@@ -281,11 +281,12 @@ const withHandle = async <T>(path: string, run: (handle: FileHandle) => Promise<
 
 /**
  * Writes `dst` from `write`; on failure the partial file is removed. Synced before it resolves.
- * `dst` must not be `src`: opening it truncates it. Callers replace a file through a temporary path.
+ * `dst` must not exist yet (it is created exclusively, so another writer's file is never truncated)
+ * and must not be `src`. Callers replace a file through a temporary path of their own.
  */
 const writeOutput = async <T>(src: string, dst: string, write: (handle: FileHandle) => Promise<T>) => {
   if (resolve(src) === resolve(dst)) throw new Error('The output path must differ from the input path');
-  const handle = await open(dst, 'w', 0o600);
+  const handle = await open(dst, 'wx', 0o600);
   try {
     const result = await write(handle);
     await handle.sync();

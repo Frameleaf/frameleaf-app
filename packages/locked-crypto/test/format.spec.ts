@@ -102,6 +102,15 @@ describe('locked file format', () => {
     }
   });
 
+  it('never truncates an existing output file (it is created exclusively)', async () => {
+    const src = path('plain');
+    const dst = path('locked');
+    await writeFile(src, randomBytes(10));
+    await writeFile(dst, 'another job is writing this');
+    await expect(encryptFile(src, dst, [{ publicKey: owner.publicKey }], info)).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(await readFile(dst, 'utf8')).toBe('another job is writing this');
+  });
+
   it('writes the header and segment layout from the spec', async () => {
     const plain = randomBytes(SEGMENT_SIZE + 10);
     const dst = await encrypted(plain, [owner, partner]);

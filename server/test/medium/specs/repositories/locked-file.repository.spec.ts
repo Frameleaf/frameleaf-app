@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType, AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
-import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
+import { LOCKED_PATH_BUSY, LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -271,6 +272,59 @@ describe(LockedFileRepository.name, () => {
       });
 
       await expect(sut.partnerRecipients(user.id)).resolves.toEqual([{ userId: partner.id, publicKey }]);
+    });
+  });
+
+  describe('withFileLock (fix round 1, C1 and I3)', () => {
+    it('lets one job at a time replace a path; the second is told it is busy', async () => {
+      const { sut } = setup();
+      const path = `/media/${randomUUID()}/shared.jpg`;
+      const ownerId = randomUUID();
+      let release!: () => void;
+      const holding = new Promise<void>((resolve) => (release = resolve));
+      let entered!: () => void;
+      const inside = new Promise<void>((resolve) => (entered = resolve));
+
+      const first = sut.withFileLock(path, ownerId, async () => {
+        entered();
+        await holding;
+        return 'first';
+      });
+      await inside;
+      await expect(sut.withFileLock(path, ownerId, () => Promise.resolve('second'))).resolves.toBe(LOCKED_PATH_BUSY);
+      await expect(sut.withFileLock(`${path}.other`, ownerId, () => Promise.resolve('other'))).resolves.toBe('other');
+      release();
+      await expect(first).resolves.toBe('first');
+      await expect(sut.withFileLock(path, ownerId, () => Promise.resolve('again'))).resolves.toBe('again');
+    });
+
+    it('a rename step waits while turning off or an unlock holds the per-user lock exclusively', async () => {
+      const { ctx, sut } = setup();
+      const database = ctx.get(DatabaseRepository);
+      const ownerId = randomUUID();
+      const order: string[] = [];
+      let release!: () => void;
+      const holding = new Promise<void>((resolve) => (release = resolve));
+      let entered!: () => void;
+      const inside = new Promise<void>((resolve) => (entered = resolve));
+
+      const exclusive = database.withLockedKeyFileLock(ownerId, async () => {
+        entered();
+        await holding;
+        order.push('finish');
+      });
+      await inside;
+      const rename = sut.withFileLock(`/media/${randomUUID()}.jpg`, ownerId, (commit) =>
+        commit(() => {
+          order.push('rename');
+          return Promise.resolve();
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(order).toEqual([]);
+      release();
+      await Promise.all([exclusive, rename]);
+      expect(order).toEqual(['finish', 'rename']);
     });
   });
 });

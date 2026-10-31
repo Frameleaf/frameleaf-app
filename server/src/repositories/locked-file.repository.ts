@@ -12,7 +12,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { PhysicalFileType, StorageFolder } from 'src/enum.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
-import { lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { filePathLockKey, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 import { releaseDerivedResults } from 'src/utils/derivative-locks.js';
@@ -30,6 +30,9 @@ export interface LockedFileRef {
 }
 
 export type LockedStatus = 'encrypting' | 'on' | 'decrypting';
+
+/** `withFileLock`: another job is replacing this file right now. */
+export const LOCKED_PATH_BUSY = Symbol('locked-path-busy');
 
 /** What the seal, unseal and rewrap jobs need to know about one asset, read in one query. */
 export interface LockedSealState {
@@ -484,7 +487,7 @@ export class LockedFileRepository {
 
   /** Copies `from` to `to` through a temporary file, checks the copy's SHA-256 and syncs it. */
   private async copyVerified(from: string, to: string) {
-    const temporary = `${to}.fllk.tmp`;
+    const temporary = `${to}.${randomUUID()}.fllk.tmp`;
     try {
       await fs.copyFile(from, temporary, constants.COPYFILE_EXCL);
       const [source, copy] = await Promise.all([sha256Of(from), sha256Of(temporary)]);
@@ -498,6 +501,36 @@ export class LockedFileRepository {
       await fs.rm(temporary, { force: true });
       throw error;
     }
+  }
+
+  /**
+   * FL-721: one replacement of a stored file at a time, whichever asset or job asks (two of a person's
+   * Locked items may share a file). Runs `work` in a transaction holding the file's path lock (the key
+   * `lockFilePath` uses), taken without waiting: `LOCKED_PATH_BUSY` when another job holds it.
+   *
+   * `work` gets `commit`, which it calls for the final re-check, rename and folder sync only: it takes
+   * the owner's per-user lock (class -721) in shared mode, so a rename never lands while turning off
+   * or an unlock is being finished, which take it exclusively (`DatabaseRepository.withLockedKeyFileLock`).
+   * Both locks are transaction-scoped, so a worker that dies leaves none behind.
+   */
+  async withFileLock<T>(
+    path: string,
+    ownerId: string,
+    work: (commit: <R>(step: () => Promise<R>) => Promise<R>) => Promise<T>,
+  ): Promise<T | typeof LOCKED_PATH_BUSY> {
+    return this.db.transaction().execute(async (trx) => {
+      const { rows } = await sql<{ locked: boolean }>`
+        select pg_try_advisory_xact_lock(${filePathLockKey(path)}::bigint) as locked
+      `.execute(trx);
+      if (!rows[0]?.locked) {
+        return LOCKED_PATH_BUSY;
+      }
+      return work(async (step) => {
+        await sql`SET LOCAL lock_timeout = '120s'`.execute(trx);
+        await sql`SELECT pg_advisory_xact_lock_shared(-721, hashtext(${ownerId})::int)`.execute(trx);
+        return step();
+      });
+    });
   }
 
   /**

@@ -35,9 +35,11 @@ export const BUDDY_CAPTURE_LOCK = -311;
  */
 export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
   await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
-  const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+  await sql`SELECT pg_advisory_xact_lock(${filePathLockKey(path)}::bigint)`.execute(db);
 };
+/** The advisory-lock key of one file path, shared by `lockFilePath` and the Locked file jobs (FL-721). */
+export const filePathLockKey = (path: string): string =>
+  createHash('sha1').update(path).digest().readBigInt64BE(0).toString();
 /**
  * Serializes universal-storage linking per content hash (see `linkUploadedOriginal`). Taken before any
  * path lock, never after one.

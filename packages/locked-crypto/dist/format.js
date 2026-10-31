@@ -203,7 +203,7 @@ const withHandle = async (path, run) => {
 const writeOutput = async (src, dst, write) => {
     if (resolve(src) === resolve(dst))
         throw new Error('The output path must differ from the input path');
-    const handle = await open(dst, 'w', 0o600);
+    const handle = await open(dst, 'wx', 0o600);
     try {
         const result = await write(handle);
         await handle.sync();

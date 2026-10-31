@@ -13,10 +13,10 @@ import {
   verifyFile,
 } from '@frameleaf/locked-crypto';
 import { Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { type Stats, createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -26,6 +26,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import {
+  LOCKED_PATH_BUSY,
   type LockedFileRef,
   LockedFileRepository,
   type LockedSealState,
@@ -38,8 +39,10 @@ import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
-/** The temporary file a seal, unseal or rewrap writes beside the file it replaces (spec §7.1). */
+/** The ending of the temporary file (`<path>.<uuid>.fllk.tmp`) a seal, unseal or rewrap writes beside the file it replaces (spec §7.1). */
 export const LOCKED_TEMP_SUFFIX = '.fllk.tmp';
+/** `<name>.<uuid>.fllk.tmp` (and the older `<name>.fllk.tmp`): group 1 is the file it was replacing. */
+const STALE_TEMP = /^(.+?)(?:\.[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})?\.fllk\.tmp$/;
 /** How long after a seal or unseal the sweep checks whether turning on or off has finished. */
 export const FINISH_CHECK_DELAY_MS = 2 * 60 * 1000;
 /** The least time between two sweeps a key load queues for one person. */
@@ -79,15 +82,30 @@ type FileState =
   | { ref: LockedFileRef; state: 'missing' | 'plain' | 'damaged' }
   | { ref: LockedFileRef; state: 'sealed'; keyIds: Buffer[] };
 
+/** Whether these files stop turning off or an unlock from finishing: one is sealed, damaged or missing. */
+const blocksFinish = (files: FileState[]) =>
+  files.some(
+    (file) => file.state === 'sealed' || file.state === 'damaged' || (file.state === 'missing' && !file.ref.optional),
+  );
+
+const syncFile = async (path: string) => {
+  const handle = await fs.open(path, 'r+');
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+};
+
 /** The outcome of one pass over an asset's files. */
-type Pass = 'done' | 'moved' | 'stopped';
+type Pass = 'done' | 'moved' | 'stopped' | 'busy';
 
 /**
  * FL-721: the jobs that encrypt Locked files in place ("seal", spec §7.1–7.2), decrypt them again
  * ("unseal", §7.3–7.4), change their recipients ("rewrap", §6.2) and look for pending work ("sweep").
  *
  * Every file is replaced the same way, so a source is never lost: the new content goes to
- * `<path>.fllk.tmp` beside it, is checked (a seal decrypts what it wrote and compares SHA-256 with
+ * `<path>.<uuid>.fllk.tmp` beside it (under the path lock), is checked (a seal decrypts what it wrote and compares SHA-256 with
  * the source; an unseal and a rewrap authenticate every segment) and synced, and only then renamed
  * over the path, after which the folder is synced. On any error the source is left as it was and the
  * temporary file is removed. Files are told apart by their first four bytes (`FLLK`), so every step
@@ -151,17 +169,41 @@ export class LockedSealService {
    */
   async removeStaleTemp(): Promise<void> {
     let removed = 0;
+    const folders = new Map<string, Set<string>>();
     for (const userId of await this.lockedEncryptionRepository.getAllUserIds()) {
       for (const asset of await this.lockedEncryptionRepository.getLockedAssets(userId)) {
+        // a read-only or external library's folders are not Frameleaf's to clean
+        if (!asset.encryptable) {
+          continue;
+        }
         for (const { path } of await this.lockedFileRepository.filesOf(asset.id)) {
-          const temporary = `${path}${LOCKED_TEMP_SUFFIX}`;
-          try {
-            await fs.unlink(temporary);
-            removed++;
-          } catch (error) {
-            if (!isMissing(error)) {
-              this.logger.warn(`Could not remove a stale Locked temporary file: ${(error as Error).name}`);
-            }
+          const names = folders.get(dirname(path)) ?? new Set<string>();
+          names.add(basename(path));
+          folders.set(dirname(path), names);
+        }
+      }
+    }
+    for (const [folder, names] of folders) {
+      let entries: string[];
+      try {
+        entries = await fs.readdir(folder);
+      } catch (error) {
+        if (!isMissing(error)) {
+          this.logger.warn(`Could not look for stale Locked temporary files: ${(error as Error).name}`);
+        }
+        continue;
+      }
+      for (const entry of entries) {
+        const match = STALE_TEMP.exec(entry);
+        if (!match || !names.has(match[1])) {
+          continue;
+        }
+        try {
+          await fs.unlink(join(folder, entry));
+          removed++;
+        } catch (error) {
+          if (!isMissing(error)) {
+            this.logger.warn(`Could not remove a stale Locked temporary file: ${(error as Error).name}`);
           }
         }
       }
@@ -201,6 +243,10 @@ export class LockedSealService {
         pass = await this.sealFiles(state, await this.lockedFileRepository.filesOf(id), recipients);
       }
       if (pass !== 'done') {
+        if (pass === 'busy') {
+          // another job is replacing a file this item shares; a later sweep looks again
+          await this.queueFinishCheck(state.ownerId);
+        }
         return JobStatus.Skipped;
       }
     } catch (error) {
@@ -271,36 +317,86 @@ export class LockedSealService {
     return 'done';
   }
 
-  private async sealFile(state: LockedSealState, ref: LockedFileRef, recipients: Recipient[]): Promise<Pass> {
+  private sealFile(state: LockedSealState, ref: LockedFileRef, recipients: Recipient[]): Promise<Pass> {
     const { path } = ref;
-    const temporary = `${path}${LOCKED_TEMP_SUFFIX}`;
-    const before = await fs.stat(path);
-    const source = await sha256Of(path);
     const info: LockedFileInfo = {
       assetId: state.id,
       kind: ref.kind,
       originalFileName: ref.table === 'asset' ? state.originalFileName : basename(path),
       mime: mimeTypes.lookup(ref.table === 'asset' ? state.originalFileName : path),
     };
-    try {
+    return this.replaceFile(state, ref, meantToBeSealed, async (temporary) => {
+      if (await isLockedFile(path)) {
+        // another job (an item sharing this file) sealed it meanwhile
+        return false;
+      }
+      const source = await sha256Of(path);
       const { sha256 } = await encryptFile(path, temporary, recipients, info, { verify: true });
-      // what the temporary file decrypts to is the source, byte for byte, and the source is unchanged
-      if (!sha256?.equals(source) || !sameFile(before, await fs.stat(path))) {
+      // what the temporary file decrypts to is the source, byte for byte
+      if (!sha256?.equals(source)) {
         throw new Error('The file changed while it was being encrypted');
       }
-      await fs.chmod(temporary, before.mode & 0o7777);
-      if (!meantToBeSealed(await this.lockedFileRepository.getSealState(state.id))) {
-        // turned off (or unlocked) while this file was being encrypted
+      return true;
+    });
+  }
+
+  /**
+   * The one way a stored file is replaced (seal, unseal in place, rewrap), under the file's path lock
+   * so no two jobs ever work on one path at once (C1):
+   *
+   * 1. `write` fills a temporary file of this job's own (`<path>.<uuid>.fllk.tmp`, created exclusively)
+   *    and checks it; it returns false when the file is already as wanted;
+   * 2. the temporary file gets the source's mode and is synced;
+   * 3. under the owner's per-user lock in shared mode (never while turning off or an unlock is being
+   *    finished): the item's state is read again, the source must be the same file as when `write`
+   *    started, then the rename and the folder sync.
+   *
+   * On any error the temporary file is removed and the source is left as it was. `busy` when another
+   * job holds the path; `moved` when the file isn't there.
+   */
+  private async replaceFile(
+    state: LockedSealState,
+    ref: LockedFileRef,
+    stillMeant: (state: LockedSealState | undefined) => boolean,
+    write: (temporary: string) => Promise<boolean>,
+  ): Promise<Pass> {
+    const { path } = ref;
+    const outcome = await this.lockedFileRepository.withFileLock(path, state.ownerId, async (commit) => {
+      const temporary = `${path}.${randomUUID()}${LOCKED_TEMP_SUFFIX}`;
+      try {
+        let before: Stats;
+        try {
+          before = await fs.stat(path);
+        } catch (error) {
+          if (isMissing(error)) {
+            return 'moved' as const;
+          }
+          throw error;
+        }
+        if (!(await write(temporary))) {
+          return 'done' as const;
+        }
+        await fs.chmod(temporary, before.mode & 0o7777);
+        await syncFile(temporary);
+        return await commit(async () => {
+          if (!stillMeant(await this.lockedFileRepository.getSealState(state.id))) {
+            // turned off, unlocked or locked again meanwhile: the file stays as it was
+            await fs.rm(temporary, { force: true });
+            return 'stopped' as const;
+          }
+          if (!sameFile(before, await fs.stat(path))) {
+            throw new Error('The file changed while it was being replaced');
+          }
+          await fs.rename(temporary, path);
+          await syncDirectory(dirname(path));
+          return 'done' as const;
+        });
+      } catch (error) {
         await fs.rm(temporary, { force: true });
-        return 'stopped';
+        throw error;
       }
-      await fs.rename(temporary, path);
-    } catch (error) {
-      await fs.rm(temporary, { force: true });
-      throw error;
-    }
-    await syncDirectory(dirname(path));
-    return 'done';
+    });
+    return outcome === LOCKED_PATH_BUSY ? 'busy' : outcome;
   }
 
   // ---- Unseal ----
@@ -312,39 +408,44 @@ export class LockedSealService {
       return JobStatus.Skipped;
     }
 
-    let finished: boolean;
+    let outcome: Awaited<ReturnType<LockedSealService['unsealFiles']>>;
     try {
-      const outcome = await this.unsealFiles(state);
+      outcome = await this.unsealFiles(state);
       if (outcome === 'no-key') {
         // the wake-up comes from lockedKeys.onLoad
         return JobStatus.Skipped;
       }
-      finished = outcome === 'done';
     } catch (error) {
       this.logger.error(`Could not decrypt Locked item ${id}: ${(error as Error).name}: ${(error as Error).message}`);
       return JobStatus.Failed;
     }
 
+    let finished = outcome === 'done';
     if (finished && state.pendingUnlockAt) {
-      // spec §7.3: the lock goes only once the last file is plain
-      await this.lockedFileRepository.finishPendingUnlock(id);
+      // spec §7.3: the lock goes only once the last file is plain, checked again under the lock
+      finished = await this.finishUnlock(id, state.ownerId);
     }
-    if (state.status === 'decrypting') {
-      // a later sweep finishes turning off once nothing is left to decrypt
+    if (state.status === 'decrypting' || outcome === 'busy') {
+      // a later sweep looks again, and finishes turning off once nothing is left to decrypt
       await this.queueFinishCheck(state.ownerId);
     }
     return finished ? JobStatus.Success : JobStatus.Skipped;
   }
 
-  private async unsealFiles(state: LockedSealState): Promise<'done' | 'stopped' | 'no-key'> {
-    const sealed: LockedFileRef[] = [];
-    for (const ref of await this.lockedFileRepository.filesOf(state.id)) {
-      if (await this.isSealed(ref)) {
-        sealed.push(ref);
-      }
-    }
+  /**
+   * Decrypts every sealed file of the item. `done` only when every listed file is there and plain
+   * afterwards: a missing file (storage offline, a move under way) is never taken for a plain one (C2).
+   */
+  private async unsealFiles(state: LockedSealState): Promise<'done' | 'stopped' | 'busy' | 'no-key'> {
+    const files = await this.fileStates(await this.lockedFileRepository.filesOf(state.id));
+    const sealed = files.filter((file) => file.state === 'sealed').map(({ ref }) => ref);
+    let outcome: 'done' | 'stopped' | 'busy' = files.some(
+      (file) => file.state === 'damaged' || (file.state === 'missing' && !file.ref.optional),
+    )
+      ? 'stopped'
+      : 'done';
     if (sealed.length === 0) {
-      return 'done';
+      return outcome;
     }
     const privateKey = this.ownerKey(state.ownerId);
     if (!privateKey) {
@@ -352,66 +453,57 @@ export class LockedSealService {
     }
     try {
       for (const ref of sealed) {
-        const outcome = await this.unsealFile(state, ref, privateKey);
-        if (outcome !== 'done') {
-          return outcome;
+        const result = await this.unsealFile(state, ref, privateKey);
+        if (result === 'stopped' || result === 'moved') {
+          outcome = 'stopped';
+        } else if (result === 'busy' && outcome === 'done') {
+          outcome = 'busy';
         }
       }
     } finally {
       privateKey.fill(0);
     }
-    return 'done';
+    return outcome;
   }
 
-  private async unsealFile(
-    state: LockedSealState,
-    ref: LockedFileRef,
-    privateKey: Buffer,
-  ): Promise<'done' | 'stopped'> {
+  private async unsealFile(state: LockedSealState, ref: LockedFileRef, privateKey: Buffer): Promise<Pass> {
     // a file the same person's other Locked items still read encrypted stays as it is; this asset
     // gets its own plain copy (the reverse of spec §6.1)
     if (
       state.status !== 'decrypting' &&
       (await this.lockedFileRepository.sealedReaders(state.id, ref.path)).length > 0
     ) {
-      const target =
-        ref.table === 'asset' || ref.table === 'asset_file' ? this.lockedFileRepository.siblingPath(ref.path) : null;
-      if (!target) {
-        this.logger.warn(`Left a file of Locked item ${state.id} encrypted: another Locked item shares it`);
-        return 'done';
-      }
-      await this.lockedFileRepository.copyAndRepoint(state.id, ref, target, (to) =>
-        this.decryptTo(ref.path, to, privateKey),
-      );
-      return 'done';
-    }
-
-    const { path } = ref;
-    const temporary = `${path}${LOCKED_TEMP_SUFFIX}`;
-    const before = await fs.stat(path);
-    try {
-      await this.decryptTo(path, temporary, privateKey, false);
-      if (!sameFile(before, await fs.stat(path))) {
-        throw new Error('The file changed while it was being decrypted');
-      }
-      await fs.chmod(temporary, before.mode & 0o7777);
-      if (!meantToBeUnsealed(await this.lockedFileRepository.getSealState(state.id))) {
-        // locked again meanwhile: the file stays encrypted
-        await fs.rm(temporary, { force: true });
+      if (ref.table !== 'asset' && ref.table !== 'asset_file') {
+        // the item stays on its way out of Locked rather than leaving it with a file nobody decrypts
+        this.logger.warn(`Locked item ${state.id} stays locked: another Locked item shares one of its files`);
         return 'stopped';
       }
-      await fs.rename(temporary, path);
+      const moved = await this.lockedFileRepository.copyAndRepoint(
+        state.id,
+        ref,
+        this.lockedFileRepository.siblingPath(ref.path),
+        (to) => this.decryptTo(ref.path, to, privateKey),
+      );
+      return moved ? 'done' : 'stopped';
+    }
+
+    try {
+      return await this.replaceFile(state, ref, meantToBeUnsealed, async (temporary) => {
+        if (!(await isLockedFile(ref.path))) {
+          return false;
+        }
+        await this.decryptTo(ref.path, temporary, privateKey, false);
+        return true;
+      });
     } catch (error) {
-      await fs.rm(temporary, { force: true });
       if (error instanceof WrongSecretError) {
-        // not sealed to this person (another person's file): not theirs to decrypt
-        this.logger.warn(`Left a file of Locked item ${state.id} encrypted: it isn't sealed to its owner's key`);
-        return 'done';
+        // not sealed to this person: the item stays on its way out of Locked rather than leaving it
+        // with a file nobody decrypts
+        this.logger.warn(`Locked item ${state.id} stays locked: one of its files isn't sealed to its owner's key`);
+        return 'stopped';
       }
       throw error;
     }
-    await syncDirectory(dirname(path));
-    return 'done';
   }
 
   /**
@@ -420,7 +512,7 @@ export class LockedSealService {
    * file of its own and its folder synced.
    */
   private async decryptTo(from: string, to: string, privateKey: Buffer, publish = true) {
-    const temporary = publish ? `${to}${LOCKED_TEMP_SUFFIX}` : to;
+    const temporary = publish ? `${to}.${randomUUID()}${LOCKED_TEMP_SUFFIX}` : to;
     try {
       const { plaintextLength } = await readHeader(from);
       await decryptFile(from, temporary, privateKey);
@@ -469,7 +561,11 @@ export class LockedSealService {
     }
     try {
       for (const ref of stale) {
-        if ((await this.rewrapFile(state, ref, privateKey, recipients)) === 'stopped') {
+        const pass = await this.rewrapFile(state, ref, privateKey, recipients);
+        if (pass === 'busy') {
+          await this.queueFinishCheck(state.ownerId);
+        }
+        if (pass !== 'done') {
           return JobStatus.Skipped;
         }
       }
@@ -488,31 +584,23 @@ export class LockedSealService {
     privateKey: Buffer,
     recipients: Recipient[],
   ): Promise<Pass> {
-    const { path } = ref;
-    const temporary = `${path}${LOCKED_TEMP_SUFFIX}`;
-    const before = await fs.stat(path);
+    const wanted = recipients.map(({ publicKey }) => keyId(publicKey));
     try {
-      await rewrapFile(path, temporary, privateKey, recipients);
-      await verifyFile(temporary, privateKey);
-      if (!sameFile(before, await fs.stat(path))) {
-        throw new Error('The file changed while it was being re-wrapped');
-      }
-      await fs.chmod(temporary, before.mode & 0o7777);
-      if (!meantToBeSealed(await this.lockedFileRepository.getSealState(state.id))) {
-        await fs.rm(temporary, { force: true });
-        return 'stopped';
-      }
-      await fs.rename(temporary, path);
+      return await this.replaceFile(state, ref, meantToBeSealed, async (temporary) => {
+        if (!(await isLockedFile(ref.path)) || this.sameRecipients((await readHeader(ref.path)).keyIds, wanted)) {
+          return false;
+        }
+        await rewrapFile(ref.path, temporary, privateKey, recipients);
+        await verifyFile(temporary, privateKey);
+        return true;
+      });
     } catch (error) {
-      await fs.rm(temporary, { force: true });
       if (error instanceof WrongSecretError) {
         this.logger.warn(`Left a file of Locked item ${state.id} as it is: it isn't sealed to its owner's key`);
         return 'done';
       }
       throw error;
     }
-    await syncDirectory(dirname(path));
-    return 'done';
   }
 
   private sameRecipients(actual: Buffer[], wanted: Buffer[]) {
@@ -567,13 +655,14 @@ export class LockedSealService {
       const sealedFiles = files.filter((file) => file.state === 'sealed' || file.state === 'damaged');
       const anyPlain = files.some((file) => file.state === 'plain');
       if (turningOff || asset.pendingUnlockAt) {
-        if (sealedFiles.length > 0) {
+        if (blocksFinish(files)) {
+          // sealed, or missing and so perhaps sealed (C2): turning off and the unlock wait
           sealedLeft++;
-          if (keyLoaded) {
+          if (keyLoaded && sealedFiles.length > 0) {
             unseal.push(asset.id);
           }
-        } else if (asset.pendingUnlockAt) {
-          await this.lockedFileRepository.finishPendingUnlock(asset.id);
+        } else if (asset.pendingUnlockAt && !(await this.finishUnlock(asset.id, userId))) {
+          sealedLeft++;
         }
         continue;
       }
@@ -617,6 +706,20 @@ export class LockedSealService {
       const row = await this.lockedEncryptionRepository.get(userId);
       if (row?.status !== 'decrypting') {
         return false;
+      }
+      // every file is read again under the exclusive lock, which no rename can pass (C2, I3): a file
+      // still sealed, or missing and so perhaps sealed, keeps the key file and the row
+      for (const asset of await this.lockedEncryptionRepository.getLockedAssets(userId)) {
+        if (!asset.encryptable) {
+          continue;
+        }
+        if (
+          asset.pendingUnlockAt ||
+          blocksFinish(await this.fileStates(await this.lockedFileRepository.filesOf(asset.id)))
+        ) {
+          this.logger.log(`Turning off Locked encryption for user ${userId} waits: item ${asset.id} isn't plain yet`);
+          return false;
+        }
       }
       let file: LockedKeyFile | null | undefined;
       try {
@@ -681,15 +784,18 @@ export class LockedSealService {
     return held ? Buffer.from(held.privateKey) : null;
   }
 
-  private async isSealed(ref: LockedFileRef) {
-    try {
-      return await isLockedFile(ref.path);
-    } catch (error) {
-      if (isMissing(error)) {
+  /**
+   * Spec §7.3: removes the lock of an item on its way out of Locked, once every file is there and
+   * plain, read again under the owner's per-user lock in exclusive mode so no seal's rename can land in
+   * between (I3). False when it has to wait (C2).
+   */
+  private finishUnlock(assetId: string, ownerId: string): Promise<boolean> {
+    return this.databaseRepository.withLockedKeyFileLock(ownerId, async () => {
+      if (blocksFinish(await this.fileStates(await this.lockedFileRepository.filesOf(assetId)))) {
         return false;
       }
-      throw error;
-    }
+      return this.lockedFileRepository.finishPendingUnlock(assetId);
+    });
   }
 
   private async fileState(ref: LockedFileRef): Promise<FileState> {

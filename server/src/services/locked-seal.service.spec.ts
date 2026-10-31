@@ -11,8 +11,8 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { LockedFileRef, LockedSealState } from 'src/repositories/locked-file.repository.js';
 import { JobName, JobStatus } from 'src/enum.js';
+import { LOCKED_PATH_BUSY, type LockedFileRef, type LockedSealState } from 'src/repositories/locked-file.repository.js';
 import { FINISH_CHECK_DELAY_MS, LockedSealService } from 'src/services/locked-seal.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
@@ -41,6 +41,7 @@ describe(LockedSealService.name, () => {
   let keyFile: LockedKeyFile;
   let row: Row | undefined;
   let plain: Map<string, Buffer>;
+  let held: Set<string>;
 
   const write = async (name: string, kind: LockedFileRef['kind'] = 'thumbnail', table = 'asset_file') => {
     const path = join(dir, name);
@@ -102,6 +103,19 @@ describe(LockedSealService.name, () => {
     mocks.lockedFile.unshareFile.mockResolvedValue(false);
     mocks.lockedFile.sealedReaders.mockResolvedValue([]);
     mocks.lockedFile.finishPendingUnlock.mockResolvedValue(true);
+    // the path lock, as Postgres gives it: taken without waiting, busy while another job holds it
+    held = new Set();
+    mocks.lockedFile.withFileLock.mockImplementation(async (path, _ownerId, work) => {
+      if (held.has(path)) {
+        return LOCKED_PATH_BUSY;
+      }
+      held.add(path);
+      try {
+        return await work((step) => step());
+      } finally {
+        held.delete(path);
+      }
+    });
     mocks.lockedKey.read.mockImplementation(() => Promise.resolve(structuredClone(keyFile)));
     mocks.lockedKey.exists.mockResolvedValue(true);
     mocks.lockedKey.write.mockResolvedValue();
@@ -198,7 +212,11 @@ describe(LockedSealService.name, () => {
       expect((await fs.readFile(second)).equals(plain.get(second)!)).toBe(true);
       // a crash that left a temporary file behind: the next start removes it
       await fs.writeFile(`${second}.fllk.tmp`, 'half written');
+      await fs.writeFile(`${second}.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.fllk.tmp`, 'half written');
+      const unrelated = join(dir, 'holiday.fllk.tmp');
+      await fs.writeFile(unrelated, 'not ours');
       await sut.removeStaleTemp();
+      await fs.rm(unrelated);
       expect(await temporaries()).toEqual([]);
       expect((await fs.readFile(second)).equals(plain.get(second)!)).toBe(true);
     });
@@ -448,8 +466,10 @@ describe(LockedSealService.name, () => {
       const ownCopy = join(dir, 'own.jpg');
       mocks.lockedFile.sealedReaders.mockResolvedValue(['00000000-0000-4000-8000-0000000000b2']);
       mocks.lockedFile.siblingPath.mockReturnValue(ownCopy);
-      mocks.lockedFile.copyAndRepoint.mockImplementation(async (_id, _ref, target, writeCopy) => {
+      mocks.lockedFile.copyAndRepoint.mockImplementation(async (_id, ref, target, writeCopy) => {
         await writeCopy(target);
+        // this asset now names its own copy; the other item keeps the shared file
+        files[0] = { ...ref, path: target };
         return true;
       });
 
@@ -623,5 +643,170 @@ describe(LockedSealService.name, () => {
         expect(mocks.lockedKey.write).not.toHaveBeenCalled();
       });
     });
+  });
+
+  describe('two jobs on one shared path (fix round 1, C1)', () => {
+    const OTHER = '00000000-0000-4000-8000-0000000000b2';
+    let states: Map<string, LockedSealState>;
+
+    beforeEach(() => {
+      states = new Map([
+        [ASSET, state],
+        [OTHER, { ...state, id: OTHER }],
+      ]);
+      mocks.lockedFile.getSealState.mockImplementation((id) =>
+        Promise.resolve(states.has(id) ? { ...states.get(id)! } : undefined),
+      );
+    });
+
+    it('concurrent seal + seal of a shared file leave one valid sealed file and lose no bytes', async () => {
+      const path = await write('shared.jpg', 'original', 'asset');
+
+      const results = await Promise.all([sut.handleSeal({ id: ASSET }), sut.handleSeal({ id: OTHER })]);
+
+      expect(results).toContain(JobStatus.Success);
+      expect((await decrypted(path)).equals(plain.get(path)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+
+    it('a seal that finds the path busy skips and asks for a later sweep', async () => {
+      const path = await write('shared.jpg', 'original', 'asset');
+      held.add(path);
+
+      await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+
+      expect(await isLockedFile(path)).toBe(false);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.LockedSweep,
+        data: { userId: OWNER, delay: FINISH_CHECK_DELAY_MS },
+      });
+    });
+
+    it('even without the path lock, each job has its own temporary file and none truncates another', async () => {
+      mocks.lockedFile.withFileLock.mockImplementation((_path, _ownerId, work) => work((step) => step()));
+      const path = await write('shared.jpg', 'original', 'asset');
+
+      await Promise.all([sut.handleSeal({ id: ASSET }), sut.handleSeal({ id: OTHER })]);
+
+      expect((await decrypted(path)).equals(plain.get(path)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+
+    it('concurrent seal + unseal of a shared file leave a valid file and lose no bytes', async () => {
+      const path = await write('shared.jpg', 'original', 'asset');
+      await sut.handleSeal({ id: ASSET });
+      states.set(OTHER, { ...state, id: OTHER, pendingUnlockAt: new Date() });
+      loadOwnerKey();
+
+      await Promise.all([sut.handleSeal({ id: ASSET }), sut.handleUnseal({ id: OTHER })]);
+
+      const bytes = (await isLockedFile(path)) ? await decrypted(path) : await fs.readFile(path);
+      expect(bytes.equals(plain.get(path)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+
+    it('concurrent unseal + seal of a plain shared file leave a valid file', async () => {
+      const path = await write('shared.jpg', 'original', 'asset');
+      states.set(OTHER, { ...state, id: OTHER, pendingUnlockAt: new Date() });
+      loadOwnerKey();
+
+      await Promise.all([sut.handleUnseal({ id: OTHER }), sut.handleSeal({ id: ASSET })]);
+
+      const bytes = (await isLockedFile(path)) ? await decrypted(path) : await fs.readFile(path);
+      expect(bytes.equals(plain.get(path)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+  });
+
+  describe('a missing file is never a plain one (fix round 1, C2)', () => {
+    it('a missing original during turn-off keeps the key file and the row; once it is back, the sweep finishes', async () => {
+      const path = await write('original.jpg', 'original', 'asset');
+      await sut.handleSeal({ id: ASSET });
+      const sealed = await fs.readFile(path);
+      await fs.rm(path); // the volume is offline
+      row = { userId: OWNER, mode: 'advanced', status: 'decrypting' };
+      keyFile.mode = 'advanced';
+      keyFile.wraps = keyFile.wraps.map((wrap) => (wrap.kind === 'pin' ? { ...wrap, kind: 'passphrase' } : wrap));
+      state.status = 'decrypting';
+      loadOwnerKey();
+
+      await expect(sut.handleUnseal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+      await sut.handleSweep({ userId: OWNER });
+
+      expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(row).toBeDefined();
+
+      await fs.writeFile(path, sealed); // back online, still encrypted
+      await sut.handleSweep({ userId: OWNER });
+      expect(row).toBeDefined();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedUnseal, data: { id: ASSET } }]);
+
+      await expect(sut.handleUnseal({ id: ASSET })).resolves.toBe(JobStatus.Success);
+      await sut.handleSweep({ userId: OWNER });
+      expect(mocks.lockedKey.delete).toHaveBeenCalledWith(OWNER);
+      expect(row).toBeUndefined();
+      expect((await fs.readFile(path)).equals(plain.get(path)!)).toBe(true);
+    });
+
+    it('turn-off re-reads every file under the exclusive lock before touching the key file', async () => {
+      const path = await write('original.jpg', 'original', 'asset');
+      row = { userId: OWNER, mode: 'pin', status: 'decrypting' };
+      // the sweep read the file plain; a rename lands before the exclusive lock is taken
+      mocks.database.withLockedKeyFileLock.mockImplementation(async (_id, fn) => {
+        await fs.writeFile(path, Buffer.concat([Buffer.from('FLLK'), randomBytes(40)]));
+        return fn();
+      });
+
+      await sut.handleSweep({ userId: OWNER });
+
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+      expect(row).toBeDefined();
+    });
+
+    it('a pending unlock with a missing file keeps the lock; once it is back, the sweep finishes it', async () => {
+      const path = await write('original.jpg', 'original', 'asset');
+      await write('thumbnail.webp');
+      await sut.handleSeal({ id: ASSET });
+      const sealed = await fs.readFile(path);
+      await fs.rm(path);
+      state.pendingUnlockAt = new Date();
+      loadOwnerKey();
+
+      await expect(sut.handleUnseal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+      await sut.handleSweep({ userId: OWNER });
+      expect(mocks.lockedFile.finishPendingUnlock).not.toHaveBeenCalled();
+
+      await fs.writeFile(path, sealed);
+      await expect(sut.handleUnseal({ id: ASSET })).resolves.toBe(JobStatus.Success);
+      expect(mocks.lockedFile.finishPendingUnlock).toHaveBeenCalledExactlyOnceWith(ASSET);
+      expect((await fs.readFile(path)).equals(plain.get(path)!)).toBe(true);
+    });
+
+    it('an unseal that leaves a file encrypted does not finish the unlock (M5)', async () => {
+      const path = await write('original.jpg', 'original', 'asset');
+      await sut.handleSeal({ id: ASSET });
+      state.pendingUnlockAt = new Date();
+      // a key that is not a recipient of the file
+      const stranger = generateKeyPair();
+      lockedKeys.load(OWNER, stranger.publicKey, Buffer.from(stranger.privateKey), null);
+
+      await expect(sut.handleUnseal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+
+      expect(await isLockedFile(path)).toBe(true);
+      expect(mocks.lockedFile.finishPendingUnlock).not.toHaveBeenCalled();
+    });
+  });
+
+  it('removeStaleTemp leaves read-only library folders alone (M4)', async () => {
+    const path = await write('original.jpg', 'original', 'asset');
+    state.encryptable = false;
+    await fs.writeFile(`${path}.fllk.tmp`, 'the person’s own file');
+
+    await sut.removeStaleTemp();
+
+    expect(await temporaries()).toEqual(['original.jpg.fllk.tmp']);
+    expect(mocks.lockedFile.filesOf).not.toHaveBeenCalled();
   });
 });
