@@ -1,0 +1,89 @@
+import { fireEvent, render } from '@testing-library/svelte';
+import StarRating from '$lib/elements/StarRating.svelte';
+
+describe('StarRating component', () => {
+  it('renders correctly', () => {
+    const component = render(StarRating, {
+      count: 3,
+      rating: 2,
+      readOnly: false,
+      onRating: vi.fn(),
+    });
+    const container = component.getByTestId('star-container') as HTMLImageElement;
+    expect(container.className).toBe('flex flex-row');
+
+    const radioButtons = component.getAllByRole('radio') as HTMLInputElement[];
+    expect(radioButtons.length).toBe(3);
+    const labels = component.getAllByTestId('star') as HTMLLabelElement[];
+    expect(labels.length).toBe(3);
+    const labelText = component.getAllByText('rating_count') as HTMLSpanElement[];
+    expect(labelText.length).toBe(3);
+    // clearing belongs to whoever shows the stars (the viewer's rating row has its own Clear)
+    expect(component.queryByRole('button')).toBeNull();
+
+    // Check the initial state
+    expect(radioButtons[0].checked).toBe(false);
+    expect(radioButtons[1].checked).toBe(true);
+    expect(radioButtons[2].checked).toBe(false);
+
+    // Check the radio button attributes
+    for (const [index, radioButton] of radioButtons.entries()) {
+      expect(radioButton.id).toBe(labels[index].htmlFor);
+      expect(radioButton.name).toBe('stars');
+      expect(radioButton.value).toBe((index + 1).toString());
+      expect(radioButton.disabled).toBe(false);
+      expect(radioButton.className).toBe('sr-only');
+    }
+
+    // Check the label attributes: the set stars carry `filled` (the viewer's warm star colour).
+    for (const [index, label] of labels.entries()) {
+      expect(label.className).toBe(index < 2 ? 'cursor-pointer filled' : 'cursor-pointer');
+      expect(label.tabIndex).toBe(-1);
+    }
+  });
+
+  it('renders correctly with readOnly', () => {
+    const component = render(StarRating, {
+      count: 3,
+      rating: 2,
+      readOnly: true,
+      onRating: vi.fn(),
+    });
+    const radioButtons = component.getAllByRole('radio') as HTMLInputElement[];
+    expect(radioButtons.length).toBe(3);
+    const labels = component.getAllByTestId('star') as HTMLLabelElement[];
+    expect(labels.length).toBe(3);
+    const clearButton = component.queryByRole('button');
+    expect(clearButton).toBeNull();
+
+    // Check the initial state
+    expect(radioButtons[0].checked).toBe(false);
+    expect(radioButtons[1].checked).toBe(true);
+    expect(radioButtons[2].checked).toBe(false);
+
+    // Check the radio button attributes
+    for (const [index, radioButton] of radioButtons.entries()) {
+      expect(radioButton.id).toBe(labels[index].htmlFor);
+      expect(radioButton.disabled).toBe(true);
+    }
+
+    // Check the label attributes
+    for (const [index, label] of labels.entries()) {
+      expect(label.className).toBe(index < 2 ? 'filled' : '');
+    }
+  });
+});
+
+it('cancels a pending rating when the control is removed', async () => {
+  vi.useFakeTimers();
+  const onRating = vi.fn();
+  const component = render(StarRating, { rating: 2, onRating });
+  try {
+    await fireEvent.change(component.getAllByRole('radio')[3], { target: { checked: true } });
+    component.unmount();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(onRating).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});

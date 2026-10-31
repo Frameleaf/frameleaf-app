@@ -1,0 +1,137 @@
+<script lang="ts">
+  import { clickOutside } from '$lib/actions/click-outside';
+  import { focusTrap } from '$lib/actions/focus-trap';
+  import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { sidebarCollapsed } from '$lib/stores/preferences.store';
+  import { sidebarStore } from '$lib/stores/sidebar.svelte';
+  import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
+  import { mdiMenu } from '@mdi/js';
+  import { onMount, type Snippet } from 'svelte';
+  import { t } from 'svelte-i18n';
+
+  interface Props {
+    ariaLabel?: string;
+    /**
+     * Replaces the collapse button at the top (desktop only). The Frameleaf rail draws its own
+     * "Library" header with the double-chevron toggle (LibraryRail.jsx `rail-header`).
+     */
+    header?: Snippet<[{ collapsed: boolean; toggle: () => void }]>;
+    /** Stays at the foot of the rail while the list above it scrolls (LibraryRail.jsx `sidebar-bottom`). */
+    footer?: Snippet;
+    children?: Snippet;
+  }
+
+  let { ariaLabel, header, footer, children }: Props = $props();
+
+  // S-28 (styles.css:291-299): the rail is the Frameleaf panel with its own edge, not the
+  // upstream `bg-light` container, and it has no end padding around its rows.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+
+  const isHidden = $derived(!sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
+  const isExpanded = $derived(sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
+  // Icon-only rail only applies on desktop; the mobile sidebar is a full-width overlay.
+  const isCollapsed = $derived($sidebarCollapsed && mediaQueryManager.isFullSidebar);
+
+  onMount(() => {
+    closeSidebar();
+  });
+
+  const closeSidebar = () => {
+    if (!isExpanded) {
+      return;
+    }
+    sidebarStore.reset();
+    if (isHidden) {
+      document.querySelector<HTMLButtonElement>(`#${menuButtonId}`)?.focus();
+    }
+  };
+</script>
+
+<nav
+  id="sidebar"
+  aria-label={ariaLabel}
+  tabindex="-1"
+  class="frameleaf fl-sidebar relative z-1 flex w-0 flex-col sidebar:w-(--sidebar-width)"
+  data-theme={appTheme}
+  class:shadow-2xl={isExpanded}
+  class:dark:border-e-immich-dark-gray={isExpanded}
+  class:border-e={isExpanded}
+  class:w-[min(100vw,16rem)]={sidebarStore.isOpen}
+  class:is-collapsed={isCollapsed}
+  class:is-resizing={sidebarStore.isResizing}
+  data-testid="sidebar-parent"
+  inert={isHidden}
+  use:clickOutside={{ onOutclick: closeSidebar, onEscape: closeSidebar }}
+  use:focusTrap={{ active: isExpanded }}
+>
+  {#if header}
+    {@render header({ collapsed: isCollapsed, toggle: () => ($sidebarCollapsed = !$sidebarCollapsed) })}
+  {:else}
+    <button
+      type="button"
+      onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
+      aria-label={isCollapsed ? $t('expand') : $t('collapse')}
+      aria-pressed={isCollapsed}
+      class="mb-1 hidden w-full shrink-0 place-items-center gap-4 rounded-e-full py-3 ps-5 hover:bg-subtle hover:text-primary sidebar:flex"
+    >
+      <Icon icon={mdiMenu} size="1.375em" class="shrink-0" aria-hidden={true} />
+    </button>
+  {/if}
+  <!-- LibraryRail.jsx `.sidebar nav`: only the list scrolls; the header and the footer keep their places. -->
+  <div class="nav-items fl-sidebar-list immich-scrollbar">
+    {@render children?.()}
+  </div>
+  {@render footer?.()}
+</nav>
+
+<style>
+  .fl-sidebar {
+    overflow: hidden;
+    background: var(--fl-panel);
+    border-inline-end: 1px solid var(--fl-border);
+    padding-block: 18px 14px;
+    /*
+     * Collapsing and opening the rail is one move (review finding 126): only the width animates,
+     * on the same duration and curve as the page grid beside it (UserPageLayout). The curve has
+     * no overshoot, because a width that springs would make the photo grid wobble.
+     */
+    transition: width var(--fl-duration) var(--fl-snappy);
+  }
+  /* Dragging the resize handle follows the pointer exactly. */
+  .fl-sidebar.is-resizing {
+    transition: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* The rail takes its new width at once. */
+    .fl-sidebar {
+      transition: none;
+    }
+  }
+  .fl-sidebar-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden auto;
+  }
+  /* Too short to pin anything without swallowing the list: the rail scrolls as one, footer last. */
+  @media (max-height: 500px) {
+    .fl-sidebar {
+      overflow: hidden auto;
+    }
+    .fl-sidebar-list {
+      flex: none;
+      overflow: visible;
+    }
+  }
+  /* A hidden (narrow-screen, closed) rail is zero wide: its edge must not leave a 1px hairline. */
+  .fl-sidebar[inert] {
+    border-inline-end-width: 0;
+  }
+  /* Icon-only rail: hide NavbarItem text labels and the dropdown expand/collapse
+     chevron buttons. Album tree, recent albums, group headers and bottom info are
+     hidden by UserSidebar itself (it owns those components). */
+  :global(#sidebar.is-collapsed .nav-items span.truncate),
+  :global(#sidebar.is-collapsed .nav-items button:not(.fl-rail button)) {
+    display: none;
+  }
+</style>

@@ -1,0 +1,58 @@
+<script lang="ts">
+  /**
+   * The frame of a plain-words settings page (FL-361, first used by Backup in FL-362): one column of
+   * the kit's pieces with a fixed rhythm between them. It is the size container the pieces answer
+   * to, so a page reads the same in the wide settings pane, beside an open rail and on a phone.
+   * The look follows the approved prototype (`settings-v2/kit.jsx`, `backup-v2.css`), drawn with the
+   * app's own tokens.
+   */
+  import type { Snippet } from 'svelte';
+
+  let { children }: { children: Snippet } = $props();
+</script>
+
+<div class="kit-page">{@render children()}</div>
+
+<style>
+  .kit-page {
+    container: kit / inline-size;
+    display: grid;
+    gap: var(--fl-space-6);
+    /* Stated, so the page keeps its width inside a form that lays its children out in a column. */
+    width: 100%;
+    min-width: 0;
+    max-width: 1120px;
+    /* The shell centres wide pages; these start on the heading's edge, as the other settings pages do. */
+    margin-inline: 0 auto;
+    padding-bottom: var(--fl-space-8);
+    color: var(--fl-text);
+  }
+  /*
+   * A choice between a few settings values is the prototype's `.bk2-segmented` (backup-v2.css): a
+   * 12px track with the chosen value filled with the accent. The shared control keeps its quieter
+   * filter look everywhere else.
+   */
+  .kit-page :global(.segments) {
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-1);
+    border-radius: var(--fl-radius-card);
+  }
+  .kit-page :global(.segments > button) {
+    padding-inline: var(--fl-space-3);
+    border-radius: var(--fl-radius-control);
+  }
+  .kit-page :global(.segments > button[aria-pressed='true']) {
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    box-shadow: none;
+  }
+  .kit-page :global(.segments > button[aria-pressed='true']:disabled) {
+    opacity: 0.6;
+  }
+  @container kit (max-width: 620px) {
+    /* The phone rhythm between sections. */
+    .kit-page {
+      gap: var(--fl-space-4);
+    }
+  }
+</style>
