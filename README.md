@@ -19,9 +19,11 @@
 
 <p align="center">
   <a href="https://frameleaf.app">Website</a> ·
+  <a href="https://frameleaf.app/help/">Help Center</a> ·
   <a href="https://frameleaf.app/docs/start/introduction/">Docs</a> ·
   <a href="https://frameleaf.app/docs/start/install/">Install</a> ·
-  <a href="https://frameleaf.app/docs/start/features/">Features</a> ·
+  <a href="https://frameleaf.app/platform/">Features</a> ·
+  <a href="https://frameleaf.app/demo/">Demo</a> ·
   <a href="https://frameleaf.app/ask/">Ask Frameleaf</a> ·
   <a href="https://frameleaf.app/docs/help/faq/">FAQ</a>
 </p>
@@ -48,26 +50,47 @@ One library, every screen:
 - **Apple TV** — browse, play memories as shows, and turn your TV into a photo frame.
 - **Frameleaf Cloud** *(optional)* — encrypted remote access, off-site backup and cloud GPU processing.
 
-➡️ Read more in [What is Frameleaf?](https://frameleaf.app/docs/start/introduction/) or the full [features overview](https://frameleaf.app/docs/start/features/).
+➡️ Read more in [What is Frameleaf?](https://frameleaf.app/docs/start/introduction/), browse [every feature](https://frameleaf.app/platform/), or [try the demo](https://frameleaf.app/demo/) in your browser.
 
-## Features
+## New in Frameleaf
 
-| | |
-|---|---|
-| 🗂️ **Library & timeline** | Fast, scrubbable timeline for huge libraries; day/month/year layouts, folders, stacks, Live and Motion Photos, RAW. Originals are never changed. [Docs](https://frameleaf.app/docs/using/library/) |
-| ⭐ **Best photos** | Your sharpest, best-exposed shots, ranked privately on your server. [Docs](https://frameleaf.app/docs/using/library/) |
-| 🔎 **Search** | Ask in plain words — "photos in Banff last summer", "receipts from 2024" — plus text in photos and moments inside videos. [Docs](https://frameleaf.app/docs/using/search/) |
-| 🧑‍🤝‍🧑 **People & pets** | Face recognition and grouping that never leave your network. [Docs](https://frameleaf.app/docs/using/people/) |
-| 📝 **AI descriptions & smart albums** | Optional on-server captions and tags, custom instructions, names of the people you've tagged, and albums that fill themselves. [Docs](https://frameleaf.app/docs/using/ai-descriptions/) |
-| 🗺️ **Memories & places** | "On this day" stories, a memory player, a world map and places by country and city. [Docs](https://frameleaf.app/docs/using/memories/) |
-| 📁 **Albums & shared spaces** | Nested albums with custom icons, shared spaces with roles, tags and partner sharing. [Docs](https://frameleaf.app/docs/using/albums/) |
-| 🔗 **Sharing** | Partners, shared albums and public links. [Docs](https://frameleaf.app/docs/using/sharing/) |
-| 🎨 **Photo editor** | Non-destructive adjustments, looks, crop, masks and saved versions — on web, iPhone and Android. [Docs](https://frameleaf.app/docs/using/editing/) |
-| 🎬 **Studio** | Built-in video editor — timeline, colour, audio, captions from speech, restoration and export. [Docs](https://frameleaf.app/docs/studio/overview/) |
-| 🧹 **Library Care** | Duplicate review (photos and videos), identical-file cleanup, integrity checks and missing-original repair. [Docs](https://frameleaf.app/docs/using/library-care/) |
-| 🔒 **Locked content** | Hide sensitive photos behind your PIN, with rules by tag or person. [Docs](https://frameleaf.app/docs/using/private-content/) |
-| 📺 **Casting** | Google Cast from web and Android, and Play on Apple TV from iPhone. [Docs](https://frameleaf.app/docs/using/casting/) |
-| 🖥️ **Command Center** | Run the server from settings written for people: backups, workers, hardware, jobs and analytics. [Docs](https://frameleaf.app/docs/admin/command-center/) |
+<table>
+  <tr>
+    <td width="50%"><a href="https://frameleaf.app/boards/"><img src="https://frameleaf.app/web/boards-colour.webp" alt="Boards filtered by colour"></a><br><sub><b>Boards</b> — a free workspace for references and design files, searchable by colour</sub></td>
+    <td width="50%"><a href="https://frameleaf.app/boards/#extension"><img src="https://frameleaf.app/web/save-to-frameleaf.webp" alt="The Save to Frameleaf browser extension"></a><br><sub><b>Save to Frameleaf</b> — save images, pages and screenshots from the web</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="https://frameleaf.app/docs/studio/make-a-movie/"><img src="https://frameleaf.app/studio/make-a-movie.webp" alt="Make a movie from an album in Studio"></a><br><sub><b>Make a movie</b> — a finished film from an album or memory, cut on the beat</sub></td>
+    <td width="50%"><a href="https://frameleaf.app/docs/using/places/#landmarks-and-attractions"><img src="https://frameleaf.app/web/memories-landmarks.webp" alt="Memories of days at national parks"></a><br><sub><b>Landmarks & attractions</b> — parks, museums and viewpoints, recognised in your photos</sub></td>
+  </tr>
+</table>
+
+## Your library
+
+Every photo and video your family has taken, in one place that stays fast at any size.
+
+- **Library & timeline** — years, months and days as cover cards; albums, folders, stacks, tags, RAW, Live and Motion Photos. [Docs](https://frameleaf.app/docs/using/library/)
+- **Three layouts** — Timeline, a dense Browse grid, and Work for culling a shoot with stars and rejects.
+- **Best photos** — your sharpest, best-exposed shots, scored privately on your server.
+- **Change hundreds at once** — dates, places, tags, albums and stacks from one selection bar.
+- **Video that scrubs** — preview thumbnails on the seek bar, and live seeking as you drag. [Docs](https://frameleaf.app/docs/using/video-previews/)
+- **Originals never change** — edits to dates, ratings and places go to the database and XMP sidecars.
+- **Bring everything home** — import a Google Photos Takeout, sync iCloud Photos in the background, add folders already on your disks, or [move a whole library to a new server](https://frameleaf.app/docs/admin/move-to-a-new-server/).
+
+<p align="center">
+  <img src="https://frameleaf.app/web/best-photos.webp" alt="Best photos in the web app" width="100%">
+</p>
+
+## Find and rediscover
+
+Search the way you remember, and let the library bring old moments back to you.
+
+- **Ask in plain words** — "photos of Alice in Banff last summer" becomes the right filters. [Docs](https://frameleaf.app/docs/using/search/)
+- **Text in photos and spoken words** — signs, receipts and screenshots, plus what was said in your videos, played from that moment. [Docs](https://frameleaf.app/docs/using/spoken-words/)
+- **People & pets** — faces and pets recognised on your own server. Name someone once and find every moment with them. [Docs](https://frameleaf.app/docs/using/people/)
+- **Memories, places & landmarks** — on this day, trips, a world map, and "A day at…" memories for the parks and museums you visited. [Docs](https://frameleaf.app/docs/using/memories/)
+- **AI descriptions & smart albums** — optional on-server captions and tags that use the names of people you know, and albums for Travel, Receipts, Pets and more that fill themselves. [Docs](https://frameleaf.app/docs/using/ai-descriptions/)
+- **Explore** — familiar faces, favourite places, documents and a few photos worth another look.
 
 <table>
   <tr>
@@ -75,31 +98,109 @@ One library, every screen:
     <td width="50%"><img src="https://frameleaf.app/web/people.webp" alt="People and pets"><br><sub><b>People & pets</b> — recognised on your own hardware</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="https://frameleaf.app/web/explore.webp" alt="Explore"><br><sub><b>Explore</b> — what you forgot you had</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/web/places-landmarks.webp" alt="Places with landmarks"><br><sub><b>Places</b> — countries, cities and landmarks</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="https://frameleaf.app/web/memory-player.webp" alt="Memory player"><br><sub><b>Memories</b> — moments resurfaced</sub></td>
-    <td width="50%"><img src="https://frameleaf.app/web/map.webp" alt="Map"><br><sub><b>Places</b> — your photos on a world map</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/web/ai-descriptions.webp" alt="AI descriptions settings"><br><sub><b>AI descriptions</b> — a caption and tags for every photo and video</sub></td>
+  </tr>
+</table>
+
+## Create
+
+A photo editor, a video editor and a design workspace, all over the same library.
+
+### Photo editor
+
+Light, colour, crop, masks, looks and RAW development, saved as a new version beside the untouched original — on web, iPhone and Android. Or [edit in another app](https://frameleaf.app/docs/using/editing/#edit-in-another-app) and bring the results back as versions. [Docs](https://frameleaf.app/docs/using/editing/)
+
+<p align="center">
+  <img src="https://frameleaf.app/web/editor-masks.webp" alt="Photo editor with masks" width="100%">
+</p>
+
+### Studio
+
+A real video editor inside your photo library. [Make a movie](https://frameleaf.app/docs/studio/make-a-movie/) from an album in one step, or edit on a multitrack timeline: colour wheels and scopes, [edit by transcript](https://frameleaf.app/docs/studio/edit-by-transcript/), word-by-word captions in eleven languages, music written for your film, [stabilising](https://frameleaf.app/docs/studio/stabilise/), [voice clean-up](https://frameleaf.app/docs/studio/clean-up-voice/), [subject cut-out](https://frameleaf.app/docs/studio/cut-out/), restoration for old footage, and vertical or square exports that follow faces — all rendered on your own hardware. [Studio guide](https://frameleaf.app/docs/studio/overview/)
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://frameleaf.app/studio/edit-timeline-clip-selected.webp" alt="Studio timeline editing"><br><sub><b>Timeline editing</b> — titles, video, camera audio and music on their own tracks</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/studio/color-wheels-adjust.webp" alt="Studio colour wheels"><br><sub><b>Colour grading</b> — wheels, curves, LUTs and scopes</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://frameleaf.app/web/editor-masks.webp" alt="Photo editor with masks"><br><sub><b>Photo editor</b> — masks, looks and saved versions</sub></td>
-    <td width="50%"><img src="https://frameleaf.app/web/best-photos.webp" alt="Best photos"><br><sub><b>Best photos</b> — your strongest shots, ranked privately</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/studio/edit-by-transcript.webp" alt="Editing by transcript in Studio"><br><sub><b>Edit by transcript</b> — delete the words, Studio cuts the film</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/studio/cut-out.webp" alt="Cutting out the subject in Studio"><br><sub><b>Cut out the subject</b> — blur, remove or replace the background</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://frameleaf.app/web/command-center.webp" alt="Command Center"><br><sub><b>Command Center</b> — your server at a glance</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/studio/caption-styles.webp" alt="Studio caption styles"><br><sub><b>Captions</b> — every word lights up as it's said</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/studio/restore-faithful-compare.webp" alt="Studio restoration"><br><sub><b>Restoration</b> — give old footage another look</sub></td>
+  </tr>
+</table>
+
+### Boards
+
+A free workspace for references, mood boards and design files, on the same server as your photos. Save images, videos, design files and links; nest collections as deep as you like; find anything by colour, type, shape or source; annotate without touching the file; save from the web with the **Save to Frameleaf** Chrome extension; and import from Eagle. [Boards](https://frameleaf.app/boards/)
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://frameleaf.app/web/boards.webp" alt="Boards with nested collections"><br><sub><b>Collections</b> — as deep as the project</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/web/boards-annotate.webp" alt="Annotating a design in Boards"><br><sub><b>Annotations</b> — drawn over the picture, not into it</sub></td>
+  </tr>
+</table>
+
+### Clients
+
+For photography studios: bring shoots into projects, cull and develop RAW files, proof with clients in branded, password-protected galleries, and deliver the exact version they approved — then publish a portfolio website. [Frameleaf for photographers](https://frameleaf.app/photographers/)
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://frameleaf.app/pro/projects.webp" alt="Client projects overview"><br><sub><b>Projects</b> — every shoot and its next step</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/pro/client.webp" alt="A password-protected client gallery"><br><sub><b>Proofing</b> — favourites and notes from your client</sub></td>
+  </tr>
+</table>
+
+## Share with the people who were there
+
+Give each person their own library, then share exactly as much as you mean to.
+
+- **Partner sharing** — see each other's photos in your own timeline. [Docs](https://frameleaf.app/docs/using/sharing/)
+- **Albums & shared spaces** — nested albums with custom icons, and shared spaces with roles. [Docs](https://frameleaf.app/docs/using/albums/)
+- **Links** — with passwords, expiry and download control.
+- **A library for everyone** — separate accounts with their own albums, favourites and storage limits; family copies of the same file are stored once.
+- **Casting** — Google Cast from web and Android, and Play on Apple TV from iPhone. [Docs](https://frameleaf.app/docs/using/casting/)
+
+## Keep it safe and tidy
+
+Photos are a forty-year project. Frameleaf looks after the files and the people in them.
+
+- **Library Care** — review photo and video duplicates side by side (preferring RAW, then HEIC, over a re-encoded JPG), and find, check and relink missing or damaged originals with evidence before anything changes. [Docs](https://frameleaf.app/docs/using/library-care/)
+- **Locked content** — lock sensitive photos behind your PIN, with rules by tag or person. [Docs](https://frameleaf.app/docs/using/private-content/)
+- **Backup** — encrypted off-site Cloud backup, Buddy backup to a friend's server, and automatic database backups with a guided restore. [Docs](https://frameleaf.app/docs/admin/backup-and-restore/)
+- **A patient trash** — deleted items wait 30 days, and come back with their albums and tags.
+
+<table>
+  <tr>
+    <td width="50%"><img src="https://frameleaf.app/web/duplicates-triage.webp" alt="Duplicate review"><br><sub><b>Duplicate review</b> — side by side, best copy suggested</sub></td>
     <td width="50%"><img src="https://frameleaf.app/web/backup-cloud.webp" alt="Cloud backup settings"><br><sub><b>Backups</b> — local, Cloud and Buddy backup</sub></td>
   </tr>
 </table>
 
-### Studio
+## Run it your way
 
-A real video editor inside your photo library: titles, video, camera audio and music on their own tracks, colour wheels and scopes, timed captions from speech, and restoration for old footage — rendered on your own hardware.
+A server that looks after itself, with settings written for people, not operators.
+
+- **Command Center** — health, storage, jobs, users and library analytics in one place. [Docs](https://frameleaf.app/docs/admin/command-center/)
+- **Where work runs** — share heavy work with the desktops in your home, then Frameleaf Cloud GPU when you choose. You set the order. [Docs](https://frameleaf.app/docs/admin/workers/)
+- **Quiet daytime, busy nights** — heavy work waits for the overnight schedule so browsing stays fast; phone uploads always go through. [Docs](https://frameleaf.app/docs/admin/jobs/)
+- **Workflows** — add matching photos to albums or tag them, after uploads or on a schedule. [Docs](https://frameleaf.app/docs/admin/workflows/)
+- **Hardware acceleration** — for AI and video, with a CPU fallback.
+- **In-app help** — help for the screen you're on, and [Ask Frameleaf](https://frameleaf.app/docs/help/ask-frameleaf/) for anything else.
 
 <table>
   <tr>
-    <td width="50%"><img src="https://frameleaf.app/studio/edit-timeline-clip-selected.webp" alt="Studio timeline editing"><br><sub><b>Timeline editing</b></sub></td>
-    <td width="50%"><img src="https://frameleaf.app/studio/color-wheels-adjust.webp" alt="Studio colour wheels"><br><sub><b>Colour grading</b></sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="https://frameleaf.app/studio/captions-transcript.webp" alt="Studio captions"><br><sub><b>Captions from speech</b></sub></td>
-    <td width="50%"><img src="https://frameleaf.app/studio/restore-faithful-compare.webp" alt="Studio restoration"><br><sub><b>Restoration</b></sub></td>
+    <td width="50%"><img src="https://frameleaf.app/web/command-center.webp" alt="Command Center"><br><sub><b>Command Center</b> — your server at a glance</sub></td>
+    <td width="50%"><img src="https://frameleaf.app/web/where-work-runs.webp" alt="Where work runs"><br><sub><b>Where work runs</b> — this server, home computers, then Cloud</sub></td>
   </tr>
 </table>
 
@@ -203,10 +304,11 @@ The [Frameleaf docs and help center](https://frameleaf.app/docs/start/introducti
 | Using Frameleaf | [Library, search, sharing, editing…](https://frameleaf.app/docs/using/library/) |
 | Apps | [iPhone and iPad](https://frameleaf.app/docs/apps/iphone/) · [iPhone Duo](https://frameleaf.app/docs/apps/iphone-duo/) · [Android](https://frameleaf.app/docs/apps/android/) · [Apple TV](https://frameleaf.app/docs/apps/apple-tv/) |
 | Studio | [Video editing guide](https://frameleaf.app/docs/studio/overview/) |
+| Boards and Clients | [Boards](https://frameleaf.app/boards/) · [Frameleaf for photographers](https://frameleaf.app/photographers/) |
 | Running your server | [Command Center, settings, upgrades…](https://frameleaf.app/docs/admin/command-center/) |
 | Frameleaf Cloud | [Remote access, backup and GPU](https://frameleaf.app/docs/cloud/overview/) |
 | Server API | [API overview](https://frameleaf.app/docs/api/overview/) |
-| Help | [Ask Frameleaf](https://frameleaf.app/ask/) · [FAQ](https://frameleaf.app/docs/help/faq/) · [Troubleshooting](https://frameleaf.app/docs/help/troubleshooting/) · [Supported formats](https://frameleaf.app/docs/help/supported-formats/) |
+| Help | [Help Center](https://frameleaf.app/help/) · [Ask Frameleaf](https://frameleaf.app/ask/) · [FAQ](https://frameleaf.app/docs/help/faq/) · [Troubleshooting](https://frameleaf.app/docs/help/troubleshooting/) · [Supported formats](https://frameleaf.app/docs/help/supported-formats/) |
 
 ## License
 
