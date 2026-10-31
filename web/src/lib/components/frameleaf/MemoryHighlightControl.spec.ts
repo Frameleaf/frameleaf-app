@@ -160,14 +160,22 @@ describe('MemoryHighlightControl (FL-194)', () => {
       (error: unknown) => (error as { status?: number } | undefined)?.status !== undefined,
     );
     sdkMock.getMemoryExports.mockResolvedValue([run({ highlight: highlight({ progress: 40 }) })]);
+    let gone: (reason: unknown) => void = () => {};
     sdkMock.getMemoryExport
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(run({ highlight: highlight({ progress: 55 }) }))
+      .mockImplementationOnce(() => new Promise((_, reject) => (gone = reject)) as never)
       .mockRejectedValue(Object.assign(new Error('gone'), { status: 404 }));
-    renderControl();
+    const view = renderControl();
+    const fill = () => view.container.querySelector<HTMLElement>('.fmh-fill');
 
     expect(await screen.findByText('frameleaf_memories_highlight_progress')).toBeInTheDocument();
+    expect(fill()?.style.inlineSize).toBe('40%');
+    // the poll after the failed one lands and its progress is shown, while the next poll is held
     await waitFor(() => expect(sdkMock.getMemoryExport).toHaveBeenCalledTimes(3));
+    expect(fill()?.style.inlineSize).toBe('55%');
+
+    gone(Object.assign(new Error('gone'), { status: 404 }));
     await waitFor(() => expect(screen.queryByText('frameleaf_memories_highlight_progress')).not.toBeInTheDocument());
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(sdkMock.getMemoryExport).toHaveBeenCalledTimes(3);
