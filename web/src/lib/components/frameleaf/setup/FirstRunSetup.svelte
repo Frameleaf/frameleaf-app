@@ -489,6 +489,9 @@
     finishPhase = 'saving';
     try {
       const current = await getConfig();
+      // Finish can run before the server data loaded: settle a defaulted tier against the model the
+      // server has now, so an unlisted model is kept rather than replaced by the stale default.
+      setup = withDefaultTier(setup, { hardware, currentModel: current.machineLearning.clip.modelName });
       // Saved here, not through the settings service: a failed save must stop setup on this step
       // with the error in view (the service only toasts), and no "Settings saved" toast belongs in
       // the hand-off. Credentials are emptied for the save exactly as the service does.

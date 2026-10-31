@@ -154,6 +154,38 @@ describe('first-run progress save ownership', () => {
     expect(sdkMock.updateFrameleafSetup).not.toHaveBeenCalled();
   });
 
+  it('keeps an unlisted search model when finishing before the server data has loaded', async () => {
+    const config = {
+      storageTemplate: { enabled: false, template: '{{y}}/{{MM}}/{{filename}}' },
+      machineLearning: {
+        clip: { enabled: true, modelName: 'custom-model' },
+        facialRecognition: { enabled: true, modelName: 'antelopev2' },
+      },
+      backup: { database: { enabled: true, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
+      newVersionCheck: { enabled: true },
+      map: { enabled: true },
+    };
+    // the mount-time load never answers; only the finish-time read does
+    sdkMock.getConfig
+      .mockReturnValueOnce(new Promise(() => {}) as never)
+      .mockResolvedValueOnce(structuredClone(config) as never);
+    sdkMock.updateConfig.mockImplementation(({ adminConfigDto }) => Promise.resolve(adminConfigDto) as never);
+    sdkMock.finishFrameleafSetup.mockResolvedValue({ completed: true, completedAt: null, flow: 'existing' } as never);
+    sdkMock.setUserOnboarding.mockResolvedValue({ isOnboarded: true });
+    const initial = createSetup('existing');
+    // saved progress from before the keep option: the default tier, never chosen
+    render(FirstRunSetup, {
+      initial: { ...initial, step: 9, reached: 9, choices: { ...initial.choices, signedIn: true } },
+      authenticated: true,
+    });
+    await tick();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.updateConfig).toHaveBeenCalledOnce();
+    expect(sdkMock.updateConfig.mock.calls[0][0].adminConfigDto.machineLearning).toMatchObject(config.machineLearning);
+    expect(sdkMock.runQueueCommandLegacy).not.toHaveBeenCalled();
+  });
+
   it.each([
     { authenticated: false, completed: false },
     { authenticated: true, completed: true },
