@@ -171,8 +171,10 @@ export async function resumeQueue(
             fatal ??= error as CaptureFailure;
             stop.abort();
           }
+          // A stop that no fatal failure caused (a pause or restart) resumes on its own.
           const retry =
-            error instanceof DeliveryFailure && error.kind === 'retry';
+            error instanceof DeliveryFailure &&
+            (error.kind === 'retry' || (error.kind === 'cancelled' && !fatal));
           const permanent =
             error instanceof DeliveryFailure && error.kind === 'permanent';
           const message =

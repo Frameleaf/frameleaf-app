@@ -3,22 +3,39 @@
 import hashlib
 import json
 import math
+from collections import OrderedDict
 from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 import orjson
 from PIL import Image as PillowImage
 
 from .config import settings
+from .models.base import InferenceModel
 from .models.facial_recognition.recognition import FaceRecognizer
 from .models.transforms import decode_pil
 from .native_qualification import ModelBindingSpec, preprocessing_identity, verify_models
 from .producer_binding import BoundPredictor
 from .schemas import ModelTask, ModelType, ORJSONResponse
+from .sessions import private_runtime_cache
 
 
 class FaceBoundPredictor(BoundPredictor):
+    def __init__(self) -> None:
+        super().__init__()
+        self._faces: OrderedDict[tuple[str, str], tuple[InferenceModel, FaceRecognizer, TemporaryDirectory[str]]] = (
+            OrderedDict()
+        )
+
+    def _clear(self) -> None:
+        directories = [directory for _, _, directory in self._faces.values()]
+        self._faces.clear()  # Release sessions before removing their compiled runtime files.
+        for directory in directories:
+            directory.cleanup()
+        super()._clear()
+
     def _predict(self, raw: str, image: bytes | None, text: str | None) -> dict[str, Any]:
         if len(raw.encode()) > 4 * 1024 * 1024 or text is not None or not image or len(image) > 16 * 1024 * 1024:
             raise ValueError("face_binding_input_invalid")
@@ -75,15 +92,25 @@ class FaceBoundPredictor(BoundPredictor):
         if cache.is_symlink():
             raise ValueError("face_binding_cache_invalid")
         _, models = verify_models(spec, cache, require_staged=False)
-        selected = {model.model_type: model for model in models}
-        detector = selected[ModelType.DETECTION]
-        recognizer = cast(FaceRecognizer, selected[ModelType.RECOGNITION])
-        # A single-item batch avoids the legacy loader rewriting the approved ONNX batch axis.
-        recognizer.batch_size = 1
-        detector.load(allow_download=False)
-        recognizer.load(allow_download=False)
-        payload = decode_pil(image)
-        faces = recognizer.predict(payload, detector.predict(payload, minScore=score))
+        key = (spec.model_key, str(cache.resolve()))
+        if key not in self._faces:
+            # Keep one verified detector/recognizer pair warm, with a fixed memory bound.
+            if self._faces:
+                evicted = self._faces.popitem(last=False)[1][2]
+                evicted.cleanup()
+            selected = {model.model_type: model for model in models}
+            recognizer = cast(FaceRecognizer, selected[ModelType.RECOGNITION])
+            # A single-item batch avoids the legacy loader rewriting the approved ONNX batch axis.
+            recognizer.batch_size = 1
+            directory = TemporaryDirectory(prefix="frameleaf-bound-face-")
+            self._faces[key] = (selected[ModelType.DETECTION], recognizer, directory)
+        self._faces.move_to_end(key)
+        detector, recognizer, directory = self._faces[key]
+        with private_runtime_cache(Path(directory.name)):
+            detector.load(allow_download=False)
+            recognizer.load(allow_download=False)
+            payload = decode_pil(image)
+            faces = recognizer.predict(payload, detector.predict(payload, minScore=score))
         result = {"facial-recognition": faces, "imageWidth": payload.width, "imageHeight": payload.height}
         encoded = ORJSONResponse(result).body
         if len(encoded) > 4 * 1024 * 1024:

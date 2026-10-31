@@ -417,7 +417,7 @@ test.describe('Preservation packages', () => {
       .toEqual([{ items: [{ id: 'item-conflict', decisions: { description: 'replace' } }] }]);
 
     await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
-    expect(mocks.state.applies).toEqual(['restore-1']);
+    await expect.poll(() => mocks.state.applies).toEqual(['restore-1']);
 
     // The first restore job is lost part-way: one item failed, and it can be tried again.
     const again = dialog.getByRole('button', { name: 'Try failed items again' });

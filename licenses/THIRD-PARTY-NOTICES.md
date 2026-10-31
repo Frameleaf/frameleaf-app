@@ -1380,6 +1380,8 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 
 ## licenses/texts/fairseq-m2m100-mit.txt
 
+Source: https://raw.githubusercontent.com/facebookresearch/fairseq/main/LICENSE (retrieved 2026-10-29, SHA-256 52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85).
+
 ```text
 MIT License
 
