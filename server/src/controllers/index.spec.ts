@@ -233,6 +233,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST help/ask': RATE_LIMITS.helpAsk,
   // FL-430: the public home-network identity proof apps ask for before each session
   'POST server/identity/challenge': { bucket: 'server-identity-challenge', limit: 120, windowSeconds: 60 },
+  // FL-702: a studio website's public inquiry form and gallery-link request
+  'POST photography/studios/:site/inquiries': RATE_LIMITS.studioInquiry,
 };
 
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
