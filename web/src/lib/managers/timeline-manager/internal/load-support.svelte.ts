@@ -20,10 +20,9 @@ export async function loadFromTimeBuckets(
   options: TimelineManagerOptions,
   signal: AbortSignal,
 ): Promise<void> {
-  if (timelineMonth.getFirstAsset()) {
-    return;
-  }
-
+  // A month that is not loaded may still hold assets a live event put there: read the whole bucket
+  // anyway and add only what it does not hold yet.
+  const held = new Set(timelineMonth.getAssets().map(({ id }) => id));
   const timeBucket = toISOYearMonthUTC(timelineMonth.yearMonth);
   for (let attempt = 1; ; attempt++) {
     const projection = timelineManager.projectionGeneration;
@@ -62,13 +61,18 @@ export async function loadFromTimeBuckets(
     for (const id of albumAssets?.id ?? []) {
       timelineManager.albumAssets.add(id);
     }
-    addBucketAssets(timelineMonth, bucketResponse);
+    addBucketAssets(timelineMonth, bucketResponse, held);
     return;
   }
 }
 
-const addBucketAssets = (timelineMonth: TimelineMonth, bucketResponse: TimeBucketAssetResponseDto) => {
-  const unprocessedAssets = timelineMonth.addAssets(bucketResponse, true);
+const addBucketAssets = (
+  timelineMonth: TimelineMonth,
+  bucketResponse: TimeBucketAssetResponseDto,
+  held: ReadonlySet<string>,
+) => {
+  // Assets already held mean the response is merged in, so it is sorted rather than taken as sorted.
+  const unprocessedAssets = timelineMonth.addAssets(bucketResponse, held.size === 0, held);
   if (unprocessedAssets.length > 0) {
     console.error(
       `Warning: getTimeBucket API returning assets not in requested month: ${timelineMonth.yearMonth.month}, ${JSON.stringify(

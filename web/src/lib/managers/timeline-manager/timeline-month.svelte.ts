@@ -195,10 +195,11 @@ export class TimelineMonth {
     };
   }
 
-  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean) {
+  /** `skipIds`: assets the month already holds, left out rather than added twice. */
+  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean, skipIds?: ReadonlySet<string>) {
     const addContext = new GroupInsertionCache();
     for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
-      if (this.timelineManager.isExcluded(timelineAsset)) {
+      if (skipIds?.has(timelineAsset.id) || this.timelineManager.isExcluded(timelineAsset)) {
         continue;
       }
 

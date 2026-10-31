@@ -62,8 +62,8 @@ type ViewportTopMonthIntersection = {
   // Where month bottom is in viewport (0 = viewport top, 1 = viewport bottom)
   monthBottomViewportRatio: number;
 };
-/** How long a month in view waits before loading again after live changes overtook its load. */
-const SUPERSEDED_RELOAD_MS = 250;
+/** Loads of one month a caller makes while live changes keep overtaking them, before it gives up. */
+const SUPERSEDED_LOAD_ATTEMPTS = 3;
 
 export class TimelineManager extends VirtualScrollManager {
   override bottomSectionHeight = $state(60);
@@ -551,31 +551,35 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
-    if (timelineMonth.loader?.executed) {
-      return;
-    }
-
-    const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
-      await (this.#options.orderedBy
-        ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
-        : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
-    }, cancelable);
-    if (executionStatus === 'LOADED' && this.months.includes(timelineMonth)) {
-      updateGeometry(this, timelineMonth, { invalidateHeight: false });
-      this.updateViewportProximities();
-    } else if (executionStatus === 'CANCELED') {
-      // A load that live changes kept overtaking gives way; a month still in view asks again shortly,
-      // since nothing else will (its proximity has not changed).
-      setTimeout(() => {
-        if (
-          this.months.includes(timelineMonth) &&
-          timelineMonth.isInOrNearViewport &&
-          !timelineMonth.loader?.executed &&
-          !timelineMonth.loader?.cancelToken
-        ) {
-          void this.loadTimelineMonth(yearMonth, options);
+    for (let attempt = 1; ; attempt++) {
+      if (timelineMonth.loader?.executed) {
+        return;
+      }
+      const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
+        await (this.#options.orderedBy
+          ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
+          : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
+      }, cancelable);
+      if (executionStatus === 'LOADED' && this.months.includes(timelineMonth)) {
+        updateGeometry(this, timelineMonth, { invalidateHeight: false });
+        this.updateViewportProximities();
+        return;
+      }
+      if (executionStatus !== 'CANCELED') {
+        return;
+      }
+      // Live changes kept overtaking the load, or another caller's load was cancelled. Ask again while
+      // the month is still wanted: a caller that waits for it (not cancellable), or a month in view.
+      const wanted = this.months.includes(timelineMonth) && (!cancelable || timelineMonth.isInOrNearViewport);
+      if (!wanted) {
+        return;
+      }
+      if (attempt >= SUPERSEDED_LOAD_ATTEMPTS) {
+        if (!cancelable) {
+          throw new Error(`Could not load timeline month ${timelineMonth.viewId}: live changes kept overtaking it`);
         }
-      }, SUPERSEDED_RELOAD_MS);
+        return;
+      }
     }
   }
 

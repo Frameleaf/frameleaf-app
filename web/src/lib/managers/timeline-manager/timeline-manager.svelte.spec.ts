@@ -337,6 +337,61 @@ describe('TimelineManager', () => {
       }
     });
 
+    it('has a waiting caller’s month loaded when the load returns, or fails it', async () => {
+      const manager = new TimelineManager();
+      try {
+        sdkMock.getTimeBuckets.mockResolvedValue([
+          { count: 1, timeBucket: '2024-03-01' },
+          { count: 3, timeBucket: '2024-01-01' },
+        ]);
+        await manager.updateOptions({});
+        sdkMock.getTimeBucket.mockReset();
+        let overtaken = 3;
+        sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) => {
+          if (overtaken > 0) {
+            overtaken--;
+            manager.invalidateLiveProjection();
+          }
+          return Promise.resolve(bucketAssetsResponse[timeBucket]);
+        });
+        // Off screen and awaited (as an iterator or a range selection does): loaded once it returns.
+        await manager.loadTimelineMonth({ year: 2024, month: 3 }, { cancelable: false });
+        expect(manager.months[0].isLoaded).toBe(true);
+        expect(manager.months[0].getAssets()).toHaveLength(1);
+
+        // Overtaken every time: the waiting caller hears so instead of reading an empty month.
+        sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) => {
+          manager.invalidateLiveProjection();
+          return Promise.resolve(bucketAssetsResponse[timeBucket]);
+        });
+        await expect(manager.loadTimelineMonth({ year: 2024, month: 1 }, { cancelable: false })).rejects.toThrow(
+          'Could not load timeline month',
+        );
+        expect(manager.months[1].isLoaded).toBe(false);
+      } finally {
+        manager.destroy();
+      }
+    });
+
+    it('reads the whole bucket for a month a live event already put an asset in', async () => {
+      const manager = new TimelineManager();
+      try {
+        sdkMock.getTimeBuckets.mockResolvedValue([{ count: 100, timeBucket: '2024-02-01' }]);
+        await manager.updateOptions({});
+        const assets = bucketAssets['2024-02-01T00:00:00.000Z'];
+        manager.months[0].addAssets(toResponseDto(assets[0]), false);
+        sdkMock.getTimeBucket.mockReset();
+        sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) => Promise.resolve(bucketAssetsResponse[timeBucket]));
+        await manager.loadTimelineMonth({ year: 2024, month: 2 }, { cancelable: false });
+        const ids = manager.months[0].getAssets().map(({ id }) => id);
+        expect(sdkMock.getTimeBucket).toHaveBeenCalledOnce();
+        expect(ids).toHaveLength(100);
+        expect(new Set(ids)).toEqual(new Set(assets.map(({ id }) => id)));
+      } finally {
+        manager.destroy();
+      }
+    });
+
     it('lays the timeline out once per viewport change', async () => {
       const layout = vi.spyOn(
         timelineManager as unknown as { updateViewportGeometry: (w: boolean) => void },
