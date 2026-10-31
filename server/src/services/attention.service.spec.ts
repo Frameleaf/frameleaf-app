@@ -112,6 +112,16 @@ describe(AttentionService.name, () => {
     );
   });
 
+  it('keeps the newest 32 dismissals, including the one just added', async () => {
+    const { sut, mocks } = setup();
+    const old = Array.from({ length: 32 }, (_, i) => `old-${i}`);
+    await mocks.metadata.set(SystemMetadataKey.OverviewDismissed, { ids: old });
+
+    await expect(sut.setDismissed({ id: 'studio', dismissed: true })).resolves.toEqual(
+      expect.objectContaining({ dismissed: [...old.slice(1), 'studio'] }),
+    );
+  });
+
   it('reads the drive the library is on', async () => {
     const { sut, mocks } = setup();
     mocks.storage.checkDiskUsage.mockResolvedValue({ available: 8 * GB, free: 8 * GB, total: 500 * GB });

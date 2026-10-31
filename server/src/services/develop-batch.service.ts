@@ -385,7 +385,11 @@ export class DevelopBatchService {
         for (const file of await readdir(folder, { withFileTypes: true }).catch(() => [])) {
           if (!file.isFile() || !file.name.endsWith('.partial')) continue;
           const target = path.join(folder, file.name);
-          if ((await stat(target)).mtimeMs < Date.now() - 24 * 60 * 60 * 1000) await rm(target, { force: true });
+          const info = await stat(target).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return null;
+            throw error;
+          });
+          if (info && info.mtimeMs < Date.now() - 24 * 60 * 60 * 1000) await rm(target, { force: true });
         }
       }
     }

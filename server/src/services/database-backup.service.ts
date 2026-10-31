@@ -735,27 +735,33 @@ export class DatabaseBackupService {
       } catch (error) {
         // A lost fence belongs to another worker; even rollback must not mutate underneath it.
         await fence?.assert();
-        progressCb?.('rollback', 0);
+        try {
+          progressCb?.('rollback', 0);
 
-        const rollbackStream = this.readDatabaseDump(restorePointFilePath);
-        const sqlStream = Readable.from(sqlRollback(rollbackStream, databaseUsername, fence));
-        const psql = this.processRepository.spawnDuplexStream(bin, args, {
-          env: {
-            PATH: process.env.PATH,
-            PGPASSWORD: databasePassword,
-          },
-        });
+          const rollbackStream = this.readDatabaseDump(restorePointFilePath);
+          const sqlStream = Readable.from(sqlRollback(rollbackStream, databaseUsername, fence));
+          const psql = this.processRepository.spawnDuplexStream(bin, args, {
+            env: {
+              PATH: process.env.PATH,
+              PGPASSWORD: databasePassword,
+            },
+          });
 
-        const [progressSource, progressSink] = createSqlProgressStreams((progress) => {
-          if (isComplete) {
-            return;
-          }
+          const [progressSource, progressSink] = createSqlProgressStreams((progress) => {
+            if (isComplete) {
+              return;
+            }
 
-          this.logger.log(`Rollback progress ~ ${(progress * 100).toFixed(2)}%`);
-          progressCb?.('rollback', progress);
-        });
+            this.logger.log(`Rollback progress ~ ${(progress * 100).toFixed(2)}%`);
+            progressCb?.('rollback', progress);
+          });
 
-        await pipeline(sqlStream, progressSource, psql, progressSink);
+          await pipeline(sqlStream, progressSource, psql, progressSink);
+        } catch (rollbackError) {
+          this.logger.error(
+            `Rollback after a failed restore did not finish: ${rollbackError}. The database may be incomplete; restore it by hand from the restore point ${restorePointFilePath}.`,
+          );
+        }
 
         throw error;
       }

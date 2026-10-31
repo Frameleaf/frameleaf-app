@@ -5,6 +5,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/pro
 import { endianness, tmpdir } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { setImmediate } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import {
@@ -322,6 +323,8 @@ async function writeNativeMasks(
       throw new Error('Missing owned native mask artifact');
     const pixels = Buffer.alloc(width * height);
     for (let y = 0; y < height; y++) {
+      // Let a deadline or cancellation fire during a large mask, not only after it.
+      if (y > 0 && y % 64 === 0) await setImmediate();
       signal.throwIfAborted();
       for (let x = 0; x < width; x++) {
         const u = (x + 0.5) / width,
