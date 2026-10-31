@@ -1,0 +1,22 @@
+import { getAuthStatus } from '@frameleaf/sdk';
+import { Route } from '$lib/route';
+import { authenticate } from '$lib/utils/auth';
+import { getFormatter } from '$lib/utils/i18n';
+import type { PageLoad } from './$types';
+
+export const load = (async ({ url }) => {
+  await authenticate(url);
+
+  const { pinCode, password } = await getAuthStatus();
+
+  const $t = await getFormatter();
+
+  return {
+    meta: {
+      title: $t('pin_verification'),
+    },
+    hasPinCode: !!pinCode,
+    hasPassword: !!password,
+    continueUrl: Route.continue(url.searchParams.get('continue'), Route.locked()),
+  };
+}) satisfies PageLoad;
