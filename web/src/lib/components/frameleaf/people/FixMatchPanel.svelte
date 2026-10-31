@@ -72,6 +72,8 @@
   let { person, onOpenAsset, onChanged, close }: Props = $props();
 
   const PAGE_SIZE = 25;
+  // at most this many photos' faces are read at once, as in FeaturedPhotoDialog
+  const FACE_READS = 6;
 
   type Row = { asset: AssetResponseDto; face: AssetFaceResponseDto };
   let rows: Row[] = $state([]);
@@ -104,21 +106,36 @@
    * number of photos seen, less one per face resolved here, which is the most that can have
    * left the results) and skips any photo it has already listed.
    */
+  /** Each photo's faces, in order, reading at most FACE_READS at a time. */
+  const readFaces = async (photos: AssetResponseDto[]) => {
+    const faces: AssetFaceResponseDto[][] = Array.from({ length: photos.length });
+    let next = 0;
+    const worker = async () => {
+      for (let index = next++; index < photos.length; index = next++) {
+        faces[index] = await getFaces({ id: photos[index].id });
+      }
+    };
+    await Promise.all(Array.from({ length: FACE_READS }, worker));
+    return faces;
+  };
+
   const loadPage = async () => {
     loading = true;
     try {
       let page = Math.floor(Math.max(0, seen.size - resolved.size) / PAGE_SIZE) + 1;
       const photos: AssetResponseDto[] = [];
+      // Marked seen only once their faces load, so a failed read lists them again on the next try.
+      const pageSeen = new Set<string>();
       let more = true;
       while (photos.length < PAGE_SIZE && more) {
         const { assets } = await searchAssets({
           metadataSearchDto: { personIds: [person.id], visibility: AssetVisibility.Timeline, size: PAGE_SIZE, page },
         });
         for (const asset of assets.items) {
-          if (seen.has(asset.id)) {
+          if (seen.has(asset.id) || pageSeen.has(asset.id)) {
             continue;
           }
-          seen.add(asset.id);
+          pageSeen.add(asset.id);
           if (asset.visibility !== AssetVisibility.Locked) {
             photos.push(asset);
           }
@@ -126,7 +143,10 @@
         more = !!assets.nextPage;
         page++;
       }
-      const faces = await Promise.all(photos.map((asset) => getFaces({ id: asset.id })));
+      const faces = await readFaces(photos);
+      for (const id of pageSeen) {
+        seen.add(id);
+      }
       const next = photos.flatMap((asset, index) =>
         faces[index].filter((face) => face.person?.id === person.id).map((face) => ({ asset, face })),
       );
