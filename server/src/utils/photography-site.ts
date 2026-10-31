@@ -28,6 +28,12 @@ const SiteColoursSchema = z.enum(['template', 'brand']).meta({ id: 'PhotographyS
 const SiteSectionIdSchema = z.enum(SITE_SECTIONS).meta({ id: 'PhotographySiteSectionId' });
 export const SiteInquiryKindSchema = z.enum(['inquiry', 'gallery-link']).meta({ id: 'PhotographySiteInquiryKind' });
 export const SITE_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
+/**
+ * FL-711: the app's own pages under /studio/. The web app serves them before any website address,
+ * so a website cannot move to one of these names (`saveSite`), and the server never looks one up as
+ * a website.
+ */
+export const STUDIO_APP_PAGES: ReadonlySet<string> = new Set(['projects']);
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 const PortfolioItem = z.strictObject({ shootId: Id, captureId: Id });
@@ -107,7 +113,7 @@ export function siteSlug(text: string) {
     .replaceAll(/^-+|-+$/g, '')
     .slice(0, 48)
     .replace(/-+$/, '');
-  return SITE_SLUG.test(slug) ? slug : 'studio';
+  return SITE_SLUG.test(slug) && !STUDIO_APP_PAGES.has(slug) ? slug : 'studio';
 }
 
 export function defaultPhotographySite(title: string): PhotographySite {

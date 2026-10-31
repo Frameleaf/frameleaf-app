@@ -8,6 +8,7 @@ import { AuthService } from 'src/services/auth.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { OpenGraphTags } from 'src/utils/misc.js';
+import { STUDIO_APP_PAGES } from 'src/utils/photography-site.js';
 
 export const render = (index: string, meta: OpenGraphTags) => {
   const [title, description, imageUrl] = [meta.title, meta.description, meta.imageUrl].map((item) =>
@@ -96,8 +97,9 @@ export class ApiService {
       }
 
       // FL-702: studio websites carry their own title, description and share image (FL-701 item 16).
+      // FL-711: /studio/projects is the app's Studio project library, not a website.
       const studio = request.path.match(/^\/studio\/([a-z0-9-]{1,48})\/?$/);
-      if (studio) {
+      if (studio && !STUDIO_APP_PAGES.has(studio[1])) {
         try {
           meta = await this.siteService.metadataTags(studio[1], defaultDomain);
         } catch {
