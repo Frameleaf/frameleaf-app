@@ -41,6 +41,7 @@
     mdiCheck,
     mdiChevronDown,
     mdiDotsHorizontal,
+    mdiEyeOutline,
     mdiFormatListBulleted,
     mdiMagnify,
     mdiMapMarker,
@@ -228,6 +229,29 @@
       chipPetNames = {};
     }),
   );
+
+  /** FL-707 item 10: the View menu (Information panel). */
+  let viewMenuOpen = $state(false);
+  let viewControl = $state<HTMLElement>();
+  const closeViewMenu = (focus = true) => {
+    viewMenuOpen = false;
+    if (focus) {
+      viewControl?.querySelector<HTMLButtonElement>('.fl-view-button')?.focus();
+    }
+  };
+  $effect(() => {
+    if (!viewMenuOpen) {
+      return;
+    }
+    viewControl?.querySelector<HTMLInputElement>('.fl-view-menu input')?.focus();
+    const onPointerDown = (event: PointerEvent) => {
+      if (!viewControl?.contains(event.target as Node)) {
+        closeViewMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  });
 
   const closeMenu = (focus = true) => {
     menuOpen = false;
@@ -444,15 +468,53 @@
     {/if}
 
     {#if inspectorOpen !== undefined && onToggleInspector}
+      <!--
+        FL-707 item 10: a labelled "View" menu in place of the unlabelled sliders icon, holding the
+        Information panel switch. Thumbnail size stays in the floating bar (owner, 2026-10-30).
+      -->
       <span class="fl-slot fl-slot-info">
-        <IconButton
-          label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
-          pressed={inspectorOpen}
-          onclick={onToggleInspector}
-        >
-          <!-- LIB-P7: the template's tune glyph (App.jsx "Show information panel"), in every layout. -->
-          <Icon icon={mdiTuneVariant} size="18" aria-hidden />
-        </IconButton>
+        <span class="fl-view" bind:this={viewControl}>
+          <button
+            type="button"
+            class="fl-tool fl-view-button"
+            class:is-open={viewMenuOpen}
+            aria-haspopup="true"
+            aria-expanded={viewMenuOpen}
+            title={$t('frameleaf_library_view_menu')}
+            onclick={() => (viewMenuOpen = !viewMenuOpen)}
+          >
+            <Icon icon={mdiEyeOutline} size="16" aria-hidden />
+            {$t('frameleaf_library_view')}
+            <Icon icon={mdiChevronDown} size="16" aria-hidden />
+          </button>
+          {#if viewMenuOpen}
+            <!-- Escape closes the menu and returns to View, as the filter menu does. -->
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+            <div
+              class="fl-view-menu fl-pop"
+              role="group"
+              aria-label={$t('frameleaf_library_view_menu')}
+              out:pop
+              onkeydown={(event) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  closeViewMenu();
+                }
+              }}
+            >
+              <label class="fl-view-row">
+                <span>{$t('frameleaf_library_information_panel')}</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+                  checked={inspectorOpen}
+                  onchange={onToggleInspector}
+                />
+              </label>
+            </div>
+          {/if}
+        </span>
       </span>
     {/if}
 
@@ -720,6 +782,49 @@
   /* A slot only groups a control for the phone layout below; elsewhere its controls sit in the row. */
   .fl-slot {
     display: contents;
+  }
+  /* FL-707 item 10 (review-1030-library.css `.view-options`): View ▾ and its menu. */
+  .fl-view {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+  }
+  .fl-view-button {
+    gap: 6px;
+  }
+  .fl-view-button.is-open {
+    background: var(--fl-raised);
+  }
+  .fl-view-menu {
+    position: absolute;
+    z-index: 5;
+    inset-inline-end: 0;
+    top: calc(100% + var(--fl-space-2));
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-3);
+    min-width: 260px;
+    padding: 8px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card, 12px);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+  }
+  .fl-view-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+    min-height: 36px;
+    color: var(--fl-text);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .fl-view-row input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--fl-accent);
   }
   /*
    * Phones (LIB-P5, template `styles.css` `@media (max-width: 700px)` `.app .results-toolbar`): two

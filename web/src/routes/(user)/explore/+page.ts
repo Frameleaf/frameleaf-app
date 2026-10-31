@@ -20,6 +20,7 @@ import {
   buildExplorePeople,
   buildExplorePlaces,
   buildExploreThings,
+  peopleNameSet,
   EXPLORE_RECENT_LIMIT,
   exploreFacetsBody,
   facetCounts,
@@ -147,7 +148,12 @@ export const load = (async ({ url }) => {
     },
     peopleCards: buildExplorePeople(facetCounts(facets?.facets, SearchFacetField.People), people?.people ?? []),
     places: buildExplorePlaces(facetCounts(facets?.facets, SearchFacetField.City)),
-    things: buildExploreThings(facetCounts(facets?.facets, SearchFacetField.Tags)),
+    // FL-707 item 15: things only, so no person's name, catalogue folder, camera keyword or code.
+    things: buildExploreThings(
+      facetCounts(facets?.facets, SearchFacetField.Tags),
+      undefined,
+      peopleNameSet(people?.people ?? []),
+    ),
     landmarks: landmarkCards,
     // FL-357: one visit worth an album, when there is one. The section is no worse off without it.
     landmarkAlbumSuggestion: await suggestLandmarkAlbum(landmarkCards).catch(() => null),

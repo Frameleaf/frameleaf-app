@@ -653,7 +653,9 @@ test.describe('Timeline', () => {
       await expect(toolbar.getByRole('button', { name: 'Slideshow' })).toBeEnabled();
       await expect(toolbar.getByRole('combobox', { name: 'Sort by' })).toHaveValue('captured-desc');
 
-      await toolbar.getByRole('button', { name: 'Show information panel' }).click();
+      // FL-707 item 10: the Information panel switch is in the labelled View menu.
+      await toolbar.getByRole('button', { name: 'View', exact: true }).click();
+      await toolbar.getByRole('switch', { name: 'Show information panel' }).click();
       await expect(page.getByTestId('frameleaf-work-inspector')).toBeVisible();
 
       await toolbar.getByRole('button', { name: 'More library actions' }).click();

@@ -539,13 +539,13 @@ describe('AssetViewerNavBar component', () => {
       expect(getByRole('menuitem', { name: 'restore' })).toBeInTheDocument();
     });
 
-    it('puts the Rating tool in the top row for the owner (V-3)', () => {
+    it('keeps no star in the top row beside the heart (FL-707 item 14)', () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
 
-      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      expect(getByTestId('viewer-rating-button')).toHaveAttribute('aria-haspopup', 'true');
+      const { queryByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(queryByTestId('viewer-rating-button')).not.toBeInTheDocument();
     });
 
     it('plays a Live Photo from the on-photo badge, not the toolbar (V-16)', () => {

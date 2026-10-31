@@ -356,7 +356,8 @@ describe('LibraryView', () => {
       await tick();
       expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
       // the toggle still says the panel is on: it comes back when the side panel closes
-      expect(screen.getByRole('button', { name: 'frameleaf_work_inspector_hide' })).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      expect(screen.getByRole('switch', { name: 'frameleaf_work_inspector_hide' })).toBeChecked();
     });
 
     it('describes the selection itself when the page supplies no panel of its own', async () => {
@@ -371,7 +372,9 @@ describe('LibraryView', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_close' }));
       expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
 
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      // FL-707 item 10: the Information panel switch is in the View menu.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
 
       await fireEvent.keyDown(document, { key: 'i' });
@@ -402,7 +405,9 @@ describe('LibraryView', () => {
       librarySession.setLayout('work');
       await tick();
       expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      // FL-707 item 10: the Information panel switch is in the View menu.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
     });
 
@@ -982,10 +987,17 @@ describe('LibraryView', () => {
     });
 
     // Favorites, Archive and Recently added (prototype `.collection-header`): one row, not a bar above.
-    it('draws a named destination’s title as the page heading, on the layout switch’s row', async () => {
+    it('draws a named destination’s title as the page heading, the layout tabs on their own row (FL-707 P2/12)', async () => {
       await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' }, title: 'Favorites' });
       const heading = screen.getByRole('heading', { level: 1, name: 'Favorites' });
-      expect(heading.closest('.fl-library-header')).toContainElement(screen.getByTestId('frameleaf-layout-switch'));
+      const tabs = screen.getByTestId('frameleaf-layout-switch');
+      expect(heading.closest('.fl-library-header')).not.toContainElement(tabs);
+      const row = tabs.closest('.fl-library-layouts');
+      expect(row).toHaveTextContent('frameleaf_library_layout_browse_hint');
+      expect(screen.getByRole('button', { name: 'frameleaf_library_layout_work' })).toHaveAttribute(
+        'title',
+        'frameleaf_library_layout_work_hint (⇧W)',
+      );
     });
 
     // FL-529: unfavoriting in Favorites takes the items off the page and out of the selection.
@@ -1037,7 +1049,9 @@ describe('LibraryView', () => {
       sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
       await setupLibrary();
       expect(librarySession.layout).toBe('browse');
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      // FL-707 item 10: the Information panel switch is in the View menu.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
 
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));

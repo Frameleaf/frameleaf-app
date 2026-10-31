@@ -33,6 +33,7 @@
     type RailSectionId,
   } from '$lib/frameleaf/navigation';
   import { canAnimate, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { railMoreStep, railSectionsBelow } from '$lib/frameleaf/rail-more';
   import { DURATION } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
   import { searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
@@ -280,6 +281,47 @@
   });
   const isSectionOpen = (id: RailSectionId) =>
     iconOnly || !FOLDABLE_RAIL_SECTIONS.includes(id) || !closedSections.includes(id);
+
+  /*
+   * FL-707 B2 (LibraryRail.jsx): on short windows the pinned footer hides the end of the list. A
+   * "More below" row with a soft edge above it names what is out of sight, scrolls the list when
+   * pressed, and goes away at the end. The list (Sidebar's `.fl-sidebar-list`) is the scroller.
+   */
+  let railScroller = $state<HTMLElement | null>(null);
+  let sectionsBelow = $state<string[]>([]);
+  $effect(() => {
+    const scroller = railElement?.parentElement;
+    if (!scroller || !railElement) {
+      return;
+    }
+    railScroller = scroller;
+    const measure = () => {
+      const top = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const headings = [...scroller.querySelectorAll<HTMLElement>('.fl-heading')]
+        .filter((heading) => heading.textContent?.trim())
+        .map((heading) => ({ top: heading.getBoundingClientRect().top - top, label: heading.textContent!.trim() }));
+      const next = railSectionsBelow(scroller, headings);
+      const current = untrack(() => sectionsBelow);
+      if (next.length !== current.length || next.some((label, index) => label !== current[index])) {
+        sectionsBelow = next;
+      }
+    };
+    measure();
+    scroller.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(scroller);
+    observer?.observe(railElement);
+    return () => {
+      scroller.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  });
+  const sectionsBelowLabel = $derived(sectionsBelow.filter(Boolean).join(', '));
+  const scrollRailForMore = () =>
+    railScroller?.scrollBy({
+      top: railMoreStep(railScroller.clientHeight),
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    });
 
   const isAlbumCurrent = (node: FrameleafAlbumNode) => pathname.startsWith(Route.viewAlbum({ id: node.id }));
   // A shared space has its own page and is still browsed through the album view, so either is "here".
@@ -698,9 +740,29 @@
   <div
     class="frameleaf fl-rail-footer"
     class:fl-icon-only={iconOnly}
+    class:has-more={sectionsBelow.length > 0}
     class:is-collapsing={collapsing}
     data-theme={appTheme}
   >
+    {#if sectionsBelow.length > 0}
+      <!-- FL-707 B2: styled as a rail row; the soft edge above it reads as "the list goes on". -->
+      <div class="fl-rail-more-wrap">
+        <button
+          type="button"
+          class="fl-link fl-rail-more"
+          aria-label={sectionsBelowLabel
+            ? $t('frameleaf_rail_more_below_named', { values: { sections: sectionsBelowLabel } })
+            : $t('frameleaf_rail_more_below')}
+          title={sectionsBelowLabel
+            ? $t('frameleaf_rail_more_below_named', { values: { sections: sectionsBelowLabel } })
+            : $t('frameleaf_rail_more_below')}
+          onclick={scrollRailForMore}
+        >
+          <Icon icon={mdiChevronDown} size="1.25em" aria-hidden={true} class="fl-icon" />
+          {#if !iconOnly}<span class="fl-label">{$t('frameleaf_rail_more_below')}</span>{/if}
+        </button>
+      </div>
+    {/if}
     {#if boards}
       {#if eagleRunning}
         {@const percent = eaglePercent(eagleRunning)}
@@ -884,6 +946,37 @@
   }
   .fl-rail-footer.fl-icon-only {
     padding-top: 8px;
+  }
+  /* FL-707 B2: "More below" sits on the footer's hairline, a rail row with its own rule under it. */
+  .fl-rail-footer {
+    position: relative;
+  }
+  .fl-rail-footer.has-more {
+    padding-top: 0;
+  }
+  .fl-rail-more-wrap {
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .fl-icon-only .fl-rail-more-wrap {
+    margin-bottom: 8px;
+  }
+  /* A soft edge over the end of the list, so the last row reads as cut off rather than as the end. */
+  .fl-rail-more-wrap::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: calc(100% + 1px);
+    height: 24px;
+    background: linear-gradient(transparent, var(--fl-panel));
+    pointer-events: none;
+  }
+  .fl-rail-footer button.fl-rail-more {
+    min-height: 40px;
+    color: var(--fl-muted);
+  }
+  .fl-rail-footer button.fl-rail-more:hover {
+    color: var(--fl-text);
   }
   .fl-heading {
     display: flex;

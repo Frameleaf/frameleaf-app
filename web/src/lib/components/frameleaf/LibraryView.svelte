@@ -34,7 +34,10 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
-  import LibraryLayoutSwitch, { showLibraryLayout } from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
+  import LibraryLayoutSwitch, {
+    LAYOUT_HINTS,
+    showLibraryLayout,
+  } from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryFilterPanel from '$lib/components/frameleaf/LibraryFilterPanel.svelte';
   import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
@@ -1803,13 +1806,17 @@
                 {/if}
                 {@render children?.()}
               </div>
-              <!-- LIB-P5: phones too show Timeline, Browse and Work beside the title, as the template does. -->
-              {#if !publicView && !firstRun}
-                <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
-              {/if}
             </div>
             {#if subheader}
               <div class="fl-library-subheader">{@render subheader()}</div>
+            {/if}
+            {#if !publicView && !firstRun}
+              <!-- FL-707 P2/12: the layout tabs get their own row under the header and any notice,
+                   directly above the toolbar, with a line saying what the current one is for. -->
+              <div class="fl-library-layouts">
+                <p class="fl-layout-hint">{$t(LAYOUT_HINTS[lockedView ? 'timeline' : session.layout])}</p>
+                <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
+              </div>
             {/if}
             {#if !publicView && !firstRun}
               <div class="fl-library-toolbar" bind:this={toolbarStrip}>
@@ -2109,33 +2116,45 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  /*
-   * Under a page's own header (an album, a person, a tag) the tabs take a row of their own and end
-   * on the photos' edge, as the prototype draws them. Beside a title, or alone, they stay where they are.
-   */
-  .fl-library-header:not(.has-title) > .fl-library-header-content:has(> :global(*)) {
-    flex-basis: 100%;
+  .fl-library-header:has(> .fl-library-header-content > :global(*)) {
+    padding-bottom: var(--fl-space-3);
   }
-  .fl-library-header > :global(.fl-layouts) {
-    margin-block: 8px 0;
+  /*
+   * FL-707 P2/12 (review-1030-library.css `.layout-row`): the layout tabs on a row of their own under
+   * the header and any notice, directly above the toolbar, with a muted line saying what the current
+   * layout is for. The hint is left out on phones.
+   */
+  .fl-library-layouts {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-4);
+    padding-block: var(--fl-space-2);
+  }
+  .fl-layout-hint {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--fl-muted);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-library-layouts > :global(.fl-layouts) {
     margin-inline-start: auto;
   }
-  /* The tabs' underline stays clear of the toolbar band (prototype `.collection-header.compact`, 8px). */
-  .fl-library-header:has(> :global(.fl-layouts)) {
-    padding-bottom: var(--fl-space-2);
-  }
-  /* Without tabs (phones), a page's own header keeps the room a row of controls above another gets. */
-  .fl-library-header:not(:has(> :global(.fl-layouts))):has(> .fl-library-header-content > :global(*)) {
-    padding-bottom: var(--fl-space-3);
+  @media (max-width: 767px) {
+    .fl-layout-hint {
+      display: none;
+    }
   }
   /*
    * A named destination (styles.css `.collection-header`, apple-style.css:220-225): the large title
    * and the layout switch share one row, their feet on one line, above the toolbar.
    */
   .fl-library-header.has-title {
-    min-height: 77px;
-    /* The title starts on the line of the toolbar's count and the photos' edge (template 24px). */
-    padding: 0 0 var(--fl-space-3);
+    /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones). */
+    padding: var(--fl-page-top) 0 var(--fl-space-3);
   }
   .fl-library-title {
     font-size: 30px;
@@ -2157,6 +2176,7 @@
     .fl-library-header,
     .fl-library-header.has-title,
     .fl-library-subheader,
+    .fl-library-layouts,
     .fl-library-toolbar {
       padding-inline: var(--fl-space-2);
     }

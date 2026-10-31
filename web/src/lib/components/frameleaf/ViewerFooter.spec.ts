@@ -113,9 +113,10 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     setSharedLink(undefined);
   });
 
-  it('announces the position and toggles the settings flag and the filmstrip', async () => {
-    render(ViewerFooter, { asset: assetFactory.build(), ...base, position: { index: 4, total: 9 } });
-    expect(screen.getByTestId('viewer-position')).toHaveAttribute('aria-live', 'polite');
+  it('leaves the position to the title and toggles the settings flag and the filmstrip', async () => {
+    render(ViewerFooter, { asset: assetFactory.build(), ...base });
+    // FL-707 item 14: one counter, beside the file name at the top.
+    expect(screen.queryByTestId('viewer-position')).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_slideshow_settings' }));
     expect(get(slideshowStore.settingsOpen)).toBe(true);

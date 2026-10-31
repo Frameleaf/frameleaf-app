@@ -276,6 +276,8 @@
   let reviewOpen = $state(false);
   let ruleOpen = $state(false);
   /** Edit details, owner badges, rule, cover and options: the "…" menu's middle group. */
+  /** FL-707 item 11: "New album" (a sub-album here) in the … menu, where the empty shelf's tile was. */
+  const canCreateChild = $derived(editor && !boards && album.kind !== AlbumKind.Space);
   const hasMiddleItems = $derived(editor || canShowOwnerBadges || !!rule);
 
   const loadRule = async (id: string) => {
@@ -748,6 +750,12 @@
         {/if}
         <div class="menu-separator" role="separator"></div>
       {/if}
+      {#if canCreateChild}
+        <MenuItem onSelect={() => (createOpen = true)}>
+          <Icon icon={mdiPlus} size="18" />
+          {$t('frameleaf_albums_create_album')}
+        </MenuItem>
+      {/if}
       {#if editor && !rule && !album.isSmart}
         {#if !isCollection && automationAvailable}
           <MenuItem
@@ -822,7 +830,8 @@
 
   <p class="status" role="status" aria-live="polite">{status}</p>
 
-  {#if album.kind !== AlbumKind.Space && (childAlbums.length > 0 || (editor && !boards))}
+  <!-- FL-707 item 11: no empty "Albums 0 albums + New album" block; New album is in the … menu. -->
+  {#if album.kind !== AlbumKind.Space && childAlbums.length > 0}
     <section class="strip" class:boards aria-label={$t(boards ? 'frameleaf_boards_collections' : 'albums')}>
       {#if !boards}<div class="strip-head">
           <h2>{$t('albums')}</h2>
@@ -860,9 +869,6 @@
           </button>
         {/if}
       </div>
-      {#if childAlbums.length === 0 && !editor}
-        <p class="empty">{$t('frameleaf_albums_shelf_empty')}</p>
-      {/if}
     </section>
   {/if}
 </header>
@@ -1465,11 +1471,6 @@
     color: var(--fl-text);
     background: var(--fl-raised);
   }
-  .empty {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: 0.875rem;
-  }
   .menu-separator {
     height: 1px;
     margin: 0.25rem 0.375rem;
@@ -1520,5 +1521,10 @@
     to {
       opacity: 0.2;
     }
+  }
+  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
+     the page area already adds 8px. */
+  .album-header {
+    padding-top: calc(var(--fl-page-top) - 8px);
   }
 </style>

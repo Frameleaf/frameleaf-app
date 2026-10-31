@@ -179,4 +179,36 @@ describe('DetailPanelImageEnrichment', () => {
       );
     });
   });
+
+  // FL-707 item 13: one status for the sensitive-content check, and the description shown once.
+  describe('one status, one description (FL-707 item 13)', () => {
+    it('says "Not checked" once, in the pill', async () => {
+      const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue({
+        ...enrichmentFactory('asset', false),
+        nsfwDetection: { status: Status2.Missing, effectiveIsNsfw: false, appliedTags: false },
+      });
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+
+      expect(await screen.findByTestId('frameleaf-sensitivity-state')).toHaveTextContent(
+        'frameleaf_info_sensitivity_missing',
+      );
+      expect(screen.getByRole('heading', { name: 'frameleaf_info_sensitive_content' })).toBeInTheDocument();
+      expect(screen.queryByText(/frameleaf_info_not_checked/)).toBeNull();
+      expect(screen.queryByTestId('frameleaf-sensitivity-detail')).toBeNull();
+    });
+
+    it('puts the description evidence under the editor it is given, with no "No description" row', async () => {
+      const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue(enrichmentFactory('asset', false));
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+
+      const row = await screen.findByTestId('frameleaf-enrichment-description');
+      expect(row).not.toHaveTextContent('frameleaf_info_description_none');
+      expect(row).not.toHaveTextContent('frameleaf_info_description');
+      expect(screen.queryByRole('heading', { name: 'frameleaf_info_enrichment' })).toBeNull();
+    });
+  });
 });
