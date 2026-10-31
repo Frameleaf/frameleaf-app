@@ -1,4 +1,6 @@
+import { createPostgres } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
+import { PostgresJSDialect } from 'kysely-postgres-js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -296,6 +298,29 @@ describe(LockedFileRepository.name, () => {
       release();
       await expect(first).resolves.toBe('first');
       await expect(sut.withFileLock(path, ownerId, () => Promise.resolve('again'))).resolves.toBe('again');
+    });
+
+    it('a replacement uses exactly one connection: it completes on a pool of one (N1)', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+      url.pathname = `/${(await sql<{ name: string }>`select current_database() as name`.execute(db)).rows[0].name}`;
+      const single = new Kysely<DB>({
+        dialect: new PostgresJSDialect({
+          postgres: createPostgres({ connection: { connectionType: 'url', url: url.href }, maxConnections: 1 }),
+        }),
+      });
+      try {
+        const sut = new LockedFileRepository(single, new LockedKeyRepository(), new LockedEncryptionRepository(single));
+        const run = sut.withFileLock(`/media/${randomUUID()}.jpg`, user.id, (commit) =>
+          commit((trx) => sut.getSealState(asset.id, trx)),
+        );
+        const timeout = new Promise<'deadlock'>((resolve) => setTimeout(() => resolve('deadlock'), 10_000));
+        await expect(Promise.race([run, timeout])).resolves.toMatchObject({ id: asset.id, locked: true });
+      } finally {
+        await single.destroy();
+      }
     });
 
     it('a rename step waits while turning off or an unlock holds the per-user lock exclusively', async () => {

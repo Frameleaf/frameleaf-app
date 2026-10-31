@@ -378,8 +378,9 @@ export class LockedSealService {
         }
         await fs.chmod(temporary, before.mode & 0o7777);
         await syncFile(temporary);
-        return await commit(async () => {
-          if (!stillMeant(await this.lockedFileRepository.getSealState(state.id))) {
+        return await commit(async (trx) => {
+          // on the lock's own connection: a job never holds a second one while it holds the path (N1)
+          if (!stillMeant(await this.lockedFileRepository.getSealState(state.id, trx))) {
             // turned off, unlocked or locked again meanwhile: the file stays as it was
             await fs.rm(temporary, { force: true });
             return 'stopped' as const;

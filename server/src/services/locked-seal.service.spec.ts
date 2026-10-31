@@ -28,6 +28,9 @@ const OWNER = '00000000-0000-4000-8000-000000000001';
 const PARTNER = '00000000-0000-4000-8000-000000000002';
 const ASSET = '00000000-0000-4000-8000-0000000000a1';
 
+/** The transaction the path lock runs in, as `withFileLock` hands it to the final step. */
+const LOCK_TRX = { lockTransaction: true } as never;
+
 type Row = { userId: string; mode: 'pin' | 'advanced'; status: 'encrypting' | 'on' | 'decrypting' };
 
 describe(LockedSealService.name, () => {
@@ -111,7 +114,7 @@ describe(LockedSealService.name, () => {
       }
       held.add(path);
       try {
-        return await work((step) => step());
+        return await work((step) => step(LOCK_TRX));
       } finally {
         held.delete(path);
       }
@@ -170,6 +173,21 @@ describe(LockedSealService.name, () => {
         name: JobName.LockedSweep,
         data: { userId: OWNER, delay: FINISH_CHECK_DELAY_MS },
       });
+    });
+
+    it('re-checks the state on the path lock’s own connection, never a second one (N1)', async () => {
+      await write('original.jpg', 'original', 'asset');
+      await write('thumbnail.webp');
+
+      await sut.handleSeal({ id: ASSET });
+
+      // the first read decides; every read under the lock (one per file) is on the lock's transaction
+      const calls = mocks.lockedFile.getSealState.mock.calls;
+      expect(calls[0]).toEqual([ASSET]);
+      expect(calls.slice(1)).toEqual([
+        [ASSET, LOCK_TRX],
+        [ASSET, LOCK_TRX],
+      ]);
     });
 
     it('keeps the file mode of each file it replaces', async () => {
@@ -683,7 +701,7 @@ describe(LockedSealService.name, () => {
     });
 
     it('even without the path lock, each job has its own temporary file and none truncates another', async () => {
-      mocks.lockedFile.withFileLock.mockImplementation((_path, _ownerId, work) => work((step) => step()));
+      mocks.lockedFile.withFileLock.mockImplementation((_path, _ownerId, work) => work((step) => step(LOCK_TRX)));
       const path = await write('shared.jpg', 'original', 'asset');
 
       await Promise.all([sut.handleSeal({ id: ASSET }), sut.handleSeal({ id: OTHER })]);

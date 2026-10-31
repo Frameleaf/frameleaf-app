@@ -212,8 +212,8 @@ export class LockedFileRepository {
 
   /** Everything a seal, unseal or rewrap of the asset decides on. Undefined when the asset is gone. */
   @GenerateSql({ params: [DummyValue.UUID] })
-  async getSealState(assetId: string): Promise<LockedSealState | undefined> {
-    const row = await this.db
+  async getSealState(assetId: string, kysely: Kysely<DB> = this.db): Promise<LockedSealState | undefined> {
+    const row = await kysely
       .selectFrom('asset')
       .leftJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
       .leftJoin('locked_encryption', 'locked_encryption.userId', 'asset.ownerId')
@@ -508,6 +508,9 @@ export class LockedFileRepository {
    * Locked items may share a file). Runs `work` in a transaction holding the file's path lock (the key
    * `lockFilePath` uses), taken without waiting: `LOCKED_PATH_BUSY` when another job holds it.
    *
+   * One job holds exactly one pooled connection: whatever runs under the lock and needs the database
+   * uses the transaction `commit` passes to its step (N1), never `this.db`.
+   *
    * `work` gets `commit`, which it calls for the final re-check, rename and folder sync only: it takes
    * the owner's per-user lock (class -721) in shared mode, so a rename never lands while turning off
    * or an unlock is being finished, which take it exclusively (`DatabaseRepository.withLockedKeyFileLock`).
@@ -516,7 +519,7 @@ export class LockedFileRepository {
   async withFileLock<T>(
     path: string,
     ownerId: string,
-    work: (commit: <R>(step: () => Promise<R>) => Promise<R>) => Promise<T>,
+    work: (commit: <R>(step: (trx: Kysely<DB>) => Promise<R>) => Promise<R>) => Promise<T>,
   ): Promise<T | typeof LOCKED_PATH_BUSY> {
     return this.db.transaction().execute(async (trx) => {
       const { rows } = await sql<{ locked: boolean }>`
@@ -528,7 +531,7 @@ export class LockedFileRepository {
       return work(async (step) => {
         await sql`SET LOCAL lock_timeout = '120s'`.execute(trx);
         await sql`SELECT pg_advisory_xact_lock_shared(-721, hashtext(${ownerId})::int)`.execute(trx);
-        return step();
+        return step(trx);
       });
     });
   }
