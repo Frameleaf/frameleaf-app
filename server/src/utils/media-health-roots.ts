@@ -280,35 +280,30 @@ const publishByCopy = async (
  * changed.
  */
 export const retainFile = (source: string, destination: string): Promise<void> => {
-  // Overlapping moves to one name run one after another, so a retry never accepts a copy that the
-  // other move is still writing or is about to remove. A move of the same file that succeeded meanwhile
-  // is this move done; after a failure the next one tries afresh.
-  const key = path.resolve(destination);
-  const from = path.resolve(source);
-  const previous = retainingNames.get(key);
-  const current = (async () => {
-    if (previous) {
-      const succeeded = await previous.succeeded;
-      if (succeeded && previous.source === from) {
-        return;
-      }
+  // Every move runs one after another in this process (they are rare), so no move ever sees another
+  // one's half-written copy or a source it is about to remove. A move of the same file to the same name
+  // that succeeded meanwhile is this move done; after a failure the next one tries afresh.
+  const key = `${path.resolve(source)}\0${path.resolve(destination)}`;
+  const previous = retainingMoves.get(key);
+  const current = retainQueue.then(async () => {
+    if (previous && (await previous)) {
+      return;
     }
     await retainFileNow(source, destination);
-  })();
-  const entry = {
-    source: from,
-    succeeded: current.then(() => true).catch(() => false),
-  };
-  retainingNames.set(key, entry);
-  void entry.succeeded.then(() => {
-    if (retainingNames.get(key) === entry) {
-      retainingNames.delete(key);
+  });
+  const succeeded = current.then(() => true).catch(() => false);
+  retainQueue = succeeded;
+  retainingMoves.set(key, succeeded);
+  void succeeded.then(() => {
+    if (retainingMoves.get(key) === succeeded) {
+      retainingMoves.delete(key);
     }
   });
   return current;
 };
 
-const retainingNames = new Map<string, { source: string; succeeded: Promise<boolean> }>();
+let retainQueue: Promise<unknown> = Promise.resolve();
+const retainingMoves = new Map<string, Promise<boolean>>();
 
 const retainFileNow = async (source: string, destination: string): Promise<void> => {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });

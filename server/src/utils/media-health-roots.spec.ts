@@ -257,6 +257,22 @@ describe('media-health-roots (FL-69)', () => {
       await expect(readFile(source)).rejects.toThrow();
     });
 
+    it('moves one source to two names one after another, never interleaving them', async () => {
+      const source = join(root, 'damaged.jpg');
+      const firstName = join(root, 'asset-finding-1.damaged.jpg');
+      const secondName = join(root, 'asset-finding-2.damaged.jpg');
+      await writeFile(source, 'damaged');
+
+      const [first, second] = await Promise.allSettled([retainFile(source, firstName), retainFile(source, secondName)]);
+
+      // The second starts only after the first has finished, so it finds the source already gone.
+      expect(first.status).toBe('fulfilled');
+      expect(second.status).toBe('rejected');
+      await expect(readFile(firstName, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(secondName)).rejects.toThrow();
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
     it('never removes a destination it did not create when publishing by copy fails', async () => {
       const source = join(root, 'damaged.jpg');
       const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');
