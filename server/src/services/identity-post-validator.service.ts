@@ -130,6 +130,7 @@ export class IdentityPostValidator {
     // Each person's name as its ordered parts, for hyphenated spellings of a name stored with spaces.
     const knownTokenRuns = knownPersons.map((p) =>
       p.name
+        .normalize('NFC')
         .toLowerCase()
         .split(/[\s-]+/)
         .filter((token) => token.length > 0),
@@ -164,7 +165,7 @@ export class IdentityPostValidator {
       }
       // A known name, or a hyphenated run of one known person's name ("Anne-Marie" for a stored
       // "Anne Marie"); parts taken from different people ("Anne-Smith") are not a known name.
-      const parts = (word as string).toLowerCase().split('-');
+      const parts = (word as string).normalize('NFC').toLowerCase().split('-');
       if (
         knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end) ||
         (parts.length > 1 &&

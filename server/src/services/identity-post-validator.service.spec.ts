@@ -25,6 +25,11 @@ describe(IdentityPostValidator.name, () => {
       expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });
     });
 
+    it('matches a hyphenated known name whatever its Unicode normalisation', () => {
+      const text = 'I saw Jose\u{301}-Maria by the lake.';
+      expect(sut.validate(text, [person('Jos\u{E9} Maria')])).toEqual({ description: text, flags: {} });
+    });
+
     it('strips a hyphenated name built from two different known people', () => {
       expect(sut.validate('I saw Anne-Smith by the lake.', [person('Anne Jones'), person('John Smith')])).toEqual({
         description: 'I saw Someone by the lake.',
