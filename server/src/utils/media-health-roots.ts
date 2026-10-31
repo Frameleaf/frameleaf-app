@@ -235,6 +235,36 @@ const holdsSameBytes = async (source: string, destination: string) => {
   return a.equals(b);
 };
 
+/** Errors from a filesystem that cannot hard-link at all. */
+const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
+/**
+ * Publish a flushed staged copy where hard links are unsupported: an exclusive copy never replaces
+ * anything, and a copy this call started but could not finish is removed so a retry starts clean.
+ */
+const publishByCopy = async (
+  staged: string,
+  destination: string,
+  refuseDifferent: (error: unknown) => Promise<void>,
+) => {
+  try {
+    await copyFile(staged, destination, constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (errorCode(error) === 'EEXIST') {
+      await refuseDifferent(error);
+      return;
+    }
+    await unlink(destination).catch(() => {});
+    throw error;
+  }
+  const file = await open(destination, 'r');
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+};
+
 /**
  * Move a file to a new name without ever replacing anything (FL-69).
  *
@@ -269,10 +299,14 @@ export const retainFile = async (source: string, destination: string): Promise<v
         try {
           await link(temporary, destination);
         } catch (linkError) {
-          if (errorCode(linkError) !== 'EEXIST') {
+          const linkCode = errorCode(linkError);
+          if (linkCode === 'EEXIST') {
+            await refuseDifferent(linkError);
+          } else if (typeof linkCode === 'string' && NO_HARD_LINKS.has(linkCode)) {
+            await publishByCopy(temporary, destination, refuseDifferent);
+          } else {
             throw linkError;
           }
-          await refuseDifferent(linkError);
         }
       } finally {
         await unlink(temporary).catch(() => {});

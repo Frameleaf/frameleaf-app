@@ -17,6 +17,14 @@ import {
   rootKindOf,
 } from 'src/utils/media-health-roots.js';
 
+// Real filesystem calls by default; single cases simulate other filesystems through `link`.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, link: vi.fn(actual.link) };
+});
+
+const failWith = (code: string) => Object.assign(new Error(code), { code });
+
 describe('media-health-roots (FL-69)', () => {
   describe(parseRecoveryRoots.name, () => {
     it('reads labelled and unlabelled locations', () => {
@@ -162,6 +170,25 @@ describe('media-health-roots (FL-69)', () => {
 
       await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
       await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('moves across filesystems to a destination that cannot hard-link, never replacing a file', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV')).mockRejectedValueOnce(failWith('EPERM'));
+
+      await retainFile(source, destination);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+
+      const other = join(root, 'other.jpg');
+      await writeFile(other, 'other');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV')).mockRejectedValueOnce(failWith('EPERM'));
+      await expect(retainFile(other, destination)).rejects.toThrow('different file');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(other, 'utf8')).resolves.toBe('other');
     });
 
     it('finishes a cross-filesystem move whose complete copy is already at the new name', async () => {
