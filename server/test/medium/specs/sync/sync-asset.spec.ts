@@ -1,0 +1,148 @@
+import { Kysely, sql } from 'kysely';
+import { randomBytes } from 'node:crypto';
+import { ChecksumAlgorithm, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SyncTestContext } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
+let defaultDatabase: Kysely<DB>;
+
+const setup = async (db?: Kysely<DB>) => {
+  const ctx = new SyncTestContext(db || defaultDatabase);
+  const { auth, user, session } = await ctx.newSyncAuthUser();
+  return { auth, user, session, ctx };
+};
+
+beforeAll(async () => {
+  defaultDatabase = await getKyselyDB();
+});
+
+describe(SyncEntityType.AssetV2, () => {
+  it('should detect and sync the first asset', async () => {
+    const originalFileName = 'firstAsset';
+    const checksum = '1115vHcVkZzNp3Q9G+FEA0nu6zUbGb4Tj4UOXkN0wRA=';
+    const thumbhash = '2225vHcVkZzNp3Q9G+FEA0nu6zUbGb4Tj4UOXkN0wRA=';
+    const date = new Date().toISOString();
+
+    const { auth, ctx } = await setup();
+    const { asset } = await ctx.newAsset({
+      originalFileName,
+      ownerId: auth.user.id,
+      checksum: Buffer.from(checksum, 'base64'),
+      thumbhash: Buffer.from(thumbhash, 'base64'),
+      fileCreatedAt: date,
+      fileModifiedAt: date,
+      localDateTime: date,
+      createdAt: date,
+      deletedAt: null,
+      duration: 600_000,
+      libraryId: null,
+      width: 1920,
+      height: 1080,
+    });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          id: asset.id,
+          originalFileName,
+          ownerId: asset.ownerId,
+          thumbhash,
+          checksum,
+          deletedAt: asset.deletedAt,
+          fileCreatedAt: asset.fileCreatedAt,
+          fileModifiedAt: asset.fileModifiedAt,
+          createdAt: asset.createdAt,
+          isFavorite: asset.isFavorite,
+          localDateTime: asset.localDateTime,
+          type: asset.type,
+          visibility: asset.visibility,
+          duration: asset.duration,
+          stackId: null,
+          livePhotoVideoId: null,
+          libraryId: asset.libraryId,
+          width: asset.width,
+          height: asset.height,
+          isEdited: asset.isEdited,
+        },
+        type: 'AssetV2',
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+  });
+
+  it('never sends a recorded digest of an asset with a path checksum (FL-69)', async () => {
+    const { auth, ctx } = await setup();
+    const pathChecksum = randomBytes(20);
+    const { asset } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: pathChecksum,
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      originalPath: '/external/photos/lake.png',
+    });
+    // what a Library Care relink of an external original records: bytes on an external mount, not a managed copy
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+      VALUES (${asset.id}::uuid, ${randomBytes(20)}, ${randomBytes(32)}, 5, ARRAY[${asset.originalPath}]::text[], 1,
+        '{"source":"recovery"}'::jsonb, now(), now())`.execute(defaultDatabase);
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(response).toEqual([
+      expect.objectContaining({
+        type: SyncEntityType.AssetV2,
+        data: expect.objectContaining({ id: asset.id, checksum: pathChecksum.toString('base64') }),
+      }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  });
+
+  it('should detect and sync a deleted asset', async () => {
+    const { auth, ctx } = await setup();
+    const assetRepo = ctx.get(AssetRepository);
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    await assetRepo.remove(asset);
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          assetId: asset.id,
+        },
+        type: 'AssetDeleteV1',
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+  });
+
+  it('should not sync an asset or asset delete for an unrelated user', async () => {
+    const { auth, ctx } = await setup();
+    const assetRepo = ctx.get(AssetRepository);
+    const { user: user2 } = await ctx.newUser();
+    const { session } = await ctx.newSession({ userId: user2.id });
+    const { asset } = await ctx.newAsset({ ownerId: user2.id });
+    const auth2 = factory.auth({ session, user: user2 });
+
+    expect(await ctx.syncStream(auth2, [SyncRequestType.AssetsV2])).toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetV2 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+
+    await assetRepo.remove(asset);
+    expect(await ctx.syncStream(auth2, [SyncRequestType.AssetsV2])).toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetDeleteV1 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+  });
+});

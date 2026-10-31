@@ -1,0 +1,352 @@
+import { Kysely } from 'kysely';
+import { AlbumUserRole, AssetVisibility, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SyncTestContext } from 'test/medium.factory.js';
+import { getKyselyDB, wait } from 'test/utils.js';
+
+let defaultDatabase: Kysely<DB>;
+
+const setup = async (db?: Kysely<DB>) => {
+  const ctx = new SyncTestContext(db || defaultDatabase);
+  const { auth, user, session } = await ctx.newSyncAuthUser();
+  return { auth, user, session, ctx };
+};
+
+beforeAll(async () => {
+  defaultDatabase = await getKyselyDB();
+});
+
+describe(SyncRequestType.AlbumToAssetsV1, () => {
+  it('should detect and sync the first album to asset relation', async () => {
+    const { auth, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user2.id });
+    const { album } = await ctx.newAlbum({ ownerId: user2.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should sync album to asset for owned albums', async () => {
+    const { auth, ctx } = await setup();
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    const { album } = await ctx.newAlbum({ ownerId: auth.user.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should detect and sync the album to asset for shared albums', async () => {
+    const { auth, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    const { album } = await ctx.newAlbum({ ownerId: user2.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id, role: AlbumUserRole.Editor });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should not sync album to asset for an album owned by another user', async () => {
+    const { auth, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user2.id });
+    const { album } = await ctx.newAlbum({ ownerId: user2.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should backfill album to assets when a user shares an album with you', async () => {
+    const { auth, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+    const { asset: album1Asset } = await ctx.newAsset({ ownerId: user2.id });
+    const { asset: album2Asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    // Backfill album
+    const { album: album2 } = await ctx.newAlbum({ ownerId: user2.id });
+    await ctx.newAlbumAsset({ albumId: album2.id, assetId: album2Asset.id });
+    await wait(2);
+    const { album: album1 } = await ctx.newAlbum({ ownerId: auth.user.id });
+    await ctx.newAlbumAsset({ albumId: album1.id, assetId: album1Asset.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album1.id,
+          assetId: album1Asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    // ack initial album to asset sync
+    await ctx.syncAckAll(auth, response);
+
+    // add user to backfill album
+    await ctx.newAlbumUser({ albumId: album2.id, userId: auth.user.id, role: AlbumUserRole.Editor });
+
+    // should backfill the album to asset relation
+    const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(newResponse).toEqual([
+      {
+        ack: expect.any(String),
+        data: expect.objectContaining({
+          albumId: album2.id,
+          assetId: album2Asset.id,
+        }),
+        type: SyncEntityType.AlbumToAssetBackfillV1,
+      },
+      {
+        ack: expect.stringContaining(SyncEntityType.AlbumToAssetBackfillV1),
+        data: {},
+        type: SyncEntityType.SyncAckV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, newResponse);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should not resend an already-acked item when backfill resumes', async () => {
+    const { auth, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+
+    // backfill needs assets with an older updateId
+    const { asset: sharedAsset1 } = await ctx.newAsset({ ownerId: user2.id });
+    await wait(2);
+    const { asset: sharedAsset2 } = await ctx.newAsset({ ownerId: user2.id });
+
+    await wait(2);
+
+    const { album: sharedAlbum } = await ctx.newAlbum({ ownerId: user2.id });
+    await ctx.newAlbumAsset({ albumId: sharedAlbum.id, assetId: sharedAsset1.id });
+    await wait(2);
+    await ctx.newAlbumAsset({ albumId: sharedAlbum.id, assetId: sharedAsset2.id });
+
+    await wait(2);
+
+    // backfill needs an initial ack, otherwise it syncs everything
+    const { asset: ownedAsset } = await ctx.newAsset({ ownerId: auth.user.id });
+    const { album: ownedAlbum } = await ctx.newAlbum({ ownerId: auth.user.id });
+    await ctx.newAlbumAsset({ albumId: ownedAlbum.id, assetId: ownedAsset.id });
+
+    const setupResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    await ctx.syncAckAll(auth, setupResponse);
+
+    // share album to trigger backfill
+    await ctx.newAlbumUser({ albumId: sharedAlbum.id, userId: auth.user.id, role: AlbumUserRole.Editor });
+
+    const response1 = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response1).toEqual([
+      // receive both
+      expect.objectContaining({ data: { albumId: sharedAlbum.id, assetId: sharedAsset1.id } }),
+      expect.objectContaining({ data: { albumId: sharedAlbum.id, assetId: sharedAsset2.id } }),
+      expect.objectContaining({ type: SyncEntityType.SyncAckV1 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    // ack 1st
+    await ctx.sut.setAcks(auth, { acks: [response1[0].ack] });
+
+    const response2 = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response2).toEqual([
+      // receive 2nd
+      expect.objectContaining({ data: { albumId: sharedAlbum.id, assetId: sharedAsset2.id } }),
+      expect.objectContaining({ type: SyncEntityType.SyncAckV1 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response2);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should detect and sync a deleted album to asset relation', async () => {
+    const { auth, ctx } = await setup();
+    const albumRepo = ctx.get(AlbumRepository);
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    const { album } = await ctx.newAlbum({ ownerId: auth.user.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await albumRepo.removeAssetIds(album.id, [asset.id]);
+    await wait(2);
+
+    const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(newResponse).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetDeleteV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, newResponse);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should detect and sync a deleted album to asset relation when an asset is deleted', async () => {
+    const { auth, ctx } = await setup();
+    const assetRepo = ctx.get(AssetRepository);
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    const { album } = await ctx.newAlbum({ ownerId: auth.user.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await assetRepo.remove({ id: asset.id });
+    await wait(2);
+
+    const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(newResponse).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetDeleteV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, newResponse);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  it('should not sync a deleted album to asset relation when the album is deleted', async () => {
+    const { auth, ctx } = await setup();
+    const albumRepo = ctx.get(AlbumRepository);
+    const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
+    const { album } = await ctx.newAlbum({ ownerId: auth.user.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          albumId: album.id,
+          assetId: asset.id,
+        },
+        type: SyncEntityType.AlbumToAssetV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.syncAckAll(auth, response);
+    await albumRepo.delete(album.id);
+    await wait(2);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumToAssetsV1]);
+  });
+
+  describe('Locked media (FL-32)', () => {
+    it("should not sync another member's Locked asset", async () => {
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+      expect(response.map(({ type }) => type)).not.toContain(SyncEntityType.AlbumToAssetV1);
+      expect(response.at(-1)).toEqual(expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }));
+    });
+
+    it("should sync the user's own Locked asset in somebody else's album", async () => {
+      const { auth, ctx } = await setup();
+      const { user: user2 } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: user2.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: auth.user.id });
+
+      const response = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+      expect(response).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: SyncEntityType.AlbumToAssetV1,
+            data: { albumId: album.id, assetId: asset.id },
+          }),
+        ]),
+      );
+    });
+  });
+});
