@@ -1817,4 +1817,6 @@
 /* FC-18: linking in the account's region is offered, never automatic. */
 .frs-cloud-region {
   align-self: flex-start;
+  justify-self: start;
+  width: fit-content;
 }
