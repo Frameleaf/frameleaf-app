@@ -1,0 +1,78 @@
+diff --git a/dist/dto-CHeB-l1i.mjs b/dist/dto-CHeB-l1i.mjs
+index 71150dbea8fed02a5f524d4db5c0193bd77f0e65..0861fac3581551c9d7e734ae647d51cfa015a1aa 100644
+--- a/dist/dto-CHeB-l1i.mjs
++++ b/dist/dto-CHeB-l1i.mjs
+@@ -94,6 +94,7 @@ function convertToOpenApi3Point0(schema) {
+ function walkJsonSchema(schema, callback, options) {
+ 	schema = callback(options?.clone ? deepmerge(schema, {}) : schema);
+ 	if (schema.type === "object" && schema.properties) for (const key in schema.properties) schema.properties[key] = walkJsonSchema(schema.properties[key], callback);
++	if (Array.isArray(schema.prefixItems)) schema.prefixItems = schema.prefixItems.map((item) => walkJsonSchema(item, callback));
+ 	if (schema.type === "array" && Array.isArray(schema.items)) schema.items = schema.items.map((item) => walkJsonSchema(item, callback));
+ 	if (schema.type === "array" && schema.items) schema.items = walkJsonSchema(schema.items, callback);
+ 	if (schema.oneOf) schema.oneOf = schema.oneOf.map((subSchema) => walkJsonSchema(subSchema, callback));
+@@ -369,6 +370,12 @@ function openApiMetadataFactory({ schema, io }) {
+ }
+ function generateJsonSchema(schema, io) {
+ 	const generatedJsonSchema = "_zod" in schema ? toJSONSchema(schema, { io }) : zodV3ToOpenAPI(schema);
++	// Frameleaf: Zod 4.6 extracts registered roots into their own $defs entry.
++	const rootId = "_zod" in schema ? globalRegistry.get(schema)?.id : void 0;
++	if (rootId && generatedJsonSchema.$ref === `#/$defs/${rootId}` && generatedJsonSchema.$defs?.[rootId]) {
++		delete generatedJsonSchema.$ref;
++		Object.assign(generatedJsonSchema, generatedJsonSchema.$defs[rootId]);
++	}
+ 	const $defs = "$defs" in generatedJsonSchema && generatedJsonSchema.$defs ? generatedJsonSchema.$defs : void 0;
+ 	const newSchema = cleanupRefs(generatedJsonSchema, io);
+ 	const newDefs = {};
+@@ -392,6 +399,13 @@ function cleanupRefs(rootSchema, io) {
+ 			const defKey = schema.$ref.replace("#/$defs/", "");
+ 			if (defKey && io === "output") schema.$ref = `#/$defs/${defKey}_Output`;
+ 		}
++		// Frameleaf: keep compact scalar unions out of Nest's array-type metadata path.
++		if (Array.isArray(schema.type)) {
++			const union = { anyOf: schema.type.map((type) => ({ type })) };
++			delete schema.type;
++			if (schema.anyOf) schema.allOf = [...(schema.allOf || []), union];
++			else schema.anyOf = union.anyOf;
++		}
+ 		if ("id" in schema) delete schema["id"];
+ 		return schema;
+ 	}, { clone: true });
+diff --git a/dist/dto-sWxCeI9D.cjs b/dist/dto-sWxCeI9D.cjs
+index b01e7e7d7ca3fc93a9eb88857d715ba409edfe96..c2508e4e10225da223af709c8a342ad3a6f847a0 100644
+--- a/dist/dto-sWxCeI9D.cjs
++++ b/dist/dto-sWxCeI9D.cjs
+@@ -117,6 +117,7 @@ function convertToOpenApi3Point0(schema) {
+ function walkJsonSchema(schema, callback, options) {
+ 	schema = callback(options?.clone ? (0, deepmerge.default)(schema, {}) : schema);
+ 	if (schema.type === "object" && schema.properties) for (const key in schema.properties) schema.properties[key] = walkJsonSchema(schema.properties[key], callback);
++	if (Array.isArray(schema.prefixItems)) schema.prefixItems = schema.prefixItems.map((item) => walkJsonSchema(item, callback));
+ 	if (schema.type === "array" && Array.isArray(schema.items)) schema.items = schema.items.map((item) => walkJsonSchema(item, callback));
+ 	if (schema.type === "array" && schema.items) schema.items = walkJsonSchema(schema.items, callback);
+ 	if (schema.oneOf) schema.oneOf = schema.oneOf.map((subSchema) => walkJsonSchema(subSchema, callback));
+@@ -392,6 +393,12 @@ function openApiMetadataFactory({ schema, io }) {
+ }
+ function generateJsonSchema(schema, io) {
+ 	const generatedJsonSchema = "_zod" in schema ? (0, zod_v4_core.toJSONSchema)(schema, { io }) : zodV3ToOpenAPI(schema);
++	// Frameleaf: Zod 4.6 extracts registered roots into their own $defs entry.
++	const rootId = "_zod" in schema ? zod_v4_core.globalRegistry.get(schema)?.id : void 0;
++	if (rootId && generatedJsonSchema.$ref === `#/$defs/${rootId}` && generatedJsonSchema.$defs?.[rootId]) {
++		delete generatedJsonSchema.$ref;
++		Object.assign(generatedJsonSchema, generatedJsonSchema.$defs[rootId]);
++	}
+ 	const $defs = "$defs" in generatedJsonSchema && generatedJsonSchema.$defs ? generatedJsonSchema.$defs : void 0;
+ 	const newSchema = cleanupRefs(generatedJsonSchema, io);
+ 	const newDefs = {};
+@@ -415,6 +422,13 @@ function cleanupRefs(rootSchema, io) {
+ 			const defKey = schema.$ref.replace("#/$defs/", "");
+ 			if (defKey && io === "output") schema.$ref = `#/$defs/${defKey}_Output`;
+ 		}
++		// Frameleaf: keep compact scalar unions out of Nest's array-type metadata path.
++		if (Array.isArray(schema.type)) {
++			const union = { anyOf: schema.type.map((type) => ({ type })) };
++			delete schema.type;
++			if (schema.anyOf) schema.allOf = [...(schema.allOf || []), union];
++			else schema.anyOf = union.anyOf;
++		}
+ 		if ("id" in schema) delete schema["id"];
+ 		return schema;
+ 	}, { clone: true });
