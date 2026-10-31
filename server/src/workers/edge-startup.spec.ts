@@ -3,11 +3,13 @@ const fixture = vi.hoisted(() => ({
   stop: undefined as (() => void) | undefined,
   ipc: undefined as boolean | undefined,
   disconnect: undefined as (() => void) | undefined,
+  attach: vi.fn(),
 }));
 
 vi.mock('@nestjs/core', () => ({ NestFactory: { createApplicationContext: fixture.create } }));
 vi.mock('src/edge/edge.module.js', () => ({ EdgeModule: class {} }));
 vi.mock('src/utils/misc.js', () => ({ isStartUpError: () => false }));
+vi.mock('src/utils/locked-key-ipc.js', () => ({ attachLockedKeyIpc: fixture.attach }));
 vi.mock('src/utils/shutdown.js', () => ({
   onStopRequest: (stop: () => void, { ipc }: { ipc: boolean }) => {
     fixture.stop = stop;
@@ -66,6 +68,16 @@ describe('edge worker native shutdown', () => {
     expect(app.close).toHaveBeenCalledOnce();
     expect(app.enableShutdownHooks).not.toHaveBeenCalled();
     expect(process.exit).toHaveBeenCalledExactlyOnceWith(failed ? 1 : 0);
+  });
+
+  it('listens for Locked keys before the application starts', async () => {
+    const context = Promise.withResolvers<typeof app>();
+    fixture.create.mockReturnValue(context.promise);
+    fixture.attach.mockClear();
+    await import('src/workers/edge.js');
+    expect(fixture.attach).toHaveBeenCalledOnce();
+    context.resolve(app);
+    await settled();
   });
 
   it('keeps container signal hooks and owner-disconnect cleanup', async () => {

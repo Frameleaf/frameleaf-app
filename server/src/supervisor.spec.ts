@@ -470,6 +470,66 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
   });
 
+  describe('FL-721 Locked keys', () => {
+    const load = {
+      type: 'locked-key',
+      action: 'load',
+      userId: 'owner',
+      publicKey: Buffer.alloc(32, 9).toString('base64'),
+      privateKey: Buffer.alloc(32, 7).toString('base64'),
+      expiresAt: null,
+      grants: [],
+    } as const;
+    const pin = { type: 'locked-key', action: 'pin', userId: 'owner' } as const;
+    type Thread = EventEmitter & { postMessage: ReturnType<typeof vi.fn> };
+    type Fork = EventEmitter & { send: ReturnType<typeof vi.fn> };
+    const posted = (worker: Thread) => worker.postMessage.mock.calls.map(([message]) => message);
+    const sent = (worker: Fork) => worker.send.mock.calls.map(([message]) => message);
+
+    it('relays keys from the API to the job worker and the edge worker only', () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Api).emit('message', pin);
+
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([load, pin]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([load, pin]);
+      expect(sent(latest(FrameleafWorker.Api) as unknown as Fork)).toEqual([]);
+    });
+
+    it('replays the loaded keys to a worker that restarts, once it listens', async () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Api).emit('message', pin);
+      latest(FrameleafWorker.Microservices).emit('exit', 1);
+      await vi.advanceTimersByTimeAsync(1000);
+      const restarted = latest(FrameleafWorker.Microservices) as unknown as Thread;
+      expect(posted(restarted)).toEqual([]);
+
+      restarted.emit('message', { type: 'locked-key-ready' });
+
+      expect(posted(restarted)).toEqual([load, pin]);
+    });
+
+    it('does not relay locked-key messages that come from a job worker', () => {
+      latest(FrameleafWorker.Microservices).emit('message', load);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
+    });
+
+    it('empties the workers when the API process starts again', async () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Api).emit('message', pin);
+      latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const drop = [
+        { type: 'locked-key', action: 'unpin', userId: 'owner' },
+        { type: 'locked-key', action: 'drop', userId: 'owner' },
+      ];
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([load, pin, ...drop]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([load, pin, ...drop]);
+      latest(FrameleafWorker.Microservices).emit('message', { type: 'locked-key-ready' });
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toHaveLength(4);
+    });
+  });
+
   it('does not admit a replacement while actual stop confirmation remains unresolved', async () => {
     // The stopped boundary represents real exit/native-child confirmation and first proof write.
     const proof = Promise.withResolvers<void>();

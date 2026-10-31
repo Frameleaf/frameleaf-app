@@ -55,6 +55,7 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
@@ -293,6 +294,8 @@ export type ServiceOverrides = {
   integrityReport: IntegrityRepository;
   job: JobRepository;
   library: LibraryRepository;
+  /** FL-721: not a BaseService dependency; services that need it take `mocks.lockedKey` explicitly. */
+  lockedKey: LockedKeyRepository;
   logger: LoggingRepository;
   machineLearning: MachineLearningRepository;
   map: MapRepository;
@@ -406,6 +409,7 @@ export const getMocks = () => {
     job: newJobRepositoryMock(),
     apiKey: automock(ApiKeyRepository),
     library: automock(LibraryRepository, { strict: false }),
+    lockedKey: automock(LockedKeyRepository),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
     media: newMediaRepositoryMock(),
