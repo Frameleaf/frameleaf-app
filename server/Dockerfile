@@ -376,6 +376,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @fram
 
 FROM plugin-sdk AS server
 
+COPY ./packages/locked-crypto ./packages/locked-crypto/
 COPY ./packages/sql-tools ./packages/sql-tools/
 COPY ./server/package.json ./server/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf...' install --frozen-lockfile
@@ -456,6 +457,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter frame
 
 FROM sdk AS cli
 
+COPY ./packages/locked-crypto ./packages/locked-crypto/
 COPY ./packages/cli/package.json ./packages/cli/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @frameleaf/cli install --frozen-lockfile
 

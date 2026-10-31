@@ -1317,6 +1317,11 @@ jobs:
         run: mise run //server:build
       - name: Test SQL-tools comparison and migration loading
         run: node --test packages/sql-tools/test/*.test.mjs
+      - name: Test locked-crypto and check its committed build is current
+        run: |
+          pnpm --filter @frameleaf/locked-crypto test
+          pnpm --filter @frameleaf/locked-crypto build
+          git diff --exit-code -- packages/locked-crypto/dist
       - name: Run existing migrations
         run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation
