@@ -37,7 +37,7 @@ REMOTE_BACKUP_PATH="/path/to/remote/backup/directory"
 borg init --encryption=repokey-blake2 "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg"
 ```
 
-`borg init` asks for a passphrase. Store it in a password manager, and keep an offline copy of each repository key (`borg key export "$BACKUP_PATH/frameleaf-borg"`, and the same for the remote repository): without both, the backups cannot be read. To run the script from cron, provide the passphrase through `BORG_PASSCOMMAND` or `BORG_PASSPHRASE` in an environment only the backup user can read.
+`borg init` asks for a passphrase. Store it in a password manager, and keep an offline copy of each repository key, for example `borg key export "$BACKUP_PATH/frameleaf-borg" /secure/offline/frameleaf-borg-local.key` and `borg key export "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg" /secure/offline/frameleaf-borg-remote.key`, on storage only you can read (not inside the backed-up folders): without both, the backups cannot be read. To run the script from cron, provide the passphrase through `BORG_PASSCOMMAND` or `BORG_PASSPHRASE` in an environment only the backup user can read.
 
 Edit the following script as necessary and add it to your crontab. Note that this script assumes there are no `:`, `@`, or `"` characters in your paths. If these characters exist, you will need to escape and/or rename the paths.
 

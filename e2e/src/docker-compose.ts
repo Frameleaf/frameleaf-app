@@ -1,9 +1,22 @@
-import { exec, spawn } from 'node:child_process';
+import { exec, spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout } from 'node:timers';
 
 const READY_MESSAGE = 'Frameleaf Microservices is running';
 
-const composeDown = () => new Promise<void>((resolve) => exec('docker compose down', () => resolve()));
+const composeDown = () =>
+  new Promise<void>((resolve, reject) =>
+    exec('docker compose down', { timeout: 120_000 }, (error) => (error ? reject(error) : resolve())),
+  );
+
+const stopChild = (child: ChildProcess) =>
+  new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+    child.once('close', () => resolve());
+    child.kill();
+  });
 
 const setup = async () => {
   const command = 'compose up --build --renew-anon-volumes --force-recreate --remove-orphans';
@@ -36,8 +49,13 @@ const setup = async () => {
   try {
     await ready;
   } catch (error) {
-    child.kill();
-    await composeDown();
+    // Let compose up finish before tearing down, and keep the startup error as the one reported.
+    await stopChild(child);
+    try {
+      await composeDown();
+    } catch (cleanupError) {
+      console.error('docker compose down failed', cleanupError);
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
