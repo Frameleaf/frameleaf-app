@@ -210,6 +210,22 @@ export class Ledger {
       .run(name, value);
   }
 
+  /**
+   * `--rescan`: walk the source library again on this ledger to pick up assets added since
+   * the last run. Only the enumeration cursors are cleared; every enumerated asset keeps its
+   * destination id and upload state, and albums keep the destination album they map to, so
+   * nothing is uploaded or created twice. Album links, tag assignments and people are reopened
+   * because adding members to them is idempotent and new assets may belong to them.
+   */
+  reopenForRescan() {
+    this.db.transaction(() => {
+      this.stmt("DELETE FROM cursor WHERE name LIKE 'enum:%'").run();
+      this.stmt('UPDATE album SET linked = 0').run();
+      this.stmt('UPDATE tag SET assigned = 0').run();
+      this.stmt('UPDATE person SET done = 0').run();
+    })();
+  }
+
   // --- assets ---
   upsertAsset(r: AssetRecord) {
     this.stmt(

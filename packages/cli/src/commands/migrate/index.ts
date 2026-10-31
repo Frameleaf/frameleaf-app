@@ -54,6 +54,7 @@ const normalize = (raw: MigrateRawOptions): MigrateOptions => ({
   dryRun: !!raw.dryRun,
   includeTrashed: !!raw.includeTrashed,
   retryFailed: !!raw.retryFailed,
+  rescan: !!raw.rescan,
   faces: raw.faces,
   serve: !!raw.serve,
   port: Number(raw.port) || 2285,
@@ -217,6 +218,7 @@ async function runMigrate(raw: MigrateRawOptions) {
       options.dryRun && '--dry-run',
       options.serve && '--serve',
       options.retryFailed && '--retry-failed',
+      options.rescan && '--rescan',
       options.includeTrashed && '--include-trashed',
       !options.faces && '--no-faces',
     ].filter(Boolean);

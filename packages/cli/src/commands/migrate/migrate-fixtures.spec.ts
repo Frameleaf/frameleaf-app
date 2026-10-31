@@ -533,6 +533,41 @@ describe('migrate against disposable source/destination fixtures', { timeout: 15
     expect(source.writes()).toEqual([]);
   }, 15_000);
 
+  it('resume skips photos added after a finished scan; --rescan copies only those, with no duplicates', async () => {
+    const { report: first } = await run(options());
+    expect(first!.ok).toBe(true);
+    expect(destination.uploads).toBe(5);
+
+    // A new photo lands on the source, in an existing album and tag.
+    source.assets.push(asset('a6', 'IMG_0006.jpg'));
+    source.albumMembers.get('al-banff')!.push('a6');
+    source.tagMembers.get('t-canada')!.push('a6');
+
+    // A plain rerun resumes fast from the ledger and never sees it.
+    const { report: resumed } = await run(options());
+    expect(destination.uploads).toBe(5);
+    expect(resumed!.assets.total).toBe(5);
+    expect(resumed!.ok).toBe(true);
+
+    // --rescan walks the source again and copies only the new photo.
+    const { report: rescanned } = await run(options({ rescan: true }));
+    expect(destination.uploads).toBe(6);
+    expect(destination.assets.has(sha256(source.assets[5].bytes))).toBe(true);
+    expect(rescanned!.assets).toEqual({ total: 6, transferred: 6, checked: 6, verified: 6, missing: 0, failed: 0 });
+    expect(rescanned!.ok).toBe(true);
+    // Same albums, same people, same stack; the new photo joins its existing album.
+    expect(destination.albums.map((album) => album.albumName).toSorted()).toEqual(['Banff', 'Trips']);
+    expect(destination.albums.find((album) => album.albumName === 'Banff')!.assetIds.size).toBe(4);
+    expect(destination.people).toHaveLength(1);
+    expect(destination.stacks).toHaveLength(1);
+
+    // Rescanning again with nothing new copies nothing.
+    await run(options({ rescan: true }));
+    expect(destination.uploads).toBe(6);
+    expect(destination.albums).toHaveLength(2);
+    expect(source.writes()).toEqual([]);
+  });
+
   it('writes a report with owners, hierarchy, physical references and no secrets or local paths', async () => {
     source.failing.add('a3');
     const { report, auditPath } = await run(options());

@@ -134,6 +134,18 @@ Albums, tags and stacks are only marked complete once every one of their photos
 is on the destination. If an original failed, its albums stay pending and the
 report lists them until the original arrives.
 
+A rerun does not scan the source again once its scan has finished, so it stays
+fast. Photos added to the source after that scan are not picked up. To copy
+them, add `--rescan`:
+
+```bash
+node packages/cli/dist/index.js migrate --ledger ./library-move.sqlite --rescan
+```
+
+It scans the source library again and copies only what the ledger has not seen.
+Photos already copied are not uploaded again, and no album or person is created
+twice. New photos join their existing albums and tags on the destination.
+
 ## 6. Retry failed items
 
 ```bash
