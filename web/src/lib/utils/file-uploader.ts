@@ -1,0 +1,443 @@
+import {
+  AssetMediaStatus,
+  AssetUploadAction,
+  AssetVisibility,
+  LibraryScope,
+  getAssetInfo,
+  updateAsset,
+  checkBulkUpload,
+  getBaseUrl,
+  type AssetMediaResponseDto,
+} from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
+import { tick } from 'svelte';
+import { t } from 'svelte-i18n';
+import { get } from 'svelte/store';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { uploadManager } from '$lib/managers/upload-manager.svelte';
+import { addAssetsToAlbums } from '$lib/services/album.service';
+import { uploadAssetsStore } from '$lib/stores/upload';
+import { UploadState } from '$lib/types';
+import { AbortError, cancelUploadRequests, uploadRequest } from '$lib/utils';
+import { ExecutorQueue } from '$lib/utils/executor-queue';
+import { generateId } from '$lib/utils/generate-id';
+import { asQueryString } from '$lib/utils/shared-links';
+import { handleError } from './handle-error';
+
+export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
+const activeUploads = new Set<AbortController>();
+type UploadContext = { current: () => boolean; owner: string | undefined; sharedLink: boolean; query: string };
+
+type FilePickerParam = { multiple?: boolean; extensions?: string[]; directory?: boolean };
+type FileUploadParam = {
+  multiple?: boolean;
+  albumId?: string;
+  directory?: boolean;
+  isLockedAssets?: boolean;
+  libraryScope?: LibraryScope;
+};
+
+export const openFilePicker = async (options: FilePickerParam = {}) => {
+  const { multiple = true, extensions, directory = false } = options;
+
+  return new Promise<File[]>((resolve, reject) => {
+    let mountedSelector: HTMLInputElement | undefined;
+    try {
+      const fileSelector = document.createElement('input');
+      mountedSelector = fileSelector;
+
+      fileSelector.type = 'file';
+      fileSelector.multiple = multiple;
+
+      if (extensions) {
+        fileSelector.accept = extensions.join(',');
+      }
+
+      if (directory) {
+        // Non-standard attributes with broad browser support for picking a whole folder;
+        // both spellings are set for maximum compatibility (Chromium prefers the property,
+        // older Firefox needed the attribute). The folder's own file-type restrictions
+        // still apply through fileUploadHandler, which skips unsupported extensions.
+        fileSelector.setAttribute('webkitdirectory', '');
+        fileSelector.setAttribute('directory', '');
+      }
+
+      fileSelector.addEventListener(
+        'change',
+        () => {
+          fileSelector.remove();
+          resolve(Array.from(fileSelector.files ?? []));
+        },
+        { passive: true, once: true },
+      );
+
+      fileSelector.addEventListener(
+        'cancel',
+        () => {
+          fileSelector.remove();
+          resolve([]);
+        },
+        { passive: true, once: true },
+      );
+
+      // Safari requires the file selector to be mounted
+      fileSelector.hidden = true;
+      document.body.append(fileSelector);
+      fileSelector.click();
+    } catch (error) {
+      mountedSelector?.remove();
+      console.log('Error selecting file', error);
+      reject(error);
+    }
+  });
+};
+
+export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
+  const { albumId, multiple = true, directory = false, isLockedAssets, libraryScope } = options;
+  const current = authManager.captureSession();
+  const extensions = uploadManager.getExtensions();
+  const files = await openFilePicker({
+    multiple,
+    // A directory picker ignores `accept`; fileUploadHandler still filters unsupported
+    // files out of whatever the folder contains, so nothing unsupported gets uploaded.
+    extensions: directory ? undefined : extensions,
+    directory,
+  });
+
+  if (!current()) {
+    return [];
+  }
+  return fileUploadHandler({ files, albumId, isLockedAssets, libraryScope });
+};
+
+type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile' | 'checksums'> & {
+  files: File[];
+  /** Checksums already worked out for these files (by file), so they are not read twice. */
+  checksums?: Map<File, UploadChecksums>;
+};
+
+export const fileUploadHandler = async ({
+  files,
+  albumId,
+  isLockedAssets = false,
+  libraryScope,
+  checksums,
+  onResult,
+}: FileUploadHandlerParams): Promise<string[]> => {
+  const extensions = uploadManager.getExtensions();
+  const context: UploadContext = {
+    current: authManager.captureSession(),
+    owner: authManager.authenticated ? authManager.user.id : undefined,
+    sharedLink: authManager.isSharedLink,
+    query: asQueryString(authManager.params),
+  };
+  const promises = [];
+  for (const file of files) {
+    const name = file.name.toLowerCase();
+    if (extensions.some((extension) => name.endsWith(extension))) {
+      const deviceAssetId = getDeviceAssetId(file);
+      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets, libraryScope });
+      promises.push(
+        uploadExecutionQueue.addTask(() =>
+          fileUploader(
+            {
+              deviceAssetId,
+              assetFile: file,
+              albumId,
+              isLockedAssets,
+              libraryScope,
+              checksums: checksums?.get(file),
+              onResult,
+            },
+            context,
+          ),
+        ),
+      );
+    } else {
+      toastManager.warning(get(t)('unsupported_file_type', { values: { file: file.name, type: file.type } }), {
+        timeout: 10_000,
+      });
+    }
+  }
+
+  // fileUploader() already catches its own failures and resolves with undefined; the extra
+  // catch here only guards the path a task takes when cancelRemainingUploads() rejects it
+  // out of the queue before it starts, so one cancelled file never fails the whole batch.
+  const results = await Promise.all(promises.map((promise) => promise.catch(() => undefined)));
+  return results.filter((result): result is string => !!result);
+};
+
+/**
+ * Re-runs every failed upload with the album and Locked destination it was first sent to. The
+ * files join the shared queue together, so the panel's parallel uploads setting applies.
+ */
+export const retryFailedUploads = async () => {
+  const failed = get(uploadAssetsStore).filter((item) => item.state === UploadState.ERROR);
+  await Promise.all(
+    failed.map(({ id, file, albumId, isLockedAssets, libraryScope }) => {
+      uploadAssetsStore.removeItem(id);
+      return fileUploadHandler({ files: [file], albumId, isLockedAssets, libraryScope });
+    }),
+  );
+};
+
+/**
+ * Stops the uploads the panel calls "remaining": in-flight requests are aborted (they
+ * settle through fileUploader's own error handling, same as any other failed upload), and
+ * anything still waiting for a queue slot is dropped from the executor queue and marked
+ * failed, since this architecture has no way to pause or resume a request once it starts.
+ * Uploads already finished, duplicated or failed are untouched.
+ */
+export const cancelRemainingUploads = () => {
+  const controllers = [...activeUploads];
+  const pending = get(uploadAssetsStore).filter((asset) => asset.state === UploadState.PENDING);
+  uploadExecutionQueue.clear();
+  cancelUploadRequests();
+
+  const $t = get(t);
+  for (const asset of pending) {
+    uploadAssetsStore.track('error');
+    uploadAssetsStore.updateItem(asset.id, {
+      state: UploadState.ERROR,
+      error: $t('frameleaf_transfer_upload_cancelled'),
+    });
+  }
+  for (const controller of controllers) {
+    controller.abort(new AbortError());
+  }
+};
+
+function getDeviceAssetId(asset: File) {
+  return `web-${asset.name}-${asset.lastModified}-${generateId()}`;
+}
+
+export type UploadChecksums = { sha256: string; sha1: string };
+
+/** Both checksums of a file, read once in a worker: what the upload checks against the library. */
+export async function hashUploadFile(file: File, signal: AbortSignal): Promise<UploadChecksums> {
+  signal.throwIfAborted();
+  const worker = new Worker(new URL('$lib/workers/hash-file.ts', import.meta.url), { type: 'module' });
+  let abort: () => void;
+  try {
+    return await new Promise((resolve, reject) => {
+      abort = () => reject(signal.reason);
+      signal.addEventListener('abort', abort, { once: true });
+      worker.addEventListener(
+        'message',
+        ({ data }: MessageEvent<{ result?: { sha256?: unknown; sha1?: unknown }; error?: string }>) => {
+          const { sha256, sha1 } = data?.result ?? {};
+          if (data?.error) {
+            reject(new Error(data.error));
+          } else if (typeof sha256 === 'string' && sha256 && typeof sha1 === 'string' && sha1) {
+            resolve({ sha256, sha1 });
+          } else {
+            reject(new Error('Missing file checksum'));
+          }
+        },
+        { once: true },
+      );
+      worker.addEventListener('error', (event) => reject(new Error(event.message)), { once: true });
+      worker.addEventListener('messageerror', () => reject(new Error('Unable to read file checksum')), { once: true });
+      // Both digests from one read: rows adopted from Immich keep SHA-1 (FL-529).
+      worker.postMessage({ file, both: true });
+    });
+  } finally {
+    signal.removeEventListener('abort', abort!);
+    worker.terminate();
+  }
+}
+
+type FileUploaderParams = {
+  assetFile: File;
+  albumId?: string;
+  replaceAssetId?: string;
+  libraryScope?: LibraryScope;
+  isLockedAssets?: boolean;
+  /** Checksums worked out before the upload started (the Eagle import's check). */
+  checksums?: UploadChecksums;
+  /** Told the item and whether the file was already in the library, once it is safely in. */
+  onResult?: (file: File, result: { id: string; duplicate: boolean }) => void;
+  // TODO rework the asset uploader and remove this
+  deviceAssetId: string;
+};
+
+// TODO: should probably use the @api SDK
+async function fileUploader(
+  { assetFile, deviceAssetId, albumId, isLockedAssets = false, libraryScope, checksums, onResult }: FileUploaderParams,
+  context: UploadContext,
+): Promise<string | undefined> {
+  const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
+  const $t = get(t);
+  const wasInitiallyLoggedIn = !!authManager.authenticated;
+
+  const controller = new AbortController();
+  const { signal } = controller;
+  activeUploads.add(controller);
+  const assertCurrent = (pending = true) => {
+    if (pending) {
+      signal.throwIfAborted();
+    }
+    const owner = authManager.authenticated ? authManager.user.id : undefined;
+    if (
+      !context.current() ||
+      owner !== context.owner ||
+      authManager.isSharedLink !== context.sharedLink ||
+      asQueryString(authManager.params) !== context.query
+    ) {
+      throw new AbortError();
+    }
+  };
+
+  try {
+    assertCurrent();
+    uploadAssetsStore.markStarted(deviceAssetId);
+    assertCurrent();
+    let responseData: { id: string; status: AssetMediaStatus; isTrashed?: boolean } | undefined;
+    if (!context.sharedLink) {
+      uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_hashing') });
+      await tick();
+      try {
+        assertCurrent();
+        // New rows store SHA-256 and rows adopted from Immich keep SHA-1, so check both (FL-529).
+        const { sha256, sha1 } = checksums ?? (await hashUploadFile(assetFile, signal));
+        assertCurrent();
+
+        const { results } = await checkBulkUpload(
+          {
+            assetBulkUploadCheckDto: {
+              assets: [
+                { id: assetFile.name, checksum: sha256 },
+                { id: assetFile.name, checksum: sha1 },
+              ],
+            },
+          },
+          { signal },
+        );
+        assertCurrent();
+        const checkUploadResult = results.find(
+          (result) => result.action === AssetUploadAction.Reject && result.assetId,
+        );
+        if (checkUploadResult?.assetId) {
+          responseData = {
+            status: AssetMediaStatus.Duplicate,
+            id: checkUploadResult.assetId,
+            isTrashed: checkUploadResult.isTrashed,
+          };
+        }
+      } catch (error) {
+        assertCurrent();
+        if (error instanceof AbortError) {
+          throw error;
+        }
+        console.error(`Error calculating checksum file=${assetFile.name})`, error);
+      }
+    }
+
+    if (!responseData) {
+      assertCurrent();
+      const formData = new FormData();
+      formData.append('fileCreatedAt', fileCreatedAt);
+      formData.append('fileModifiedAt', fileCreatedAt);
+      formData.append('isFavorite', 'false');
+      if (libraryScope) {
+        formData.append('libraryScope', libraryScope);
+      }
+      formData.append('assetData', new File([assetFile], assetFile.name));
+      if (isLockedAssets) {
+        formData.append('visibility', AssetVisibility.Locked);
+      }
+
+      uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_uploading') });
+      assertCurrent();
+      const response = await uploadRequest<AssetMediaResponseDto>({
+        url: getBaseUrl() + '/assets' + (context.query ? `?${context.query}` : ''),
+        data: formData,
+        onUploadProgress: (event) => uploadAssetsStore.updateProgress(deviceAssetId, event.loaded, event.total),
+      });
+
+      if (![200, 201].includes(response.status)) {
+        throw new Error($t('errors.unable_to_upload_file'));
+      }
+
+      responseData = response.data;
+    }
+
+    if (libraryScope === LibraryScope.Design && responseData.status === AssetMediaStatus.Duplicate && responseData.id) {
+      assertCurrent(false);
+      const existing = await getAssetInfo({ id: responseData.id }, { signal });
+      assertCurrent(false);
+      if (
+        context.sharedLink ||
+        existing.ownerId !== context.owner ||
+        existing.isTrashed ||
+        existing.visibility === AssetVisibility.Locked
+      ) {
+        throw new Error($t('errors.unable_to_upload_file'));
+      }
+      if (!existing.libraryScope || existing.libraryScope === LibraryScope.Personal) {
+        await updateAsset({ id: existing.id, updateAssetDto: { libraryScope: LibraryScope.Both } }, { signal });
+        assertCurrent(false);
+      }
+    }
+
+    // An acknowledged upload is saved; cancelling the batch cannot undo it.
+    assertCurrent(false);
+
+    if (albumId && !context.sharedLink && responseData.id) {
+      uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_adding_to_album') });
+      assertCurrent(false);
+      const added = await addAssetsToAlbums([albumId], [responseData.id], { notify: false });
+      assertCurrent(false);
+      if (!added) {
+        // FL-53: the file is safely in the library, but it is not in the album. Say exactly that,
+        // rather than "added to album"; retrying finds the uploaded original and only adds it.
+        // It counts as a failure, so the panel offers Retry and Dismiss (FL-529).
+        uploadAssetsStore.track('error');
+        uploadAssetsStore.updateItem(deviceAssetId, {
+          state: UploadState.ERROR,
+          assetId: responseData.id,
+          error: $t('frameleaf_upload_album_add_failed'),
+        });
+        return responseData.id;
+      }
+      uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_added_to_album') });
+    }
+
+    uploadAssetsStore.track(responseData.status === AssetMediaStatus.Duplicate ? 'duplicate' : 'success');
+
+    uploadAssetsStore.updateItem(deviceAssetId, {
+      state: responseData.status === AssetMediaStatus.Duplicate ? UploadState.DUPLICATED : UploadState.DONE,
+      assetId: responseData.id || undefined,
+      isTrashed: responseData.isTrashed,
+    });
+
+    if (responseData.id) {
+      onResult?.(assetFile, { id: responseData.id, duplicate: responseData.status === AssetMediaStatus.Duplicate });
+    }
+
+    if (responseData.status !== AssetMediaStatus.Duplicate) {
+      setTimeout(() => {
+        uploadAssetsStore.removeItem(deviceAssetId);
+      }, 1000);
+    }
+
+    return responseData.id;
+  } catch (error) {
+    // If the user store no longer holds a user, it means they have logged out
+    // In this case don't bother reporting any errors.
+    if (wasInitiallyLoggedIn && !authManager.authenticated) {
+      return;
+    }
+
+    // Cancel remaining aborted it; handleError stays quiet about an AbortError.
+    const errorMessage =
+      error instanceof AbortError
+        ? $t('frameleaf_transfer_upload_cancelled')
+        : handleError(error, $t('errors.unable_to_upload_file'));
+    uploadAssetsStore.track('error');
+    uploadAssetsStore.updateItem(deviceAssetId, { state: UploadState.ERROR, error: errorMessage });
+    return;
+  } finally {
+    activeUploads.delete(controller);
+  }
+}

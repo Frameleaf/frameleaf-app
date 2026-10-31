@@ -1,0 +1,88 @@
+<script lang="ts">
+  import { hasTransparentPixels } from './profile-image';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
+  import { createProfileImage, type AssetResponseDto } from '@frameleaf/sdk';
+  import { FormModal, toastManager } from '@frameleaf/ui';
+  import domtoimage from 'dom-to-image';
+  import { onDestroy, onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import PhotoViewer from '../components/asset-viewer/PhotoViewer.svelte';
+
+  interface Props {
+    asset: AssetResponseDto;
+    onClose: () => void;
+  }
+
+  let { asset, onClose }: Props = $props();
+
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
+
+  let imgElement: HTMLDivElement | undefined = $state();
+
+  onMount(() => {
+    if (!imgElement) {
+      return;
+    }
+
+    imgElement.style.width = '100%';
+  });
+
+  const onSubmit = async () => {
+    if (!imgElement) {
+      return;
+    }
+
+    const assetId = asset.id;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => !destroyed && asset.id === assetId && isCurrentSession();
+    try {
+      const imgElementHeight = imgElement.offsetHeight;
+      const imgElementWidth = imgElement.offsetWidth;
+      const blob = await domtoimage.toBlob(imgElement, {
+        width: imgElementWidth,
+        height: imgElementHeight,
+      });
+
+      if (!isCurrent()) {
+        return;
+      }
+      const transparent = await hasTransparentPixels(blob);
+      if (!isCurrent()) {
+        return;
+      }
+      if (transparent) {
+        toastManager.danger($t('errors.profile_picture_transparent_pixels'));
+        return;
+      }
+      const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
+      // the photo is recorded so the picture is replaced if the photo is later Locked
+      await createProfileImage({ createProfileImageDto: { file, assetId } });
+      if (!isCurrent()) {
+        return;
+      }
+      toastManager.primary($t('profile_picture_set'));
+
+      await authManager.refresh();
+
+      if (isCurrent()) {
+        onClose();
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_set_profile_picture'));
+      }
+    }
+  };
+</script>
+
+<FormModal size="small" title={$t('set_profile_picture')} {onClose} {onSubmit}>
+  <div class="flex place-items-center items-center justify-center">
+    <div
+      class="relative flex aspect-square w-62.5 overflow-hidden rounded-full border-4 border-immich-primary bg-immich-dark-primary dark:border-immich-dark-primary dark:bg-immich-primary"
+    >
+      <PhotoViewer bind:element={imgElement} cursor={{ current: asset }} />
+    </div>
+  </div>
+</FormModal>

@@ -1,0 +1,478 @@
+import { AssetOrder, TimeBucketDateType, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
+import { t } from 'svelte-i18n';
+import { SvelteSet } from 'svelte/reactivity';
+import { get } from 'svelte/store';
+import {
+  ViewportProximity,
+  isInOrNearViewport as isInOrNearViewportUtil,
+  isInViewport as isInViewportUtil,
+} from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
+import { CancellableTask } from '$lib/utils/cancellable-task';
+import { handleError } from '$lib/utils/handle-error';
+import {
+  formatGroupTitle,
+  formatTimelineMonthHeading,
+  formatTimelineMonthTitle,
+  fromTimelinePlainDate,
+  fromTimelinePlainYearMonth,
+  getTimes,
+  type TimelineYearMonth,
+  getOrderingDate,
+} from '$lib/utils/timeline-util';
+import { GroupInsertionCache } from './group-insertion-cache.svelte';
+import { TimelineDay } from './timeline-day.svelte';
+import type { TimelineManager } from './timeline-manager.svelte';
+import type { AssetDescriptor, Direction, FlowItem, MoveAsset, TimelineAsset } from './types';
+import { ViewerAsset } from './viewer-asset.svelte';
+
+export class TimelineMonth {
+  #viewportProximity: ViewportProximity = $state(ViewportProximity.FarFromViewport);
+  isLoaded: boolean = $state(false);
+  timelineDays: TimelineDay[] = $state([]);
+  readonly timelineManager: TimelineManager;
+
+  #height: number = $state(0);
+  #top: number = $state(0);
+
+  #initialCount: number = 0;
+  #sortOrder: AssetOrder = AssetOrder.Desc;
+  #dateType: TimeBucketDateType = TimeBucketDateType.Taken;
+  percent: number = $state(0);
+
+  assetsCount: number = $derived(
+    this.isLoaded
+      ? this.timelineDays.reduce((accumulator, g) => accumulator + g.viewerAssets.length, 0)
+      : this.#initialCount,
+  );
+  loader: CancellableTask | undefined;
+  isHeightActual: boolean = $state(false);
+
+  /** The short form ("Oct 2026"), for the scrubber. */
+  readonly title: string;
+  /** The long form ("October 2026"), for the loading placeholder's heading. */
+  readonly heading: string;
+  readonly yearMonth: TimelineYearMonth;
+
+  /*
+   * FL-143: in All (and Years when not shown as cards) and the Browse and Work grids, a group's rows
+   * run on from one month bucket into the next, as the prototype lays the whole group out as one
+   * flow. `internal/flow-support.svelte.ts` owns these.
+   */
+  /** The month this one's rows run on from: the month before it, once both are loaded. */
+  flowLinkedTo: TimelineMonth | undefined = undefined;
+  /** The unfinished last row of this month's flow; the next month carries it on when it runs on. */
+  flowTail: FlowItem[] = [];
+  /** Whether this month lays its unfinished last row out itself (nothing runs on from it). */
+  flowClosed = true;
+  /**
+   * A hold: while set, this month hands exactly this many of its last tiles to the next month and
+   * closes the rest itself, so a change here does not move the next month's rows on screen.
+   */
+  flowHandOff: number | undefined = undefined;
+  /** When this month was first laid out as part of a flow; see `FLOW_SETTLE_MS`. */
+  flowShownAt: number | undefined = undefined;
+  /** Earlier months' tiles laid out at the start of this month's rows, and drawn with this month. */
+  flowCarried: FlowItem[] = $state.raw([]);
+  /** The size of this month's rows, under its group header or gap. */
+  flowContentWidth = $state(0);
+  flowContentHeight = $state(0);
+
+  constructor(
+    timelineManager: TimelineManager,
+    yearMonth: TimelineYearMonth,
+    initialCount: number,
+    loaded: boolean,
+    order: AssetOrder = AssetOrder.Desc,
+    dateType: TimeBucketDateType = TimeBucketDateType.Taken,
+    /** A page of a flat order (S-15) is not a calendar month and has no title. */
+    title?: string,
+  ) {
+    this.timelineManager = timelineManager;
+    this.#initialCount = initialCount;
+    this.#sortOrder = order;
+    this.#dateType = dateType;
+
+    this.yearMonth = { year: yearMonth.year, month: yearMonth.month };
+    this.title = title ?? formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
+    this.heading = title ?? formatTimelineMonthHeading(fromTimelinePlainYearMonth(yearMonth));
+
+    this.loader = new CancellableTask(
+      () => {
+        this.isLoaded = true;
+      },
+      () => {
+        this.timelineDays = [];
+        this.isLoaded = false;
+      },
+      this.#handleLoadError,
+    );
+    if (loaded) {
+      this.isLoaded = true;
+    }
+  }
+
+  set viewportProximity(newValue: ViewportProximity) {
+    const old = this.#viewportProximity;
+    if (old === newValue) {
+      return;
+    }
+    this.#viewportProximity = newValue;
+    if (isInOrNearViewportUtil(newValue)) {
+      void this.timelineManager.loadTimelineMonth(this.yearMonth);
+    } else {
+      this.cancel();
+    }
+  }
+
+  get isInOrNearViewport() {
+    return isInOrNearViewportUtil(this.#viewportProximity);
+  }
+
+  get isInViewport() {
+    return isInViewportUtil(this.#viewportProximity);
+  }
+
+  get lastTimelineDay() {
+    return this.timelineDays.at(-1);
+  }
+
+  getFirstAsset() {
+    return this.timelineDays[0]?.getFirstAsset();
+  }
+
+  getAssets() {
+    return this.timelineDays.flatMap((day) => day.getAssets());
+  }
+
+  sortTimelineDays() {
+    if (this.#sortOrder === AssetOrder.Asc) {
+      return this.timelineDays.sort((a, b) => a.day - b.day);
+    }
+
+    return this.timelineDays.sort((a, b) => b.day - a.day);
+  }
+
+  runAssetCallback(ids: Set<string>, callback: (asset: TimelineAsset) => void | { remove?: boolean }) {
+    if (ids.size === 0) {
+      return {
+        moveAssets: [] as MoveAsset[],
+        processedIds: new SvelteSet<string>(),
+        unprocessedIds: ids,
+        changedGeometry: false,
+      };
+    }
+    const { timelineDays } = this;
+    let combinedChangedGeometry = false;
+    const idsToProcess = new SvelteSet(ids);
+    const idsProcessed = new SvelteSet<string>();
+    const combinedMoveAssets: MoveAsset[][] = [];
+    let index = timelineDays.length;
+    while (index--) {
+      if (idsToProcess.size === 0) {
+        break;
+      }
+
+      const group = timelineDays[index];
+      const { moveAssets, processedIds, changedGeometry } = group.runAssetCallback(ids, callback);
+      if (moveAssets.length > 0) {
+        combinedMoveAssets.push(moveAssets);
+      }
+      for (const id of processedIds) {
+        idsToProcess.delete(id);
+        idsProcessed.add(id);
+      }
+      combinedChangedGeometry ||= changedGeometry;
+      if (group.viewerAssets.length === 0) {
+        timelineDays.splice(index, 1);
+        combinedChangedGeometry = true;
+      }
+    }
+    return {
+      moveAssets: combinedMoveAssets.flat(),
+      unprocessedIds: idsToProcess,
+      processedIds: idsProcessed,
+      changedGeometry: combinedChangedGeometry,
+    };
+  }
+
+  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean) {
+    const addContext = new GroupInsertionCache();
+    for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
+      if (this.timelineManager.isExcluded(timelineAsset)) {
+        continue;
+      }
+
+      this.addTimelineAsset(timelineAsset, addContext);
+    }
+    if (preSorted) {
+      return addContext.unprocessedAssets;
+    }
+
+    for (const group of addContext.existingTimelineDays) {
+      group.sortAssets(this.#sortOrder);
+    }
+
+    if (addContext.newTimelineDays.size > 0) {
+      this.sortTimelineDays();
+    }
+
+    addContext.sort(this, this.#sortOrder);
+
+    return addContext.unprocessedAssets;
+  }
+
+  /**
+   * One page of a flat order (S-15): every asset in one group, in exactly the order the server sent
+   * them. Nothing is regrouped by date or re-sorted.
+   */
+  addOrderedAssets(bucketAssets: TimeBucketAssetResponseDto) {
+    let timelineDay = this.timelineDays[0];
+    if (!timelineDay) {
+      timelineDay = new TimelineDay(this, 0, 1, '', this.#dateType);
+      this.timelineDays.push(timelineDay);
+    }
+    for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
+      if (!this.timelineManager.isExcluded(timelineAsset)) {
+        timelineDay.viewerAssets.push(new ViewerAsset(timelineAsset));
+      }
+    }
+  }
+
+  addTimelineAsset(timelineAsset: TimelineAsset, addContext: GroupInsertionCache) {
+    const dateTime = getOrderingDate(timelineAsset, this.#dateType);
+
+    const { year, month } = this.yearMonth;
+    if (month !== dateTime.month || year !== dateTime.year) {
+      addContext.unprocessedAssets.push(timelineAsset);
+      return;
+    }
+
+    let timelineDay = addContext.getTimelineDay(dateTime) || this.findTimelineDayByDay(dateTime.day);
+    if (timelineDay) {
+      addContext.setTimelineDay(timelineDay, dateTime);
+    } else {
+      const groupTitle = formatGroupTitle(fromTimelinePlainDate(dateTime));
+      timelineDay = new TimelineDay(this, this.timelineDays.length, dateTime.day, groupTitle, this.#dateType);
+      this.timelineDays.push(timelineDay);
+      addContext.setTimelineDay(timelineDay, dateTime);
+      addContext.newTimelineDays.add(timelineDay);
+    }
+
+    const viewerAsset = new ViewerAsset(timelineAsset);
+    timelineDay.viewerAssets.push(viewerAsset);
+    addContext.changedTimelineDays.add(timelineDay);
+  }
+
+  get viewId() {
+    const { year, month } = this.yearMonth;
+    return year + '-' + month;
+  }
+
+  set height(height: number) {
+    if (this.#height === height) {
+      return;
+    }
+    const timelineManager = this.timelineManager;
+    const index = this.#index;
+    const heightDelta = height - this.#height;
+    this.#height = height;
+    const previousTimelineMonth = timelineManager.months[index - 1];
+    if (previousTimelineMonth) {
+      const newTop = previousTimelineMonth.#top + previousTimelineMonth.#height;
+      if (this.#top !== newTop) {
+        this.#top = newTop;
+      }
+    }
+    if (heightDelta === 0) {
+      return;
+    }
+    for (let cursor = index + 1; cursor < timelineManager.months.length; cursor++) {
+      const timelineMonth = this.timelineManager.months[cursor];
+      const newTop = timelineMonth.#top + heightDelta;
+      if (timelineMonth.#top !== newTop) {
+        timelineMonth.#top = newTop;
+      }
+    }
+    // A flow change (FL-143) keeps the scroll position itself: it knows which part of the month moved.
+    if (!timelineManager.viewportTopMonthIntersection || timelineManager.flowHoldsScroll) {
+      return;
+    }
+    const { month, monthBottomViewportRatio, viewportTopRatioInMonth } = timelineManager.viewportTopMonthIntersection;
+    const currentIndex = month ? timelineManager.months.indexOf(month) : -1;
+    if (!month || currentIndex <= 0 || index > currentIndex) {
+      return;
+    }
+    if (index < currentIndex || monthBottomViewportRatio < 1) {
+      timelineManager.scrollBy(heightDelta);
+    } else if (index === currentIndex) {
+      const scrollTo = this.top + height * viewportTopRatioInMonth;
+      timelineManager.scrollTo(scrollTo);
+    }
+  }
+
+  get height() {
+    return this.#height;
+  }
+
+  #indexHint = -1;
+
+  /** Where this month is in the manager's months, found once and checked on every read. */
+  get #index(): number {
+    const months = this.timelineManager.months;
+    if (months[this.#indexHint] !== this) {
+      this.#indexHint = months.indexOf(this);
+    }
+    return this.#indexHint;
+  }
+
+  /**
+   * Whether this month opens a display group: every month when grouping by month, the newest loaded
+   * month of each year when grouping by year (in the display order), the first month for "all".
+   * Day grouping draws a header per day instead.
+   */
+  get startsGroup(): boolean {
+    const { grouping, months } = this.timelineManager;
+    if (grouping === 'days' || grouping === 'months') {
+      return true;
+    }
+    const index = this.#index;
+    if (index <= 0) {
+      return true;
+    }
+    return grouping === 'years' && months[index - 1].yearMonth.year !== this.yearMonth.year;
+  }
+
+  /**
+   * The space above this month's rows: a group header, or the gap between months of one group. When
+   * a group's rows run on across months (All, and Years when not shown as cards; FL-143) that gap is
+   * the row gap, so a month boundary inside the group leaves no seam.
+   */
+  get groupHeaderHeight(): number {
+    const manager = this.timelineManager;
+    if (manager.grouping === 'days' || this.startsGroup) {
+      return manager.headerHeight;
+    }
+    return manager.continuousGroups && !manager.cells ? manager.justifiedLayoutOptions.spacing : manager.gap;
+  }
+
+  get top(): number {
+    return this.#top + this.timelineManager.topSectionHeight;
+  }
+
+  #handleLoadError(error: unknown) {
+    const _$t = get(t);
+    handleError(error, _$t('errors.failed_to_load_assets'));
+  }
+
+  findTimelineDayForAsset(asset: TimelineAsset) {
+    for (const group of this.timelineDays) {
+      if (group.viewerAssets.some((viewerAsset) => viewerAsset.id === asset.id)) {
+        return group;
+      }
+    }
+  }
+
+  findTimelineDayByDay(day: number) {
+    return this.timelineDays.find((group) => group.day === day);
+  }
+
+  findAssetAbsolutePosition(assetId: string) {
+    this.timelineManager.clearDeferredLayout(this);
+    for (const group of this.timelineDays) {
+      const viewerAsset = group.viewerAssets.find((viewAsset) => viewAsset.id === assetId);
+      if (viewerAsset) {
+        if (!viewerAsset.position) {
+          console.warn('No position for asset');
+          return;
+        }
+        return {
+          top: this.top + group.top + viewerAsset.position.top + this.groupHeaderHeight,
+          height: viewerAsset.position.height,
+        };
+      }
+    }
+  }
+
+  *assetsIterator(options?: { startTimelineDay?: TimelineDay; startAsset?: TimelineAsset; direction?: Direction }) {
+    const direction = options?.direction ?? 'earlier';
+    let { startAsset } = options ?? {};
+    const isEarlier = direction === 'earlier';
+    let groupIndex = options?.startTimelineDay
+      ? this.timelineDays.indexOf(options.startTimelineDay)
+      : isEarlier
+        ? 0
+        : this.timelineDays.length - 1;
+
+    while (groupIndex >= 0 && groupIndex < this.timelineDays.length) {
+      const group = this.timelineDays[groupIndex];
+      yield* group.assetsIterator({ startAsset, direction });
+      startAsset = undefined;
+      groupIndex += isEarlier ? 1 : -1;
+    }
+  }
+
+  findAssetById(assetDescriptor: AssetDescriptor) {
+    for (const asset of this.assetsIterator()) {
+      if (asset.id === assetDescriptor.id) {
+        return asset;
+      }
+    }
+  }
+
+  cancel() {
+    this.loader?.cancel();
+  }
+}
+
+/** The time bucket's columnar response as timeline assets, in the order the server sent them. */
+export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto): Generator<TimelineAsset> {
+  for (let i = 0; i < bucketAssets.id.length; i++) {
+    const { localDateTime, fileCreatedAt } = getTimes(bucketAssets.fileCreatedAt[i], bucketAssets.localOffsetHours[i]);
+
+    const timelineAsset: TimelineAsset = {
+      city: bucketAssets.city?.[i] ?? null,
+      country: bucketAssets.country?.[i] ?? null,
+      duration: bucketAssets.duration[i],
+      id: bucketAssets.id[i],
+      visibility: bucketAssets.visibility[i],
+      lockReason: bucketAssets.lockReason?.[i] ?? null,
+      isFavorite: bucketAssets.isFavorite[i],
+      isImage: bucketAssets.isImage[i],
+      isTrashed: bucketAssets.isTrashed[i],
+      isVideo: !bucketAssets.isImage[i],
+      livePhotoVideoId: bucketAssets.livePhotoVideoId[i],
+      localDateTime,
+      createdAt: fileCreatedAt,
+      fileCreatedAt,
+      ownerId: bucketAssets.ownerId[i],
+      projectionType: bucketAssets.projectionType[i],
+      ratio: bucketAssets.ratio[i],
+      stack: bucketAssets.stack?.at(i)
+        ? {
+            id: bucketAssets.stack[i]![0],
+            primaryAssetId: bucketAssets.id[i],
+            assetCount: Number.parseInt(bucketAssets.stack[i]![1]),
+          }
+        : null,
+      thumbhash: bucketAssets.thumbhash[i],
+      people: null, // People are not included in the bucket assets
+      rating: bucketAssets.rating?.[i] ?? null,
+      isOffline: bucketAssets.isOffline?.[i] ?? false,
+      originalFileName: bucketAssets.originalFileName?.[i] ?? null,
+    };
+
+    const latitude = bucketAssets.latitude?.[i];
+    const longitude = bucketAssets.longitude?.[i];
+    if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null) {
+      timelineAsset.latitude = latitude;
+      timelineAsset.longitude = longitude;
+    }
+    // The list view's columns (S-15), where the source sends them.
+    if (bucketAssets.width) {
+      timelineAsset.width = bucketAssets.width[i] ?? null;
+      timelineAsset.height = bucketAssets.height?.[i] ?? null;
+      timelineAsset.fileSizeInByte = bucketAssets.fileSizeInByte?.[i] ?? null;
+    }
+    yield timelineAsset;
+  }
+}

@@ -1,0 +1,548 @@
+import {
+  AssetMediaSize,
+  AssetTypeEnum,
+  MemoryType,
+  finishOAuth,
+  getAssetOriginalPath,
+  getAssetPlaybackPath,
+  getAssetThumbnailPath,
+  getBaseUrl,
+  getPeopleThumbnailPath,
+  getUserProfileImagePath,
+  linkOAuthAccount,
+  startOAuth,
+  unlinkOAuthAccount,
+  type AssetResponseDto,
+  type MemoryResponseDto,
+  type PersonResponseDto,
+  type ServerVersionResponseDto,
+  type SharedLinkResponseDto,
+  type UserResponseDto,
+} from '@frameleaf/sdk';
+import { toastManager, type ActionItem, type IfLike } from '@frameleaf/ui';
+import { DateTime } from 'luxon';
+import { init, register, t } from 'svelte-i18n';
+import { derived, get } from 'svelte/store';
+import { defaultLang, locales } from '$lib/constants';
+import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
+import {
+  eventStoryPlace,
+  formatLocalDateRange,
+  memoryHeadline as headlineOf,
+  isBirthday,
+  isEventStory,
+  isPetStory,
+  isPersonRecap,
+  isYearInReview,
+} from '$lib/frameleaf/memory-stories';
+import { mayHaveDevelopPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
+import { isWebCompatibleImage } from '$lib/utils/asset-utils';
+import { handleError } from '$lib/utils/handle-error';
+import { convertBCP47, langs } from '$lib/utils/i18n';
+
+interface DateFormatter {
+  formatDate: (date: Date) => string;
+  formatTime: (date: Date) => string;
+  formatDateTime: (date: Date) => string;
+}
+
+export const initLanguage = async () => {
+  const preferenceLang = get(lang);
+  for (const { code, loader } of langs) {
+    register(convertBCP47(code), loader);
+  }
+
+  await init({ fallbackLocale: preferenceLang === 'dev' ? 'dev' : defaultLang.code, initialLocale: preferenceLang });
+};
+
+interface UploadRequestOptions {
+  url: string;
+  method?: 'POST' | 'PUT';
+  data: FormData;
+  onUploadProgress?: (event: ProgressEvent<XMLHttpRequestEventTarget>) => void;
+}
+
+export class AbortError extends Error {
+  override name = 'AbortError';
+}
+
+class ApiError extends Error {
+  override name = 'ApiError';
+
+  constructor(
+    public override message: string,
+    public statusCode: number,
+    public details: string,
+  ) {
+    super(message);
+  }
+}
+
+export const sleep = (ms: number) => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+let unsubscribeId = 0;
+const uploads: Record<number, () => void> = {};
+
+const trackUpload = (unsubscribe: () => void) => {
+  const id = unsubscribeId++;
+  uploads[id] = unsubscribe;
+  return () => {
+    delete uploads[id];
+  };
+};
+
+export const cancelUploadRequests = () => {
+  for (const unsubscribe of Object.values(uploads)) {
+    unsubscribe();
+  }
+};
+
+export const uploadRequest = async <T>(options: UploadRequestOptions): Promise<{ data: T; status: number }> => {
+  const { onUploadProgress: onProgress, data, url } = options;
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const unsubscribe = trackUpload(() => xhr.abort());
+
+    xhr.addEventListener('error', (error) => {
+      unsubscribe();
+      reject(error);
+    });
+
+    // cancelUploadRequests() aborts the request, which fires neither error nor load.
+    xhr.addEventListener('abort', () => {
+      unsubscribe();
+      reject(new AbortError());
+    });
+
+    xhr.addEventListener('load', () => {
+      unsubscribe();
+      if (xhr.readyState === 4 && xhr.status >= 200 && xhr.status < 300) {
+        resolve({ data: xhr.response as T, status: xhr.status });
+      } else {
+        reject(new ApiError(xhr.statusText, xhr.status, xhr.response));
+      }
+    });
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (event) => onProgress(event));
+    }
+
+    try {
+      xhr.open(options.method || 'POST', url);
+      xhr.responseType = 'json';
+      xhr.send(data);
+    } catch (error) {
+      unsubscribe();
+      reject(error);
+    }
+  });
+};
+
+let _sharedLink: SharedLinkResponseDto | undefined;
+let sharedLinkRequest = 0;
+
+export const setSharedLink = (sharedLink: typeof _sharedLink) => {
+  sharedLinkRequest++;
+  return (_sharedLink = sharedLink);
+};
+export const getSharedLink = (): typeof _sharedLink => _sharedLink;
+export const captureSharedLinkRequest = () => {
+  const request = ++sharedLinkRequest;
+  return (sharedLink: SharedLinkResponseDto) => {
+    if (request === sharedLinkRequest) {
+      setSharedLink(sharedLink);
+    }
+  };
+};
+
+const createUrl = (path: string, parameters?: Record<string, unknown>) => {
+  const searchParameters = new URLSearchParams();
+  for (const [key, value] of Object.entries(parameters ?? {})) {
+    if (value !== undefined && value !== null) {
+      searchParameters.set(key, value.toString());
+    }
+  }
+
+  const url = new URL(path, 'https://example.com');
+  url.search = searchParameters.toString();
+
+  return getBaseUrl() + url.pathname + url.search + url.hash;
+};
+
+type AssetUrlOptions = {
+  id: string;
+  cacheKey?: string | null;
+  edited?: boolean;
+  size?: AssetMediaSize;
+  dynamicRange?: 'auto' | 'sdr' | 'hdr';
+  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic';
+};
+
+export const getAssetUrl = ({
+  asset,
+  sharedLink,
+  forceOriginal = false,
+  dynamicRange,
+}: {
+  asset: AssetResponseDto | undefined;
+  sharedLink?: SharedLinkResponseDto;
+  forceOriginal?: boolean;
+  dynamicRange?: AssetUrlOptions['dynamicRange'];
+}) => {
+  if (!asset) {
+    return;
+  }
+  const id = asset.id;
+  // FL-115: the preview and full-size files follow the owner's playback choice, so their cache key does too.
+  const cacheKey = playbackCacheKey(asset);
+  const range = asset.type === AssetTypeEnum.Image && !asset.duration ? dynamicRange : undefined;
+  if (sharedLink && (!sharedLink.allowDownload || !sharedLink.showMetadata)) {
+    return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey, dynamicRange: range });
+  }
+  const target = targetImageSize(asset, forceOriginal);
+  const size = range && target === AssetMediaSize.Original ? AssetMediaSize.Fullsize : target;
+  return getAssetMediaUrl({ id, size, cacheKey, dynamicRange: range });
+};
+
+export function getAssetUrls(
+  asset: AssetResponseDto,
+  sharedLink?: SharedLinkResponseDto,
+  dynamicRange?: AssetUrlOptions['dynamicRange'],
+) {
+  return {
+    thumbnail: getAssetMediaUrl({ id: asset.id, cacheKey: asset.thumbhash, size: AssetMediaSize.Thumbnail }),
+    preview: getAssetUrl({ asset, sharedLink, dynamicRange })!,
+    original: getAssetUrl({ asset, sharedLink, forceOriginal: true, dynamicRange })!,
+  };
+}
+
+const forceUseOriginal = (asset: AssetResponseDto) => {
+  return asset.type === AssetTypeEnum.Image && asset.duration;
+};
+
+export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean) => {
+  if (forceOriginal || get(alwaysLoadOriginalFile) || forceUseOriginal(asset)) {
+    if (asset.type === AssetTypeEnum.Image && mayHaveDevelopPlaybackRevision(asset)) {
+      return AssetMediaSize.Fullsize;
+    }
+    return asset.type === AssetTypeEnum.Video || isWebCompatibleImage(asset)
+      ? AssetMediaSize.Original
+      : AssetMediaSize.Fullsize;
+  }
+  return AssetMediaSize.Preview;
+};
+
+export const getAssetMediaUrl = (options: AssetUrlOptions) => {
+  const { id, size, cacheKey: c, edited = true, dynamicRange, format } = options;
+  const isOriginal = size === AssetMediaSize.Original;
+  const path = isOriginal ? getAssetOriginalPath(id) : getAssetThumbnailPath(id);
+  return createUrl(path, {
+    ...authManager.params,
+    size: isOriginal ? undefined : size,
+    format: isOriginal ? format : undefined,
+    c,
+    edited,
+    dynamicRange:
+      !isOriginal && (size === AssetMediaSize.Preview || size === AssetMediaSize.Fullsize) ? dynamicRange : undefined,
+  });
+};
+
+export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
+  const { id, cacheKey: c, edited } = options;
+  // `edited: false` asks for the unedited clip; the server honours it for the owner only (FL-113).
+  return createUrl(getAssetPlaybackPath(id), {
+    ...authManager.params,
+    c,
+    edited: edited === false ? false : undefined,
+  });
+};
+
+/** FL-650: a video's filmstrip sprite, the variant and version its filmstrip index names. */
+export const getAssetFilmstripSpriteUrl = (id: string, options: { count: number; height: number; version: string }) =>
+  createUrl(`/assets/${id}/filmstrip/sprite`, { ...authManager.params, ...options });
+
+/** FL-97: the Studio HDR intermediate of an HDR original, read under asset.view; never the original. */
+export const getStudioHdrVideoUrl = (id: string) =>
+  createUrl(`/assets/${id}/video/studio-hdr`, { ...authManager.params });
+
+/**
+ * FL-103 / FL-105: the bytes of a file kept with a Studio project, for its owner's editor. A plain
+ * same-origin path: the owner's session cookie authorizes it, and no key, slug or token is added
+ * (the route refuses shared links anyway), so the engine that receives it gains no credential.
+ */
+export const getStudioProjectImportUrl = (projectId: string, importId: string) =>
+  createUrl(`/studio/projects/${projectId}/imports/${importId}/file`);
+
+export const getAssetHlsUrl = (id: string) => {
+  return createUrl(`/assets/${id}/video/stream/main.m3u8`, authManager.params);
+};
+
+export const getAssetHlsSessionUrl = (id: string, sessionId: string, params = authManager.params) => {
+  return createUrl(`/assets/${id}/video/stream/${sessionId}`, params);
+};
+
+export const getProfileImageUrl = (user: UserResponseDto) =>
+  createUrl(getUserProfileImagePath(user.id), { updatedAt: user.profileChangedAt });
+
+export const getPeopleThumbnailUrl = (person: PersonResponseDto, updatedAt?: string) =>
+  createUrl(getPeopleThumbnailPath(person.id), { updatedAt: updatedAt ?? person.updatedAt });
+
+/** Copies and says so; resolves false (after reporting the failure) when nothing reached the clipboard. */
+export const copyToClipboard = async (secret: string | unknown): Promise<boolean> => {
+  const $t = get(t);
+
+  try {
+    const value = typeof secret === 'string' ? secret : JSON.stringify(secret, jsonReplacer, 2);
+    await navigator.clipboard.writeText(value);
+    toastManager.info($t('copied_to_clipboard'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_copy_to_clipboard'));
+    return false;
+  }
+};
+
+// https://stackoverflow.com/questions/16167581/sort-object-properties-and-json-stringify/43636793#43636793
+const jsonReplacer = (_key: string, value: unknown) =>
+  value instanceof Object && !Array.isArray(value)
+    ? Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((key) => [key, (value as Record<string, unknown>)[key]]),
+      )
+    : value;
+
+export const downloadUrl = (url: string, filename: string) => {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+
+  // Safari starts reading the file after the click returns, so the object URL outlives it for a
+  // moment, as the prototype does (UploadPanel.jsx:503).
+  if (url.startsWith('blob:')) {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
+/**
+ * Streams an archive through a form POST. `edited: true` asks for each item as it is shown; left
+ * out, the server sends the originals.
+ */
+export const downloadUrlPost = (
+  url: string,
+  assetIds: string[],
+  archiveName: string,
+  edited?: boolean,
+  fields: Record<string, string> = {},
+) => {
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = url;
+  form.target = '_blank';
+
+  function mkInput(name: string, value: string) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.append(input);
+  }
+
+  mkInput('assetIds', assetIds.join(','));
+  mkInput('archiveName', archiveName);
+  if (edited !== undefined) {
+    mkInput('edited', String(edited));
+  }
+  for (const [name, value] of Object.entries(fields)) {
+    mkInput(name, value);
+  }
+
+  document.body.append(form);
+  form.submit();
+  form.remove();
+};
+
+export const downloadBlob = (data: Blob, filename: string) => downloadUrl(URL.createObjectURL(data), filename);
+
+export const downloadJson = (data: unknown, filename: string) => {
+  const blob = new Blob([JSON.stringify(data, jsonReplacer, 2)], { type: 'application/json' });
+  const downloadKey = filename;
+  downloadBlob(blob, downloadKey);
+
+  const $t = get(t);
+  toastManager.info($t('downloading_filename', { values: { filename } }));
+};
+
+export const oauth = {
+  isCallback: (location: Location) => {
+    const search = location.search;
+    return search.includes('code=') || search.includes('error=');
+  },
+  isAutoLaunchDisabled: (location: Location) => {
+    const values = ['autoLaunch=0', 'password=1', 'password=true'];
+    for (const value of values) {
+      if (location.search.includes(value)) {
+        return true;
+      }
+    }
+    return false;
+  },
+  isAutoLaunchEnabled: (location: Location) => {
+    const value = 'autoLaunch=1';
+    return location.search.includes(value);
+  },
+  authorize: async (location: Location, isCurrent?: () => boolean) => {
+    const $t = get(t);
+    try {
+      const redirectUri = location.href.split('?', 1)[0];
+      const { url } = await startOAuth({ oAuthConfigDto: { redirectUri } });
+      if (isCurrent && !isCurrent()) {
+        return false;
+      }
+      // FL-80: the callback may arrive in another tab; keep this sign-in's choices for it
+      recordOAuthRequest(url);
+      globalThis.location.assign(url);
+      return true;
+    } catch (error) {
+      if (!isCurrent || isCurrent()) {
+        handleError(error, $t('errors.unable_to_login_with_oauth'));
+      }
+      return false;
+    }
+  },
+  login: (location: Location, rememberMe = true) => {
+    return finishOAuth({ oAuthCallbackDto: { url: location.href, rememberMe } });
+  },
+  link: (location: Location) => {
+    return linkOAuthAccount({ oAuthCallbackDto: { url: location.href } });
+  },
+  unlink: () => {
+    return unlinkOAuthAccount();
+  },
+};
+
+export const findLocale = (code: string | undefined) => {
+  const language = locales.find((lang) => lang.code === code);
+  return {
+    code: language?.code,
+    name: language?.name,
+  };
+};
+
+export const asyncTimeout = (ms: number) => {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+};
+
+export const handlePromiseError = <T>(promise: Promise<T>): void => {
+  promise.catch((error) => console.error(`[utils.ts]:handlePromiseError ${error}`, error));
+};
+
+/**
+ * FL-62: a memory's title and the line under it as the Memories index and player show them
+ * (Memories.jsx), with the owner's own title first. See `memoryHeadline` in memory-stories.
+ */
+export const memoryHeadline = derived([t, locale], ([$t, $locale]) => {
+  return (memory: MemoryResponseDto) =>
+    headlineOf(memory, { t: $t as Parameters<typeof headlineOf>[1]['t'], locale: $locale ?? undefined });
+});
+
+export const memoryLaneTitle = derived(t, ($t) => {
+  return (memory: MemoryResponseDto) => {
+    // FL-62: the owner's own title wins everywhere a memory is named.
+    if (memory.title) {
+      return memory.title;
+    }
+
+    if (memory.type === MemoryType.OnThisDay) {
+      const now = DateTime.now();
+      const memoryDate = DateTime.fromISO(memory.memoryAt, { zone: 'utc' });
+
+      return memoryDate.day === now.day && memoryDate.month === now.month
+        ? $t('years_ago', { values: { years: now.year - memory.data.year } })
+        : memoryDate.toLocaleString(DateTime.DATE_MED, { locale: get(locale) });
+    }
+
+    // FL-62: event stories and year-in-review recaps. An event story names its place when
+    // it has one and otherwise reads as its local day range; the range comes from the
+    // server's `yyyy-MM-dd` local days, so it is not re-zoned here.
+    if (isEventStory(memory)) {
+      return eventStoryPlace(memory) ?? formatLocalDateRange(memory.data.startDate, memory.data.endDate, get(locale));
+    }
+
+    if (isYearInReview(memory)) {
+      return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
+    }
+
+    if (isPetStory(memory) || isBirthday(memory) || isPersonRecap(memory)) {
+      return get(memoryHeadline)(memory).title;
+    }
+
+    return $t('unknown');
+  };
+});
+
+export const withError = async <T>(fn: () => Promise<T>): Promise<[undefined, T] | [unknown, undefined]> => {
+  try {
+    const result = await fn();
+    return [undefined, result];
+  } catch (error) {
+    return [error, undefined];
+  }
+};
+
+// eslint-disable-next-line unicorn/prefer-code-point
+export const decodeBase64 = (data: string) => Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+
+export function createDateFormatter(localeCode: string | undefined): DateFormatter {
+  return {
+    formatDate: (date: Date): string =>
+      date.toLocaleString(localeCode, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }),
+
+    formatTime: (date: Date): string =>
+      date.toLocaleString(localeCode, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+
+    formatDateTime: (date: Date): string => {
+      const formattedDate = date.toLocaleString(localeCode, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      const formattedTime = date.toLocaleString(localeCode, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      return `${formattedDate} ${formattedTime}`;
+    },
+  };
+}
+
+// FL-80: the server's full pre-release identifier (beta.2, rc.1) when it sends one; older servers only
+// send the number, which was always a release candidate.
+export const semverToName = ({ major, minor, patch, prerelease, prereleaseName }: ServerVersionResponseDto) => {
+  const suffix = prereleaseName ? `-${prereleaseName}` : prerelease === null ? '' : `-rc.${prerelease}`;
+  return `v${major}.${minor}.${patch}${suffix}`;
+};
+
+export const withoutIcons = (actions: ActionItem[]): ActionItem[] =>
+  actions.map((action) => ({ ...action, icon: undefined }));
+
+export const isEnabled = ({ $if }: IfLike) => $if?.() ?? true;
