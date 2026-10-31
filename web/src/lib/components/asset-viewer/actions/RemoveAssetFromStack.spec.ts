@@ -6,9 +6,12 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import RemoveAssetFromStack from '$lib/components/asset-viewer/actions/RemoveAssetFromStack.svelte';
 import { AssetAction } from '$lib/constants';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { handleError } from '$lib/utils/handle-error';
 import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import en from '../../../../../../i18n/en.json';
+
+vi.mock('$lib/utils/handle-error');
 
 /** FL-35 / FL-83: removing one item from a stack, the viewer's other stack decision. */
 describe('RemoveAssetFromStack', () => {
@@ -67,6 +70,18 @@ describe('RemoveAssetFromStack', () => {
     authManager.reset();
     pending.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed removal and keeps the stack unchanged', async () => {
+    const [primary, current] = assetFactory.buildList(2);
+    const stack: StackResponseDto = { id: 'stack', primaryAssetId: primary.id, assets: [primary, current] };
+    const onAction = vi.fn();
+    const failure = new Error('offline');
+    sdkMock.removeAssetFromStack.mockRejectedValue(failure);
+    render(RemoveAssetFromStack, { asset: current, stack, onAction });
+    await userEvent.click(screen.getByText(en.viewer_remove_from_stack));
+    await waitFor(() => expect(handleError).toHaveBeenCalledWith(failure, en.errors.failed_to_unstack_assets));
     expect(onAction).not.toHaveBeenCalled();
   });
 });

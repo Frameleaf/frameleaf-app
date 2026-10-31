@@ -131,6 +131,31 @@ describe('DetailPanelPets', () => {
     );
   });
 
+  it('puts a removed pet back on the photo it came from after the viewer moves on', async () => {
+    sdkMock.getAssetPetObservations.mockResolvedValue([observation()]);
+    const toast = vi.spyOn(toastManager, 'primary');
+    const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
+    const view = render(DetailPanelPets, { asset, isOwner: true });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Biscuit from this photo' }));
+    await waitFor(() => expect(sdkMock.deletePetObservation).toHaveBeenCalled());
+    sdkMock.getAssetPetObservations.mockResolvedValue([]);
+    await view.rerender({
+      asset: assetFactory.build({ id: 'asset-2', ownerId: owner.id, checksum: 'b3RoZXIK' }),
+      isOwner: true,
+    });
+    const [[item]] = toast.mock.calls as unknown as [[{ button: { onclick: () => void } }]];
+    item.button.onclick();
+
+    await waitFor(() =>
+      expect(sdkMock.createPetObservation).toHaveBeenCalledWith({
+        id: 'pet-biscuit',
+        petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3VtCg==' },
+      }),
+    );
+    expect(screen.queryByText('Biscuit')).not.toBeInTheDocument();
+  });
+
   it('says so when the original changed since the photo was opened', async () => {
     const warning = vi.spyOn(toastManager, 'warning');
     sdkMock.isHttpError.mockReturnValue(true);

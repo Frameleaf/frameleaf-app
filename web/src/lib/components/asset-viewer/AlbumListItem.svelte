@@ -103,7 +103,7 @@
       class="absolute inset-e-0 top-4 p-3 hover:cursor-pointer focus:outline-none"
       role="checkbox"
       tabindex={-1}
-      aria-checked={selected}
+      aria-checked={multiSelected}
     >
       {#if multiSelected}
         <div class="rounded-full">

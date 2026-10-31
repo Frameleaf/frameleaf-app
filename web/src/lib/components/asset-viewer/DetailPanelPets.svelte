@@ -111,29 +111,43 @@
     observations = observations.filter((entry) => entry.id !== id);
   };
 
-  const undoAdd = (observation: PetObservationResponseDto) => async () => {
+  // The photo a decision was made on: its Undo writes against that photo's checksum and only touches
+  // the list on screen while the viewer still shows it.
+  type Source = { id: string; checksum: string };
+  const currentSource = (): Source => ({ id: asset.id, checksum: asset.checksum });
+  const onScreen = (source: Source) => source.id === asset.id;
+
+  const undoAdd = (observation: PetObservationResponseDto, source: Source) => async () => {
     try {
-      await deletePetObservation({ id: observation.id, expectedChecksum: asset.checksum });
-      removeLocal(observation.id);
+      await deletePetObservation({ id: observation.id, expectedChecksum: source.checksum });
+      if (onScreen(source)) {
+        removeLocal(observation.id);
+      }
       toastManager.primary($t('frameleaf_pets_undone'));
     } catch (error) {
       reportFailure(error);
     }
   };
 
-  const added = (observation: PetObservationResponseDto, pet: PetResponseDto) => {
-    upsertLocal(observation);
-    toastPetDecision($t('frameleaf_viewer_pets_added', { values: { name: nameOf(pet) } }), undoAdd(observation));
+  const added = (observation: PetObservationResponseDto, pet: PetResponseDto, source: Source = currentSource()) => {
+    if (onScreen(source)) {
+      upsertLocal(observation);
+    }
+    toastPetDecision(
+      $t('frameleaf_viewer_pets_added', { values: { name: nameOf(pet) } }),
+      undoAdd(observation, source),
+    );
   };
 
   const addWholePhoto = async (pet: PetResponseDto) => {
+    const source = currentSource();
     busy = true;
     try {
       const observation = await createPetObservation({
         id: pet.id,
-        petObservationCreateDto: { assetId: asset.id, expectedChecksum: asset.checksum },
+        petObservationCreateDto: { assetId: source.id, expectedChecksum: source.checksum },
       });
-      added(observation, pet);
+      added(observation, pet, source);
     } catch (error) {
       reportFailure(error);
     } finally {
@@ -143,19 +157,23 @@
 
   const remove = async (observation: PetObservationResponseDto) => {
     const pet = petsById.get(observation.petId);
+    const source = currentSource();
     busy = true;
     try {
-      await deletePetObservation({ id: observation.id, expectedChecksum: asset.checksum });
-      removeLocal(observation.id);
+      await deletePetObservation({ id: observation.id, expectedChecksum: source.checksum });
+      if (onScreen(source)) {
+        removeLocal(observation.id);
+      }
       toastPetDecision($t('frameleaf_viewer_pets_removed', { values: { name: nameOf(pet) } }), async () => {
         try {
-          // Undo writes the same decision back, region and all, on the photo still on screen.
-          upsertLocal(
-            await createPetObservation({
-              id: observation.petId,
-              petObservationCreateDto: observationToCreate(observation, asset.checksum),
-            }),
-          );
+          // Undo writes the same decision back, region and all, on the photo it was removed from.
+          const restored = await createPetObservation({
+            id: observation.petId,
+            petObservationCreateDto: observationToCreate(observation, source.checksum),
+          });
+          if (onScreen(source)) {
+            upsertLocal(restored);
+          }
           toastManager.primary($t('frameleaf_pets_undone'));
         } catch (error) {
           reportFailure(error);
