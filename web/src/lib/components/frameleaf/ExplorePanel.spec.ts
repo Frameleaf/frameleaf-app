@@ -1,0 +1,208 @@
+import { AssetTypeEnum } from '@frameleaf/sdk';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { init, register, waitLocale } from 'svelte-i18n';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { buildExplorePeople, buildExplorePlaces, buildExploreThings } from '$lib/frameleaf/explore';
+import { createLandmarkAlbum, dismissLandmarkAlbum } from '$lib/frameleaf/landmark-albums';
+import { buildLandmarkCards } from '$lib/frameleaf/landmarks';
+import { albumFactory } from '@test-data/factories/album-factory';
+import { assetFactory } from '@test-data/factories/asset-factory';
+import { personFactory } from '@test-data/factories/person-factory';
+import ExplorePanel from './ExplorePanel.svelte';
+
+vi.mock('$lib/frameleaf/landmark-albums', () => ({
+  createLandmarkAlbum: vi.fn().mockResolvedValue('album'),
+  dismissLandmarkAlbum: vi.fn(),
+}));
+
+const jamie = personFactory.build({ id: 'jamie', name: 'Jamie', isHidden: false });
+const clip = assetFactory.build({
+  id: 'clip',
+  type: AssetTypeEnum.Video,
+  originalFileName: 'IMG_0042.MOV',
+  localDateTime: '2026-08-02T21:15:00.000Z',
+});
+const still = assetFactory.build({ id: 'still', type: AssetTypeEnum.Image, originalFileName: 'IMG_0041.HEIC' });
+
+const props = (overrides: Record<string, unknown> = {}) => ({
+  people: buildExplorePeople([{ value: 'jamie', count: 12 }], [jamie]),
+  places: buildExplorePlaces([{ value: 'Paris', count: 4 }]),
+  things: buildExploreThings([{ value: 'tag-1', label: 'beach', count: 1, coverAssetId: 'beach-cover' }]),
+  recents: [clip, still],
+  memories: [{ id: 'm1', title: '1 year ago', href: '/memory', alt: '', src: '/m.jpg', count: 3 }],
+  albums: [albumFactory.build({ id: 'a1', albumName: 'Summer', assetCount: 5 })],
+  bestPhotos: { total: 2, cover: null },
+  shortcutCounts: { favorites: 1, photos: 2, videos: 3, withoutPeople: 4 },
+  libraryTotal: 40,
+  onViewAsset: vi.fn(),
+  ...overrides,
+});
+
+/** T-12 (ExploreLibrary.jsx:60-274): counted cards, "Things in your photos" and Recent captures details. */
+describe('ExplorePanel', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  it('counts every person, place, memory and thing card', () => {
+    render(ExplorePanel, props());
+
+    const people = within(screen.getByRole('region', { name: 'People' }));
+    expect(people.getByRole('link', { name: /Jamie/ })).toHaveTextContent('12 items');
+    const places = within(screen.getByRole('region', { name: 'Places' }));
+    expect(places.getByRole('link', { name: /Paris/ })).toHaveTextContent('4 items');
+    const memories = within(screen.getByRole('region', { name: 'Days to revisit' }));
+    expect(memories.getByRole('link', { name: /1 year ago/ })).toHaveTextContent('3 items');
+    const things = within(screen.getByRole('region', { name: 'Things in your photos' }));
+    const thing = things.getByRole('link', { name: /beach/ });
+    expect(thing).toHaveTextContent('1 item');
+    expect(thing.getAttribute('href')).toContain('tagIds');
+  });
+
+  it('lists visited landmarks with their kind, count and dates, each opening its search (FL-354)', () => {
+    const landmarks = buildLandmarkCards([
+      {
+        id: 'Q181185',
+        name: 'Disneyland Park',
+        kind: 'theme_park',
+        latitude: 33.8121,
+        longitude: -117.919,
+        radiusM: 600,
+        assetCount: 14,
+        firstTakenAt: '2026-06-03T10:00:00.000Z',
+        lastTakenAt: '2026-06-03T21:30:00.000Z',
+        coverAssetId: 'park-cover',
+        city: 'Anaheim',
+        state: 'California',
+        country: 'United States of America',
+        icon: { background: '#ffffff', tile: false },
+      },
+    ]);
+    render(ExplorePanel, props({ landmarks }));
+
+    const section = within(screen.getByRole('region', { name: 'Landmarks & attractions' }));
+    const card = section.getByRole('link', { name: /Disneyland Park, Theme park, 14 items/ });
+    expect(card).toHaveTextContent('Theme park');
+    expect(card).toHaveTextContent('14 items');
+    expect(card).toHaveTextContent('2026');
+    expect(card.getAttribute('href')).toContain('landmarkIds');
+    // its own brand icon, in a circle of the icon's background colour
+    const icon = card.querySelector(':scope .lm-badge-brand img');
+    expect(icon?.getAttribute('src')).toContain('/search/landmarks/Q181185/icon');
+  });
+
+  // FL-357: one visit offered as an album under the landmarks, answered once.
+  it('offers a visit as an album, and makes it or puts the offer away', async () => {
+    const [resort] = buildLandmarkCards([
+      {
+        id: 'Q1229066',
+        name: 'Disneyland Resort',
+        kind: 'resort',
+        latitude: 33.809,
+        longitude: -117.909,
+        radiusM: 1993,
+        assetCount: 20,
+        firstTakenAt: '2026-09-10T09:00:00.000Z',
+        lastTakenAt: '2026-09-11T12:05:00.000Z',
+        coverAssetId: 'resort-cover',
+        city: 'Anaheim',
+        state: 'California',
+        country: 'United States of America',
+      },
+    ]);
+    const albumSuggestion = { landmark: resort, startDate: '2026-09-10', endDate: '2026-09-11', count: 20 };
+    const { unmount } = render(ExplorePanel, props({ landmarks: [resort], albumSuggestion }));
+
+    const offer = within(screen.getByRole('group', { name: 'Suggested album' }));
+    expect(offer.getByText('20 photos at Disneyland Resort')).toBeInTheDocument();
+    expect(offer.getByText(/Sep 10, 2026 – Sep 11, 2026 · Make it an album\?/)).toBeInTheDocument();
+    await fireEvent.click(offer.getByRole('button', { name: 'Create album' }));
+
+    expect(createLandmarkAlbum).toHaveBeenCalledWith({
+      landmarkId: 'Q1229066',
+      startDate: '2026-09-10',
+      endDate: '2026-09-11',
+      albumName: 'Disneyland Resort',
+    });
+    expect(await offer.findByText('Album created: Disneyland Resort')).toBeInTheDocument();
+    expect(offer.queryByRole('button')).toBeNull();
+    unmount();
+
+    render(ExplorePanel, props({ landmarks: [resort], albumSuggestion }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(dismissLandmarkAlbum).toHaveBeenCalledWith(albumSuggestion);
+    expect(screen.queryByRole('group', { name: 'Suggested album' })).toBeNull();
+  });
+
+  it('shows no landmarks section for an account that has been to none', () => {
+    render(ExplorePanel, props());
+    expect(screen.queryByRole('region', { name: 'Landmarks & attractions' })).toBeNull();
+  });
+
+  it('opens the same search the person and place counts came from', () => {
+    render(ExplorePanel, props());
+    expect(screen.getByRole('link', { name: /Jamie/ }).getAttribute('href')).toContain('personIds');
+    expect(screen.getByRole('link', { name: /Paris/ }).getAttribute('href')).toContain('city');
+  });
+
+  it('shows each recent capture with its name, a Video label and its capture day', async () => {
+    const onViewAsset = vi.fn();
+    render(ExplorePanel, props({ onViewAsset }));
+
+    const recent = within(screen.getByRole('region', { name: 'Recent captures' }));
+    const video = recent.getByRole('button', { name: 'Open IMG_0042.MOV' });
+    expect(video).toHaveTextContent('IMG_0042.MOV');
+    expect(video).toHaveTextContent('Video');
+    expect(video).toHaveTextContent('2026-08-02');
+    expect(recent.getByRole('button', { name: 'Open IMG_0041.HEIC' })).not.toHaveTextContent('Video');
+
+    await fireEvent.click(video);
+    expect(onViewAsset).toHaveBeenCalledWith('clip');
+  });
+
+  it('leaves out a section with nothing in it', () => {
+    render(ExplorePanel, props({ things: [], people: [] }));
+    expect(screen.queryByRole('region', { name: 'Things in your photos' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'People' })).toBeNull();
+  });
+
+  it('covers a thing with the newest match its facet returned', () => {
+    render(ExplorePanel, props());
+    const thing = within(screen.getByRole('region', { name: 'Things in your photos' })).getByRole('link');
+    expect(thing.querySelector('img')?.getAttribute('src')).toContain('beach-cover');
+  });
+
+  describe('the Best Photos card', () => {
+    const card = () => screen.getByRole('link', { name: /Best Photos/ });
+
+    it('shows its picture and, with nothing at the quality threshold, makes no claim about a count', () => {
+      render(ExplorePanel, props({ bestPhotos: { total: 0, cover: still } }));
+
+      expect(card().querySelector('img')?.getAttribute('src')).toContain('still');
+      expect(card()).toHaveTextContent('Find your strongest photos and videos');
+      expect(card()).not.toHaveTextContent('picked for you');
+    });
+
+    it('counts the picks that reach the quality threshold', () => {
+      render(ExplorePanel, props({ bestPhotos: { total: 2, cover: still } }));
+      expect(card()).toHaveTextContent('2 best shots picked for you');
+    });
+
+    it('keeps its invitation, without a picture, when nothing is ranked yet', () => {
+      render(ExplorePanel, props({ bestPhotos: { total: 0, cover: null } }));
+
+      expect(card().querySelector('img')).toBeNull();
+      expect(card().querySelector('.el-cover-empty')).not.toBeNull();
+      expect(card()).toHaveTextContent('Find your strongest photos and videos');
+    });
+  });
+
+  it('points an empty library at uploading, in the prototype empty-state pattern', () => {
+    render(ExplorePanel, props({ libraryTotal: 0 }));
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing to explore yet');
+    expect(screen.getByRole('status')).toHaveTextContent('Upload photos and videos');
+    expect(screen.queryByRole('region', { name: 'People' })).toBeNull();
+  });
+});
