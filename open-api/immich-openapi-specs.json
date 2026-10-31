@@ -1233,7 +1233,7 @@
             "state": "Alpha"
           }
         ],
-        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-permission": "adminCloudBackup.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -122796,7 +122796,7 @@
       "PinCodeChangeDto": {
         "properties": {
           "newPinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "New PIN code (6 digits)",
             "pattern": "^\\d{6}$",
             "type": "string"
           },
@@ -122806,7 +122806,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "New PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -122825,7 +122825,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "New PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -122836,7 +122836,7 @@
       "PinCodeSetupDto": {
         "properties": {
           "pinCode": {
-            "description": "PIN code (4-6 digits)",
+            "description": "PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -126977,7 +126977,7 @@
       "ReconciliationStartDto": {
         "properties": {
           "buckets": {
-            "description": "First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused.",
+            "description": "First byte buckets in index order. Digest SHA256 of sorted distinct raw 32-byte hashes; empty digest SHA256(empty). Maximum 2000 hashes per bucket; larger sets refused.",
             "items": {
               "properties": {
                 "count": {
@@ -133502,7 +133502,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "New PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"

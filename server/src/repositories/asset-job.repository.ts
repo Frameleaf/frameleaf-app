@@ -890,7 +890,7 @@ export class AssetJobRepository {
     }>`
       SELECT
         count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS photos,
-        count(*) FILTER (WHERE NOT EXISTS (
+        count(*) FILTER (WHERE a.type = ${AssetType.Image} AND NOT EXISTS (
           SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Preview}
         ))::int AS "withoutPreview",
         count(*) FILTER (WHERE a.type = ${AssetType.Video})::int AS videos,

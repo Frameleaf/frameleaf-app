@@ -125,12 +125,12 @@ export class PasswordLinkRedeemDto extends createZodDto(PasswordLinkRedeemSchema
 
 const PinCodeSetupSchema = z
   .object({
-    pinCode: z.string().regex(pinCodeRegex).describe('PIN code (4-6 digits)').meta({ example: '123456' }),
+    pinCode: z.string().regex(pinCodeRegex).describe('PIN code (6 digits)').meta({ example: '123456' }),
   })
   .meta({ id: 'PinCodeSetupDto' });
 
 const PinCodeResetSchema = z.object({
-  pinCode: z.string().regex(pinCodeRegex).optional().describe('New PIN code (4-6 digits)').meta({ example: '123456' }),
+  pinCode: z.string().regex(pinCodeRegex).optional().describe('New PIN code (6 digits)').meta({ example: '123456' }),
   password: z
     .string()
     .optional()
@@ -141,7 +141,7 @@ const PinCodeResetSchema = z.object({
 const SessionUnlockSchema = PinCodeResetSchema.meta({ id: 'SessionUnlockDto' });
 
 const PinCodeChangeSchema = PinCodeResetSchema.extend({
-  newPinCode: z.string().regex(pinCodeRegex).describe('New PIN code (4-6 digits)'),
+  newPinCode: z.string().regex(pinCodeRegex).describe('New PIN code (6 digits)'),
 }).meta({ id: 'PinCodeChangeDto' });
 
 const ValidateAccessTokenResponseSchema = z

@@ -6238,25 +6238,25 @@ export type PasswordLinkCheckResponseDto = {
 export type PinCodeResetDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (4-6 digits) */
+    /** New PIN code (6 digits) */
     pinCode?: string;
 };
 export type PinCodeSetupDto = {
-    /** PIN code (4-6 digits) */
+    /** PIN code (6 digits) */
     pinCode: string;
 };
 export type PinCodeChangeDto = {
-    /** New PIN code (4-6 digits) */
+    /** New PIN code (6 digits) */
     newPinCode: string;
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (4-6 digits) */
+    /** New PIN code (6 digits) */
     pinCode?: string;
 };
 export type SessionUnlockDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (4-6 digits) */
+    /** New PIN code (6 digits) */
     pinCode?: string;
 };
 export type AuthStatusResponseDto = {
@@ -17542,7 +17542,7 @@ export type ReconciliationHistoryDto = {
     }[];
 };
 export type ReconciliationStartDto = {
-    /** First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused. */
+    /** First byte buckets in index order. Digest SHA256 of sorted distinct raw 32-byte hashes; empty digest SHA256(empty). Maximum 2000 hashes per bucket; larger sets refused. */
     buckets: {
         count: number;
         digest: string;
