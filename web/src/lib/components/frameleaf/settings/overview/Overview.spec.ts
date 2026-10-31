@@ -83,6 +83,9 @@ describe('Overview (FL-363)', () => {
     expect(await screen.findByText('Emma’s phone hasn’t sent photos for 9 days')).toBeInTheDocument();
     expect(screen.getByText('1 phone behind')).toBeInTheDocument();
     expect(screen.getByText('Emma’s phone, 9 days')).toBeInTheDocument();
+    // The five checks are healthy, so the status sentence names the phone, not "all is well".
+    expect(screen.getByText('A phone hasn’t sent photos lately.')).toBeInTheDocument();
+    expect(screen.queryByText(/Your library is backed up/)).not.toBeInTheDocument();
   });
 
   it('says there are no phones yet (FL-518)', async () => {
