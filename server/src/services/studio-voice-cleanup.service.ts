@@ -207,6 +207,11 @@ export class StudioVoiceCleanupService {
       noises,
       humHz: dto.humHz ?? null,
     };
+    // The same clean-up already queued or running is answered by that job: one cleaned track.
+    const [twin] = await this.twins(auth.user.id, projectId, cleanedImportId(snapshot));
+    if (twin) {
+      return { id: twin.id, status: twin.status };
+    }
     const operation = await this.operations.create({
       ownerId: auth.user.id,
       kind: MediaOperationKind.StudioTranscription,
@@ -400,6 +405,15 @@ export class StudioVoiceCleanupService {
       // Kept with the project as an audio import, like music someone adds in Studio. A retry reuses the
       // track an earlier attempt kept, and replaces one it left unfinished.
       const importId = cleanedImportId(snapshot);
+      // Only an abandoned attempt is superseded, never one another job still holds a live claim on.
+      const live = await this.twins(operation.ownerId, snapshot.projectId, importId, operation.id);
+      if (
+        live.some(
+          (twin) => twin.claimToken && twin.claimExpiresAt && new Date(twin.claimExpiresAt).getTime() > Date.now(),
+        )
+      ) {
+        throw new Error('The same voice clean-up is running in another job');
+      }
       let kept = await this.supersede(auth, snapshot.projectId, importId);
       if (!kept) {
         const name = fileSafe(resolved.clip.label) || 'Clip';
@@ -478,6 +492,30 @@ export class StudioVoiceCleanupService {
         await this.storage.unlink(incoming).catch(() => {});
       }
     }
+  }
+
+  /** Unfinished voice clean-ups of this owner's project that keep the same cleaned track. */
+  private async twins(ownerId: string, projectId: string, importId: string, excludeId?: string) {
+    const open = await this.operations.listUnfinishedForProjects(
+      [projectId],
+      [MediaOperationKind.StudioTranscription],
+      ownerId,
+    );
+    const twins: MediaOperation[] = [];
+    for (const row of open) {
+      const operation = row.id === excludeId ? undefined : await this.operations.getForWorker(row.id);
+      if (!operation || (operation.snapshot as { kind?: unknown } | null)?.kind !== VOICE_CLEANUP_SNAPSHOT_KIND) {
+        continue;
+      }
+      try {
+        if (cleanedImportId(this.snapshot(operation)) === importId) {
+          twins.push(operation);
+        }
+      } catch {
+        // A job with an unreadable snapshot fails on its own; it never keeps this track.
+      }
+    }
+    return twins;
   }
 
   /**
