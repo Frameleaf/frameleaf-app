@@ -6,8 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -58,7 +57,7 @@ import {
   lockedViewerOf,
 } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -531,7 +530,8 @@ export class AssetMediaService extends BaseService {
           message: 'HDR HEIC export is unavailable',
         });
       const checksum = Buffer.from(source.checksum);
-      const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
+      // FL-721 (spec §8): a sealed source's full-size export is written inside the locked tmpfs folder
+      const folder = await makeWorkDir('photo-export', await isLockedPath(filePath));
       const heic = dto.format === 'hdr-heic';
       const output = path.join(folder, heic ? 'still_hdr.heic' : 'still.jpg');
       const release = () =>

@@ -17,6 +17,9 @@ import {
   clearLockedPathCache,
   deferForLockedKey,
   isLockedPath,
+  isPlainCopyPath,
+  makeWorkDir,
+  makeWorkDirFor,
   openLockedRead,
   resetLockedTmpCheck,
   rewriteThroughPlainCopy,
@@ -265,6 +268,50 @@ describe('locked-read', () => {
       const execution = context();
       queueExecution.run(execution, () => deferForLockedKey(new Error('other')));
       expect(execution.dependencyReason).toBeUndefined();
+    });
+  });
+
+  describe('makeWorkDir (FL-721)', () => {
+    it("puts a sealed source's scratch folder in the locked tmp root, 0700, swept like a plain copy", async () => {
+      const root = await fs.mkdtemp(join(tmpdir(), 'locked-workdir-'));
+      const lockedTmp = join(root, 'shm');
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP', lockedTmp);
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'true');
+      resetLockedTmpCheck();
+      try {
+        const sealed = await makeWorkDir('darktable', true);
+        expect(sealed.startsWith(join(lockedTmp, `copy-${process.pid}-darktable-`))).toBe(true);
+        expect((await fs.stat(sealed)).mode & 0o777).toBe(0o700);
+
+        const copy = join(lockedTmp, `copy-${process.pid}-x`, 'IMG.CR2');
+        expect(isPlainCopyPath(copy)).toBe(true);
+        expect(isPlainCopyPath(join(root, 'IMG.CR2'))).toBe(false);
+        expect((await makeWorkDirFor(copy, 'tool')).startsWith(lockedTmp)).toBe(true);
+
+        const plain = await makeWorkDir('darktable', false);
+        expect(plain.startsWith(join(tmpdir(), 'frameleaf-darktable-'))).toBe(true);
+        await fs.rm(plain, { recursive: true, force: true });
+      } finally {
+        vi.unstubAllEnvs();
+        resetLockedTmpCheck();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses a sealed scratch folder when the locked tmp is not RAM-backed', async () => {
+      const folder = join(tmpdir(), `locked-workdir-${randomBytes(4).toString('hex')}`);
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP', folder);
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'false');
+      resetLockedTmpCheck();
+      try {
+        if (process.platform !== 'linux') {
+          await expect(makeWorkDir('darktable', true)).rejects.toBeInstanceOf(LockedTmpUnavailableError);
+        }
+      } finally {
+        vi.unstubAllEnvs();
+        resetLockedTmpCheck();
+        await fs.rm(folder, { recursive: true, force: true });
+      }
     });
   });
 });

@@ -1,8 +1,8 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { execFile as execFileCallback } from 'node:child_process';
 import { constants } from 'node:fs';
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { endianness, tmpdir } from 'node:os';
+import { chmod, copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { endianness } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
@@ -17,6 +17,7 @@ import { trackQueueChild } from 'src/queue/child-process.js';
 import { NATIVE_RAW_ORDER, nativeBlendParams, nativeModuleParams } from 'src/utils/darktable-controls.js';
 import { type DevelopBitmap } from 'src/utils/develop-cleanup.js';
 import { maskWeight, originalMaskWeight } from 'src/utils/develop-recipe.js';
+import { makeWorkDirFor } from 'src/utils/locked-read.js';
 
 const execFile = promisify(execFileCallback);
 
@@ -362,7 +363,9 @@ export async function renderDarktable(
     const abort = signal ? AbortSignal.any([signal, deadline]) : deadline;
     const { stdout } = await runDarktable(['--version'], abort);
     verifyDarktableVersion(stdout);
-    directory = await mkdtemp(join(tmpdir(), 'frameleaf-darktable-'));
+    // FL-721 (spec §8): a plain copy of a sealed original is worked on inside the locked tmpfs folder,
+    // so neither the copy of it nor the full-resolution renders below reach a disk
+    directory = await makeWorkDirFor(input, 'darktable');
     // A private copy also excludes adjacent imported sidecars and makes original writes impossible.
     const source = join(directory, `original${extname(input)}`);
     const library = join(directory, 'library.db');

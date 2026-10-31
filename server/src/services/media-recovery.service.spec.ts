@@ -205,6 +205,13 @@ describe(MediaRecoveryService.name, () => {
     expect(await readFile(original, 'utf8')).toBe('damaged original');
     expect(await readFile(input.stagedPath)).toEqual(bytes);
   });
+  it('never repairs or replaces an encrypted Locked original (FL-721)', async () => {
+    await writeFile(original, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+    expect(await sut.reconcile(input)).toEqual({ outcome: 'needs-review', reason: 'locked_encrypted' });
+    expect(repository.reserve).not.toHaveBeenCalled();
+    expect(repository.commit).not.toHaveBeenCalled();
+    expect((await readFile(original)).subarray(0, 4).toString()).toBe('FLLK');
+  });
   it('rehashes the actual healthy original before reuse', async () => {
     await writeFile(original, bytes);
     expect(await sut.reconcile(input)).toEqual({ outcome: 'reused', assetId: candidate.id });

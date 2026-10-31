@@ -94397,7 +94397,7 @@
             "type": "integer"
           },
           "encrypted": {
-            "description": "Encrypted Locked files the damage check passed over: encrypted, not checked",
+            "description": "Encrypted Locked files the damage check passed over: encrypted, not checked (not counted in checked)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"

@@ -120,6 +120,7 @@ import {
   hashPlainFile,
   isLockedKeyUnavailable,
   isLockedPath,
+  makeWorkDir,
   withPlainCopy,
 } from 'src/utils/locked-read.js';
 import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
@@ -438,7 +439,8 @@ export class AssetDevelopService {
       }
       // Export copies retain the saved rendition and renderer identity. Historical SDR converts
       // to sRGB JPEG; HDR HEIC reconstructs the published gain-map master in the same worker.
-      const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
+      // FL-721 (spec §8): a sealed source's full-size export is written inside the locked tmpfs folder
+      const folder = await makeWorkDir('photo-export', await isLockedPath(filePath));
       const output = path.join(folder, heic ? 'still_hdr.heic' : 'still_sdr.jpg');
       const release = () =>
         void rm(folder, { recursive: true, force: true }).catch(() => {

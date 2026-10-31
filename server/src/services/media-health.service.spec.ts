@@ -1308,6 +1308,83 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
     });
 
+    describe('encrypted Locked originals (FL-721, spec §8.3)', () => {
+      let directory: string;
+      let sealed: string;
+      const confirmed = { status: MediaHealthStatus.CorruptConfirmed, score: null, evidence: {}, resolution: {} };
+
+      beforeEach(async () => {
+        directory = await mkdtemp(join(tmpdir(), 'media-health-bulk-locked-'));
+        sealed = join(directory, 'sealed.jpg');
+        await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+      });
+
+      afterEach(async () => {
+        await rm(directory, { recursive: true, force: true });
+      });
+
+      it('the trash worker keeps an item whose original is sealed, however it was queued', async () => {
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          finding({ category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.TrashQueued }),
+        ] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset({ originalPath: sealed })] as never);
+        vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue(confirmed);
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.TrashDamagedMedia, {
+            assetId: 'asset-1',
+            findingId: 'health-1',
+          }),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_media_health_not_damaged',
+        });
+        expect(mediaHealthRepository.trashCorruptIfUnchanged).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetTrashAll', expect.anything());
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({ status: MediaHealthStatus.Resolved, evidence: { reason: 'locked_encrypted' } }),
+        );
+      });
+
+      it('never replaces a sealed original with a recovery copy', async () => {
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+          finding({ category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.CorruptConfirmed }),
+        ] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset({ originalPath: sealed })] as never);
+
+        await expect(
+          sut.applyBulkEntry(worker({ isAdmin: true }), MediaOperationBulkAction.RecoverDamagedMedia, entry),
+        ).resolves.toMatchObject({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_media_health_changed',
+        });
+        expect(mediaHealthRepository.getCandidatesByHealthIds).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+
+      it('never hashes or relinks a sealed candidate', async () => {
+        vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([finding()] as never);
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset()] as never);
+        vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([
+          {
+            id: 'candidate-1',
+            healthId: 'health-1',
+            candidatePath: sealed,
+            status: MediaHealthStatus.Found,
+            evidence: { rootId: MANAGED_ROOT_ID },
+          },
+        ] as never);
+        // a hash that would match, if anything read the ciphertext
+        vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1, sha256, sizeInBytes: 10 });
+
+        await expect(
+          sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
+        ).resolves.toMatchObject({ status: MediaOperationItemStatus.Skipped });
+        expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+      });
+    });
+
     describe('recovery from a verified copy (disposable filesystem fixtures)', () => {
       let root: string;
       let backup: string;

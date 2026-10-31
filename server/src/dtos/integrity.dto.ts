@@ -90,7 +90,7 @@ const IntegrityCheckHistoryEntrySchema = z
       .int()
       .nonnegative()
       .optional()
-      .describe('Encrypted Locked files the damage check passed over: encrypted, not checked'),
+      .describe('Encrypted Locked files the damage check passed over: encrypted, not checked (not counted in checked)'),
   })
   .meta({ id: 'IntegrityCheckHistoryEntryDto' });
 

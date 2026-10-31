@@ -1,5 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -11,6 +11,7 @@ import {
   translateDarktableExposure,
   verifyDarktableVersion,
 } from 'src/utils/darktable-renderer.js';
+import { resetLockedTmpCheck } from 'src/utils/locked-read.js';
 import { tryPromise } from 'src/utils/promise.js';
 
 const mocks = vi.hoisted(() => ({
@@ -114,6 +115,36 @@ describe('pinned darktable adapter', () => {
       for (const option of ['--library', '--configdir', '--cachedir']) {
         expect(args[args.indexOf(option) + 1]).toContain(mocks.tempRoot);
       }
+    }
+  });
+
+  it('works on a plain copy of a sealed original only inside the locked tmp folder (FL-721)', async () => {
+    const lockedTmp = join(directory, 'shm');
+    vi.stubEnv('FRAMELEAF_LOCKED_TMP', lockedTmp);
+    vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'true');
+    resetLockedTmpCheck();
+    try {
+      // what withPlainCopy hands a tool: a decrypted copy in its own folder under the locked root
+      const copy = join(lockedTmp, `copy-${process.pid}-test`, 'source.CR2');
+      await mkdir(dirname(copy), { recursive: true });
+      await writeFile(copy, 'decrypted original');
+
+      await expect(renderDarktable(copy, recipe)).resolves.toBeInstanceOf(Buffer);
+
+      const work = mocks.exec.mock.calls.slice(1).map(([, args]) => args as string[]);
+      expect(work.length).toBeGreaterThan(0);
+      for (const args of work) {
+        expect(args[0].startsWith(`${lockedTmp}/copy-${process.pid}-darktable-`)).toBe(true);
+        for (const option of ['--library', '--configdir', '--cachedir']) {
+          expect(args[args.indexOf(option) + 1].startsWith(lockedTmp)).toBe(true);
+        }
+      }
+      // the work folder is gone; only the plain copy's own folder remains for withPlainCopy to remove
+      expect(await readdir(lockedTmp)).toEqual([`copy-${process.pid}-test`]);
+      expect(nativeDirectory!.startsWith(lockedTmp)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      resetLockedTmpCheck();
     }
   });
 

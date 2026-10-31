@@ -3,6 +3,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { queueExecution } from 'src/queue/context.js';
@@ -510,6 +511,37 @@ export async function withPlainCopy<T>(
     await fs.rm(folder, { recursive: true, force: true });
   }
 }
+
+/** Whether `path` lies inside `FRAMELEAF_LOCKED_TMP`: a plain copy that `withPlainCopy` handed out. */
+export function isPlainCopyPath(path: string): boolean {
+  const { path: root } = lockedTmpConfig();
+  return resolve(path).startsWith(root + sep);
+}
+
+/**
+ * FL-721 (spec §8): a private scratch folder for a tool. With `sealed` (its input is, or comes from,
+ * a sealed Locked file) the folder is made inside the RAM-backed `FRAMELEAF_LOCKED_TMP`, mode 0700 and
+ * named like a plain copy's, so a crashed process's folder is swept at startup
+ * (`removeStalePlainCopies`): a decrypted input, and full renditions of it, never reach a disk.
+ * Otherwise it is an ordinary folder in the OS temp folder. The caller removes it.
+ */
+export async function makeWorkDir(label: string, sealed: boolean): Promise<string> {
+  if (!sealed) {
+    return fs.mkdtemp(join(tmpdir(), `frameleaf-${label}-`));
+  }
+  try {
+    await assertLockedTmpIsTmpfs();
+  } catch (error) {
+    deferForLockedKey(error);
+    throw error;
+  }
+  const folder = await fs.mkdtemp(join(lockedTmpConfig().path, `${COPY_PREFIX}${process.pid}-${label}-`));
+  await fs.chmod(folder, 0o700);
+  return folder;
+}
+
+/** `makeWorkDir` for a tool given `input`: in the locked folder when `input` is a plain copy. */
+export const makeWorkDirFor = (input: string, label: string) => makeWorkDir(label, isPlainCopyPath(input));
 
 /** `withPlainCopy` over several paths (e.g. a Live Photo's still and motion part, or a sidecar and its original). */
 export async function withPlainCopies<T>(paths: string[], fn: (plainPaths: string[]) => Promise<T>): Promise<T> {
