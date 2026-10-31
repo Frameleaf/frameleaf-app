@@ -476,7 +476,7 @@ const routes = {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', BASE);
   const key = `${request.method} ${url.pathname}`;
-  if (!url.pathname.startsWith('/__fixture/')) {
+  if (!url.pathname.startsWith('/__fixture/') && url.pathname !== '/ping') {
     state.requests.push(key);
     state.requests = state.requests.slice(-200);
   }

@@ -115,17 +115,20 @@ export const setupTimelineMockApiRoutes = async (
       const pathname = url.pathname;
       const assetId = basename(pathname);
       let asset = getAsset(timelineRestData, assetId);
-      if (changes.assetDeletions.includes(asset!.id)) {
+      if (!asset) {
+        return route.fallback();
+      }
+      if (changes.assetDeletions.includes(asset.id)) {
         asset = {
           ...asset,
           isTrashed: true,
         } as AssetResponseDto;
       }
       // The asset endpoint reports the same changes the buckets do.
-      if (changes.assetFavorites.includes(asset!.id)) {
+      if (changes.assetFavorites.includes(asset.id)) {
         asset = { ...asset, isFavorite: true } as AssetResponseDto;
       }
-      if (changes.assetArchivals.includes(asset!.id)) {
+      if (changes.assetArchivals.includes(asset.id)) {
         asset = { ...asset, visibility: AssetVisibility.Archive } as AssetResponseDto;
       }
       return route.fulfill({
