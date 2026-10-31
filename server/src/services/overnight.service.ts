@@ -144,7 +144,7 @@ export class OvernightService {
       });
       await this.startRequestedRedo();
       await this.startRequestedRecompare();
-      await this.advance();
+      await this.advance(true);
       return JobStatus.Success;
     });
   }
@@ -233,7 +233,7 @@ export class OvernightService {
 
   async move(): Promise<void> {
     return this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, async () => {
-      await this.advance();
+      await this.advance(false);
       await this.keepQuietHours();
     });
   }
@@ -352,16 +352,17 @@ export class OvernightService {
   }
 
   /** Whether a step's work is still being done. */
-  private async isBusy(step: OvernightStep): Promise<boolean> {
+  private async isBusy(step: OvernightStep, insideJob: boolean): Promise<boolean> {
     const queueBusy = async (name: QueueName) => {
       const counts = await this.jobRepository.getJobCounts(name);
       return counts.active + counts.waiting + counts.delayed > 0;
     };
     switch (step) {
       case 'cleanup': {
-        // This job runs on the same queue and has finished its own part by now.
+        // Inside the overnight job, that job is one of the active BackgroundTask jobs and has finished its
+        // own part by now. A look from watch() runs after it ended, so any active job is still tidy-up.
         const counts = await this.jobRepository.getJobCounts(QueueName.BackgroundTask);
-        return counts.waiting + counts.delayed > 0 || counts.active > 1;
+        return counts.waiting + counts.delayed > 0 || counts.active > (insideJob ? 1 : 0);
       }
       case 'folders': {
         return queueBusy(QueueName.Library);
@@ -379,7 +380,7 @@ export class OvernightService {
    * Moves the run as far as it can go: past every step that is off, not due or finished, starting
    * each step that is due, and stopping to wait at the first one still being done.
    */
-  private async advance(): Promise<void> {
+  private async advance(insideJob: boolean): Promise<void> {
     let state = await this.state();
     let run: OvernightRun | null = state.run;
     if (!run) {
@@ -395,7 +396,7 @@ export class OvernightService {
       if (run.begunAt) {
         let busy = false;
         try {
-          busy = await this.isBusy(step);
+          busy = await this.isBusy(step, insideJob);
         } catch (error) {
           this.logger.warn(`Overnight run: could not tell whether ${step} finished: ${error}`);
         }

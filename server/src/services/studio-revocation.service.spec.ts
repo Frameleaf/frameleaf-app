@@ -82,6 +82,7 @@ describe(StudioRevocationService.name, () => {
         MediaOperationKind.StudioReverseConform,
         MediaOperationKind.StudioPreview,
         MediaOperationKind.StudioPreviewStream,
+        MediaOperationKind.StudioTranscription,
       ],
       undefined,
     );
@@ -117,6 +118,7 @@ describe(StudioRevocationService.name, () => {
         MediaOperationKind.StudioReverseConform,
         MediaOperationKind.StudioPreview,
         MediaOperationKind.StudioPreviewStream,
+        MediaOperationKind.StudioTranscription,
       ],
       'reviewer-1',
     );

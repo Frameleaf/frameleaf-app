@@ -15,6 +15,8 @@ const SOURCE_BOUND_KINDS = [
   MediaOperationKind.StudioReverseConform,
   MediaOperationKind.StudioPreview,
   MediaOperationKind.StudioPreviewStream,
+  // Transcription, stabilise and voice clean-up all read a library original.
+  MediaOperationKind.StudioTranscription,
 ] as const;
 
 /**
