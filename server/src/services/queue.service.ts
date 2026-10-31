@@ -178,8 +178,7 @@ export class QueueService extends BaseService {
       }
 
       case QueueCommand.Resume: {
-        await this.jobRepository.resume(name);
-        await this.releaseQuietHold(name);
+        await this.resumeAndReleaseQuietHold(name);
         break;
       }
 
@@ -242,8 +241,7 @@ export class QueueService extends BaseService {
       }
       await this.jobRepository.pause(name);
     } else if (dto.isPaused === false) {
-      await this.jobRepository.resume(name);
-      await this.releaseQuietHold(name);
+      await this.resumeAndReleaseQuietHold(name);
     }
 
     return this.getByName(name);
@@ -252,10 +250,13 @@ export class QueueService extends BaseService {
   /**
    * FL-711: a queue the administrator resumes is theirs again. Quiet hours stop holding it, so a pause
    * they make later is said as their own (and listed as work that waits) and the window's opening
-   * does not resume it for them.
+   * does not resume it for them. The queue is resumed under the same lock quiet hours take to pause
+   * and record it, so the overnight runner cannot pause it again in between and leave it paused but
+   * no longer held.
    */
-  private async releaseQuietHold(name: QueueName): Promise<void> {
+  private async resumeAndReleaseQuietHold(name: QueueName): Promise<void> {
     await this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, async () => {
+      await this.jobRepository.resume(name);
       const state = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
       const holding = state?.quiet?.holding;
       if (!state || !holding?.includes(name)) {

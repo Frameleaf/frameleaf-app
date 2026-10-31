@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import {
+  DatabaseLock,
   FrameleafWorker,
   JobName,
   MlDestinationKind,
@@ -276,6 +277,50 @@ describe(QueueService.name, () => {
         nights: [],
         quiet: { holding: [QueueName.SmartSearch] },
       });
+    });
+
+    it('resumes a held queue under the quiet hours lock, before the hold is released (FL-711)', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
+      mocks.systemMetadata.get.mockResolvedValue({
+        run: null,
+        nights: [],
+        quiet: { holding: [QueueName.VideoConversion] },
+      });
+      const calls: string[] = [];
+      let locked = false;
+      mocks.database.withLock.mockImplementation(async (lock, fn) => {
+        calls.push(`lock:${lock}`);
+        locked = true;
+        try {
+          return await fn();
+        } finally {
+          locked = false;
+          calls.push('unlock');
+        }
+      });
+      mocks.job.resume.mockImplementation(() => {
+        calls.push(`resume:${locked}`);
+        return Promise.resolve();
+      });
+      mocks.systemMetadata.set.mockImplementation(() => {
+        calls.push(`release:${locked}`);
+        return Promise.resolve();
+      });
+
+      await sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Resume, force: false });
+
+      expect(calls).toEqual([`lock:${DatabaseLock.OvernightSequenceRun}`, 'resume:true', 'release:true', 'unlock']);
+    });
+
+    it('does not resume a queue when the quiet hours lock cannot be taken', async () => {
+      mocks.database.withLock.mockRejectedValue(new Error('lock failed'));
+
+      await expect(sut.update(authStub.admin, QueueName.VideoConversion, { isPaused: false })).rejects.toThrow(
+        'lock failed',
+      );
+
+      expect(mocks.job.resume).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
     it('leaves the quiet hours record alone when the resumed queue is not held', async () => {
