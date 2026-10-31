@@ -7,6 +7,10 @@
           "title": "[Fixture shared]",
           "body": "[Fixture {senderName} shared one item]"
         },
+        "item-share-many": {
+          "title": "[Fixture shared]",
+          "body": "[Fixture {senderName} shared {count} items]"
+        },
         "access-removed-unknown": {
           "title": "[Fixture access]",
           "body": "[Fixture album access ended]"
@@ -466,6 +470,26 @@
       "expected": {
         "title": "Shared with you",
         "body": "Zoë shared 2 items with you"
+      }
+    },
+    {
+      "name": "numeric count renders the catalog text",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "item-share-many",
+        "args": {
+          "senderName": "Zoë",
+          "count": 2
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared 2 items with you"
+      },
+      "expected": {
+        "title": "[Fixture shared]",
+        "body": "[Fixture Zoë shared 2 items]"
       }
     },
     {
