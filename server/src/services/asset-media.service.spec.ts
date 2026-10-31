@@ -6,8 +6,9 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
@@ -868,6 +869,26 @@ describe(AssetMediaService.name, () => {
           expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(shared, file.checksum);
           await expect(options.identify(shared)).resolves.toBe(identity);
           expect(mocks.logger.warn).not.toHaveBeenCalled();
+        });
+
+        it('upload with a checksum matching an encrypted physical_file stores a new file instead of linking', async () => {
+          // FL-721 (spec §6.1): a sealed Locked file never stands in for an upload, whatever its size or
+          // its hash would say, and it is not reported as a stored file holding other bytes
+          const directory = await mkdtemp(join(tmpdir(), 'upload-locked-'));
+          const sealed = join(directory, 'shared.jpeg');
+          await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+          try {
+            const options = await uploadOptions();
+            mocks.storage.stat.mockResolvedValue(stats as never);
+            mocks.crypto.hashFileMatching.mockClear();
+            mocks.crypto.hashFileMatching.mockResolvedValue(file.checksum);
+
+            await expect(options.verify(sealed)).resolves.toBeNull();
+            expect(mocks.crypto.hashFileMatching).not.toHaveBeenCalled();
+            expect(mocks.logger.warn).not.toHaveBeenCalled();
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
         });
 
         it('never trusts a stored file that holds other bytes, and says so', async () => {

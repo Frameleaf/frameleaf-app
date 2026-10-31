@@ -1596,6 +1596,8 @@ export type IntegrityCheckHistoryEntry = {
   found: number;
   /** Files looked at in this run, when the check counts them. */
   checked: number | null;
+  /** FL-721: encrypted Locked files the damage check passed over ("encrypted, not checked"). */
+  encrypted?: number;
 };
 
 export type UserPreferences = {

@@ -58,7 +58,7 @@ import {
   lockedViewerOf,
 } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -373,10 +373,14 @@ export class AssetMediaService extends BaseService {
     // linked to that file and the upload released; new content becomes its own primary file. FL-412: only
     // a stored file proven to hold the same bytes replaces the upload's own copy.
     const expected = { checksum: file.checksum, sizeInBytes: file.size };
+    const checks = storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+      this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
+    );
     const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, {
-      ...storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
-        this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
-      ),
+      ...checks,
+      // FL-721 (spec §6.1): a sealed Locked file never stands in for an upload; the upload keeps its own
+      // file (the repository already leaves encrypted files out; this holds for one sealed meanwhile)
+      verify: async (path) => ((await isLockedPath(path)) ? null : checks.verify(path)),
       untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
       ...(options.quotaCharged && { ingestion: options.ingestion }),
     });

@@ -158,7 +158,12 @@ export class StudioMediaService extends BaseService {
 
     let filmstrip: Awaited<ReturnType<StudioMediaService['ensureFilmstrip']>>;
     try {
-      filmstrip = await this.ensureFilmstrip(await this.getSource(id), PLAYER_FILMSTRIP);
+      const source = await this.getSource(id);
+      if (await isLockedPath(source.path)) {
+        // FL-721 (spec §8.3): duplicate fingerprinting never decodes a sealed Locked video
+        return JobStatus.Skipped;
+      }
+      filmstrip = await this.ensureFilmstrip(source, PLAYER_FILMSTRIP);
     } catch (error) {
       if (error instanceof NotFoundException) {
         return JobStatus.Skipped; // file missing or nothing decodable

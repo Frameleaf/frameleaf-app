@@ -44,6 +44,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
 
@@ -278,6 +279,7 @@ export class IntegrityService extends BaseService {
     startedAt: string,
     outcome: IntegrityCheckHistoryEntry['outcome'],
     checked: number | null,
+    encrypted?: number,
   ) {
     const summary = await this.integrityRepository.getIntegrityReportSummary();
     const entry: IntegrityCheckHistoryEntry = {
@@ -287,6 +289,7 @@ export class IntegrityService extends BaseService {
       outcome,
       found: summary[type] ?? 0,
       checked,
+      ...(encrypted !== undefined && { encrypted }),
     };
     const history = await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckHistory);
     await this.systemMetadataRepository.set(SystemMetadataKey.IntegrityCheckHistory, {
@@ -729,6 +732,11 @@ export class IntegrityService extends BaseService {
     if (!this.hashForAlgorithm(checksumAlgorithm)) {
       return;
     }
+    // FL-721 (spec §8.3): a sealed Locked file holds ciphertext, so its plaintext checksum can't be
+    // compared: "encrypted, not checked", never a checksum failure (its GCM tags prove it intact)
+    if (await isLockedPath(originalPath)) {
+      return 'encrypted' as const;
+    }
 
     const sha1Hash = createHash('sha1');
     const sha256Hash = createHash('sha256');
@@ -844,8 +852,13 @@ export class IntegrityService extends BaseService {
 
     const assets = this.integrityRepository.streamAssetChecksums(startMarker);
 
+    let encrypted = 0;
     for await (const { originalPath, checksum, checksumAlgorithm, createdAt, assetId, reportId } of assets) {
-      await this.checkAssetChecksum(originalPath, checksum, checksumAlgorithm, assetId, reportId);
+      if (
+        (await this.checkAssetChecksum(originalPath, checksum, checksumAlgorithm, assetId, reportId)) === 'encrypted'
+      ) {
+        encrypted++;
+      }
 
       processed++;
 
@@ -880,13 +893,19 @@ export class IntegrityService extends BaseService {
       // FL-520: a pass stopped by its limits (or by Stop) is not a completed run: it carries on from the
       // checkpoint next night. Stop already wrote its own line in Recent checks.
       if (await this.systemMetadataRepository.clearIntegrityRun(IntegrityReport.ChecksumFail, runId)) {
-        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, stopped ? 'stopped' : 'paused', processed);
+        await this.recordHistory(
+          IntegrityReport.ChecksumFail,
+          runStartedAt,
+          stopped ? 'stopped' : 'paused',
+          processed,
+          encrypted,
+        );
       }
     } else {
       this.logger.log(`Finished checksum job, covered all assets.`);
       // A pass that reached the last asset is a completed run (FL-81).
       if (await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date())) {
-        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, 'completed', processed);
+        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, 'completed', processed, encrypted);
       }
     }
 
@@ -906,6 +925,10 @@ export class IntegrityService extends BaseService {
         const hash = this.hashForAlgorithm(checksumAlgorithm);
         if (!hash) {
           return reportId;
+        }
+        // FL-721: a sealed Locked file is not checked, so its report is left as it is
+        if (await isLockedPath(path)) {
+          return;
         }
 
         try {

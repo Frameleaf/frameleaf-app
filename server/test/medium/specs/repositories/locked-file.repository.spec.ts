@@ -132,7 +132,7 @@ describe(LockedFileRepository.name, () => {
       expect((await lockRow(encrypted.id))?.pendingUnlockAt).toBeInstanceOf(Date);
       await expect(sut.encryptedSetOwner(encrypted.id)).resolves.toBeNull();
       await expect(assets.getLockedEncryptionItems([encrypted.id])).resolves.toEqual([
-        { id: encrypted.id, ownerId: user.id, pending: true },
+        { id: encrypted.id, ownerId: user.id, pending: true, mode: 'pin' },
       ]);
 
       await expect(sut.finishPendingUnlock(encrypted.id)).resolves.toBe(true);

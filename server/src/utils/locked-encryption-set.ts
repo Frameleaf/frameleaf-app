@@ -18,3 +18,30 @@ export const encryptsFilesOf = (alias = 'asset'): RawBuilder<boolean> => {
     and not exists (select 1 from public.asset_origin o where o."assetId" = ${asset}.id)
   )`;
 };
+
+/**
+ * FL-721 (spec §6.1): whether the original the asset under `alias` reads is, or is about to be,
+ * encrypted: a Locked item whose owner's encryption covers it reads the same file (the item itself,
+ * a partner's copy of it, or a plain reader still waiting for the un-share before the seal). That
+ * includes the copy an un-share made, which only the encrypted item reads. Deduplication never links
+ * into or out of such a file: an upload or the identical-files engine keeps its own copy instead.
+ * Checksums stay plaintext checksums, so duplicate detection still finds them.
+ */
+export const holdsEncryptedOriginal = (alias = 'asset'): RawBuilder<boolean> =>
+  sql<boolean>`exists (
+    select 1 from public.asset sealed
+    join public.asset_lock sealed_lock on sealed_lock."assetId" = sealed.id
+    where (
+      sealed."originalPath" = ${sql.ref(`${alias}.originalPath`)}
+      or sealed."physicalOriginalFileId" = ${sql.ref(`${alias}.physicalOriginalFileId`)}
+    )
+    and ${encryptsFilesOf('sealed')}
+  )`;
+
+/** `holdsEncryptedOriginal` for a stored file's path rather than an asset. */
+export const isEncryptedOriginalPath = (path: string): RawBuilder<boolean> =>
+  sql<boolean>`exists (
+    select 1 from public.asset sealed
+    join public.asset_lock sealed_lock on sealed_lock."assetId" = sealed.id
+    where sealed."originalPath" = ${path} and ${encryptsFilesOf('sealed')}
+  )`;

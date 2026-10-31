@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
@@ -148,6 +151,41 @@ describe(IntegrityService.name, () => {
       await sut.handleChecksumFiles({});
       expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
       expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+    });
+
+    it('counts an encrypted Locked original as encrypted and never reads or reports it (FL-721)', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'integrity-locked-'));
+      const sealed = join(directory, 'sealed.jpg');
+      await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+      try {
+        streamAsset(sha256, ChecksumAlgorithm.sha256File);
+        mocks.integrityReport.streamAssetChecksums.mockReturnValue(
+          (function* () {
+            yield {
+              assetId: 'asset-1',
+              originalPath: sealed,
+              checksum: sha256,
+              checksumAlgorithm: ChecksumAlgorithm.sha256File,
+              createdAt: new Date(),
+              reportId: 'report-1',
+            };
+          })() as never,
+        );
+        mocks.systemMetadata.completeIntegrityRun.mockResolvedValue(true);
+        mocks.integrityReport.getIntegrityReportSummary.mockResolvedValue({} as never);
+
+        await sut.handleChecksumFiles({});
+
+        expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.recordVerification).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.deleteById).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckHistory, {
+          entries: [expect.objectContaining({ type: IntegrityReport.ChecksumFail, checked: 1, encrypted: 1 })],
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     });
 
     it('propagates proof persistence failures without misreporting a file failure', async () => {
