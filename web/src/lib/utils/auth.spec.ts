@@ -18,7 +18,10 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getStorage: vi.fn(),
 }));
-const server = vi.hoisted(() => ({ value: { isInitialized: true, isOnboarded: false } }));
+const server = vi.hoisted(() => ({
+  value: { isInitialized: true, isOnboarded: false },
+  ready: () => Promise.resolve(server.value),
+}));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({ serverConfigManager: server }));
 
@@ -47,6 +50,21 @@ describe('authenticate: Frameleaf setup (FL-176)', () => {
   it('never blocks other accounts', async () => {
     auth.user.isAdmin = false;
     await expect(authenticate(at('/photos'))).resolves.toBeUndefined();
+  });
+
+  it('does not read the path of a signed-in page once setup is complete', async () => {
+    // a route load that reads the path runs again whenever it changes, such as opening an item
+    server.value = { isInitialized: true, isOnboarded: true };
+    let reads = 0;
+    const url = {
+      get pathname() {
+        reads++;
+        return '/albums/album-1/photos/asset-1';
+      },
+      search: '',
+    } as URL;
+    await expect(authenticate(url)).resolves.toBeUndefined();
+    expect(reads).toBe(0);
   });
 
   it('does not loop on the setup page itself', async () => {

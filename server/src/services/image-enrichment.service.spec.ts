@@ -2186,7 +2186,7 @@ describe(ImageEnrichmentService.name, () => {
 
       await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.duplicateRepository.getVideoDuplicateFrames).not.toHaveBeenCalled();
+      expect(mocks.duplicateRepository.getVideoFingerprints).not.toHaveBeenCalled();
       expect(moments.replaceFrames).not.toHaveBeenCalled();
       expect(mocks.media.composeImageGrid).toHaveBeenCalledWith(
         ['/frames/0.jpeg', '/frames/1.jpeg', '/frames/2.jpeg', '/frames/3.jpeg'],

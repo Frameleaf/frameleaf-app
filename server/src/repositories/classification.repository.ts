@@ -1,12 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Selectable, type Transaction, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetType, AssetVisibility, ClassificationMatchDecision, ClassificationMediaType } from 'src/enum.js';
+import { SearchFilter, SearchFilterSchema } from 'src/dtos/search.dto.js';
+import {
+  AssetType,
+  AssetVisibility,
+  ClassificationMatchDecision,
+  ClassificationMediaType,
+  LibraryScope,
+} from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
+import { searchFilterPredicate } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
+import { collectFilterIds } from 'src/utils/search-filter.js';
 
 export type ClassificationRule = Selectable<ClassificationRuleTable>;
 export type ClassificationRuleWithAlbum = ClassificationRule & { albumName: string; tagName: string | null };
@@ -16,7 +26,7 @@ export type ClassificationMatch = Selectable<ClassificationMatchTable>;
 export type ClassificationRuleCriteria = Pick<
   ClassificationRule,
   'ownerId' | 'personIds' | 'tagIds' | 'takenAfter' | 'takenBefore' | 'mediaType' | 'visualQueries' | 'threshold'
->;
+> & { filter?: SearchFilter | null };
 
 /** What a rule applies. */
 export type ClassificationRuleEffects = Pick<
@@ -35,6 +45,10 @@ export type ClassificationApplyOutcome = {
   tagged: string[];
   /** Assets this call untagged, for the sidecar events. */
   untagged: string[];
+  /** Assets left untouched because they are locked. */
+  locked: string[];
+  /** Assets left untouched because they are no longer the owner's live, listed media. */
+  missing: string[];
 };
 
 export type ClassificationRuleCounts = Record<'matched' | 'suggested' | 'accepted' | 'rejected', number>;
@@ -60,6 +74,8 @@ const emptyOutcome = (): ClassificationApplyOutcome => ({
   unchanged: 0,
   tagged: [],
   untagged: [],
+  locked: [],
+  missing: [],
 });
 
 const jsonb = (value: string[]) => sql<string[]>`${JSON.stringify(value)}::text::jsonb`;
@@ -134,6 +150,7 @@ export class ClassificationRepository {
       .insertInto('classification_rule')
       .values({
         ...values,
+        filter: values.filter ? sql`${JSON.stringify(values.filter)}::text::jsonb` : null,
         personIds: jsonb(values.personIds ?? []),
         tagIds: jsonb(values.tagIds ?? []),
         visualQueries: jsonb(values.visualQueries ?? []),
@@ -150,6 +167,8 @@ export class ClassificationRepository {
         patch[key] = jsonb(value as string[]);
       }
     }
+    if (values.filter !== undefined)
+      patch.filter = values.filter === null ? null : sql`${JSON.stringify(values.filter)}::text::jsonb`;
     await this.db.updateTable('classification_rule').set(patch).where('id', '=', id).execute();
   }
 
@@ -223,9 +242,24 @@ export class ClassificationRepository {
    * The owner's items a rule could ever touch: listed (timeline or archive), not in the trash, not
    * the hidden half of a live photo, and not locked.
    */
-  private eligible(ownerId: string) {
+  private eligible(ownerId: string, storedFilter?: SearchFilter | null) {
+    const filter = SearchFilterSchema.parse(storedFilter ?? {});
+    const roots = [
+      ...new Set([...collectFilterIds(filter, 'albumIds'), ...collectFilterIds(filter, 'albumSubtreeIds')]),
+    ];
     return this.db
       .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .$if(storedFilter !== undefined, (qb) =>
+        qb
+          .where(libraryScopePredicate(filter.libraryScope ?? LibraryScope.Personal))
+          // A shareable cohort cannot reveal colors from the owner’s private working rendition.
+          .where((eb) => searchFilterPredicate(eb, filter, ownerId, undefined, undefined, { paletteViewerId: null }))
+          .$if(roots.length > 0, (qb) =>
+            qb.where(sql<boolean>`${roots.length} = (select count(*) from album join album_user on album_user."albumId" = album.id
+          where album.id = any(${roots}::uuid[]) and album."deletedAt" is null and album_user."userId" = ${ownerId}::uuid)`),
+          ),
+      )
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', 'in', LISTED)
@@ -264,8 +298,8 @@ export class ClassificationRepository {
   }
 
   /** How many items a preview reads: the eligible library, or the newest `sampleSize` of it. */
-  async countEligible(ownerId: string, sampleSize?: number): Promise<number> {
-    let inner = this.eligible(ownerId).select('asset.id');
+  async countEligible(ownerId: string, sampleSize?: number, filter: SearchFilter | null = null): Promise<number> {
+    let inner = this.eligible(ownerId, filter).select('asset.id');
     if (sampleSize) {
       inner = inner.orderBy('asset.fileCreatedAt', 'desc').limit(sampleSize);
     }
@@ -288,7 +322,7 @@ export class ClassificationRepository {
           >`greatest(${sql.join(vectors.map((vector) => sql`1 - (smart_search.embedding <=> ${vector})`))})`
         : sql<number | null>`null::double precision`;
 
-    let query = this.eligible(rule.ownerId)
+    let query = this.eligible(rule.ownerId, rule.filter ?? null)
       .leftJoin('smart_search', 'smart_search.assetId', 'asset.id')
       .select(['asset.id as assetId', score.as('score')]);
 
@@ -300,7 +334,7 @@ export class ClassificationRepository {
     }
 
     if (options.sampleSize) {
-      const newest = this.eligible(rule.ownerId)
+      const newest = this.eligible(rule.ownerId, rule.filter ?? null)
         .select('asset.id')
         .orderBy('asset.fileCreatedAt', 'desc')
         .limit(options.sampleSize);
@@ -467,6 +501,7 @@ export class ClassificationRepository {
           value.ownerId,
           value.albumId,
           value.enabled,
+          value.filter,
           value.personIds,
           value.tagIds,
           value.takenAfter,
@@ -491,6 +526,7 @@ export class ClassificationRepository {
         const row = existing.get(assetId);
         if (!asset || asset.isLocked) {
           outcome.unchanged++;
+          (asset ? outcome.locked : outcome.missing).push(assetId);
           continue;
         }
 

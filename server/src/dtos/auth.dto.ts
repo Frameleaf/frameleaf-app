@@ -88,6 +88,28 @@ const ChangePasswordSchema = z
   })
   .meta({ id: 'ChangePasswordDto' });
 
+/** FL-538: the single-use link an administrator emailed to choose a password. */
+const PasswordLinkCheckSchema = z
+  .object({
+    token: z.string().min(1).max(200).describe('The token from the emailed link'),
+  })
+  .meta({ id: 'PasswordLinkCheckDto' });
+
+const PasswordLinkCheckResponseSchema = z
+  .object({
+    name: z.string().describe('Name of the person the link is for'),
+    email: z.string().describe('The email address they sign in with'),
+  })
+  .meta({ id: 'PasswordLinkCheckResponseDto' });
+
+const PasswordLinkRedeemSchema = PasswordLinkCheckSchema.extend({
+  newPassword: z.string().min(8).describe('The password they chose (min 8 characters)').meta({ example: 'password' }),
+}).meta({ id: 'PasswordLinkRedeemDto' });
+
+export class PasswordLinkCheckDto extends createZodDto(PasswordLinkCheckSchema) {}
+export class PasswordLinkCheckResponseDto extends createZodDto(PasswordLinkCheckResponseSchema) {}
+export class PasswordLinkRedeemDto extends createZodDto(PasswordLinkRedeemSchema) {}
+
 const PinCodeSetupSchema = z
   .object({
     pinCode: z.string().regex(pinCodeRegex).describe('PIN code (4-6 digits)').meta({ example: '123456' }),
@@ -166,6 +188,26 @@ export class SessionUnlockDto extends createZodDto(SessionUnlockSchema) {}
 export class PinCodeChangeDto extends createZodDto(PinCodeChangeSchema) {}
 export class ValidateAccessTokenResponseDto extends createZodDto(ValidateAccessTokenResponseSchema) {}
 export class OAuthCallbackDto extends createZodDto(OAuthCallbackSchema) {}
+/** FL-367: the details a provider check reads; nothing is saved. */
+const OAuthCheckSchema = z
+  .object({
+    issuerUrl: z.url().describe('The provider address (issuer URL)'),
+    clientId: z.string().min(1).describe('Client ID given by the provider'),
+    clientSecret: z.string().optional().describe('Client secret; empty to use the saved one'),
+    allowInsecureRequests: z.boolean().optional().describe('Allow a provider without a valid certificate'),
+  })
+  .meta({ id: 'OAuthCheckDto' });
+
+const OAuthCheckResponseSchema = z
+  .object({
+    ok: z.boolean().describe('Whether the provider answered'),
+    issuer: z.string().nullable().describe('The issuer the provider names, when it answered'),
+    error: z.string().nullable().describe('Why the check failed, when it did'),
+  })
+  .meta({ id: 'OAuthCheckResponseDto' });
+
+export class OAuthCheckDto extends createZodDto(OAuthCheckSchema) {}
+export class OAuthCheckResponseDto extends createZodDto(OAuthCheckResponseSchema) {}
 export class OAuthConfigDto extends createZodDto(OAuthConfigSchema) {}
 export class OAuthAuthorizeResponseDto extends createZodDto(OAuthAuthorizeResponseSchema) {}
 export class OAuthBackchannelLogoutDto extends createZodDto(OAuthBackchannelLogoutSchema) {}

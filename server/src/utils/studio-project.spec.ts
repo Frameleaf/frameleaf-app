@@ -10,6 +10,8 @@ import {
   checkStudioEnvelope,
   diffStudioGraphs,
   formatStudioTime,
+  hasNoMainTimelineItems,
+  isEmptyStudioTimeline,
   isStudioLeaseHeld,
   mergeCommandSummaries,
   normalizeCommandSummary,
@@ -70,6 +72,27 @@ describe('checkStudioEnvelope', () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(checkStudioEnvelope(envelope(cyclic))).toMatchObject({ ok: false, problem: 'not-serializable' });
+  });
+});
+
+describe('isEmptyStudioTimeline (FL-677)', () => {
+  it('calls a Freecut graph empty only when nothing is placed', () => {
+    expect(isEmptyStudioTimeline({ timeline: { tracks: [{ id: 't' }], items: [] } })).toBe(true);
+    expect(isEmptyStudioTimeline({ timeline: { items: [], compositions: [{ id: 'c', items: [] }] } })).toBe(true);
+    expect(isEmptyStudioTimeline({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+    expect(isEmptyStudioTimeline({ timeline: { items: [], compositions: [{ id: 'c', items: [{}] }] } })).toBe(false);
+    // Other shapes are the renderer's to judge.
+    expect(isEmptyStudioTimeline({ tracks: [] })).toBe(false);
+    expect(isEmptyStudioTimeline(null)).toBe(false);
+  });
+});
+
+describe('hasNoMainTimelineItems (FL-677)', () => {
+  it('looks at the main timeline only', () => {
+    expect(hasNoMainTimelineItems({ timeline: { items: [], compositions: [{ id: 'c', items: [{}] }] } })).toBe(true);
+    expect(hasNoMainTimelineItems({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+    expect(hasNoMainTimelineItems({ tracks: [] })).toBe(false);
+    expect(hasNoMainTimelineItems(null)).toBe(false);
   });
 });
 

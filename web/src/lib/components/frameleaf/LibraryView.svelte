@@ -42,6 +42,8 @@
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
   import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
+  import type { MakeMovieSource } from '$lib/frameleaf/studio/make-movie';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
@@ -49,6 +51,7 @@
   import {
     activeFilterFields,
     withoutDiscoveryFilter,
+    withoutDiscoveryFilters,
     type DiscoveryDestination,
     type DiscoveryFilterSection,
     type DiscoveryQuery,
@@ -56,7 +59,7 @@
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
-  import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { bulkStateById, type BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
@@ -71,11 +74,12 @@
   import { searchQueryForTimeline, timelineQueryOptions } from '$lib/frameleaf/library-query-options';
   import { locale } from '$lib/stores/preferences.store';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
-  import type {
-    LibraryGrouping,
-    LibraryLayout,
-    LibrarySessionAction,
-    LibrarySort,
+  import {
+    scopeForDestination,
+    type LibraryGrouping,
+    type LibraryLayout,
+    type LibrarySessionAction,
+    type LibrarySort,
   } from '$lib/frameleaf/library-session';
   import {
     describeFilterFields,
@@ -124,6 +128,7 @@
     mdiFilterOffOutline,
     mdiFolderOutline,
     mdiImageMultipleOutline,
+    mdiMovieOpenPlayOutline,
     mdiOpenInNew,
     mdiPencilOutline,
     mdiTrayArrowUp,
@@ -580,6 +585,14 @@
     restoredView = urlView;
     writtenView = undefined;
     session.restore(new URL(page.url.href), storageUserId, storageContext);
+    // The device's last view can be an album's; anywhere but an album or a space it is the library,
+    // or "everything matching" here would quietly mean that album's items.
+    untrack(() => {
+      const scope = scopeForDestination(session.state.scope, destination?.kind);
+      if (scope) {
+        session.normalizeScope(scope);
+      }
+    });
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
     if (session.refusedView) {
@@ -678,11 +691,18 @@
     if (!patch) {
       return;
     }
-    manager.update(ids, patch);
+    // Decide what leaves before updating: update() already splices excluded items out of the page,
+    // so they could not be found afterwards (FL-529).
     const left = ids.filter((id) => {
       const asset = findAsset(id);
-      return !!asset && manager.isExcluded(asset);
+      if (!asset) {
+        return false;
+      }
+      const changed = { ...asset };
+      patch(changed);
+      return manager.isExcluded(changed);
     });
+    manager.update(ids, patch);
     if (left.length > 0) {
       dispatch({ type: 'mutated', removedIds: left });
     }
@@ -703,6 +723,7 @@
           .map((id) => [id, findAsset(id)?.ownerId])
           .filter(([, owner]) => !!owner) as [string, string][],
       ),
+      stateById: bulkStateById([...session.selection, ...actionTargets], findAsset),
     }),
   });
 
@@ -830,7 +851,11 @@
         }
       }
     }
-    return [chip.detail ?? $t(chip.labelKey)];
+    return [
+      chip.detailText
+        ? $t(chip.detailText.key, { values: chip.detailText.values })
+        : (chip.detail ?? $t(chip.labelKey)),
+    ];
   };
 
   /**
@@ -1146,13 +1171,41 @@
     void goto(Route.studio({ assetIds: studioIds.slice(0, maxStudioHandoffAssets) }));
   };
 
+  /** Make a movie (FL-561) from the selection: what Studio may receive, as many as a movie takes. */
+  let movieOpen = $state(false);
+  const movieIds = $derived(studioIds.slice(0, 2000));
+  /** The selection as it was when the sheet opened, so another version uses the same items. */
+  let movieSource = $state<MakeMovieSource>({
+    kind: 'selection',
+    assetIds: [],
+    name: '',
+    photoCount: 0,
+    videoCount: 0,
+  });
+  const makeMovie = () => {
+    const ids = [...movieIds];
+    movieSource = {
+      kind: 'selection',
+      assetIds: ids,
+      name: $t('frameleaf_movie_source_items', { values: { count: ids.length } }),
+      photoCount: ids.filter((id) => !findAsset(id)?.isVideo).length,
+      videoCount: ids.filter((id) => findAsset(id)?.isVideo).length,
+      previewIds: ids.slice(0, 3),
+    };
+    movieOpen = true;
+  };
+
   const leadingActions = $derived<SelectionBarLeadingAction[]>([
     {
       id: 'compare',
       label: $t('frameleaf_compare_title'),
       icon: mdiCompare,
       disabled: session.selection.length < 2 || !!snapshot,
-      disabledReason: session.selection.length < 2 ? $t('frameleaf_selection_compare_needs_two') : undefined,
+      disabledReason: snapshot
+        ? $t('frameleaf_selection_needs_picked_items')
+        : session.selection.length < 2
+          ? $t('frameleaf_selection_compare_needs_two')
+          : undefined,
       onClick: () => session.patchView({ view: 'compare' }),
     },
     ...(viewer
@@ -1162,10 +1215,18 @@
             label: $t('frameleaf_selection_quick_edit'),
             icon: mdiPencilOutline,
             disabled: !canQuickEdit,
+            disabledReason: snapshot ? $t('frameleaf_selection_needs_picked_items') : undefined,
             onClick: openQuickEdit,
           },
         ]
       : []),
+    {
+      id: 'movie',
+      label: $t('frameleaf_movie_make'),
+      icon: mdiMovieOpenPlayOutline,
+      disabled: movieIds.length === 0,
+      onClick: makeMovie,
+    },
     {
       id: 'studio',
       label: $t('frameleaf_selection_open_in_studio'),
@@ -1703,84 +1764,89 @@
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
     <div class="fl-library-main" bind:this={main}>
-      <LibraryTimeline
-        timelineManager={manager}
-        {session}
-        {ratingFor}
-        sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
-        {tileLayout}
-        thumbnailSize={libraryGridPreferences.thumbnailSize}
-        showFileNames={libraryGridPreferences.showFileNames}
-        onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
-        showDayHeaders={gridLayout === 'timeline'}
-        grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
-        onGroupingChange={gridLayout === 'timeline' && !firstRun
-          ? (grouping) => session.patchView({ grouping })
-          : undefined}
-        {enableRouting}
-        {selectionMode}
-        {singleSelect}
-        {onSelect}
-        {onTileClick}
-        {tileOverlay}
-        {onOpen}
-        quickActions={quickActionsFor}
-        timelineCaptions={gridLayout === 'timeline'}
-        empty={emptyState}
-        {gutter}
-      >
-        {#snippet header()}
-          <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
-          <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
-            <div class="fl-library-header-content">
-              {#if title}
-                <h1 class="fl-library-title">{title}</h1>
-              {/if}
-              {@render children?.()}
-            </div>
-            <!-- LIB-P5: phones too show Timeline, Browse and Work beside the title, as the template does. -->
-            {#if !publicView && !firstRun}
-              <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
-            {/if}
-          </div>
-          {#if subheader}
-            <div class="fl-library-subheader">{@render subheader()}</div>
-          {/if}
-          {#if !publicView && !firstRun}
-            <div class="fl-library-toolbar" bind:this={toolbarStrip}>
-              <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
-              <ResultsToolbar
-                {session}
-                onOpenFilterPanel={openFilterPanel}
-                {filterPanelOpen}
-                onCloseFilterPanel={closeFilterPanel}
-                count={resultCount}
-                onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
-                inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
-                onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-                {sorts}
-                sort={shownSort}
-                onSortChange={albumSortId || ranked ? changeAlbumSort : undefined}
-                unappliedFields={queryApplied.unapplied}
-                view={toolbarView}
-                onViewChange={changeView}
-                onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
-                leading={toolbarStart}
-              >
-                {@render toolbar?.()}
-                <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
-                {#if gridLayout === 'work' && !listView}
-                  <WorkFileNamesToggle />
+      <!-- LIB-09: the year scrubber and the stuck toolbar stack above Compare's overlay, so the
+           timeline is hidden (and out of the tab order) while Compare is open. It stays mounted,
+           so the scroll position survives Done. -->
+      <div class="fl-behind-compare" inert={comparing}>
+        <LibraryTimeline
+          timelineManager={manager}
+          {session}
+          {ratingFor}
+          sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
+          {tileLayout}
+          thumbnailSize={libraryGridPreferences.thumbnailSize}
+          showFileNames={libraryGridPreferences.showFileNames}
+          onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
+          showDayHeaders={gridLayout === 'timeline'}
+          grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
+          onGroupingChange={gridLayout === 'timeline' && !firstRun
+            ? (grouping) => session.patchView({ grouping })
+            : undefined}
+          {enableRouting}
+          {selectionMode}
+          {singleSelect}
+          {onSelect}
+          {onTileClick}
+          {tileOverlay}
+          {onOpen}
+          quickActions={quickActionsFor}
+          timelineCaptions={gridLayout === 'timeline'}
+          empty={emptyState}
+          {gutter}
+        >
+          {#snippet header()}
+            <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
+            <div class="fl-library-header" class:has-title={!!title} class:has-toolbar={!publicView && !firstRun}>
+              <div class="fl-library-header-content">
+                {#if title}
+                  <h1 class="fl-library-title">{title}</h1>
                 {/if}
-              </ResultsToolbar>
+                {@render children?.()}
+              </div>
+              <!-- LIB-P5: phones too show Timeline, Browse and Work beside the title, as the template does. -->
+              {#if !publicView && !firstRun}
+                <LibraryLayoutSwitch {session} layouts={lockedView ? ['timeline'] : undefined} />
+              {/if}
             </div>
-          {/if}
-        {/snippet}
-      </LibraryTimeline>
+            {#if subheader}
+              <div class="fl-library-subheader">{@render subheader()}</div>
+            {/if}
+            {#if !publicView && !firstRun}
+              <div class="fl-library-toolbar" bind:this={toolbarStrip}>
+                <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
+                <ResultsToolbar
+                  {session}
+                  onOpenFilterPanel={openFilterPanel}
+                  {filterPanelOpen}
+                  onCloseFilterPanel={closeFilterPanel}
+                  count={resultCount}
+                  onSlideshow={canSlideshow ? () => void startSlideshow() : undefined}
+                  inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
+                  onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+                  {sorts}
+                  sort={shownSort}
+                  onSortChange={albumSortId || ranked ? changeAlbumSort : undefined}
+                  unappliedFields={queryApplied.unapplied}
+                  view={toolbarView}
+                  onViewChange={changeView}
+                  onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
+                  leading={toolbarStart}
+                >
+                  {@render toolbar?.()}
+                  <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
+                  {#if gridLayout === 'work' && !listView}
+                    <WorkFileNamesToggle />
+                  {/if}
+                </ResultsToolbar>
+              </div>
+            {/if}
+          {/snippet}
+        </LibraryTimeline>
 
-      {#if onShowMore}
-        <ShowMore {session} {onShowMore} {loading} />
-      {/if}
+        {#if onShowMore}
+          <ShowMore {session} {onShowMore} {loading} />
+        {/if}
+      </div>
 
       {#if comparing}
         <div class="fl-library-compare">
@@ -1812,6 +1878,10 @@
           <LibraryWorkInspector
             asset={inspectedAsset}
             selectedCount={session.selection.length}
+            onChooseColor={(color) => {
+              applyFilterPanelQuery({ ...session.query, filter: { ...session.query.filter, color } });
+              openFilterPanel('media');
+            }}
             onOpen={(asset) => {
               session.open(asset.id);
               session.setScrollAnchor(asset.id);
@@ -1853,6 +1923,9 @@
         onDismissOperation={(requestId) => bulk.dismiss(requestId)}
         leading={selectionMode || publicView ? [] : leadingActions}
       />
+      {#if !selectionMode && !publicView}
+        <MakeMovieSheet bind:open={movieOpen} source={movieSource} />
+      {/if}
     {/if}
   {/if}
   {#if showStatusBar && !firstRun}
@@ -1906,7 +1979,7 @@
       message={$t('frameleaf_library_empty_filtered_message')}
       action={{
         label: $t('frameleaf_library_empty_filtered_clear'),
-        onClick: () => session.setQuery({ ...session.query, text: '', filter: {} }),
+        onClick: () => session.setQuery({ ...withoutDiscoveryFilters(session.query), text: '' }),
       }}
     />
   {:else if empty}
@@ -2135,6 +2208,12 @@
     to {
       opacity: 0.2;
     }
+  }
+  .fl-behind-compare {
+    display: contents;
+  }
+  .fl-behind-compare[inert] {
+    visibility: hidden;
   }
   .fl-library-compare {
     position: absolute;

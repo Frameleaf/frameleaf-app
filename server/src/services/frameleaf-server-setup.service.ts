@@ -48,6 +48,8 @@ export class FrameleafServerSetupService extends BaseService {
         email: dto.email,
         name: dto.name,
         password: dto.password,
+        // The administrator chose this password themselves: there is nothing to change at first sign-in.
+        shouldChangePassword: false,
         storageLabel: 'admin',
       });
       await this.recordAdminEvents([

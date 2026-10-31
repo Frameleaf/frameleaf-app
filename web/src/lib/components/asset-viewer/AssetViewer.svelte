@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   import { browser } from '$app/env';
   import { replaceState } from '$app/navigation';
@@ -28,9 +29,11 @@
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
+  import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
   import { isPanorama } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -334,11 +337,29 @@
   });
 
   let requestedOriginalVideo = $state($alwaysLoadOriginalVideo);
-  const isPlayingOriginalVideo = $derived(requestedOriginalVideo && (!sharedLink || sendCopyPermitted(sharedLink)));
+  const speechOriginal = $derived(videoSeek.pending?.assetId === asset.id && videoSeek.pending.original === true);
+  $effect(() => {
+    if (speechOriginal) {
+      requestedOriginalVideo = true;
+    }
+  });
+  // FL-630: a video without a playback copy plays its original (unless real-time playback makes one as it
+  // plays), so the player asks for the original directly
+  const isPlayingOriginalVideo = $derived(
+    (requestedOriginalVideo ||
+      speechOriginal ||
+      (asset.playbackCopy === false && !featureFlagsManager.value.realtimeTranscoding)) &&
+      (!sharedLink || sendCopyPermitted(sharedLink)),
+  );
   let slideshowStartAssetId = $state<string>();
 
   const setPlayOriginalVideo = (value: boolean) => {
     requestedOriginalVideo = value;
+    // "Play encoded" must win over a spoken-word seek still waiting for the original. Its moment is on the
+    // original's timeline, which a trimmed encoded video doesn't share, so drop the seek rather than land wrong.
+    if (!value && speechOriginal) {
+      videoSeek.pending = null;
+    }
   };
 
   const refreshStack = async () => {
@@ -758,6 +779,23 @@
    * does nothing when the on-screen buttons would not have been there either, and the two replay paths
    * above re-check it too, since a queued press can outlive the state it was made in.
    */
+  /**
+   * An arrow key the viewer handles only when nothing else owns it: a slider, select, number field or
+   * video keeps its arrows, and so does an open dialog. The key is left un-prevented in those cases, so
+   * the control's own stepping still happens.
+   */
+  const arrowShortcut = (key: string, run: () => void) => ({
+    shortcut: { key },
+    preventDefault: false,
+    onShortcut: (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target) || isDialogOpen()) {
+        return;
+      }
+      event.preventDefault();
+      run();
+    },
+  });
+
   const navigateAssetByKey = (order: 'previous' | 'next') => {
     if (!canNavigateByKey()) {
       return;
@@ -925,6 +963,7 @@
     }
   };
 
+  let facesShownFor: string | undefined;
   const refresh = async () => {
     const target = asset;
     const isCurrent = captureView();
@@ -935,7 +974,10 @@
       return;
     }
     ocrManager.clear();
-    faceManager.clear();
+    // LIB-02: an update to the open item (a saved date, the server's re-read after it) keeps its people
+    // on screen while they are read again, instead of flashing "No people tagged yet."
+    faceManager.clear(target.id === facesShownFor);
+    facesShownFor = target.id;
     if (!sharedLink) {
       await ocrManager.getAssetOcr(target.id);
       if (!isCurrent()) {
@@ -1588,21 +1630,15 @@
   bind:fullscreenElement
   onfullscreenchange={onFullscreenChange}
   use:shortcuts={[
-    { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
-    { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },
+    arrowShortcut('ArrowUp', () => navigateStack('previous')),
+    arrowShortcut('ArrowDown', () => navigateStack('next')),
     // While a slideshow runs the arrows step it through SlideshowBar's own bindings (VIEWER-P1 has no
     // capsule buttons any more), so the viewer leaves them alone: a match here would mark the key
     // handled and the slideshow would never see it.
     ...($slideshowState === SlideshowState.None
       ? [
-          {
-            shortcut: { key: 'ArrowLeft' },
-            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
-          },
-          {
-            shortcut: { key: 'ArrowRight' },
-            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
-          },
+          arrowShortcut('ArrowLeft', () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous')),
+          arrowShortcut('ArrowRight', () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous')),
         ]
       : []),
   ]}

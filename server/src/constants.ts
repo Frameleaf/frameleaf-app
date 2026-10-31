@@ -119,20 +119,19 @@ export const serverVersion = new SemVer(version);
  * and a spare, pinned in source so a certificate is only ever trusted if one of them signed it
  * (instance contract, "License certificate"). A certificate signed by any other key is refused.
  *
- * These are placeholder public keys whose private halves were never kept: until the production keys
- * of the Frameleaf Cloud licence service replace them (FL-145), no certificate verifies and every
- * cloud entitlement stays off. Self-hosted features never depend on them.
+ * Production public keys, verified against the signing service and its publication. A rotation
+ * requires a reviewed release with the next public key; remote discovery never adds trust.
  */
 export const FRAMELEAF_LICENSE_KEYS: ReadonlyArray<{ kid: string; x: string; status: 'active' | 'spare' }> =
   Object.freeze([
     {
-      kid: 'siWAxYtAkYIj69LAMUbhb5ma-FKRWDWZtI479DZ0BRo',
-      x: 'p-ilbYOPlIjm12XyBzhM8lOJfKfnPMCnypNxHYVgwvc',
+      kid: 'cdE6k9KvACebltQ-j-HlKNYz28580yVTfLxhZYRJGSc',
+      x: 'wtEzaxbYXHNlOm8giBlumxxEJDSW6kKzwFzHnAAujhE',
       status: 'active',
     },
     {
-      kid: 'AzTIXdzYrPfkBjYvKjlYaeYhQvPIMY9G2ddCr0zF1rA',
-      x: 'FN_dby_dUkObZoniAoVM79EgzhXJkVugbmHs63W-C8A',
+      kid: 'xgldSJcOACOmfFqNONvNp6Nrmk8IKOjlGlbzA4-Ahgg',
+      x: 'Iw89VmiDUUdaVDnJVc4bCJ4KSMSDc9a70ZlOUaZFhc0',
       status: 'spare',
     },
   ]);
@@ -246,6 +245,8 @@ export const ORIENTATION_TO_SHARP_ROTATION: Record<ExifOrientation, SharpRotatio
 } as const;
 
 export const endpointTags: Record<ApiTag, string> = {
+  [ApiTag.Capture]: 'Save design assets and web references with narrow, revocable capture access.',
+  [ApiTag.Bookmarks]: 'Saved web references organized using existing albums and tags.',
   [ApiTag.Activities]: 'An activity is a like or a comment made by a user on an asset or album.',
   [ApiTag.Albums]: 'An album is a collection of assets that can be shared with other users or via shared links.',
   [ApiTag.AlbumSources]:

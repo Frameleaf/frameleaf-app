@@ -39,7 +39,7 @@ export interface ReadStreamResponse {
 
 export interface ZipDownloadStream extends ReadStreamResponse {
   /** Adds the file at a path, or (FL-423) bytes made for the archive, such as a generated details file. */
-  addFile: (input: string | Buffer, filename: string) => void;
+  addFile: (input: string | Buffer | Readable, filename: string) => void;
   finalize: () => Promise<void>;
 }
 
@@ -104,7 +104,7 @@ export class StorageRepository {
   createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
 
-    const addFile = (input: string | Buffer, filename: string) => {
+    const addFile = (input: string | Buffer | Readable, filename: string) => {
       if (typeof input === 'string') {
         archive.file(input, { name: filename, mode: 0o644 });
       } else {
@@ -216,6 +216,19 @@ export class StorageRepository {
 
   async unlinkDir(folder: string, options: { recursive?: boolean; force?: boolean }) {
     await fs.rm(folder, { ...options, maxRetries: 5, retryDelay: 100 });
+  }
+
+  /** Remove the folder when it is empty; false when it is not, or is gone already. */
+  async removeDirIfEmpty(directory: string): Promise<boolean> {
+    try {
+      await fs.rmdir(directory);
+      return true;
+    } catch (error) {
+      if (['ENOENT', 'ENOTEMPTY', 'EEXIST', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async removeEmptyDirs(directory: string, self: boolean = false) {

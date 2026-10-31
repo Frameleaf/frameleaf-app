@@ -99,7 +99,7 @@ import {
   type WaitContext,
 } from 'src/harness-wait.js';
 import request from 'supertest';
-import { playwrightDbHost, playwrightHost, playwriteBaseUrl } from '../playwright.config';
+import { playwrightDbHost, playwrightDbPort, playwrightHost, playwriteBaseUrl } from '../playwright.config';
 
 export type { Emitter } from '@socket.io/component-emitter';
 
@@ -107,7 +107,7 @@ type WaitOptions = { event: EventType; id?: string; total?: number; timeout?: nu
 type AdminSetupOptions = { onboarding?: boolean };
 type FileData = { bytes?: Buffer; filename: string };
 
-const dbUrl = `postgres://postgres:postgres@${playwrightDbHost}:5435/frameleaf`;
+const dbUrl = `postgres://postgres:postgres@${playwrightDbHost}:${playwrightDbPort}/frameleaf`;
 export const baseUrl = playwriteBaseUrl;
 export const shareUrl = `${baseUrl}/share`;
 export const app = `${baseUrl}/api`;
@@ -735,7 +735,7 @@ export const utils = {
                   'admin-onboarding',
                   'maintenance-mode',
                   'version-check-state',
-                  'physical-deduplication-migration',
+                  'identical-files',
                   'frameleaf-cloud-link',
                   'frameleaf-service-discovery',
                   'frameleaf-ml-wallet',

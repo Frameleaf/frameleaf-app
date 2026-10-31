@@ -15,7 +15,8 @@ select
           "user"."email",
           "user"."isAdmin",
           "user"."quotaUsageInBytes",
-          "user"."quotaSizeInBytes"
+          "user"."quotaSizeInBytes",
+          "user"."uploadsPaused"
         from
           "user"
         where
@@ -56,3 +57,12 @@ where
   "userId" = $1
 order by
   "createdAt" desc
+
+-- ApiKeyRepository.getSignedInClients
+select
+  "apiKeyId",
+  "client"
+from
+  "browser_extension_access"
+where
+  "userId" = $1

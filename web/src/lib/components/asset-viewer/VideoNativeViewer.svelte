@@ -14,8 +14,16 @@
   import { getAssetActions } from '$lib/services/asset.service';
   import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
-  import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
-  import { AssetMediaSize, AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+  import {
+    getAssetHlsSessionUrl,
+    getAssetHlsUrl,
+    getAssetMediaUrl,
+    getAssetFilmstripSpriteUrl,
+    getAssetPlaybackUrl,
+    isEnabled,
+  } from '$lib/utils';
+  import { filmstripToVtt, PLAYER_FILMSTRIP } from '$lib/utils/scrub-previews';
+  import { AssetMediaSize, AssetVisibility, getAssetFilmstrip, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, LoadingSpinner, shortcuts } from '@frameleaf/ui';
   import {
     mdiCheck,
@@ -94,6 +102,7 @@
   let videoPlayer: HTMLVideoElement | undefined = $state();
   let isLoading = $state(true);
   let hasLoadedMetadata = $state(false);
+  let metadataSource = $state('');
   let playbackFailed = $state(false);
   let playbackFailure = $state<VideoFailure>('load');
   let retryCount = $state(0);
@@ -110,6 +119,64 @@
 
     return getAssetPlaybackUrl({ id: assetId, cacheKey });
   });
+  // FL-650: preview thumbnails on the seek bar, from the video's filmstrip (made ahead of time by the
+  // server), read on the first pointer or focus on the seek bar. Without one it is a plain seek bar.
+  // Keyed by the cache key too: an edit or re-encode changes the filmstrip version the sprite URL names.
+  const scrubKey = $derived(`${assetId}:${cacheKey ?? ''}`);
+  let scrubPreviews = $state<{ key: string; url: string }>();
+  let scrubRequestedFor: string | undefined;
+  let destroyed = false;
+  const scrubTrackUrl = $derived(scrubPreviews?.key === scrubKey ? scrubPreviews.url : undefined);
+  const loadScrubPreviews = async () => {
+    const key = scrubKey;
+    const id = assetId;
+    if (scrubRequestedFor === key) {
+      return;
+    }
+    scrubRequestedFor = key;
+    try {
+      const filmstrip = await getAssetFilmstrip({ id, ...PLAYER_FILMSTRIP, ...authManager.params });
+      if (destroyed || key !== scrubKey) {
+        return; // the viewer moved on while the filmstrip was being read
+      }
+      // the track is a blob URL, so the sprite URL in its cues must be absolute
+      const sprite = new URL(
+        getAssetFilmstripSpriteUrl(id, { ...PLAYER_FILMSTRIP, version: filmstrip.version }),
+        location.href,
+      ).href;
+      const url = URL.createObjectURL(new Blob([filmstripToVtt(filmstrip, sprite)], { type: 'text/vtt' }));
+      scrubPreviews = { key, url };
+    } catch {
+      // no previews this time (the filmstrip is still being made, or the network failed): try again next time
+      if (scrubRequestedFor === key) {
+        scrubRequestedFor = undefined;
+      }
+    }
+  };
+  $effect(() => {
+    const url = scrubPreviews?.url;
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  });
+  // media-chrome gives the seek bar its slider semantics; this only listens for someone reaching it
+  const onScrubApproach = (range: HTMLElement) => {
+    const approach = () => void loadScrubPreviews();
+    range.addEventListener('pointerenter', approach);
+    range.addEventListener('focusin', approach);
+    return {
+      destroy() {
+        range.removeEventListener('pointerenter', approach);
+        range.removeEventListener('focusin', approach);
+      },
+    };
+  };
+  // a metadata track added after the video loaded starts disabled; hidden loads its cues
+  const showTrack = (track: HTMLTrackElement) => {
+    track.track.mode = 'hidden';
+  };
   const aspectRatio = $derived(asset.width && asset.height ? `${asset.width} / ${asset.height}` : undefined);
   let showVideo = $state(false);
   let hasFocused = $state(false);
@@ -356,7 +423,12 @@
 
   // FL-59: a moment chosen in the moments panel or in moment search starts the video there.
   $effect(() => {
-    if (!hasLoadedMetadata || !videoPlayer || videoSeek.pending?.assetId !== assetId) {
+    if (
+      !hasLoadedMetadata ||
+      !videoPlayer ||
+      videoSeek.pending?.assetId !== assetId ||
+      (videoSeek.pending.original && (!playOriginalVideo || metadataSource !== assetFileUrl))
+    ) {
       return;
     }
     const seconds = videoSeek.take(assetId);
@@ -488,6 +560,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     if (videoPlayer) {
       videoPlayer.src = '';
     }
@@ -614,7 +687,10 @@
             class="h-full object-contain"
             oncanplay={(e: Event) => handleCanPlay(e.currentTarget as HTMLVideoElement)}
             onerror={handlePlaybackError}
-            onloadedmetadata={() => (hasLoadedMetadata = true)}
+            onloadedmetadata={() => {
+              metadataSource = assetFileUrl;
+              hasLoadedMetadata = true;
+            }}
             onended={onVideoEnded}
             onseeking={onSeeking}
             onplaying={(e: Event) => {
@@ -627,7 +703,11 @@
             }}
             onclose={onClose}
             poster={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey })}
-          ></hls-video>
+          >
+            {#if scrubTrackUrl}
+              <track kind="metadata" label="thumbnails" default src={scrubTrackUrl} use:showTrack />
+            {/if}
+          </hls-video>
         {:else}
           <video
             bind:this={videoPlayer}
@@ -641,7 +721,10 @@
             class="h-full object-contain"
             oncanplay={(e) => handleCanPlay(e.currentTarget)}
             onerror={handlePlaybackError}
-            onloadedmetadata={() => (hasLoadedMetadata = true)}
+            onloadedmetadata={() => {
+              metadataSource = assetFileUrl;
+              hasLoadedMetadata = true;
+            }}
             onended={onVideoEnded}
             onseeking={onSeeking}
             onplaying={(e) => {
@@ -654,7 +737,11 @@
             }}
             onclose={onClose}
             poster={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey })}
-          ></video>
+          >
+            {#if scrubTrackUrl}
+              <track kind="metadata" label="thumbnails" default src={scrubTrackUrl} use:showTrack />
+            {/if}
+          </video>
         {/if}
 
         {#if extendedControls}
@@ -722,7 +809,12 @@
               <media-settings-menu-button class="shrink-0 rounded-full p-2 outline-none"></media-settings-menu-button>
             {/if}
           </media-control-bar>
-          <frameleaf-time-range class="h-8 w-full rounded-lg px-2 pb-3 outline-none"></frameleaf-time-range>
+          <!-- FL-650: a file played directly scrubs as you drag; a realtime stream seeks on release -->
+          <frameleaf-time-range
+            live={!useHls || undefined}
+            use:onScrubApproach
+            class="h-8 w-full rounded-lg px-2 pb-3 outline-none"
+          ></frameleaf-time-range>
         </div>
       </media-controller>
 
@@ -826,6 +918,14 @@
     --media-tooltip-background-color: var(--immich-ui-light-200);
     --media-tooltip-distance: 8px;
     --media-tooltip-padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3.5);
+    /* FL-650: seek-bar preview, as in the approved prototype (VideoControls.jsx) */
+    --media-preview-thumbnail-border: 1px solid rgb(255 255 255 / 0.5);
+    --media-preview-thumbnail-border-radius: 8px;
+    --media-preview-thumbnail-box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+    --media-preview-time-background: rgb(0 0 0 / 0.65);
+    --media-preview-time-border-radius: 6px;
+    --media-preview-time-padding: 2px 8px;
+    --media-preview-time-margin: 8px 0 0;
   }
 
   media-time-display {

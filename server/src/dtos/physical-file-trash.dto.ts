@@ -2,9 +2,9 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
 /**
- * Library Care file trash (universal storage, spec §3.5): originals nothing references any more wait
- * here until an administrator restores them or deletes them permanently. Nothing is deleted
- * automatically.
+ * Library Care → Unused files (universal storage, spec §3.5; "file trash" until FL-416): originals nothing
+ * references any more wait here until the server owner restores them or deletes them permanently. Nothing
+ * is deleted automatically.
  */
 
 const FileTrashListQuerySchema = z
@@ -41,7 +41,16 @@ const FileTrashRestoreResponseSchema = z
   })
   .meta({ id: 'FileTrashRestoreResponseDto' });
 
+const FileTrashEmptyResponseSchema = z
+  .object({
+    files: z.int().nonnegative().describe('Files deleted from the drive for good'),
+    bytes: z.int().nonnegative().describe('Space that came back, in bytes'),
+    kept: z.int().nonnegative().describe('Files that could not be deleted and are still waiting'),
+  })
+  .meta({ id: 'FileTrashEmptyResponseDto' });
+
 export class FileTrashListQueryDto extends createZodDto(FileTrashListQuerySchema) {}
 export class FileTrashItemResponseDto extends createZodDto(FileTrashItemResponseSchema) {}
 export class FileTrashResponseDto extends createZodDto(FileTrashResponseSchema) {}
 export class FileTrashRestoreResponseDto extends createZodDto(FileTrashRestoreResponseSchema) {}
+export class FileTrashEmptyResponseDto extends createZodDto(FileTrashEmptyResponseSchema) {}

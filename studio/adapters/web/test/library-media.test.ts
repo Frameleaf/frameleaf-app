@@ -23,10 +23,12 @@ import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import {
   createLibraryMediaSeeder,
   followRetiredImports,
+  isSubjectMatteImport,
   retireProject,
   type LibraryMediaSeeder,
 } from '../src/library-media'
 import { VirtualWorkspace } from '../src/virtual-workspace'
+import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
 import { getHdrSourceUrl } from '@/features/export/utils/hdr-video-sources'
 
 // Folder handles for imported files live in IndexedDB, which jsdom does not have; none are used here.
@@ -181,6 +183,45 @@ describe('library media across editor remounts', () => {
     workspace.dispose()
   })
 
+  it('offers a library item again when it is asked for from the Library view after a removal (FL-636)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib', onChange: () => {} })
+    try {
+      await media.seed([libraryAsset])
+      expect(await getProjectMediaIds('fl-lib')).toContain(LIBRARY)
+      // The person removes it from the bin; an ordinary host update does not bring it back.
+      await removeMediaFromProject('fl-lib', LIBRARY)
+      await deleteMedia(LIBRARY)
+      media.forget(LIBRARY)
+      await media.seed([libraryAsset])
+      expect(await getMedia(LIBRARY)).toBeUndefined()
+      // Asking for it again from the Library view does.
+      await media.restore([libraryAsset])
+      expect(await getMedia(LIBRARY)).toBeDefined()
+      expect(await getProjectMediaIds('fl-lib')).toContain(LIBRARY)
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('marks a restored item as HDR again when the server reports it after the restore (FL-636)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib-hdr', onChange: () => {} })
+    try {
+      await media.seed([{ ...libraryAsset, hdr: true }])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+      await removeMediaFromProject('fl-lib-hdr', LIBRARY)
+      await deleteMedia(LIBRARY)
+      media.forget(LIBRARY)
+      // Restored before the server names it HDR again: a plain record.
+      await media.restore([libraryAsset])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBeUndefined()
+      // The next report marks it.
+      await media.seed([{ ...libraryAsset, hdr: true }])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+    } finally {
+      media.dispose()
+    }
+  })
+
   it('records a library original the server reports as HDR, also after it was seeded (FL-97)', async () => {
     const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-hdr', onChange: () => {} })
     try {
@@ -199,6 +240,29 @@ describe('library media across editor remounts', () => {
       await media.seed([{ ...libraryAsset, hdr: true, hdrSourceUrl: hdrUrl }, hdrVideo])
       expect(getHdrSourceUrl(LIBRARY)).toBe(hdrUrl)
       expect(getHdrSourceUrl(IMPORTED)).toBeUndefined()
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('hands a cut-out matte to the renderer by its id, never to the bin (FL-639)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-cutout', onChange: () => {} })
+    try {
+      const matte = {
+        id: UNUSED,
+        kind: 'image' as const,
+        name: `frameleaf-subject-matte-${UNUSED}.png`,
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        url: `/api/studio/projects/p/imports/${UNUSED}`,
+      }
+      expect(isSubjectMatteImport(matte)).toBe(true)
+      expect(isSubjectMatteImport({ ...matte, name: 'holiday.png' })).toBe(false)
+      await media.seedImports([matte])
+      expect(blobUrlManager.get(UNUSED)).toBe(matte.url)
+      expect(await getMedia(UNUSED)).toBeUndefined()
+      expect(await getProjectMediaIds('fl-cutout')).not.toContain(UNUSED)
+      expect(media.known(UNUSED)).toBe(true)
     } finally {
       media.dispose()
     }

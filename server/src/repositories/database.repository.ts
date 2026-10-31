@@ -1,7 +1,7 @@
 import { createMigrationProvider, schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
-import { Kysely, type Transaction, sql } from 'kysely';
+import { Kysely, type RawBuilder, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,18 +27,87 @@ import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 
-const CLIP_TABLES = [
-  'smart_search',
-  'smart_search_description',
-  'asset_video_duplicate_frame',
-  'video_moment_frame_embedding',
+// 1.1.17 name -> current name, in the order 1.1.17 ran them
+export const RENAMED_MIGRATIONS = [
+  ['1793164441799-LibraryScope', '2100000003021-LibraryScope'],
+  ['1793189000000-BookmarksAndSources', '2100000003022-BookmarksAndSources'],
+  ['1793191100000-CaptureReceipts', '2100000003023-CaptureReceipts'],
+  ['1793196800000-AssetPalettes', '2100000003024-AssetPalettes'],
+  ['1793209000000-ClassificationSearchFilter', '2100000003025-ClassificationSearchFilter'],
+  ['1793210000000-BookmarkRatings', '2100000003026-BookmarkRatings'],
+  ['1793250000000-AlbumColor', '2100000003027-AlbumColor'],
+  ['2100000003014-SpeechIndex', '2100000003028-SpeechIndex'],
+  ['2100000003015-BrowserExtensionSignIn', '2100000003029-BrowserExtensionSignIn'],
+  ['2100000003017-AssetSourceImportedFrom', '2100000003030-AssetSourceImportedFrom'],
+  ['2100000003018-AssetAnnotations', '2100000003031-AssetAnnotations'],
+  ['2100000003019-EagleServerImport', '2100000003032-EagleServerImport'],
+  ['2100000003020-VideoTimelineFingerprint', '2100000003033-VideoTimelineFingerprint'],
 ] as const;
+
+const CLIP_TABLES = ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'] as const;
 
 export const getVectorExtension = (_runner?: Kysely<DB>): Promise<VectorExtension> =>
   Promise.resolve(DatabaseExtension.Vector);
 
 /** A session advisory lock held on its own reserved connection. */
 export type HeldLock = { backendPid: number; verify: () => Promise<boolean>; release: () => Promise<void> };
+
+/**
+ * Every column that stores an absolute media path, so a media-location move rebases them all. A path left on the old
+ * prefix is not counted as a reference after the move, and its file can be reported as untracked and deleted.
+ * Relative or external paths (library import paths, takeout entry names) are not listed.
+ */
+const MEDIA_PATH_COLUMNS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['asset', ['originalPath', 'libraryPath']],
+  ['asset_file', ['path']],
+  ['person', ['thumbnailPath']],
+  ['user', ['profileImagePath']],
+  ['physical_file', ['path']],
+  ['physical_file_trash', ['path']],
+  ['move_history', ['oldPath', 'newPath']],
+  ['video_moment_frame', ['path']],
+  ['video_edit_version', ['masterPath', 'proxyPath', 'sourcePath']],
+  ['asset_develop_revision', ['masterPath', 'previewPath', 'hdrMasterPath', 'hdrPreviewPath']],
+  ['asset_develop_artifact', ['path']],
+  ['asset_restoration', ['previewBeforePath', 'previewAfterPath', 'resultPath', 'resultPreviewPath']],
+  ['asset_health', ['originalPath']],
+  ['asset_health_candidate', ['candidatePath']],
+  ['asset_integrity_verification', ['originalPath']],
+  ['asset_upload_resource', ['finalPath']],
+  ['asset_upload_part', ['path']],
+  ['identical_file_change', ['ownPath']],
+  ['integrity_report', ['path']],
+  ['preservation_package', ['path']],
+  ['memory_export', ['path']],
+  ['buddy_backup_reference', ['path']],
+  ['cloud_backup_manifest_entry', ['path']],
+  ['icloud_resource', ['path', 'stagingPath', 'promotedPath']],
+  ['takeout_source', ['path']],
+  ['takeout_file', ['path']],
+  ['takeout_item', ['createPath']],
+  ['media_operation_checkpoint', ['outputPath', 'subtitlePath']],
+  ['studio_export_version', ['outputPath', 'subtitlePath']],
+  ['studio_preview_frame', ['framePath']],
+  ['studio_project_import', ['path']],
+  ['studio_import_publication', ['stagedPath', 'targetPath']],
+  ['studio_bundle_upload', ['path']],
+  ['studio_generated_resource', ['path']],
+  ['studio_hdr_intermediate', ['path']],
+];
+const MEDIA_PATH_ARRAY_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['asset_checksum', 'verifiedPaths'],
+  ['cloud_backup_selection', 'folders'],
+];
+const MEDIA_PATH_JSON_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['video_edit_version', 'files'],
+  ['photography_workflow', 'value'],
+];
+
+/**
+ * Locks whose waiters must not give up after the pool's lock_timeout: the migration lock is held for as long as a
+ * worker migrates, which on a fresh or slow database is far longer than 5 s, and every other worker must wait for it.
+ */
+const UNBOUNDED_WAIT_LOCKS: ReadonlySet<DatabaseLock> = new Set([DatabaseLock.Migrations]);
 
 @Injectable()
 export class DatabaseRepository {
@@ -305,7 +374,7 @@ export class DatabaseRepository {
       .setIsolationLevel('read committed')
       .execute(async (trx) => {
         await this.assertLegacyClipIndex(trx);
-        await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}, ${sql.table('video_moment_frame_embedding')}`.execute(
+        await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('video_moment_frame_embedding')}`.execute(
           trx,
         );
       });
@@ -367,6 +436,21 @@ export class DatabaseRepository {
 
   async runMigrations(): Promise<void> {
     await this.assertFrameleafDatabase();
+    // 1.1.17 put new migrations before the 1.1.16 chain, so upgrades refused to start (issue 626).
+    // They now sort after 2100000003013 in the same order; fresh 1.1.17 installs recorded the old names.
+    // Kysely orders the ledger by timestamp, so those rows also move to just after the 1.1.16 chain.
+    await sql`
+      UPDATE public.frameleaf_migrations m SET name = r.new, timestamp = to_char(
+        (SELECT max(timestamp::timestamptz) FROM public.frameleaf_migrations WHERE name <= '2100000003013-DevelopBatches')
+          AT TIME ZONE 'UTC' + r.n * interval '1 millisecond', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      FROM (VALUES ${sql.join(RENAMED_MIGRATIONS.map(([old, name], n) => sql`(${old}, ${name}, ${n + 1}::int)`))})
+        AS r(old, new, n)
+      WHERE m.name IN (r.old, r.new)
+    `
+      .execute(this.db)
+      .catch((error: { code?: string }) => {
+        if (error.code !== '42P01') throw error; // no ledger yet on a fresh database
+      });
     const migrator = new Migrator({
       db: this.db,
       migrationTableName: 'frameleaf_migrations',
@@ -391,47 +475,56 @@ export class DatabaseRepository {
       targetFolder = targetFolder.slice(0, -1);
     }
 
-    type PathColumn = 'asset.originalPath' | 'asset_file.path' | 'person.thumbnailPath' | 'user.profileImagePath';
-    const replacement = (column: PathColumn) =>
-      sql<string>`${targetFolder} || substring(${sql.ref(column)} from char_length(${sourceFolder}) + 1)`;
-    const matches = (column: PathColumn) => {
+    const replacement = (value: RawBuilder<unknown>) =>
+      sql<string>`${targetFolder} || substring(${value} from char_length(${sourceFolder}) + 1)`;
+    const separators = ['/', ...(windowsSource ? ['\\'] : [])];
+    const matches = (value: RawBuilder<unknown>) => {
       if (!sourceFolder) {
-        return sql<boolean>`starts_with(${sql.ref(column)}, ${'/'})`;
+        return sql<boolean>`starts_with(${value}, ${'/'})`;
       }
-      const prefixes = [sourceFolder + '/', ...(windowsSource ? [sourceFolder + '\\'] : [])];
-      return sql<boolean>`(${sql.ref(column)} = ${sourceFolder} OR ${sql.join(
-        prefixes.map((prefix) => sql<boolean>`starts_with(${sql.ref(column)}, ${prefix})`),
+      return sql<boolean>`(${value} = ${sourceFolder} OR ${sql.join(
+        separators.map((separator) => sql<boolean>`starts_with(${value}, ${sourceFolder + separator})`),
         sql` OR `,
       )})`;
     };
+    // JSON documents hold paths as string values: rewrite each string that starts with the old folder.
+    // ponytail: a text-level rewrite, so an escaped quote right before such a path inside a longer string is rewritten too.
+    const jsonString = (folder: string, separator: string) => JSON.stringify(folder + separator).slice(0, -1);
 
     await this.db.transaction().execute(async (tx) => {
-      await tx
-        .updateTable('asset')
-        .set({ originalPath: replacement('asset.originalPath') })
-        .where(matches('asset.originalPath'))
-        .execute();
+      for (const [table, columns] of MEDIA_PATH_COLUMNS) {
+        for (const column of columns) {
+          const value = sql.ref(column);
+          await sql`UPDATE ${sql.table(table)} SET ${value} = ${replacement(value)} WHERE ${matches(value)}`.execute(
+            tx,
+          );
+        }
+      }
 
-      await tx
-        .updateTable('asset_file')
-        .set({ path: replacement('asset_file.path') })
-        .where(matches('asset_file.path'))
-        .execute();
+      for (const [table, column] of MEDIA_PATH_ARRAY_COLUMNS) {
+        const value = sql.ref(column);
+        const element = sql.ref('element');
+        await sql`UPDATE ${sql.table(table)}
+          SET ${value} = ARRAY(
+            SELECT CASE WHEN ${matches(element)} THEN ${replacement(element)} ELSE element END
+            FROM unnest(${value}) WITH ORDINALITY AS item(element, position) ORDER BY position
+          )
+          WHERE EXISTS (SELECT 1 FROM unnest(${value}) AS item(element) WHERE ${matches(element)})`.execute(tx);
+      }
 
-      await tx
-        .updateTable('person')
-        .set({ thumbnailPath: replacement('person.thumbnailPath') })
-        .where(matches('person.thumbnailPath'))
-        .execute();
-
-      await tx
-        .updateTable('user')
-        .set({ profileImagePath: replacement('user.profileImagePath') })
-        .where(matches('user.profileImagePath'))
-        .execute();
+      for (const [table, column] of MEDIA_PATH_JSON_COLUMNS) {
+        for (const separator of separators) {
+          const value = sql.ref(column);
+          const prefix = jsonString(sourceFolder, separator);
+          await sql`UPDATE ${sql.table(table)}
+            SET ${value} = replace(${value}::text, ${prefix}, ${jsonString(targetFolder, separator)})::jsonb
+            WHERE strpos(${value}::text, ${prefix}) > 0`.execute(tx);
+        }
+      }
     });
   }
 
+  /** Takes `lock`, waiting without the pool's lock_timeout for the locks in `UNBOUNDED_WAIT_LOCKS`. */
   async withLock<R>(lock: DatabaseLock, callback: () => Promise<R>): Promise<R> {
     return this.asyncLock.acquire(DatabaseLock[lock], () =>
       this.db.connection().execute(async (connection) => {
@@ -598,7 +691,20 @@ export class DatabaseRepository {
   }
 
   private async acquireLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
-    await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+    if (!UNBOUNDED_WAIT_LOCKS.has(lock)) {
+      await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+      return;
+    }
+    // FL-646: the pool's session lock_timeout (5 s) also bounds advisory-lock waits. On a fresh or slow database the
+    // first worker holds the migration lock for longer than that, and the other worker's wait was cancelled with
+    // "canceling statement due to lock timeout" (55P03). Wait on this reserved session until the holder finishes (or its
+    // session ends), then restore the pool default before the session does anything else.
+    await sql`SET lock_timeout = 0`.execute(connection);
+    try {
+      await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+    } finally {
+      await sql`RESET lock_timeout`.execute(connection);
+    }
   }
 
   private async acquireTryLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<boolean> {

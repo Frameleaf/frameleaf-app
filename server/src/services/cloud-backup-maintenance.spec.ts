@@ -426,6 +426,19 @@ describe(CloudBackupMaintenance.name, () => {
       },
     );
 
+    it('reports an object or dump with an impossible encrypted length as damaged and finishes the pass', async () => {
+      objects = nightlyBucket(1);
+      const damaged = new CloudBackupStoreError('The backup object is damaged.', null, 'ChecksumMismatch');
+      store.head.mockRejectedValue(damaged);
+
+      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
+        operationId: 'verify',
+        claimToken: 'claim',
+      });
+
+      expect(result).toMatchObject({ done: true, mismatched: 2, missing: 1, degradedManifests: 1 });
+    });
+
     it('resumes after the last checked dump without counting it again', async () => {
       objects = nightlyBucket(2);
       const start = {

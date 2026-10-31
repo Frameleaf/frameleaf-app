@@ -9,8 +9,10 @@ import {
   QueueJobStatus,
   QueueJobWorkerKind,
   QueueName,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory } from 'test/small.factory.js';
@@ -85,6 +87,26 @@ describe(QueueService.name, () => {
 
       expect(mocks.job.queueAll).toHaveBeenCalledWith(expect.not.arrayContaining([{ name: JobName.AnalyticsCollect }]));
     });
+
+    it('leaves Trash alone while emptying it is off (FL-363)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ nightlyTasks: { emptyTrash: false } });
+
+      await sut.handleNightlyJobs();
+
+      const [jobs] = mocks.job.queueAll.mock.calls[0];
+      expect(jobs).not.toContainEqual({ name: JobName.AssetDeleteCheck });
+      expect(jobs).not.toContainEqual({ name: JobName.UserDeleteCheck });
+      expect(jobs).toContainEqual({ name: JobName.PersonCleanup });
+    });
+
+    it('queues only the nightly counts on a night the tidy-up does not run (FL-363)', async () => {
+      await sut.handleNightlyJobs({ cleanup: false });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AnalyticsCollect },
+        { name: JobName.PushBackupStaleCheck },
+      ]);
+    });
   });
 
   describe('getAllJobStatus', () => {
@@ -101,6 +123,31 @@ describe(QueueService.name, () => {
         hasUnfinishedWork: true,
       });
       expect(mocks.job.hasUnfinishedWork).toHaveBeenCalledExactlyOnceWith(QueueName.Library);
+    });
+
+    it('reads paused and unfinished state once for every queue, not once per queue', async () => {
+      const statistics = factory.queueStatistics();
+      mocks.job.getJobCounts.mockResolvedValue(statistics);
+      mocks.job.getPausedQueues.mockResolvedValue(new Set([QueueName.Library]));
+      mocks.job.getQueuesWithUnfinishedWork.mockResolvedValue(new Set([QueueName.SmartSearch]));
+
+      const queues = await sut.getAll(factory.auth());
+
+      expect(queues).toHaveLength(Object.values(QueueName).length);
+      expect(queues.find(({ name }) => name === QueueName.Library)).toEqual({
+        name: QueueName.Library,
+        isPaused: true,
+        statistics,
+        hasUnfinishedWork: false,
+      });
+      expect(queues.find(({ name }) => name === QueueName.SmartSearch)).toMatchObject({
+        isPaused: false,
+        hasUnfinishedWork: true,
+      });
+      expect(mocks.job.getPausedQueues).toHaveBeenCalledOnce();
+      expect(mocks.job.getQueuesWithUnfinishedWork).toHaveBeenCalledExactlyOnceWith(Object.values(QueueName));
+      expect(mocks.job.isPaused).not.toHaveBeenCalled();
+      expect(mocks.job.hasUnfinishedWork).not.toHaveBeenCalled();
     });
 
     it('bounds queue snapshots to four and retains queue order', async () => {
@@ -164,7 +211,7 @@ describe(QueueService.name, () => {
       const expected = { jobCounts: stats, queueStatus: { isActive: true, isPaused: true } };
 
       mocks.job.getJobCounts.mockResolvedValue(stats);
-      mocks.job.isPaused.mockResolvedValue(true);
+      mocks.job.getPausedQueues.mockResolvedValue(new Set(Object.values(QueueName)));
 
       await expect(sut.getAllLegacy(factory.auth())).resolves.toEqual({
         [QueueName.BackgroundTask]: expected,
@@ -211,6 +258,33 @@ describe(QueueService.name, () => {
       await sut.runCommandLegacy(QueueName.MetadataExtraction, { command: QueueCommand.Resume, force: false });
 
       expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.MetadataExtraction);
+    });
+
+    it('stops quiet hours holding a queue the administrator resumes (FL-711)', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
+      mocks.systemMetadata.get.mockResolvedValue({
+        run: null,
+        nights: [],
+        quiet: { holding: [QueueName.VideoConversion, QueueName.SmartSearch] },
+      });
+
+      await sut.update(authStub.admin, QueueName.VideoConversion, { isPaused: false });
+
+      expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.VideoConversion);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.OvernightSequence, {
+        run: null,
+        nights: [],
+        quiet: { holding: [QueueName.SmartSearch] },
+      });
+    });
+
+    it('leaves the quiet hours record alone when the resumed queue is not held', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
+      mocks.systemMetadata.get.mockResolvedValue({ run: null, nights: [], quiet: { holding: null } });
+
+      await sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Resume, force: false });
+
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
     it('should handle an empty command', async () => {
@@ -273,7 +347,7 @@ describe(QueueService.name, () => {
       await sut.runCommandLegacy(QueueName.VideoDuplicateDetection, { command: QueueCommand.Start, force: true });
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.AssetGenerateVideoDuplicateFramesQueueAll,
+        name: JobName.AssetVideoFingerprintQueueAll,
         data: { force: true },
       });
     });

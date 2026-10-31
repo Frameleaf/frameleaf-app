@@ -4,12 +4,15 @@ import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReaso
 import {
   ClaimAdmissionInput,
   RenderOutputRefusal,
+  SDR_TEN_BIT_PROFILE,
   SessionAdmissionInput,
   evaluateClaimAdmission,
   evaluateRenderOutput,
   evaluateRunningLimits,
   evaluateSessionAdmission,
+  hdrMasterEvidence,
   isWorkerRefusal,
+  operationOutputRequest,
   provesOutput,
   requiredOutput,
   signInputGrant,
@@ -735,6 +738,108 @@ describe('evaluateRenderOutput (FL-42)', () => {
       supported: true,
     });
   });
+
+  describe('HDR10 and HLG masters (FL-107)', () => {
+    // What the bundled worker reports after writing and decoding back both masters with libx265.
+    const bundled = {
+      gpuMemoryBytes: 8 * gib,
+      codecs: ['webcodecs-avc', 'libx265'],
+      formats: ['mp4', 'mp4-hevc', 'mp4-hevc-main10', 'mp4-hevc-main10+pq', 'mp4-hevc-main10+hlg'],
+      colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
+    };
+    const hlg = {
+      format: 'mp4-hevc-main10',
+      color: 'preserve',
+      resolution: '1080p',
+      minBitDepth: 10,
+      transfer: 'arib-std-b67' as const,
+    };
+    const pq = { ...hlg, color: 'hdr10', transfer: 'smpte2084' as const };
+
+    it('writes Main10 only as a master: an SDR picture in a 10-bit format needs the SDR 10-bit profile (FL-674)', () => {
+      const sdrPicture = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p', transfer: null };
+      expect(evaluateRenderOutput([bundled], sdrPicture)).toEqual({
+        supported: false,
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      // Before the contract is sealed (no transfer known) the first check keeps its old meaning.
+      expect(evaluateRenderOutput([bundled], { ...sdrPicture, transfer: undefined })).toEqual({ supported: true });
+      // HDR masters and 8-bit formats are unaffected.
+      expect(evaluateRenderOutput([bundled], pq)).toEqual({ supported: true });
+      expect(evaluateRenderOutput([bundled], { ...sdrPicture, format: 'mp4-hevc' })).toEqual({ supported: true });
+      expect(
+        evaluateRenderOutput([{ ...bundled, formats: [...bundled.formats, SDR_TEN_BIT_PROFILE] }], sdrPicture),
+      ).toEqual({ supported: true });
+    });
+
+    it('names the exact master evidence', () => {
+      expect(hdrMasterEvidence('mp4-hevc-main10', 'smpte2084')).toBe('mp4-hevc-main10+pq');
+      expect(hdrMasterEvidence('mp4-hevc-main10', 'arib-std-b67')).toBe('mp4-hevc-main10+hlg');
+    });
+
+    it('admits an HDR10 and an HLG master from the session that proved them', () => {
+      expect(evaluateRenderOutput([bundled], pq)).toEqual({ supported: true });
+      expect(evaluateRenderOutput([bundled], hlg)).toEqual({ supported: true });
+    });
+
+    it('refuses HLG without the exact HLG master evidence, even at ten bits', () => {
+      const pqOnly = { ...bundled, formats: bundled.formats.filter((format) => !format.endsWith('+hlg')) };
+      expect(evaluateRenderOutput([pqOnly], hlg)).toEqual({
+        supported: false,
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      expect(evaluateRenderOutput([hdr], hlg)).toMatchObject({ refusal: RenderOutputRefusal.IncompatibleColor });
+      // HLG kept in an 8-bit format: no session proved that format as HLG.
+      expect(evaluateRenderOutput([bundled], { ...hlg, format: 'mp4-hevc' })).toMatchObject({
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+    });
+
+    it('refuses a PQ picture kept from PQ sources without verified HDR10', () => {
+      const tenBitOnly = { ...bundled, colorPrecision: { maxBitDepth: 10, hdr10: false, dolbyVision: false } };
+      expect(evaluateRenderOutput([tenBitOnly], { ...pq, color: 'preserve' })).toMatchObject({
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      expect(evaluateRenderOutput([bundled], { ...pq, color: 'preserve' })).toEqual({ supported: true });
+    });
+
+    it('offers a queued claim only to a session that can keep its sealed contract', () => {
+      const settings = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p' };
+      const request = operationOutputRequest(settings, {
+        contract: { video: { minBitDepth: 10, transfer: 'arib-std-b67' } },
+      });
+      expect(request).toEqual({ ...settings, minBitDepth: 10, transfer: 'arib-std-b67' });
+      expect(evaluateRenderOutput([hdr], request)).toMatchObject({ refusal: RenderOutputRefusal.IncompatibleColor });
+      expect(evaluateRenderOutput([bundled], request)).toEqual({ supported: true });
+      expect(operationOutputRequest(settings, null)).toEqual(settings);
+      expect(operationOutputRequest(settings, { contract: { video: { transfer: 'bt709' } } })).toEqual(settings);
+    });
+
+    it('keeps a sealed SDR picture SDR at claim time, so only a 10-bit SDR writer claims Main10 (FL-674)', () => {
+      const settings = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p' };
+      const request = operationOutputRequest(settings, { contract: { video: { minBitDepth: 10, transfer: null } } });
+      expect(request).toEqual({ ...settings, minBitDepth: 10, transfer: null });
+      // The bundled worker writes Main10 only as an HDR master: it may not claim this export.
+      expect(evaluateRenderOutput([bundled], request)).toMatchObject({
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      expect(
+        evaluateRenderOutput([{ ...bundled, formats: [...bundled.formats, SDR_TEN_BIT_PROFILE] }], request),
+      ).toEqual({ supported: true });
+      // An 8-bit export of the same SDR picture is unaffected.
+      expect(
+        evaluateRenderOutput(
+          [bundled],
+          operationOutputRequest(
+            { ...settings, format: 'mp4-hevc' },
+            {
+              contract: { video: { minBitDepth: 8, transfer: null } },
+            },
+          ),
+        ),
+      ).toEqual({ supported: true });
+    });
+  });
 });
 
 describe('Sidecar v1 same-session capability admission', () => {
@@ -836,5 +941,62 @@ describe('Sidecar v1 same-session capability admission', () => {
     expect(formats.parse(['mp4', profile, 'legacy-container'])).toEqual(['mp4', profile, 'legacy-container']);
     expect(formats.safeParse(['x'.repeat(31)]).success).toBe(false);
     expect(formats.safeParse(Array.from({ length: 33 }, () => 'mp4')).success).toBe(false);
+  });
+});
+
+describe('vertical and square exports (FL-563)', () => {
+  const gib = 1024 ** 3;
+  const capabilities = { codecs: ['webcodecs-avc', 'aac'], formats: ['mp4', 'reframe-v1'] };
+  const candidate = { gpuMemoryBytes: 8 * gib, ...capabilities, colorPrecision: null };
+  const settings = { format: 'mp4-h264', color: 'preserve', resolution: '2160p', shape: 'vertical' };
+
+  it('needs a session that names the reframe profile', () => {
+    expect(requiredOutput(settings)).toMatchObject({ format: 'mp4-h264', reframe: true });
+    expect(provesOutput(capabilities, requiredOutput(settings)!)).toBe(true);
+    expect(provesOutput({ ...capabilities, formats: ['mp4'] }, requiredOutput(settings)!)).toBe(false);
+    expect(evaluateRenderOutput([candidate], settings)).toEqual({ supported: true });
+    expect(evaluateRenderOutput([{ ...candidate, formats: ['mp4'] }], settings)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+    // the project's own shape needs nothing new
+    for (const shape of [undefined, 'original']) {
+      expect(provesOutput({ ...capabilities, formats: ['mp4'] }, requiredOutput({ ...settings, shape })!)).toBe(true);
+    }
+  });
+
+  it('admits 2160 × 3840 with the 2160p memory it already needs, and a square at any resolution', () => {
+    expect(evaluateRenderOutput([{ ...candidate, gpuMemoryBytes: 6 * gib }], settings)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.InsufficientMemory,
+    });
+    for (const resolution of ['720p', '1080p', '1440p', '2160p']) {
+      expect(evaluateRenderOutput([candidate], { ...settings, shape: 'square', resolution })).toEqual({
+        supported: true,
+      });
+    }
+  });
+
+  it('refuses shapes on anything but SDR video, and unknown shapes', () => {
+    for (const patch of [
+      { shape: 'round' },
+      { format: 'mp4-hevc-main10' },
+      { format: 'audio-mp3' },
+      { format: 'sdr-jpeg', resolution: 'original' },
+      { color: 'hdr10' },
+    ]) {
+      expect(provesOutput(capabilities, requiredOutput({ ...settings, ...patch })!)).toBe(false);
+    }
+  });
+
+  it('is checked again when a worker claims the export', () => {
+    expect(evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings } }))).toEqual({
+      admitted: true,
+    });
+    expect(
+      evaluateClaimAdmission(
+        claimInput({ session: { capabilities: { ...capabilities, formats: ['mp4'] } }, operation: { settings } }),
+      ),
+    ).toMatchObject({ admitted: false });
   });
 });

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { LRUMap } from 'mnemonist';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LibraryViewScope } from 'src/enum.js';
 import type {
   AssetSearchOptions,
   AssetSearchScope,
@@ -48,7 +49,12 @@ import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-v
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
-import { applyLockedVisibilityPolicy, collectFilterIds, requirePetFilterAllowed } from 'src/utils/search-filter.js';
+import {
+  applyLockedVisibilityPolicy,
+  collectFilterIds,
+  requirePetFilterAllowed,
+  requireSourceFilterAllowed,
+} from 'src/utils/search-filter.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -113,20 +119,25 @@ export class SearchService extends BaseService {
   async getExploreData(auth: AuthDto) {
     const options = { ...getHiddenContentQueryOptions(auth), maxFields: 12, minAssetsPerField: 5 };
 
-    const cities = await this.assetRepository.getAssetIdByCity(auth.user.id, options);
-    const cityAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
-      cities.items.map(({ data }) => data),
-      auth.user.id,
-      { ...options, ownerId: auth.user.id },
-    );
-    const cityItems = cityAssets.map((asset) => ({ value: asset.exifInfo!.city!, data: mapAsset(asset, { auth }) }));
-
-    const recents = await this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options);
-    const recentAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
-      recents.items.map((item) => item.data),
-      auth.user.id,
-      { ...options, ownerId: auth.user.id },
-    );
+    // the two sections are independent: read them side by side, not one after the other
+    const loadField = async (field: Promise<{ fieldName: string; items: Array<{ data: string }> }>) => {
+      const { fieldName, items } = await field;
+      const assets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
+        items.map(({ data }) => data),
+        auth.user.id,
+        { ...options, ownerId: auth.user.id },
+      );
+      return { fieldName, assets };
+    };
+    const [cities, recents] = await Promise.all([
+      loadField(this.assetRepository.getAssetIdByCity(auth.user.id, options)),
+      loadField(this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options)),
+    ]);
+    const cityItems = cities.assets.map((asset) => ({
+      value: asset.exifInfo!.city!,
+      data: mapAsset(asset, { auth }),
+    }));
+    const recentAssets = recents.assets;
     const recentItems = recentAssets.map((asset) => ({
       value: asset.createdAt.toISOString(),
       data: mapAsset(asset, { auth }),
@@ -220,6 +231,7 @@ export class SearchService extends BaseService {
       limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
       suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
+      suppressedPetIds: auth.hiddenContent?.petIds ?? [],
       covers: facetCovers ?? false,
     };
 
@@ -244,7 +256,7 @@ export class SearchService extends BaseService {
         counts: rows
           .filter((row) => row.field === fieldName)
           .map(({ value, label, count, coverAssetId }) => ({
-            ...(fieldName === SearchFacetField.People || fieldName === SearchFacetField.Tags
+            ...([SearchFacetField.People, SearchFacetField.Tags, SearchFacetField.Pets].includes(fieldName)
               ? { value, label, count }
               : { value, count }),
             // only when asked for (Explore's cards): the newest match, inside the same scope as the count
@@ -578,13 +590,18 @@ export class SearchService extends BaseService {
     return this.mapResponse(items, { auth });
   }
 
-  private async resolveSearchScopeV3(
+  async resolveSearchScopeV3(
     auth: AuthDto,
-    dto: { filter?: SearchFilter },
+    dto: { filter?: SearchFilter; libraryScope?: LibraryViewScope },
   ): Promise<{ filter: SearchFilter; scope: AssetSearchScope }> {
-    const filter = dto.filter ?? {};
+    const filter = { ...dto.filter, ...(dto.libraryScope && { libraryScope: dto.libraryScope }) };
     const effectiveFilter = applyLockedVisibilityPolicy(auth, filter);
+    requireSourceFilterAllowed(auth, effectiveFilter);
 
+    const subtreeIds = collectFilterIds(filter, 'albumSubtreeIds');
+    if (auth.sharedLink && subtreeIds.length > 0) {
+      throw new BadRequestException('Shared links do not grant descendant albums');
+    }
     const fullyConfined = isFullyAlbumConfined(filter);
     // a shared link visitor does not have a universe, so there every branch must be confined
     if (auth.sharedLink && !fullyConfined) {
@@ -593,7 +610,7 @@ export class SearchService extends BaseService {
 
     requirePetFilterAllowed(auth, collectFilterIds(filter, 'petIds'));
 
-    const albumIds = collectFilterIds(filter, 'albumIds');
+    const albumIds = [...new Set([...collectFilterIds(filter, 'albumIds'), ...subtreeIds])];
     if (albumIds.length > 0) {
       await this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead });
     }
@@ -938,15 +955,18 @@ export class SearchService extends BaseService {
       return { personIds: [], petIds: [] };
     }
 
-    const match = query.match(
-      /\b(?:with|of)\s+([A-Za-z][\w'-]*(?:\s+(?:and\s+)?[A-Za-z][\w'-]*)*?)(?=\s+(?:in|near|around|at|last|this|from|during|before|after|since)\b|$)/,
+    // ponytail: names are only read from the first 500 characters; the regex is still quadratic on long word runs
+    const match = query.slice(0, 500).match(
+      // one word per step (a joining "and" is itself a word), so the pattern cannot backtrack exponentially
+      /\b(?:with|of)\s+([A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)*?)(?=\s+(?:in|near|around|at|last|this|from|during|before|after|since)\b|$)/,
     );
     if (!match?.[1]) {
       return { personIds: [], petIds: [] };
     }
 
     const names = match[1]
-      .split(/\s+(?:and|&)\s+|,\s*/)
+      // the query's whitespace is already collapsed to single spaces
+      .split(/\s(?:and|&)\s|,\s*/)
       .map((name) => name.trim())
       .filter(Boolean);
     const privacy = getHiddenContentQueryOptions(auth);

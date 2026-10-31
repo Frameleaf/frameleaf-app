@@ -20,6 +20,8 @@ import {
   managedBucketName,
   readBackupKeyFile,
   retentionValue,
+  savedRecovery,
+  withRecoveryHistory,
 } from '$lib/frameleaf/cloud-backup';
 
 const fixed = {
@@ -62,6 +64,28 @@ describe('cloud backup keys in the browser (FL-160)', () => {
     expect(readBackupKeyFile(JSON.stringify({ format: 'something-else', key: key.key }))).toEqual({
       error: 'frameleaf_cloud_backup_key_file_invalid',
     });
+  });
+
+  it('retains an independent client root in the managed recovery file', () => {
+    const legacy = createBackupKey();
+    const root = createBackupKey();
+    const file = backupKeyFile({
+      ...legacy,
+      clientRoot: root.key,
+      instanceId: 'f0000000-0000-4000-8000-000000000001',
+      bucket: 'managed-backup',
+      mode: CloudBackupKeyMode.OwnMemory,
+    });
+    expect(JSON.parse(file)).toMatchObject({
+      key: legacy.key,
+      client: {
+        vaultId: 'f0000000-0000-4000-8000-000000000001',
+        current: 1,
+        keys: { 1: root.key },
+      },
+    });
+    expect(root.key).not.toBe(legacy.key);
+    expect(readBackupKeyFile(file, legacy.fingerprint)).toEqual({ key: file });
   });
 
   it.each(['client', 'recovery', 'both'])('preserves the complete %s authority in an imported key file', (kind) => {
@@ -111,6 +135,24 @@ describe('cloud backup keys in the browser (FL-160)', () => {
       secretAccessKey: 'frameleaf_cloud_backup_secret_missing',
     });
     expect(endpointHost('https://s3.eu-central-2.storage.example/')).toBe('s3.eu-central-2.storage.example');
+  });
+});
+
+describe('savedRecovery (FL-696)', () => {
+  it('refuses a file without client roots and hands on a saved history', () => {
+    expect(savedRecovery(JSON.stringify({ key: 'k' }))).toBeNull();
+    expect(savedRecovery(JSON.stringify({ key: 'k', client: { keys: { 1: 'r' } } }))).toEqual({});
+    expect(savedRecovery(JSON.stringify({ client: { keys: { 1: 'r' } }, recovery: { snapshots: [] } }))).toEqual({
+      recovery: '{"snapshots":[]}',
+    });
+  });
+});
+
+describe('withRecoveryHistory (FL-696)', () => {
+  it('keeps every key in the saved file and replaces only its signed history', () => {
+    const file = JSON.stringify({ key: 'k', client: { current: 2 }, recovery: { snapshots: ['old'] } });
+    const refreshed = JSON.parse(withRecoveryHistory(file, JSON.stringify({ snapshots: ['old', 'new'] })));
+    expect(refreshed).toEqual({ key: 'k', client: { current: 2 }, recovery: { snapshots: ['old', 'new'] } });
   });
 });
 

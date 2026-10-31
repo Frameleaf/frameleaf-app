@@ -21,9 +21,12 @@ import {
   AssetVisibility,
   AssetVisibilitySchema,
   ChecksumAlgorithm,
+  LibraryScope,
+  LibraryScopeSchema,
 } from 'src/enum.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { displayPath } from 'src/utils/library-path.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -50,6 +53,10 @@ const SanitizedAssetResponseSchema = z
       })
       .optional()
       .describe('Available current still renditions; omitted when file evidence was not loaded'),
+    playbackCopy: z
+      .boolean()
+      .optional()
+      .describe('Whether a video has a playback copy; omitted for photos and when file evidence was not loaded'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     localDateTime: z
       .string()
@@ -123,6 +130,7 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     isTrashed: z.boolean().describe('Is trashed'),
     isOffline: z.boolean().describe('Is offline'),
     visibility: AssetVisibilitySchema,
+    libraryScope: LibraryScopeSchema.optional(),
     exifInfo: ExifResponseSchema.optional(),
     tags: z.array(TagResponseSchema).optional(),
     people: z.array(PersonResponseSchema).optional(),
@@ -168,6 +176,7 @@ export type MapAsset = {
   isFavorite: boolean;
   isOffline: boolean;
   visibility: AssetVisibility;
+  libraryScope?: LibraryScope;
   /** FL-34: selected by reads that know the lock (`isLocked()` in `src/utils/locked.ts`) */
   isLocked?: boolean | null;
   libraryId: string | null;
@@ -175,6 +184,8 @@ export type MapAsset = {
   localDateTime: Date;
   originalFileName: string;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept in another folder */
+  libraryPath?: string | null;
   owner?: ShallowDehydrateObject<User> | null;
   ownerId: string;
   stack?: (ShallowDehydrateObject<Stack> & { assets: Stack['assets'] }) | null;
@@ -218,6 +229,12 @@ const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
     hdrFullsize: available(AssetFileType.HdrFullSize, true),
   };
 };
+
+/** FL-630: without a playback copy the video plays its original, so the viewer offers only that. */
+const mapPlaybackCopy = (entity: MaybeDehydrated<MapAsset>) =>
+  entity.type === AssetType.Video && entity.files
+    ? entity.files.some((file) => file.type === AssetFileType.EncodedVideo && !!file.path)
+    : undefined;
 
 const peopleFromFaces = (faces?: MaybeDehydrated<AssetFace>[]): PersonResponseDto[] => {
   if (!faces) {
@@ -264,6 +281,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       imageEncoding:
         entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
       imageRenditions: mapImageRenditions(entity),
+      playbackCopy: mapPlaybackCopy(entity),
       hasMetadata: false,
       width: entity.width,
       height: entity.height,
@@ -278,7 +296,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     owner: entity.owner ? mapUser(entity.owner) : undefined,
     libraryId: entity.libraryId,
     type: entity.type,
-    originalPath: entity.originalPath,
+    // FL-417: the photo's own path, never the folder a shared file is kept in
+    originalPath: displayPath(entity),
     originalFileName: entity.originalFileName,
     originalMimeType: mimeTypes.lookup(entity.originalFileName),
     thumbhash: entity.thumbhash ? hexOrBufferToBase64(entity.thumbhash) : null,
@@ -286,10 +305,12 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
-    isFavorite: options.auth?.user.id === entity.ownerId && entity.isFavorite,
+    // the viewer's own mark: a shared link acts as its owner, but a visitor never sees the owner's favorites
+    isFavorite: !options.auth?.sharedLink && options.auth?.user.id === entity.ownerId && entity.isFavorite,
     isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility,
+    libraryScope: entity.libraryScope,
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,
@@ -301,6 +322,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     imageEncoding:
       entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
     imageRenditions: mapImageRenditions(entity),
+    playbackCopy: mapPlaybackCopy(entity),
     hasMetadata: true,
     duplicateId: entity.duplicateId,
     resized: true,

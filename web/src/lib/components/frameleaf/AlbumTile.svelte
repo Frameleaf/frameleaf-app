@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import { defaultIconFor, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
@@ -9,7 +10,7 @@
   import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
   import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAccountArrowLeftOutline, mdiAccountMultipleOutline, mdiAutoFix } from '@mdi/js';
+  import { mdiAccountArrowLeftOutline, mdiAccountMultipleOutline, mdiAutoFix, mdiBackupRestore } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -72,10 +73,14 @@
   const originLabel = $derived(
     originName ? $t('frameleaf_partner_origin', { values: { name: originName } }) : undefined,
   );
+  // FL-416: a Recovered Media album (files Immich had lost track of, brought back after an Immich import)
+  // carries a small mark of its own and says so under its name, as the approved prototype does.
+  const recoveredLabel = $derived(album.recovered ? $t('frameleaf_albums_recovered_mark') : undefined);
   const meta = $derived(
     [
       $t('frameleaf_albums_items', { values: { count: album.assetCount } }),
       monthSpan(album.startDate, album.endDate, $locale ?? undefined),
+      album.recovered ? $t('frameleaf_albums_recovered') : undefined,
     ]
       .filter(Boolean)
       .join(' · '),
@@ -159,6 +164,17 @@
           <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.xs} />
         </span>
       {/if}
+      {#if recoveredLabel}
+        <span
+          class="mark recovered"
+          role="img"
+          title={recoveredLabel}
+          aria-label={recoveredLabel}
+          data-testid="album-recovered-mark"
+        >
+          <Icon icon={mdiBackupRestore} size={ICON_SIZE.xs} aria-hidden />
+        </span>
+      {/if}
       {#if originLabel}
         <span
           class="mark origin"
@@ -173,7 +189,10 @@
     </span>
   </a>
   <div class="text">
-    <a class="name" {href}>{name}</a>
+    <a class="name" {href}
+      >{#if album.color}<AlbumMark icon={album.icon} color={album.color} kind={album.kind} size="16" />
+      {/if}{name}</a
+    >
     <div class="meta">
       <small>{meta}</small>
       <AlbumAvatarStack users={others} />

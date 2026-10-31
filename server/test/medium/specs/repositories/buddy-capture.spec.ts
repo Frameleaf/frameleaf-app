@@ -43,18 +43,11 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getKyselyDB } from 'test/utils.js';
 
 // CI's temporary volume may be below the production 10 GiB/10% reserve. Keep all file I/O real;
-// only supply enough reported free space for these small fixtures when that reserve would reject them.
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const fs = await importOriginal<typeof import('node:fs/promises')>();
-  return {
-    ...fs,
-    statfs: async (path: Parameters<typeof fs.statfs>[0]) => {
-      const stats = await fs.statfs(path);
-      const reserve = Math.max(10 * 1024 ** 3, stats.blocks * stats.bsize * 0.1);
-      return { ...stats, bavail: Math.max(stats.bavail, Math.ceil((reserve + 64 * 1024 ** 2) / stats.bsize)) };
-    },
-  };
-});
+// only report enough free space for these small fixtures (the reserve check reads `df`).
+vi.mock('src/utils/disk-usage.js', () => ({
+  getDiskUsage: () =>
+    Promise.resolve({ total: 4096 * 1_000_000_000, free: 4096 * 1_000_000_000, available: 4096 * 1_000_000_000 }),
+}));
 
 describe('Buddy capture preservation and interrupted-run cleanup', () => {
   let db: Kysely<DB>;
@@ -175,7 +168,6 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   const derivedFixture = async () => {
     const video = await original('derived-video.mov', undefined, AssetType.Video);
     await mkdir(join(root, 'source', '.attempts', 'accepted-claim'), { recursive: true });
-    const duplicate = await file('.attempts/accepted-claim/duplicate.jpg');
     const moment = await file('.attempts/accepted-claim/moment.jpg');
     const thumbnail = await file('.attempts/accepted-claim/person.jpg');
     const { person } = await ctx.newPerson({ ownerId });
@@ -184,16 +176,6 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       .set({ thumbnailPath: thumbnail.path })
       .where('ownerId', '=', ownerId)
       .where('personGroupId', '=', person.personGroupId)
-      .execute();
-    await db
-      .insertInto('asset_video_duplicate_frame')
-      .values({
-        assetId: video.asset.id,
-        frameIndex: 0,
-        timestampMs: 1000,
-        path: duplicate.path,
-        embedding: `[${Array.from({ length: 512 }, () => 0).join(',')}]`,
-      })
       .execute();
     await db
       .insertInto('video_moment_frame')
@@ -208,8 +190,26 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         rank: 1,
       })
       .execute();
-    return { video, person, duplicate, moment, thumbnail };
+    return { video, person, moment, thumbnail };
   };
+
+  it('leaves out an offline item whose original is gone instead of failing the whole capture', async () => {
+    const kept = await original('kept.jpg');
+    const gone = await original('gone.jpg');
+    const moved = await original('moved.jpg');
+    await unlink(gone.path);
+    // A library scan marks a vanished file offline and trashes it, but leaves its status as is.
+    await db
+      .updateTable('asset')
+      .set({ isOffline: true, deletedAt: new Date() })
+      .where('id', 'in', [gone.asset.id, moved.asset.id])
+      .execute();
+    const { capture } = fixture();
+    const captured = await capture.capture(options());
+    expect(Object.keys(captured.manifest.library.assets).toSorted()).toEqual(
+      [kept.asset.id, moved.asset.id].toSorted(),
+    );
+  });
 
   it('pins and encrypts canonical frame and owner-person paths, including accepted .attempts outputs', async () => {
     const own = await derivedFixture();
@@ -254,23 +254,14 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const { capture } = fixture(async () => {
       const pinned = (await references(run.runId)).map((row) => row.path);
       expect(pinned).toEqual(
-        expect.arrayContaining([
-          own.duplicate.path,
-          own.moment.path,
-          own.thumbnail.path,
-          otherThumbnail.path,
-          otherFrame.path,
-        ]),
+        expect.arrayContaining([own.moment.path, own.thumbnail.path, otherThumbnail.path, otherFrame.path]),
       );
     });
     const result = await capture.capture(run);
     expect(result.derivedInventoryVersion).toBe(1);
     const ownedFiles = result.manifest.library.assets[own.video.asset.id].files;
     expect(ownedFiles).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: own.duplicate.path, role: 'video-duplicate-frame' }),
-        expect.objectContaining({ path: own.moment.path, role: 'video-moment-frame' }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ path: own.moment.path, role: 'video-moment-frame' })]),
     );
     expect(
       ownedFiles.some((entry) => [otherFrame.path, own.thumbnail.path, otherThumbnail.path].includes(entry.path)),
@@ -289,14 +280,14 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       ...Object.values(result.manifest.library.assets).flatMap((asset) => asset.files),
       ...result.manifest.dependencies,
     ];
-    for (const source of [own.duplicate, own.moment, own.thumbnail, otherThumbnail, otherFrame]) {
+    for (const source of [own.moment, own.thumbnail, otherThumbnail, otherFrame]) {
       const entry = inventory.find((entry) => entry.path === source.path)!;
       expect(await restoreBytes(result, run.runId, entry.sha256)).toEqual(source.bytes);
     }
     await capture.release(run.runId);
   });
 
-  it.each(['duplicate', 'moment', 'thumbnail'] as const)(
+  it.each(['moment', 'thumbnail'] as const)(
     'refuses a missing selected %s rather than publishing an incomplete derived inventory',
     async (kind) => {
       const source = await derivedFixture();
@@ -315,7 +306,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         ...Object.values(excluded.manifest.library.assets).flatMap((asset) => asset.files),
         ...excluded.manifest.dependencies,
       ].map((entry) => entry.path);
-      for (const file of [source.duplicate, source.moment, source.thumbnail]) expect(paths).not.toContain(file.path);
+      for (const file of [source.moment, source.thumbnail]) expect(paths).not.toContain(file.path);
       expect((await references(excludedRun.runId)).map((entry) => entry.path)).not.toContain(source[kind].path);
       await capture.release(excludedRun.runId);
     },
@@ -1092,6 +1083,34 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     await expect(readdir(capture.runDirectory(run.runId))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readdir(join(repository.root(), 'nonces'))).toContain(staged[0]);
   }, 20_000);
+
+  it('replays a deletion held back by a capture with the removed original identity', async () => {
+    const photo = await original('held.jpg');
+    const runId = randomUUID();
+    const { capture, queue } = fixture();
+    await capture.capture(options(runId));
+    // The item is removed while the capture still pins its original.
+    await db.deleteFrom('asset').where('id', '=', photo.asset.id).execute();
+    await expect(physical.deleteUnreferencedPath(photo.path, () => unlink(photo.path))).resolves.toMatchObject({
+      deleted: false,
+    });
+    await capture.release(runId);
+    expect(queue).toHaveBeenCalledExactlyOnceWith({
+      name: JobName.FileDelete,
+      data: {
+        files: [photo.path],
+        removedAssetId: photo.asset.id,
+        original: {
+          path: photo.path,
+          ownerId,
+          assetId: photo.asset.id,
+          originalFileName: photo.asset.originalFileName,
+          checksum: createHash('sha256').update(photo.bytes).digest('hex'),
+          sizeInBytes: 0,
+        },
+      },
+    });
+  });
 
   it('reconciles abandoned runs and retries the deletion outbox without releasing resumable claims', async () => {
     const { capture, backups, jobs, keys, queue } = fixture();

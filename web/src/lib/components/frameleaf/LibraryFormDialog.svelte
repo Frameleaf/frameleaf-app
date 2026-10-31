@@ -9,6 +9,12 @@
    * libraries and whether it can read each folder now. Create and update check again, so the
    * check is a convenience and the endpoint is the boundary. Editing folders while a scan runs
    * says that saving stops that scan, which is what the server does.
+   *
+   * FL-365: "Choose folder…" browses what the server can see (`browseLibraryFolders`, names only),
+   * and "What to skip" is two recommended tick boxes: hidden and system files, and NAS clutter
+   * (recycle bins, snapshots, thumbnail folders). The NAS list is the server's own default, read
+   * from the server, so a folder added here skips what a folder added any other way skips. The
+   * patterns themselves stay under Advanced, where more can be typed.
    */
   import '$lib/frameleaf/libraries.css';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -24,8 +30,10 @@
   } from '$lib/frameleaf/libraries';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    browseLibraryFolders,
     createLibrary,
     updateLibrary,
+    type LibraryFolderBrowseResponseDto,
     validate,
     type LibraryResponseDto,
     type UserAdminResponseDto,
@@ -78,6 +86,39 @@
     exclusionPatterns = next;
     validation = null;
   };
+
+  // ---- FL-365: the folder chooser and "What to skip" ----
+  /** Hidden and system files: macOS's own files. */
+  const HIDDEN_PATTERNS = ['**/.DS_Store', '**/._*'];
+  /** NAS clutter: the server's own default list once read; until then the same list the app ships. */
+  let nasPatterns = $state<string[]>(
+    DEFAULT_EXCLUSION_PATTERNS.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern)),
+  );
+  let browsing = $state<LibraryFolderBrowseResponseDto | null>(null);
+  let browseOpen = $state(false);
+  let browseError = $state('');
+  const browse = async (path?: string) => {
+    browseError = '';
+    try {
+      browsing = await browseLibraryFolders({ path });
+      nasPatterns = browsing.defaultExclusionPatterns.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern));
+    } catch (error_) {
+      browseError = getServerErrorMessage(error_) ?? $t('frameleaf_libraries_browse_failed');
+    }
+  };
+  const useFolder = (path: string) => {
+    if (!importPaths.includes(path)) {
+      setPaths([...importPaths.filter((item) => item.trim() !== ''), path]);
+    }
+    browseOpen = false;
+  };
+  const skips = (patterns: string[]) => patterns.every((pattern) => exclusionPatterns.includes(pattern));
+  const setSkip = (patterns: string[], on: boolean) =>
+    setExclusions(
+      on
+        ? [...exclusionPatterns, ...patterns.filter((pattern) => !exclusionPatterns.includes(pattern))]
+        : exclusionPatterns.filter((pattern) => !patterns.includes(pattern)),
+    );
 
   const check = async () => {
     error = '';
@@ -242,13 +283,90 @@
         setPaths,
         '/mnt/photos/family',
       )}
-      {@render pathList(
-        $t('frameleaf_libraries_paths_exclusions'),
-        $t('frameleaf_libraries_add_exclusion'),
-        exclusionPatterns,
-        setExclusions,
-        '**/cache/**',
-      )}
+      <div class="resource-browse">
+        <button
+          type="button"
+          class="resource-button"
+          aria-expanded={browseOpen}
+          onclick={() => {
+            browseOpen = !browseOpen;
+            if (browseOpen && !browsing) {
+              void browse();
+            }
+          }}
+        >
+          {$t('frameleaf_libraries_choose_folder')}
+        </button>
+        {#if browseOpen}
+          <div class="resource-browser" role="group" aria-label={$t('frameleaf_libraries_choose_folder')}>
+            {#if browseError}
+              <p class="resource-error" role="alert">{browseError}</p>
+            {:else if browsing}
+              <p class="resource-footnote">
+                <code>{browsing.path}</code>
+                {#if !browsing.readable}· {$t('frameleaf_libraries_browse_unreadable')}{/if}
+              </p>
+              <ul>
+                {#if browsing.parent}
+                  <li>
+                    <button type="button" class="resource-button" onclick={() => browse(browsing!.parent!)}
+                      >{$t('frameleaf_libraries_browse_up')}</button
+                    >
+                  </li>
+                {/if}
+                {#each browsing.folders as folder (folder.path)}
+                  <li>
+                    <button type="button" class="resource-button" onclick={() => browse(folder.path)}
+                      >{folder.name}</button
+                    >
+                  </li>
+                {:else}
+                  <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
+                {/each}
+              </ul>
+              {#if browsing.truncated}
+                <p class="resource-footnote">{$t('frameleaf_libraries_browse_truncated')}</p>
+              {/if}
+              {#if browsing.path !== '/' && browsing.readable}
+                <button type="button" class="resource-button primary" onclick={() => useFolder(browsing!.path)}
+                  >{$t('frameleaf_libraries_browse_use')}</button
+                >
+              {/if}
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <fieldset class="resource-path-list">
+        <legend>{$t('frameleaf_libraries_skip_title')}</legend>
+        <label class="resource-check">
+          <input
+            type="checkbox"
+            checked={skips(HIDDEN_PATTERNS)}
+            onchange={(event) => setSkip(HIDDEN_PATTERNS, event.currentTarget.checked)}
+          />
+          <span>{$t('frameleaf_libraries_skip_hidden')}</span>
+        </label>
+        <label class="resource-check">
+          <input
+            type="checkbox"
+            checked={skips(nasPatterns)}
+            onchange={(event) => setSkip(nasPatterns, event.currentTarget.checked)}
+          />
+          <span>{$t('frameleaf_libraries_skip_nas')}</span>
+        </label>
+      </fieldset>
+
+      <details class="resource-advanced">
+        <summary>{$t('frameleaf_libraries_skip_advanced')}</summary>
+        {@render pathList(
+          $t('frameleaf_libraries_paths_exclusions'),
+          $t('frameleaf_libraries_add_exclusion'),
+          exclusionPatterns,
+          setExclusions,
+          '**/cache/**',
+        )}
+      </details>
 
       <button type="button" class="resource-button" disabled={importPaths.length === 0 || checking} onclick={check}>
         {$t('frameleaf_libraries_check_paths')}

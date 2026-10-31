@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AssetStatus, Permission } from 'src/enum.js';
@@ -19,6 +19,20 @@ export type InteractiveAdmissionView = {
   owners: InteractiveAdmissionOwner[];
 };
 export type InteractiveAdmissionSource = InteractiveAdmissionOwner & { assetId: string };
+
+/**
+ * A preview or preview stream is admitted against the signed-in session that resolved it, so a
+ * credential without one (an API key) is told so up front instead of the admission refusing it as
+ * changed on every attempt.
+ */
+export function requireAdmissionSession(manifest: { interactiveAdmissionView?: InteractiveAdmissionView }): void {
+  if (manifest.interactiveAdmissionView && !manifest.interactiveAdmissionView.sessionId) {
+    throw new ForbiddenException({
+      message: 'Studio previews need a signed-in session; an API key cannot open one',
+      code: 'studio_preview_session_required',
+    });
+  }
+}
 
 /** Adds an epoch fence to an already-authorized server-derived snapshot; grants no access itself. */
 export async function holdSourceAdmission(

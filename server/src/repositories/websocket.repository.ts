@@ -43,6 +43,8 @@ export const serverEvents = [
 export type ServerEvents = (typeof serverEvents)[number];
 
 export interface ClientEventMap {
+  /** Content-free owner invalidation; discard speech quotes and re-read live authority. */
+  on_speech_index_change: [];
   /** Complete local sequence; never translated into broad Trash/Delete handlers. */
   AssetLocalEffectsV1: [
     { streamEpoch: string; sequence: string; effectId: string; assetIds: string[]; revokedOperationIds: string[] },
@@ -81,6 +83,7 @@ export interface ClientEventMap {
    */
   on_user_preferences_update: [];
 
+  LibraryAssetUpdateV1: [AssetResponseDto];
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
   AssetEditReadyV2: [{ asset: SyncAssetV2; edit: SyncAssetEditV1[] }];

@@ -155,6 +155,15 @@ describe(MemoryHighlightService.name, () => {
   });
 
   describe('create', () => {
+    type ExportRequest = { format: string; resolution: string };
+    const workerTakes = (takes: (dto: ExportRequest) => boolean) =>
+      vi.fn((_auth: unknown, _project: unknown, dto: ExportRequest) =>
+        takes(dto)
+          ? Promise.resolve({ version: { id: VERSION }, operation: { id: RENDER } })
+          : Promise.reject(new ConflictException({ code: 'studio_export_unsupported', reason: 'no-worker' })),
+      );
+    const tried = () => studioExports.create.mock.calls.map((call) => `${call[2].format}@${call[2].resolution}`);
+
     it('keeps a concurrent refresh pending after project creation until the export version is attached', async () => {
       let current = runRow({
         status: MemoryExportStatus.Pending,
@@ -246,6 +255,42 @@ describe(MemoryHighlightService.name, () => {
         expect.objectContaining({ destination: MediaOperationDestination.Lan, resolution: '1080p' }),
         { retainInProject: true },
       );
+    });
+
+    it("falls back to the bundled worker's best format and size (FL-690)", async () => {
+      // The bundled CPU worker: no SDR Main10, and too little memory for 2160p.
+      studioExports.create = workerTakes((dto) => dto.format !== 'mp4-hevc-main10' && dto.resolution !== '2160p');
+
+      await expect(sut.create(auth, memory)).resolves.toMatchObject({ studioExportVersionId: VERSION });
+
+      expect(tried()).toEqual([
+        'mp4-hevc-main10@2160p',
+        'mp4-hevc-main10@1440p',
+        'mp4-hevc-main10@1080p',
+        'mp4-h264@2160p',
+        'mp4-h264@1440p',
+      ]);
+      expect(memories.updateExport).toHaveBeenCalledWith(
+        RUN,
+        expect.objectContaining({ settings: expect.objectContaining({ resolution: '1440p' }) }),
+      );
+      expect(projects.delete).not.toHaveBeenCalled();
+    });
+
+    it("keeps the owner's resolution and only changes the format", async () => {
+      studioExports.create = workerTakes((dto) => dto.format !== 'mp4-hevc-main10');
+
+      await sut.create(auth, memory, { resolution: '2160p' });
+
+      expect(tried()).toEqual(['mp4-hevc-main10@2160p', 'mp4-h264@2160p']);
+    });
+
+    it('does not try other settings for a refusal no format or size can fix', async () => {
+      const refusal = new ConflictException({ code: 'studio_export_sources_refused' });
+      studioExports.create.mockRejectedValue(refusal);
+
+      await expect(sut.create(auth, memory)).rejects.toBe(refusal);
+      expect(studioExports.create).toHaveBeenCalledTimes(1);
     });
 
     it("leaves nothing behind when the render is refused, and passes the export's reason on", async () => {

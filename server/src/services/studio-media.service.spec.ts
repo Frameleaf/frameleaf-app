@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import { Writable } from 'node:stream';
-import { CacheControl } from 'src/enum.js';
+import { AssetVisibility, CacheControl, JobStatus } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -90,22 +90,21 @@ describe(StudioMediaService.name, () => {
   });
 
   describe('filmstrip', () => {
-    it('cuts frames from the playback rendition, never the original, and composes a sprite', async () => {
+    it('cuts a short video in one pass from the playback rendition, never the original, and composes a sprite', async () => {
       mocks.media.probe.mockResolvedValue(videoInfo(false));
       const index = await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
 
-      expect(mocks.media.transcode).toHaveBeenCalledTimes(4);
-      for (const call of mocks.media.transcode.mock.calls) {
-        expect(call[0]).toBe(encodedPath);
-      }
-      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
-        ['-ss', '1.250'],
-        ['-ss', '3.750'],
-        ['-ss', '6.250'],
-        ['-ss', '8.750'],
-      ]);
+      // FL-650: one decoding pass, starting at the centre of the first slice, one frame per slice
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      const [input, output, command] = mocks.media.transcode.mock.calls[0];
+      expect(input).toBe(encodedPath);
+      expect(output).toMatch(/\.work-.*\/pass-%d\.jpg$/);
+      expect(command.inputOptions).toEqual(['-ss', '1.250']);
+      expect(command.outputOptions).toEqual(
+        expect.arrayContaining(['-frames:v', '4', '-vf', 'fps=4000/10000,scale=-2:90:flags=bilinear']),
+      );
       expect(mocks.media.composeFilmstrip).toHaveBeenCalledWith(
-        expect.arrayContaining([expect.stringMatching(/\.work-.*\/0\.jpg$/)]),
+        [1, 2, 3, 4].map((frame) => expect.stringMatching(new RegExp(String.raw`\.work-.*/pass-${frame}\.jpg$`))),
         expect.objectContaining({ columns: 4, rows: 1, tileWidth: 160, tileHeight: 90, format: 'jpeg' }),
       );
       const spritePath = `${folder}/filmstrip-${version}-4x90.jpg`;
@@ -139,6 +138,42 @@ describe(StudioMediaService.name, () => {
       });
     });
 
+    it('seeks once per frame in a video longer than ten minutes', async () => {
+      mocks.media.probe.mockResolvedValue({
+        ...videoInfo(false),
+        format: { ...videoInfo(false).format, duration: 1200 },
+      });
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
+
+      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
+        ['-ss', '150.000'],
+        ['-ss', '450.000'],
+        ['-ss', '750.000'],
+        ['-ss', '1050.000'],
+      ]);
+      for (const call of mocks.media.transcode.mock.calls) {
+        expect(call[0]).toBe(encodedPath);
+      }
+    });
+
+    it('falls back to a seek per frame when the single pass fails', async () => {
+      mocks.media.probe.mockResolvedValue(videoInfo(false));
+      mocks.media.transcode.mockRejectedValueOnce(new Error('decoder error'));
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
+
+      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
+        ['-ss', '1.250'],
+        ['-ss', '1.250'],
+        ['-ss', '3.750'],
+        ['-ss', '6.250'],
+        ['-ss', '8.750'],
+      ]);
+      expect(mocks.media.composeFilmstrip).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringMatching(/\.work-.*\/0\.jpg$/)]),
+        expect.anything(),
+      );
+    });
+
     it('serves the cached index and sprite without running ffmpeg', async () => {
       const cached = { assetId, version, mimeType: 'image/webp', frames: [] };
       mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify(cached)));
@@ -154,6 +189,95 @@ describe(StudioMediaService.name, () => {
       expect(mocks.storage.readFile).toHaveBeenCalledWith(`${folder}/filmstrip-${version}-20x90.webp.json`);
       expect(mocks.media.probe).not.toHaveBeenCalled();
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    describe('handleWarmFilmstrip (FL-650)', () => {
+      it("makes the player's seek-bar variant ahead of time, with no user", async () => {
+        mocks.media.probe.mockResolvedValue(videoInfo(false));
+
+        await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+        expect(mocks.media.transcode).toHaveBeenCalledOnce();
+        expect(mocks.media.transcode.mock.calls[0][2].outputOptions).toEqual(
+          expect.arrayContaining(['-frames:v', '120']),
+        );
+        expect(mocks.storage.rename).toHaveBeenCalledWith(
+          expect.stringContaining('/.work-'),
+          `${folder}/filmstrip-${version}-120x180.jpg`,
+        );
+      });
+
+      it('is a quick cache hit when the previews exist', async () => {
+        mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify({ assetId, version, frames: [] })));
+
+        await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Success);
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      });
+
+      it('skips anything that is not a video', async () => {
+        mocks.asset.getForVideo.mockResolvedValue(undefined);
+        await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+      });
+    });
+
+    describe('handleVideoFingerprint (FL-651)', () => {
+      const index = {
+        assetId,
+        version,
+        durationMs: 2000,
+        frameWidth: 320,
+        frameHeight: 180,
+        frames: [
+          { index: 0, timeMs: 500, x: 0, y: 0 },
+          { index: 1, timeMs: 1500, x: 320, y: 0 },
+        ],
+      };
+
+      beforeEach(() => {
+        mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
+          id: assetId,
+          ownerId,
+          visibility: AssetVisibility.Timeline,
+        } as never);
+        mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify(index)));
+        mocks.duplicateRepository.upsertVideoFingerprint.mockResolvedValue();
+      });
+
+      it("hashes every frame of the seek-bar filmstrip and removes the retired check's frames", async () => {
+        const rising = Array.from({ length: 72 }, (_, pixel) => (pixel % 9) * 20);
+        const black = Array.from({ length: 72 }, () => 0);
+        mocks.media.filmstripFrameGrids.mockResolvedValue([rising, black]);
+        mocks.storage.checkFileExists.mockImplementation((path) =>
+          Promise.resolve(!path.includes('_video_duplicate_7')),
+        );
+
+        await expect(sut.handleVideoFingerprint({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        expect(mocks.media.filmstripFrameGrids).toHaveBeenCalledWith(`${folder}/filmstrip-${version}-120x180.jpg`, [
+          { left: 0, top: 0, width: 320, height: 180 },
+          { left: 320, top: 0, width: 320, height: 180 },
+        ]);
+        expect(mocks.duplicateRepository.upsertVideoFingerprint).toHaveBeenCalledWith({
+          assetId,
+          durationMs: 2000,
+          hashes: ['-1', null],
+        });
+        const { files } = (mocks.job.queue.mock.calls[0][0] as { data: { files: string[] } }).data;
+        expect(files).toHaveLength(7);
+        expect(files[0]).toMatch(new RegExp(String.raw`${assetId}_video_duplicate_0\.jpeg$`));
+      });
+
+      it('skips locked videos', async () => {
+        mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
+          id: assetId,
+          ownerId,
+          visibility: AssetVisibility.Locked,
+        } as never);
+        await expect(sut.handleVideoFingerprint({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+        expect(mocks.duplicateRepository.upsertVideoFingerprint).not.toHaveBeenCalled();
+      });
     });
 
     it('refuses a sprite for an index of an earlier version of the video', async () => {

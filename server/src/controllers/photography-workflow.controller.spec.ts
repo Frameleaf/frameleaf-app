@@ -11,9 +11,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyGalleryDto } from 'src/dtos/photography-workflow.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 
 vi.mock('src/services/photography-workflow.service.js', () => ({ PhotographyWorkflowService: class {} }));
+vi.mock('src/services/photography-site.service.js', () => ({ PhotographySiteService: class {} }));
 vi.mock('src/services/auth.service.js', () => ({ AuthService: class {} }));
 
 // Reproduce the application-wide method-only operation ID factory and an unrelated library route.
@@ -31,6 +33,7 @@ describe('photography OpenAPI contract', () => {
       controllers: [PhotographyWorkflowController, MediaHealthContractController],
       providers: [
         { provide: PhotographyWorkflowService, useValue: {} },
+        { provide: PhotographySiteService, useValue: {} },
         { provide: LoggingRepository, useValue: {} },
       ],
     }).compile();
@@ -120,7 +123,7 @@ describe('photography OpenAPI contract', () => {
         required: expect.arrayContaining(['expectedRevision', 'config']),
       });
       expect(schemas.PhotographyPublicSiteDto).toMatchObject({
-        properties: { brand: expect.any(Object), portfolio: { type: 'array' } },
+        properties: { brand: expect.any(Object), collections: { type: 'array' } },
       });
       const session = document.paths['/photography/galleries/{id}/session'].post!;
       expect(session.responses['401']).toMatchObject({

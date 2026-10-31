@@ -125,7 +125,7 @@ Machine-learning features are set in **Settings → Search & intelligence**, one
 
 ### URL
 
-The built in (`http://frameleaf-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers under **Details → AI helpers: addresses, access keys and limits** on the **Computers** page. See [Workers and endpoints](/administration/workers-and-endpoints).
+The built in (`http://frameleaf-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers under **Details → AI helpers: addresses, access tokens and limits** on the **Computers** page. See [Workers and endpoints](/administration/workers-and-endpoints).
 
 Hosting the `frameleaf-machine-learning` container on a machine with a more powerful GPU can be helpful to for processing a large number of photos (such as during batch import) or for faster search.
 

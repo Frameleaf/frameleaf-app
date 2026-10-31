@@ -69,6 +69,24 @@ const keyframeRow = (assetId: string, n: number) => ({
 });
 
 describe(AssetRepository.name, () => {
+  it('updates non-key fields while metadata extraction holds a foreign-key reference', async () => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newExif({ assetId: asset.id, description: 'retained description' });
+
+    await defaultDatabase.transaction().execute(async (metadata) => {
+      // A foreign-key check holds KEY SHARE until metadata commits; editing must not upgrade the asset key lock.
+      await sql`select id from asset where id = ${asset.id}::uuid for key share`.execute(metadata);
+      await defaultDatabase.transaction().execute(async (editing) => {
+        await sql`set local lock_timeout = '250ms'`.execute(editing);
+        const updated = await new AssetRepository(editing).update({ id: asset.id, isFavorite: true });
+        expect(updated).toEqual(expect.objectContaining({ id: asset.id, isFavorite: true }));
+        expect(updated?.exifInfo).toEqual(expect.objectContaining({ description: 'retained description' }));
+      });
+    });
+  });
+
   it('calendar day lookup skips impossible leap dates while retaining valid anniversaries', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

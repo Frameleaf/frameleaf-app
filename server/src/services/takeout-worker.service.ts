@@ -34,6 +34,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { UPLOADS_PAUSED_MESSAGE } from 'src/utils/access.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS, mediaOperationProgress } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { TakeoutZipError } from 'src/utils/takeout-zip.js';
@@ -283,6 +284,14 @@ export class TakeoutWorkerService {
       await this.operations.fail(id, claimToken, {
         error: 'The account that started this import no longer exists',
         errorCode: 'takeout_owner_unavailable',
+      });
+      return;
+    }
+    if (action === 'import' && auth.user.uploadsPaused) {
+      // FL-538: nothing new is added while an administrator has paused this account's uploads
+      await this.operations.fail(id, claimToken, {
+        error: UPLOADS_PAUSED_MESSAGE,
+        errorCode: 'takeout_uploads_paused',
       });
       return;
     }
@@ -632,10 +641,15 @@ export class TakeoutWorkerService {
   private async importItems(run: TakeoutRun): Promise<void> {
     const { row } = run;
     const options = parseTakeoutOptions(row.options);
-    run.total = (await this.repository.countPending(row.id)) + (await this.repository.countApprovedPairs(row.id));
+    // Progress counts unique photos, as the check step does (FL-668): an album's copy of a photo is
+    // the same photo, so it moves the count once, and linking Live Photos adds nothing to it.
+    const pending = await this.repository.pendingPhotos(row.id);
+    run.total = pending.total;
     await this.checkpoint(run, true);
 
     const seen = new Set<string>();
+    // A photo an earlier run already brought in is not counted again when another copy of it retries.
+    const photos = new Set(pending.alreadyIn.map((checksum) => checksum.toString('hex')));
     let sinceRefresh = 0;
     while (true) {
       this.throwIfStopped(run);
@@ -653,6 +667,12 @@ export class TakeoutWorkerService {
         seen.add(item.id);
         try {
           await this.importItem(run, item, options);
+          // A photo counts once one of its copies is in; a copy that fails leaves it for the next.
+          const photo = item.checksum.toString('hex');
+          if (!photos.has(photo)) {
+            photos.add(photo);
+            run.processed++;
+          }
         } catch (error) {
           if (error instanceof TakeoutStop || run.controller.signal.aborted) {
             throw error;
@@ -662,7 +682,6 @@ export class TakeoutWorkerService {
           }
           await this.repository.itemDone(item.id, 'failed', errorMessage(error));
         }
-        run.processed++;
         await this.checkpoint(run);
         if (++sinceRefresh >= AUTH_REFRESH_ITEMS) {
           sinceRefresh = 0;
@@ -672,6 +691,9 @@ export class TakeoutWorkerService {
               'takeout_owner_unavailable',
               'The account that started this import no longer exists',
             );
+          }
+          if (refreshed.user.uploadsPaused) {
+            throw new TakeoutJobError('takeout_uploads_paused', UPLOADS_PAUSED_MESSAGE);
           }
           run.auth = refreshed;
         }
@@ -687,7 +709,6 @@ export class TakeoutWorkerService {
       for (const pair of pairs) {
         this.throwIfStopped(run);
         await this.repository.pairDone(pair.photoItemId, pair.videoItemId, await this.linkPair(run, pair));
-        run.processed++;
         await this.checkpoint(run);
       }
     }
@@ -1079,6 +1100,8 @@ export class TakeoutWorkerService {
         email: user.email,
         quotaUsageInBytes: user.quotaUsageInBytes,
         quotaSizeInBytes: user.quotaSizeInBytes,
+        // FL-538: an import started before uploads were paused stops adding items once they are
+        uploadsPaused: user.uploadsPaused,
       },
       session: { id: this.sessionId, hasElevatedPermission: true },
     };

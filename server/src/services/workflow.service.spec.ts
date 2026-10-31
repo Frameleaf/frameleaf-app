@@ -66,6 +66,33 @@ describe(WorkflowService.name, () => {
   });
 
   describe('import and export', () => {
+    it('discovers every trigger and installed automation template on the new endpoint', async () => {
+      mocks.plugin.search.mockResolvedValue([
+        {
+          name: 'sample',
+          templates: [
+            { name: 'scheduled', title: 'Scheduled', description: '', trigger: WorkflowTrigger.Schedule, steps: [] },
+          ],
+        },
+      ] as never);
+      const discovery = await sut.discovery();
+      expect(discovery.triggers.map(({ trigger }) => trigger)).toEqual(
+        expect.arrayContaining([WorkflowTrigger.AssetChanged, WorkflowTrigger.Schedule, WorkflowTrigger.AssetCreate]),
+      );
+      expect(discovery.templates).toEqual([
+        expect.objectContaining({ key: 'sample#scheduled', trigger: WorkflowTrigger.Schedule }),
+      ]);
+      expect(mocks.plugin.search).toHaveBeenCalledWith({ enabled: true });
+    });
+
+    it('keeps legacy trigger discovery within the original closed enum', () => {
+      expect(sut.getTriggers().map(({ trigger }) => trigger)).toEqual([
+        WorkflowTrigger.AssetCreate,
+        WorkflowTrigger.AssetMetadataExtraction,
+        WorkflowTrigger.AssetTagged,
+      ]);
+    });
+
     const imported = {
       trigger: WorkflowTrigger.AssetCreate,
       name: 'Imported',
@@ -128,14 +155,14 @@ describe(WorkflowService.name, () => {
     });
 
     it('keeps an unavailable trigger in the definition without inventing one', async () => {
-      const response = await sut.create(auth, { trigger: 'Schedule', enabled: false, steps: [] });
+      const response = await sut.create(auth, { trigger: 'FutureTrigger', enabled: false, steps: [] });
 
       const [dto, definition] = mocks.workflow.create.mock.calls[0]!;
       expect(dto.trigger).toBe(WorkflowTrigger.AssetCreate);
-      expect(definition.trigger).toBe('Schedule');
-      expect(response.trigger).toBe('Schedule');
+      expect(definition.trigger).toBe('FutureTrigger');
+      expect(response.trigger).toBe('FutureTrigger');
       expect(response.issues).toEqual([expect.objectContaining({ code: WorkflowIssueCode.TriggerUnavailable })]);
-      expect(sut.getTriggers().map(({ trigger }) => trigger)).not.toContain('Schedule');
+      expect(sut.getTriggers().map(({ trigger }) => trigger)).not.toContain('FutureTrigger');
     });
 
     it('refuses definitions that are not ordinary JSON or too large', async () => {
@@ -472,4 +499,72 @@ describe(WorkflowService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
+});
+
+describe('workflow source persistence', () => {
+  it('stores source beside the definition instead of writing unknown workflow columns', async () => {
+    const { sut, mocks } = newTestService(WorkflowService);
+    mocks.plugin.getForValidation.mockResolvedValue([]);
+    mocks.workflow.create.mockImplementation((dto, definition) =>
+      Promise.resolve({
+        id: newUuid(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        name: null,
+        description: null,
+        logging: false,
+        ...dto,
+        definition,
+        steps: [],
+      } as never),
+    );
+    const source = { filter: { rating: { gte: 4 } } };
+    const result = await sut.create(factory.auth(), { trigger: 'AssetChanged', source, steps: [] });
+    expect(result.source).toEqual(source);
+    expect(mocks.workflow.create.mock.calls[0]?.[0]).not.toHaveProperty('source');
+  });
+});
+
+it('previews a saved credential-dependent workflow without requiring its secret back from the client', async () => {
+  const { sut, mocks } = newTestService(WorkflowService);
+  const id = newUuid(),
+    stepId = newUuid();
+  const auth = factory.auth();
+  mocks.access.workflow.checkOwnerAccess.mockResolvedValue(new Set([id]));
+  mocks.workflow.get.mockResolvedValue({
+    id,
+    name: 'secret',
+    enabled: true,
+    logging: true,
+    trigger: 'AssetChanged',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    steps: [],
+    definition: {
+      version: 1,
+      trigger: 'AssetChanged',
+      source: { filter: {} },
+      extra: {},
+      steps: [{ id: stepId, method: 'plugin#http', config: { apiKey: 'stored-secret' }, enabled: true, extra: {} }],
+    },
+  } as never);
+  mocks.plugin.getForValidation.mockResolvedValue([
+    {
+      id: newUuid(),
+      pluginName: 'plugin',
+      name: 'http',
+      types: [WorkflowType.AssetV1],
+      schema: { type: 'object', properties: { apiKey: { type: 'string' } }, required: ['apiKey'] },
+    },
+  ]);
+  mocks.workflow.previewSource.mockResolvedValue({ count: 0, exampleAssetIds: [] });
+  const result = await sut.preview(auth, {
+    workflowId: id,
+    trigger: 'AssetChanged',
+    source: { filter: {} },
+    steps: [{ id: stepId, method: 'plugin#http', config: {} }],
+  } as never);
+  expect(result.issues).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain('stored-secret');
+  expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
 });

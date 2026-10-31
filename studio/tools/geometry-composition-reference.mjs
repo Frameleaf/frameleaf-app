@@ -75,12 +75,57 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-450 locked-lane drag refusal leaves the composition producers unchanged.
     sourceSha256 === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' ||
     // Trackless-video audio admission changes no geometry/composition producer bytes.
-    sourceSha256 === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a'
+    sourceSha256 === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||
+    // FL-505 Node 22.23.4 pin changes only the engine package/lockfile, not composition producers.
+    sourceSha256 === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
+    // FL-562 transcript editing changes no geometry/composition producer.
+    sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
+    // FL-597 speed ramps and freeze frames change timeline edits only.
+    sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
+    // FL-597 speed ramps: captions follow their segments, mismatched companions refused
+    sourceSha256 === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+    // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
+    sourceSha256 === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+    // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+    // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+    // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
+    // FL-640 word-by-word captions (caption cues, subtitle text and caption UI) on multicam; changes no composition or raster producer.
+    sourceSha256 === 'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9'
   )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+    }
+  // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
+  // renderer, which draws it through its correction; every other clip renders as before.
+  if (
+    sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
+    // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
+    sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
+    // FL-636 the bin's Library view changes the media bin only, no composition or raster producer.
+    sourceSha256 === '7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6' ||
+    // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
+    sourceSha256 === '4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad'
+  )
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
+    }
+  // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
+  if (sourceSha256 === 'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
+      'src/features/export/utils/client-render-engine.ts':
+        '0e2d3bfc84f9871d4ca39155e9f851e391c083bf368cbd1eafd9ae11b85b4ae4',
     }
   assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
   return COMPOSITION_SOURCES

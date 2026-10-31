@@ -36,11 +36,11 @@ import { checkAccess } from 'src/utils/access.js';
 import { BulkOperationItem, bulkErrorMessage, classifyBulkError } from 'src/utils/bulk-operation.js';
 import {
   DuplicateGroupDecision,
-  classifyDuplicateGroup,
   duplicateQualityReasons,
   duplicateStackPrimary,
   duplicateTrashIds,
   parseDuplicateGroups,
+  reviewKindOf,
 } from 'src/utils/duplicate-review.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
@@ -172,6 +172,13 @@ export class DuplicateDecisionService {
         ? []
         : (await this.repository.getOwnerNames(otherOwnerIds)).map(({ id, name }) => [id, name] as const),
     );
+    const albumNames = new Map<string, string[]>();
+    for (const { assetId, albumName } of await this.repository.getAlbumNames(
+      auth.user.id,
+      groups.flatMap(({ assets }) => assets.map(({ id }) => id)),
+    )) {
+      albumNames.set(assetId, [...(albumNames.get(assetId) ?? []), albumName]);
+    }
 
     return groups.map((group) => {
       const all = byGroup.get(group.duplicateId) ?? [];
@@ -193,15 +200,16 @@ export class DuplicateDecisionService {
         : hiddenMemberCount > 0
           ? DuplicateGroupBlock.HiddenMembers
           : null;
-      const kind = classifyDuplicateGroup(group.assets);
+      const reviewKind = reviewKindOf(group.assets);
       const reasons = duplicateQualityReasons(group.assets);
 
       return {
         duplicateId: group.duplicateId,
         assets: group.assets,
-        // related burst frames are different moments, never disposable copies (FL-61)
-        suggestedKeepAssetIds: kind === DuplicateGroupKind.Burst ? [] : group.suggestedKeepAssetIds,
-        kind,
+        // burst frames and look-alikes are different moments, never disposable copies (FL-61, FL-558)
+        suggestedKeepAssetIds: reviewKind === 'copies' ? group.suggestedKeepAssetIds : [],
+        kind: reviewKind === 'burst' ? DuplicateGroupKind.Burst : DuplicateGroupKind.Duplicates,
+        lookAlike: reviewKind === 'look-alike',
         ...(group.reviewRequiredReasons && { reviewRequiredReasons: group.reviewRequiredReasons }),
         editable: blockedReason === null,
         blockedReason,
@@ -209,6 +217,7 @@ export class DuplicateDecisionService {
         ...(otherOwnerNames && { otherOwnerNames }),
         totalBytes: group.assets.reduce((sum, asset) => sum + (asset.exifInfo?.fileSizeInByte ?? 0), 0),
         qualities: group.assets.map((asset) => ({ assetId: asset.id, reasons: reasons.get(asset.id) ?? [] })),
+        albums: group.assets.map((asset) => ({ assetId: asset.id, names: albumNames.get(asset.id) ?? [] })),
       };
     });
   }
@@ -243,6 +252,10 @@ export class DuplicateDecisionService {
     const visible = (memberIds: readonly string[]) => memberIds.every((id) => !locked.has(id));
 
     const running = new Set(operations.map(({ id }) => id));
+    // FL-416: the jobs Frameleaf started itself, merging identical photos ("Merged for you")
+    const automatic = await this.repository.getAutomaticOperationIds([
+      ...new Set(decisions.map(({ operationId }) => operationId).filter((id): id is string => !!id)),
+    ]);
     const batches = new Map<string, DuplicateDecisionBatchDto>();
     for (const decision of decisions) {
       // a decision its job closed without applying never happened as far as the owner is concerned
@@ -256,6 +269,7 @@ export class DuplicateDecisionService {
         createdAt,
         groups: [],
         undoable: true,
+        automatic: automatic.has(decision.operationId),
       };
       const group: DuplicateDecisionGroupDto = {
         decisionId: decision.id,

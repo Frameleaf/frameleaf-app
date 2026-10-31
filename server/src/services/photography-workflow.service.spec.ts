@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 import type { ClsService } from 'nestjs-cls';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
-import type { WorkflowRow } from 'src/repositories/photography-workflow.repository.js';
+import type { StudioRecord, WorkflowRow } from 'src/repositories/photography-workflow.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
@@ -18,15 +18,17 @@ import {
   PhotographyGalleryPasswordRequiredDto,
   PhotographyPreviewSessionResponseDto,
   PhotographyPublicSiteDto,
-  type PhotographySite,
   PhotographySiteSaveDto,
   PhotographyWorkflowDto,
   PhotographyWorkflowListDto,
 } from 'src/dtos/photography-workflow.dto.js';
 import { JobStatus } from 'src/enum.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
+import * as configUtils from 'src/utils/config.js';
 import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
+import { defaultPhotographySite } from 'src/utils/photography-site.js';
 
 vi.mock('src/repositories/job.repository.js', () => ({ JobRepository: class {} }));
 vi.mock('src/services/album.service.js', () => ({ AlbumService: class {} }));
@@ -71,7 +73,8 @@ async function setup(brand?: unknown) {
   vi.spyOn(StorageCore, 'getFolderLocation').mockReturnValue(folder);
   let row: WorkflowRow | undefined;
   let visible = true;
-  let site: { revision: string; value: PhotographySite } | undefined;
+  // the studio record as photography_studio_site stores it: website, presets, site photo copies, inquiries
+  let studio = { revision: null as string | null, record: { site: null, presets: [] } as StudioRecord };
   const asset = {
     id: assetId,
     ownerId,
@@ -87,27 +90,33 @@ async function setup(brand?: unknown) {
     rating: null,
     isOffline: false,
   };
-  let studio = { revision: null as string | null, presets: [] as any[] };
   const repository = {
-    studioPresets: vi.fn(() => Promise.resolve(structuredClone(studio))),
-    mutateStudio: vi.fn(async (_owner: string, expected: string | null, change: (record: any) => unknown) => {
-      if (expected !== studio.revision) throw new ConflictException();
-      const record = { site: site?.value ?? null, presets: structuredClone(studio.presets) };
-      const result = await change(record);
-      studio = { revision: randomUUID(), presets: record.presets };
-      return { revision: studio.revision, record, result };
-    }),
+    studioPresets: vi.fn(() =>
+      Promise.resolve({ revision: studio.revision, presets: structuredClone(studio.record.presets) }),
+    ),
+    studioRecord: vi.fn(() => Promise.resolve(structuredClone(studio))),
+    // like the repository: `expected` undefined is a write that keeps the revision (FL-702)
+    mutateStudio: vi.fn(
+      async (_owner: string, expected: string | null | undefined, change: (record: StudioRecord) => unknown) => {
+        if (expected !== undefined && expected !== studio.revision) throw new ConflictException();
+        const record = structuredClone(studio.record);
+        const result = await change(record);
+        studio = { revision: expected === undefined && studio.revision ? studio.revision : randomUUID(), record };
+        return { revision: studio.revision!, record, result };
+      },
+    ),
     pinnedStudioPreset: vi.fn((_tx: unknown, _owner: string, expected: string, id: string) => {
       if (expected !== studio.revision) throw new ConflictException();
-      const preset = studio.presets.find((preset) => preset.id === id);
+      const preset = studio.record.presets.find((preset) => preset.id === id);
       if (!preset) throw new ForbiddenException();
       return Promise.resolve(structuredClone(preset));
     }),
-    site: vi.fn(() => Promise.resolve(site)),
-    saveSite: vi.fn((_owner: string, _expected: string | null, value: PhotographySite) => {
-      site = { revision: randomUUID(), value };
-      return Promise.resolve({ revision: site.revision, site: value });
-    }),
+    site: vi.fn(() =>
+      Promise.resolve(studio.record.site ? { revision: studio.revision!, value: studio.record.site } : undefined),
+    ),
+    siteOwnerBySlug: vi.fn((slug: string) => Promise.resolve(studio.record.site?.slug === slug ? ownerId : undefined)),
+    studioOwner: vi.fn(() => Promise.resolve({ email: 'studio@example.com', name: 'Studio' })),
+    assetDescriptions: vi.fn(() => Promise.resolve(new Map([[assetId, 'Jamie by the lake']]))),
     studioLive: vi.fn(() => (visible ? Promise.resolve() : Promise.reject(new ForbiddenException()))),
     get: vi.fn((id: string) => Promise.resolve(id === shootId && row ? structuredClone(row) : undefined)),
     ownerName: vi.fn(() => Promise.resolve('Jamie Reid')),
@@ -205,6 +214,22 @@ async function setup(brand?: unknown) {
     jobs as never,
     storage as never,
   );
+  const notifications = { create: vi.fn(() => Promise.resolve({ id: randomUUID(), createdAt: new Date() })) };
+  const email = { renderEmail: vi.fn(() => Promise.resolve({ html: '<p>x</p>', text: 'x' })) };
+  const config = { server: { externalDomain: 'https://photos.example' }, templates: { email: { showBranding: true } } };
+  vi.spyOn(configUtils, 'getConfig').mockResolvedValue(config as never);
+  const siteService = new PhotographySiteService(
+    repository as never,
+    workspace as never,
+    service,
+    email as never,
+    jobs as never,
+    notifications as never,
+    { clientSend: vi.fn() } as never,
+    {} as never,
+    {} as never,
+    { setContext: vi.fn(), warn: vi.fn() } as never,
+  );
   const auth = { user: { id: ownerId, name: 'Studio' }, session: { hasElevatedPermission: true } } as AuthDto;
   const initial = await service.intake(auth, shootId, { expectedRevision: null });
   const captureId = initial.captures[0].id;
@@ -239,6 +264,10 @@ async function setup(brand?: unknown) {
   }
   return {
     service,
+    siteService,
+    notifications,
+    email,
+    studio: () => studio,
     auth,
     shootId,
     ownerId,
@@ -707,21 +736,21 @@ describe('photography workflow integration boundaries', () => {
     });
     expect(legacy.row().value.config.proofWatermark.text).toBe('Legacy studio');
   });
-  it('publishes portfolio pixels only with explicit inclusion and a matching current approved web revision', async () => {
+  it('copies a website photograph when it is added and keeps it after its gallery expires (FL-702)', async () => {
     const s = await setup();
     await s.published();
+    const item = { shootId: s.shootId, captureId: s.captureId };
     const dto = PhotographySiteSaveDto.schema.parse({
       expectedRevision: null,
       site: {
+        ...defaultPhotographySite('Studio'),
         enabled: true,
-        title: 'Studio',
-        about: 'Portraits',
-        services: '',
-        contact: '',
-        portfolio: [{ shootId: s.shootId, captureId: s.captureId, consent: true }],
+        slug: 'studio',
+        cover: item,
+        collections: [{ id: 'weddings', name: 'Weddings', items: [item] }],
       },
     });
-    await expect(s.service.saveSite(s.auth, dto)).rejects.toThrow('approved web photograph');
+    await expect(s.siteService.saveSite(s.auth, dto)).rejects.toThrow('approved web photograph');
     await s.service.approval(s.auth, s.shootId, {
       expectedRevision: s.row().revision,
       captureId: s.captureId,
@@ -730,16 +759,46 @@ describe('photography workflow integration boundaries', () => {
     });
     expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
     await s.published();
-    await s.service.saveSite(s.auth, dto);
-    const site = await s.service.publicSite(s.ownerId);
+    const saved = await s.siteService.saveSite(s.auth, dto);
+    expect(saved.url).toBe('/studio/studio');
+    const copies = Object.values(s.studio().record.media!);
+    expect(copies).toHaveLength(1);
+    expect(copies[0].files).toHaveLength(3);
+
+    const site = await s.siteService.publicSite('studio');
     expect(PhotographyPublicSiteDto.schema.safeParse(site).success).toBe(true);
-    expect(site.portfolio).toHaveLength(1);
+    expect(site.collections[0].photos).toHaveLength(1);
+    expect(site.cover).toMatchObject({ alt: 'Jamie by the lake', width: 800, height: 600 });
+    expect(site.cover!.srcset).toContain(' 640w');
+    expect(site.cover!.url).toContain(`?v=${copies[0].version}`);
     expect(JSON.stringify(site)).not.toContain(s.assetId);
-    expect((await s.service.publicPhoto(s.ownerId, s.shootId, s.captureId)).path).not.toBe(s.source);
-    s.setVisible(false);
-    await expect(s.service.publicPhoto(s.ownerId, s.shootId, s.captureId)).rejects.toBeInstanceOf(ForbiddenException);
+
+    // The gallery expires: the website keeps showing its own copy (FL-701 item 15).
+    s.row().value.config.expiresAt = new Date(Date.now() - 60_000).toISOString();
+    expect((await s.siteService.publicSite(s.ownerId)).collections[0].photos).toHaveLength(1);
+    const file = await s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId, 640);
+    expect(file.path).toContain('-640.jpg');
+    expect((await sharp(file.path).metadata()).width).toBe(640);
+    await expect(s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId, 500)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+
+    // A photograph that is withheld disappears from the website at once.
+    s.row().value.captures[0].withheld = true;
+    expect((await s.siteService.publicSite(s.ownerId)).collections[0].photos).toHaveLength(0);
+    await expect(s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId, 640)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+
+    // Taking it off the website deletes the copies.
+    await s.siteService.saveSite(s.auth, {
+      expectedRevision: s.studio().revision,
+      site: { ...dto.site, cover: null, collections: [{ id: 'weddings', name: 'Weddings', items: [] }] },
+    });
+    expect(s.studio().record.media).toEqual({});
+    await expect(readFile(copies[0].files[0].path)).rejects.toThrow();
   });
-  it('reads each portfolio gallery once per public site load, and still skips a gallery that is gone', async () => {
+  it('shows an older site from its galleries until its copies are made, then uses them (FL-702 review)', async () => {
     const s = await setup();
     await s.published();
     await s.service.approval(s.auth, s.shootId, {
@@ -750,25 +809,103 @@ describe('photography workflow integration boundaries', () => {
     });
     expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
     await s.published();
-    const item = { shootId: s.shootId, captureId: s.captureId, consent: true as const };
-    const gone = { shootId: randomUUID(), captureId: s.captureId, consent: true as const };
-    const value = {
+    s.studio().record.site = {
+      presentation: { layout: 'editorial', spacing: 'comfortable', font: 'editorial', palette: 'studio' },
       enabled: true,
-      title: 'Studio',
+      title: 'Old studio',
       about: '',
       services: '',
       contact: '',
-      portfolio: [item, gone, item, gone, item],
-    } as unknown as PhotographySite;
-    s.repository.site.mockResolvedValue({ revision: randomUUID(), value });
-    s.repository.get.mockClear();
-    s.repository.live.mockClear();
+      portfolio: [{ shootId: s.shootId, captureId: s.captureId, consent: true }],
+    } as never;
+    const before = await s.siteService.publicSite(s.ownerId);
+    expect(before.cover).toMatchObject({
+      url: `/api/photography/studios/${s.ownerId}/photos/${s.shootId}/${s.captureId}`,
+      srcset: '',
+    });
+    const legacy = await s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId);
+    expect(legacy.path).toContain('-preview.jpg');
+    await vi.waitFor(() => expect(Object.keys(s.studio().record.media ?? {})).toHaveLength(1));
+    const after = await s.siteService.publicSite(s.ownerId);
+    expect(after.cover!.srcset).toContain(' 640w');
+    expect((await s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId)).path).toContain('-2048.jpg');
+  });
+  it('removes the copies of a save that did not happen', async () => {
+    const s = await setup();
+    await s.published();
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.published();
+    const item = { shootId: s.shootId, captureId: s.captureId };
+    const folder = path.join(StorageCore.getFolderLocation('' as never, s.ownerId), 'photography', 'site');
+    await expect(
+      s.siteService.saveSite(s.auth, {
+        expectedRevision: randomUUID(),
+        site: { ...defaultPhotographySite('Studio'), collections: [{ id: 'w', name: 'Work', items: [item] }] },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(readdir(folder)).resolves.toEqual([]);
+  });
+  it('reads a website saved before FL-702, refuses a taken address and keeps inquiries apart from edits', async () => {
+    const s = await setup();
+    s.studio().record.site = {
+      presentation: { layout: 'grid', spacing: 'airy', font: 'modern', palette: 'ivory' },
+      enabled: true,
+      title: 'Old studio',
+      about: 'About us',
+      services: 'Portraits',
+      contact: 'Say hello',
+      portfolio: [],
+    } as never;
+    const view = await s.siteService.site(s.auth);
+    expect(view.site).toMatchObject({
+      template: 'minimal',
+      enabled: true,
+      title: 'Old studio',
+      about: 'About us\n\nPortraits',
+      slug: 'old-studio',
+    });
+    s.repository.siteOwnerBySlug.mockResolvedValueOnce(randomUUID());
+    await expect(
+      s.siteService.saveSite(s.auth, { expectedRevision: view.revision, site: { ...view.site, slug: 'taken' } }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    const saved = await s.siteService.saveSite(s.auth, { expectedRevision: view.revision, site: view.site });
 
-    const site = await s.service.publicSite(s.ownerId);
-
-    expect(site.portfolio).toHaveLength(3);
-    expect(s.repository.get).toHaveBeenCalledTimes(2);
-    expect(s.repository.live).toHaveBeenCalledTimes(1);
+    const inquiry = { kind: 'inquiry' as const, name: 'Sam', email: 'sam@example.com', date: '', type: 'Family' };
+    await s.siteService.inquire('old-studio', { ...inquiry, message: 'A session in June?' });
+    // An inquiry never makes the photographer's open editor reload.
+    expect(s.studio().revision).toBe(saved.revision);
+    expect(s.studio().record.inquiries).toMatchObject([{ name: 'Sam', message: 'A session in June?' }]);
+    expect(s.notifications.create).toHaveBeenCalledOnce();
+    expect(s.jobs.queue).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ to: 'studio@example.com' }) }),
+    );
+    // A notification problem after the inquiry is saved is not the visitor's failure.
+    s.notifications.create.mockRejectedValueOnce(new Error('database busy'));
+    await expect(s.siteService.inquire('old-studio', { ...inquiry, message: 'Second try' })).resolves.toBeUndefined();
+    expect(s.studio().record.inquiries).toHaveLength(2);
+    s.studio().record.inquiries!.shift();
+    // Form-filling bots are told it worked; nothing is kept.
+    await s.siteService.inquire(s.ownerId, { ...inquiry, message: 'Buy now', website: 'https://spam.example' });
+    expect(s.studio().record.inquiries).toHaveLength(1);
+    // Asking for a gallery link keeps only the email address.
+    await s.siteService.inquire(s.ownerId, { ...inquiry, kind: 'gallery-link', message: 'ignored' });
+    expect(s.studio().record.inquiries![0]).toMatchObject({ kind: 'gallery-link', name: '', message: '' });
+    expect(await s.siteService.site(s.auth)).toMatchObject({ inquiries: [{ kind: 'gallery-link' }, { name: 'Sam' }] });
+    // A site that is turned off takes no inquiries.
+    await s.siteService.saveSite(s.auth, {
+      expectedRevision: s.studio().revision,
+      site: { ...view.site, enabled: false },
+    });
+    await expect(s.siteService.inquire(s.ownerId, { ...inquiry, message: 'Hello?' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(s.siteService.metadataTags('old-studio')).rejects.toBeInstanceOf(NotFoundException);
   });
   it('verifies provider amount/currency, applies payment once, and keeps snapshots after refund', async () => {
     const s = await setup();

@@ -14,8 +14,8 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(11);
-  expect(catalogue.profiles).toHaveLength(42);
+  expect(catalogue.epoch).toBe(12);
+  expect(catalogue.profiles).toHaveLength(52);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -37,7 +37,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(42);
+  expect(catalogue.profiles).toHaveLength(52);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
@@ -78,7 +78,7 @@ it('validates the approved default model and preserves exact config, source and 
         profile.modelName,
         profile.spec.entries,
         profile.runtimeSourceRevision,
-        'CUDAExecutionProvider',
+        'MIGraphXExecutionProvider',
       ),
     ).toBeUndefined();
   }
@@ -167,6 +167,16 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     'd9eecddc9dbbc61ff126beb62ce35b1e45af0b289f568c3a9b6ca219eb75f93c',
     '40115f6689e12d4b40e2e456dd4f20b527a29795a17d76c1b79b881b6b3b0f34',
     '420f5d93f9189e42fad015eec0ff2cb19571e1e5f127e68b6e2770b697f15557',
+    '7480057b35520ea85d2bff0fa0fa026df115eabdd51ab87a9ba3ba2211d97b6d',
+    '37a25a170947f424cc0231e279ff5ea5de7dfc0c1a40b056bb60f3c807ef176b',
+    'f4a861ae2fb52c45577f1ab08aa0bdf794628dc11c4e4a2de75909bac6bf68b6',
+    '2a43cd5fb87f155cb03c1d528dad7d560f390654ce7849b4ffa4da45eab5daf2',
+    'bb60ac6ef80bdf0bcc77295364cece4173adad781cd945a7250b47fa2e19ad88',
+    '82bc3cb4ec3204c5f06e0b43e1c3e65666d82bda63381d655c7eb92ab1d56551',
+    'f3dabc2a4bdda94ec954ed297ef9da4ea2ea2b7875d328c508d5ca3d31227e0e',
+    'c07473e7f48fc116ede101ba012f266a7c84c1a79485f8be4f6f80df49153d82',
+    'eb5990f3895a30726bf70f19dca270e14c09325364d0c71085c4334a54912cff',
+    '84a5a8662aab5eac9415ca46b9c25318ba0bd989f4711853c75776614e919f8c',
   ];
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -307,7 +317,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(42);
+  expect(catalogue.profiles).toHaveLength(52);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -338,8 +348,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(11);
-  expect(catalogue.profiles).toHaveLength(42);
+  expect(catalogue.epoch).toBe(12);
+  expect(catalogue.profiles).toHaveLength(52);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -367,5 +377,31 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
     const cpu = catalogue.profiles[32 + index];
     const gpu = catalogue.profiles[37 + index];
     expect({ ...gpu, spec: { ...gpu.spec, provider: 'CPUExecutionProvider' } }).toEqual(cpu);
+  }
+});
+
+it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  expect(catalogue.epoch).toBe(12);
+  expect(catalogue.profiles).toHaveLength(52);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(catalogue.profiles.slice(0, 42)))
+      .digest('hex'),
+  ).toBe('55de0a4da603339578721080a8eca52ef7a9beb32ca28d4b52aa58d798a49d5d');
+  const source = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
+  for (const [offset, provider] of [
+    [42, 'CUDAExecutionProvider'],
+    [47, 'OpenVINOExecutionProvider'],
+  ] as const) {
+    for (let index = 0; index < 5; index++) {
+      const cpu = catalogue.profiles[32 + index];
+      const twin = catalogue.profiles[offset + index];
+      expect(twin.runtimeSourceRevision).toBe(source);
+      expect(twin.spec.provider).toBe(provider);
+      // the same model, files, fixture and CPU reference output, for the other provider
+      expect({ ...twin, spec: { ...twin.spec, provider: 'CPUExecutionProvider' } }).toEqual(cpu);
+      expect(matchDesktopModelProfile(catalogue, twin.modelName, twin.spec.entries, source, provider)).toEqual(twin);
+    }
   }
 });

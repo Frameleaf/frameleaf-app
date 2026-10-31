@@ -331,6 +331,10 @@ export class MediaRepository {
     return sharpProcessPool.run('composeFilmstrip', args);
   }
 
+  async filmstripFrameGrids(...args: SharpArguments<'filmstripFrameGrids'>): Promise<number[][]> {
+    return sharpProcessPool.run('filmstripFrameGrids', args);
+  }
+
   async renderDevelopGeometry(
     input: Buffer,
     raw: RawImageInfo,
@@ -353,6 +357,10 @@ export class MediaRepository {
     output?: string,
   ): Promise<Buffer | undefined> {
     return sharpProcessPool.run('encodeDevelopOutput', [input, raw, options, output]);
+  }
+
+  async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
+    return sharpProcessPool.run('extractAssetPalette', [input, options]);
   }
 
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {

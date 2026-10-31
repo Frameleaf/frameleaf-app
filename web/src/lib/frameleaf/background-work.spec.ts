@@ -1,6 +1,6 @@
 import { QueueName, type DurableJobRun, type DurableQueueRun, type DurableRunningJobs } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
-import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
+import { buildBackgroundWorkCards, tonightStart } from '$lib/frameleaf/background-work';
 
 const queue = (name: QueueName, patch: Partial<DurableQueueRun> = {}): DurableQueueRun => ({
   name,
@@ -101,6 +101,35 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
     ]);
   });
 
+  it('says work quiet hours saved for tonight as waiting, with when it starts, not as paused (FL-711)', () => {
+    const cards = buildBackgroundWorkCards(
+      summary({
+        queues: [
+          queue(QueueName.VideoConversion, {
+            isPaused: true,
+            heldForNight: true,
+            resumesAt: '2026-10-31T06:00:00.000Z',
+            state: 'paused',
+            waiting: 3,
+            total: 3,
+          }),
+          queue(QueueName.SmartSearch, { isPaused: true, waiting: 52, total: 52 }),
+        ],
+      }),
+    );
+
+    expect(cards).toEqual([
+      expect.objectContaining({
+        queueName: QueueName.VideoConversion,
+        stage: 'queued',
+        waiting: 3,
+        tonight: { startsAt: '2026-10-31T06:00:00.000Z' },
+      }),
+      expect.objectContaining({ queueName: QueueName.SmartSearch, stage: 'paused' }),
+    ]);
+    expect(cards[1]).not.toHaveProperty('tonight');
+  });
+
   it('counts an unfinished run once, only for a kind whose queue is idle, without its stages', () => {
     const cards = buildBackgroundWorkCards(
       summary({
@@ -133,5 +162,31 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('tonightStart (FL-711)', () => {
+  // Local times, so the calendar days are the viewer's own.
+  const evening = new Date(2026, 9, 30, 21, 28);
+
+  it('calls a start after midnight but before noon tomorrow tonight', () => {
+    expect(tonightStart(new Date(2026, 9, 31, 0, 0).toISOString(), evening)).toBe('tonight');
+    expect(tonightStart(new Date(2026, 9, 30, 23, 0).toISOString(), evening)).toBe('tonight');
+  });
+
+  it('names the day of a start tomorrow evening, though it is less than 24 hours away', () => {
+    expect(tonightStart(new Date(2026, 9, 31, 20, 0).toISOString(), evening)).toBe('day');
+    expect(tonightStart(new Date(2026, 10, 2, 0, 0).toISOString(), evening)).toBe('day');
+  });
+
+  it('judges by calendar day across a daylight-saving change', () => {
+    // 1 November 2026 is the fall-back day in North America; its start is still the morning after.
+    const night = new Date(2026, 9, 31, 22, 0);
+    expect(tonightStart(new Date(2026, 10, 1, 2, 0).toISOString(), night)).toBe('tonight');
+  });
+
+  it('says nothing about a time when the schedule never starts', () => {
+    expect(tonightStart(null, evening)).toBe('unscheduled');
+    expect(tonightStart('not a date', evening)).toBe('unscheduled');
   });
 });

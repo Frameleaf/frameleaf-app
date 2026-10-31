@@ -19,6 +19,21 @@ describe(TagController.name, () => {
     ctx.reset();
   });
 
+  describe('GET /tags/search (FL-647)', () => {
+    it('passes the search and a default page size, and is not read as a tag id', async () => {
+      service.getAll.mockResolvedValue([]);
+      const { status } = await request(ctx.getHttpServer()).get('/tags/search').query({ search: 'trip' });
+      expect(status).toBe(200);
+      expect(service.getAll).toHaveBeenCalledWith(undefined, { search: 'trip', take: 20 });
+      expect(service.get).not.toHaveBeenCalled();
+    });
+
+    it('bounds the page size', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/tags/search').query({ take: 500 });
+      expect(status).toBe(400);
+    });
+  });
+
   describe('POST /tags', () => {
     it('should a null parentId', async () => {
       await request(ctx.getHttpServer()).post(`/tags`).send({ name: 'tag', parentId: null });

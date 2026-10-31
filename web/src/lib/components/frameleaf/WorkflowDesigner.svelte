@@ -9,9 +9,13 @@
    * server refuses to enable or run what cannot run, and the draft stays open when a save fails.
    * History is the server's real run log: attempts, failures and manual retry.
    */
+  import WorkflowAutomation from './WorkflowAutomation.svelte';
+  import WorkflowBatches from './WorkflowBatches.svelte';
+  import { onMount } from 'svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import WorkflowParameter, { type ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
+  import WorkflowParameter from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import '$lib/frameleaf/workflow-designer.css';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import {
@@ -37,6 +41,10 @@
   import { downloadJson } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    getWorkflowCapabilities,
+    previewWorkflow as previewWorkflowMatches,
+    type WorkflowCapabilitiesDto,
+    type WorkflowPreviewResponseDto,
     createWorkflow,
     deleteWorkflow,
     getWorkflowLogs,
@@ -62,7 +70,6 @@
     methods,
     triggers,
     templates,
-    references = {},
     onSaved,
     onDeleted,
   }: {
@@ -73,7 +80,6 @@
     methods: PluginMethodResponseDto[];
     triggers: WorkflowTriggerResponseDto[];
     templates: PluginTemplateResponseDto[];
-    references?: Record<string, ReferenceOption[]>;
     onSaved: (workflow: WorkflowResponseDto) => void;
     onDeleted: (id: string) => void;
   } = $props();
@@ -91,6 +97,54 @@
   let raw = $state('');
   let parameterJson = $state<string | null>(null);
   let validation = $state<ReturnType<typeof previewWorkflow> | null>(null);
+  let capabilities = $state<WorkflowCapabilitiesDto | null>(null);
+  let matches = $state<WorkflowPreviewResponseDto | null>(null);
+  let previewing = $state(false);
+  let previewGeneration = 0;
+  onMount(() => {
+    let mounted = true;
+    void Promise.resolve(getWorkflowCapabilities())
+      .then((value) => {
+        if (mounted) {
+          capabilities = value ?? null;
+        }
+      })
+      .catch(() => {});
+    const unsubscribe = onLibraryAccessChange(() => {
+      matches = null;
+      previewGeneration++;
+    });
+    return () => {
+      mounted = false;
+      previewGeneration++;
+      unsubscribe();
+    };
+  });
+  const checkPreview = async () => {
+    validation = previewWorkflow(draft, methods, triggers);
+    matches = null;
+    if (!capabilities || validation.problems.length > 0) {
+      return;
+    }
+    const generation = ++previewGeneration;
+    previewing = true;
+    try {
+      const result = await previewWorkflowMatches({
+        workflowPreviewDto: { ...draftToCreateDto(draft), ...(workflow && { workflowId: workflow.id }) },
+      });
+      if (generation === previewGeneration) {
+        matches = result;
+      }
+    } catch (error_) {
+      if (generation === previewGeneration) {
+        error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+      }
+    } finally {
+      if (generation === previewGeneration) {
+        previewing = false;
+      }
+    }
+  };
   let deleting = $state(false);
   let saving = $state(false);
 
@@ -119,6 +173,9 @@
     draft = next;
     error = '';
     validation = null;
+    matches = null;
+    previewing = false;
+    previewGeneration++;
   };
 
   const updateStep = (next: WorkflowDraftStep) =>
@@ -375,7 +432,18 @@
         </label>
         <label class="wd-field">
           {$t('frameleaf_workflows.trigger')}
-          <select value={draft.trigger} onchange={(event) => update({ ...draft, trigger: event.currentTarget.value })}>
+          <select
+            value={draft.trigger}
+            onchange={(event) => {
+              const trigger = event.currentTarget.value;
+              update({
+                ...draft,
+                trigger,
+                ...(['Schedule', 'AssetChanged'].includes(trigger) && { source: draft.source ?? { filter: {} } }),
+                ...(trigger === 'Schedule' && { schedule: draft.schedule ?? { cron: '0 9 * * *' } }),
+              });
+            }}
+          >
             {#if !knownTrigger}
               <option value={draft.trigger}>
                 {$t('frameleaf_workflows.trigger_unavailable', { values: { trigger: draft.trigger } })}
@@ -395,6 +463,14 @@
         </label>
       </div>
 
+      {#if capabilities}
+        <WorkflowAutomation
+          {draft}
+          timezone={capabilities.timezone}
+          nextRunAt={dirty ? null : workflow?.nextRunAt}
+          onChange={update}
+        />
+      {/if}
       <div class="wd-switches">
         <label>
           <input
@@ -522,7 +598,6 @@
                 value={selected.config ?? {}}
                 label={$t('frameleaf_workflows.parameters')}
                 storedSecrets={selected.storedSecrets}
-                {references}
                 onChange={(config) => updateStep({ ...selected, config: config as Record<string, unknown> })}
               />
               {#if selected.storedSecrets.length > 0}<small>{$t('frameleaf_workflows.credentials_note')}</small>{/if}
@@ -564,10 +639,21 @@
       <h3>{$t('frameleaf_workflows.validation_title')}</h3>
       <p>{$t('frameleaf_workflows.validation_help')}</p>
       <div>
-        <Button onclick={() => (validation = previewWorkflow(draft, methods, triggers))}>
+        <Button disabled={previewing} onclick={() => void checkPreview()}>
           {$t('frameleaf_workflows.validate')}
         </Button>
       </div>
+      {#if matches}
+        <div role="status">
+          <p>{$t('frameleaf_workflows.match_count', { values: { count: matches.count } })}</p>
+          {#each matches.issues as issue, index (index)}<p>{issue.message}</p>{/each}
+          <ul>
+            {#each matches.exampleAssetIds as id (id)}<li>
+                <a href={Route.viewAsset({ id })}>{$t('frameleaf_workflows.open_photo')}</a>
+              </li>{/each}
+          </ul>
+        </div>
+      {/if}
       {#if validation}
         <div role="status">
           {#if validation.problems.length > 0}
@@ -596,6 +682,7 @@
     {:else if tab === 'history'}
       <h3>{$t('frameleaf_workflows.history_title')}</h3>
       <p>{$t('frameleaf_workflows.history_help')}</p>
+      {#if capabilities && workflow}<WorkflowBatches {workflow} {dirty} />{/if}
       {#if notice}<p role="status">{notice}</p>{/if}
       {#if !workflow}
         <p>{$t('frameleaf_workflows.history_new')}</p>

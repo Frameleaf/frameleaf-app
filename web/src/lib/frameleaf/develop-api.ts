@@ -12,6 +12,7 @@ import {
   getAssetDevelop,
   defaults,
   getBaseUrl,
+  isHttpError,
   previewAssetDevelop,
   type AssetDevelopRecipeDto,
   type AssetDevelopResponseDto,
@@ -97,10 +98,84 @@ export function parseHdrHistogram(header: string | null): HdrHistogram | undefin
 }
 
 /**
+ * The server develops one RAW at a time and answers 503 while another render runs (often the
+ * preview this one just superseded, still stopping). That is "still working", not a failure: the
+ * request waits and asks again, backing off, until it is superseded or gives up (FL-677).
+ */
+export const PREVIEW_BUSY_RETRY_MS = [500, 1000, 2000, 4000] as const;
+export const PREVIEW_BUSY_GIVE_UP_MS = 120_000;
+
+const isBusy = (error: unknown) => isHttpError(error) && error.status === 503;
+
+/** Waits `ms`; false when the signal aborts first. */
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<boolean>((resolve) => {
+    if (signal?.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+/**
  * Renders the recipe on the server at preview size and returns an object URL. The caller owns
  * the URL and revokes it when a newer preview replaces it; an aborted request resolves to null.
+ * While the server is busy with another render it waits and retries instead of failing. From the
+ * first busy answer, every pause and retry shares one bounded wait; when it runs out, the last busy
+ * error is thrown.
  */
 export async function requestDevelopPreview(
+  assetId: string,
+  recipe: AssetDevelopRecipeDto,
+  size: number,
+  signal?: AbortSignal,
+  dynamicRange?: 'auto' | 'sdr' | 'hdr',
+): Promise<PreviewResult | null> {
+  let giveUp: AbortController | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let busy: unknown;
+  const bounded = () => (giveUp ? (signal ? AbortSignal.any([signal, giveUp.signal]) : giveUp.signal) : signal);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const result = await renderPreview(assetId, recipe, size, bounded(), dynamicRange);
+        if (result === null && giveUp?.signal.aborted && !signal?.aborted) {
+          throw busy;
+        }
+        return result;
+      } catch (error) {
+        if (!isBusy(error)) {
+          throw error;
+        }
+        busy = error;
+        if (!giveUp) {
+          const controller = new AbortController();
+          giveUp = controller;
+          timer = setTimeout(() => controller.abort(), PREVIEW_BUSY_GIVE_UP_MS);
+        }
+        const delay = PREVIEW_BUSY_RETRY_MS[Math.min(attempt, PREVIEW_BUSY_RETRY_MS.length - 1)];
+        if (!(await pause(delay, bounded()))) {
+          if (signal?.aborted) {
+            return null;
+          }
+          throw busy;
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function renderPreview(
   assetId: string,
   recipe: AssetDevelopRecipeDto,
   size: number,

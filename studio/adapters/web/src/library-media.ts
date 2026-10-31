@@ -266,11 +266,24 @@ export interface LibraryMediaSeeder {
   forget(mediaId: string): void
   /** The media is in the current bin again (imported again, or linked again by Freecut). */
   remember(mediaId: string): void
+  /**
+   * FL-636: the person asked for these again from the bin's Library view. Offer each afresh, even one
+   * they removed from the bin earlier, which `seed` alone would leave out.
+   */
+  restore(assets: readonly StudioAssetRef[]): Promise<void>
   /** What this seeder linked to `projectId`: the bin it put there, before anyone else changed it. */
   linked(projectId: string): ReadonlySet<string>
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
+
+/**
+ * FL-639: the server keeps a cut-out's matte with the project under this file name. It is project
+ * data for the renderer, not media the person placed, so it stays out of the bin.
+ */
+export const SUBJECT_MATTE_FILE_PREFIX = 'frameleaf-subject-matte-'
+export const isSubjectMatteImport = (item: Pick<StudioProjectImportRef, 'name' | 'mimeType'>): boolean =>
+  item.mimeType === 'image/png' && item.name.startsWith(SUBJECT_MATTE_FILE_PREFIX)
 
 export function createLibraryMediaSeeder(options: {
   workspace: VirtualWorkspace
@@ -402,8 +415,17 @@ export function createLibraryMediaSeeder(options: {
       }
       onChange()
     },
-    async seedImports(imports) {
+    async seedImports(all) {
       if (controller.signal.aborted) return
+      // FL-639: a cut-out matte is read by the renderer by its id, never offered in the bin.
+      const imports: StudioProjectImportRef[] = []
+      for (const item of all) {
+        if (!isSubjectMatteImport(item)) imports.push(item)
+        else if (!seeded.has(item.id)) {
+          seeded.add(item.id)
+          blobUrlManager.registerUrl(item.id, item.url)
+        }
+      }
       // A canonical reload wins over stale workspace metadata, including records already seeded.
       for (const item of imports) {
         if (removed.has(item.id) || !item.processingProvenance) continue
@@ -461,6 +483,15 @@ export function createLibraryMediaSeeder(options: {
     remember(mediaId) {
       removed.delete(mediaId)
       options.onAvailabilityChange?.(mediaId, true)
+    },
+    restore(assets) {
+      for (const asset of assets) {
+        if (removed.delete(asset.id)) options.onAvailabilityChange?.(asset.id, true)
+        seeded.delete(asset.id)
+        // A restored record starts afresh, so a later HDR report marks it again.
+        hdrMarked.delete(asset.id)
+      }
+      return this.seed(assets)
     },
     linked(projectId) {
       return linkedTo.get(projectId) ?? new Set()

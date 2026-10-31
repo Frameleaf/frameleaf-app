@@ -222,6 +222,76 @@ describe('bundled worker recipe', () => {
     });
   }
 
+  // FL-563: vertical and square exports render a graph derived from the project's.
+  const shaped = (shape = 'vertical', resolution = '1080p') => {
+    const claim = claimOf();
+    const video = claim.snapshot.studio.graph.timeline.items[0];
+    Object.assign(video, { sourceWidth: 1920, sourceHeight: 1080 });
+    const output = shape === 'vertical' ? { width: 1080, height: 1920 } : { width: 1080, height: 1080 };
+    Object.assign(claim.settings, {
+      resolution,
+      shape,
+      reframe: { version: 1, shape, output, shots: { v: [{ t: 0, x: 0.4 }, { t: 1, x: 0.6 }] } },
+    });
+    return claim;
+  };
+
+  it('renders a vertical export at its shaped size from a derived graph', () => {
+    const claim = shaped();
+    const project = structuredClone(claim.snapshot.studio.graph);
+    const recipe = bundledRecipe(claim, { softwareRenderer: true });
+    assert.deepEqual(recipe.dimensions, { width: 1080, height: 1920 });
+    assert.deepEqual(recipe.settings.resolution, { width: 1080, height: 1920 });
+    assert.equal(recipe.shape, 'vertical');
+    assert.deepEqual(recipe.graph.metadata, { ...project.metadata, width: 608, height: 1080 });
+    assert.equal(recipe.graph.timeline.keyframes[0].itemId, 'v');
+    // the claim's project graph is left exactly as it came
+    assert.deepEqual(claim.snapshot.studio.graph, project);
+    // the probe holds the file to the shaped size
+    const video = { codec_type: 'video', codec_name: 'h264', width: 1080, height: 1920, duration: '4', pix_fmt: 'yuv420p' };
+    const audio = { codec_type: 'audio', codec_name: 'aac', channels: 2, sample_rate: '48000', duration: '4' };
+    assert.equal(outputMismatch(recipe, { streams: [video, audio], format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' } }), null);
+    assert.match(
+      outputMismatch(recipe, {
+        streams: [{ ...video, width: 1920, height: 1080 }, audio],
+        format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+      }),
+      /1080/,
+    );
+    // another framing is another render
+    const moved = shaped();
+    moved.settings.reframe.shots.v = [{ t: 0.5, x: 0.3 }];
+    assert.notEqual(bundledRecipe(moved, { softwareRenderer: true }).chunkKey, recipe.chunkKey);
+    assert.notEqual(bundledRecipe(claimOf(), { softwareRenderer: true }).chunkKey, recipe.chunkKey);
+  });
+
+  it('renders a square export at the square size', () => {
+    const recipe = bundledRecipe(shaped('square'), { softwareRenderer: true });
+    assert.deepEqual(recipe.dimensions, { width: 1080, height: 1080 });
+    assert.deepEqual(recipe.graph.metadata.width, 1080);
+  });
+
+  const shapeRefusals = [
+    ['a shape without its framing', (claim) => delete claim.settings.reframe, 'reframe_invalid'],
+    ['a framing sealed for another resolution', (claim) => (claim.settings.resolution = '720p'), 'reframe_invalid'],
+    ['a shape on sound alone', (claim) => (claim.settings.format = 'audio-mp3'), 'reframe_invalid'],
+    [
+      'a clip that follows another',
+      (claim) => (claim.snapshot.studio.graph.timeline.items[0].transformParent = { parentItemId: 't' }),
+      'reframe_unsupported',
+    ],
+  ];
+  for (const [name, change, code] of shapeRefusals) {
+    it(`refuses ${name} with a reason`, () => {
+      const claim = shaped();
+      change(claim);
+      assert.throws(
+        () => bundledRecipe(claim, { softwareRenderer: false }),
+        (error) => error instanceof BundledRefusal && error.code === code && error.message.length > 10,
+      );
+    });
+  }
+
   it('refuses effects on a software renderer, and renders them on a GPU', () => {
     const claim = claimOf();
     claim.snapshot.studio.graph.timeline.items[0].effects = [{ type: 'blur', enabled: true }];
@@ -966,6 +1036,43 @@ describe('renderer', () => {
         });
         await assert.rejects(renderer.conformance({ signal: AbortSignal.timeout(1000) }), { code: 'font_refused' });
       } finally {
+        await rm(engineDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it(
+    'passes container browser ownership without enabling native sandbox restrictions',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const engineDir = await fakeEngine();
+      const key = `frameleaf-container-guard-${randomUUID()}`;
+      const sentinel = new Error('launch captured');
+      let launch;
+      globalThis[key] = (options) => {
+        launch = options;
+        throw sentinel;
+      };
+      try {
+        await writeFile(
+          path.join(engineDir, 'node_modules/playwright/index.js'),
+          `module.exports.chromium = { launch: async options => globalThis[${JSON.stringify(key)}](options) };`,
+        );
+        await writeFile(
+          path.join(engineDir, 'headless/lib/cli.mjs'),
+          'export const chromeLaunchArgs = () => ["--no-sandbox"];',
+        );
+        const renderer = await createEngineRenderer({
+          engineDir,
+          chromiumPath: '/usr/local/bin/frameleaf-studio-browser',
+        });
+        await assert.rejects(renderer.conformance(), (error) => error === sentinel);
+        assert.equal(launch.executablePath, '/usr/local/bin/frameleaf-studio-browser');
+        assert.equal(launch.env?.FRAMELEAF_STUDIO_OWNER_PID, String(process.pid));
+        assert.equal(launch.chromiumSandbox, undefined);
+        assert(launch.args.includes('--no-sandbox'));
+      } finally {
+        delete globalThis[key];
         await rm(engineDir, { recursive: true, force: true });
       }
     },

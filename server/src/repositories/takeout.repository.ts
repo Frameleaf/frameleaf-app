@@ -714,13 +714,28 @@ export class TakeoutRepository {
     );
     return rows.map((row) => mapItem(row));
   }
-  async countPending(importId: string): Promise<number> {
+  /**
+   * The photos a run still imports, by checksum: the importer adds an album's copy of a photo once,
+   * so the import's progress counts photos as the check step does (FL-668). `total` leaves out a photo
+   * one of whose copies is already in (an earlier run imported or matched it and another copy is being
+   * retried); `alreadyIn` lists those photos' checksums, so their remaining copies do not count again.
+   */
+  async pendingPhotos(importId: string): Promise<{ total: number; alreadyIn: Buffer[] }> {
     const { rows } = await sql<{
-      total: string;
+      checksum: Buffer;
+      done: boolean;
     }>`
-      select count(*) as total from takeout_item where "importId" = ${importId}::uuid and state in ('ready', 'importing')
+      select file.checksum, bool_or(item.state in ('imported', 'matched')) as done
+      from takeout_item item
+      inner join takeout_file file on file.id = item.id
+      where item."importId" = ${importId}::uuid
+      group by file.checksum
+      having bool_or(item.state in ('ready', 'importing'))
     `.execute(this.db);
-    return toNumber(rows[0]?.total);
+    return {
+      total: rows.filter(({ done }) => !done).length,
+      alreadyIn: rows.filter(({ done }) => done).map(({ checksum }) => checksum),
+    };
   }
   /** Items that failed get their one automatic retry: back to ready, error kept until they run. */
   async retryFailed(importId: string): Promise<number> {
@@ -832,8 +847,9 @@ export class TakeoutRepository {
   }
   /**
    * Of the items still to import, how many are already in the owner's library (matched by either
-   * digest, trash included) and how many are new. One index probe per item, so only asked for when
-   * the wizard shows it, never while a job is running.
+   * digest, trash included) and how many are new. Both count unique photos by checksum, the identity
+   * the importer dedups on, so an album's copy of a photo is not counted twice (FL-658). One index
+   * probe per item, so only asked for when the wizard shows it, never while a job is running.
    */
   async matchSummary(
     ownerId: string,
@@ -847,10 +863,10 @@ export class TakeoutRepository {
       fresh: string;
     }>`
       select
-        count(*) filter (where found) as matched,
-        count(*) filter (where not found) as fresh
+        count(distinct checksum) filter (where found) as matched,
+        count(distinct checksum) filter (where not found) as fresh
       from (
-        select exists (
+        select file.checksum, exists (
           select 1 from asset
           where asset."ownerId" = ${ownerId}::uuid
             and asset.checksum in (file.checksum, file."legacyChecksum")
@@ -975,14 +991,6 @@ export class TakeoutRepository {
       limit ${limit}
     `.execute(this.db);
     return rows;
-  }
-  async countApprovedPairs(importId: string): Promise<number> {
-    const { rows } = await sql<{
-      total: string;
-    }>`
-      select count(*) as total from takeout_pair where "importId" = ${importId}::uuid and state = 'approved'
-    `.execute(this.db);
-    return toNumber(rows[0]?.total);
   }
   async pairDone(photoItemId: string, videoItemId: string, error: string | null): Promise<void> {
     await this.write((db) =>

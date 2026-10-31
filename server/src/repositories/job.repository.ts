@@ -49,6 +49,7 @@ import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-autho
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
+import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -77,6 +78,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
   JobName.AssetGenerateThumbnailsQueueAll,
+  JobName.AssetPaletteExtract,
+  JobName.AssetPaletteQueueAll,
   JobName.AssetEditThumbnailGeneration,
   JobName.OcrQueueAll,
   JobName.PetRecognitionQueueAll,
@@ -86,6 +89,7 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.ImageDescriptionQueueAll,
   JobName.NsfwDetectionQueueAll,
   JobName.AssetEncodeVideo,
+  JobName.AssetWarmFilmstrip,
   JobName.SmartSearch,
   JobName.Ocr,
   JobName.BestPhotosScore,
@@ -99,6 +103,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetGenerateVideoDuplicateFrames,
   JobName.AssetDetectDuplicatesQueueAll,
   JobName.AssetGenerateVideoDuplicateFramesQueueAll,
+  JobName.AssetVideoFingerprint,
+  JobName.AssetVideoFingerprintQueueAll,
   JobName.PetRecognition,
   JobName.VideoMomentCaptions,
   JobName.ImageDescription,
@@ -109,9 +115,33 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluateAll,
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
+  // FL-413: every batch saves the run's cursor; a retry carries on from it
+  JobName.IdenticalFilesCheck,
+  // a restart mid-batch must not leave the partner card "queued" forever; copies are keyed by
+  // source and recipient, so a re-run batch copies nothing twice
+  JobName.PartnerBackfill,
+  // FL-667: removing a filler tag that is already gone changes nothing, so a re-run is harmless
+  JobName.DescriptionFillerTagCleanup,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
+
+/** Queues whose jobs each name one asset as `data.id`. */
+const ASSET_WORK_QUEUES = [
+  QueueName.ThumbnailGeneration,
+  QueueName.MetadataExtraction,
+  QueueName.VideoConversion,
+  QueueName.Sidecar,
+  QueueName.FaceDetection,
+  QueueName.SmartSearch,
+  QueueName.Ocr,
+  QueueName.DuplicateDetection,
+  QueueName.VideoDuplicateDetection,
+  QueueName.ImageEnrichment,
+  QueueName.ImageDescription,
+  QueueName.NsfwDetection,
+  QueueName.PetRecognition,
+];
 
 @Injectable()
 export class JobRepository {
@@ -119,6 +149,7 @@ export class JobRepository {
   private coordinator?: Worker;
   private stopping?: Promise<void>;
   private active = new Map<string, { abort: AbortController; finished: Promise<void> }>();
+  private observerDeliveries = new Set<Promise<void>>();
   private rollingAvgBuffers: Partial<Record<JobName, number[]>> = {};
   private deferralWarnedAt = new Map<string, number>();
   private store: SqlQueueStore;
@@ -128,7 +159,7 @@ export class JobRepository {
     private configRepository: ConfigRepository,
     private eventRepository: EventRepository,
     private logger: LoggingRepository,
-    @InjectKysely() db: Kysely<any>,
+    @InjectKysely() db: Kysely<DB>,
   ) {
     this.logger.setContext(JobRepository.name);
     this.store = new SqlQueueStore(db);
@@ -233,6 +264,7 @@ export class JobRepository {
   private async execute(claim: QueueClaim, abort: AbortController) {
     const admission = queueAdmission(this.store.db);
     let releaseExecution: (() => void) | undefined;
+    let releaseObservers: (() => void) | undefined;
     let started = false;
     let settled = false;
     const context: QueueExecution = {
@@ -247,6 +279,8 @@ export class JobRepository {
     try {
       try {
         if (this.stopping) abort.abort(new Error('Worker stopped'));
+        // Backpressure before media work so every committed callback has reserved delivery capacity.
+        releaseObservers = await deliverJobObservers.reserve(abort.signal);
         releaseExecution = await admission.execution.acquire(abort.signal);
         abort.signal.throwIfAborted();
         started = true;
@@ -292,10 +326,20 @@ export class JobRepository {
         ),
       );
       if (settled) {
-        // Notification failure cannot change an already committed outcome or replay media work.
-        await deliverJobObservers(context.afterCommit ?? [], () =>
-          this.logger.warn('Accepted job observer delivery unavailable'),
-        );
+        // Native execution can settle while the reserved callback chain drains independently.
+        const release = releaseObservers;
+        releaseObservers = undefined;
+        const drained = Promise.withResolvers<void>();
+        this.observerDeliveries.add(drained.promise);
+        void deliverJobObservers(
+          context.afterCommit ?? [],
+          () => this.logger.warn('Accepted job observer delivery unavailable'),
+          () => {
+            release();
+            this.observerDeliveries.delete(drained.promise);
+            drained.resolve();
+          },
+        ).catch(() => {});
         const buffer = (this.rollingAvgBuffers[claim.name as JobName] ??= []);
         buffer.push(Date.now() - new Date(claim.startedAt).getTime());
         if (buffer.length > 100) {
@@ -354,6 +398,7 @@ export class JobRepository {
         }
       }
       releaseExecution?.();
+      releaseObservers?.();
     }
   }
 
@@ -403,7 +448,12 @@ export class JobRepository {
 
   private async stopOnce(graceMs: number) {
     this.coordinator?.postMessage({ type: 'stop' });
-    await Promise.race([Promise.allSettled(this.active.values().map(({ finished }) => finished)), sleep(graceMs)]);
+    await Promise.race([
+      Promise.allSettled(this.active.values().map(({ finished }) => finished)).then(() =>
+        Promise.allSettled(this.observerDeliveries),
+      ),
+      sleep(graceMs),
+    ]);
     for (const { abort } of this.active.values()) {
       abort.abort(new Error('Worker stopped'));
     }
@@ -469,6 +519,23 @@ export class JobRepository {
   empty(name: QueueName) {
     return this.store.clear(name, ['pending', 'waiting']);
   }
+  /** Removed items' waiting work in the queues that process one item at a time: none of it can run any more. */
+  async cancelAssetJobs(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    for (const queue of ASSET_WORK_QUEUES) {
+      await this.store.clear(queue, ['pending', 'waiting'], assetIds);
+    }
+    // facial recognition names a face, and the items' faces go with them
+    const { rows: faces } = await sql<{ id: string }>`select id from asset_face
+      where "assetId" = any(${assetIds}::uuid[])`.execute(this.store.db);
+    await this.store.clear(
+      QueueName.FacialRecognition,
+      ['pending', 'waiting'],
+      faces.map((face) => face.id),
+    );
+  }
   clear(name: QueueName, _type: QueueCleanType) {
     return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
   }
@@ -480,6 +547,14 @@ export class JobRepository {
   }
   hasUnfinishedWork(name: QueueName): Promise<boolean> {
     return this.store.hasUnfinishedWork(name);
+  }
+  /** The paused queues, read once for a snapshot of every queue. */
+  getPausedQueues(): Promise<Set<string>> {
+    return this.store.pausedQueues();
+  }
+  /** Which of these queues have unfinished work, in one round trip. */
+  async getQueuesWithUnfinishedWork(names: readonly QueueName[]): Promise<Set<string>> {
+    return new Set(await this.store.queuesWithUnfinishedWork(names));
   }
   hasDedupJob(name: QueueName, id: string) {
     return this.store.hasDedup(name, id);
@@ -507,7 +582,7 @@ export class JobRepository {
     }
     const context = queueExecution.getStore();
     context?.signal.throwIfAborted();
-    const admit = (tx: Transaction<any>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
+    const admit = (tx: Transaction<DB>) => this.store.admitRun(id, kind, selection, admission.intents, tx);
     if (context?.buffering) {
       // The run and its parent-dependent intents become visible only with successful publication.
       context.adoptions.push(admit);
@@ -546,7 +621,7 @@ export class JobRepository {
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
-    const data = (item.data ?? {}) as Record<string, unknown>;
+    const data = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
     const queue = this.getQueueName(item.name);
     const isMl = [
       QueueName.SmartSearch,
@@ -557,11 +632,16 @@ export class JobRepository {
       QueueName.Ocr,
       QueueName.PetRecognition,
     ].includes(queue);
+    const options = this.getNamedJobOptions(item) ?? undefined;
+    const subject = String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'));
+    // A job with its own identity (one per workflow execution, one per album recipient) is its own run item:
+    // keyed by subject alone, the second one would hit job_run_stage and be dropped.
+    const identity = options?.deduplication?.id ?? options?.jobId;
     return {
       name: item.name,
       data,
       queue,
-      options: this.getNamedJobOptions(item) ?? undefined,
+      options,
       safeToRetry:
         !data.operationId &&
         !(
@@ -575,7 +655,8 @@ export class JobRepository {
       deadlineMs: isMl ? QUEUE_TIMING.mlDeadline : QUEUE_TIMING.opaqueDeadline,
       runId,
       itemKey: runId
-        ? String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex')) +
+        ? subject +
+          (identity && identity !== subject ? `/${identity}` : '') +
           (item.name === JobName.FacialRecognition && data.deferred ? '/deferred' : '')
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
@@ -733,6 +814,23 @@ export class JobRepository {
   }
 
   /** Persist before admission. A retry keeps its original destination even if routing changes. */
+  /**
+   * FL-456: the destination this job already pinned for `workload`, if any, without pinning one. Outside
+   * a queued job there is none.
+   */
+  async pinnedDestination(workload: string): Promise<string | null> {
+    const context = queueExecution.getStore();
+    if (!context) {
+      return null;
+    }
+    context.signal.throwIfAborted();
+    const {
+      rows: [row],
+    } = await sql<{ destination: string | null }>`select data->'_queueDestinations'->>${workload}::text as destination
+      from job where id = ${context.claim.id}::uuid and token = ${context.claim.token}::uuid`.execute(this.store.db);
+    return row?.destination ?? null;
+  }
+
   async pinDestination(workload: string, destinationId: string): Promise<string> {
     const context = queueExecution.getStore();
     if (!context) {
@@ -754,7 +852,7 @@ export class JobRepository {
   }
 
   /** Database-only producer already holding its domain claim; admission commits with that publication. */
-  async queueInTransaction(tx: Transaction<any>, item: JobItem, runId?: string): Promise<void> {
+  async queueInTransaction(tx: Transaction<DB>, item: JobItem, runId?: string): Promise<void> {
     if (runAdmission.getStore()) throw new Error('Run admission cannot use an independent transaction');
     const context = queueExecution.getStore();
     const committedEffect = item.name === JobName.DuplicateResolutionLifecycle;
@@ -838,8 +936,29 @@ export class JobRepository {
     return rows;
   }
 
+  /**
+   * The `job/token` pairs among `claims` whose attempt is proven stopped, by the same evidence the queue
+   * uses: it completed, or its attempt or worker recorded a stop. A cleared token alone is not proof.
+   */
+  async getStoppedClaims(claims: { jobId: string; token: string }[]): Promise<Set<string>> {
+    if (claims.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ jobId: string; token: string }>`select a."jobId", a.token from job_attempt a
+      join unnest(${claims.map((claim) => claim.jobId)}::uuid[], ${claims.map((claim) => claim.token)}::uuid[])
+        as c("jobId", token) on a."jobId" = c."jobId" and a.token = c.token
+      where (a.outcome = 'completed' and a."finishedAt" is not null)
+        or exists (select 1 from system_metadata m where m.key = 'frameleaf-attempt-evidence:' || a.token::text
+          and m.value->>'jobId' = a."jobId"::text and m.value ? 'stoppedAt')
+        or exists (select 1 from system_metadata m where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
+          and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')`.execute(this.store.db);
+    return new Set(rows.map((row) => `${row.jobId}/${row.token}`));
+  }
+
   async removeJob(name: JobName, jobID: string): Promise<void> {
-    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now()
+    // The removed job gives up its run stage, so the replacement queued in the same run takes over the run item.
+    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now(),
+        "runId" = null, "itemKey" = null, "rootItemKey" = null
       where queue = ${this.getQueueName(name)} and "externalId" = ${jobID} and state in ('pending','waiting')`.execute(
       this.store.db,
     );
@@ -859,6 +978,10 @@ export class JobRepository {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
       }
+      case JobName.IdenticalFilesCheck: {
+        // FL-413: one run at a time; a check asked for while one runs is the same run carrying on
+        return { deduplication: { id: JobName.IdenticalFilesCheck, keepLastIfActive: true } };
+      }
       case JobName.LibraryScanRun: {
         // FL-78: one waiting wake-up is enough; a scan queued while one drains is picked up after it
         return { deduplication: { id: JobName.LibraryScanRun, keepLastIfActive: true } };
@@ -871,6 +994,11 @@ export class JobRepository {
       }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
+      }
+      case JobName.AssetDetectDuplicates: {
+        // FL-651: a recheck after each group mate's fingerprint is its own run item, so one queued
+        // before the mate's own fingerprint existed does not swallow the later ones
+        return item.data.recheckAfter ? { jobId: `${item.data.id}/after/${item.data.recheckAfter}` } : null;
       }
       case JobName.StudioHdrProxyGenerate: {
         // FL-97: every project read asks for missing intermediates; one per video is enough
@@ -886,6 +1014,12 @@ export class JobRepository {
           deduplication: { id: `${JobName.PhotographyWorkflowRender}:${item.data.id}`, keepLastIfActive: true },
         };
       }
+      case JobName.AssetPaletteExtract: {
+        return { deduplication: { id: `${item.name}:${item.data.id}:${item.data.sourceRevision}` } };
+      }
+      case JobName.AssetPaletteQueueAll: {
+        return { deduplication: { id: `${item.name}:${item.data.afterId ?? 'root'}:${!!item.data.force}` } };
+      }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
         return item.data.delay ? { delay: item.data.delay } : null;
@@ -895,6 +1029,10 @@ export class JobRepository {
       }
       case JobName.ImageDescriptionQueueAll: {
         return { deduplication: { id: JobName.ImageDescriptionQueueAll } };
+      }
+      case JobName.DescriptionFillerTagCleanup: {
+        // FL-667: a restart while it is still queued or running adds no second run
+        return { deduplication: { id: JobName.DescriptionFillerTagCleanup } };
       }
       case JobName.SmartAlbumReevaluateAll: {
         // Kind-scoped dispatches get their own dedup namespace so they don't
@@ -934,6 +1072,10 @@ export class JobRepository {
       // FL-362: one start of the backup schedule at a time
       case JobName.BackupSequence: {
         return { deduplication: { id: JobName.BackupSequence } };
+      }
+      // FL-363: one start of the overnight schedule at a time
+      case JobName.OvernightSequence: {
+        return { deduplication: { id: JobName.OvernightSequence } };
       }
       // FL-164: one schedule tick and one verification check at a time
       case JobName.CloudBackupSchedule: {

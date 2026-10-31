@@ -153,6 +153,37 @@ export const canonicalJson = (value: unknown): string => {
   return `{${entries.join(',')}}`;
 };
 
+/**
+ * FL-677: a Freecut graph with nothing placed: no timeline item and no nested sequence holding one.
+ * Other graph shapes are never called empty here; the renderer judges those.
+ */
+export const isEmptyStudioTimeline = (graph: unknown): boolean => {
+  const timeline = (graph as { timeline?: unknown } | null)?.timeline as
+    { items?: unknown; compositions?: unknown } | null | undefined;
+  if (!timeline || typeof timeline !== 'object' || !Array.isArray(timeline.items) || timeline.items.length > 0) {
+    return false;
+  }
+  const compositions = timeline.compositions;
+  return (
+    compositions === undefined ||
+    (Array.isArray(compositions) &&
+      compositions.every((composition) => {
+        const items = (composition as { items?: unknown } | null)?.items;
+        return !Array.isArray(items) || items.length === 0;
+      }))
+  );
+};
+
+/**
+ * FL-677: a Freecut graph whose main timeline places nothing. What is exported is the main timeline,
+ * so a nested sequence that holds items but is placed nowhere still renders nothing. Used only to
+ * refuse an export; drafts keep `isEmptyStudioTimeline`.
+ */
+export const hasNoMainTimelineItems = (graph: unknown): boolean => {
+  const items = ((graph as { timeline?: unknown } | null)?.timeline as { items?: unknown } | null | undefined)?.items;
+  return Array.isArray(items) && items.length === 0;
+};
+
 export const studioEnvelopeDigest = (envelope: StudioProjectEnvelope): string =>
   createHash('sha256').update(canonicalJson(envelope)).digest('hex');
 

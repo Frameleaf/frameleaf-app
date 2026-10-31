@@ -13,22 +13,23 @@
    * without secrets, and imports a settings file into the draft for review instead of saving it.
    */
   import AuthSettings from '../../admin/system-settings/AuthSettings.svelte';
+  import PhonesList from '$lib/components/frameleaf/settings/PhonesList.svelte';
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
   import MapSettings from '../../admin/system-settings/MapSettings.svelte';
-  import MigrationSettingsSection from '$lib/components/frameleaf/settings/MigrationSettingsSection.svelte';
   import NewVersionCheckSettings from '../../admin/system-settings/NewVersionCheckSettings.svelte';
-  import NightlyTasksSettings from '../../admin/system-settings/NightlyTasksSettings.svelte';
   import NotificationSettings from '../../admin/system-settings/NotificationSettings.svelte';
   import ServerSettings from '../../admin/system-settings/ServerSettings.svelte';
-  import StorageTemplateSettings from '$lib/components/admin-settings/StorageTemplateSettings.svelte';
   import ThemeSettings from '../../admin/system-settings/ThemeSettings.svelte';
-  import TrashSettings from '../../admin/system-settings/TrashSettings.svelte';
-  import UserSettings from '../../admin/system-settings/UserSettings.svelte';
   import Duplicates from '$lib/components/frameleaf/settings/care/Duplicates.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import UnusedFiles from '$lib/components/frameleaf/settings/care/UnusedFiles.svelte';
+  import DeletedItems from '$lib/components/frameleaf/settings/storage/DeletedItems.svelte';
+  import FolderLayout from '$lib/components/frameleaf/settings/storage/FolderLayout.svelte';
+  import MoveOrExport from '$lib/components/frameleaf/settings/storage/MoveOrExport.svelte';
+  import OvernightSchedule from '$lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte';
   import Descriptions from '$lib/components/frameleaf/settings/intelligence/Descriptions.svelte';
   import Faces from '$lib/components/frameleaf/settings/intelligence/Faces.svelte';
   import LockedDetection from '$lib/components/frameleaf/settings/intelligence/LockedDetection.svelte';
@@ -45,6 +46,7 @@
   import { forConfigSave } from '$lib/frameleaf/credentials';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { cloneConfig, SYSTEM_CONFIG_JOURNAL_PREFIX } from '$lib/frameleaf/system-config-draft';
+  import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
   import {
     setSystemConfigDraft,
     SystemConfigDraftStore,
@@ -66,20 +68,17 @@
   import { CommandPaletteDefaultProvider, modalManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
-    mdiAccountOutline,
     mdiAutoFix,
     mdiContentCopy,
     mdiFaceRecognition,
     mdiImageSearchOutline,
     mdiTextRecognition,
-    mdiCertificateOutline,
     mdiCloudSyncOutline,
     mdiCloudUploadOutline,
     mdiCreditCardOutline,
     mdiEarth,
     mdiExpansionCard,
     mdiLinkVariant,
-    mdiContentDuplicate,
     mdiDesktopTowerMonitor,
     mdiTransitConnectionVariant,
     mdiShieldAccountOutline,
@@ -108,6 +107,7 @@
     mdiUpdate,
     mdiSwapVertical,
     mdiVideoOutline,
+    mdiCellphoneArrowDown,
   } from '@mdi/js';
   import { onMount, untrack, type Snippet } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
@@ -180,6 +180,10 @@
   });
 
   onMount(() => {
+    void unusedFilesAccess.loadForCurrentUser();
+  });
+
+  onMount(() => {
     // Another administrator (or another tab) saved settings: follow them. An unsaved draft is
     // carried onto them, or marked stale when it changes the same settings.
     return websocketEvents.on('on_config_update', () => void settingsDraft.refresh());
@@ -201,6 +205,15 @@
       subtitle: $t('frameleaf_cc_section_database_backup_description'),
       key: 'backup',
       icon: mdiBackupRestore,
+    },
+    {
+      // FL-540: every account's phones that back up here, and which stopped sending photos
+      admin: true,
+      component: PhonesList,
+      title: $t('frameleaf_cc_section_phones'),
+      subtitle: $t('frameleaf_cc_section_phones_description'),
+      key: 'devices-backup',
+      icon: mdiCellphoneArrowDown,
     },
     {
       admin: true,
@@ -277,7 +290,7 @@
       icon: mdiRobotOutline,
     },
     {
-      // FL-366: Library care → Duplicates (look-alike matching; exact copies are merged on Merge older copies).
+      // FL-366: Library care → Duplicates (identical files, stored once by themselves, and look-alike matching).
       admin: true,
       component: Duplicates,
       title: $t('frameleaf_cc_section_duplicates'),
@@ -285,6 +298,20 @@
       key: 'duplicates',
       icon: mdiContentCopy,
     },
+    // FL-416: Library care → Unused files, the server owner's alone (the first administrator): no other
+    // account is offered the page, its search entry or its address.
+    ...(unusedFilesAccess.isOwner
+      ? [
+          {
+            admin: true,
+            component: UnusedFiles,
+            title: $t('frameleaf_cc_section_unused_files'),
+            subtitle: $t('frameleaf_cc_section_unused_files_description'),
+            key: 'unused-files',
+            icon: mdiTrashCanOutline,
+          },
+        ]
+      : []),
     {
       admin: true,
       component: MapSettings,
@@ -295,7 +322,7 @@
     },
     {
       admin: true,
-      component: MigrationSettingsSection,
+      component: MoveOrExport,
       title: $t('admin.frameleaf_migration_settings_title'),
       subtitle: $t('admin.frameleaf_migration_settings_subtitle'),
       key: 'migration',
@@ -303,7 +330,7 @@
     },
     {
       admin: true,
-      component: NightlyTasksSettings,
+      component: OvernightSchedule,
       title: $t('frameleaf_computers_page_overnight'),
       subtitle: $t('frameleaf_computers_page_overnight_description'),
       key: 'nightly-tasks',
@@ -335,7 +362,7 @@
     },
     {
       admin: true,
-      component: StorageTemplateSettings,
+      component: FolderLayout,
       title: $t('frameleaf_cc_section_organization'),
       subtitle: $t('frameleaf_cc_section_organization_description'),
       key: 'storage-template',
@@ -351,19 +378,11 @@
     },
     {
       admin: true,
-      component: TrashSettings,
+      component: DeletedItems,
       title: $t('frameleaf_cc_section_retention'),
       subtitle: $t('frameleaf_cc_section_retention_description'),
       key: 'trash',
       icon: mdiTrashCanOutline,
-    },
-    {
-      admin: true,
-      component: UserSettings,
-      title: $t('admin.user_settings'),
-      subtitle: $t('admin.user_settings_description'),
-      key: 'user-settings',
-      icon: mdiAccountOutline,
     },
     {
       admin: true,
@@ -418,7 +437,6 @@
     // FL-71: the old administration pages, as sections drawn by `sections/SectionBody.svelte`.
     ...(
       [
-        ['deduplication', 'frameleaf_cc_section_deduplication', mdiContentDuplicate],
         ['enrichment-care', 'frameleaf_cc_section_enrichment', mdiAutoFix],
         // FL-421: Notifications → What needs your attention.
         ['signals', 'frameleaf_cc_section_signals', mdiBellAlertOutline],
@@ -432,7 +450,6 @@
         // FL-154..FL-156: Frameleaf Cloud → Account & link, Plan and Licence (settings-catalog.mjs:1713-1752).
         ['cloud-account', 'frameleaf_cc_section_cloud_account', mdiLinkVariant],
         ['cloud-plan', 'frameleaf_cc_section_cloud_plan', mdiCreditCardOutline],
-        ['cloud-license', 'frameleaf_cc_section_cloud_license', mdiCertificateOutline],
         // FL-161: Frameleaf Cloud → Remote access, who can connect and what the relay carries.
         ['cloud-remote', 'frameleaf_cc_section_cloud_remote', mdiEarth],
         // FL-160: Frameleaf Cloud → Cloud backup.

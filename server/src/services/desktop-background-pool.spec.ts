@@ -200,3 +200,32 @@ it('selects a qualified face workload without changing the CLIP index', async ()
     expect(assertSource).toHaveBeenCalledOnce();
   });
 });
+describe('when the processing order sends the job to the helpers (FL-456)', () => {
+  const ready = vi.fn();
+  const selectReady = () =>
+    service.selectBackgroundPool(selection, {
+      jobId: 'asset',
+      modelName: defaults.machineLearning.clip.modelName,
+      assertConfig,
+      requireReady: true,
+    });
+  beforeEach(() => {
+    service = new DesktopMlService(
+      { hasReadyWorker: ready } as never,
+      index as never,
+      policies as never,
+      routes as never,
+    );
+  });
+  it('takes the job when one of the owner’s helpers is ready for its model', async () => {
+    ready.mockResolvedValue(true);
+    await queueExecution.run(context, async () => {
+      expect((await selectReady()).desktopClip).toBeTypeOf('function');
+      expect(ready).toHaveBeenCalledWith(ownerId, space.visualModelKey);
+    });
+  });
+  it('hands the job back for the next place when none is ready', async () => {
+    ready.mockResolvedValue(false);
+    await queueExecution.run(context, async () => expect(await selectReady()).toBe(selection));
+  });
+});

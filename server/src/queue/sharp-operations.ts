@@ -21,9 +21,11 @@ import { resizeHdrImage } from './image-hdr-pixels.js';
 import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
 
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
+import { extractPalette } from '../utils/asset-palette.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
+import { HASH_GRID } from '../utils/video-fingerprint.js';
 
 import type { KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
 import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
@@ -377,6 +379,33 @@ export class SharpOperations {
     return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
   }
 
+  async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
+    if (options.colorspace !== 'srgb') throw new Error('Palette output must be sRGB');
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    const metadata =
+      options.raw ?? (await sharp(bytes, { limitInputPixels: this.maxPixels, failOn: 'error' }).metadata());
+    const { width, height } = metadata;
+    if (!width || !height || width * height > this.maxPixels || width * height * 4 + bytes.length > this.maxBytes) {
+      throw new SharpResourceLimitError('palette source exceeds the decoded surface budget');
+    }
+    this.progress();
+    const { data, info } = await this.getImageDecodingPipeline(bytes, {
+      ...options,
+      size: undefined,
+      processInvalidImages: false,
+    })
+      .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .toColourspace('srgb')
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    this.progress();
+    return {
+      swatches: extractPalette(data, info.width, info.height),
+      hasTransparency: data.some((alpha, index) => index % 4 === 3 && alpha < 255),
+    };
+  }
+
   async generateImageThumbnails(
     input: string | Buffer,
     decode: DecodeToBufferOptions,
@@ -573,6 +602,30 @@ export class SharpOperations {
         ? sheet.webp({ quality, effort: 2 })
         : sheet.jpeg({ quality, chromaSubsampling: '4:2:0', progressive: false })
     ).toFile(output);
+  }
+
+  /** FL-651: each filmstrip tile as the small grayscale grid its difference hash is made from. */
+  async filmstripFrameGrids(
+    input: string,
+    tiles: Array<{ left: number; top: number; width: number; height: number }>,
+  ): Promise<number[][]> {
+    const sheet = await sharp(input, { limitInputPixels: this.maxPixels })
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const raw = { width: sheet.info.width, height: sheet.info.height, channels: sheet.info.channels };
+    const grids: number[][] = [];
+    for (const tile of tiles) {
+      const grid = await sharp(sheet.data, { raw })
+        .extract(tile)
+        .resize(HASH_GRID.width, HASH_GRID.height, { fit: 'fill' })
+        .extractChannel(0)
+        .raw()
+        .toBuffer();
+      grids.push([...grid]);
+      this.progress();
+    }
+    return grids;
   }
 
   private getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {

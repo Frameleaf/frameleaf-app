@@ -1,8 +1,9 @@
+import { LibraryScope, LibraryViewScope } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { discoveryUrl, emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { createLibrarySession, writeLibraryView, type LibraryViewState } from '$lib/frameleaf/library-session';
 import { discoveryContextChips, withoutDiscoveryContext } from '$lib/frameleaf/search-chips';
-import { searchContextFor } from '$lib/frameleaf/search-context';
+import { albumSearchContext, searchContextFor, workspaceHref, libraryUploadScope } from '$lib/frameleaf/search-context';
 
 const albumId = '11111111-2222-4333-8444-555555555555';
 const petId = '99999999-8888-4777-8666-555555555555';
@@ -19,6 +20,17 @@ const onPage = (path: string, view?: LibraryViewState) => {
 };
 
 describe('the query the top bar search opens on (FL-48)', () => {
+  it('keeps Pro text and colors in the free Design workspace', () => {
+    expect(searchContextFor(onPage('/pro')).query.filter.libraryScope).toBe('design');
+    const query = {
+      ...emptyDiscoveryQuery(),
+      filter: { libraryScope: LibraryViewScope.Design, text: { contains: 'packaging' } },
+    };
+    const url = new URL(`http://localhost${discoveryUrl(query)}`);
+    expect(url.pathname).toBe('/pro');
+    expect(searchContextFor(url).query).toEqual(query);
+  });
+
   it('opens a library page on the filters its toolbar shows as chips', () => {
     const view = state({ query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['tag-1'] } } } });
     expect(searchContextFor(onPage('/photos', view))).toEqual({ query: view.query, unsupported: [] });
@@ -123,4 +135,43 @@ describe('search context chips (FL-48)', () => {
     }
     expect(query.queryAssetId).toBe('asset-1');
   });
+});
+
+it('uses the album workspace while preserving an explicit Pro context and required membership', () => {
+  const url = onPage(`/albums/${albumId}`);
+  expect(albumSearchContext(url, { id: albumId, libraryScope: LibraryScope.Design }).filter).toMatchObject({
+    libraryScope: LibraryViewScope.Design,
+    albumIds: { any: [albumId] },
+  });
+  expect(albumSearchContext(url, { id: albumId, libraryScope: LibraryScope.Both }).filter.libraryScope).toBe(
+    LibraryViewScope.Personal,
+  );
+  const scoped = onPage(
+    `/albums/${albumId}`,
+    state({
+      query: { ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design, color: { hex: '#609060' } } },
+    }),
+  );
+  expect(albumSearchContext(scoped, { id: albumId, libraryScope: LibraryScope.Both }).filter).toMatchObject({
+    libraryScope: LibraryViewScope.Design,
+    color: { hex: '#609060' },
+    albumIds: { any: [albumId] },
+  });
+});
+
+it('carries the Pro workspace through ordinary album and create links', () => {
+  const href = workspaceHref('/albums?create=album', LibraryViewScope.Design, 'http://localhost');
+  const url = new URL(href, 'http://localhost');
+  expect(url.searchParams.get('create')).toBe('album');
+  expect(searchContextFor(url).query.filter.libraryScope).toBe(LibraryViewScope.Design);
+  expect(workspaceHref('/albums', undefined, 'http://localhost')).toBe('/albums');
+});
+
+it('keeps dropped and picked files in their originating workspace', () => {
+  expect(libraryUploadScope(onPage('/pro'))).toBe(LibraryScope.Design);
+  expect(libraryUploadScope(onPage('/photos'))).toBeUndefined();
+  expect(libraryUploadScope(onPage(`/albums/${albumId}`), { libraryScope: LibraryScope.Design })).toBe(
+    LibraryScope.Design,
+  );
+  expect(libraryUploadScope(onPage(`/albums/${albumId}`), { libraryScope: LibraryScope.Both })).toBeUndefined();
 });

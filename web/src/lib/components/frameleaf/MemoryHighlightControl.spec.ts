@@ -70,6 +70,7 @@ const capable = {
             maxBitDepth: 10,
             hdr10: true,
             dolbyVision: false,
+            sdrTenBit: true,
           },
         ],
       },
@@ -218,17 +219,21 @@ describe('MemoryHighlightControl (FL-194)', () => {
     await waitFor(() => expect(sdkMock.getMemoryExport).toHaveBeenCalledTimes(1));
 
     // the player moves on to another memory while the first one's render is being read
-    await rerender({ memoryId: 'memory-2', memoryTitle: 'Beach day', pollMs: 10 });
-    await waitFor(() => expect(sdkMock.getMemoryExports).toHaveBeenLastCalledWith({ memoryId: 'memory-2' }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
     sdkMock.getMemoryExport.mockImplementation(({ id }) =>
       Promise.resolve(id === 'run-2' ? run({ id: 'run-2', memoryId: 'memory-2' }) : run()),
     );
+    await rerender({ memoryId: 'memory-2', memoryTitle: 'Beach day', pollMs: 10 });
+    // only polls made after the switch count, however slowly this runs
+    const switched = sdkMock.getMemoryExport.mock.calls.length;
+    await waitFor(() => expect(sdkMock.getMemoryExports).toHaveBeenLastCalledWith({ memoryId: 'memory-2' }));
     answer(run({ status: MemoryExportStatus.Ready, isDownloadable: true }));
+    await waitFor(() => expect(sdkMock.getMemoryExport.mock.calls.length).toBeGreaterThan(switched));
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // memory-2 follows its own render only, and nothing is reported as failed
-    expect(sdkMock.getMemoryExport.mock.calls.slice(1).every(([{ id }]) => id === 'run-2')).toBe(true);
+    const after = sdkMock.getMemoryExport.mock.calls.slice(switched);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every(([{ id }]) => id === 'run-2')).toBe(true);
     expect(screen.queryByRole('button', { name: 'frameleaf_memories_highlight_download' })).toBeNull();
     expect(screen.getByRole('button', { name: 'frameleaf_memories_highlight_cancel' })).toBeInTheDocument();
   });

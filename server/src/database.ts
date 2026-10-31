@@ -26,6 +26,8 @@ export type AuthUser = {
   email: string;
   quotaUsageInBytes: number;
   quotaSizeInBytes: number | null;
+  /** FL-538: new uploads are paused for this account (absent on an auth built without it). */
+  uploadsPaused?: boolean;
 };
 
 export type AlbumUser = {
@@ -55,6 +57,8 @@ export type Library = {
   deletedAt: Date | null;
   refreshedAt: Date | null;
   assets?: MapAsset[];
+  /** Items in the library, counted as its statistics' total. */
+  assetCount?: number;
 };
 
 export type AuthApiKey = {
@@ -147,6 +151,8 @@ export type Asset = {
   localDateTime: Date;
   originalFileName: string;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept elsewhere */
+  libraryPath?: string | null;
   physicalOriginalFileId?: string | null;
   ownerId: string;
   type: AssetType;
@@ -172,6 +178,7 @@ export type UserAdmin = User & {
   oauthId: string | null;
   quotaSizeInBytes: number | null;
   quotaUsageInBytes: number;
+  uploadsPaused: boolean;
   status: UserStatus;
   metadata: UserMetadataItem[];
 };
@@ -332,10 +339,12 @@ export const columns = {
     'asset.isExternal',
     'asset.visibility',
     'asset.libraryId',
+    'asset.libraryScope',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
     'asset.originalFileName',
     'asset.originalPath',
+    'asset.libraryPath',
     'asset.physicalOriginalFileId',
     'asset.ownerId',
     'asset.type',
@@ -362,10 +371,12 @@ export const columns = {
     'asset.isEdited',
     'asset.visibility',
     'asset.libraryId',
+    'asset.libraryScope',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
     'asset.originalFileName',
     'asset.originalPath',
+    'asset.libraryPath',
     'asset.ownerId',
     'asset.stackId',
     'asset.thumbhash',
@@ -379,6 +390,7 @@ export const columns = {
     'asset.stackId',
     'asset.livePhotoVideoId',
     'asset.libraryId',
+    'asset.libraryScope',
     'asset.duplicateId',
     'asset.createdAt',
     'asset.updatedAt',
@@ -416,7 +428,15 @@ export const columns = {
     'asset_file.isProgressive',
     'asset_file.isTransparent',
   ],
-  authUser: ['user.id', 'user.name', 'user.email', 'user.isAdmin', 'user.quotaUsageInBytes', 'user.quotaSizeInBytes'],
+  authUser: [
+    'user.id',
+    'user.name',
+    'user.email',
+    'user.isAdmin',
+    'user.quotaUsageInBytes',
+    'user.quotaSizeInBytes',
+    'user.uploadsPaused',
+  ],
   authApiKey: ['api_key.id', 'api_key.permissions'],
   authSession: ['session.id', 'session.updatedAt', 'session.pinExpiresAt', 'session.appVersion'],
   user: userColumns,
@@ -435,6 +455,7 @@ export const columns = {
     'storageLabel',
     'quotaSizeInBytes',
     'quotaUsageInBytes',
+    'uploadsPaused',
   ],
   tag: ['tag.id', 'tag.value', 'tag.createdAt', 'tag.updatedAt', 'tag.color', 'tag.parentId'],
   apiKey: ['id', 'name', 'userId', 'createdAt', 'updatedAt', 'permissions'],

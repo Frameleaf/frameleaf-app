@@ -110,6 +110,12 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'credential',
     principalLimit: 60,
   },
+  /** FL-655: Save to Frameleaf's sign-in, `browser-extension/sign-in/*` (start, authorize, exchange). */
+  extensionSignIn: {
+    bucket: 'extension-sign-in',
+    limit: 30,
+    windowSeconds: 10 * MINUTE,
+  },
   /** `POST shared-links/login`. */
   sharedLinkLogin: {
     bucket: 'shared-link-login',
@@ -131,6 +137,8 @@ export const RATE_LIMITS = Object.freeze({
   serverIdentityChallenge: { bucket: 'server-identity-challenge', limit: 120, windowSeconds: MINUTE },
   /** FL-488: Ask Frameleaf in the help panel, `POST help/ask`; the Ask service keeps its own limits too. */
   helpAsk: { bucket: 'help-ask', limit: 30, windowSeconds: MINUTE, principal: 'credential', principalLimit: 10 },
+  /** FL-702: a studio website's inquiry form and gallery-link request, `POST photography/studios/:site/inquiries`. */
+  studioInquiry: { bucket: 'studio-inquiry', limit: 5, windowSeconds: HOUR },
   /** Starting a link to Frameleaf Cloud: `POST admin/cloud/link`. */
   linkStart: { bucket: 'link-start', limit: 10, windowSeconds: HOUR, principal: 'credential', principalLimit: 10 },
 } satisfies Record<string, RateLimitRule>);

@@ -11,7 +11,8 @@ where
 -- BestPhotosRepository.upsertScore
 begin
 select
-  "ownerId"
+  "ownerId",
+  "libraryScope"
 from
   "asset"
 where
@@ -28,6 +29,7 @@ from
 where
   "asset_best_photo_score"."ownerId" = $1::uuid
   and "asset"."ownerId" = $2::uuid
+  and "asset"."libraryScope" in ($3, $4)
   and "asset"."deletedAt" is null
   and "asset"."status" = 'active'
   and "asset"."visibility" in ('timeline')
@@ -40,7 +42,7 @@ where
       asset_lock."assetId" = "asset"."id"
   )
   and "asset"."type" in ('IMAGE', 'VIDEO')
-  and "asset_best_photo_score"."score" >= $3
+  and "asset_best_photo_score"."score" >= $5
 select
   "asset".*,
   exists (
@@ -68,6 +70,7 @@ from
 where
   "asset_best_photo_score"."ownerId" = $1::uuid
   and "asset"."ownerId" = $2::uuid
+  and "asset"."libraryScope" in ($3, $4)
   and "asset"."deletedAt" is null
   and "asset"."status" = 'active'
   and "asset"."visibility" in ('timeline')
@@ -80,14 +83,14 @@ where
       asset_lock."assetId" = "asset"."id"
   )
   and "asset"."type" in ('IMAGE', 'VIDEO')
-  and "asset_best_photo_score"."score" >= $3
+  and "asset_best_photo_score"."score" >= $5
 order by
   "asset_best_photo_score"."score" desc,
   "asset"."fileCreatedAt" desc
 limit
-  $4
+  $6
 offset
-  $5
+  $7
 
 -- BestPhotosRepository.deleteForAssets
 begin

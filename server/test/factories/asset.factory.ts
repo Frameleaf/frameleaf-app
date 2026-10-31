@@ -1,5 +1,5 @@
 import { Selectable } from 'kysely';
-import { AssetFileType, AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetFileType, AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { AssetEditFactory } from 'test/factories/asset-edit.factory.js';
@@ -63,10 +63,12 @@ export class AssetFactory {
       isFavorite: false,
       isOffline: false,
       libraryId: null,
+      libraryScope: LibraryScope.Personal,
       livePhotoVideoId: null,
       localDateTime: new Date(now),
       originalFileName,
       originalPath: `/data/library/${originalFileName}`,
+      libraryPath: null,
       physicalOriginalFileId: null,
       ownerId: newUuid(),
       stackId: null,

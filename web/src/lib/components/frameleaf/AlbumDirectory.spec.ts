@@ -1,11 +1,20 @@
-import { AlbumKind, AlbumUserRole, SmartAlbumBuiltInKind, type AlbumTreeResponseDto } from '@frameleaf/sdk';
+import {
+  LibraryScope,
+  LibraryViewScope,
+  AlbumKind,
+  AlbumUserRole,
+  SmartAlbumBuiltInKind,
+  type AlbumTreeResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { init, register, waitLocale } from 'svelte-i18n';
+import { init, register, t, waitLocale } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterNavigate } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
+import { workspaceHref } from '$lib/frameleaf/search-context';
 import { installFrameleafToasts } from '$lib/frameleaf/toast';
 import { albumDirectoryView } from '$lib/stores/preferences.store';
 import { renderWithTooltips } from '$tests/helpers';
@@ -247,6 +256,23 @@ describe('AlbumDirectory', () => {
     expect(app.replaceState).toHaveBeenCalledOnce();
   });
 
+  it('creates a Pro album in Design through the ordinary album flow', async () => {
+    app.page.url = new URL(
+      workspaceHref('/albums?create=album', LibraryViewScope.Design, 'http://localhost'),
+      'http://localhost',
+    );
+    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ libraryScope: LibraryScope.Design }));
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    const dialog = await screen.findByRole('dialog', { name: 'New album' });
+    await fireEvent.input(within(dialog).getByRole('textbox', { name: 'Name' }), { target: { value: 'Packaging' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(sdkMock.createAlbum).toHaveBeenCalledWith({
+        createAlbumDto: expect.objectContaining({ albumName: 'Packaging', libraryScope: LibraryScope.Design }),
+      }),
+    );
+  });
+
   it('opens no create dialog on a plain visit to All albums', () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
@@ -271,6 +297,25 @@ describe('AlbumDirectory', () => {
 
     await waitFor(() => expect(sdkMock.deleteAlbum).toHaveBeenCalledWith({ id: 'rockies' }));
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('says once, with the count, that a deleted collection keeps its albums (LIB-04)', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Family' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Family' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Delete “Family”?' });
+    expect(dialog).toHaveTextContent(
+      'The collection is removed. Its children move to its parent, or to the top level. Its 2 child albums stay in your library.',
+    );
+    expect(dialog.textContent?.match(/stays? in your library/g)).toHaveLength(1);
+
+    const format = get(t);
+    expect(format('frameleaf_album_delete_collection_keep', { values: { count: 1 } })).toBe(
+      'Its 1 child album stays in your library.',
+    );
   });
 
   it('leaves a shared album through the Frameleaf confirmation as “me”', async () => {
@@ -483,8 +528,8 @@ describe('AlbumDirectory', () => {
       const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
       await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
       const dialog = within(await screen.findByRole('dialog', { name: /Move “Summer in the Rockies”/ }));
-      await fireEvent.click(dialog.getByRole('radio', { name: /On its own/ }));
-      await fireEvent.click(dialog.getByRole('button', { name: 'Move' }));
+      await fireEvent.click(dialog.getByRole('radio', { name: /Top level/ }));
+      await fireEvent.click(dialog.getByRole('button', { name: 'Move here' }));
 
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
       expect(directoryStatus()).toHaveTextContent('Your albums changed since this page loaded');
@@ -513,7 +558,7 @@ describe('AlbumDirectory', () => {
     const destination = dialog.getByRole('radio', { name: /Trips/ });
     destination.focus();
     await fireEvent.click(destination);
-    await fireEvent.submit(dialog.getByRole('button', { name: 'Move' }).closest('form')!);
+    await fireEvent.submit(dialog.getByRole('button', { name: 'Move here' }).closest('form')!);
 
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
@@ -523,6 +568,28 @@ describe('AlbumDirectory', () => {
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
     expect(await screen.findByText(/Summer in the Rockies.*Trips/)).toBeInTheDocument();
+  });
+
+  it('keeps a collection and everything inside it listed but refused when moving it, saying why', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Family' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Family' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
+    const dialog = within(await screen.findByRole('dialog', { name: /Move “Family”/ }));
+
+    const self = dialog.getByRole('radio', { name: /^Family/ });
+    expect(self).toBeDisabled();
+    expect(self).toHaveAccessibleDescription('This is the one you’re moving');
+    const inside = dialog.getByRole('radio', { name: /Summer in the Rockies/ });
+    expect(inside).toBeDisabled();
+    expect(inside).toHaveAccessibleDescription('It’s inside the one you’re moving');
+
+    await fireEvent.input(dialog.getByRole('searchbox', { name: 'Find a collection' }), {
+      target: { value: 'rockies' },
+    });
+    expect(dialog.getByText('Family')).toBeInTheDocument();
+    expect(dialog.queryByRole('radio', { name: /Top level/ })).toBeNull();
   });
 
   it('never offers Move to… or a drag to an editor of someone else’s album (FL-83 AL-9)', async () => {

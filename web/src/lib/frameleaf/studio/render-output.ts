@@ -13,6 +13,7 @@ import {
   StudioExportColor,
   StudioExportFormat,
   StudioExportResolution,
+  StudioExportShape,
   StudioExportSubtitleMode,
   StudioExportQuality,
   type StudioRenderCandidateDto,
@@ -29,6 +30,13 @@ export type StudioRenderSettings = {
   resolution: StudioExportResolution;
   subtitleMode?: StudioExportSubtitleMode;
   quality?: StudioExportQuality;
+  /** FL-563: vertical and square need SDR video and a session that reframes (`reframe-v1`). */
+  shape?: StudioExportShape;
+  /**
+   * FL-674: the project keeps an HDR picture. Without it the picture is SDR, and a 10-bit video
+   * format needs a session that writes one for SDR (`sdrTenBit`), not only HDR masters.
+   */
+  hdrPicture?: boolean;
 };
 
 export type StudioRenderVerdict = { supported: true } | { supported: false; refusal: StudioRenderRefusal };
@@ -82,13 +90,24 @@ export const STUDIO_AUDIO_FORMATS: readonly StudioExportFormat[] = [
   StudioExportFormat.AudioWav,
 ];
 
+const isVideoFormat = (format: StudioExportFormat) =>
+  !STUDIO_STILL_FORMATS.includes(format) && !STUDIO_AUDIO_FORMATS.includes(format);
+
 /** SDR video formats: the only ones that can carry captions as a file or a track. */
-const isSdrVideoFormat = (format: StudioExportFormat) =>
-  !STUDIO_STILL_FORMATS.includes(format) && !STUDIO_AUDIO_FORMATS.includes(format) && FORMAT_BIT_DEPTH[format] === 8;
+const isSdrVideoFormat = (format: StudioExportFormat) => isVideoFormat(format) && FORMAT_BIT_DEPTH[format] === 8;
 
 const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderCandidateDto) => {
   const depth = Math.max(FORMAT_BIT_DEPTH[settings.format], settings.color === StudioExportColor.Preserve ? 8 : 10);
   if (evidence.maxBitDepth < depth) {
+    return false;
+  }
+  if (
+    settings.color === StudioExportColor.Preserve &&
+    !settings.hdrPicture &&
+    isVideoFormat(settings.format) &&
+    FORMAT_BIT_DEPTH[settings.format] > 8 &&
+    evidence.sdrTenBit !== true
+  ) {
     return false;
   }
   if (settings.format === StudioExportFormat.HdrJpeg || settings.format === StudioExportFormat.HdrHeic) {
@@ -135,9 +154,14 @@ export const evaluateStudioRender = (
   ) {
     return { supported: false, refusal: 'codec-unavailable' };
   }
+  const reshaped = settings.shape !== undefined && settings.shape !== StudioExportShape.Original;
+  if (reshaped && (!isSdrVideoFormat(settings.format) || settings.color !== StudioExportColor.Preserve)) {
+    return { supported: false, refusal: 'codec-unavailable' };
+  }
   const withOutput = withMemory.filter(
     (candidate) =>
       candidate.outputFormats.includes(settings.format) &&
+      (!reshaped || candidate.reframe === true) &&
       (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)) &&
       (!embedded || candidate.embeddedOutputFormats?.includes(settings.format)),
   );
@@ -148,6 +172,49 @@ export const evaluateStudioRender = (
     return { supported: false, refusal: 'incompatible-color' };
   }
   return { supported: true };
+};
+
+/**
+ * FL-674, FL-689: whether an export that keeps the source colour keeps an HDR picture. The server
+ * seals one only when every placed video shares one HDR transfer, whatever the project's working
+ * range: all PQ (`resources.pqSources`) or all HLG (`resources.hlgSources`). Anything less, such as
+ * PQ mixed with HLG, SDR, or Dolby Vision without either transfer, is judged as SDR.
+ */
+export const studioKeepsHdrPicture = (
+  graph: unknown,
+  resources: { pqSources?: readonly string[]; hlgSources?: readonly string[] } | null | undefined,
+): boolean => {
+  const videos = new Set<string>();
+  let budget = 100_000;
+  const visit = (value: unknown, depth: number) => {
+    if (--budget < 0 || depth > 64 || !value || typeof value !== 'object') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, depth + 1);
+      }
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    if (node.type === 'video' && typeof node.mediaId === 'string') {
+      videos.add(node.mediaId.toLowerCase());
+    }
+    for (const item of Object.values(node)) {
+      visit(item, depth + 1);
+    }
+  };
+  visit((graph as { timeline?: unknown } | null)?.timeline, 0);
+  const sharesTransfer = (sources: readonly string[] | undefined) => {
+    const transfer = new Set((sources ?? []).map((id) => id.toLowerCase()));
+    for (const id of videos) {
+      if (!transfer.has(id)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  return videos.size > 0 && (sharesTransfer(resources?.pqSources) || sharesTransfer(resources?.hlgSources));
 };
 
 export type StudioRenderChoice<T> = { value: T; verdict: StudioRenderVerdict };

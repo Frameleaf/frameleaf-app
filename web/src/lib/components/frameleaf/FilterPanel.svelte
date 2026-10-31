@@ -1,6 +1,8 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import ColorFilter from '$lib/components/frameleaf/ColorFilter.svelte';
+  import DimensionFilters from '$lib/components/frameleaf/DimensionFilters.svelte';
   import FilterMultiSelect from '$lib/components/frameleaf/FilterMultiSelect.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -24,6 +26,12 @@
     withFilterCondition,
     type SetCondition,
   } from '$lib/frameleaf/search-filters';
+  import {
+    ENRICHMENT_GROUPS,
+    RATING_CHOICES,
+    ratingChoiceText,
+    VISIBILITY_LABEL_KEYS,
+  } from '$lib/frameleaf/library-filters';
   import type { PaletteFacets } from '$lib/frameleaf/search-palette';
   import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
   import '$lib/frameleaf/tokens.css';
@@ -62,6 +70,7 @@
     embedded = false,
     facets = {},
     enrichmentCounts = {},
+    showEnrichment = true,
     onChange,
     onClose,
     onSave,
@@ -80,6 +89,7 @@
     facets?: PaletteFacets;
     /** Live counts per enrichment value for the current search. */
     enrichmentCounts?: Partial<Record<ImageEnrichmentFilter, number>>;
+    showEnrichment?: boolean;
     onChange: (query: DiscoveryQuery) => void;
     onClose?: () => void;
     /** Docked beside a library (LIB-P1): the footer's "Save search", the template's "Save preset". */
@@ -142,7 +152,9 @@
       list.push(asOption(CUSTOM_CONDITION, $t('frameleaf_search_custom_condition')));
     }
     for (const value of values) {
-      list.push(asOption(value, withCount(value, counts?.get(value))));
+      const key = field === 'visibility' ? VISIBILITY_LABEL_KEYS[value] : undefined;
+      const name = key ? $t(key) : value;
+      list.push(asOption(value, withCount(name, counts?.get(value))));
     }
     if (current && current !== CUSTOM_CONDITION && !values.includes(current)) {
       list.push(asOption(current, current));
@@ -177,56 +189,11 @@
   const ratingOptions = $derived<ComboBoxOption[]>([
     asOption('', $t('frameleaf_search_any_rating')),
     ...(ratingValue === CUSTOM_CONDITION ? [asOption(CUSTOM_CONDITION, $t('frameleaf_search_custom_condition'))] : []),
-    asOption('null', $t('frameleaf_search_rating_unset')),
-    asOption('0', $t('frameleaf_search_rating_unrated')),
-    asOption('-1', $t('frameleaf_search_rating_rejected')),
-    ...[1, 2, 3, 4, 5].map((value) =>
-      asOption(String(value), $t('frameleaf_search_rating_exactly', { values: { count: value } })),
-    ),
-    ...[0, 1, 2, 3, 4, 5].map((value) =>
-      asOption(`min${value}`, $t('frameleaf_search_rating_at_least', { values: { count: value } })),
-    ),
+    ...RATING_CHOICES.map((value) => {
+      const text = ratingChoiceText(value)!;
+      return asOption(value, $t(text.key, { values: text.values }));
+    }),
   ]);
-
-  /**
-   * The prototype's "Text & descriptions" and "Sensitivity review" radiogroups (FP-2). The server has
-   * one enrichment enum, so the two groups share it: a choice in one returns the other to Any. The
-   * prototype's "Generated" and "Written manually" description states have no server value and are
-   * not offered; the detection states the prototype does not list stay reachable in the sensitivity
-   * group, so nothing the server supports is lost.
-   */
-  const ENRICHMENT_GROUPS: {
-    section: string;
-    headingKey: Translations;
-    helpKey: Translations;
-    labelKey: Translations;
-    values: readonly { value: ImageEnrichmentFilter; labelKey: Translations }[];
-  }[] = [
-    {
-      section: 'text',
-      headingKey: 'frameleaf_search_text_and_descriptions',
-      helpKey: 'frameleaf_search_text_and_descriptions_help',
-      labelKey: 'description',
-      values: [
-        { value: ImageEnrichmentFilter.MissingImageDescription, labelKey: 'frameleaf_search_status_no_description' },
-        { value: ImageEnrichmentFilter.ImageDescriptionFailed, labelKey: 'frameleaf_search_status_generation_failed' },
-      ],
-    },
-    {
-      section: 'sensitivity',
-      headingKey: 'frameleaf_search_sensitivity_review',
-      helpKey: 'frameleaf_search_sensitivity_review_help',
-      labelKey: 'frameleaf_search_review_status',
-      values: [
-        { value: ImageEnrichmentFilter.NsfwReviewed, labelKey: 'frameleaf_search_status_reviewed' },
-        { value: ImageEnrichmentFilter.NsfwReview, labelKey: 'frameleaf_search_status_needs_review' },
-        { value: ImageEnrichmentFilter.NsfwOverridden, labelKey: 'frameleaf_search_status_overridden' },
-        { value: ImageEnrichmentFilter.Nsfw, labelKey: 'frameleaf_search_status_flagged' },
-        { value: ImageEnrichmentFilter.NsfwDetectionFailed, labelKey: 'frameleaf_search_status_check_failed' },
-        { value: ImageEnrichmentFilter.MissingNsfwDetection, labelKey: 'frameleaf_search_status_not_checked' },
-      ],
-    },
-  ];
 
   type EnrichmentChoice = { value: ImageEnrichmentFilter; labelKey: Translations };
 
@@ -286,6 +253,7 @@
   const typeCounts = $derived(countsFor(SearchFacetField.Type));
   const peopleCounts = $derived(countsFor(SearchFacetField.People));
   const tagCounts = $derived(countsFor(SearchFacetField.Tags));
+  const petCounts = $derived(countsFor(SearchFacetField.Pets));
 
   const visibilityOptions = $derived(facetOptions('visibility', $t('visibility'), Object.values(AssetVisibility)));
 
@@ -343,7 +311,11 @@
         field="petIds"
         anchor="pets"
         label={$t('frameleaf_pets_title')}
-        options={options.pets.map((pet) => ({ value: pet.id, label: pet.name || $t('frameleaf_pets_unnamed') }))}
+        options={options.pets.map((pet) => ({
+          value: pet.id,
+          label: pet.name || $t('frameleaf_pets_unnamed'),
+          count: petCounts.get(pet.id),
+        }))}
         condition={filter.petIds as SetCondition}
         onChange={setCondition}
       />
@@ -369,6 +341,11 @@
         ]}
         onChange={(value) => setCondition('type', value ? { eq: value } : null)}
       />
+    </section>
+
+    <section class="filter-section" data-section="media">
+      <ColorFilter color={query.filter.color} onChange={(value) => setCondition('color', value)} />
+      <DimensionFilters filter={query.filter} onChange={setCondition} />
     </section>
 
     <section class="filter-section" data-section="date">
@@ -449,6 +426,29 @@
       onChange={setCondition}
     />
 
+    <FilterMultiSelect
+      field="albumSubtreeIds"
+      anchor="albums"
+      label={$t('frameleaf_filter_nested_albums')}
+      options={options.albums}
+      condition={filter.albumSubtreeIds as SetCondition}
+      onChange={setCondition}
+    />
+    <section class="filter-section" data-section="sources">
+      <label
+        >{$t('frameleaf_filter_source')}<input
+          type="text"
+          maxlength="500"
+          value={query.filter.source?.contains ?? ''}
+          onchange={(event) =>
+            setCondition(
+              'source',
+              event.currentTarget.value.trim() ? { contains: event.currentTarget.value.trim() } : null,
+            )}
+        /></label
+      >
+    </section>
+
     <section class="filter-section" data-section="camera">
       <h3>{$t('frameleaf_search_camera_and_lens')}</h3>
       {#each cameraFacets as facet (facet.field)}
@@ -461,7 +461,7 @@
       {/each}
     </section>
 
-    {#each ENRICHMENT_GROUPS as group (group.section)}
+    {#each showEnrichment ? ENRICHMENT_GROUPS : [] as group (group.section)}
       <section class="filter-section" data-section={group.section}>
         <h3>{$t(group.headingKey)}</h3>
         <p class="muted">{$t(group.helpKey)}</p>

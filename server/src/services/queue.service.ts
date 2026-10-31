@@ -35,6 +35,7 @@ import {
   QueueJobStatus,
   QueueJobWorkerKind,
   QueueName,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -43,6 +44,7 @@ import {
   isNsfwDetectionEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { overnightCron } from 'src/utils/overnight.js';
 
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
@@ -84,10 +86,8 @@ const subjectIdsOf = (data: Record<string, unknown> | undefined): string[] =>
     return typeof value === 'string' && UUID_PATTERN.test(value) ? [value.toLowerCase()] : [];
   });
 
-const asNightlyTasksCron = (config: SystemConfig) => {
-  const [hours, minutes] = config.nightlyTasks.startTime.split(':').map(Number);
-  return `${minutes} ${hours} * * *`;
-};
+/** FL-363: the overnight schedule's start, on the days it runs. */
+const asNightlyTasksCron = (config: SystemConfig) => overnightCron(config.nightlyTasks);
 
 @Injectable()
 export class QueueService extends BaseService {
@@ -109,7 +109,8 @@ export class QueueService extends BaseService {
         name: CronJob.NightlyJobs,
         expression: cronExpression,
         start: true,
-        onTick: () => handlePromiseError(this.handleNightlyJobs(), this.logger),
+        // FL-363: the tick starts an overnight run, which runs each step after the one before it
+        onTick: () => handlePromiseError(this.jobRepository.queue({ name: JobName.OvernightSequence }), this.logger),
       });
     }
   }
@@ -178,6 +179,7 @@ export class QueueService extends BaseService {
 
       case QueueCommand.Resume: {
         await this.jobRepository.resume(name);
+        await this.releaseQuietHold(name);
         break;
       }
 
@@ -200,11 +202,22 @@ export class QueueService extends BaseService {
 
   async getAll(_auth: AuthDto): Promise<QueueResponseDto[]> {
     const names = Object.values(QueueName);
+    // The Jobs page asks for every queue every few seconds: whether each is paused or has
+    // unfinished work is read once for all of them, and only the counts are per queue.
+    const paused = await this.jobRepository.getPausedQueues();
+    const unfinished = await this.jobRepository.getQueuesWithUnfinishedWork(names);
     const queues: QueueResponseDto[] = [];
     for (let offset = 0; offset < names.length; offset += 4) {
       // Wait for this batch to settle on failure too, so a failed request cannot leave
       // its sibling snapshots consuming the database pool after the response ends.
-      const results = await Promise.allSettled(names.slice(offset, offset + 4).map((name) => this.getByName(name)));
+      const results = await Promise.allSettled(
+        names.slice(offset, offset + 4).map(async (name) => ({
+          name,
+          isPaused: paused.has(name),
+          statistics: await this.jobRepository.getJobCounts(name),
+          hasUnfinishedWork: unfinished.has(name),
+        })),
+      );
       for (const result of results) {
         if (result.status === 'rejected') throw result.reason;
         queues.push(result.value);
@@ -230,9 +243,27 @@ export class QueueService extends BaseService {
       await this.jobRepository.pause(name);
     } else if (dto.isPaused === false) {
       await this.jobRepository.resume(name);
+      await this.releaseQuietHold(name);
     }
 
     return this.getByName(name);
+  }
+
+  /**
+   * FL-711: a queue the administrator resumes is theirs again. Quiet hours stop holding it, so a pause
+   * they make later is said as their own (and listed as work that waits) and the window's opening
+   * does not resume it for them.
+   */
+  private async releaseQuietHold(name: QueueName): Promise<void> {
+    await this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, async () => {
+      const state = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
+      const holding = state?.quiet?.holding;
+      if (!state || !holding?.includes(name)) {
+        return;
+      }
+      const quiet = { ...state.quiet, holding: holding.filter((held) => held !== name) };
+      await this.systemMetadataRepository.set(SystemMetadataKey.OvernightSequence, { ...state, quiet });
+    });
   }
 
   /**
@@ -387,7 +418,7 @@ export class QueueService extends BaseService {
       }
 
       case QueueName.VideoDuplicateDetection: {
-        return this.jobRepository.queue({ name: JobName.AssetGenerateVideoDuplicateFramesQueueAll, data: { force } });
+        return this.jobRepository.queue({ name: JobName.AssetVideoFingerprintQueueAll, data: { force } });
       }
 
       case QueueName.MetadataExtraction: {
@@ -487,14 +518,21 @@ export class QueueService extends BaseService {
     ].includes(name);
   }
 
-  async handleNightlyJobs() {
+  /**
+   * The overnight schedule's first step, "Empty Trash and tidy up" (FL-363), and the counts that run
+   * every night whatever the step's timing. `cleanup` is false on a night the step does not run.
+   */
+  async handleNightlyJobs({ cleanup = true }: { cleanup?: boolean } = {}) {
     const config = await this.getConfig({ withCache: false });
     const jobs: JobItem[] = [];
+    const tidy = cleanup && config.nightlyTasks.databaseCleanup;
 
-    if (config.nightlyTasks.databaseCleanup) {
+    if (tidy) {
+      // FL-363: Trash is emptied, and deleted accounts removed, only while that choice is on
+      if (config.nightlyTasks.emptyTrash) {
+        jobs.push({ name: JobName.AssetDeleteCheck }, { name: JobName.UserDeleteCheck });
+      }
       jobs.push(
-        { name: JobName.AssetDeleteCheck },
-        { name: JobName.UserDeleteCheck },
         { name: JobName.PersonCleanup },
         { name: JobName.MemoryCleanup },
         { name: JobName.SessionCleanup },
@@ -505,19 +543,20 @@ export class QueueService extends BaseService {
       await this.eventRepository.emit('NightlyDatabaseCleanup');
     }
 
-    if (config.nightlyTasks.generateMemories) {
+    // FL-363: switching the tidy-up step off also stops these catching up (the page says so)
+    if (tidy && config.nightlyTasks.generateMemories) {
       jobs.push({ name: JobName.MemoryGenerate });
     }
 
-    if (config.nightlyTasks.syncQuotaUsage) {
+    if (tidy && config.nightlyTasks.syncQuotaUsage) {
       jobs.push({ name: JobName.UserSyncUsage });
     }
 
-    if (config.nightlyTasks.missingThumbnails) {
+    if (tidy && config.nightlyTasks.missingThumbnails) {
       jobs.push({ name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } });
     }
 
-    if (config.nightlyTasks.clusterNewFaces) {
+    if (tidy && config.nightlyTasks.clusterNewFaces) {
       jobs.push({ name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } });
     }
 

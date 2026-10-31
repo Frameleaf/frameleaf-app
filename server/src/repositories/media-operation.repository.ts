@@ -31,6 +31,7 @@ import {
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
   PAUSABLE_MEDIA_OPERATION_STATUSES,
+  PUBLIC_MEDIA_OPERATION_KINDS,
   SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
@@ -116,6 +117,8 @@ export type MediaOperationChange = {
 };
 export type MediaOperationListOptions = {
   ownerId: string;
+  /** Exclude internal-only jobs before selecting a page or counting public Activity results. */
+  publicOnly?: boolean;
   kind?: MediaOperationKind;
   statuses?: readonly MediaOperationStatus[];
   /** Finished jobs the owner cleared from Activity are hidden unless explicitly asked for. */
@@ -414,7 +417,10 @@ export class MediaOperationRepository {
     items: MediaOperation[];
     total: number;
   }> {
-    let query = this.db.selectFrom('media_operation').where('ownerId', '=', options.ownerId);
+    let query = this.db
+      .selectFrom('media_operation')
+      .where('ownerId', '=', options.ownerId)
+      .$if(!!options.publicOnly, (qb) => qb.where('kind', 'in', PUBLIC_MEDIA_OPERATION_KINDS));
     if (options.kind) {
       query = query.where('kind', '=', options.kind);
     }
@@ -424,6 +430,18 @@ export class MediaOperationRepository {
     if (!options.includeDismissed) {
       query = query.where('dismissedAt', 'is', null);
     }
+    // A removed library's scans have nothing left to act on (FL-588).
+    query = query.where((eb) =>
+      eb.or([
+        eb('kind', '!=', MediaOperationKind.LibraryScan),
+        eb.exists(
+          eb
+            .selectFrom('library')
+            .where(sql<boolean>`library.id::text = media_operation.snapshot->>'libraryId'`)
+            .where('library.deletedAt', 'is', null),
+        ),
+      ]),
+    );
     const [items, total] = await Promise.all([
       query
         .select(LIST_COLUMNS)
@@ -932,6 +950,12 @@ export class MediaOperationRepository {
       kinds: readonly MediaOperationKind[];
       destinationIds: readonly string[];
     };
+    /**
+     * Only jobs whose `snapshot.kind` is one of these. Several Studio jobs on one clip share the
+     * `studio_transcription` kind (a new kind would change a response enum the native apps decode),
+     * so each worker names its own snapshot kind and never takes another's job.
+     */
+    snapshotKinds?: readonly string[];
   }): Promise<
     | {
         operation: MediaOperation;
@@ -974,6 +998,9 @@ export class MediaOperationRepository {
               qb.where(
                 sql<boolean>`not ("kind" = any(${[...holdBack!.kinds]}::text[]) and coalesce("snapshot"->>'destinationId', '') = any(${[...holdBack!.destinationIds]}::text[]))`,
               ),
+            )
+            .$if(!!options.snapshotKinds?.length, (qb) =>
+              qb.where(sql<boolean>`"snapshot"->>'kind' = any(${[...options.snapshotKinds!]}::text[])`),
             )
             .orderBy('createdAt', 'asc')
             .limit(1)
@@ -1327,6 +1354,11 @@ export class MediaOperationRepository {
     },
     options: {
       retry?: boolean;
+      /**
+       * The runner resumes from its recorded result and repeats no external side effect (a Frameleaf Cloud
+       * batch resumes by its job and idempotency key), so the retry is allowed although it is remote work.
+       */
+      resumable?: boolean;
       /** Opt-in final-write lease fence for workers whose stop state can expire while awaiting a row lock. */
       requireActiveClaim?: boolean;
       executor?: Kysely<DB>;
@@ -1364,7 +1396,7 @@ export class MediaOperationRepository {
               )
               .where('status', 'in', WORKING_STATUSES)
               .where('cancelRequestedAt', 'is', null)
-              .where(safeAutomaticReplay())
+              .$if(options.resumable !== true, (qb) => qb.where(safeAutomaticReplay()))
               .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
               .returning(['id', 'ownerId'])
               .executeTakeFirst(),
@@ -2680,9 +2712,10 @@ export class MediaOperationRepository {
    * path: an administrator can see that eleven renders are queued on Frameleaf Cloud without learning
    * whose media they are.
    */
-  async getAggregates(): Promise<MediaOperationAggregateRow[]> {
+  async getAggregates(options: { publicOnly?: boolean } = {}): Promise<MediaOperationAggregateRow[]> {
     const rows = await this.db
       .selectFrom('media_operation')
+      .$if(!!options.publicOnly, (qb) => qb.where('kind', 'in', PUBLIC_MEDIA_OPERATION_KINDS))
       .select((eb) => [
         'kind',
         'status',

@@ -80,6 +80,8 @@
 
     if (succeeded && isCurrent()) {
       failure = null;
+      // LIB-02: show the saved date and zone at once, not after the next edit or a reload
+      await reload();
     }
   };
 

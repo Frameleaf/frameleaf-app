@@ -65,10 +65,10 @@ const status = (overrides: Partial<CloudMlStatusResponseDto> = {}) =>
     ...overrides,
   }) as CloudMlStatusResponseDto;
 
-const hardware = (ml: { model: string; vramGb: number; backend: string } | null) =>
+const hardware = (ml: { model: string; vramGb: number | null; backend: string; integrated?: boolean } | null) =>
   ({
-    ml: ml ?? { model: null, vramGb: null, backend: 'CPU' },
-    server: { model: null, vramGb: null, backend: 'CPU' },
+    ml: ml ?? { model: null, vramGb: null, backend: 'CPU', integrated: null },
+    server: { model: null, vramGb: null, backend: 'CPU', integrated: null },
     benchmark: null,
   }) as unknown as HardwareCheckResponseDto;
 
@@ -212,6 +212,35 @@ describe('where each job runs (FL-159 §3.2)', () => {
     ]);
     expect(preferredDestination(options, 'cloud')).toBeNull();
     expect(routeSummary('local', local).key).toBe('admin.frameleaf_routing_summary_local_short');
+  });
+
+  it('counts an integrated GPU as the GPU in use, deciding what fits as for the processor', () => {
+    const igpu = { model: 'Intel(R) Iris(R) Xe Graphics', vramGb: null, backend: 'OpenVINO', integrated: true };
+    const worker = workerFromHardware(hardware(igpu));
+    expect(worker.gpu).toEqual({
+      name: 'Intel(R) Iris(R) Xe Graphics',
+      vramGb: 0,
+      backend: 'OpenVINO',
+      profile: null,
+      integrated: true,
+    });
+    // Light work runs on it; what has a processor path runs on it too; heavy work needs a card.
+    expect(localCapability('search', worker)).toMatchObject({
+      ok: true,
+      key: 'admin.frameleaf_routing_local_integrated',
+    });
+    expect(localCapability('descriptions', worker)).toMatchObject({
+      ok: true,
+      key: 'admin.frameleaf_routing_local_up_to_integrated',
+    });
+    expect(localCapability('restoration', worker)).toMatchObject({
+      ok: false,
+      key: 'admin.frameleaf_routing_local_needs_gpu_integrated',
+      values: { gpu: 'Intel(R) Iris(R) Xe Graphics' },
+    });
+    // Without the flag, no memory still means the processor; a card with memory is a card.
+    expect(workerFromHardware(hardware({ ...igpu, integrated: false })).gpu).toBeNull();
+    expect(workerFromHardware(hardware({ ...igpu, vramGb: 16 })).gpu).toMatchObject({ vramGb: 16 });
   });
 
   it('with both, each job offers what can run and preselects the start-with choice', () => {

@@ -4,6 +4,7 @@ import { addClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import {
   appendBackupSnapshot,
   backupSnapshotSigningInput,
+  extendBackupHistory,
   selectBackupSnapshot,
   signBackupSnapshot,
   unwrapBackupRecoveryKit,
@@ -90,6 +91,40 @@ describe('trusted recovery history', () => {
         first.descriptor.manifest.objectKey,
       ),
     ).toThrow('gap');
+  });
+  it('extends a saved history only with pinned, chained records (FL-697)', () => {
+    const first = record(1, null);
+    const second = record(2, first.digest);
+    const saved = appendBackupSnapshot(null, first);
+    const third = record(3, second.digest);
+    expect(selectBackupSnapshot(extendBackupHistory(saved, [first, second, third]).history).record.digest).toBe(
+      third.digest,
+    );
+    expect(extendBackupHistory(saved, []).history).toBe(saved);
+
+    const other = generateKeyPairSync('ed25519');
+    const otherJwk = { kty: 'OKP' as const, crv: 'Ed25519' as const, x: other.publicKey.export({ format: 'jwk' }).x! };
+    const forged = signBackupSnapshot(
+      { ...second.descriptor, signerKid: ed25519Thumbprint(otherJwk) },
+      {
+        kid: ed25519Thumbprint(otherJwk),
+        publicJwk: otherJwk,
+        sign: () => '',
+        signBytes: (value) => sign(null, value, other.privateKey),
+      },
+    );
+    const unsigned = { ...second, signature: 'A'.repeat(86) };
+    const offChain = record(2, 'f'.repeat(64));
+    const skipped = record(3, second.digest);
+    for (const remote of [[forged], [unsigned], [offChain], [skipped], [{ descriptor: second.descriptor }]]) {
+      const result = extendBackupHistory(saved, remote);
+      expect(result.refused).toBe(true);
+      expect(result.history).toBe(saved);
+    }
+    // a valid prefix is kept; the first bad record ends it
+    const partial = extendBackupHistory(saved, [second, record(3, 'f'.repeat(64))]);
+    expect(partial.refused).toBe(true);
+    expect(selectBackupSnapshot(partial.history).record.digest).toBe(second.digest);
   });
   it(
     'wraps both key histories locally and rejects passphrase/context tampering and own-key escrow',

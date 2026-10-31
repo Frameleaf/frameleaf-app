@@ -1,0 +1,2007 @@
+Subject: Stabilise shaky clips from a measured camera path, cropped in, in preview and export
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -39,6 +39,7 @@ import type { SelectionState, SelectionActions } from '@/shared/state/selection'
+ import type { TimelineState, TimelineActions } from '@/features/editor/deps/timeline-store'
+ import type { TransformProperties } from '@/types/transform'
+ import type { TimelineItem, VideoItem, CompositionItem } from '@/types/timeline'
++import { StabiliseSection } from './stabilise-section'
+ import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ 
+@@ -701,6 +702,11 @@ const ClipPanelCore = memo(function ClipPanelCore({
+         <TabsContent value="motion" className="mt-3 min-h-0 flex-1 data-[state=inactive]:hidden">
+           {showMotionTab && activeTab === 'motion' ? (
+             <div className="flex h-full min-h-0 flex-col">
++              {selectedItems.length === 1 && selectedItems[0]!.type === 'video' && (
++                <div className="mb-3 shrink-0">
++                  <StabiliseSection item={selectedItems[0] as VideoItem} />
++                </div>
++              )}
+               <div className="min-h-0 flex-1">
+                 {showFullMotionLibrary ? (
+                   <Suspense fallback={<div className="h-full rounded-md bg-muted/20" />}>
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.test.tsx
+@@ -0,0 +1,178 @@
++import { act, fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { VideoItem } from '@/types/timeline'
++import type { StabilisationMotion } from '@/types/stabilisation'
++
++const analyse = vi.hoisted(() => vi.fn())
++const actions = vi.hoisted(() => ({
++  applyStabilisation: vi.fn((): { ok: boolean; reason?: string } => ({ ok: true })),
++  removeStabilisation: vi.fn(() => ({ ok: true })),
++  setStabilisationLevel: vi.fn(() => ({ ok: true })),
++}))
++const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }))
++
++vi.mock('react-i18next', () => ({
++  useTranslation: () => ({
++    t: (key: string, values?: Record<string, unknown>) =>
++      values ? `${key} ${JSON.stringify(values)}` : key,
++  }),
++}))
++vi.mock('sonner', () => ({ toast }))
++vi.mock('./stabilise-service', () => ({
++  stabiliseAvailable: true,
++  stabiliseAnalysis: { analyse },
++  StabiliseUnavailableError: class extends Error {},
++}))
++vi.mock('@/features/editor/deps/timeline-store', () => actions)
++vi.mock('@/features/editor/deps/media-library', () => ({
++  useMediaLibraryStore: (select: (state: unknown) => unknown) => select({ mediaById: {} }),
++}))
++
++const { StabiliseSection } = await import('./stabilise-section')
++
++const motion: StabilisationMotion = {
++  version: 1,
++  method: 'block-similarity-v1',
++  rate: 30,
++  start: 0,
++  count: 2,
++  width: 160,
++  height: 90,
++  x: 'AAAAAArXIzw=',
++  y: 'AAAAAAAAAAA=',
++  a: 'AAAAAAAAAAA=',
++  found: 1,
++}
++
++const clip = (extra: Partial<VideoItem> = {}): VideoItem =>
++  ({
++    id: `clip-${Math.random()}`,
++    type: 'video',
++    trackId: 't1',
++    from: 0,
++    durationInFrames: 90,
++    label: 'Walk',
++    src: 'blob:v',
++    mediaId: 'm1',
++    ...extra,
++  }) as VideoItem
++
++describe('StabiliseSection', () => {
++  beforeEach(() => {
++    analyse.mockReset()
++    for (const action of Object.values(actions)) action.mockClear()
++    for (const action of Object.values(toast)) action.mockClear()
++  })
++
++  it('shows the before and after preview, the three smoothness levels and Stabilise clip', () => {
++    render(<StabiliseSection item={clip()} />)
++    expect(screen.getByRole('region', { name: 'editor.stabilise.title' })).toBeTruthy()
++    expect(screen.getByText('editor.stabilise.original')).toBeTruthy()
++    expect(screen.getByText('editor.stabilise.stabilisedCrop {"crop":7}')).toBeTruthy()
++    const levels = screen.getAllByRole('radio')
++    expect(levels.map((level) => level.textContent)).toEqual([
++      'editor.stabilise.level.gentle',
++      'editor.stabilise.level.smooth',
++      'editor.stabilise.level.locked',
++    ])
++    expect(
++      screen
++        .getByRole('radio', { name: 'editor.stabilise.level.smooth' })
++        .getAttribute('aria-checked'),
++    ).toBe('true')
++    expect(screen.getByText(/editor\.stabilise\.note\.smooth/)).toBeTruthy()
++    expect(screen.getByRole('button', { name: 'editor.stabilise.start' })).toBeTruthy()
++    expect(screen.getByText('editor.stabilise.whereItRuns')).toBeTruthy()
++  })
++
++  it('analyses once with progress, then stabilises the clip at the chosen level', async () => {
++    let finish!: (value: StabilisationMotion) => void
++    let report!: (progress: number) => void
++    analyse.mockImplementation(
++      (_id: string, _signal: AbortSignal, onProgress: (progress: number) => void) => {
++        report = onProgress
++        return new Promise((resolve) => {
++          finish = resolve
++        })
++      },
++    )
++    const item = clip()
++    render(<StabiliseSection item={item} />)
++    fireEvent.click(screen.getByRole('radio', { name: 'editor.stabilise.level.gentle' }))
++    expect(screen.getByText('editor.stabilise.stabilisedCrop {"crop":4}')).toBeTruthy()
++    fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.start' }))
++    expect(analyse).toHaveBeenCalledTimes(1)
++    expect(screen.getByRole('progressbar', { name: 'editor.stabilise.analysing' })).toBeTruthy()
++    expect(
++      screen.getByRole('button', { name: 'editor.stabilise.start' }).hasAttribute('disabled'),
++    ).toBe(true)
++    act(() => report(40))
++    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40')
++    await act(async () => finish(motion))
++    expect(actions.applyStabilisation).toHaveBeenCalledWith(item.id, motion, 'gentle')
++    expect(toast.success).toHaveBeenCalledWith('editor.stabilise.applied {"name":"Walk"}')
++    expect(screen.queryByRole('progressbar')).toBeNull()
++  })
++
++  it('when stabilised: shows the level and crop, applies another level at once and turns off', () => {
++    const item = clip({ stabilisation: { level: 'smooth', motion } })
++    render(<StabiliseSection item={item} />)
++    expect(screen.getByTestId('stabilise-done').textContent).toContain(
++      'editor.stabilise.done {"level":"editor.stabilise.level.smooth","crop":7}',
++    )
++    fireEvent.click(screen.getByRole('radio', { name: 'editor.stabilise.level.locked' }))
++    expect(actions.setStabilisationLevel).toHaveBeenCalledWith(item.id, 'locked')
++    expect(analyse).not.toHaveBeenCalled()
++    fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.turnOff' }))
++    expect(actions.removeStabilisation).toHaveBeenCalledWith(item.id)
++    expect(screen.queryByRole('button', { name: 'editor.stabilise.start' })).toBeNull()
++  })
++
++  it('says the result was not applied, in words, when the clip was locked or removed meanwhile', async () => {
++    for (const [reason, key] of [
++      ['locked', 'editor.stabilise.notApplied.locked'],
++      ['not-found', 'editor.stabilise.notApplied.removed'],
++      ['invalid-motion', 'editor.stabilise.notApplied.other'],
++    ] as const) {
++      analyse.mockResolvedValue(motion)
++      actions.applyStabilisation.mockReturnValueOnce({ ok: false, reason })
++      toast.warning.mockClear()
++      const { unmount } = render(<StabiliseSection item={clip()} />)
++      await act(async () => {
++        fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.start' }))
++      })
++      expect(toast.warning).toHaveBeenCalledWith(key)
++      expect(toast.error).not.toHaveBeenCalled()
++      unmount()
++    }
++  })
++
++  it('shows the level of a running analysis and starts again from each clip when the selection changes', async () => {
++    analyse.mockImplementation(() => new Promise(() => {}))
++    const first = clip()
++    const { rerender, unmount } = render(<StabiliseSection item={first} />)
++    fireEvent.click(screen.getByRole('radio', { name: 'editor.stabilise.level.locked' }))
++    fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.start' }))
++    // Remounted while the job runs: the job's level, not the default.
++    unmount()
++    const again = render(<StabiliseSection item={first} />)
++    expect(screen.getByRole('radio', { name: 'editor.stabilise.level.locked' }).getAttribute('aria-checked')).toBe('true')
++    // Another clip does not inherit it.
++    again.rerender(<StabiliseSection item={clip()} />)
++    expect(screen.getByRole('radio', { name: 'editor.stabilise.level.smooth' }).getAttribute('aria-checked')).toBe('true')
++    void rerender
++    again.unmount()
++  })
++
++  it('says why when the analysis fails, and nothing is applied', async () => {
++    analyse.mockRejectedValue(new Error('The clip has no picture to stabilise'))
++    render(<StabiliseSection item={clip()} />)
++    await act(async () => {
++      fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.start' }))
++    })
++    expect(actions.applyStabilisation).not.toHaveBeenCalled()
++    expect(toast.error).toHaveBeenCalledWith(
++      'editor.stabilise.failedReason {"reason":"The clip has no picture to stabilise"}',
++    )
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.tsx
+@@ -0,0 +1,273 @@
++import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
++import { useTranslation } from 'react-i18next'
++import { CheckCircle2, Video } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import type { VideoItem } from '@/types/timeline'
++import type { StabilisationLevel, StabilisationMotion } from '@/types/stabilisation'
++import {
++  applyStabilisation,
++  removeStabilisation,
++  setStabilisationLevel,
++  type StabiliseRefusal,
++} from '@/features/editor/deps/timeline-store'
++import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
++import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
++import {
++  STABILISATION_LEVEL_IDS,
++  correctionPath,
++  stabilisationCrop,
++} from '@/shared/utils/stabilisation'
++import {
++  stabiliseAnalysis,
++  stabiliseAvailable,
++  StabiliseUnavailableError,
++} from '@/features/editor/components/properties-sidebar/clip-panel/stabilise-service'
++
++/**
++ * Analyses in flight, by clip. They outlive the panel, so selecting another clip and coming back
++ * shows the same job, and a finished analysis is still applied to its clip.
++ */
++type Running = { progress: number; level: StabilisationLevel; controller: AbortController }
++const running = new Map<string, Running>()
++const listeners = new Set<() => void>()
++let version = 0
++const changed = () => {
++  version += 1
++  for (const listener of listeners) listener()
++}
++const subscribe = (listener: () => void) => {
++  listeners.add(listener)
++  return () => listeners.delete(listener)
++}
++const snapshot = () => version
++
++/** Start measuring a clip's camera movement; when it finishes, the clip is stabilised at `level`. */
++function startStabiliseAnalysis(
++  item: Pick<VideoItem, 'id' | 'label'>,
++  level: StabilisationLevel,
++  messages: {
++    applied: string
++    failed: (reason: string) => string
++    notApplied: (reason: StabiliseRefusal) => string
++  },
++): void {
++  if (running.has(item.id)) return
++  const controller = new AbortController()
++  const job: Running = { progress: 0, level, controller }
++  running.set(item.id, job)
++  changed()
++  stabiliseAnalysis
++    .analyse(item.id, controller.signal, (progress) => {
++      job.progress = Math.max(0, Math.min(100, progress))
++      changed()
++    })
++    .then((motion: StabilisationMotion) => {
++      if (controller.signal.aborted) return
++      const outcome = applyStabilisation(item.id, motion, job.level)
++      if (outcome.ok) toast.success(messages.applied)
++      // Analysed, but the clip changed meanwhile (removed, locked): say so, not that analysis failed.
++      else toast.warning(messages.notApplied(outcome.reason))
++    })
++    .catch((error: unknown) => {
++      if (controller.signal.aborted) return
++      const reason =
++        error instanceof StabiliseUnavailableError
++          ? 'unavailable'
++          : ((error as Error)?.message ?? '')
++      toast.error(messages.failed(reason))
++    })
++    .finally(() => {
++      if (running.get(item.id) === job) running.delete(item.id)
++      changed()
++    })
++}
++
++/** Before and after: the clip's picture moved along the measured path, and along the smoothed one. */
++function ShakePreview({
++  item,
++  steady,
++  level,
++}: {
++  item: VideoItem
++  steady: boolean
++  level: StabilisationLevel
++}) {
++  const { t } = useTranslation()
++  const motion = item.stabilisation?.motion
++  const crop = stabilisationCrop(level)
++  const [sample, setSample] = useState(0)
++  const count = motion?.count ?? 0
++  useEffect(() => {
++    if (count < 2) return undefined
++    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
++      return undefined
++    const rate = Math.min(30, motion?.rate ?? 30)
++    const timer = setInterval(() => setSample((value) => (value + 1) % count), 1000 / rate)
++    return () => clearInterval(timer)
++  }, [count, motion?.rate])
++  const transform = useMemo(() => {
++    if (!motion) return steady ? `scale(${1 + crop / 100})` : undefined
++    const path = correctionPath(motion, level)
++    if (!path) return undefined
++    const index = Math.min(sample, path.x.length - 1)
++    // The analysis is relative to the first frame: the original shows the measured shake (the
++    // correction undone), the stabilised view shows the smoothed path at the level's crop.
++    const original = { x: -path.x[index]!, y: -path.y[index]!, a: -path.a[index]! }
++    if (!steady)
++      return `translate(${original.x * 100}%, ${original.y * 100}%) rotate(${original.a}rad)`
++    return `scale(${1 + crop / 100})`
++  }, [crop, level, motion, sample, steady])
++  return (
++    <figure className="m-0 flex min-w-0 flex-col gap-1">
++      <div className="relative aspect-video overflow-hidden rounded-md bg-black">
++        {item.thumbnailUrl ? (
++          <img
++            src={item.thumbnailUrl}
++            alt=""
++            className="h-full w-full object-cover"
++            style={{ transform, transformOrigin: '50% 50%' }}
++          />
++        ) : (
++          <div className="h-full w-full bg-muted/30" style={{ transform }} />
++        )}
++      </div>
++      <figcaption className="text-[11px] text-muted-foreground">
++        {steady ? t('editor.stabilise.stabilisedCrop', { crop }) : t('editor.stabilise.original')}
++      </figcaption>
++    </figure>
++  )
++}
++
++/**
++ * Stabilise (FL-638), on the Motion tab for one video clip. The camera movement is measured once, as a
++ * server job in Activity; choosing another smoothness afterwards applies at once with no new analysis.
++ * Stabilising crops in a little to hide the moving edges; the original video never changes.
++ */
++export function StabiliseSection({ item }: { item: VideoItem }) {
++  const { t } = useTranslation()
++  useSyncExternalStore(subscribe, snapshot, snapshot)
++  const job = running.get(item.id)
++  const done = item.stabilisation
++  // The level shown: the clip's own once stabilised, else the one its running analysis will apply,
++  // else the person's choice. Selecting another clip starts again from that clip's state.
++  const [chosen, setChosen] = useState<StabilisationLevel>(done?.level ?? job?.level ?? 'smooth')
++  const [shownFor, setShownFor] = useState(item.id)
++  if (shownFor !== item.id) {
++    setShownFor(item.id)
++    setChosen(done?.level ?? job?.level ?? 'smooth')
++  }
++  const level = done?.level ?? job?.level ?? chosen
++  const colorTransfer = useMediaLibraryStore((state) =>
++    item.mediaId ? state.mediaById[item.mediaId]?.colorTransfer : undefined,
++  )
++  const hdr = workingRangeOfSources([colorTransfer]) === 'hdr'
++
++  if (!stabiliseAvailable && !done) return null
++
++  const levelLabel = (id: StabilisationLevel) => t(`editor.stabilise.level.${id}`)
++  const choose = (id: StabilisationLevel) => {
++    setChosen(id)
++    if (job) job.level = id
++    // Already stabilised: the measured path is reused, so the new smoothness applies at once.
++    if (done && done.level !== id) setStabilisationLevel(item.id, id)
++  }
++  const start = () =>
++    startStabiliseAnalysis(item, level, {
++      applied: t('editor.stabilise.applied', { name: item.label }),
++      failed: (reason) =>
++        reason === 'unavailable' || reason === ''
++          ? t('editor.stabilise.failed')
++          : t('editor.stabilise.failedReason', { reason }),
++      notApplied: (reason) =>
++        reason === 'locked'
++          ? t('editor.stabilise.notApplied.locked')
++          : reason === 'not-found'
++            ? t('editor.stabilise.notApplied.removed')
++            : t('editor.stabilise.notApplied.other'),
++    })
++
++  return (
++    <section
++      className="space-y-3 rounded-md border border-border p-3"
++      aria-label={t('editor.stabilise.title')}
++    >
++      <h4 className="flex items-center gap-1.5 text-xs font-medium">
++        <Video className="h-3.5 w-3.5" aria-hidden />
++        {t('editor.stabilise.title')}
++      </h4>
++      <div className="grid grid-cols-2 gap-3">
++        <ShakePreview item={item} steady={false} level={level} />
++        <ShakePreview item={item} steady level={level} />
++      </div>
++      <div role="radiogroup" aria-label={t('editor.stabilise.smoothness')} className="space-y-1">
++        <p className="text-[11px] text-muted-foreground">{t('editor.stabilise.smoothness')}</p>
++        <div className="grid grid-cols-3 gap-1 rounded-md bg-muted/40 p-0.5">
++          {STABILISATION_LEVEL_IDS.map((id) => (
++            <button
++              key={id}
++              type="button"
++              role="radio"
++              aria-checked={level === id}
++              disabled={hdr}
++              className={`h-7 rounded px-1 text-xs ${level === id ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
++              onClick={() => choose(id)}
++            >
++              {levelLabel(id)}
++            </button>
++          ))}
++        </div>
++      </div>
++      <p className="text-[11px] text-muted-foreground">
++        {t(`editor.stabilise.note.${level}`)} {t('editor.stabilise.cropNote')}
++      </p>
++      {hdr && !done && <p className="text-[11px] text-amber-500">{t('editor.stabilise.hdr')}</p>}
++      {job && (
++        <div className="space-y-1" aria-live="polite">
++          <p className="text-xs">{t('editor.stabilise.analysing')}</p>
++          <div
++            className="h-1.5 overflow-hidden rounded bg-muted"
++            role="progressbar"
++            aria-label={t('editor.stabilise.analysing')}
++            aria-valuemin={0}
++            aria-valuemax={100}
++            aria-valuenow={Math.round(job.progress)}
++          >
++            <div className="h-full bg-primary" style={{ width: `${job.progress}%` }} />
++          </div>
++        </div>
++      )}
++      <div className="flex flex-wrap items-center gap-2">
++        {done ? (
++          <>
++            <span className="flex items-center gap-1 text-xs" data-testid="stabilise-done">
++              <CheckCircle2 className="h-3.5 w-3.5 text-primary" aria-hidden />
++              {t('editor.stabilise.done', {
++                level: levelLabel(done.level),
++                crop: stabilisationCrop(done.level),
++              })}
++            </span>
++            <Button
++              variant="ghost"
++              size="sm"
++              className="h-7 text-xs"
++              onClick={() => removeStabilisation(item.id)}
++            >
++              {t('editor.stabilise.turnOff')}
++            </Button>
++          </>
++        ) : (
++          <Button
++            size="sm"
++            className="h-7 flex-1 text-xs"
++            disabled={!!job || hdr || !stabiliseAvailable}
++            onClick={start}
++          >
++            {t('editor.stabilise.start')}
++          </Button>
++        )}
++      </div>
++      <p className="text-[11px] text-muted-foreground">{t('editor.stabilise.whereItRuns')}</p>
++    </section>
++  )
++}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/stabilise-service.ts b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-service.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-service.ts
+@@ -0,0 +1,30 @@
++/**
++ * Stabilise (FL-638): where a clip's camera movement is measured.
++ *
++ * The measurement is a job on the host's server, so this module only names the contract. On its
++ * own the engine has no such server and answers that Stabilise is unavailable; a host build
++ * substitutes this module with one that runs the job and follows it.
++ */
++import type { StabilisationMotion } from '@/types/stabilisation'
++
++export class StabiliseUnavailableError extends Error {
++  constructor() {
++    super('Stabilise is not available here')
++    this.name = 'StabiliseUnavailableError'
++  }
++}
++
++export interface StabiliseAnalysis {
++  /** Measure the clip's camera movement. `onProgress` gets 0-100. Rejects with the reason to show. */
++  analyse(
++    itemId: string,
++    signal: AbortSignal,
++    onProgress: (progress: number) => void,
++  ): Promise<StabilisationMotion>
++}
++
++export const stabiliseAvailable = false
++
++export const stabiliseAnalysis: StabiliseAnalysis = {
++  analyse: () => Promise.reject(new StabiliseUnavailableError()),
++}
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -66,6 +66,12 @@ export {
+   type MulticamSyncProposal,
+ } from '@/features/timeline/stores/actions/edit/multicam-actions'
+ export { applyColourMatch } from '@/features/timeline/utils/colour-match'
++export {
++  applyStabilisation,
++  removeStabilisation,
++  setStabilisationLevel,
++  type StabiliseRefusal,
++} from '@/features/timeline/stores/actions/edit/stabilise-actions'
+ export {
+   addCompositionControl,
+   removeCompositionControl,
+diff --git a/src/features/export/utils/canvas-item-renderer/gpu.ts b/src/features/export/utils/canvas-item-renderer/gpu.ts
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -4,6 +4,7 @@
+  * uploads, and color/path helpers used by the GPU shape pipeline.
+  */
+ 
++import { hasStabilisation } from '@/shared/utils/stabilisation'
+ import type {
+   CompositionItem,
+   ImageItem,
+@@ -395,6 +396,10 @@ export function renderPreviewVideoGpuEffectsToCanvas(
+     recordFastPath('crop')
+     return null
+   }
++  if (hasStabilisation(item)) {
++    recordFastPath('stabilisation')
++    return null
++  }
+   if (hasCornerPin(item.cornerPin)) {
+     recordFastPath('corner-pin')
+     return null
+@@ -530,6 +535,13 @@ export async function prepareGpuMediaParticipant(
+   frame: number,
+   rctx: ItemRenderContext,
+ ): Promise<PreparedGpuMediaParticipant | null> {
++  // Stabilise (FL-638) is drawn by the canvas item renderer; every caller falls back to it on null.
++  // HDR video has no canvas path, and the editor does not offer Stabilise for it.
++  if (
++    hasStabilisation(participant.item) &&
++    !(participant.item.type === 'video' && isHdrVideoSource(participant.item.mediaId))
++  )
++    return null
+   if (rctx.gpuPipeline?.getWorkingRange?.() === 'hdr') {
+     if (
+       participant.effects.some(
+diff --git a/src/features/export/utils/canvas-item-renderer/render-item.stabilisation.test.ts b/src/features/export/utils/canvas-item-renderer/render-item.stabilisation.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-item-renderer/render-item.stabilisation.test.ts
+@@ -0,0 +1,203 @@
++// @vitest-environment node
++
++import { describe, expect, it, vi, beforeEach } from 'vite-plus/test'
++import type { VideoItem } from '@/types/timeline'
++import type { StabilisationMotion } from '@/types/stabilisation'
++import { stabilisationAt, stabilisationCssTransform } from '@/shared/utils/stabilisation'
++import type { ItemRenderContext, ItemTransform } from './types'
++
++const drawn: Array<{ matrix: number[]; clip: number[] | null }> = []
++
++vi.mock('./video', () => ({
++  renderVideoItem: vi.fn(async (ctx: RecordingContext) => {
++    drawn.push({ matrix: [...ctx.matrix], clip: ctx.clipRect ? [...ctx.clipRect] : null })
++    return true
++  }),
++}))
++
++const { renderItem } = await import('./render-item')
++
++/** A 2D context that keeps its current transform (a, b, c, d, e, f) and last clip rectangle. */
++class RecordingContext {
++  matrix = [1, 0, 0, 1, 0, 0]
++  clipRect: number[] | null = null
++  private pendingRect: number[] | null = null
++  private stack: Array<{ matrix: number[]; clipRect: number[] | null }> = []
++  globalAlpha = 1
++  globalCompositeOperation = 'source-over'
++  save() {
++    this.stack.push({ matrix: [...this.matrix], clipRect: this.clipRect })
++  }
++  restore() {
++    const state = this.stack.pop()
++    if (state) Object.assign(this, state)
++  }
++  private multiply(a: number, b: number, c: number, d: number, e: number, f: number) {
++    const [m0, m1, m2, m3, m4, m5] = this.matrix as [number, number, number, number, number, number]
++    this.matrix = [
++      m0 * a + m2 * b,
++      m1 * a + m3 * b,
++      m0 * c + m2 * d,
++      m1 * c + m3 * d,
++      m0 * e + m2 * f + m4,
++      m1 * e + m3 * f + m5,
++    ]
++  }
++  translate(x: number, y: number) {
++    this.multiply(1, 0, 0, 1, x, y)
++  }
++  rotate(angle: number) {
++    this.multiply(Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), 0, 0)
++  }
++  scale(x: number, y: number) {
++    this.multiply(x, 0, 0, y, 0, 0)
++  }
++  beginPath() {
++    this.pendingRect = null
++  }
++  rect(x: number, y: number, width: number, height: number) {
++    this.pendingRect = [x, y, width, height]
++  }
++  roundRect() {}
++  clip() {
++    this.clipRect = this.pendingRect
++  }
++}
++
++const encode = (values: number[]) => {
++  const bytes = new Uint8Array(values.length * 4)
++  const view = new DataView(bytes.buffer)
++  values.forEach((value, index) => view.setFloat32(index * 4, value, true))
++  return btoa(String.fromCharCode(...bytes))
++}
++
++const shake = Array.from({ length: 60 }, (_, i) => 0.01 * Math.sin(i * 1.3))
++const motion: StabilisationMotion = {
++  version: 1,
++  method: 'block-similarity-v1',
++  rate: 30,
++  start: 0,
++  count: 60,
++  width: 160,
++  height: 90,
++  x: encode(shake),
++  y: encode(shake.map((value) => -value / 2)),
++  a: encode(shake.map((value) => value / 10)),
++  found: 1,
++}
++
++const transform: ItemTransform = {
++  x: 0,
++  y: 0,
++  width: 1920,
++  height: 1080,
++  rotation: 0,
++  opacity: 1,
++  cornerRadius: 0,
++}
++
++const clip = (extra: Partial<VideoItem> = {}) =>
++  ({
++    id: 'clip-1',
++    type: 'video',
++    src: 'file.mp4',
++    mediaId: 'media-1',
++    from: 10,
++    durationInFrames: 40,
++    sourceStart: 15,
++    sourceFps: 30,
++    sourceDuration: 60,
++    sourceWidth: 1920,
++    sourceHeight: 1080,
++    speed: 1,
++    transform,
++    ...extra,
++  }) as VideoItem
++
++const rctx = (renderMode: 'preview' | 'export') =>
++  ({
++    fps: 30,
++    renderMode,
++    canvasSettings: { width: 1920, height: 1080, fps: 30 },
++    keyframesMap: new Map(),
++    videoExtractors: new Map(),
++    videoElements: new Map(),
++    useMediabunny: new Set(),
++    mediabunnyDisabledItems: new Set(),
++    mediabunnyFailureCountByItem: new Map(),
++    scrubbingCache: null,
++  }) as unknown as ItemRenderContext
++
++/** Where a point of the media lands under a context matrix. */
++const apply = (m: number[], x: number, y: number): [number, number] => [
++  m[0]! * x + m[2]! * y + m[4]!,
++  m[1]! * x + m[3]! * y + m[5]!,
++]
++
++describe('renderItem with Stabilise', () => {
++  beforeEach(() => {
++    drawn.length = 0
++  })
++
++  it('draws an unstabilised clip untouched', async () => {
++    await renderItem(new RecordingContext() as never, clip(), transform, 20, rctx('export'))
++    expect(drawn).toEqual([{ matrix: [1, 0, 0, 1, 0, 0], clip: null }])
++  })
++
++  it('draws a stabilised clip through the correction at its source time, clipped to the media, in export and preview', async () => {
++    for (const mode of ['export', 'preview'] as const) {
++      drawn.length = 0
++      const ctx = new RecordingContext()
++      // Timeline frame 20 is 10 frames into the clip: source frame 25, source second 25/30.
++      await renderItem(
++        ctx as never,
++        clip({ stabilisation: { level: 'smooth', motion } }),
++        transform,
++        20,
++        rctx(mode),
++      )
++      const [draw] = drawn
++      expect(draw!.clip).toEqual([0, 0, 1920, 1080])
++      const correction = stabilisationAt({ level: 'smooth', motion }, 25 / 30 + 1e-4 / 30, 16 / 9)
++      expect(correction.scale).toBeCloseTo(1.07, 9)
++      // The media centre moves by the correction's shift; a corner turns and scales about it.
++      const [cx, cy] = apply(draw!.matrix, 960, 540)
++      expect(cx).toBeCloseTo(960 + correction.tx * 1920, 6)
++      expect(cy).toBeCloseTo(540 + correction.ty * 1080, 6)
++      const [rx, ry] = apply(draw!.matrix, 1920, 540)
++      expect(rx - cx).toBeCloseTo(960 * correction.scale * Math.cos(correction.rotation), 6)
++      expect(ry - cy).toBeCloseTo(960 * correction.scale * Math.sin(correction.rotation), 6)
++      // The context is restored for the next item.
++      expect(ctx.matrix).toEqual([1, 0, 0, 1, 0, 0])
++      expect(ctx.clipRect).toBeNull()
++    }
++  })
++
++  it('matches the live preview: the CSS transform maps the media the same way', () => {
++    const correction = stabilisationAt({ level: 'gentle', motion }, 0.5, 16 / 9)
++    const css = stabilisationCssTransform(correction)!
++    const [, tx, ty, rotation, scale] = css
++      .match(/translate\((.+)%, (.+)%\) rotate\((.+)rad\) scale\((.+)\)/)!
++      .map(Number)
++    expect(tx! / 100).toBeCloseTo(correction.tx, 12)
++    expect(ty! / 100).toBeCloseTo(correction.ty, 12)
++    expect(rotation).toBeCloseTo(correction.rotation, 12)
++    expect(scale).toBeCloseTo(correction.scale, 12)
++  })
++
++  it('clips a smaller clip to its own box and moves it about its own centre', async () => {
++    const small = { ...transform, x: 200, y: -100, width: 640, height: 360 }
++    await renderItem(
++      new RecordingContext() as never,
++      clip({ stabilisation: { level: 'locked', motion }, transform: small }),
++      small,
++      20,
++      rctx('export'),
++    )
++    const [draw] = drawn
++    expect(draw!.clip).toEqual([1160 - 320, 440 - 180, 640, 360])
++    const [cx] = apply(draw!.matrix, 1160, 440)
++    const correction = stabilisationAt({ level: 'locked', motion }, 25 / 30 + 1e-4 / 30, 16 / 9)
++    expect(cx).toBeCloseTo(1160 + correction.tx * 640, 6)
++  })
++})
+diff --git a/src/features/export/utils/canvas-item-renderer/render-item.ts b/src/features/export/utils/canvas-item-renderer/render-item.ts
+--- a/src/features/export/utils/canvas-item-renderer/render-item.ts
++++ b/src/features/export/utils/canvas-item-renderer/render-item.ts
+@@ -35,6 +35,14 @@ import {
+   resolveItemTransform,
+ } from './shared'
+ import { renderVideoItem } from './video'
++import { calculateContainedMediaDrawLayout } from './media-draw'
++import { getItemRenderTimelineSpan, resolveVideoRenderSourceTimeSeconds } from '../render-span'
++import {
++  applyStabilisationToContext,
++  hasStabilisation,
++  intersectRect,
++  stabilisationAt,
++} from '@/shared/utils/stabilisation'
+ import { renderImageItem } from './image'
+ import { renderLottieItem } from './lottie'
+ import { getTextRasterCacheKey, renderSubtitleSegmentItem, renderTextItem } from './text'
+@@ -181,6 +189,46 @@ export async function renderItem(
+   }
+ }
+ 
++/** Clip to the media's visible rectangle and apply the clip's stabilisation for this frame. */
++function applyVideoStabilisation(
++  ctx: OffscreenCanvasRenderingContext2D,
++  item: VideoItem,
++  transform: ItemTransform,
++  frame: number,
++  rctx: ItemRenderContext,
++  sourceFrameOffset: number,
++  renderSpan?: RenderTimelineSpan,
++): void {
++  const layout = calculateContainedMediaDrawLayout(
++    item.sourceWidth ?? transform.width,
++    item.sourceHeight ?? transform.height,
++    transform,
++    rctx.canvasSettings,
++    item.crop,
++  )
++  const { mediaRect } = layout
++  if (mediaRect.width <= 0 || mediaRect.height <= 0) return
++  const box = {
++    x: rctx.canvasSettings.width / 2 + transform.x - transform.width / 2,
++    y: rctx.canvasSettings.height / 2 + transform.y - transform.height / 2,
++    width: transform.width,
++    height: transform.height,
++  }
++  const sourceSeconds = resolveVideoRenderSourceTimeSeconds(
++    item,
++    renderSpan ?? getItemRenderTimelineSpan(item),
++    frame,
++    rctx.fps,
++    sourceFrameOffset,
++  )
++  const correction = stabilisationAt(
++    item.stabilisation,
++    sourceSeconds,
++    mediaRect.width / mediaRect.height,
++  )
++  applyStabilisationToContext(ctx, correction, mediaRect, intersectRect(mediaRect, box))
++}
++
+ /**
+  * Render item content (dispatches to type-specific renderers).
+  */
+@@ -200,15 +248,36 @@ async function renderItemContent(
+ 
+   switch (effectiveItem.type) {
+     case 'video': {
+-      const videoFrameDrawn = await renderVideoItem(
+-        ctx,
+-        effectiveItem as VideoItem,
+-        transform,
+-        frame,
+-        rctx,
+-        sourceFrameOffset,
+-        renderSpan,
+-      )
++      const videoItem = effectiveItem as VideoItem
++      // Stabilise (FL-638): draw the clip through its per-frame correction, clipped to where the
++      // media shows, so the moving edges stay outside the frame. Preview and export both pass here.
++      const stabilised = hasStabilisation(videoItem)
++      if (stabilised) {
++        ctx.save()
++        applyVideoStabilisation(
++          ctx,
++          videoItem,
++          transform,
++          frame,
++          rctx,
++          sourceFrameOffset,
++          renderSpan,
++        )
++      }
++      let videoFrameDrawn: boolean
++      try {
++        videoFrameDrawn = await renderVideoItem(
++          ctx,
++          videoItem,
++          transform,
++          frame,
++          rctx,
++          sourceFrameOffset,
++          renderSpan,
++        )
++      } finally {
++        if (stabilised) ctx.restore()
++      }
+       if (!videoFrameDrawn) {
+         // Preview canvases are cleared before item rendering. A video item is
+         // complete only after one of its real frame sources was drawn; every
+diff --git a/src/features/timeline/stores/actions/edit/stabilise-actions.test.ts b/src/features/timeline/stores/actions/edit/stabilise-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/stabilise-actions.test.ts
+@@ -0,0 +1,115 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { TimelineTrack, VideoItem } from '@/types/timeline'
++import type { StabilisationMotion } from '@/types/stabilisation'
++import { useItemsStore } from '../../items-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { applyStabilisation, removeStabilisation, setStabilisationLevel } from './stabilise-actions'
++
++const track = (id: string, locked = false) =>
++  ({
++    id,
++    name: id,
++    order: 0,
++    height: 80,
++    locked,
++    syncLock: true,
++    visible: true,
++    muted: false,
++    solo: false,
++    volume: 0,
++    items: [],
++    kind: 'video',
++  }) as TimelineTrack
++
++const video = (overrides: Partial<VideoItem> = {}): VideoItem =>
++  ({
++    id: 'v1',
++    type: 'video',
++    trackId: 't1',
++    from: 0,
++    durationInFrames: 60,
++    label: 'Walk',
++    src: 'blob:v',
++    mediaId: 'm1',
++    sourceStart: 0,
++    sourceEnd: 60,
++    sourceFps: 30,
++    ...overrides,
++  }) as VideoItem
++
++const motion: StabilisationMotion = {
++  version: 1,
++  method: 'block-similarity-v1',
++  rate: 30,
++  start: 0,
++  count: 2,
++  width: 160,
++  height: 90,
++  // [0, 0.01] as float32 little-endian.
++  x: 'AAAAAArXIzw=',
++  y: 'AAAAAAAAAAA=',
++  a: 'AAAAAAAAAAA=',
++  found: 1,
++}
++
++const stabilisation = (id = 'v1') =>
++  (useItemsStore.getState().itemById[id] as VideoItem).stabilisation
++
++describe('stabilise actions', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useItemsStore.getState().setTracks([track('t1'), track('t2', true)])
++    useItemsStore
++      .getState()
++      .setItems([
++        video(),
++        video({ id: 'locked', trackId: 't2' }),
++        { ...video({ id: 'a1' }), type: 'audio' } as never,
++      ])
++  })
++
++  it('stabilises a clip in one undo step and marks the project changed', () => {
++    expect(applyStabilisation('v1', motion, 'smooth')).toEqual({ ok: true })
++    expect(stabilisation()).toEqual({ level: 'smooth', motion })
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(true)
++    useTimelineCommandStore.getState().undo()
++    expect(stabilisation()).toBeUndefined()
++  })
++
++  it('changes the smoothness without a new analysis, and undo brings the old level back', () => {
++    applyStabilisation('v1', motion, 'smooth')
++    expect(setStabilisationLevel('v1', 'locked')).toEqual({ ok: true })
++    expect(stabilisation()).toEqual({ level: 'locked', motion })
++    expect(stabilisation()!.motion).toBe(motion)
++    useTimelineCommandStore.getState().undo()
++    expect(stabilisation()!.level).toBe('smooth')
++  })
++
++  it('turns stabilisation off, and undo turns it back on', () => {
++    applyStabilisation('v1', motion, 'gentle')
++    expect(removeStabilisation('v1')).toEqual({ ok: true })
++    expect(stabilisation()).toBeUndefined()
++    useTimelineCommandStore.getState().undo()
++    expect(stabilisation()).toEqual({ level: 'gentle', motion })
++  })
++
++  it('refuses a missing, locked or non-video clip, a bad level and a malformed path', () => {
++    expect(applyStabilisation('gone', motion, 'smooth')).toEqual({ ok: false, reason: 'not-found' })
++    expect(applyStabilisation('a1', motion, 'smooth')).toEqual({ ok: false, reason: 'not-video' })
++    expect(applyStabilisation('locked', motion, 'smooth')).toEqual({ ok: false, reason: 'locked' })
++    expect(applyStabilisation('v1', motion, 'wobbly' as never)).toEqual({
++      ok: false,
++      reason: 'invalid-level',
++    })
++    expect(applyStabilisation('v1', { ...motion, count: 5 }, 'smooth')).toEqual({
++      ok: false,
++      reason: 'invalid-motion',
++    })
++    expect(setStabilisationLevel('v1', 'smooth')).toEqual({ ok: false, reason: 'not-stabilised' })
++    expect(stabilisation()).toBeUndefined()
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/stabilise-actions.ts b/src/features/timeline/stores/actions/edit/stabilise-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/stabilise-actions.ts
+@@ -0,0 +1,87 @@
++import type { VideoItem } from '@/types/timeline'
++import type { StabilisationLevel, StabilisationMotion } from '@/types/stabilisation'
++import { useItemsStore } from '../../items-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { execute } from '../shared'
++import { hasLockedEditParticipants } from '../linked-edit'
++import { isStabilisationLevel, readStabilisationMotion } from '@/shared/utils/stabilisation'
++
++export type StabiliseRefusal =
++  | 'not-found'
++  | 'not-video'
++  | 'locked'
++  | 'invalid-motion'
++  | 'invalid-level'
++  | 'not-stabilised'
++
++export type StabiliseOutcome = { ok: true } | { ok: false; reason: StabiliseRefusal }
++
++function videoItem(itemId: string): VideoItem | StabiliseRefusal {
++  const item = useItemsStore.getState().itemById[itemId]
++  if (!item) return 'not-found'
++  if (item.type !== 'video') return 'not-video'
++  if (hasLockedEditParticipants([item])) return 'locked'
++  return item
++}
++
++/** Stabilise a video clip with a measured camera path at a smoothness, in one undo step. */
++export function applyStabilisation(
++  itemId: string,
++  motion: StabilisationMotion,
++  level: StabilisationLevel,
++): StabiliseOutcome {
++  const item = videoItem(itemId)
++  if (typeof item === 'string') return { ok: false, reason: item }
++  if (!isStabilisationLevel(level)) return { ok: false, reason: 'invalid-level' }
++  if (!readStabilisationMotion(motion)) return { ok: false, reason: 'invalid-motion' }
++  execute(
++    'APPLY_STABILISATION',
++    () => {
++      useItemsStore
++        .getState()
++        ._updateItem(itemId, { stabilisation: { level, motion } } as Partial<VideoItem>)
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { itemId, level },
++  )
++  return { ok: true }
++}
++
++/** Change a stabilised clip's smoothness, in one undo step. The measured path is reused as it is. */
++export function setStabilisationLevel(itemId: string, level: StabilisationLevel): StabiliseOutcome {
++  const item = videoItem(itemId)
++  if (typeof item === 'string') return { ok: false, reason: item }
++  if (!isStabilisationLevel(level)) return { ok: false, reason: 'invalid-level' }
++  const current = item.stabilisation
++  if (!current) return { ok: false, reason: 'not-stabilised' }
++  if (current.level === level) return { ok: true }
++  execute(
++    'SET_STABILISATION_LEVEL',
++    () => {
++      useItemsStore
++        .getState()
++        ._updateItem(itemId, { stabilisation: { ...current, level } } as Partial<VideoItem>)
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { itemId, level },
++  )
++  return { ok: true }
++}
++
++/** Turn stabilisation off, in one undo step. The source was never changed, so nothing else changes. */
++export function removeStabilisation(itemId: string): StabiliseOutcome {
++  const item = videoItem(itemId)
++  if (typeof item === 'string') return { ok: false, reason: item }
++  if (!item.stabilisation) return { ok: true }
++  execute(
++    'REMOVE_STABILISATION',
++    () => {
++      useItemsStore
++        .getState()
++        ._updateItem(itemId, { stabilisation: undefined } as Partial<VideoItem>)
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { itemId },
++  )
++  return { ok: true }
++}
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -1090,6 +1090,37 @@
+         "already-multicam": "These clips are already angles of a multicam edit.",
+         "generated-media": "Generated clips have no recording to sync, so they can’t be angles."
+       }
++    },
++    "stabilise": {
++      "title": "Stabilise",
++      "original": "Original",
++      "stabilisedCrop": "Stabilised · crops in {{crop}}%",
++      "smoothness": "Smoothness",
++      "level": {
++        "gentle": "Gentle",
++        "smooth": "Smooth",
++        "locked": "Locked off"
++      },
++      "note": {
++        "gentle": "Smooths small wobbles. Keeps natural camera movement.",
++        "smooth": "Steady handheld walking shots.",
++        "locked": "As if on a tripod. Crops in the most."
++      },
++      "cropNote": "Stabilising crops in a little to hide the moving edges.",
++      "analysing": "Analysing camera movement…",
++      "start": "Stabilise clip",
++      "done": "{{level}} · crops in {{crop}}%",
++      "turnOff": "Turn off",
++      "applied": "{{name}} is stabilised. The original video never changes.",
++      "failed": "The camera movement couldn't be analysed.",
++      "failedReason": "The camera movement couldn't be analysed: {{reason}}",
++      "hdr": "Stabilise isn't available for HDR clips yet.",
++      "whereItRuns": "Analysed once on your Frameleaf server, as a job in Activity. Changing the smoothness afterwards is instant.",
++      "notApplied": {
++        "locked": "The clip is on a locked track, so it wasn't stabilised.",
++        "removed": "The clip was removed before the analysis finished.",
++        "other": "The analysis couldn't be applied to this clip."
++      }
+     }
+   }
+ }
+diff --git a/src/runtime/composition-runtime/components/contained-media-layout.stabilisation.test.tsx b/src/runtime/composition-runtime/components/contained-media-layout.stabilisation.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/runtime/composition-runtime/components/contained-media-layout.stabilisation.test.tsx
+@@ -0,0 +1,41 @@
++import { render } from '@testing-library/react'
++import { describe, expect, it } from 'vite-plus/test'
++import { ContainedMediaLayout } from './contained-media-layout'
++
++describe('ContainedMediaLayout with Stabilise', () => {
++  it('leaves unstabilised media as before', () => {
++    const { container } = render(
++      <ContainedMediaLayout
++        sourceWidth={1920}
++        sourceHeight={1080}
++        containerWidth={1920}
++        containerHeight={1080}
++      >
++        <span />
++      </ContainedMediaLayout>,
++    )
++    const outer = container.firstElementChild as HTMLElement
++    expect(outer.style.clipPath).toBe('')
++    expect((outer.firstElementChild as HTMLElement).style.transform).toBe('')
++  })
++
++  it('moves the media about its centre and clips it to where it showed', () => {
++    const { container } = render(
++      <ContainedMediaLayout
++        sourceWidth={1920}
++        sourceHeight={1080}
++        containerWidth={1920}
++        containerHeight={1440}
++        stabilisation={{ tx: 0.01, ty: -0.02, rotation: 0.003, scale: 1.07 }}
++      >
++        <span />
++      </ContainedMediaLayout>,
++    )
++    const outer = container.firstElementChild as HTMLElement
++    // Letterboxed 16:9 in a 4:3 box: the media shows from 180 to 1260 of 1440.
++    expect(outer.style.clipPath).toBe('inset(12.5% 0% 12.5% 0%)')
++    const media = outer.firstElementChild as HTMLElement
++    expect(media.style.transform).toBe('translate(1%, -2%) rotate(0.003rad) scale(1.07)')
++    expect(media.style.transformOrigin).toBe('50% 50%')
++  })
++})
+diff --git a/src/runtime/composition-runtime/components/contained-media-layout.tsx b/src/runtime/composition-runtime/components/contained-media-layout.tsx
+--- a/src/runtime/composition-runtime/components/contained-media-layout.tsx
++++ b/src/runtime/composition-runtime/components/contained-media-layout.tsx
+@@ -1,5 +1,10 @@
+ import type React from 'react'
+ import type { CropSettings } from '@/types/transform'
++import {
++  intersectRect,
++  stabilisationCssTransform,
++  type StabilisationCorrection,
++} from '@/shared/utils/stabilisation'
+ import {
+   calculateMediaCropLayout,
+   type MediaCropFitMode,
+@@ -13,6 +18,8 @@ interface ContainedMediaLayoutProps {
+   containerHeight: number
+   crop?: CropSettings
+   fitMode?: MediaCropFitMode
++  /** Stabilise (FL-638): this frame's correction, drawn about the media's centre. */
++  stabilisation?: StabilisationCorrection
+   children: React.ReactNode
+ }
+ 
+@@ -87,6 +94,7 @@ export function ContainedMediaLayout({
+   containerHeight,
+   crop,
+   fitMode = 'contain',
++  stabilisation,
+   children,
+ }: ContainedMediaLayoutProps) {
+   const layout = calculateMediaCropLayout(
+@@ -108,27 +116,60 @@ export function ContainedMediaLayout({
+   const maskImage = buildCropMask(layout)
+   const maskComposite = maskImage?.includes(', ') ? 'intersect' : undefined
+ 
++  const stabilisationTransform = stabilisation
++    ? stabilisationCssTransform(stabilisation)
++    : undefined
++  const media = (
++    <div
++      style={{
++        position: 'absolute',
++        left: percent(layout.mediaRect.x, containerWidth),
++        top: percent(layout.mediaRect.y, containerHeight),
++        width: percent(layout.mediaRect.width, containerWidth),
++        height: percent(layout.mediaRect.height, containerHeight),
++        maskImage,
++        WebkitMaskImage: maskImage,
++        ...(maskComposite
++          ? {
++              maskComposite,
++              WebkitMaskComposite: 'destination-in',
++            }
++          : {}),
++        ...(stabilisationTransform
++          ? { transform: stabilisationTransform, transformOrigin: '50% 50%' }
++          : {}),
++      }}
++    >
++      {children}
++    </div>
++  )
++
++  if (!stabilisationTransform) {
++    return <div style={{ position: 'relative', width: '100%', height: '100%' }}>{media}</div>
++  }
++
++  // Stabilised: the corrected media is clipped to where it showed uncorrected (the media inside the
++  // box), as the canvas renderer clips it, so the moving edges stay out of sight.
++  const clip = intersectRect(layout.mediaRect, {
++    x: 0,
++    y: 0,
++    width: containerWidth,
++    height: containerHeight,
++  })
++  const insetTop = percent(clip.y, containerHeight)
++  const insetRight = percent(containerWidth - clip.x - clip.width, containerWidth)
++  const insetBottom = percent(containerHeight - clip.y - clip.height, containerHeight)
++  const insetLeft = percent(clip.x, containerWidth)
+   return (
+-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+-      <div
+-        style={{
+-          position: 'absolute',
+-          left: percent(layout.mediaRect.x, containerWidth),
+-          top: percent(layout.mediaRect.y, containerHeight),
+-          width: percent(layout.mediaRect.width, containerWidth),
+-          height: percent(layout.mediaRect.height, containerHeight),
+-          maskImage,
+-          WebkitMaskImage: maskImage,
+-          ...(maskComposite
+-            ? {
+-                maskComposite,
+-                WebkitMaskComposite: 'destination-in',
+-              }
+-            : {}),
+-        }}
+-      >
+-        {children}
+-      </div>
++    <div
++      style={{
++        position: 'relative',
++        width: '100%',
++        height: '100%',
++        clipPath: `inset(${insetTop} ${insetRight} ${insetBottom} ${insetLeft})`,
++      }}
++    >
++      {media}
+     </div>
+   )
+ }
+diff --git a/src/runtime/composition-runtime/components/hooks/use-item-visual-state.ts b/src/runtime/composition-runtime/components/hooks/use-item-visual-state.ts
+--- a/src/runtime/composition-runtime/components/hooks/use-item-visual-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-item-visual-state.ts
+@@ -16,6 +16,7 @@ import { useCompositionSpace } from '../../contexts/composition-space-context'
+ import { useRuntimeItemKeyframes } from './use-runtime-item-keyframes'
+ import { KeyframesContext } from '../../contexts/keyframes-context-core'
+ import { useVisualFreezeFrame } from './use-visual-freeze-frame'
++import { hasStabilisation, stabilisationSourceSeconds } from '@/shared/utils/stabilisation'
+ import type { MaskInfo } from '../item'
+ import type React from 'react'
+ import {
+@@ -77,6 +78,8 @@ interface ItemVisualState {
+ 
+   /** Properties preview for content components */
+   propertiesPreview: ItemPropertiesPreview | undefined
++  /** Stabilise (FL-638): the source second shown now, when the clip is stabilised; null otherwise. */
++  stabilisationSeconds: number | null
+ }
+ 
+ /**
+@@ -566,6 +569,11 @@ export function useItemVisualState(
+   // Properties preview for content components
+   const propertiesPreview = itemPreview?.properties
+ 
++  const stabilisationSeconds =
++    item.type === 'video' && hasStabilisation(item)
++      ? stabilisationSourceSeconds(item, visualFrame, fps)
++      : null
++
+   return {
+     transform,
+     transformStyle,
+@@ -578,5 +586,6 @@ export function useItemVisualState(
+     vignetteStyle,
+     ...maskState,
+     propertiesPreview,
++    stabilisationSeconds,
+   }
+ }
+diff --git a/src/runtime/composition-runtime/components/item-visual-wrapper.tsx b/src/runtime/composition-runtime/components/item-visual-wrapper.tsx
+--- a/src/runtime/composition-runtime/components/item-visual-wrapper.tsx
++++ b/src/runtime/composition-runtime/components/item-visual-wrapper.tsx
+@@ -30,6 +30,7 @@ import type { MaskInfo } from './item'
+ import type { CropSettings } from '@/types/transform'
+ import type { MediaCropFitMode } from '@/shared/utils/media-crop'
+ import { ContainedMediaLayout } from './contained-media-layout'
++import { stabilisationAt } from '@/shared/utils/stabilisation'
+ import { ItemVisualTransformProvider } from '../contexts/item-visual-transform-context'
+ import { useCompositionSpace } from '../contexts/composition-space-context'
+ import { resolveGizmoDomTranslation } from '../utils/gizmo-dom-translation'
+@@ -702,6 +703,16 @@ export const ItemVisualWrapper: React.FC<ItemVisualWrapperProps> = ({
+     }
+   }, [maskStyle, blendModeCss])
+ 
++  const stabilisation =
++    mediaContent && state.stabilisationSeconds !== null && item.type === 'video'
++      ? stabilisationAt(
++          item.stabilisation,
++          state.stabilisationSeconds,
++          (mediaContent.sourceWidth ?? state.transform.width) /
++            (mediaContent.sourceHeight ?? state.transform.height),
++        )
++      : undefined
++
+   const effectiveMediaChildren = mediaContent ? (
+     <ContainedMediaLayout
+       sourceWidth={mediaContent.sourceWidth ?? state.transform.width}
+@@ -710,6 +721,7 @@ export const ItemVisualWrapper: React.FC<ItemVisualWrapperProps> = ({
+       containerHeight={state.transform.height}
+       crop={effectiveCrop}
+       fitMode={mediaContent.fitMode}
++      stabilisation={stabilisation}
+     >
+       {children}
+     </ContainedMediaLayout>
+@@ -736,6 +748,7 @@ export const ItemVisualWrapper: React.FC<ItemVisualWrapperProps> = ({
+       containerHeight={cornerPinTargetRect.height}
+       crop={effectiveCrop}
+       fitMode={mediaContent.fitMode}
++      stabilisation={stabilisation}
+     >
+       {children}
+     </ContainedMediaLayout>
+diff --git a/src/shared/utils/stabilisation.test.ts b/src/shared/utils/stabilisation.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/stabilisation.test.ts
+@@ -0,0 +1,192 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import {
++  IDENTITY_CORRECTION,
++  STABILISATION_LEVELS,
++  coversFrame,
++  correctionPath,
++  fitCorrectionToCrop,
++  hasStabilisation,
++  readStabilisationMotion,
++  smoothPath,
++  stabilisationAt,
++  stabilisationCssTransform,
++  type StabilisationMotion,
++} from './stabilisation'
++
++const encode = (values: number[]): string => {
++  const bytes = new Uint8Array(values.length * 4)
++  const view = new DataView(bytes.buffer)
++  values.forEach((value, index) => view.setFloat32(index * 4, value, true))
++  let binary = ''
++  for (const byte of bytes) binary += String.fromCharCode(byte)
++  return btoa(binary)
++}
++
++const motionOf = (
++  x: number[],
++  y = x.map(() => 0),
++  a = x.map(() => 0),
++  rate = 30,
++  start = 0,
++): StabilisationMotion => ({
++  version: 1,
++  method: 'block-similarity-v1',
++  rate,
++  start,
++  count: x.length,
++  width: 160,
++  height: 90,
++  x: encode(x),
++  y: encode(y),
++  a: encode(a),
++  found: 1,
++})
++
++/** A deterministic shaky path: a slow pan plus a fast wobble, in fractions of the frame. */
++const shaky = (count: number) =>
++  Array.from(
++    { length: count },
++    (_, i) => 0.0005 * i + 0.01 * Math.sin(i * 1.7) + 0.006 * Math.sin(i * 0.9 + 1),
++  )
++
++const roughness = (values: ArrayLike<number>) => {
++  let total = 0
++  for (let i = 2; i < values.length; i += 1)
++    total += Math.abs(values[i]! - 2 * values[i - 1]! + values[i - 2]!)
++  return total / (values.length - 2)
++}
++
++describe('stabilisation path smoothing', () => {
++  it('keeps a straight pan straight, ends included', () => {
++    const pan = Array.from({ length: 200 }, (_, i) => 0.002 * i)
++    const smooth = smoothPath(pan, 10)
++    // A renormalised Gaussian of a line bends only within three sigma of the ends, never past them.
++    for (const i of [30, 100, 169]) expect(smooth[i]).toBeCloseTo(pan[i]!, 9)
++    expect(smooth[0]).toBeGreaterThanOrEqual(0)
++    expect(smooth[199]).toBeLessThanOrEqual(pan[199]!)
++  })
++
++  it('removes the wobble: each stronger level leaves a smoother path', () => {
++    const path = shaky(300)
++    const gentle = smoothPath(path, STABILISATION_LEVELS.gentle.sigmaSeconds * 30)
++    const smooth = smoothPath(path, STABILISATION_LEVELS.smooth.sigmaSeconds * 30)
++    expect(roughness(gentle)).toBeLessThan(roughness(path) / 5)
++    expect(roughness(smooth)).toBeLessThan(roughness(gentle))
++  })
++
++  it('holds a locked-off path at its mean', () => {
++    const smooth = smoothPath([0, 0.02, -0.02, 0.04], Number.POSITIVE_INFINITY)
++    expect([...smooth].every((value) => Math.abs(value - 0.01) < 1e-9)).toBe(true)
++  })
++
++  it('leaves a path alone at zero sigma and handles an empty one', () => {
++    expect([...smoothPath([1, 2, 3], 0)]).toEqual([1, 2, 3])
++    expect(smoothPath([], 5).length).toBe(0)
++  })
++
++  it('corrects toward the smooth path: measured plus correction equals smoothed', () => {
++    const x = shaky(120)
++    const motion = motionOf(x)
++    const correction = correctionPath(motion, 'smooth')!
++    const expected = smoothPath(new Float32Array(x), 30)
++    for (const i of [0, 17, 60, 119]) {
++      expect(Math.fround(x[i]!) + correction.x[i]!).toBeCloseTo(expected[i]!, 9)
++    }
++  })
++})
++
++describe('stabilisation crop maths', () => {
++  const aspect = 16 / 9
++
++  it('covers the frame with no correction, and with a shift inside the crop margin', () => {
++    expect(coversFrame(IDENTITY_CORRECTION, aspect)).toBe(true)
++    // Scaled 7%: 3.5% of the frame spare on each side.
++    expect(coversFrame({ tx: 0.034, ty: -0.034, rotation: 0, scale: 1.07 }, aspect)).toBe(true)
++    expect(coversFrame({ tx: 0.036, ty: 0, rotation: 0, scale: 1.07 }, aspect)).toBe(false)
++  })
++
++  it('counts the corners a turn uncovers', () => {
++    // At 4% a small turn fits, a larger one shows a corner.
++    expect(coversFrame({ tx: 0, ty: 0, rotation: 0.01, scale: 1.04 }, aspect)).toBe(true)
++    expect(coversFrame({ tx: 0, ty: 0, rotation: 0.05, scale: 1.04 }, aspect)).toBe(false)
++  })
++
++  it('reduces an oversized correction just enough to keep the frame covered', () => {
++    const fitted = fitCorrectionToCrop({ tx: 0.1, ty: 0, rotation: 0, scale: 1.07 }, aspect)
++    expect(fitted.tx).toBeCloseTo(0.035, 4)
++    expect(coversFrame(fitted, aspect)).toBe(true)
++    const turned = fitCorrectionToCrop({ tx: 0.02, ty: 0.02, rotation: 0.04, scale: 1.04 }, aspect)
++    expect(coversFrame(turned, aspect)).toBe(true)
++    expect(turned.rotation / 0.04).toBeCloseTo(turned.tx / 0.02, 9)
++    expect(turned.scale).toBe(1.04)
++  })
++
++  it('keeps a correction that already fits unchanged', () => {
++    const correction = { tx: 0.01, ty: 0.01, rotation: 0.001, scale: 1.12 }
++    expect(fitCorrectionToCrop(correction, aspect)).toBe(correction)
++  })
++})
++
++describe('stabilisationAt', () => {
++  it('scales by the level crop and interpolates between samples', () => {
++    const motion = motionOf([0, 0.02, 0, 0.02, 0], undefined, undefined, 10, 1)
++    const at = stabilisationAt({ level: 'locked', motion }, 1.15, 16 / 9)
++    expect(at.scale).toBeCloseTo(1.12, 9)
++    // Locked: mean 0.008; at sample 1.5 the measured path is 0.01, so the correction is -0.002.
++    expect(at.tx).toBeCloseTo(-0.002, 6)
++  })
++
++  it('holds the end corrections outside the analysed range', () => {
++    const motion = motionOf([0, 0.02, 0], undefined, undefined, 10, 1)
++    expect(stabilisationAt({ level: 'locked', motion }, 0, 16 / 9).tx).toBeCloseTo(
++      stabilisationAt({ level: 'locked', motion }, 1, 16 / 9).tx,
++      9,
++    )
++    expect(stabilisationAt({ level: 'locked', motion }, 99, 16 / 9).tx).toBeCloseTo(
++      stabilisationAt({ level: 'locked', motion }, 1.2, 16 / 9).tx,
++      9,
++    )
++  })
++
++  it('changing the level reuses the analysis and changes only the correction', () => {
++    const motion = motionOf(shaky(200))
++    const gentle = stabilisationAt({ level: 'gentle', motion }, 3, 16 / 9)
++    const smooth = stabilisationAt({ level: 'smooth', motion }, 3, 16 / 9)
++    expect(gentle.scale).toBeCloseTo(1.04, 9)
++    expect(smooth.scale).toBeCloseTo(1.07, 9)
++    expect(gentle.tx).not.toBeCloseTo(smooth.tx, 6)
++  })
++
++  it('draws nothing for a missing, unknown or malformed stabilisation', () => {
++    expect(stabilisationAt(undefined, 1, 1)).toBe(IDENTITY_CORRECTION)
++    expect(stabilisationAt({ level: 'wobbly' as never, motion: motionOf([0, 1]) }, 1, 1)).toBe(
++      IDENTITY_CORRECTION,
++    )
++    expect(
++      stabilisationAt({ level: 'smooth', motion: { ...motionOf([0, 1]), count: 3 } }, 1, 1),
++    ).toBe(IDENTITY_CORRECTION)
++    expect(readStabilisationMotion({ ...motionOf([0]), x: '!!!' })).toBeNull()
++    expect(readStabilisationMotion({ ...motionOf([0]), version: 2 })).toBeNull()
++    expect(readStabilisationMotion({ ...motionOf([Number.NaN]) })).toBeNull()
++  })
++
++  it('knows which items it draws', () => {
++    const motion = motionOf([0, 0.01])
++    expect(hasStabilisation({ type: 'video', stabilisation: { level: 'smooth', motion } })).toBe(
++      true,
++    )
++    expect(hasStabilisation({ type: 'image', stabilisation: { level: 'smooth', motion } })).toBe(
++      false,
++    )
++    expect(hasStabilisation({ type: 'video' })).toBe(false)
++  })
++
++  it('writes the same correction as a CSS transform about the box centre', () => {
++    expect(stabilisationCssTransform(IDENTITY_CORRECTION)).toBeUndefined()
++    expect(stabilisationCssTransform({ tx: 0.01, ty: -0.02, rotation: 0.003, scale: 1.07 })).toBe(
++      'translate(1%, -2%) rotate(0.003rad) scale(1.07)',
++    )
++  })
++})
+diff --git a/src/shared/utils/stabilisation.ts b/src/shared/utils/stabilisation.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/stabilisation.ts
+@@ -0,0 +1,364 @@
++/**
++ * Stabilise (FL-638): turning a clip's measured camera path into the correction drawn on each frame.
++ *
++ * The server measures the camera path once (`stabilisation.motion`: the cumulative shift, as fractions
++ * of the frame, and turn, in radians, of the picture at a fixed sample rate through the clip's source).
++ * Each level smooths that path; the correction at a source time is the smoothed path minus the
++ * measured one, so the picture follows the smooth path instead of the shaky one. The picture is then
++ * scaled up by the level's crop so the moving edges stay outside the frame; where a correction would
++ * still uncover an edge, it is reduced just enough that the frame stays covered. There is no edge
++ * fill. Preview and export both draw through `stabilisationAt`, so they show the same correction.
++ */
++
++import type {
++  StabilisationLevel,
++  StabilisationMotion,
++  VideoStabilisation,
++} from '@/types/stabilisation'
++
++export type { StabilisationLevel, StabilisationMotion, VideoStabilisation }
++
++export interface StabilisationLevelSpec {
++  /** Percent the picture is cropped in (scaled up) to hide the moving edges. */
++  crop: number
++  /** Gaussian smoothing of the camera path, in seconds; Infinity holds it still. */
++  sigmaSeconds: number
++}
++
++export const STABILISATION_LEVELS: Readonly<Record<StabilisationLevel, StabilisationLevelSpec>> = {
++  gentle: { crop: 4, sigmaSeconds: 0.33 },
++  smooth: { crop: 7, sigmaSeconds: 1 },
++  locked: { crop: 12, sigmaSeconds: Number.POSITIVE_INFINITY },
++}
++
++export const STABILISATION_LEVEL_IDS: readonly StabilisationLevel[] = ['gentle', 'smooth', 'locked']
++
++export function isStabilisationLevel(value: unknown): value is StabilisationLevel {
++  return value === 'gentle' || value === 'smooth' || value === 'locked'
++}
++
++export function stabilisationCrop(level: StabilisationLevel): number {
++  return STABILISATION_LEVELS[level].crop
++}
++
++/** The correction for one frame: shift as fractions of the media rectangle, turn in radians, scale. */
++export interface StabilisationCorrection {
++  tx: number
++  ty: number
++  rotation: number
++  scale: number
++}
++
++export const IDENTITY_CORRECTION: StabilisationCorrection = Object.freeze({
++  tx: 0,
++  ty: 0,
++  rotation: 0,
++  scale: 1,
++})
++
++const MAX_SAMPLES = 30 * 60 * 10 + 30 * 8
++
++function decodeFloat32(base64: string): Float32Array {
++  const binary = atob(base64)
++  const bytes = new Uint8Array(binary.length)
++  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
++  const view = new DataView(bytes.buffer)
++  const values = new Float32Array(Math.floor(bytes.length / 4))
++  for (let index = 0; index < values.length; index += 1)
++    values[index] = view.getFloat32(index * 4, true)
++  return values
++}
++
++/** A motion record this engine can draw: well-formed, finite and of a sane size; null otherwise. */
++export function readStabilisationMotion(
++  motion: unknown,
++): { x: Float32Array; y: Float32Array; a: Float32Array } | null {
++  if (!motion || typeof motion !== 'object') return null
++  const value = motion as Partial<StabilisationMotion>
++  if (value.version !== 1) return null
++  if (!(typeof value.rate === 'number' && value.rate > 0 && value.rate <= 240)) return null
++  if (!(typeof value.start === 'number' && Number.isFinite(value.start) && value.start >= 0))
++    return null
++  if (!(Number.isSafeInteger(value.count) && value.count! >= 1 && value.count! <= MAX_SAMPLES))
++    return null
++  if (typeof value.x !== 'string' || typeof value.y !== 'string' || typeof value.a !== 'string')
++    return null
++  try {
++    const x = decodeFloat32(value.x)
++    const y = decodeFloat32(value.y)
++    const a = decodeFloat32(value.a)
++    if (x.length !== value.count || y.length !== value.count || a.length !== value.count)
++      return null
++    for (const path of [x, y, a]) {
++      for (const sample of path) if (!Number.isFinite(sample)) return null
++    }
++    return { x, y, a }
++  } catch {
++    return null
++  }
++}
++
++/**
++ * Gaussian smoothing of a sampled path. The kernel is cut at three sigma and renormalised at the ends,
++ * so the smoothed path starts and ends on the measured one's local average rather than pulling to zero.
++ * An infinite sigma holds the path at its mean (a locked-off camera).
++ */
++export function smoothPath(values: ArrayLike<number>, sigmaSamples: number): Float64Array {
++  const count = values.length
++  const out = new Float64Array(count)
++  if (count === 0) return out
++  if (!Number.isFinite(sigmaSamples)) {
++    let sum = 0
++    for (let index = 0; index < count; index += 1) sum += values[index]!
++    out.fill(sum / count)
++    return out
++  }
++  if (sigmaSamples <= 0) {
++    for (let index = 0; index < count; index += 1) out[index] = values[index]!
++    return out
++  }
++  const radius = Math.max(1, Math.ceil(3 * sigmaSamples))
++  const kernel = new Float64Array(2 * radius + 1)
++  for (let offset = -radius; offset <= radius; offset += 1) {
++    kernel[offset + radius] = Math.exp(-(offset * offset) / (2 * sigmaSamples * sigmaSamples))
++  }
++  for (let index = 0; index < count; index += 1) {
++    let sum = 0
++    let weight = 0
++    const from = Math.max(0, index - radius)
++    const to = Math.min(count - 1, index + radius)
++    for (let sample = from; sample <= to; sample += 1) {
++      const w = kernel[sample - index + radius]!
++      sum += w * values[sample]!
++      weight += w
++    }
++    out[index] = sum / weight
++  }
++  return out
++}
++
++/**
++ * Whether the picture, scaled by `scale`, turned by `rotation` and moved by (`tx`, `ty`) about its
++ * centre, still covers its own frame. Shifts are fractions of the frame; the frame is `aspect` wide
++ * and 1 high. A frame corner c is covered when R(-rotation)(c - t) / scale lies inside the frame.
++ */
++export function coversFrame(correction: StabilisationCorrection, aspect: number): boolean {
++  const halfWidth = aspect / 2
++  const halfHeight = 0.5
++  const cos = Math.cos(-correction.rotation)
++  const sin = Math.sin(-correction.rotation)
++  const tx = correction.tx * aspect
++  const ty = correction.ty
++  const epsilon = 1e-9
++  for (const [cx, cy] of [
++    [-halfWidth, -halfHeight],
++    [halfWidth, -halfHeight],
++    [halfWidth, halfHeight],
++    [-halfWidth, halfHeight],
++  ] as const) {
++    const px = cx - tx
++    const py = cy - ty
++    const qx = (cos * px - sin * py) / correction.scale
++    const qy = (sin * px + cos * py) / correction.scale
++    if (Math.abs(qx) > halfWidth + epsilon || Math.abs(qy) > halfHeight + epsilon) return false
++  }
++  return true
++}
++
++/**
++ * Reduce a correction's shift and turn by the least factor that keeps the frame covered at its scale.
++ * The covered set is convex in the shift for a fixed turn and shrinks as the turn grows, so halving
++ * the interval finds the largest such factor.
++ */
++export function fitCorrectionToCrop(
++  correction: StabilisationCorrection,
++  aspect: number,
++): StabilisationCorrection {
++  if (coversFrame(correction, aspect)) return correction
++  const scaled = (factor: number): StabilisationCorrection => ({
++    tx: correction.tx * factor,
++    ty: correction.ty * factor,
++    rotation: correction.rotation * factor,
++    scale: correction.scale,
++  })
++  let low = 0
++  let high = 1
++  for (let step = 0; step < 24; step += 1) {
++    const middle = (low + high) / 2
++    if (coversFrame(scaled(middle), aspect)) low = middle
++    else high = middle
++  }
++  return scaled(low)
++}
++
++interface CorrectionPath {
++  x: Float64Array
++  y: Float64Array
++  a: Float64Array
++}
++
++type DecodedMotion = {
++  x: Float32Array
++  y: Float32Array
++  a: Float32Array
++  levels: Map<StabilisationLevel, CorrectionPath>
++} | null
++
++const decodedByMotion = new WeakMap<object, DecodedMotion>()
++/** Undo snapshots and project reloads copy items; the path text identifies the same analysis. */
++const decodedByPath = new Map<string, DecodedMotion>()
++const PATH_CACHE_LIMIT = 16
++
++function decoded(motion: StabilisationMotion): DecodedMotion {
++  const byObject = decodedByMotion.get(motion)
++  if (byObject !== undefined) return byObject
++  const key = `${motion.rate}|${motion.start}|${motion.count}|${motion.x}|${motion.y}|${motion.a}`
++  let value = decodedByPath.get(key)
++  if (value === undefined) {
++    const read = readStabilisationMotion(motion)
++    value = read ? { ...read, levels: new Map() } : null
++    if (decodedByPath.size >= PATH_CACHE_LIMIT)
++      decodedByPath.delete(decodedByPath.keys().next().value!)
++    decodedByPath.set(key, value)
++  }
++  decodedByMotion.set(motion, value)
++  return value
++}
++
++/** The per-sample correction (smoothed minus measured path) of one level. */
++export function correctionPath(
++  motion: StabilisationMotion,
++  level: StabilisationLevel,
++): CorrectionPath | null {
++  const path = decoded(motion)
++  if (!path) return null
++  const cached = path.levels.get(level)
++  if (cached) return cached
++  const sigma = STABILISATION_LEVELS[level].sigmaSeconds * motion.rate
++  const correction = (measured: Float32Array) => {
++    const smooth = smoothPath(measured, sigma)
++    for (let index = 0; index < smooth.length; index += 1) smooth[index]! -= measured[index]!
++    return smooth
++  }
++  const result = { x: correction(path.x), y: correction(path.y), a: correction(path.a) }
++  path.levels.set(level, result)
++  return result
++}
++
++/**
++ * The correction drawn at a source time, for a picture of `aspect` (width / height): the level's
++ * correction interpolated between samples (held at the ends of the analysed range), scaled up by the
++ * level's crop and reduced if needed so the frame stays covered. Identity when there is nothing to draw.
++ */
++export function stabilisationAt(
++  stabilisation: VideoStabilisation | undefined,
++  sourceSeconds: number,
++  aspect: number,
++): StabilisationCorrection {
++  if (
++    !stabilisation ||
++    !isStabilisationLevel(stabilisation.level) ||
++    !Number.isFinite(sourceSeconds)
++  ) {
++    return IDENTITY_CORRECTION
++  }
++  const path = correctionPath(stabilisation.motion, stabilisation.level)
++  if (!path) return IDENTITY_CORRECTION
++  const position = Math.min(
++    path.x.length - 1,
++    Math.max(0, (sourceSeconds - stabilisation.motion.start) * stabilisation.motion.rate),
++  )
++  const index = Math.floor(position)
++  const next = Math.min(path.x.length - 1, index + 1)
++  const fraction = position - index
++  const at = (values: Float64Array) => values[index]! + (values[next]! - values[index]!) * fraction
++  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9
++  return fitCorrectionToCrop(
++    {
++      tx: at(path.x),
++      ty: at(path.y),
++      rotation: at(path.a),
++      scale: 1 + STABILISATION_LEVELS[stabilisation.level].crop / 100,
++    },
++    safeAspect,
++  )
++}
++
++/** Whether an item carries a stabilisation this engine draws. */
++export function hasStabilisation(item: { type: string; stabilisation?: unknown }): boolean {
++  if (item.type !== 'video' || !item.stabilisation || typeof item.stabilisation !== 'object')
++    return false
++  const value = item.stabilisation as Partial<VideoStabilisation>
++  return isStabilisationLevel(value.level) && !!value.motion && decoded(value.motion) !== null
++}
++
++/** The CSS transform for a correction on a box whose own centre is the transform origin. */
++export function stabilisationCssTransform(correction: StabilisationCorrection): string | undefined {
++  if (correction === IDENTITY_CORRECTION) return undefined
++  return `translate(${correction.tx * 100}%, ${correction.ty * 100}%) rotate(${correction.rotation}rad) scale(${correction.scale})`
++}
++
++/**
++ * Apply a correction to a 2D context, about the centre of `rect` (the media's drawn rectangle), after
++ * clipping to `clip`. Matches `stabilisationCssTransform` on a box of `rect`'s size.
++ */
++export function applyStabilisationToContext(
++  ctx: Pick<
++    CanvasRenderingContext2D,
++    'beginPath' | 'rect' | 'clip' | 'translate' | 'rotate' | 'scale'
++  >,
++  correction: StabilisationCorrection,
++  rect: { x: number; y: number; width: number; height: number },
++  clip: { x: number; y: number; width: number; height: number },
++): void {
++  ctx.beginPath()
++  ctx.rect(clip.x, clip.y, clip.width, clip.height)
++  ctx.clip()
++  const centreX = rect.x + rect.width / 2
++  const centreY = rect.y + rect.height / 2
++  ctx.translate(centreX + correction.tx * rect.width, centreY + correction.ty * rect.height)
++  ctx.rotate(correction.rotation)
++  ctx.scale(correction.scale, correction.scale)
++  ctx.translate(-centreX, -centreY)
++}
++
++/** The rectangle two rectangles share (empty when they do not meet). */
++export function intersectRect(
++  a: { x: number; y: number; width: number; height: number },
++  b: { x: number; y: number; width: number; height: number },
++): { x: number; y: number; width: number; height: number } {
++  const x = Math.max(a.x, b.x)
++  const y = Math.max(a.y, b.y)
++  const right = Math.min(a.x + a.width, b.x + b.width)
++  const bottom = Math.min(a.y + a.height, b.y + b.height)
++  return { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) }
++}
++
++/**
++ * The source second a clip shows at a frame counted from its start, for the live (DOM) preview.
++ * Export and the canvas preview use the render span's exact resolver, which also follows speed ramp
++ * spans; this is the same arithmetic for a clip played at one speed, forwards or reversed.
++ */
++export function stabilisationSourceSeconds(
++  item: {
++    sourceStart?: number
++    trimStart?: number
++    sourceEnd?: number
++    sourceFps?: number
++    speed?: number
++    isReversed?: boolean
++    durationInFrames: number
++  },
++  localFrame: number,
++  fps: number,
++): number {
++  const sourceFps = item.sourceFps ?? fps
++  const speed = item.speed ?? 1
++  const sourceStart = item.sourceStart ?? item.trimStart ?? 0
++  if (item.isReversed) {
++    const sourceEnd =
++      item.sourceEnd ?? sourceStart + (item.durationInFrames * speed * sourceFps) / fps
++    return Math.max(0, (sourceEnd - localFrame * speed * (sourceFps / fps) - 1) / sourceFps)
++  }
++  return Math.max(0, sourceStart / sourceFps + (localFrame / fps) * speed)
++}
+diff --git a/src/types/stabilisation.ts b/src/types/stabilisation.ts
+new file mode 100644
+--- /dev/null
++++ b/src/types/stabilisation.ts
+@@ -0,0 +1,27 @@
++/** Stabilise (FL-638): what a video clip stores. See `@/shared/utils/stabilisation` for how it is drawn. */
++
++export type StabilisationLevel = 'gentle' | 'smooth' | 'locked'
++
++export interface StabilisationMotion {
++  version: 1
++  method: string
++  /** Samples a second. */
++  rate: number
++  /** Source seconds of the first sample. */
++  start: number
++  count: number
++  /** The analysed picture's size, for its aspect. */
++  width: number
++  height: number
++  /** Cumulative path: float32 little-endian, base64. */
++  x: string
++  y: string
++  a: string
++  /** Share of frames whose movement was found. */
++  found: number
++}
++
++export interface VideoStabilisation {
++  level: StabilisationLevel
++  motion: StabilisationMotion
++}
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -1,3 +1,4 @@
++import type { VideoStabilisation } from './stabilisation'
+ import type { CropSettings, TransformParentBinding, TransformProperties } from './transform'
+ import type { ItemEffect } from './effects'
+ import type { MotionAnimationLayer, MotionModifier } from './motion'
+@@ -205,6 +206,11 @@ export type VideoItem = BaseTimelineItem & {
+   // Source dimensions (intrinsic size from media metadata)
+   sourceWidth?: number
+   sourceHeight?: number
++  /**
++   * Stabilise (FL-638): the measured camera path and the chosen smoothness. Drawn on every frame in
++   * preview and export; the source is never changed.
++   */
++  stabilisation?: VideoStabilisation
+ }
+ 
+ export type AudioItem = BaseTimelineItem & {

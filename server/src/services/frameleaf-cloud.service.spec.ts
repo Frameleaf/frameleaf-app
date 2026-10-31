@@ -12,6 +12,7 @@ import {
   DatabaseLock,
   JobName,
   JobStatus,
+  MlAdmissionRefusal,
   NotificationLevel,
   PushEventType,
   SystemMetadataKey,
@@ -38,7 +39,7 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
-import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import {
   FakeCloud,
   FakeCloudAnswer,
@@ -51,7 +52,7 @@ import {
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectLocalisedSystemNotices, newTestService } from 'test/utils.js';
 
 /** The RFC 7638 kid of an Ed25519 private key. */
 const kidOf = (privateKey: KeyObject) => {
@@ -231,6 +232,8 @@ describe(FrameleafCloudService.name, () => {
   });
 
   afterEach(async () => {
+    // FL-406: every notice and push carries a system template whose English matches the supplied text
+    expectLocalisedSystemNotices(mocks.event.emit);
     await cloud.close();
     await rm(identityDir, { recursive: true, force: true });
   });
@@ -374,6 +377,49 @@ describe(FrameleafCloudService.name, () => {
       expect(pathsCalled()).toEqual(['POST /id/token']);
       expect(cloud.requests[0].form().get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code');
       expect(Date.parse(storedLink()!.pending!.nextPollAt)).toBeGreaterThan(Date.now());
+    });
+
+    it('clears a failed check once the cloud answers again while waiting', async () => {
+      let answer = { status: 503, body: { code: 'unavailable', message: 'down', retryable: true } } as {
+        status: number;
+        body: unknown;
+      };
+      serveLinking(() => answer);
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.lastError).toBeTruthy();
+      expect(storedLink()?.status).toBe('pending');
+
+      answer = { status: 400, body: { error: 'authorization_pending' } };
+      makeDue();
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'pending', lastError: null });
+      expect(storedLink()?.lastError).toBeUndefined();
+    });
+
+    it('ends the attempt when the cloud no longer accepts the code (invalid_grant)', async () => {
+      serveLinking(() => ({ status: 400, body: { error: 'invalid_grant' } }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'unlinked', linkResult: 'expired', pending: null });
+      expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('Get a new code') });
+    });
+
+    it('waits longer after a check that got no answer, as RFC 8628 asks, but not after a 5xx', async () => {
+      serveLinking(() => ({ status: 503, body: { code: 'unavailable', message: 'down', retryable: true } }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.pending?.intervalSeconds).toBe(5);
+
+      const requestOAuth = vi
+        .spyOn(FrameleafCloudRepository.prototype, 'requestOAuth')
+        .mockRejectedValueOnce(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'did not answer'));
+      makeDue();
+      await sut.getLink();
+      requestOAuth.mockRestore();
+      expect(storedLink()).toMatchObject({ status: 'pending', pending: { intervalSeconds: 10 } });
+      expect(Date.parse(storedLink()!.pending!.nextPollAt)).toBeGreaterThan(Date.now() + 9000);
     });
 
     it('adds five seconds to the interval on slow_down', async () => {
@@ -3362,6 +3408,56 @@ describe(FrameleafCloudService.name, () => {
         'POST /id/token',
         'POST /api/v1/instance/commands/s1/ack',
       ]);
+    });
+  });
+
+  describe('Sign in with Frameleaf people (FL-541)', () => {
+    const emma = { id: 'u-emma', name: 'Emma', email: 'emma@example.com' };
+    const sam = { id: 'u-sam', name: 'Sam', email: 'sam@example.com' };
+    beforeEach(() => {
+      mocks.user.getList.mockResolvedValue([sam, emma] as never);
+      mocks.frameleafAccount.listLinks.mockResolvedValue([{ userId: sam.id, email: 'sam@frameleaf.app' }]);
+      mocks.email.renderEmail.mockResolvedValue({ html: '<p/>', text: 'text' });
+    });
+
+    it('lists who has linked by name, those not linked first, and cannot remind without email', async () => {
+      await expect(sut.getSignInPeople()).resolves.toEqual({
+        people: [
+          { id: emma.id, name: 'Emma', email: emma.email, linked: false, frameleafEmail: null },
+          { id: sam.id, name: 'Sam', email: sam.email, linked: true, frameleafEmail: 'sam@frameleaf.app' },
+        ],
+        canRemind: false,
+      });
+      mocks.user.get.mockResolvedValue(emma as never);
+      await expect(sut.remindSignIn(authStub.admin, emma.id)).rejects.toThrow('Email and a public address');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.SendMail }));
+    });
+
+    it('emails a reminder to someone who has not linked, never to someone who has', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        notifications: { smtp: { enabled: true } },
+        server: { externalDomain: 'https://photos.example.com' },
+      });
+      clearConfigCache();
+      await expect(sut.getSignInPeople()).resolves.toMatchObject({ canRemind: true });
+
+      mocks.user.get.mockResolvedValue(sam as never);
+      await expect(sut.remindSignIn(authStub.admin, sam.id)).rejects.toThrow('already linked');
+
+      mocks.user.get.mockResolvedValue(emma as never);
+      await sut.remindSignIn(authStub.admin, emma.id);
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            displayName: 'Emma',
+            link: 'https://photos.example.com/user-settings?area=preferences&section=frameleaf-account',
+          }),
+        }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({ to: emma.email }),
+      });
     });
   });
 

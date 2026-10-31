@@ -16,7 +16,9 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
 }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: { user: { id: 'me' }, captureSession: () => () => true },
+}));
 
 type AlbumUsers = AlbumResponseDto['albumUsers'];
 const as = (role: AlbumUserRole, id = 'me') => [{ user: { id }, role }] as unknown as AlbumUsers;

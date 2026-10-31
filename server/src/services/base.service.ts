@@ -11,7 +11,9 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock, MlWorkload } from 'src/enum.js';
+import { DatabaseLock, LibraryScope, MlWorkload } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -94,6 +96,8 @@ import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import {
+  MlDestinationNotFoundError,
+  MlDestinationRefusedError,
   MlSelectionRequest,
   clipTextDestinationId,
   routedMlDestinationId,
@@ -101,6 +105,16 @@ import {
 } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
+import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
+
+/**
+ * FL-456: an admission that says this place cannot take the job now (refused, gone, or the Frameleaf
+ * Desktop helpers cannot take it yet), so the next place in the processing order may.
+ */
+const isPlaceUnavailable = (error: unknown) =>
+  error instanceof MlDestinationRefusedError ||
+  error instanceof MlDestinationNotFoundError ||
+  error instanceof JobDependencyUnavailable;
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -420,6 +434,14 @@ export class BaseService {
     return readConfig(repos);
   }
 
+  /** One AssetsChanged for a bulk change; nothing when no item changed, as when it was sent per item. */
+  protected async emitAssetsChanged(assetIds: Iterable<string>) {
+    const unique = [...new Set(assetIds)];
+    if (unique.length > 0) {
+      await this.eventRepository.emit('AssetsChanged', { assetIds: unique });
+    }
+  }
+
   /**
    * FL-66: change the saved system configuration as one step. It holds the settings lock that
    * every administrator save holds, and starts from the configuration read straight from storage
@@ -475,24 +497,71 @@ export class BaseService {
    */
   protected async selectMlDestination(request: MlSelectionRequest) {
     const destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
+    return this.admitMlDestination({ ...request, destinationId });
+  }
+
+  private admitMlDestination(request: MlSelectionRequest) {
     return selectMlDestination(
       {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
-        selectBackgroundPool: (selection) =>
-          this.machineLearningRepository.selectBackgroundPool(selection, request.jobId),
+        selectBackgroundPool: (selection, options) =>
+          this.machineLearningRepository.selectBackgroundPool(selection, request.jobId, options?.requireReady),
       },
-      { ...request, destinationId },
+      request,
     );
   }
 
   /**
-   * Admit a library workload against the destination the administrator routed it to. The
-   * route is explicit configuration; a workload without one is refused, not sent anywhere.
+   * Admit a library workload where its processing order sends it (FL-456): each place in the order is
+   * tried, live, until one admits the job. A job that already ran somewhere keeps that place. When no
+   * place can take it, the job waits on the first one (its refusal, and the wait it implies, are the first
+   * place's). Work never goes to a place outside the order; a workload whose order names nowhere is
+   * refused, not sent anywhere.
    */
   protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
-    const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
-    return this.selectMlDestination({ ...request, destinationId });
+    const pinned = await this.jobRepository.pinnedDestination(request.workload);
+    if (pinned) {
+      return this.selectMlDestination({ ...request, destinationId: pinned });
+    }
+    const candidates = (await this.mlDestinationRepository.resolveRoute(request.workload)) ?? [];
+    const available = candidates.filter((candidate) => candidate.available);
+    if (available.length === 0) {
+      const destinationId =
+        candidates[0]?.destinationId ?? (await routedMlDestinationId(this.mlDestinationRepository, request.workload));
+      return this.selectMlDestination({ ...request, destinationId });
+    }
+
+    // A refusal notes the wait it implies on the running job; only the one the job ends on may stay.
+    const context = queueExecution.getStore();
+    const before = context?.dependencyReason;
+    let first: { error: unknown; reason: typeof before } | undefined;
+    for (const candidate of available) {
+      try {
+        const selection = await this.admitMlDestination({
+          ...request,
+          destinationId: candidate.destinationId,
+          desktopPool: candidate.desktopPool ? 'only' : 'skip',
+        });
+        if (context) {
+          context.dependencyReason = before;
+        }
+        await this.jobRepository.pinDestination(request.workload, selection.destinationId);
+        return selection;
+      } catch (error) {
+        if (!isPlaceUnavailable(error)) {
+          throw error;
+        }
+        first ??= { error, reason: context?.dependencyReason };
+        if (context) {
+          context.dependencyReason = before;
+        }
+      }
+    }
+    if (context) {
+      context.dependencyReason = first!.reason;
+    }
+    throw first!.error;
   }
 
   /**
@@ -530,7 +599,7 @@ export class BaseService {
     const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
     for (const asset of assets) {
       this.websocketRepository.clientSend(
-        'on_asset_update',
+        asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
         ownerId,
         // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
         // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open
@@ -604,6 +673,16 @@ export class BaseService {
 
   checkAccess(request: AccessRequest) {
     return checkAccess(this.accessRepository, request);
+  }
+
+  /** FL-416: whether the caller is the server owner, the first administrator (`utils/server-owner`). */
+  isServerOwner(auth: AuthDto): Promise<boolean> {
+    return isServerOwner(this.userRepository, auth);
+  }
+
+  /** FL-416: refuses (403) anyone but the server owner, the first administrator. */
+  requireServerOwner(auth: AuthDto): Promise<void> {
+    return requireServerOwner(this.userRepository, auth);
   }
 
   async isSetupAvailable(): Promise<boolean> {

@@ -4,7 +4,15 @@ import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
-import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName } from 'src/enum.js';
+import {
+  AssetType,
+  AssetVisibility,
+  IntegrityReport,
+  JobName,
+  JobStatus,
+  LibraryScope,
+  ManualJobName,
+} from 'src/enum.js';
 import { afterJobCommit, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -52,13 +60,14 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.BestPhotosScoreQueueAll, data: { force: true } };
     }
 
-    case ManualJobName.PhysicalDeduplicationDryRun: {
-      return { name: JobName.PhysicalDeduplicationMigrationDryRun };
+    case ManualJobName.PhysicalDeduplicationDryRun:
+    case ManualJobName.PhysicalDeduplicationApply: {
+      // FL-413: the per-account merge is retired; identical files merge automatically
+      throw new BadRequestException('Replaced by identical-files-check');
     }
 
-    case ManualJobName.PhysicalDeduplicationApply: {
-      // FL-73: applying needs one specific reviewed plan, never a whole-server queue button.
-      throw new BadRequestException('Apply a reviewed plan from the Physical deduplication page');
+    case ManualJobName.IdenticalFilesCheck: {
+      return { name: JobName.IdenticalFilesCheck };
     }
 
     case ManualJobName.IntegrityMissingFiles: {
@@ -211,7 +220,7 @@ export class JobService extends BaseService {
       response &&
       typeof response === 'string' &&
       [JobStatus.Success, JobStatus.Skipped].includes(response) &&
-      !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
+      !(job.name === JobName.AssetVideoFingerprint && response === JobStatus.Skipped);
     if (shouldRunFollowUp) {
       await this.onDone(job);
     }
@@ -223,6 +232,7 @@ export class JobService extends BaseService {
     if (!asset) {
       return;
     }
+    if (asset.libraryScope === LibraryScope.Design) return asset;
     const edits = await this.assetEditRepository.getWithSyncInfo(id);
     this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
       asset: {
@@ -288,9 +298,15 @@ export class JobService extends BaseService {
 
       case JobName.AssetEditThumbnailGeneration: {
         const asset = await this.sendAssetEditReady(item.data.id);
-        if (asset) {
+        if (asset && asset.libraryScope !== LibraryScope.Design) {
           await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
         }
+        break;
+      }
+
+      case JobName.AssetEncodeVideo: {
+        // FL-650: seek-bar previews come from the copy playback serves, so they follow the encode
+        await this.jobRepository.queue({ name: JobName.AssetWarmFilmstrip, data: { id: item.data.id } });
         break;
       }
 
@@ -306,7 +322,7 @@ export class JobService extends BaseService {
             const [updatedAsset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([asset.id]);
             if (updatedAsset) {
               this.websocketRepository.clientSend(
-                'on_asset_update',
+                updatedAsset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
                 updatedAsset.ownerId,
                 await this.withLandmarks(mapAsset(updatedAsset)),
               );
@@ -333,7 +349,7 @@ export class JobService extends BaseService {
         if (isSmartSearchEnabled(machineLearning)) {
           jobs.push({ name: JobName.SmartSearch, data: item.data });
         }
-        if (isFacialRecognitionEnabled(machineLearning)) {
+        if (asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
           jobs.push({ name: JobName.AssetDetectFaces, data: item.data });
         }
         if (isOcrEnabled(machineLearning)) {
@@ -342,14 +358,12 @@ export class JobService extends BaseService {
 
         if (asset.type === AssetType.Video) {
           // Videos are scored for Best Photos too (via sampled frames).
-          jobs.push(
-            { name: JobName.AssetEncodeVideo, data: item.data },
-            { name: JobName.BestPhotosScore, data: item.data },
-          );
+          jobs.push({ name: JobName.AssetEncodeVideo, data: item.data });
+          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
         }
 
         if (asset.type === AssetType.Image) {
-          jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
 
           if (isImageDescriptionEnabled(machineLearning)) {
             jobs.push({ name: JobName.ImageDescription, data: item.data });
@@ -367,7 +381,8 @@ export class JobService extends BaseService {
           // a locked upload (FL-34) stays out of every open timeline; the Locked view fetches it itself
           if (
             (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
-            !isLockedRow(asset)
+            !isLockedRow(asset) &&
+            asset.libraryScope !== LibraryScope.Design
           ) {
             // FL-169: an upload trashed before its thumbnails were ready is not announced as a new timeline
             // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
@@ -440,14 +455,16 @@ export class JobService extends BaseService {
       case JobName.SmartSearch: {
         // FL-58: a fresh CLIP embedding is what pet recognition reads. The handler returns at once
         // for an owner who has not confirmed a pet yet, before any destination is contacted.
-        await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
+        const asset = await this.assetRepository.getById(item.data.id);
+        if (asset && asset.libraryScope !== LibraryScope.Design)
+          await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
         if (item.data.source === 'upload') {
-          const asset = await this.assetRepository.getById(item.data.id);
+          // FL-651: a video is fingerprinted first, unless video comparison is off
+          const fingerprint =
+            asset?.type === AssetType.Video &&
+            (await this.getConfig({ withCache: true })).machineLearning.duplicateDetection.enhancedVideo.enabled;
           await this.jobRepository.queue({
-            name:
-              asset?.type === AssetType.Video
-                ? JobName.AssetGenerateVideoDuplicateFrames
-                : JobName.AssetDetectDuplicates,
+            name: fingerprint ? JobName.AssetVideoFingerprint : JobName.AssetDetectDuplicates,
             data: item.data,
           });
         }
@@ -456,14 +473,24 @@ export class JobService extends BaseService {
 
       case JobName.AssetDetectFaces: {
         const { machineLearning } = await this.getConfig({ withCache: true });
-        if (isFacialRecognitionEnabled(machineLearning)) {
+        const asset = await this.assetRepository.getById(item.data.id);
+        if (asset && asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
           await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
         }
         break;
       }
 
-      case JobName.AssetGenerateVideoDuplicateFrames: {
-        await this.jobRepository.queue({ name: JobName.AssetDetectDuplicates, data: item.data });
+      case JobName.AssetVideoFingerprint: {
+        // FL-651: its group mates too, whose check may have waited on this fingerprint
+        const mates = await this.duplicateRepository.getGroupMateIds(item.data.id);
+        await this.jobRepository.queueAll([
+          // its own check, a new run item beside the one that found it without a fingerprint
+          { name: JobName.AssetDetectDuplicates, data: { id: item.data.id, recheckAfter: item.data.id } },
+          ...mates.map((id) => ({
+            name: JobName.AssetDetectDuplicates as const,
+            data: { id, recheckAfter: item.data.id },
+          })),
+        ]);
         break;
       }
 

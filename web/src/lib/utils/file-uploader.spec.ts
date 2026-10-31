@@ -1,6 +1,13 @@
-import { AssetMediaStatus, type AssetMediaResponseDto, type UserAdminResponseDto } from '@frameleaf/sdk';
+import {
+  LibraryScope,
+  AssetVisibility,
+  AssetMediaStatus,
+  type AssetMediaResponseDto,
+  type UserAdminResponseDto,
+} from '@frameleaf/sdk';
 import { get } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { uploadManager } from '$lib/managers/upload-manager.svelte';
 import * as albumService from '$lib/services/album.service';
@@ -132,6 +139,106 @@ describe('fileUploader error handling', () => {
     expect(item.assetId).toBe(mockUploadResponse.id);
     expect(item.error).toBeTruthy();
     expect(item.message).not.toBe('asset_added_to_album');
+    // FL-529: it counts as a failure, so the panel offers Retry and Dismiss.
+    expect(get(uploadAssetsStore.stats)).toMatchObject({ errors: 1, success: 0 });
+  });
+
+  it('publishes a new Pro upload directly into Design and preserves that scope on retry', async () => {
+    authManager.setUser(mockUserObject);
+    authManager.setPreferences(preferencesFactory.build());
+    const upload = vi
+      .spyOn(utils, 'uploadRequest')
+      .mockRejectedValueOnce(mockError)
+      .mockResolvedValue({ status: 201, data: mockUploadResponse });
+    await fileUploadHandler({ files: [mockFile], libraryScope: LibraryScope.Design });
+    expect(upload.mock.calls[0][0].data.get('libraryScope')).toBe('design');
+    expect(get(uploadAssetsStore)[0].libraryScope).toBe('design');
+    await retryFailedUploads();
+    expect(upload.mock.calls[1][0].data.get('libraryScope')).toBe('design');
+  });
+
+  it('adds an eligible personal duplicate to both workspaces without uploading another original', async () => {
+    authManager.setUser(mockUserObject);
+    authManager.setPreferences(preferencesFactory.build());
+    const upload = vi
+      .spyOn(utils, 'uploadRequest')
+      .mockResolvedValue({ status: 200, data: { id: 'existing', status: AssetMediaStatus.Duplicate } });
+    sdkMock.getAssetInfo.mockResolvedValue({
+      id: 'existing',
+      ownerId: mockUserObject.id,
+      libraryScope: LibraryScope.Personal,
+      visibility: AssetVisibility.Timeline,
+      isTrashed: false,
+    } as never);
+    await fileUploadHandler({ files: [mockFile], libraryScope: LibraryScope.Design });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(sdkMock.updateAsset).toHaveBeenCalledWith(
+      { id: 'existing', updateAssetDto: { libraryScope: LibraryScope.Both } },
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    { libraryScope: LibraryScope.Design, visibility: AssetVisibility.Timeline },
+    { libraryScope: LibraryScope.Both, visibility: AssetVisibility.Timeline },
+    { libraryScope: LibraryScope.Personal, visibility: AssetVisibility.Locked },
+  ])('does not broaden an existing $libraryScope / $visibility duplicate', async (existing) => {
+    authManager.setUser(mockUserObject);
+    authManager.setPreferences(preferencesFactory.build());
+    vi.spyOn(utils, 'uploadRequest').mockResolvedValue({
+      status: 200,
+      data: { id: 'existing', status: AssetMediaStatus.Duplicate },
+    });
+    sdkMock.getAssetInfo.mockResolvedValue({
+      id: 'existing',
+      ownerId: mockUserObject.id,
+      isTrashed: false,
+      ...existing,
+    } as never);
+    await fileUploadHandler({ files: [mockFile], libraryScope: LibraryScope.Design });
+    expect(sdkMock.updateAsset).not.toHaveBeenCalled();
+  });
+
+  // FL-529: rows adopted from Immich keep a SHA-1 checksum, so the pre-check sends both digests.
+  it('finds a duplicate stored under a SHA-1 checksum before uploading', async () => {
+    authManager.setUser(mockUserObject);
+    const sha1 = 'a'.repeat(40);
+    const sha256 = 'b'.repeat(64);
+    class FakeWorker extends EventTarget {
+      postMessage({ both }: { file: File; both?: boolean }) {
+        const result = both ? { sha256, sha1 } : undefined;
+        queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: { result } })));
+      }
+      terminate() {}
+    }
+    vi.stubGlobal('Worker', FakeWorker);
+    sdkMock.checkBulkUpload.mockResolvedValue({
+      results: [
+        { id: mockFile.name, action: 'accept' },
+        { id: mockFile.name, action: 'reject', reason: 'duplicate', assetId: 'old-asset' },
+      ],
+    } as never);
+    const upload = vi.spyOn(utils, 'uploadRequest');
+    try {
+      const ids = await fileUploadHandler({ files: [mockFile] });
+
+      expect(sdkMock.checkBulkUpload).toHaveBeenCalledWith(
+        {
+          assetBulkUploadCheckDto: {
+            assets: [
+              { id: mockFile.name, checksum: sha256 },
+              { id: mockFile.name, checksum: sha1 },
+            ],
+          },
+        },
+        expect.anything(),
+      );
+      expect(upload).not.toHaveBeenCalled();
+      expect(ids).toEqual(['old-asset']);
+      expect(get(uploadAssetsStore)[0].state).toBe(UploadState.DUPLICATED);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('retrying a failed upload clears the previous error and re-runs the same file', async () => {

@@ -93,7 +93,11 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
       portfolio: [],
     } as const;
     const writes = await Promise.allSettled(
-      [1, 2].map(() => repository.saveSite(ownerId, null, { ...site, portfolio: [] })),
+      [1, 2].map(() =>
+        repository.mutateStudio(ownerId, null, (record) => {
+          record.site = { ...site, portfolio: [] } as never;
+        }),
+      ),
     );
     expect(writes.filter((write) => write.status === 'fulfilled')).toHaveLength(1);
     expect(writes.find((write) => write.status === 'rejected')).toMatchObject({
@@ -139,7 +143,9 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
     expect((await repository.get(secondShootId))?.revision).toBe(snapshot.revision);
     await expect(repository.mutateStudio(ownerId, saved.revision, () => {})).rejects.toBeInstanceOf(ConflictException);
     const studio = await repository.studioPresets(ownerId);
-    await repository.saveSite(ownerId, studio.revision, { ...existing.value!, title: 'Changed website' });
+    await repository.mutateStudio(ownerId, studio.revision, (record) => {
+      record.site = { ...existing.value!, title: 'Changed website' };
+    });
     expect((await repository.studioPresets(ownerId)).presets).toEqual(studio.presets);
     await expect(
       db.transaction().execute((tx) => repository.pinnedStudioPreset(tx, randomUUID(), saved.revision, presetId)),

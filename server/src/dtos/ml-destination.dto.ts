@@ -6,6 +6,8 @@ import {
   MlAdmissionRefusalSchema,
   MlDestinationHealthSchema,
   MlDestinationKindSchema,
+  MlProcessingSourceSchema,
+  MlProcessingSourceStateSchema,
   MlWorkerAccelerationSchema,
   MlWorkerRoleSchema,
   MlWorkloadSchema,
@@ -183,7 +185,16 @@ const MlDestinationConsentRequestSchema = z
 const MlWorkloadRouteSchema = z
   .object({
     workload: MlWorkloadSchema,
-    destinationId: z.uuidv4().nullable().describe('Destination the workload is routed to, or null when unrouted'),
+    destinationId: z
+      .uuidv4()
+      .nullable()
+      .describe(
+        "Where the workload's jobs go now: the first available place in its processing order (FL-456), else the first place in it; null when its order names nowhere it could run",
+      ),
+    followsOrder: z
+      .boolean()
+      .optional()
+      .describe('FL-456: true when the workload follows the main processing order, false when it has its own list'),
     origin: z
       .enum(['default', 'pinned', 'legacy'])
       .meta({ id: 'MlRouteOrigin' })
@@ -211,6 +222,53 @@ const MlWorkloadRouteUpdateSchema = z
     destinationId: z.uuidv4().nullable().describe('Destination to route the workload to; null removes the route'),
   })
   .meta({ id: 'MlWorkloadRouteUpdateDto' });
+
+const sourceList = (description: string) =>
+  z
+    .array(MlProcessingSourceSchema)
+    .max(3)
+    .refine((sources) => new Set(sources).size === sources.length, 'Name each place once')
+    .describe(description);
+
+const MlProcessingSourceStatusSchema = z
+  .object({
+    source: MlProcessingSourceSchema,
+    state: MlProcessingSourceStateSchema,
+    ready: z.int().describe('How many computers of this kind can take work now'),
+    total: z.int().describe('How many computers of this kind are set up'),
+  })
+  .meta({ id: 'MlProcessingSourceStatusDto' });
+
+const MlWorkloadProcessingOrderSchema = z
+  .object({
+    workload: MlWorkloadSchema,
+    sources: sourceList("The workload's own list, first to last; empty keeps the workload off"),
+  })
+  .meta({ id: 'MlWorkloadProcessingOrderDto' });
+
+const MlProcessingOrderResponseSchema = z
+  .object({
+    order: sourceList('The places processing tries, first to last, for every workload without a list of its own'),
+    workloads: z.array(MlWorkloadProcessingOrderSchema).describe('Workloads with a list of their own'),
+    sources: z.array(MlProcessingSourceStatusSchema).describe('Whether each place can take work now'),
+  })
+  .meta({ id: 'MlProcessingOrderResponseDto' });
+
+const MlProcessingOrderUpdateSchema = z
+  .object({
+    order: sourceList(
+      'The places to try, first to last; each of this server, your computers and Frameleaf Cloud once',
+    ).refine((sources) => sources.length === 3, 'Put all three places in order'),
+  })
+  .meta({ id: 'MlProcessingOrderUpdateDto' });
+
+const MlWorkloadProcessingOrderUpdateSchema = z
+  .object({
+    sources: sourceList(
+      "The workload's own list, first to last; empty keeps it off; null makes it follow the main order again",
+    ).nullable(),
+  })
+  .meta({ id: 'MlWorkloadProcessingOrderUpdateDto' });
 
 const MlStudioFeatureSchema = z
   .enum(STUDIO_AI_CLOUD_FEATURES)
@@ -316,6 +374,16 @@ const StudioRenderCandidateSchema = z
       .refine(unique, 'Each format is listed once')
       .optional()
       .describe('Output formats whose versioned paired SRT profile this same session verified'),
+    reframe: z
+      .boolean()
+      .optional()
+      .describe('This session renders vertical and square exports of its SDR video formats (FL-563)'),
+    sdrTenBit: z
+      .boolean()
+      .optional()
+      .describe(
+        'This session writes its 10-bit video formats for an SDR picture; without it they are HDR masters only (FL-674)',
+      ),
     maxBitDepth: z.int(),
     hdr10: z.boolean(),
     dolbyVision: z.boolean(),
@@ -350,6 +418,10 @@ const StudioCapabilitiesSchema = z
     previewStreamWorker: z.boolean().optional().describe('A qualified local session can stream Studio previews'),
     restorationWorker: z.boolean().describe('A destination can serve a restoration workload right now'),
     transcriptionWorker: z.boolean().describe('A destination can serve the Studio AI workload right now'),
+    generationWorker: z
+      .boolean()
+      .optional()
+      .describe('This server or a home-network worker can make music for a movie right now (FL-561)'),
     // FL-42
     render: z
       .array(StudioRenderEvidenceSchema)
@@ -373,6 +445,11 @@ export class MlDestinationHealthStateDto extends createZodDto(MlDestinationHealt
 export class MlWorkloadRouteDto extends createZodDto(MlWorkloadRouteSchema) {}
 export class MlWorkloadRoutesResponseDto extends createZodDto(MlWorkloadRoutesResponseSchema) {}
 export class MlWorkloadRouteUpdateDto extends createZodDto(MlWorkloadRouteUpdateSchema) {}
+export class MlProcessingSourceStatusDto extends createZodDto(MlProcessingSourceStatusSchema) {}
+export class MlWorkloadProcessingOrderDto extends createZodDto(MlWorkloadProcessingOrderSchema) {}
+export class MlProcessingOrderResponseDto extends createZodDto(MlProcessingOrderResponseSchema) {}
+export class MlProcessingOrderUpdateDto extends createZodDto(MlProcessingOrderUpdateSchema) {}
+export class MlWorkloadProcessingOrderUpdateDto extends createZodDto(MlWorkloadProcessingOrderUpdateSchema) {}
 export class MlAdmissionRequestDto extends createZodDto(MlAdmissionRequestSchema) {}
 export class MlAdmissionResponseDto extends createZodDto(MlAdmissionResponseSchema) {}
 export class MlAdmissionRefusalResponseDto extends createZodDto(MlAdmissionRefusalResponseSchema) {}

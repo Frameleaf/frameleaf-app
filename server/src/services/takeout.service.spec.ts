@@ -270,6 +270,13 @@ describe(TakeoutService.name, () => {
   });
 
   describe('create', () => {
+    it('refuses a new import while an administrator has paused new uploads (FL-538)', async () => {
+      const auth = { ...authStub.user1, user: { ...authStub.user1.user, uploadsPaused: true } };
+      await expect(sut.create(auth, { name: 'Import' })).rejects.toThrow('New uploads are paused');
+      await expect(sut.startImport(auth, 'import-id', {} as never)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it('lets only an administrator import from a server folder', async () => {
       await expect(
         sut.create(authStub.user1, { name: 'Import', rootId: '0', directory: 'Takeout' }),

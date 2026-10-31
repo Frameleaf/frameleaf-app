@@ -23,6 +23,31 @@ const setup = async () => {
 const types = [SyncRequestType.TagsV1, SyncRequestType.AssetTagsV1];
 const entities = (rows: any[]) => rows.filter((row) => row.type !== SyncEntityType.SyncCompleteV1);
 
+it('revokes and regrants bookmark-only tag privacy without a fake tag deletion', async () => {
+  const ctx = new SyncTestContext(db);
+  const { auth, user } = await ctx.newSyncAuthUser();
+  const { tag } = await ctx.newTag({ userId: user.id, value: 'Reference' });
+  const bookmark = await db
+    .insertInto('bookmark')
+    .values({ ownerId: user.id, url: 'https://example.org', title: 'Reference' })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  await db.insertInto('bookmark_tag').values({ bookmarkId: bookmark.id, tagId: tag.id }).execute();
+  const first = await ctx.syncStream(auth, [SyncRequestType.TagsV1]);
+  expect(entities(first).map(({ type }) => type)).toEqual([SyncEntityType.TagV1]);
+  await ctx.syncAckAll(auth, first);
+  await db.updateTable('bookmark').set({ isLocked: true }).where('id', '=', bookmark.id).execute();
+  const removed = await ctx.syncStream(auth, [SyncRequestType.TagsV1]);
+  expect(entities(removed)).toEqual([
+    expect.objectContaining({ type: SyncEntityType.TagDeleteV1, data: { tagId: tag.id } }),
+  ]);
+  await ctx.syncAckAll(auth, removed);
+  await db.updateTable('bookmark').set({ isLocked: false }).where('id', '=', bookmark.id).execute();
+  const restored = await ctx.syncStream(auth, [SyncRequestType.TagsV1]);
+  expect(entities(restored).map(({ type }) => type)).toEqual([SyncEntityType.TagV1]);
+  expect(await db.selectFrom('tag_audit').selectAll().where('tagId', '=', tag.id).execute()).toEqual([]);
+});
+
 it('creates, updates, deletes and acknowledges both additive types', async () => {
   const { ctx, auth, tag, asset } = await setup();
   const first = await ctx.syncStream(auth, types);

@@ -7,7 +7,9 @@
 #
 # The compose file on main may not be compatible with the latest release.
 
-name: immich
+# Stacks created by Frameleaf 1.1.12 or earlier run as project "immich": keep it by adding
+# COMPOSE_PROJECT_NAME=immich to .env, so Compose reuses the same containers, network and volumes.
+name: frameleaf
 
 services:
   frameleaf-server:
@@ -30,11 +32,12 @@ services:
     env_file:
       - .env
     ports:
-      - "2283:2283"
+      - "${FRAMELEAF_HOST_PORT:-2283}:2283"
       # Frameleaf Cloud remote access: the direct HTTPS listener (LAN names and direct connections)
-      - "2443:2443"
+      - "${FRAMELEAF_HOST_HTTPS_PORT:-2443}:2443"
     depends_on:
-      - database
+      database:
+        condition: service_healthy
     restart: always
     # must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
     stop_grace_period: 10s
@@ -88,4 +91,9 @@ services:
     shm_size: 128mb
     restart: always
     healthcheck:
-      disable: false
+      # Over TCP: during first-boot initdb the temporary server answers only on the socket, which
+      # passed the image check and let the server connect before PostgreSQL listened.
+      test: ["CMD-SHELL", "pg_isready --host=127.0.0.1 --dbname=\"$${POSTGRES_DB}\" --username=\"$${POSTGRES_USER}\" && /usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      start_period: 5m
+      start_interval: 5s

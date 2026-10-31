@@ -10,6 +10,14 @@ The desktop compiles an identical copy at `runtime/model-catalogue.json`. TypeSc
 
 To requalify a profile, decode its `fixtureBase64` into `spec.fixtureFile`, write `spec` as UTF-8 JSON, and run the existing `immich_ml.native_qualification` entrypoint with that spec and a cache matching every approved artifact. Retain successful reports privately before changing reference outputs, memory floors, snapshot revisions or runtime bindings.
 
+## Cloud pins (`model-pins.json`)
+
+A model Frameleaf Cloud may run for smart search or faces must be exactly the model this server would run (FL-455): the server compares the Cloud catalogue entry and every result with its release pin. A qualified profile above is that pin. A model the mirror serves but no signed runtime has qualified yet is pinned in `model-pins.json` instead: the same model name, snapshot revision, every model file with its size and SHA-256 (hashed from the bytes `models.frameleaf.cloud` serves), request entries, the current runtime's preprocessing identity and the producer model key, with no fixture or reference output. Epoch 1 pins `ViT-B-32__openai` (image encoder, 512 dimensions; the text tower is listed for the server) and `antelopev2` (512 dimensions). A pin only lets the Cloud identity guard match and ingest; it never issues a desktop challenge, and a catalogue profile for the same model comes first. To promote a pin, qualify the model as described above with the same preprocessing identity and append the profile; the model key, and so the stored producer keys, stay the same.
+
+## GPU runtime profiles
+
+`runtime-profiles.json` approves `cuda-ort` (`CUDAExecutionProvider`, the `cuda` extra, Windows and Linux x86_64) and `openvino-ort` (`OpenVINOExecutionProvider`, the `openvino` extra, Windows and Linux x86_64) next to `cpu-ort` and `coreml-ort`. Epoch 12 of the catalogue adds a CUDA and an OpenVINO twin of each current CPU profile (runtime `f2c451a6`), the way the CoreML twins were added: the same model, fixture and CPU reference output under the other provider, so a signed GPU runtime can be challenged and its report validated. An OpenVINO report is validated like a CUDA one (no device collector; mixed when nodes stay on the processor); CoreML keeps its signed-collector proof. A GPU qualification still requires a signed runtime built for that provider; none is claimed here.
+
 The NAS release trust and runtime profile files match the desktop's public
 release authority. Runtime attestation verifies the existing Ed25519 signature
 over the exact decompressed manifest, then checks epoch, approved OS/architecture,

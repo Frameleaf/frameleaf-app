@@ -134,8 +134,7 @@ describe(TakeoutWorkerService.name, () => {
       stagedSidecarPaths: vi.fn().mockResolvedValue([]),
       recordItem: vi.fn(),
       recordPair: vi.fn(),
-      countPending: vi.fn().mockResolvedValue(1),
-      countApprovedPairs: vi.fn().mockResolvedValue(0),
+      pendingPhotos: vi.fn().mockResolvedValue({ total: 1, alreadyIn: [] }),
       pendingItems: vi.fn(() => Promise.resolve(pending.shift() ?? [])),
       approvedPairs: vi.fn().mockResolvedValue([]),
       pairDone: vi.fn(),
@@ -808,8 +807,98 @@ describe(TakeoutWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('counts progress in unique photos, so an album copy moves it once (FL-668)', async () => {
+      // A photo in its year folder and again in an album is two items with one checksum.
+      const copy = itemOf({ id: '6f1c1a0e-2222-4222-8222-222222222222', relativePath: 'Beach/IMG_1.jpg' });
+      const other = itemOf({
+        id: '6f1c1a0e-3333-4333-8333-333333333333',
+        name: 'IMG_2.jpg',
+        relativePath: 'Trip/IMG_2.jpg',
+        checksum: Buffer.alloc(32, 2),
+      });
+      pending = [[itemOf(), copy, other]];
+      repository.pendingPhotos.mockResolvedValue({ total: 2, alreadyIn: [] });
+      assetMedia.bulkUploadCheck
+        .mockResolvedValueOnce({ results: [{ id: 'sha256' }, { id: 'sha1' }] })
+        .mockResolvedValue({ results: [{ id: 'sha256', assetId }, { id: 'sha1' }] });
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.pendingPhotos).toHaveBeenCalledWith(importId);
+      const writes = (operations.setBulkResult.mock.calls as [string, string, { totalUnits: number }][]).map(
+        (call) => call[2],
+      );
+      expect(writes[0]).toMatchObject({ processedUnits: 0, totalUnits: 2 });
+      expect(writes.at(-1)).toMatchObject({ processedUnits: 2, totalUnits: 2, progress: 100 });
+      expect(writes.every(({ totalUnits }) => totalUnits === 2)).toBe(true);
+      expect(repository.itemDone).toHaveBeenCalledTimes(3);
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('counts a photo when a later copy succeeds after the first copy failed (FL-668)', async () => {
+      const copy = itemOf({ id: '6f1c1a0e-2222-4222-8222-222222222222', relativePath: 'Beach/IMG_1.jpg' });
+      pending = [[itemOf(), copy]];
+      repository.pendingPhotos.mockResolvedValue({ total: 1, alreadyIn: [] });
+      assetMedia.bulkUploadCheck.mockRejectedValueOnce(new Error('check failed'));
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'failed', 'check failed');
+      expect(repository.itemDone).toHaveBeenCalledWith(copy.id, 'imported');
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 1, totalUnits: 1 }),
+      );
+    });
+
+    it('does not count a photo none of whose copies came in (FL-668)', async () => {
+      pending = [[itemOf()]];
+      assetMedia.bulkUploadCheck.mockRejectedValue(new Error('check failed'));
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 0, totalUnits: 1 }),
+      );
+      expect(operations.setBulkResult).not.toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 1 }),
+      );
+    });
+
+    it('does not count again a photo an earlier run brought in when another copy retries (FL-668)', async () => {
+      // IMG_1 was imported from its year folder; its album copy failed and is retried now.
+      const copy = itemOf({ id: '6f1c1a0e-2222-4222-8222-222222222222', relativePath: 'Beach/IMG_1.jpg' });
+      const other = itemOf({
+        id: '6f1c1a0e-3333-4333-8333-333333333333',
+        name: 'IMG_2.jpg',
+        relativePath: 'Trip/IMG_2.jpg',
+        checksum: Buffer.alloc(32, 2),
+      });
+      pending = [[copy, other]];
+      repository.pendingPhotos.mockResolvedValue({ total: 1, alreadyIn: [Buffer.alloc(32, 1)] });
+      // IMG_2 is matched to a photo the library already has
+      assetMedia.bulkUploadCheck
+        .mockResolvedValueOnce({ results: [{ id: 'sha256' }, { id: 'sha1' }] })
+        .mockResolvedValueOnce({ results: [{ id: 'sha256', assetId }, { id: 'sha1' }] });
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.itemDone).toHaveBeenCalledWith(copy.id, 'imported');
+      expect(repository.itemDone).toHaveBeenCalledWith(other.id, 'matched');
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 1, totalUnits: 1 }),
+      );
+    });
+
     it('links an approved Live Photo once both parts are in the library', async () => {
-      repository.countPending.mockResolvedValue(0);
+      repository.pendingPhotos.mockResolvedValue({ total: 0, alreadyIn: [] });
       repository.approvedPairs
         .mockResolvedValueOnce([
           { photoItemId: 'p', videoItemId: 'v', photoAssetId: assetId, videoAssetId: 'video-asset' },
@@ -820,6 +909,12 @@ describe(TakeoutWorkerService.name, () => {
 
       expect(livePhoto.relinkOne).toHaveBeenCalledWith(expect.anything(), assetId, 'video-asset');
       expect(repository.pairDone).toHaveBeenCalledWith('p', 'v', null);
+      // linking is not a photo added, so it never moves the photo count (FL-668)
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 0, totalUnits: 0 }),
+      );
     });
   });
 

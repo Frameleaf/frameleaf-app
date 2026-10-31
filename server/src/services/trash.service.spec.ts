@@ -55,6 +55,37 @@ describe(TrashService.name, () => {
       Promise.resolve(verify(rows) ? rows.map((row) => row.id) : null),
     );
 
+  describe('getEveryone (FL-365)', () => {
+    it('adds up every account and counts what a shorter keep time removes tonight', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+      mocks.trash.getEveryone.mockResolvedValue([
+        { userId: 'user-1', name: 'Taylor', count: '8', bytes: '62000000', oldestDeletedAt: trashedAt, older: '3' },
+        { userId: 'user-2', name: 'Morgan', count: '2', bytes: '1000', oldestDeletedAt: trashedAt, older: '1' },
+      ]);
+
+      await expect(sut.getEveryone({ days: 7 })).resolves.toEqual({
+        count: 10,
+        bytes: 62_001_000,
+        days: 7,
+        removedTonight: 4,
+        trashEnabled: true,
+        tidyUpOn: true,
+        accounts: [
+          expect.objectContaining({ userId: 'user-1', count: 8, oldestDeletedAt: trashedAt.toISOString() }),
+          expect.objectContaining({ userId: 'user-2', count: 2, bytes: 1000 }),
+        ],
+      });
+      const [before] = mocks.trash.getEveryone.mock.calls[0];
+      expect(Date.now() - before.getTime()).toBeGreaterThan(6.9 * 86_400_000);
+    });
+
+    it('uses the saved keep time when none is proposed', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+      mocks.trash.getEveryone.mockResolvedValue([]);
+      await expect(sut.getEveryone({})).resolves.toEqual(expect.objectContaining({ days: 30, count: 0 }));
+    });
+  });
+
   describe('restoreAssets', () => {
     it('should require asset restore access for all ids', async () => {
       await expect(
@@ -189,8 +220,38 @@ describe(TrashService.name, () => {
       );
     });
 
+    it('says when the next item goes and what emptying frees (FL-539)', async () => {
+      mocks.trash.getSummary.mockResolvedValue({
+        count: 2,
+        offline: 0,
+        bytes: 3000,
+        pendingDeletion: 0,
+        oldestDeletedAt: new Date('2026-10-01T00:00:00.000Z'),
+      });
+      mocks.trash.getFreedBytes.mockResolvedValue(1000);
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+
+      await expect(sut.getSummary(authStub.user1)).resolves.toEqual({
+        count: 2,
+        offline: 0,
+        bytes: 3000,
+        pendingDeletion: 0,
+        nextGoesAt: '2026-10-31T00:00:00.000Z',
+        freesBytes: 1000,
+      });
+      // counted in the database, never by reading every row of the trash
+      expect(mocks.trash.getFreedBytes).toHaveBeenCalledWith('user-id', TrashReviewAction.Empty, { privacy: {} });
+      expect(mocks.trash.getReviewRows).not.toHaveBeenCalled();
+    });
+
     it('should never widen an ordinary session to Locked media', async () => {
-      mocks.trash.getSummary.mockResolvedValue({ count: 0, offline: 0, bytes: 0, pendingDeletion: 0 });
+      mocks.trash.getSummary.mockResolvedValue({
+        count: 0,
+        offline: 0,
+        bytes: 0,
+        pendingDeletion: 0,
+        oldestDeletedAt: null,
+      });
 
       await sut.getSummary(authStub.user1);
 
@@ -201,7 +262,13 @@ describe(TrashService.name, () => {
   describe('privacy filters (FL-47)', () => {
     it('should keep hidden sensitive media out of an ordinary session', async () => {
       const auth = { ...authStub.user1, hideNsfwAssets: true };
-      mocks.trash.getSummary.mockResolvedValue({ count: 0, offline: 0, bytes: 0, pendingDeletion: 0 });
+      mocks.trash.getSummary.mockResolvedValue({
+        count: 0,
+        offline: 0,
+        bytes: 0,
+        pendingDeletion: 0,
+        oldestDeletedAt: null,
+      });
 
       await sut.getSummary(auth);
 
@@ -273,6 +340,40 @@ describe(TrashService.name, () => {
         page: 1,
         size: 1,
       });
+    });
+  });
+
+  describe('going soon (FL-519)', () => {
+    beforeEach(() => {
+      mocks.trash.getItems.mockResolvedValue({ items: [], hasNextPage: false, total: 0 });
+    });
+
+    it('lists only what is removed for good within the days asked, going soonest first', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-23T12:00:00.000Z') });
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
+
+      await sut.getItems(authStub.user1, { goingWithinDays: 7, sort: TrashItemSort.Soonest });
+
+      // removed 30 days after deletion, so going within 7 days = deleted 23 or more days ago
+      expect(mocks.trash.getItems).toHaveBeenCalledWith(
+        'user-id',
+        expect.objectContaining({
+          deletedBefore: new Date('2026-09-30T12:00:00.000Z'),
+          order: TrashItemSort.Soonest,
+        }),
+      );
+      vi.useRealTimers();
+    });
+
+    it('lists everything while the trash is off, because it all goes tonight', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: false, days: 30 } });
+
+      await sut.getItems(authStub.user1, { goingWithinDays: 7 });
+
+      expect(mocks.trash.getItems).toHaveBeenCalledWith(
+        'user-id',
+        expect.objectContaining({ deletedBefore: undefined }),
+      );
     });
   });
 

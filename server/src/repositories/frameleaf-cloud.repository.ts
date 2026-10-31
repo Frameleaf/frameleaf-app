@@ -122,6 +122,14 @@ export class FrameleafCloudRepository {
    * new one. Nonces are not credentials, so `forget` keeps them.
    */
   private nonces = new Map<string, string>();
+  /**
+   * Requests already on their way, so callers that miss the cache at the same moment (a batch of cloud
+   * jobs starting together) share one discovery read or one token request instead of each sending one.
+   */
+  private discoveryInFlight = new Map<string, Promise<FrameleafDiscoveryDocument>>();
+  private tokenInFlight = new Map<string, Promise<FrameleafInstanceToken>>();
+  /** Bumped by `forget`: an answer to a request sent before it is returned to its callers but never cached. */
+  private generation = 0;
 
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(FrameleafCloudRepository.name);
@@ -136,6 +144,12 @@ export class FrameleafCloudRepository {
     if (this.discoveryCache?.cloudUrl === cloudUrl && this.discoveryCache.validUntil > now) {
       return this.discoveryCache.document;
     }
+    return this.shared(this.discoveryInFlight, cloudUrl, (generation) =>
+      this.fetchDiscovery(cloudUrl, now, generation),
+    );
+  }
+
+  private async fetchDiscovery(cloudUrl: string, now: number, generation: number) {
     // a bad remote block is dropped, never failing discovery, but said in the log (FL-165)
     const schema = z.preprocess((raw) => {
       const remoteProblem = discoveryRemoteProblem(raw);
@@ -153,12 +167,29 @@ export class FrameleafCloudRepository {
     if (problem) {
       throw new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, `Frameleaf Cloud refused: ${problem}`);
     }
-    this.discoveryCache = {
-      cloudUrl,
-      document,
-      validUntil: now + Math.min(document.validFor, DISCOVERY_CACHE_MAX_SECONDS) * 1000,
-    };
+    if (generation === this.generation) {
+      this.discoveryCache = {
+        cloudUrl,
+        document,
+        validUntil: now + Math.min(document.validFor, DISCOVERY_CACHE_MAX_SECONDS) * 1000,
+      };
+    }
     return document;
+  }
+
+  /** One request per key at a time: a caller arriving while it is on its way waits for the same answer. */
+  private shared<T>(inFlight: Map<string, Promise<T>>, key: string, run: (generation: number) => Promise<T>) {
+    const pending = inFlight.get(key);
+    if (pending) {
+      return pending;
+    }
+    const request = run(this.generation).finally(() => {
+      if (inFlight.get(key) === request) {
+        inFlight.delete(key);
+      }
+    });
+    inFlight.set(key, request);
+    return request;
   }
 
   /** The discovery document this process holds for `cloudUrl` and still may use, without any call. */
@@ -188,6 +219,20 @@ export class FrameleafCloudRepository {
     if (cached && cached.expiresAt - FRAMELEAF_CLOUD_TOKEN_REFRESH_MARGIN_MS > now) {
       return { accessToken: cached.token, signer };
     }
+    return this.shared(this.tokenInFlight, cacheKey, (generation) =>
+      this.mintToken(document, instanceId, resource, signer, now, cacheKey, generation),
+    );
+  }
+
+  private async mintToken(
+    document: FrameleafDiscoveryDocument,
+    instanceId: string,
+    resource: string,
+    signer: FrameleafKeySigner,
+    now: number,
+    cacheKey: string,
+    generation: number,
+  ): Promise<FrameleafInstanceToken> {
     const tokenEndpoint = `${document.issuer.replace(/\/+$/, '')}/token`;
     const response = await this.exchangeJson(tokenResponseSchema, () => {
       const issuedAt = Math.floor(now / 1000);
@@ -219,13 +264,17 @@ export class FrameleafCloudRepository {
     if (problem) {
       throw new BoundTokenRefusedError(problem);
     }
-    // a token minted with another key of this server (one a rotation replaced) is never used again
-    for (const key of this.tokenCache.keys()) {
-      if (key.startsWith(`${instanceId} ${resource} `)) {
-        this.tokenCache.delete(key);
+    // a token asked for before `forget` (a rotation, a new link) still answers its callers, but isn't kept
+    // and doesn't evict a token cached since
+    if (generation === this.generation) {
+      // a token minted with another key of this server (one a rotation replaced) is never used again
+      for (const key of this.tokenCache.keys()) {
+        if (key.startsWith(`${instanceId} ${resource} `)) {
+          this.tokenCache.delete(key);
+        }
       }
+      this.tokenCache.set(cacheKey, { token: response.access_token, expiresAt: now + response.expires_in * 1000 });
     }
-    this.tokenCache.set(cacheKey, { token: response.access_token, expiresAt: now + response.expires_in * 1000 });
     return { accessToken: response.access_token, signer };
   }
 
@@ -234,8 +283,12 @@ export class FrameleafCloudRepository {
    * bound to the key that minted them) or a 401 that refused a token.
    */
   forget() {
+    this.generation++;
     this.discoveryCache = undefined;
     this.tokenCache.clear();
+    // a caller from now on asks again rather than joining a request sent before
+    this.discoveryInFlight.clear();
+    this.tokenInFlight.clear();
   }
 
   /**

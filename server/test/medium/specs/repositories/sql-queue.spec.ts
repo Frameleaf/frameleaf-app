@@ -69,6 +69,27 @@ describe('PostgreSQL queue', () => {
     await store.initialize([], workerB);
   });
 
+  it('keeps repeated remote capacity deferrals at thirty seconds without spending failure retries', async () => {
+    await store.enqueue([intent()]);
+    for (let index = 0; index < 8; index++) {
+      const [claim] = await store.claim(queue, workerA);
+      expect(await store.defer(claim, 'destination-capacity')).toBe(true);
+      const {
+        rows: [job],
+      } = await sql<{ state: string; attempt: number; base: number; wait: number }>`
+        select state, attempt, "retryBaseAttempt" base,
+          extract(epoch from "availableAt" - clock_timestamp())::float8 wait from job where id=${claim.id}::uuid
+      `.execute(db);
+      expect(job.state).toBe('pending');
+      expect(job.attempt).toBe(index + 1);
+      expect(job.base).toBe(index + 1);
+      expect(job.wait).toBeGreaterThan(25);
+      expect(job.wait).toBeLessThanOrEqual(30);
+      expect(await store.defer(claim, 'destination-capacity')).toBe(false);
+      await sql`update job set "availableAt"=now() where id=${claim.id}::uuid`.execute(db);
+    }
+  });
+
   it('discovers paused manifest-only work and pending producers in one read without treating retained terminal jobs as work', async () => {
     const producerQueue = `${queue}-producer`;
     const idleQueue = `${queue}-idle`;
@@ -1098,6 +1119,113 @@ describe('PostgreSQL queue', () => {
       ).rows,
     ).toHaveLength(2);
   });
+
+  it.each([true, false])(
+    'retries interrupted repeatable work after an unconfirmed stop and holds other work (safeToRetry=%s)',
+    async (safeToRetry) => {
+      await store.enqueue([intent({ safeToRetry })]);
+      const [old] = await store.claim(queue, workerA);
+      // A replaced container never wrote its stop proof; only the expired lease remains.
+      await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${old.id}::uuid`.execute(
+        db,
+      );
+      await store.recoverExpired();
+      const {
+        rows: [row],
+      } = await sql<{ state: string; token: string | null; finished: boolean; error: string }>`select state, token,
+        "finishedAt" is not null finished, error from job where id=${old.id}::uuid`.execute(db);
+      expect(await store.complete(old, [])).toBe(false);
+      if (!safeToRetry) {
+        expect(row).toEqual({
+          state: 'needs_attention',
+          token: null,
+          finished: true,
+          error: 'Executor stop could not be confirmed; review the worker before retrying',
+        });
+        await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
+        expect(await store.claim(queue, workerB)).toEqual([]);
+        return;
+      }
+      expect(row).toMatchObject({ state: 'pending', token: null, finished: false });
+      expect(row.error).toContain('retried automatically');
+      await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
+      const [retry] = await store.claim(queue, workerB);
+      expect(retry).toMatchObject({ id: old.id, attempt: 2 });
+      expect(await store.complete(retry, [])).toBe(true);
+      const { rows: attempts } = await sql<{ outcome: string }>`select outcome from job_attempt
+        where "jobId" = ${old.id}::uuid order by attempt`.execute(db);
+      expect(attempts.map(({ outcome }) => outcome)).toEqual(['pending', 'completed']);
+    },
+  );
+
+  it('keeps the retry budget for repeatable work whose stop is never confirmed', async () => {
+    await store.enqueue([intent()]);
+    for (const [expected, message] of [
+      ['pending', 'it is retried automatically'],
+      ['failed', 'out of automatic retries; retry failed jobs to run it again'],
+    ]) {
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      const [claim] = await store.claim(queue, workerA);
+      await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
+        db,
+      );
+      await store.recoverExpired();
+      const { rows } = await sql<{ state: string; error: string }>`select state, error from job
+        where id=${claim.id}::uuid`.execute(db);
+      expect(rows).toEqual([{ state: expected, error: expect.stringContaining(message) }]);
+    }
+    expect(await store.retryFailed(queue)).toBe(1);
+  });
+
+  it.each([true, false])(
+    'schedules the deferred latest request when repeatable work runs out of retries on an unconfirmed stop (run item=%s)',
+    async (withRunItem) => {
+      const runId = await store.createRun('unconfirmed-exhausted', {});
+      const latestRun = await store.createRun('latest-after-exhausted', {});
+      const options = { deduplication: { id: randomUUID(), keepLastIfActive: true } };
+      await store.enqueue([intent({ runId, itemKey: 'old', rootItemKey: 'old', options })]);
+      await store.finishEnumeration(runId);
+      const latestData = { id: randomUUID(), kind: 'latest' };
+      for (const expected of ['pending', 'failed']) {
+        await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+        const [claim] = await store.claim(queue, workerA);
+        if (expected === 'failed') {
+          // A newer request arrives while the final attempt runs; it is held as the job's latest.
+          await store.enqueue([
+            withRunItem
+              ? intent({ runId: latestRun, itemKey: 'latest', rootItemKey: 'latest', options, data: latestData })
+              : intent({ options, data: latestData }),
+          ]);
+          await store.finishEnumeration(latestRun);
+        }
+        await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
+          db,
+        );
+        await store.recoverExpired();
+        expect((await sql`select state from job where id=${claim.id}::uuid`.execute(db)).rows).toEqual([
+          { state: expected },
+        ]);
+      }
+      // The newer request is not discarded: it is the one live job for its key, and its run stays open.
+      const { rows: live } = await sql<{ data: unknown }>`select data from job
+        where "dedupKey" is not null and queue = ${queue} and state in ('pending','waiting','active')`.execute(db);
+      expect(live).toEqual([{ data: latestData }]);
+      if (withRunItem) {
+        expect(
+          (await sql`select "finishedAt" is null open from job_run where id = ${latestRun}::uuid`.execute(db)).rows,
+        ).toEqual([{ open: true }]);
+      }
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      const claims = await store.claim(queue, workerB);
+      expect(claims).toHaveLength(1);
+      expect(claims[0].data).toEqual(latestData);
+      expect(await store.complete(claims[0], [])).toBe(true);
+      if (withRunItem) {
+        const { rows } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+        expect(rows).toEqual([{ state: 'completed' }]);
+      }
+    },
+  );
 
   it('fences the linked operation without giving its dispatcher an independent retry after an unconfirmed stop', async () => {
     const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository], real: [] });

@@ -193,7 +193,7 @@ export class LibraryRemovalReviewDto extends createZodDto(LibraryRemovalReviewSc
 export class LibraryRemovalDto extends createZodDto(LibraryRemovalSchema) {}
 
 export function mapLibrary(entity: Library, scan: LibraryScanResponseDto | null = null): LibraryResponseDto {
-  const assetCount = entity.assets ? entity.assets.length : 0;
+  const assetCount = entity.assetCount ?? entity.assets?.length ?? 0;
   return {
     id: entity.id,
     ownerId: entity.ownerId,
@@ -209,3 +209,53 @@ export function mapLibrary(entity: Library, scan: LibraryScanResponseDto | null 
     scan,
   };
 }
+
+/** FL-365: browse the folders this server can see, to choose one to add. */
+const LibraryFolderBrowseSchema = z
+  .object({
+    path: z.string().max(4096).optional().describe('An absolute folder; defaults to the top of the disk'),
+  })
+  .meta({ id: 'LibraryFolderBrowseDto' });
+
+const LibraryFolderBrowseResponseSchema = z
+  .object({
+    path: z.string().describe('The folder that was listed'),
+    parent: z.string().nullable().describe('The folder above it; null at the top'),
+    folders: z
+      .array(z.object({ name: z.string(), path: z.string() }).meta({ id: 'LibraryFolderEntryDto' }))
+      .describe('Its folders, sorted by name; hidden, system and NAS folders are left out'),
+    truncated: z.boolean().describe('Whether there were more folders than listed'),
+    readable: z.boolean().describe('Whether the folder could be read'),
+    defaultExclusionPatterns: z
+      .array(z.string())
+      .describe('What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like'),
+  })
+  .meta({ id: 'LibraryFolderBrowseResponseDto' });
+
+/** FL-539: "About N photos and videos, X GB" for a folder chosen on Add a folder. */
+const LibraryFolderEstimateSchema = z
+  .object({
+    path: z.string().min(1).max(4096).describe('An absolute folder'),
+    exclusionPatterns: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .transform((value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]))
+      .describe('What the folder would skip'),
+  })
+  .meta({ id: 'LibraryFolderEstimateDto' });
+
+const LibraryFolderEstimateResponseSchema = z
+  .object({
+    readable: z.boolean().describe('Whether the folder could be read'),
+    count: z.int().min(0).describe('Photos and videos found'),
+    bytes: z.int().min(0).describe('Their combined size, in bytes'),
+    complete: z
+      .boolean()
+      .describe('False when the count stopped early (a very large or slow folder), so it is a lower bound'),
+  })
+  .meta({ id: 'LibraryFolderEstimateResponseDto' });
+
+export class LibraryFolderEstimateDto extends createZodDto(LibraryFolderEstimateSchema) {}
+export class LibraryFolderEstimateResponseDto extends createZodDto(LibraryFolderEstimateResponseSchema) {}
+export class LibraryFolderBrowseDto extends createZodDto(LibraryFolderBrowseSchema) {}
+export class LibraryFolderBrowseResponseDto extends createZodDto(LibraryFolderBrowseResponseSchema) {}

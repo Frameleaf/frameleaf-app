@@ -69,7 +69,10 @@ Its configuration includes `media: {"mode":"manager-in-place", "authority":"fram
 Every `mediaRoots` entry must use exactly the same absolute normalized `source`
 and `target` path. Nested Manager roots select the most specific mount, matching
 Docker mount precedence; duplicate destinations are refused. Manager mounts the existing media at those exact container
-paths, read-only during import; it does not copy or back up media. Root mappings,
+paths, read-only during import; it does not copy or back up media. Before the import, Manager checks with the
+server image and its live mounts that every writable media root is writable by the server (FL-414):
+after activation the identical-files run moves extra copies to the file trash and recovers orphans in
+place. A folder that is not writable stops the operation before any source grant, naming the folder. Root mappings,
 media mode, deployment and operation identity are included in the existing
 configuration fingerprint. They cannot change on resume or verification.
 
@@ -85,7 +88,16 @@ checks containment, regular-file type, complete content hashes, original checksu
 and before/after file metadata. The source fingerprint additionally includes the
 SHA-256 of every present referenced media file, including legacy path-checksummed
 external originals. Changed media therefore invalidates a resumed operation.
-Missing regenerable files are recorded consistently; originals cannot be missing.
+Missing regenerable files are recorded consistently. An original Immich had already lost
+(shown there as unavailable), one whose bytes no longer match Immich's checksum, or one
+outside every mapped root is still imported, never dropped and never a reason to stop:
+verification lists it and, before activation, notifies its owner (and every administrator,
+with the per-account list) with the file name, paths, dates, size, camera and checksum. An
+empty or absent root reads as unmounted and still stops the import, as do copy-safety
+failures (symlink escape, shared inode, a file present in Immich but not copied). After
+setup, Library Care's full scan covers every account, relinks a lost original to an
+untracked file with the same bytes in the owner's own storage, and brings other untracked
+media back; uploading the same file again restores a lost original under its photo.
 The importer never writes media. After activation Frameleaf becomes the media
 writer; restarting Immich against these originals is not a safe rollback.
 
@@ -93,14 +105,14 @@ Invoke `frameleaf-admin import-immich preflight --config /private/import.json`,
 then `run` (or `resume` for a partial journal), then `verify`, in the offline
 container. The existing admin module initializes the canonical PostgreSQL 19
 schema with inactive imports allowed, without starting ordinary API/workers.
-Verification retains all five derived-work snapshots and activates the journal before
-Manager starts the app. In a Manager `new_import`, all five snapshots commit held in
+Verification retains all six derived-work snapshots (FL-414 adds identical files) and activates the journal before
+Manager starts the app. In a Manager `new_import`, all six snapshots commit held in
 `enumerating` state, including empty snapshots. Their stable fingerprint-derived run
 records `selection.managerSetup` with installation and operation identity,
 `preparedAt` after the complete manifest audit, and `startedAt: null`. No worker can
 admit this retained work before first setup explicitly releases it. The setup service
 requires an admin, the chosen and validated initial ML settings, the matching activated
-journal, and all five captured stages; it stamps `startedAt` and releases the held
+journal, and all six captured stages; it stamps `startedAt` and releases the held
 snapshots atomically. A resumed import preserves that start and never revives cancelled
 or attention-required stages.
 
@@ -206,6 +218,21 @@ change, so a release that already ran it reads that table directly. The views co
   their members, assets, activity and links dropped, cross-owner memory assets dropped;
 - 3.3 empty OAuth ids as NULL.
 
+### Pre-Frameleaf fork libraries
+
+A library from the fork Frameleaf grew out of has the upstream ledger plus the fork's own
+migrations, so it is read like a newer release. When the source has them with their fork types,
+the importer also reads album nesting (`album.parentId`, `icon`, `sortOrder`) and smart albums
+(`smart_album`, `smart_album_asset`, `smart_album_exclusion`). After the copy it builds
+`album_closure` for every album and turns albums that hold other albums into collections unless
+a smart album fills them, as `2100000000080-AddAlbumKind` did for an in-place upgrade.
+
+For every source, assets in the upstream Locked folder become `asset_lock` records with stored
+visibility `timeline` (`hidden` for a live photo's video), the fork's Mark Sensitive review
+becomes a `marked` lock, whole stacks and live photos lock together, and locked media stops being
+an album cover or a person's face thumbnail, as in `2100000000320-AddAssetLock`. Verification
+accepts exactly those rewrites. The fork's sensitive detections (`asset.is_nsfw`) are not carried.
+
 Tables a release predates (edits before 2.5, OCR before 2.2, the 3.0 audio/video/
 keyframe metadata) are skipped and regenerated by the derived-work pass. 2.x sources
 are admitted when their ledger and every column the views read match the replayed
@@ -252,6 +279,14 @@ Ineligible faces remain excluded, and the ordinary thumbnail worker retains its
 featured-face, protected-content and publication checks. An empty person stage does
 not prevent the run completing. This handoff promises durable repair ownership, not
 that rendering has already finished.
+FL-414: the run also holds one `IdenticalFilesCheck` item (`itemKey` `identical-files`, payload
+`importRunId`), frozen at verify with the other stages and admitted with them, so the importer
+still changes no files. Once admitted it starts the identical-files run (FL-413) for this import:
+every managed original is read again, SHA-1 records are upgraded, identical files are stored once
+(the oldest copy across people; the oldest photo inside one library, the other to the Trash through
+a duplicate decision), orphans are recovered into each owner's Recovered Media album, and extra
+copies wait in the file trash ("Unused files"). A retried item after that run finished changes
+nothing. An empty library still holds this item, because orphans can exist without any asset.
 After activation, the coordinator admits manifest work in batches of 250 up to 1,000 live
 jobs per queue, refilling when that queue reaches 500. It activates only when every gate has passed;
 derived jobs need to be durably retained, not already executed. Worker/API startup must call

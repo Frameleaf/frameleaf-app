@@ -6,7 +6,7 @@ import type { SyncAck } from 'src/types.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm, LibraryScope, UserMetadataKey } from 'src/enum.js';
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -21,6 +21,7 @@ import {
   getHiddenContentQueryOptions,
   getOthersRulesQueryOptions,
 } from 'src/utils/hidden-content.js';
+import { libraryScopePredicate, personalAlbumScopePredicate } from 'src/utils/library-scope.js';
 import {
   effectiveVisibility,
   getLockedOwnerId,
@@ -249,6 +250,7 @@ class AlbumSync extends BaseSync {
         .selectFrom('album')
         .innerJoin('album_user as album_users', 'album.id', 'album_users.albumId')
         .where('album_users.userId', '=', userId)
+        .where(personalAlbumScopePredicate(userId, sql.ref('album.id')))
         .select([
           'album.id',
           'album.albumName as name',
@@ -317,6 +319,7 @@ class AlbumSync extends BaseSync {
       .selectFrom('album_user')
       .select(['albumId as id', 'createId'])
       .where('userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
       .where('createId', '<', nowId)
       .orderBy('createId', 'asc')
@@ -324,9 +327,19 @@ class AlbumSync extends BaseSync {
   }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
+    const scopedOut = this.upsertQuery('album', options)
+      .clearOrderBy()
+      .innerJoin('album_user', 'album_user.albumId', 'album.id')
+      .where('album_user.userId', '=', options.userId)
+      .where('album_user.role', '=', AlbumUserRole.Owner)
+      .where('album.libraryScope', '=', LibraryScope.Design)
+      .select(['album.updateId as id', 'album.id as albumId']);
     return this.auditQuery('album_audit', options)
+      .clearOrderBy()
       .select(['id', 'albumId'])
       .where('userId', '=', options.userId)
+      .unionAll(scopedOut)
+      .orderBy('id', 'asc')
       .stream();
   }
   cleanupAuditTable(daysAgo: number) {
@@ -342,6 +355,7 @@ class AlbumSync extends BaseSync {
       .distinctOn(['album.id', 'album.updateId'])
       .leftJoin('album_user as album_users', 'album.id', 'album_users.albumId')
       .where('album_users.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album.id')))
       .select([
         'album.id',
         'album.albumName as name',
@@ -378,6 +392,7 @@ class AlbumAssetSync extends BaseSync {
       .innerJoin('user as mediaOwner', 'mediaOwner.id', 'asset.ownerId')
       .where('mediaOwner.deletedAt', 'is', null)
       .where('album_user.userId', '=', auth.user.id)
+      .where(personalAlbumScopePredicate(auth.user.id, sql.ref('album.id')))
       .where('album.deletedAt', 'is', null)
       .where('asset.deletedAt', 'is', null)
       .where(notLockedOrOwnedBy(getLockedOwnerId(auth)))
@@ -417,6 +432,7 @@ class AlbumAssetSync extends BaseSync {
       )
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_asset.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
       .stream();
@@ -440,6 +456,7 @@ class AlbumAssetSync extends BaseSync {
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send updates for assets that the client already knows about
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
       .stream();
@@ -462,6 +479,7 @@ class AlbumAssetSync extends BaseSync {
       )
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
       .stream();
@@ -476,6 +494,7 @@ class AlbumAssetExifSync extends BaseSync {
       .select(columns.syncAssetExif)
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_asset.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
       .stream();
@@ -491,6 +510,7 @@ class AlbumAssetExifSync extends BaseSync {
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send exif updates for assets that the client already knows about
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(options.userId))
       .stream();
@@ -506,6 +526,7 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(options.userId))
       .stream();
@@ -518,6 +539,7 @@ class AlbumToAssetSync extends BaseSync {
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(['album_asset.assetId as assetId', 'album_asset.albumId as albumId', 'album_asset.updateId'])
       .where('album_asset.albumId', '=', albumId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_asset.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
       .stream();
@@ -525,6 +547,9 @@ class AlbumToAssetSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     const userId = options.userId;
+    // FL-447: a removal is sent even for an item that now matches its owner's Locked rules, which the
+    // device may have synced before; the withheld fingerprint only covers items still in the album
+    const hidden = { ...options, othersRulesViewerId: undefined };
     return this.auditQuery('album_asset_audit', options)
       .select(['album_asset_audit.id', 'assetId', 'albumId'])
       .leftJoin('asset', 'asset.id', 'album_asset_audit.assetId')
@@ -532,10 +557,14 @@ class AlbumToAssetSync extends BaseSync {
         eb(
           'albumId',
           'in',
-          eb.selectFrom('album_user').select(['album_user.albumId as id']).where('album_user.userId', '=', userId),
+          eb
+            .selectFrom('album_user')
+            .select(['album_user.albumId as id'])
+            .where('album_user.userId', '=', userId)
+            .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId'))),
         ),
       )
-      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$call((qb) => withHiddenContentFilter(qb, hidden))
       .stream();
   }
   cleanupAuditTable(daysAgo: number) {
@@ -558,6 +587,7 @@ class AlbumToAssetSync extends BaseSync {
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .where('album_user.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .where('album.deletedAt', 'is', null)
       .where(
         sql<boolean>`(exists (select 1 from asset_lock) or exists (
@@ -590,6 +620,7 @@ class AlbumToAssetSync extends BaseSync {
       .select(['album_asset.assetId as assetId', 'album_asset.albumId as albumId', 'album_asset.updateId'])
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
+      .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
       .stream();
@@ -613,7 +644,11 @@ class AlbumUserSync extends BaseSync {
         eb(
           'albumId',
           'in',
-          eb.selectFrom('album_user').select(['album_user.albumId as id']).where('album_user.userId', '=', userId),
+          eb
+            .selectFrom('album_user')
+            .select(['album_user.albumId as id'])
+            .where('album_user.userId', '=', userId)
+            .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId'))),
         ),
       )
       .stream();
@@ -634,7 +669,8 @@ class AlbumUserSync extends BaseSync {
           eb
             .selectFrom('album_user as albumUsers')
             .select(['albumUsers.albumId as id'])
-            .where('albumUsers.userId', '=', userId),
+            .where('albumUsers.userId', '=', userId)
+            .where(personalAlbumScopePredicate(userId, sql.ref('albumUsers.albumId'))),
         ),
       )
       .stream();
@@ -657,6 +693,7 @@ class AssetSync extends BaseSync {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .select(syncAsset(options))
         // Preserve PostgreSQL microseconds; driver Date conversion loses cursor precision.
         .select(
@@ -678,9 +715,17 @@ class AssetSync extends BaseSync {
   }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
+    const scopedOut = this.upsertQuery('asset', options)
+      .clearOrderBy()
+      .select(['asset.updateId as id', 'asset.id as assetId'])
+      .where('asset.ownerId', '=', options.userId)
+      .where('asset.libraryScope', '=', LibraryScope.Design);
     return this.auditQuery('asset_audit', options)
+      .clearOrderBy()
       .select(['id', 'assetId'])
       .where('ownerId', '=', options.userId)
+      .unionAll(scopedOut)
+      .orderBy('id', 'asc')
       .stream();
   }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
@@ -702,6 +747,7 @@ class AssetSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('asset', options)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .select(syncAsset(options))
       .select('asset.updateId')
       .where('ownerId', '=', options.userId)
@@ -803,6 +849,7 @@ class AssetFaceSync extends BaseSync {
       .select(['asset_face_audit.id', 'assetFaceId'])
       .leftJoin('asset', 'asset.id', 'asset_face_audit.assetId')
       .where('asset.ownerId', '=', options.userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -816,6 +863,7 @@ class AssetFaceSync extends BaseSync {
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -830,6 +878,7 @@ class AssetFaceSync extends BaseSync {
       .select('asset_face.updateId')
       .leftJoin('asset', 'asset.id', 'asset_face.assetId')
       .where('asset.ownerId', '=', options.userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -844,6 +893,7 @@ class AssetFaceSync extends BaseSync {
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -856,6 +906,7 @@ class AssetExifSync extends BaseSync {
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
       .where('asset.ownerId', '=', options.userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -867,6 +918,7 @@ class AssetEditSync extends BaseSync {
       .select(['asset_edit_audit.id', 'editId'])
       .innerJoin('asset', 'asset.id', 'asset_edit_audit.assetId')
       .where('asset.ownerId', '=', options.userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -879,6 +931,7 @@ class AssetEditSync extends BaseSync {
       .select([...columns.syncAssetEdit, 'asset_edit.updateId'])
       .innerJoin('asset', 'asset.id', 'asset_edit.assetId')
       .where('asset.ownerId', '=', options.userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1023,6 +1076,7 @@ class AssetMetadataSync extends BaseSync {
       .leftJoin('asset', 'asset.id', 'asset_metadata_audit.assetId')
       .where('asset.ownerId', '=', userId)
       .where('asset_metadata_audit.key', '!=', AssetMetadataKey.MlEnrichment)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1036,6 +1090,7 @@ class AssetMetadataSync extends BaseSync {
       .innerJoin('asset', 'asset.id', 'asset_metadata.assetId')
       .where('asset.ownerId', '=', userId)
       .where('asset_metadata.key', '!=', AssetMetadataKey.MlEnrichment)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1047,6 +1102,7 @@ class AssetOcrSync extends BaseSync {
       .select(['asset_ocr_audit.id', 'asset_ocr_audit.assetId', 'asset_ocr_audit.deletedAt'])
       .leftJoin('asset', 'asset.id', 'asset_ocr_audit.assetId')
       .where('asset.ownerId', '=', userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1059,6 +1115,7 @@ class AssetOcrSync extends BaseSync {
       .select(columns.syncAssetOcr)
       .innerJoin('asset', 'asset.id', 'asset_ocr.assetId')
       .where('asset.ownerId', '=', userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }

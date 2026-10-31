@@ -58,7 +58,8 @@ const stagesFor = (
     when "availableAt" > now() then 'delayed'
     else 'waiting' end outcome
   from ((
-  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
+  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt",
+  case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   p.state "parentState"
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}
@@ -135,7 +136,10 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
           and r.selection->'managerSetup'->>'startedAt' is null,false) "managerSetupPending"
       from job_run r
       ${runId === undefined ? sql`` : sql`where r.id = ${runId}::uuid`}
-      order by (r."finishedAt" is not null), r."createdAt" desc, r.id desc limit ${take} offset ${skip}
+      -- A library scan that failed or was cancelled lists with the finished runs (FL-588).
+      order by (r."finishedAt" is not null or exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
+          where m."runId" = r.id and s."sourceKind" = 'library-initial' and s.state = 'needs_attention')),
+        r."createdAt" desc, r.id desc limit ${take} offset ${skip}
     ), stages as (${stagesFor(sql<boolean>`i."runId" in (select id from runs)`, sql<string>`select id from runs`)}), run_stages as (
       select s.* from stages s
     ), selected as (
@@ -172,7 +176,7 @@ export async function legacyListRuns(db: Kysely<any>, take: number, skip: number
         coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id
-    order by (r."finishedAt" is not null), r."createdAt" desc, r.id desc`.execute(db);
+    order by (r."finishedAt" is not null or r."librarySourceAttention"), r."createdAt" desc, r.id desc`.execute(db);
   return rows.map((raw) => {
     const row = raw;
     const state = runState(row);

@@ -114,7 +114,7 @@ export function encoderArgs({ width, height, fps, transfer, light, mastering, ou
     '-f', 'rawvideo', '-pix_fmt', 'rgb48le', '-s', `${width}x${height}`, '-r', String(fps),
     '-color_primaries', 'bt2020', '-color_trc', trc, '-colorspace', 'rgb', '-color_range', 'pc',
     '-i', '-',
-    ...(audio ? ['-i', audio.path, '-map', '0:v:0', '-map', `1:a:${audio.stream ?? 0}`, '-c:a', 'copy'] : []),
+    ...(audio ? ['-i', audio.path, '-map', '0:v:0', '-map', `1:a:${audio.stream ?? 0}`, ...(audio.codecArgs ?? ['-c:a', 'copy'])] : []),
     // Explicit matrix and range; ten-bit codes are rounded per BT.2100 (TEN_BIT_QUANTISER).
     '-vf', [
       `format=gbrp16le,zscale=rangein=full:range=limited:matrixin=gbr:matrix=bt2020nc:dither=${TEN_BIT_QUANTISER},format=yuv420p10le`,
@@ -178,23 +178,7 @@ export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', 
     });
     signal?.throwIfAborted();
     const probe = probeMaster(ffprobe, partial);
-    const trc = transfer === 'pq' ? 'smpte2084' : 'arib-std-b67';
-    assert.deepEqual([probe.codec, probe.profile, probe.pixFmt, probe.primaries, probe.transfer, probe.matrix, probe.range],
-      ['hevc', 'Main 10', 'yuv420p10le', 'bt2020', trc, 'bt2020nc', 'tv'], 'HDR master signalling mismatch');
-    assert.deepEqual([probe.width, probe.height, probe.frames], [width, height, frames.length], 'HDR master picture count/size mismatch');
-    if (light) {
-      assert.deepEqual([Number(probe.contentLight?.max_content), Number(probe.contentLight?.max_average)],
-        [light.maxCll, light.maxFall], 'HDR master content-light mismatch');
-      const ratio = (value) => { const [num, den] = String(value).split('/').map(Number); return num / den; };
-      const data = probe.mastering;
-      assert.deepEqual([ratio(data?.max_luminance), ratio(data?.min_luminance)],
-        [Math.round(mastering.maxNits * 10000) / 10000, Math.round(mastering.minNits * 10000) / 10000],
-        'HDR master mastering luminance mismatch');
-      for (const [key, prefix] of [['R', 'red'], ['G', 'green'], ['B', 'blue'], ['WP', 'white_point']]) {
-        assert.deepEqual([ratio(data?.[`${prefix}_x`]), ratio(data?.[`${prefix}_y`])],
-          BT2020_MASTERING_PRIMARIES[key].map((value) => value / 50000), 'HDR master mastering chromaticity mismatch');
-      }
-    }
+    assertMasterSignalling(probe, { transfer, width, height, frames: frames.length, light, mastering });
     const decoded = decodeMaster(ffmpeg, partial, width, height);
     assert.equal(decoded.length, frames.length, 'HDR master decoded frame count mismatch');
     // Caller-specific picture/timing/audio QC must pass while the result is still private.
@@ -205,6 +189,32 @@ export async function encodeHdrMaster({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', 
     await rm(partial, { force: true });
   }
   return { light, args };
+}
+
+/** ffmpeg/ffprobe names of each master transfer characteristic. */
+export const MASTER_TRC = Object.freeze({ pq: 'smpte2084', hlg: 'arib-std-b67' });
+
+/**
+ * The probed master is HEVC Main10 4:2:0 BT.2020 NCL limited range with the requested transfer, the
+ * expected picture count and size, and (PQ) exactly the measured content light and declared mastering
+ * display. Throws on the first difference.
+ */
+export function assertMasterSignalling(probe, { transfer, width, height, frames, light, mastering }) {
+  assert.deepEqual([probe.codec, probe.profile, probe.pixFmt, probe.primaries, probe.transfer, probe.matrix, probe.range],
+    ['hevc', 'Main 10', 'yuv420p10le', 'bt2020', MASTER_TRC[transfer], 'bt2020nc', 'tv'], 'HDR master signalling mismatch');
+  assert.deepEqual([probe.width, probe.height, probe.frames], [width, height, frames], 'HDR master picture count/size mismatch');
+  if (!light) return;
+  assert.deepEqual([Number(probe.contentLight?.max_content), Number(probe.contentLight?.max_average)],
+    [light.maxCll, light.maxFall], 'HDR master content-light mismatch');
+  const ratio = (value) => { const [num, den] = String(value).split('/').map(Number); return num / den; };
+  const data = probe.mastering;
+  assert.deepEqual([ratio(data?.max_luminance), ratio(data?.min_luminance)],
+    [Math.round(mastering.maxNits * 10000) / 10000, Math.round(mastering.minNits * 10000) / 10000],
+    'HDR master mastering luminance mismatch');
+  for (const [key, prefix] of [['R', 'red'], ['G', 'green'], ['B', 'blue'], ['WP', 'white_point']]) {
+    assert.deepEqual([ratio(data?.[`${prefix}_x`]), ratio(data?.[`${prefix}_y`])],
+      BT2020_MASTERING_PRIMARIES[key].map((value) => value / 50000), 'HDR master mastering chromaticity mismatch');
+  }
 }
 
 /** Probes the master: codec, 10-bit, colour tags and HDR10 side data. */

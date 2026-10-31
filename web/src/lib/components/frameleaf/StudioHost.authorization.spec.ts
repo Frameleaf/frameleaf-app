@@ -43,6 +43,8 @@ const detail = (access: StudioProjectAccess): StudioProjectDetailDto => ({
     unsupportedSources: [],
     hiddenSources: [],
     hdrSources: [],
+    pqSources: [],
+    hlgSources: [],
     hdrProxySources: [],
     checkedAt: '2026-10-09T12:00:00Z',
   },
@@ -233,9 +235,9 @@ it.each(['absent', 'missing-workers', 'ready'] as const)(
     const onImportRetention = vi.fn();
     await view.refresh({ onImportRetention });
     await fireEvent.click(view.getByRole('button', { name: 'more' }));
-    await fireEvent.click(view.getByRole('menuitem', { name: 'Import receipts' }));
+    await fireEvent.click(view.getByRole('menuitem', { name: 'frameleaf_studio_receipts_title' }));
     expect(onImportRetention).toHaveBeenCalledTimes(1);
     await view.refresh({ accessLost: true });
-    expect(view.queryByRole('menuitem', { name: 'Import receipts' })).toBeNull();
+    expect(view.queryByRole('menuitem', { name: 'frameleaf_studio_receipts_title' })).toBeNull();
   },
 );

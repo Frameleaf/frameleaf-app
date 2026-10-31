@@ -5,7 +5,8 @@
 # its promotion logic (.github/frameleaf-release.cjs `release`):
 #   release  - verify that the named candidate (the exact main commit, or the digest of its
 #              frameleaf-server candidate) is a verified build of that commit (a successful same-SHA
-#              Deploy run, verified manifests; rolling tags are never evidence), run the deployment test on
+#              Deploy run, started by hand on main first; verified manifests; rolling tags are never
+#              evidence), run the deployment test on
 #              those exact images, then in the protected `production` environment promote the version,
 #              `release` and `latest` tags, sign every image digest with the Frameleaf cosign key, attach
 #              the release manifest as an attestation, and publish the GitHub release.

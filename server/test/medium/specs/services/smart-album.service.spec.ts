@@ -71,6 +71,46 @@ describe(SmartAlbumService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('counts, previews and hiding (FL-522)', () => {
+    it('counts and samples what the album holds, previews a rule, and hides it for its owner only', async () => {
+      const { ctx } = setup(await getKyselyDB());
+      const repo = ctx.get(SmartAlbumRepository);
+      const { user, travelAlbumId } = await newSmartAlbumUser(ctx);
+      const { asset: beach } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: city } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+      await ctx.get(SearchRepository).upsert(beach.id, unitVector(0));
+      await ctx.get(SearchRepository).upsert(city.id, unitVector(1));
+      for (const asset of [city, trashed]) {
+        await repo.addAssetToSmartAlbum(travelAlbumId, asset.id, 'tag');
+      }
+
+      const [listed] = await repo.listForOwner(user.id);
+      expect(listed).toEqual(expect.objectContaining({ kind: 'travel', hidden: false, count: 1, samples: [city.id] }));
+
+      // A rule that looks like the beach adds it and takes the city out.
+      const preview = await repo.previewRule(user.id, 'travel', {
+        tags: [],
+        embeddings: [unitVector(0)],
+        threshold: 0.5,
+      });
+      expect(preview).toEqual({
+        current: 1,
+        matched: 1,
+        adds: 1,
+        removes: 1,
+        addSamples: [beach.id],
+        removeSamples: [city.id],
+      });
+
+      await expect(repo.setHidden(user.id, 'travel', true)).resolves.toBe(true);
+      await expect(repo.setHidden(user.id, 'pets', true)).resolves.toBe(false);
+      const albumId = (await repo.listForOwner(user.id))[0].albumId;
+      await expect(repo.getHiddenAlbumIds(user.id)).resolves.toEqual(new Set([albumId]));
+      await expect(repo.getHouseholdCounts()).resolves.toEqual([{ kind: 'travel', count: 1, people: 1, hiddenBy: 1 }]);
+    });
+  });
+
   describe('evaluate (CLIP)', () => {
     it('should add a membership with source "clip" when similarity meets the threshold', async () => {
       const { sut, ctx } = setup();

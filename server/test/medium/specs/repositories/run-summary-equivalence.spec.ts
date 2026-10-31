@@ -39,7 +39,14 @@ const ITEM_STATES = [
   'blocked',
 ] as const;
 const HEADER_STATES = ['enumerating', 'ready', 'needs_attention', 'cancelled'] as const;
-const DEPENDENCY_REASONS = ['local-capacity', 'source-unavailable', 'destination-budget', null, null, null] as const;
+const DEPENDENCY_REASONS = [
+  'local-capacity',
+  'source-unavailable',
+  'destination-budget',
+  'destination-capacity',
+  null,
+  null,
+] as const;
 // Far from now() on both sides: the two reads run a moment apart and must agree on every clock test.
 const PAST = new Date(Date.now() - 3_600_000);
 const FUTURE = new Date(Date.now() + 3_600_000);

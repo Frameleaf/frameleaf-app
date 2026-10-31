@@ -99,6 +99,27 @@ describe(PartnerService.name, () => {
   );
 
   describe('create', () => {
+    it('refuses to share a library with its own owner', async () => {
+      const user = UserFactory.create();
+      const auth = AuthFactory.create({ id: user.id });
+
+      await expect(sut.create(auth, { sharedWithId: user.id })).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.partner.create).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('refuses its own owner when the ID is written in upper case', async () => {
+      const user = UserFactory.create();
+      const auth = AuthFactory.create({ id: user.id });
+
+      await expect(sut.create(auth, { sharedWithId: user.id.toUpperCase() })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mocks.partner.create).not.toHaveBeenCalled();
+    });
+
     it('should create a new partner', async () => {
       const user1 = UserFactory.create();
       const user2 = UserFactory.create();

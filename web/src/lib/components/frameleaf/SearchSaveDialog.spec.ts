@@ -40,6 +40,38 @@ describe('SearchSaveDialog', () => {
     return { onSaved };
   };
 
+  it('does not offer lossy saving or workflow creation for spoken words', async () => {
+    setup({ ...emptyDiscoveryQuery(), mode: 'speech', text: '“hello world”' });
+    expect(
+      screen.getByText('Save Search, Create Workflow and Play on TV are unavailable for spoken words.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Automate this search/ })).not.toBeInTheDocument();
+    expect(sdkMock.createAlbum).not.toHaveBeenCalled();
+  });
+
+  it('opens a copied workflow draft without creating an album or running actions', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
+    const query = { ...emptyDiscoveryQuery(), text: 'Holiday', filter: { rating: { gte: 4 } } };
+    setup(query);
+    const button = screen.getByRole('button', { name: /Automate this search/ });
+    await waitFor(() => expect(button).toBeEnabled());
+    await fireEvent.click(button);
+    await waitFor(() => expect(goto).toHaveBeenCalled());
+    const url = new URL(String(vi.mocked(goto).mock.calls[0][0]), 'https://frameleaf.test');
+    expect(JSON.parse(url.searchParams.get('workflowQuery')!)).toEqual(query);
+    expect(sdkMock.createAlbum).not.toHaveBeenCalled();
+    expect(sdkMock.createWorkflow).not.toHaveBeenCalled();
+    expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('explains the unavailable automation capability on older servers', async () => {
+    sdkMock.getWorkflowCapabilities.mockRejectedValue(new Error('not found'));
+    setup(emptyDiscoveryQuery());
+    const button = screen.getByRole('button', { name: /Automate this search/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent('Update the server');
+  });
+
   it('creates a rule-backed smart album from a search a rule can say', async () => {
     sdkMock.createClassificationRule.mockResolvedValue({ albumId: ALBUM } as never);
     const query = {
@@ -52,7 +84,11 @@ describe('SearchSaveDialog', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Smart album/ }));
     await waitFor(() =>
       expect(sdkMock.createClassificationRule).toHaveBeenCalledWith({
-        classificationRuleCreateDto: { albumName: 'Jamie', personIds: [JAMIE], visualQueries: ['hike'] },
+        classificationRuleCreateDto: expect.objectContaining({
+          albumName: 'Jamie',
+          visualQueries: ['hike'],
+          filter: expect.objectContaining({ personIds: { all: [JAMIE] } }),
+        }),
       }),
     );
     expect(onSaved).toHaveBeenCalledWith('smart', true);
@@ -60,10 +96,15 @@ describe('SearchSaveDialog', () => {
   });
 
   it('disables the smart album for a search a rule cannot say, and says why', () => {
-    setup({ ...emptyDiscoveryQuery(), filter: { city: { eq: 'Banff' } } });
+    setup({ ...emptyDiscoveryQuery(), mode: 'smart', queryAssetId: JAMIE });
     const smart = screen.getByRole('button', { name: /Smart album/ });
     expect(smart).toBeDisabled();
-    expect(smart).toHaveTextContent('Only searches by people');
+    expect(smart).toHaveTextContent('photos like one photo');
+  });
+
+  it('offers a smart album for any filter a rule can say, such as a place', () => {
+    setup({ ...emptyDiscoveryQuery(), filter: { city: { eq: 'Banff' } } });
+    expect(screen.getByRole('button', { name: /Smart album/ })).toBeEnabled();
   });
 
   it('confirms the exact number, then snapshots every match into a new album and reports per item', async () => {

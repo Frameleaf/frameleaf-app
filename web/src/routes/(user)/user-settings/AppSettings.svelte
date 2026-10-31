@@ -4,9 +4,9 @@
    * `settings-v2/server/preferences.jsx`): the same device preferences as before in four headed
    * groups, with the theme and the date format each as one choice instead of a switch and a field.
    *
-   * Everything here but "Show albums" and "Show archived photos in search" is kept on this device and
-   * applies as it is chosen, as it always has. Those two are account preferences and keep the Save
-   * bar. ACCOUNT-P3 added "Use less movement", "Open the library in", "Show file names in Work view"
+   * Everything here but "Show albums", "Show archived photos in search" and "Let uploads bring back
+   * deleted photos" is kept on this device and applies as it is chosen, as it always has. Those three
+   * are account preferences and keep the Save bar. ACCOUNT-P3 added "Use less movement", "Open the library in", "Show file names in Work view"
    * and "Show archived photos in search", and moved "Dates and numbers" up to Appearance.
    */
   import { invalidateAll } from '$app/navigation';
@@ -74,8 +74,18 @@
   let sample: string = $derived(createDateFormatter(editedLocale).formatDateTime(time));
   const customLocale = $derived(findLocale(editedLocale).code || fallbackLocale.code);
 
-  // The two account preferences on this page; "Show archived photos in search" is ACCOUNT-P3.
-  const albums = createOwnPreferencesDraft(['albums.defaultAssetOrder', 'search.includeArchived']);
+  // The account preferences on this page; "Show archived photos in search" is ACCOUNT-P3, "Let uploads
+  // bring back deleted photos" FL-556.
+  const albums = createOwnPreferencesDraft([
+    'albums.defaultAssetOrder',
+    'search.includeArchived',
+    'trash.reuploadUntil',
+  ]);
+
+  /** FL-556: a 24-hour window, turned on here and off by itself (the server caps it at 24 hours). */
+  const REUPLOAD_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const reuploadUntil = $derived(Date.parse(albums.draft['trash.reuploadUntil']));
+  const reuploadOpen = $derived(reuploadUntil > time.getTime());
 
   /**
    * ACCOUNT-P3: until "Open the library in" is chosen, the library opens in the layout used last on
@@ -238,6 +248,27 @@
           label={$t('frameleaf_prefs_look_ask_delete')}
           checked={$showDeleteModal}
           onChange={(value) => ($showDeleteModal = value)}
+        />
+      </Row>
+      <Row
+        label={$t('frameleaf_prefs_look_reupload')}
+        help={reuploadOpen
+          ? $t('frameleaf_prefs_look_reupload_help_on', {
+              values: {
+                until: new Date(reuploadUntil).toLocaleString($i18nLocale ?? undefined, {
+                  weekday: 'short',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                }),
+              },
+            })
+          : $t('frameleaf_prefs_look_reupload_help')}
+      >
+        <Switch
+          label={$t('frameleaf_prefs_look_reupload')}
+          checked={reuploadOpen}
+          onChange={(value) =>
+            albums.set('trash.reuploadUntil', value ? new Date(Date.now() + REUPLOAD_WINDOW_MS).toISOString() : '')}
         />
       </Row>
     </Section>

@@ -4,7 +4,7 @@ import {
   BUDDY_UUID,
   buddyObjectId,
   decryptBuddyBlock,
-  encryptBuddyBlock,
+  sealBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
 
 /** Client format 1 reuses Buddy's authenticated blocks with a separate key domain per payload/chunk. */
@@ -26,8 +26,6 @@ export type ClientBackupContext = {
   kind: 'object' | 'database' | 'manifest';
   id: string;
 };
-
-export const clientBackupWritesEnabled = () => process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION === '1';
 
 /** Unknown client namespaces are rejected, never retried as plaintext or SSE-C. */
 export const clientBackupContext = (
@@ -128,7 +126,7 @@ const seal = (root: Buffer, context: ClientBackupContext, header: Buffer, index:
   const key = blockRoot(root, context, header, index);
   try {
     const id = buddyObjectId(key, context.vaultId, plaintext);
-    return Buffer.concat([Buffer.from(id, 'hex'), encryptBuddyBlock(key, { ...context, id }, plaintext)]);
+    return Buffer.concat([Buffer.from(id, 'hex'), sealBuddyBlock(key, { ...context, id }, plaintext)]);
   } finally {
     key.fill(0);
   }

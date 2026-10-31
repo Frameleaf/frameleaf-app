@@ -33,7 +33,11 @@ describe.each(['archive', 'output', 'file'] as const)('photography %s delivery r
         return Promise.resolve();
       },
     } as unknown as PhotographyWorkflowService;
-    const controller = new PhotographyWorkflowController(service, { warn: vi.fn() } as unknown as LoggingRepository);
+    const controller = new PhotographyWorkflowController(
+      service,
+      {} as never,
+      { warn: vi.fn() } as unknown as LoggingRepository,
+    );
     const response = Object.assign(new EventEmitter(), {
       statusCode,
       req: { method },

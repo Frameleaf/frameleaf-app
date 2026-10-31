@@ -12,6 +12,7 @@ import {
   AssetVisibility,
   FrameleafWorker,
   JobName,
+  LibraryScope,
   Permission,
   UserMetadataKey,
 } from 'src/enum.js';
@@ -268,6 +269,21 @@ describe(PartnerCopyService.name, () => {
   );
 
   describe('copyAsset', () => {
+    it('does not copy designer references or enumerate them for partner backfill', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      await db.updateTable('asset').set({ libraryScope: LibraryScope.Design }).where('id', '=', source.id).execute();
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, libraryScope: LibraryScope.Design });
+      expect(await origins.getOwnerAssetIdsAfter(alice.id, null, 100)).toEqual([]);
+      expect(await origins.countOwnerAssets(alice.id)).toBe(0);
+      expect(await origins.getOwnedAlbumIds(alice.id)).not.toContain(album.id);
+      expect(await origins.getAlbumForCopy(album.id)).toBeUndefined();
+      expect(await sut.copyAsset(source.id, bob.id, alice.id)).toBeUndefined();
+      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([]);
+    });
     it('copies exact CLIP producer provenance with the unchanged vector, including unknown legacy origins', async () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
@@ -824,6 +840,30 @@ describe(PartnerCopyService.name, () => {
       });
       const afterSecond = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
       expect(afterSecond).toHaveLength(3);
+    });
+
+    it('passes on an album copied before a stop when the final batch is retried', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [source.id]);
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      await origins.startBackfill(alice.id, bob.id, 1);
+      // the stopped run copied the album, then stopped before passing it on to Bob's partners
+      const copyId = await sut.copyAlbum(album.id, bob.id, alice.id);
+      ctx.getMock(JobRepository).queueAll.mockClear();
+
+      await sut.handleBackfill({ sharedById: alice.id, sharedWithId: bob.id });
+
+      expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PartnerCopyAlbum,
+          data: { sourceAlbumId: copyId, targetOwnerId: carol.id, partnerSharedById: bob.id },
+        },
+      ]);
     });
 
     it('stops following when the partnership ends; the partner keeps every copy', async () => {

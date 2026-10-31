@@ -17,6 +17,7 @@ import { migrateStacks } from 'src/commands/migrate/stacks';
 import { migrateTags } from 'src/commands/migrate/tags';
 import { transfer } from 'src/commands/migrate/transfer';
 import type { MigrateOptions, MigrateRawOptions } from 'src/commands/migrate/types';
+import { keyPermissions } from 'src/utils';
 
 const SOURCE_REQUIRED = [Permission.AssetRead, Permission.AssetDownload, Permission.AlbumRead, Permission.TagRead];
 const SOURCE_OPTIONAL = [Permission.StackRead, Permission.PersonRead];
@@ -34,6 +35,7 @@ const DEST_OPTIONAL = [
   Permission.PersonCreate,
   Permission.PersonReassign,
   Permission.FaceRead, // needed to find which face on B a name should attach to
+  Permission.AssetDelete, // restores an original B already holds only in its trash
 ];
 
 const die = (message: string): never => {
@@ -152,7 +154,12 @@ async function transferAndOrganize(
   await migratePeople(from, to, ledger, options, controller);
 }
 
-const printSummary = (report: AuditReport | undefined, ledgerPath: string, auditPath: string) => {
+// An API key can't unlock Locked, so those items are never read, copied or counted.
+const LOCKED_WARNING =
+  '⚠️  Locked items are not copied: an API key cannot open Locked. On SERVER A, move anything in Locked ' +
+  'back to the timeline and run again, or confirm Locked is empty, before decommissioning SERVER A.';
+
+export const printSummary = (report: AuditReport | undefined, ledgerPath: string, auditPath: string) => {
   if (!report) {
     console.log('\nStopped. State saved — re-run the same command to resume.');
     return;
@@ -170,13 +177,14 @@ const printSummary = (report: AuditReport | undefined, ledgerPath: string, audit
   }
   if (report.dryRun) {
     console.log('\nDRY RUN — nothing was written to SERVER B. This preview never clears SERVER A for decommissioning.');
-  } else if (report.ok && report.unresolvedCount > 0) {
-    console.log(
-      `\n✅ PASS — every asset is present on SERVER B, but ${report.unresolvedCount} album/tag/stack/person item(s) ` +
-        'are unresolved. Resolve or accept them (see the audit report) before decommissioning SERVER A.',
-    );
   } else if (report.ok) {
-    console.log('\n✅ PASS — every asset is present on SERVER B. SERVER A is safe to decommission.');
+    console.log(
+      report.unresolvedCount > 0
+        ? `\n✅ PASS — every copied asset is present on SERVER B, but ${report.unresolvedCount} album/tag/stack/person ` +
+            'item(s) are unresolved. Resolve or accept them (see the audit report) before decommissioning SERVER A.'
+        : '\n✅ PASS — every copied asset is present on SERVER B.',
+    );
+    console.log(LOCKED_WARNING);
   } else if (report.complete) {
     console.log(
       `\n⚠️  INCOMPLETE — ${t.missing} asset(s) missing, ${t.failed} failed. Re-run to resume; see the audit report.`,
@@ -228,8 +236,8 @@ async function runMigrate(raw: MigrateRawOptions) {
   ]);
 
   const [fromKey, toKey] = await Promise.all([from.getMyApiKey(), to.getMyApiKey()]);
-  checkPermissions(fromKey.permissions, SOURCE_REQUIRED, SOURCE_OPTIONAL, 'Source');
-  checkPermissions(toKey.permissions, DEST_REQUIRED, DEST_OPTIONAL, 'Destination');
+  checkPermissions(keyPermissions(fromKey), SOURCE_REQUIRED, SOURCE_OPTIONAL, 'Source');
+  checkPermissions(keyPermissions(toKey), DEST_REQUIRED, DEST_OPTIONAL, 'Destination');
   if (fromUser.email !== toUser.email) {
     console.warn(
       `Warning: source user (${fromUser.email}) differs from destination user (${toUser.email}). ` +
@@ -358,6 +366,7 @@ function printPreflight(options: MigrateOptions, from: ServerClient, to: ServerC
   for (const warning of warnings) {
     console.warn(`Warning: ${warning}`);
   }
+  console.log(`\n${LOCKED_WARNING}`);
   console.log('\nPreflight passed. Nothing was written to either server.');
 }
 

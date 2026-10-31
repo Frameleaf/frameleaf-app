@@ -25,14 +25,21 @@ const setup = (rows: QueueJobRow[]) => {
 
 describe('public queue job compatibility (FL-283)', () => {
   it('retains every legacy job name in runtime validation and the response schema', () => {
-    const legacyNames = Object.values(JobName).filter((name) => name !== JobName.PhotographyWorkflowRender);
+    const internal = new Set<JobName>([
+      JobName.PhotographyWorkflowRender,
+      JobName.AssetWarmFilmstrip,
+      JobName.AssetVideoFingerprintQueueAll,
+      JobName.AssetVideoFingerprint,
+      JobName.DescriptionFillerTagCleanup,
+    ]);
+    const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));
     const schema = QueueJobResponseDto.schema.shape.name;
 
     const document = z.toJSONSchema(schema);
     const root = document.$ref ? document.$defs![document.$ref.slice('#/$defs/'.length)] : document;
     expect(root.enum).toEqual(legacyNames);
     for (const name of legacyNames) expect(schema.parse(name)).toBe(name);
-    expect(schema.safeParse(JobName.PhotographyWorkflowRender).success).toBe(false);
+    for (const name of internal) expect(schema.safeParse(name).success).toBe(false);
   });
 
   it.each([undefined, ownerId])(

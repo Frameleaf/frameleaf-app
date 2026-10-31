@@ -10,7 +10,7 @@ import type { Translations } from 'svelte-i18n';
  *
  * - Selection is a multi-select state separate from the open item, and the floating selection bar
  *   carries the complete bulk set: favorite, add to album, share link, download, stack, link motion
- *   clips, change date, description and location, archive, Mark Sensitive and Unmark Sensitive,
+ *   clips, change date, description and location, archive, Lock and Unlock,
  *   tag, delete with undo, and the per-item refresh jobs.
  * - Trash undo uses restore; partial failures report per item.
  *
@@ -158,7 +158,7 @@ export type BulkActionContext = {
    * there (FL-48 map/space follow-ups). Combined with `snapshot`, this narrows the matching set's
    * actions to the two a viewer's role always permits: download and adding what they can see to an
    * album of their own — neither one touches the space. The album-level actions (remove from album,
-   * tag, change date, archive, Mark Sensitive, stacking, ...) need the editor or owner role the server
+   * tag, change date, archive, Lock, stacking, ...) need the editor or owner role the server
    * already checks per item; offering them over a set the client has not resolved would just fail
    * across items the member cannot act on. A manually built selection is unaffected by this flag —
    * those items are already visible, and the per-item check still decides, as it always has.
@@ -166,6 +166,11 @@ export type BulkActionContext = {
   spaceViewerMatching?: boolean;
   /** The browser's share sheet takes files, so "Send a copy…" can be offered (`canSendCopies`). */
   canSendCopy?: boolean;
+  /**
+   * False when the server has trash turned off. A delete then cannot be undone, so the bar offers the
+   * confirmed permanent delete in its place, as the viewer's delete does (FL-529).
+   */
+  trashEnabled?: boolean;
 };
 
 /** The only actions a shared space's "select everything matching" offers a viewer (FL-48). */
@@ -227,6 +232,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
   const readOnly = !!context.readOnly;
   /** The ordinary library destinations: neither trash nor the Locked folder. */
   const live = !trash && !locked && !readOnly;
+  const noTrash = context.trashEnabled === false;
   const snapshot = !!context.snapshot;
   /** A shared-space viewer's matching set: only download and add-to-album are ever available. */
   const spaceViewerMatching = snapshot && !!context.spaceViewerMatching;
@@ -301,7 +307,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       danger: true,
       // Trash is reversible: it offers undo rather than a confirmation.
       undoable: true,
-      available: live && has,
+      available: live && has && !noTrash,
     },
     {
       id: 'restore',
@@ -317,8 +323,9 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       group: 'primary',
       danger: true,
       confirm: true,
-      // The Locked folder has no trash step of its own: a delete there is the permanent one.
-      available: !readOnly && (trash || locked) && has,
+      // The Locked folder has no trash step of its own: a delete there is the permanent one. Neither
+      // does a server with trash turned off.
+      available: !readOnly && (trash || locked || noTrash) && has,
     },
     {
       id: 'stack',
@@ -403,7 +410,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
-      // Mark Sensitive is the lock (FL-34, the prototype's `lock`): one lock record per item, metadata
+      // Lock (FL-34, the prototype's `lock`): one lock record per item, metadata
       // that never relocates it. Album membership and organization are untouched; the item is hidden
       // everywhere until the session is unlocked, and the Locked view lists it.
       id: 'mark-sensitive',
@@ -413,7 +420,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has && (unknown || any((asset) => !asset.isLocked)),
     },
     {
-      // Unmark Sensitive is Unlock: each item goes back exactly where it was. Offered in the Locked view
+      // Unlock: each item goes back exactly where it was. Offered in the Locked view
       // and wherever an unlocked session shows a marked item; a Locked-rule match the Locked view also
       // lists has no lock to remove, so it alone never offers it.
       id: 'unmark-sensitive',
@@ -532,9 +539,16 @@ export const primaryBulkActions = (actions: BulkAction[], trash: boolean, locked
   const byId = bulkActionById(actions);
   const order = trash ? TRASH_PRIMARY_BULK_ACTIONS : locked ? LOCKED_PRIMARY_BULK_ACTIONS : PRIMARY_BULK_ACTIONS;
   return order
-    .map((id) =>
-      id === 'favorite' && !byId.favorite?.available && byId.unfavorite?.available ? byId.unfavorite : byId[id],
-    )
+    .map((id) => {
+      if (id === 'favorite' && !byId.favorite?.available && byId.unfavorite?.available) {
+        return byId.unfavorite;
+      }
+      // With trash off the permanent delete takes Delete's slot.
+      if (id === 'delete' && !byId.delete?.available) {
+        return byId['delete-permanently'];
+      }
+      return byId[id];
+    })
     .filter((action): action is BulkAction => !!action?.available);
 };
 
