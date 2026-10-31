@@ -118,7 +118,16 @@ export class EdgeCertificateRepository {
 
   /** The ACME client for a directory and account key. Specs replace this with a fake CA. */
   client(directoryUrl: string, accountKey: string): AcmeClient {
-    return new AcmeLibraryClient({ directoryUrl, accountKey });
+    return new (class extends AcmeLibraryClient {
+      // createAccount reuses this path for existing accounts; new-account terms are not an update.
+      override updateAccount(
+        data: Parameters<AcmeLibraryClient['updateAccount']>[0] & { termsOfServiceAgreed?: boolean } = {},
+      ) {
+        const update = { ...data };
+        delete update.termsOfServiceAgreed;
+        return super.updateAccount(update);
+      }
+    })({ directoryUrl, accountKey });
   }
 
   /** A new P-256 key and a CSR for `names`; the key stays in this process until it is written 0600. */
