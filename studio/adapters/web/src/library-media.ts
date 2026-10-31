@@ -297,6 +297,8 @@ export function createLibraryMediaSeeder(options: {
   const seeded = new Set<string>()
   /** Assets already recorded as HDR originals (FL-97). */
   const hdrMarked = new Set<string>()
+  /** Fresh assets whose record a running seed is still creating and linking, by id. */
+  const pending = new Map<string, Promise<void>>()
   /** Removed from the bin by the person; never carried to another mount. */
   const removed = new Set<string>()
   /** What was linked to each recent mount's project here (the last few mounts only). */
@@ -360,39 +362,54 @@ export function createLibraryMediaSeeder(options: {
       // Reserve before the first await so an overlapping seed cannot process the same asset twice.
       const freshIds = new Set(fresh.map((asset) => asset.id))
       for (const id of freshIds) seeded.add(id)
+      let finish!: () => void
+      const work = new Promise<void>((resolve) => (finish = resolve))
+      for (const id of freshIds) pending.set(id, work)
       const now = Date.now()
       // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
       for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
+      let started = 0
+      try {
+        for (const asset of fresh) {
+          started++
+          if (asset.hdr) hdrMarked.add(asset.id)
+          if (controller.signal.aborted) return
+          const record = initialMediaRecord(asset, now)
+          if (!(await getMedia(asset.id))) {
+            await createMedia(record)
+          }
+          if (controller.signal.aborted) return
+          // Media bytes stay on the server until something actually reads them.
+          workspace.putLazyFile(
+            [...mediaDir(asset.id), record.fileName],
+            () => fetchBlob(sourceUrlOf(asset), controller.signal),
+            record.mimeType,
+          )
+          blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
+          await link(projectId(), asset.id)
+        }
+      } finally {
+        // Assets this seed never started stay free for a later seed; started ones keep their reservation.
+        for (const asset of fresh.slice(started)) seeded.delete(asset.id)
+        for (const id of freshIds) if (pending.get(id) === work) pending.delete(id)
+        finish()
+      }
+      if (fresh.length > 0) onChange()
+      // Another seed may still be creating the records this one skipped: wait for them. This seed has
+      // finished its own records first, so two overlapping seeds never wait on each other.
+      await Promise.all(assets.filter((asset) => !freshIds.has(asset.id)).map((asset) => pending.get(asset.id)))
       // FL-97: the server names HDR originals once they are placed; record it on media the bin
       // already holds, so the project becomes HDR without a remount.
       let marked = false
       for (const asset of assets) {
         if (!asset.hdr || freshIds.has(asset.id) || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
-        hdrMarked.add(asset.id)
         if (await getMedia(asset.id)) {
           await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
+          hdrMarked.add(asset.id)
           marked = true
         }
       }
       if (marked) onChange()
-      for (const asset of fresh) {
-        if (asset.hdr) hdrMarked.add(asset.id)
-        if (controller.signal.aborted) return
-        const record = initialMediaRecord(asset, now)
-        if (!(await getMedia(asset.id))) {
-          await createMedia(record)
-        }
-        if (controller.signal.aborted) return
-        // Media bytes stay on the server until something actually reads them.
-        workspace.putLazyFile(
-          [...mediaDir(asset.id), record.fileName],
-          () => fetchBlob(sourceUrlOf(asset), controller.signal),
-          record.mimeType,
-        )
-        blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
-        await link(projectId(), asset.id)
-      }
-      if (fresh.length > 0) onChange()
       // Probe one at a time in the background, handoff order first: it is the starting cut.
       probing = probing.then(async () => {
         for (const asset of fresh) await enrich(asset)

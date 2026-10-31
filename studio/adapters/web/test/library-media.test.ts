@@ -225,6 +225,52 @@ describe('library media across editor remounts', () => {
     }
   })
 
+  it('lets an overlapping seed return only once the records it skipped exist', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-wait', onChange: () => {} })
+    const assets = [libraryAsset, { ...libraryAsset, id: IMPORTED }]
+    try {
+      const first = media.seed(assets)
+      await media.seed(assets)
+      expect(await getMedia(IMPORTED)).toBeDefined()
+      expect((await getProjectMediaIds('fl-wait')).toSorted()).toEqual([LIBRARY, IMPORTED].toSorted())
+      await first
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('records HDR reported by an overlapping seed while another seed creates the record', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-hdr-overlap', onChange: () => {} })
+    try {
+      await Promise.all([media.seed([libraryAsset]), media.seed([{ ...libraryAsset, hdr: true }])])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('frees the assets a failed seed never started, so a later seed adds them', async () => {
+    let fail = true
+    const media = createLibraryMediaSeeder({
+      workspace,
+      projectId: () => {
+        if (fail) throw new Error('project unavailable')
+        return 'fl-retry'
+      },
+      onChange: () => {},
+    })
+    const assets = [libraryAsset, { ...libraryAsset, id: IMPORTED }]
+    try {
+      await expect(media.seed(assets)).rejects.toThrow('project unavailable')
+      fail = false
+      await media.seed(assets)
+      // The asset that failed keeps its reservation; the one never started is added now.
+      expect(await getProjectMediaIds('fl-retry')).toEqual([IMPORTED])
+    } finally {
+      media.dispose()
+    }
+  })
+
   it('marks a restored item as HDR again when the server reports it after the restore (FL-636)', async () => {
     const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib-hdr', onChange: () => {} })
     try {
