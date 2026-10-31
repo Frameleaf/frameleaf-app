@@ -43,12 +43,12 @@ describe('locked-key IPC', () => {
 
   it('a load message loads the holder and a drop message drops it', () => {
     attachLockedKeyIpc(holder, channel);
-    const { message, privateKey } = loadMessage('owner', '2026-11-01T00:00:00.000Z', ['viewer']);
+    const { message, privateKey } = loadMessage('owner', '2099-11-01T00:00:00.000Z', ['viewer']);
 
     channel.emit('message', message);
 
     expect(holder.has('owner')).toBe(true);
-    expect(holder.expiresAt('owner')).toEqual(new Date('2026-11-01T00:00:00.000Z'));
+    expect(holder.expiresAt('owner')).toEqual(new Date('2099-11-01T00:00:00.000Z'));
     expect(holder.canRead('viewer', 'owner')).toBe(true);
     const held = holder.list()[0];
     expect(held.privateKey.equals(privateKey)).toBe(true);
@@ -158,11 +158,41 @@ describe('locked-key IPC', () => {
     });
 
     it('forgets dropped and expired keys', () => {
-      relay.record(loadMessage('a').message);
-      relay.record(loadMessage('b', '2000-01-01T00:00:00.000Z').message);
-      relay.record({ type: 'locked-key', action: 'drop', userId: 'a' });
+      vi.useFakeTimers({ now: new Date('2026-10-31T00:00:00Z') });
+      try {
+        relay.record(loadMessage('a').message);
+        relay.record(loadMessage('b', '2026-10-31T00:05:00.000Z').message);
+        relay.record({ type: 'locked-key', action: 'drop', userId: 'a' });
+        vi.setSystemTime(new Date('2026-10-31T00:06:00Z'));
 
+        expect(relay.replay()).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refuses to relay a load that has already expired', () => {
+      const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
+      expect(relay.record(loadMessage('a', '2000-01-01T00:00:00.000Z').message)).toBe(false);
+      expect(warn).toHaveBeenCalledOnce();
       expect(relay.replay()).toEqual([]);
+    });
+
+    it('a load with fewer grants revokes the others, in the relay and in a worker', () => {
+      const { message } = loadMessage('owner', null, ['a', 'b']);
+      const worker = new LockedKeyHolder();
+      const workerChannel = new EventEmitter();
+      attachLockedKeyIpc(worker, workerChannel);
+      const revoke = { ...message, grants: ['b'] };
+      for (const sent of [message, revoke]) {
+        relay.record(sent);
+        workerChannel.emit('message', sent);
+      }
+
+      expect(worker.canRead('a', 'owner')).toBe(false);
+      expect(worker.canRead('b', 'owner')).toBe(true);
+      expect(relay.replay()).toEqual([revoke]);
+      worker.clear();
     });
 
     it('clear returns the messages that empty a worker, pins included', () => {

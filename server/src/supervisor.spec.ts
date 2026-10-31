@@ -1,3 +1,4 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { EventEmitter } from 'node:events';
 import { ExitCode, FrameleafWorker } from 'src/enum.js';
 import { API_STARTUP_RETRY_EXIT_CODE } from 'src/utils/shutdown.js';
@@ -471,12 +472,13 @@ describe('supervisor worker-local restart lifecycle', () => {
   });
 
   describe('FL-721 Locked keys', () => {
+    const pair = generateKeyPair();
     const load = {
       type: 'locked-key',
       action: 'load',
       userId: 'owner',
-      publicKey: Buffer.alloc(32, 9).toString('base64'),
-      privateKey: Buffer.alloc(32, 7).toString('base64'),
+      publicKey: pair.publicKey.toString('base64'),
+      privateKey: pair.privateKey.toString('base64'),
       expiresAt: null,
       grants: [],
     } as const;

@@ -1,4 +1,6 @@
 import { keyId as toKeyId } from '@frameleaf/locked-crypto';
+import { createPrivateKey, createPublicKey } from 'node:crypto';
+import { inspect } from 'node:util';
 
 /** FL-721 (spec §4.3): how often every process drops the keys whose ask-again time has passed. */
 const SWEEP_INTERVAL_MS = 60_000;
@@ -14,6 +16,56 @@ export interface HeldKey {
 }
 
 type Entry = Omit<HeldKey, 'pinned'> & { grants: Set<string> };
+
+const REDACTED = '[redacted]';
+/** DER prefix of a PKCS#8 X25519 private key (RFC 8410), followed by the 32 raw bytes. */
+const PKCS8_X25519_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex');
+
+const derivePublicKey = (privateKey: Buffer) => {
+  const der = Buffer.concat([PKCS8_X25519_PREFIX, privateKey]);
+  try {
+    const key = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+    return Buffer.from(createPublicKey(key).export({ format: 'jwk' }).x!, 'base64url');
+  } finally {
+    der.fill(0);
+  }
+};
+
+/**
+ * A held key as handed out by the holder. Printing it (`console.log`, `util.inspect`, a logger) or
+ * `JSON.stringify` shows who and until when, never the private key.
+ */
+class HeldKeyValue implements HeldKey {
+  userId: string;
+  keyId: Buffer;
+  privateKey: Buffer;
+  expiresAt: Date | null;
+  pinned: boolean;
+  publicKey: Buffer;
+
+  constructor(entry: Entry, pinned: boolean) {
+    this.userId = entry.userId;
+    this.keyId = entry.keyId;
+    this.privateKey = entry.privateKey;
+    this.expiresAt = entry.expiresAt;
+    this.pinned = pinned;
+    this.publicKey = entry.publicKey;
+  }
+
+  toJSON() {
+    return {
+      userId: this.userId,
+      keyId: this.keyId.toString('hex'),
+      expiresAt: this.expiresAt,
+      pinned: this.pinned,
+      privateKey: REDACTED,
+    };
+  }
+
+  [inspect.custom]() {
+    return `HeldKey ${JSON.stringify(this.toJSON())}`;
+  }
+}
 
 /**
  * FL-721 (spec §4.3): the unwrapped Locked private keys of this process, in memory only.
@@ -39,7 +91,13 @@ export class LockedKeyHolder {
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
       throw new Error('Invalid Locked key expiry');
     }
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      throw new Error('This Locked key has already expired');
+    }
     const keyId = toKeyId(publicKey);
+    if (!derivePublicKey(privateKey).equals(publicKey)) {
+      throw new Error('The Locked private key does not match its public key');
+    }
     const previous = this.keys.get(userId);
     const sameKey = previous?.keyId.equals(keyId) ?? false;
     if (previous && previous.privateKey !== privateKey) {
@@ -96,6 +154,14 @@ export class LockedKeyHolder {
 
   grant(viewerId: string, ownerId: string): void {
     this.keys.get(ownerId)?.grants.add(viewerId);
+  }
+
+  /** Replaces the owner's grants with exactly these viewers (an IPC `load` is authoritative). */
+  setGrants(ownerId: string, viewerIds: string[]): void {
+    const entry = this.keys.get(ownerId);
+    if (entry) {
+      entry.grants = new Set(viewerIds);
+    }
   }
 
   canRead(viewerId: string, ownerId: string): boolean {
@@ -164,8 +230,17 @@ export class LockedKeyHolder {
     this.timer.unref();
   }
 
-  private toHeld({ grants: _, ...entry }: Entry): HeldKey {
-    return { ...entry, pinned: this.pinned.has(entry.userId) };
+  private toHeld(entry: Entry): HeldKey {
+    return new HeldKeyValue(entry, this.pinned.has(entry.userId));
+  }
+
+  /** Printing or serializing the holder names the people whose keys are loaded, never the keys. */
+  toJSON() {
+    return { keys: this.list().map((key) => (key as HeldKeyValue).toJSON()) };
+  }
+
+  [inspect.custom]() {
+    return `LockedKeyHolder ${JSON.stringify(this.toJSON())}`;
   }
 }
 

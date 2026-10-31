@@ -7,6 +7,7 @@ import type { LockedKeyFile } from '@frameleaf/locked-crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
 
 const DIRECTORY = 'locked-keys';
+const FORMAT = 'frameleaf-locked-key/1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
@@ -18,15 +19,19 @@ const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 
  */
 @Injectable()
 export class LockedKeyRepository {
+  /** Null when there is no key file, or when it is not a version-1 key file for this person. */
   async read(userId: string): Promise<LockedKeyFile | null> {
+    let text: string;
     try {
-      return JSON.parse(await fs.readFile(this.path(userId), 'utf8')) as LockedKeyFile;
+      text = await fs.readFile(this.path(userId), 'utf8');
     } catch (error) {
       if (isMissing(error)) {
         return null;
       }
       throw error;
     }
+    const file = JSON.parse(text) as Partial<LockedKeyFile> | null;
+    return file?.format === FORMAT && file.userId === userId ? (file as LockedKeyFile) : null;
   }
 
   /** Atomic: a temporary file is written and flushed, renamed over the old one, then the folder is flushed. */
@@ -34,6 +39,8 @@ export class LockedKeyRepository {
     const path = this.path(file.userId);
     const directory = this.directory();
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    // a folder made earlier (or by hand) may be wider; mkdir leaves an existing one as it is
+    await fs.chmod(directory, 0o700);
     const temporary = `${path}.${randomUUID()}.tmp`;
     try {
       const handle = await fs.open(temporary, 'wx', 0o600);
@@ -65,7 +72,11 @@ export class LockedKeyRepository {
     }
     try {
       const { size } = await handle.stat();
-      await handle.write(randomBytes(size), 0, size, 0);
+      const noise = randomBytes(size);
+      for (let written = 0; written < size;) {
+        const { bytesWritten } = await handle.write(noise, written, size - written, written);
+        written += bytesWritten;
+      }
       await handle.sync();
     } finally {
       await handle.close();
@@ -81,7 +92,8 @@ export class LockedKeyRepository {
       if (!name.endsWith('.json') || !UUID.test(userId)) {
         continue;
       }
-      const file = await this.read(userId);
+      // one unreadable file must not hide everyone else's
+      const file = await this.read(userId).catch(() => null);
       if (file) {
         files.push(file);
       }

@@ -1,4 +1,5 @@
 import { generateKeyPair, keyId } from '@frameleaf/locked-crypto';
+import { inspect } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LockedKeyHolder } from 'src/utils/locked-key-holder.js';
 
@@ -9,6 +10,8 @@ describe(LockedKeyHolder.name, () => {
   let sut: LockedKeyHolder;
 
   beforeEach(() => {
+    // the expiry dates below are all after this moment
+    vi.useFakeTimers({ now: new Date('2026-10-31T00:00:00Z') });
     sut = new LockedKeyHolder();
   });
 
@@ -109,6 +112,60 @@ describe(LockedKeyHolder.name, () => {
     expect(id).toHaveLength(8);
     expect(sut.forKeyId(id)).toMatchObject({ userId: 'b', privateKey: b.privateKey, expiresAt: null, pinned: false });
     expect(sut.forKeyId(Buffer.alloc(8))).toBeUndefined();
+  });
+
+  it('never prints or serializes a private key', () => {
+    const { publicKey, privateKey } = generateKeyPair();
+    sut.load(owner, publicKey, privateKey, null);
+    const secrets = [privateKey.toString('hex'), privateKey.toString('base64')];
+    const bytes = [...privateKey].join(',');
+    const held = sut.forKeyId(keyId(publicKey))!;
+
+    for (const text of [
+      JSON.stringify(held),
+      JSON.stringify(sut.list()),
+      JSON.stringify(sut),
+      inspect(held, { depth: 10 }),
+      inspect(sut.list(), { depth: 10 }),
+      inspect(sut, { depth: 10, showHidden: true }),
+      inspect({ wrapped: held }),
+    ]) {
+      for (const secret of secrets) expect(text).not.toContain(secret);
+      expect(text).not.toContain(bytes);
+      expect(text).not.toMatch(/<Buffer/);
+    }
+    expect(JSON.parse(JSON.stringify(held))).toEqual({
+      userId: owner,
+      keyId: keyId(publicKey).toString('hex'),
+      expiresAt: null,
+      pinned: false,
+      privateKey: '[redacted]',
+    });
+    expect(held.privateKey).toBe(privateKey);
+  });
+
+  it('setGrants replaces the grants, so a viewer can lose access', () => {
+    const { publicKey, privateKey } = generateKeyPair();
+    sut.load(owner, publicKey, privateKey, null);
+    sut.setGrants(owner, ['a', 'b']);
+    sut.setGrants(owner, ['b']);
+
+    expect(sut.canRead('a', owner)).toBe(false);
+    expect(sut.canRead('b', owner)).toBe(true);
+    expect(sut.grantsOf(owner)).toEqual(['b']);
+  });
+
+  it('refuses a private key that does not belong to the public key', () => {
+    const a = generateKeyPair();
+    const b = generateKeyPair();
+    expect(() => sut.load(owner, a.publicKey, b.privateKey, null)).toThrow('does not match');
+    expect(sut.has(owner)).toBe(false);
+  });
+
+  it('refuses a key whose expiry has already passed', () => {
+    const { publicKey, privateKey } = generateKeyPair();
+    expect(() => sut.load(owner, publicKey, privateKey, new Date('2026-10-30T23:59:59Z'))).toThrow('already expired');
+    expect(sut.has(owner)).toBe(false);
   });
 
   it('onLoad tells listeners until they unsubscribe', () => {

@@ -87,9 +87,7 @@ export const applyLockedKeyMessage = (holder: LockedKeyHolder, message: LockedKe
         privateKey.fill(0);
         throw error;
       }
-      for (const viewerId of message.grants) {
-        holder.grant(viewerId, message.userId);
-      }
+      holder.setGrants(message.userId, message.grants);
       break;
     }
     case 'drop': {
