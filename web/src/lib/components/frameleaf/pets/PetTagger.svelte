@@ -33,6 +33,7 @@
     type PetObservationResponseDto,
     type PetResponseDto,
   } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -220,8 +221,12 @@
         open = false;
       }
     } catch (error_) {
+      const message = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
       if (stillShown(source)) {
-        error = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
+        error = message;
+      } else {
+        // The viewer has moved on: say so in a toast rather than on the photo now shown.
+        toastManager.warning(message);
       }
     } finally {
       saving = false;

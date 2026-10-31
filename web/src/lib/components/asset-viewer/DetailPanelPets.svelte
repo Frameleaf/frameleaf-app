@@ -48,7 +48,9 @@
 
   let pets = $state<PetResponseDto[]>([]);
   let observations = $state<PetObservationResponseDto[]>([]);
+  // The photo the list was loaded for, by id and checksum: a replaced original reloads it.
   let loadedFor = $state<string | null>(null);
+  let loadGeneration = 0;
   let taggerOpen = $state(false);
   let busy = $state(false);
 
@@ -71,27 +73,31 @@
   const addable = $derived(pets.filter((pet) => confirmed.every((observation) => observation.petId !== pet.id)));
   const nameOf = (pet: PetResponseDto | undefined) => pet?.name || $t('frameleaf_pets_unnamed');
 
-  const load = async (assetId: string) => {
+  const photoKey = () => `${asset.id}:${asset.checksum}`;
+
+  // Only the latest load is applied, and only while its photo (id and checksum) is still shown.
+  const load = async () => {
+    const generation = ++loadGeneration;
+    const key = photoKey();
     try {
       const [allPets, found] = await Promise.all([
         getAllPets({ withHidden: false }),
-        getAssetPetObservations({ assetId }),
+        getAssetPetObservations({ assetId: asset.id }),
       ]);
-      // A late answer for a photo the viewer has moved away from is dropped.
-      if (assetId !== asset.id) {
+      if (generation !== loadGeneration || key !== photoKey()) {
         return;
       }
       pets = allPets;
       observations = found;
-      loadedFor = assetId;
+      loadedFor = key;
     } catch (error) {
       handleError(error, $t('frameleaf_viewer_pets_error'));
     }
   };
 
   $effect(() => {
-    if (available && loadedFor !== asset.id) {
-      void load(asset.id);
+    if (available && loadedFor !== photoKey()) {
+      void load();
     }
   });
 
@@ -116,13 +122,20 @@
   type Source = { id: string; checksum: string };
   const currentSource = (): Source => ({ id: asset.id, checksum: asset.checksum });
   const onScreen = (source: Source) => source.id === asset.id && source.checksum === asset.checksum;
+  // Applies a finished write to the list on screen. If the same photo's original was replaced
+  // meanwhile, the list is reloaded from the server instead (a newer load supersedes older ones).
+  const settle = (source: Source, apply: () => void) => {
+    if (onScreen(source)) {
+      apply();
+    } else if (source.id === asset.id && available) {
+      void load();
+    }
+  };
 
   const undoAdd = (observation: PetObservationResponseDto, source: Source) => async () => {
     try {
       await deletePetObservation({ id: observation.id, expectedChecksum: source.checksum });
-      if (onScreen(source)) {
-        removeLocal(observation.id);
-      }
+      settle(source, () => removeLocal(observation.id));
       toastManager.primary($t('frameleaf_pets_undone'));
     } catch (error) {
       reportFailure(error);
@@ -130,9 +143,7 @@
   };
 
   const added = (observation: PetObservationResponseDto, pet: PetResponseDto, source: Source) => {
-    if (onScreen(source)) {
-      upsertLocal(observation);
-    }
+    settle(source, () => upsertLocal(observation));
     toastPetDecision(
       $t('frameleaf_viewer_pets_added', { values: { name: nameOf(pet) } }),
       undoAdd(observation, source),
@@ -161,9 +172,7 @@
     busy = true;
     try {
       await deletePetObservation({ id: observation.id, expectedChecksum: source.checksum });
-      if (onScreen(source)) {
-        removeLocal(observation.id);
-      }
+      settle(source, () => removeLocal(observation.id));
       toastPetDecision($t('frameleaf_viewer_pets_removed', { values: { name: nameOf(pet) } }), async () => {
         try {
           // Undo writes the same decision back, region and all, on the photo it was removed from.
@@ -171,9 +180,7 @@
             id: observation.petId,
             petObservationCreateDto: observationToCreate(observation, source.checksum),
           });
-          if (onScreen(source)) {
-            upsertLocal(restored);
-          }
+          settle(source, () => upsertLocal(restored));
           toastManager.primary($t('frameleaf_pets_undone'));
         } catch (error) {
           reportFailure(error);
@@ -211,7 +218,7 @@
       {/if}
     </div>
 
-    {#if pets.length === 0 && loadedFor === asset.id}
+    {#if pets.length === 0 && loadedFor === photoKey()}
       <p class="muted">
         <a href={Route.pets()}>{$t('frameleaf_viewer_pets_no_pets')}</a>
       </p>

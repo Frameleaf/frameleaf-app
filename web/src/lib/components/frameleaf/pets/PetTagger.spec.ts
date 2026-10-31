@@ -5,6 +5,7 @@ import {
   type PetObservationResponseDto,
   type PetResponseDto,
 } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -205,6 +206,26 @@ describe('PetTagger', () => {
       id: biscuit.id,
       petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3Vt' },
     });
+  });
+
+  it('reports a failed save in a toast once the viewer has moved on', async () => {
+    const warning = vi.spyOn(toastManager, 'warning');
+    const pending = deferredPromise<PetObservationResponseDto>();
+    sdkMock.createPetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.createPetObservation>);
+    const asset = assetFactory.build({ id: 'asset-1', checksum: 'c3Vt', originalFileName: 'garden.jpg' });
+    const props = { asset, pets: [biscuit], petId: biscuit.id, onSaved: vi.fn(), onClose: vi.fn() };
+    const view = render(PetTagger, props);
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_pet_tagger_whole_photo }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_pet_tagger_save }));
+
+    await view.rerender({
+      ...props,
+      asset: assetFactory.build({ id: 'asset-2', checksum: 'b3Ro', originalFileName: 'beach.jpg' }),
+    });
+    pending.reject(new Error('offline'));
+
+    await waitFor(() => expect(warning).toHaveBeenCalledWith(en.frameleaf_viewer_pets_error));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('keeps the dialog open and explains a photo that changed meanwhile', async () => {

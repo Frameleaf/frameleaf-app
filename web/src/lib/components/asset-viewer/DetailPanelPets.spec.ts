@@ -158,7 +158,7 @@ describe('DetailPanelPets', () => {
     expect(screen.queryByText('Biscuit')).not.toBeInTheDocument();
   });
 
-  it('leaves the list alone when the original is replaced while an add is in flight', async () => {
+  it('reloads the list instead of applying an add that finishes after the original was replaced', async () => {
     const pending = deferredPromise<PetObservationResponseDto>();
     sdkMock.createPetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.createPetObservation>);
     const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
@@ -169,9 +169,27 @@ describe('DetailPanelPets', () => {
     await view.rerender({ asset: { ...asset, checksum: 'bmV3Cg==' }, isOwner: true });
     pending.resolve(observation({ petId: 'pet-rex' }));
 
-    await waitFor(() => expect(sdkMock.createPetObservation).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(3));
     expect(screen.queryByRole('button', { name: 'Remove Rex from this photo' })).not.toBeInTheDocument();
+  });
+
+  it('reloads the list when a removal finishes after the original was replaced', async () => {
+    sdkMock.getAssetPetObservations.mockResolvedValue([observation()]);
+    const pending = deferredPromise<void>();
+    sdkMock.deletePetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.deletePetObservation>);
+    const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
+    const view = render(DetailPanelPets, { asset, isOwner: true });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Biscuit from this photo' }));
+    await view.rerender({ asset: { ...asset, checksum: 'bmV3Cg==' }, isOwner: true });
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(2));
+    sdkMock.getAssetPetObservations.mockResolvedValue([]);
+    pending.resolve();
+
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Remove Biscuit from this photo' })).not.toBeInTheDocument(),
+    );
   });
 
   it('says so when the original changed since the photo was opened', async () => {
