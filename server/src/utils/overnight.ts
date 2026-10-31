@@ -163,9 +163,11 @@ export const lastOvernightStart = (
 ): DateTime | null => {
   const [hour, minute] = startTime.split(':').map(Number);
   const today = now.setZone(zone).set({ hour, minute, second: 0, millisecond: 0 });
+  // No chosen day means every day, as in `overnightCron`.
+  const everyDay = days.every((day) => day < 0 || day > 6);
   for (let back = 0; back <= 7; back++) {
     const start = today.minus({ days: back });
-    if (start <= now && days.includes(start.weekday % 7)) {
+    if (start <= now && (everyDay || days.includes(start.weekday % 7))) {
       return start;
     }
   }

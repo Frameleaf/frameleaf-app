@@ -38,12 +38,14 @@ async function main() {
     const first = await lines.next();
     assert.ok(!first.done);
     await loadAdmittedWorker(JSON.parse(first.value));
+    clearTimeout(deadline);
   } catch {
     // Never emit credentials, paths, media, arbitrary input or application errors.
     emit({ state: 'failed', error: 'crash_worker_refused' });
     process.exitCode = 1;
+    // Keep bounding work a failed worker may have admitted, without holding a clean exit open.
+    deadline.unref();
   } finally {
-    clearTimeout(deadline);
     input.close();
   }
 }
