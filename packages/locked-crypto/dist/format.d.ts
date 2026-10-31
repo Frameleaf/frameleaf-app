@@ -30,8 +30,11 @@ export declare function generateKeyPair(): {
 export declare function keyId(publicKey: Buffer): Buffer;
 export declare function isLockedFile(path: string): Promise<boolean>;
 export declare function readHeader(path: string): Promise<LockedHeader>;
-export declare function encryptFile(src: string, dst: string, recipients: Recipient[], info: LockedFileInfo): Promise<{
+export declare function encryptFile(src: string, dst: string, recipients: Recipient[], info: LockedFileInfo, options?: {
+    verify?: boolean;
+}): Promise<{
     plaintextLength: number;
+    sha256?: Buffer;
 }>;
 export declare function openDecrypt(path: string, privateKey: Buffer, range?: {
     start: number;

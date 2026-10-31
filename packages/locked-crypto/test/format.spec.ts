@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, open, readFile, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,6 +86,19 @@ describe('locked file format', () => {
       expect((await readHeader(dst)).plaintextLength).toBe(size);
       await expect(decryptFile(dst, out, owner.privateKey)).resolves.toEqual(info);
       expect((await readFile(out)).equals(plain)).toBe(true);
+    }
+  });
+
+  it('with verify, decrypts what it wrote with the file key and returns the SHA-256 of the plaintext', async () => {
+    for (const size of [0, 1, SEGMENT_SIZE, 2 * SEGMENT_SIZE + 3]) {
+      const plain = randomBytes(size);
+      const src = path('plain');
+      const dst = path('locked');
+      await writeFile(src, plain);
+      const result = await encryptFile(src, dst, [{ publicKey: owner.publicKey }], info, { verify: true });
+      expect(result.plaintextLength).toBe(size);
+      expect(result.sha256?.equals(createHash('sha256').update(plain).digest())).toBe(true);
+      expect(await isLockedFile(dst)).toBe(true);
     }
   });
 

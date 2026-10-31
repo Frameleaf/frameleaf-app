@@ -223,12 +223,44 @@ export async function readHeader(path) {
     const { version, plaintextLength, keyIds, headerLength } = await withHandle(path, parseHeader);
     return { version, plaintextLength, keyIds, headerLength };
 }
-export async function encryptFile(src, dst, recipients, info) {
+const verifyWithFileKey = async (path, fileKey, prefix, info) => withHandle(path, async (handle) => {
+    const header = await parseHeader(handle);
+    if (!header.prefix.equals(prefix))
+        throw corrupt('The locked file prefix changed while it was written');
+    await assertFileLength(handle, header);
+    if (JSON.stringify(openInfo(header, fileKey)) !== JSON.stringify(info)) {
+        throw corrupt('Locked file info does not match what was written');
+    }
+    const segmentKey = hkdf(fileKey, header.prefix, 'segment');
+    const hash = createHash('sha256');
+    try {
+        const count = segmentCount(header.plaintextLength);
+        for (let index = 0; index < count; index++) {
+            const sealedLength = segmentPlainLength(header.plaintextLength, index) + TAG;
+            const sealed = await readFully(handle, sealedLength, header.headerLength + index * SEALED_SEGMENT);
+            if (sealed.length !== sealedLength)
+                throw corrupt(`Locked file segment ${index} is truncated`);
+            try {
+                hash.update(unseal(segmentKey, segmentNonce(index), sealed, segmentAad(index, index === count - 1)));
+            }
+            catch {
+                throw corrupt(`Locked file segment ${index} does not authenticate`);
+            }
+        }
+    }
+    finally {
+        segmentKey.fill(0);
+    }
+    return hash.digest();
+});
+export async function encryptFile(src, dst, recipients, info, options = {}) {
     return withHandle(src, async (input) => {
         const { size: plaintextLength } = await input.stat();
         const prefix = buildPrefix(plaintextLength);
         const fileKey = randomBytes(32);
         const segmentKey = hkdf(fileKey, prefix, 'segment');
+        const sourceHash = createHash('sha256');
+        let sha256;
         try {
             const recipientList = buildRecipients(prefix, fileKey, recipients);
             const infoCiphertext = seal(hkdf(fileKey, prefix, 'info'), ZERO_NONCE, Buffer.from(JSON.stringify(info), 'utf8'));
@@ -249,18 +281,31 @@ export async function encryptFile(src, dst, recipients, info) {
                     const plain = await readFully(input, length, index * SEGMENT_SIZE);
                     if (plain.length !== length)
                         throw new Error('Source file changed while it was being encrypted');
+                    sourceHash.update(plain);
                     await write(seal(segmentKey, segmentNonce(index), plain, segmentAad(index, index === count - 1)));
                 }
                 if ((await readFully(input, 1, plaintextLength)).length > 0) {
                     throw new Error('Source file changed while it was being encrypted');
                 }
             });
+            if (options.verify) {
+                try {
+                    sha256 = await verifyWithFileKey(dst, fileKey, prefix, info);
+                    if (!sha256.equals(sourceHash.digest())) {
+                        throw corrupt('The locked file does not decrypt to its source');
+                    }
+                }
+                catch (error) {
+                    await unlink(dst).catch(() => { });
+                    throw error;
+                }
+            }
         }
         finally {
             fileKey.fill(0);
             segmentKey.fill(0);
         }
-        return { plaintextLength };
+        return sha256 ? { plaintextLength, sha256 } : { plaintextLength };
     });
 }
 export async function openDecrypt(path, privateKey, range) {
