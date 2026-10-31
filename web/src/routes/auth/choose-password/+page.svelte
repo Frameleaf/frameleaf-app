@@ -32,7 +32,11 @@
   const ready = $derived(passwordStrength(password).acceptable && password === passwordConfirm);
 
   onMount(() => {
-    token = decodeURIComponent(location.hash.replace(/^#/, ''));
+    try {
+      token = decodeURIComponent(location.hash.replace(/^#/, ''));
+    } catch {
+      // a truncated or mangled link: shown as expired below
+    }
     // keep the token out of the history entry and of anything the page later shares
     history.replaceState(history.state, '', location.pathname);
     if (!token) {

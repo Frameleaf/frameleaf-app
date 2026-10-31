@@ -92,13 +92,15 @@
   };
 
   /** FL-367: "Wait for the provider" in seconds; the setting keeps milliseconds. */
-  let timeoutSeconds = $state(Math.max(1, Math.round(requireSystemConfigDraft().draft.oauth.timeout / 1000)));
-  $effect(() => {
-    const seconds = Math.max(1, Math.round(Number(timeoutSeconds) || 1));
-    if (Math.round(configToEdit.oauth.timeout / 1000) !== seconds) {
-      configToEdit.oauth.timeout = seconds * 1000;
+  // the draft is the only copy, so discard and reload reset this field too
+  const getTimeoutSeconds = () => Math.max(1, Math.round(configToEdit.oauth.timeout / 1000));
+  const setTimeoutSeconds = (seconds: unknown) => {
+    // a cleared field stays empty while typing; the field clamps it when the edit is committed
+    if (seconds === null || seconds === '') {
+      return;
     }
-  });
+    configToEdit.oauth.timeout = Math.max(1, Math.round(Number(seconds) || 1)) * 1000;
+  };
 
   /** FL-367: the ways in that are on, said in one sentence at the top. */
   const ways = $derived(
@@ -281,7 +283,7 @@
                     label={$t('frameleaf_signin_timeout')}
                     description={$t('frameleaf_signin_timeout_description')}
                     required={true}
-                    bind:value={timeoutSeconds}
+                    bind:value={getTimeoutSeconds, setTimeoutSeconds}
                     disabled={disabled || !configToEdit.oauth.enabled}
                     isEdited={configToEdit.oauth.timeout !== config.oauth.timeout}
                   />

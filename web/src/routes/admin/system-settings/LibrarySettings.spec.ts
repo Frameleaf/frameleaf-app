@@ -82,6 +82,19 @@ describe('Folder checks (FL-539)', () => {
     expect(await screen.findByRole('heading', { name: 'These apply once you add a folder' })).toBeInTheDocument();
   });
 
+  it('offers a retry instead of "add a folder" when the folders fail to load', async () => {
+    sdkMock.getAllLibraries
+      .mockRejectedValueOnce(new Error('Offline'))
+      .mockResolvedValue([library('Family photos', {})]);
+    render(LibrarySettings);
+
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('heading', { name: 'These apply once you add a folder' })).not.toBeInTheDocument();
+    screen.getByRole('button', { name: 'Try again' }).click();
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(sdkMock.getAllLibraries).toHaveBeenCalledTimes(2);
+  });
+
   it('follows a folder added in the Libraries manager without a reload', async () => {
     sdkMock.getAllLibraries.mockResolvedValue([]);
     render(LibrarySettings);
