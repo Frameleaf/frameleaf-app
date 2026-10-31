@@ -36,15 +36,29 @@
   /** What the viewer steps through: largest first, without what went to the trash or was deleted. */
   const inLibrary = $derived(assets.filter((asset) => !trashed.has(asset.id) && !removed.has(asset.id)));
 
+  /** Bumped by every open and close, so a slower earlier open cannot show its asset afterwards. */
+  let openRequest = 0;
+
   const onOpen = async (asset: AssetResponseDto) => {
+    const request = ++openRequest;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => request === openRequest && isCurrentSession();
     try {
       const info = await getAssetInfo({ ...authManager.params, id: asset.id });
+      if (!isCurrent()) {
+        return false;
+      }
       // Show the asset only once the URL points at it, so a failed navigation leaves nothing open.
       await navigate({ targetRoute: 'current', assetId: asset.id });
+      if (!isCurrent() || page.url.searchParams.get('assetId') !== asset.id) {
+        return false;
+      }
       assetViewerManager.setAsset(info);
       return true;
     } catch (error) {
-      handleError(error, $t('errors.failed_to_load_asset'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.failed_to_load_asset'));
+      }
       return false;
     }
   };
@@ -72,7 +86,10 @@
         assetViewerManager.showAssetViewer(false);
     }
   };
-  onDestroy(() => assetViewerManager.showAssetViewer(false));
+  onDestroy(() => {
+    openRequest++;
+    assetViewerManager.showAssetViewer(false);
+  });
   $effect(() => {
     const id = page.url.searchParams.get('assetId');
     if (!id) {
@@ -109,6 +126,7 @@
         {onRandom}
         {preAction}
         onClose={() => {
+          openRequest++;
           assetViewerManager.showAssetViewer(false);
           handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
         }}
