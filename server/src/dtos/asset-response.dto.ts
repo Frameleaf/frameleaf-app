@@ -1,0 +1,333 @@
+import { Selectable, ShallowDehydrateObject } from 'kysely';
+import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
+import type { MaybeDehydrated } from 'src/types.js';
+import { AssetFace, AssetFile, Exif, Stack, Tag, User } from 'src/database.js';
+import { HistoryBuilder } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
+import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
+import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
+import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
+import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
+import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
+import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import {
+  AssetFileType,
+  AssetStatus,
+  AssetType,
+  AssetTypeSchema,
+  AssetVisibility,
+  AssetVisibilitySchema,
+  ChecksumAlgorithm,
+  LibraryScope,
+  LibraryScopeSchema,
+} from 'src/enum.js';
+import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { asDateTimeString } from 'src/utils/date.js';
+import { displayPath } from 'src/utils/library-path.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+
+const SanitizedAssetResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Asset ID'),
+    type: AssetTypeSchema,
+    thumbhash: z
+      .string()
+      .describe(
+        'Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting.',
+      )
+      .nullable(),
+    originalMimeType: z.string().optional().describe('Original MIME type'),
+    imageEncoding: ImageEncodingSchema.optional().describe(
+      'Source image color encoding; unprocessed or unavailable evidence remains unknown',
+    ),
+    imageRenditions: z
+      .object({
+        sdrPreview: z.boolean(),
+        sdrFullsize: z.boolean(),
+        hdrPreview: z.boolean(),
+        hdrFullsize: z.boolean(),
+      })
+      .optional()
+      .describe('Available current still renditions; omitted when file evidence was not loaded'),
+    playbackCopy: z
+      .boolean()
+      .optional()
+      .describe('Whether a video has a playback copy; omitted for photos and when file evidence was not loaded'),
+    // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
+    localDateTime: z
+      .string()
+      .meta({ format: 'date-time' })
+      .describe(
+        'The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer\'s local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months.',
+      ),
+    duration: z.int32().min(0).nullable().describe('Video/gif duration in milliseconds (null for static images)'),
+    livePhotoVideoId: z.string().nullish().describe('Live photo video ID'),
+    hasMetadata: z.boolean().describe('Whether asset has metadata'),
+    width: z.int().min(0).nullable().describe('Asset width'),
+    height: z.int().min(0).nullable().describe('Asset height'),
+  })
+  .meta({ id: 'SanitizedAssetResponseDto' });
+
+export class SanitizedAssetResponseDto extends createZodDto(SanitizedAssetResponseSchema) {}
+
+const AssetStackResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Stack ID'),
+    primaryAssetId: z.uuidv4().describe('Primary asset ID'),
+    assetCount: z.int().min(0).describe('Number of assets in stack'),
+  })
+  .meta({ id: 'AssetStackResponseDto' });
+
+export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
+  z.object({
+    // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
+    createdAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .describe('The UTC timestamp when the asset was originally uploaded to Frameleaf.'),
+    ownerId: z.uuidv4().describe('Owner user ID'),
+    owner: UserResponseSchema.optional(),
+    landmarks: z
+      .array(LandmarkSummarySchema)
+      .optional()
+      .describe('Landmarks this asset was taken at, the most specific first. Only on the single-asset response.'),
+    // FL-326
+    origin: PartnerOriginSchema.optional().describe(
+      'Present on your own asset when partner sharing copied it from another library (GET /assets/{id})',
+    ),
+    libraryId: z
+      .uuidv4()
+      .nullish()
+      .describe('Library ID')
+      .meta(new HistoryBuilder().added('v1').deprecated('v1').getExtensions()),
+    originalPath: z.string().describe('Original file path'),
+    originalFileName: z.string().describe('Original file name'),
+    // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
+    fileCreatedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .describe(
+        'The actual UTC timestamp when the file was created/captured, preserving timezone information. This is the authoritative timestamp for chronological sorting within timeline groups. Combined with timezone data, this can be used to determine the exact moment the photo was taken.',
+      ),
+    fileModifiedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .describe(
+        'The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.',
+      ),
+    updatedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .describe(
+        'The UTC timestamp when the asset record was last updated in the database. This is automatically maintained by the database and reflects when any field in the asset was last modified.',
+      ),
+    isFavorite: z.boolean().describe('Is favorite'),
+    isArchived: z.boolean().describe('Is archived'),
+    isTrashed: z.boolean().describe('Is trashed'),
+    isOffline: z.boolean().describe('Is offline'),
+    visibility: AssetVisibilitySchema,
+    libraryScope: LibraryScopeSchema.optional(),
+    exifInfo: ExifResponseSchema.optional(),
+    tags: z.array(TagResponseSchema).optional(),
+    people: z.array(PersonResponseSchema).optional(),
+    checksum: z
+      .string()
+      .describe(
+        'Base64-encoded file checksum. SHA-256 (44 chars) for assets uploaded after the SHA-256 transition; SHA-1 (28 chars) for legacy assets. Use the asset `checksumAlgorithm` field to disambiguate when length-based detection is insufficient.',
+      ),
+    stack: AssetStackResponseSchema.nullish(),
+    duplicateId: z.uuidv4().nullish().describe('Duplicate group ID'),
+    resized: z
+      .boolean()
+      .optional()
+      .describe('Is resized')
+      .meta(new HistoryBuilder().added('v1').deprecated('v1.113.0').getExtensions()),
+    isEdited: z
+      .boolean()
+      .describe('Is edited')
+      .meta(new HistoryBuilder().added('v2.5.0').beta('v2.5.0').getExtensions()),
+  }).shape,
+).meta({ id: 'AssetResponseDto' });
+
+export class AssetResponseDto extends createZodDto(AssetResponseSchema) {}
+
+export type MapAsset = {
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  id: string;
+  updateId: string;
+  status: AssetStatus;
+  checksum: Buffer<ArrayBufferLike>;
+  checksumAlgorithm: ChecksumAlgorithm;
+  duplicateId: string | null;
+  duration: number | null;
+  edits?: ShallowDehydrateObject<AssetEditActionItem>[];
+  exifInfo?: ShallowDehydrateObject<Selectable<Exif>> | null;
+  faces?: ShallowDehydrateObject<AssetFace>[];
+  fileCreatedAt: Date;
+  fileModifiedAt: Date;
+  files?: ShallowDehydrateObject<AssetFile>[];
+  isExternal: boolean;
+  isFavorite: boolean;
+  isOffline: boolean;
+  visibility: AssetVisibility;
+  libraryScope?: LibraryScope;
+  /** FL-34: selected by reads that know the lock (`isLocked()` in `src/utils/locked.ts`) */
+  isLocked?: boolean | null;
+  libraryId: string | null;
+  livePhotoVideoId: string | null;
+  localDateTime: Date;
+  originalFileName: string;
+  originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept in another folder */
+  libraryPath?: string | null;
+  owner?: ShallowDehydrateObject<User> | null;
+  ownerId: string;
+  stack?: (ShallowDehydrateObject<Stack> & { assets: Stack['assets'] }) | null;
+  stackId: string | null;
+  tags?: ShallowDehydrateObject<Tag>[];
+  thumbhash: Buffer<ArrayBufferLike> | null;
+  type: AssetType;
+  width: number | null;
+  height: number | null;
+  isEdited: boolean;
+  hasCurrentDevelop?: boolean;
+};
+
+export type AssetMapOptions = {
+  stripMetadata?: boolean;
+  withStack?: boolean;
+  auth?: AuthDto;
+};
+
+const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
+  if (entity.type !== AssetType.Image || !entity.files || entity.hasCurrentDevelop !== false) return;
+  const available = (type: AssetFileType, hdr = false) =>
+    entity.files!.some(
+      (file) =>
+        file.type === type &&
+        file.isEdited === entity.isEdited &&
+        !!file.path &&
+        (!hdr ||
+          (process.env.FRAMELEAF_HDR_IMAGES === 'experimental' &&
+            !!file.renditionIdentity &&
+            /^[a-f0-9]{64}$/.test(file.renditionIdentity))),
+    );
+  return {
+    sdrPreview: available(AssetFileType.Preview),
+    sdrFullsize:
+      available(AssetFileType.FullSize) ||
+      (!entity.isEdited &&
+        entity.exifInfo?.imageEncoding?.dynamicRange === 'sdr' &&
+        mimeTypes.isWebSupportedImage(entity.originalPath)),
+    hdrPreview: available(AssetFileType.HdrPreview, true),
+    hdrFullsize: available(AssetFileType.HdrFullSize, true),
+  };
+};
+
+/** FL-630: without a playback copy the video plays its original, so the viewer offers only that. */
+const mapPlaybackCopy = (entity: MaybeDehydrated<MapAsset>) =>
+  entity.type === AssetType.Video && entity.files
+    ? entity.files.some((file) => file.type === AssetFileType.EncodedVideo && !!file.path)
+    : undefined;
+
+const peopleFromFaces = (faces?: MaybeDehydrated<AssetFace>[]): PersonResponseDto[] => {
+  if (!faces) {
+    return [];
+  }
+
+  const peopleMap: Map<string, PersonResponseDto> = new Map();
+
+  for (const face of faces) {
+    if (face.person && !peopleMap.has(face.person.personGroupId)) {
+      peopleMap.set(face.person.personGroupId, mapPerson(face.person));
+    }
+  }
+
+  return peopleMap.values().toArray();
+};
+
+const mapStack = (entity: { stack?: Stack | null }) => {
+  if (!entity.stack) {
+    return null;
+  }
+
+  return {
+    id: entity.stack.id,
+    primaryAssetId: entity.stack.primaryAssetId,
+    assetCount: entity.stack.assetCount ?? entity.stack.assets.length + 1,
+  };
+};
+
+export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOptions = {}): AssetResponseDto {
+  const { stripMetadata = false, withStack = false } = options;
+  // FL-34: `locked` for a locked asset, whatever its stored visibility
+  const visibility = effectiveVisibilityOf(entity);
+
+  if (stripMetadata) {
+    const sanitizedAssetResponse: SanitizedAssetResponseDto = {
+      id: entity.id,
+      type: entity.type,
+      originalMimeType: mimeTypes.lookup(entity.originalFileName),
+      thumbhash: entity.thumbhash ? hexOrBufferToBase64(entity.thumbhash) : null,
+      localDateTime: asDateTimeString(entity.localDateTime),
+      duration: entity.duration,
+      livePhotoVideoId: entity.livePhotoVideoId,
+      imageEncoding:
+        entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
+      imageRenditions: mapImageRenditions(entity),
+      playbackCopy: mapPlaybackCopy(entity),
+      hasMetadata: false,
+      width: entity.width,
+      height: entity.height,
+    };
+    return sanitizedAssetResponse as AssetResponseDto;
+  }
+
+  return {
+    id: entity.id,
+    createdAt: asDateTimeString(entity.createdAt),
+    ownerId: entity.ownerId,
+    owner: entity.owner ? mapUser(entity.owner) : undefined,
+    libraryId: entity.libraryId,
+    type: entity.type,
+    // FL-417: the photo's own path, never the folder a shared file is kept in
+    originalPath: displayPath(entity),
+    originalFileName: entity.originalFileName,
+    originalMimeType: mimeTypes.lookup(entity.originalFileName),
+    thumbhash: entity.thumbhash ? hexOrBufferToBase64(entity.thumbhash) : null,
+    fileCreatedAt: asDateTimeString(entity.fileCreatedAt),
+    fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
+    localDateTime: asDateTimeString(entity.localDateTime),
+    updatedAt: asDateTimeString(entity.updatedAt),
+    // the viewer's own mark: a shared link acts as its owner, but a visitor never sees the owner's favorites
+    isFavorite: !options.auth?.sharedLink && options.auth?.user.id === entity.ownerId && entity.isFavorite,
+    isArchived: visibility === AssetVisibility.Archive,
+    isTrashed: !!entity.deletedAt,
+    visibility,
+    libraryScope: entity.libraryScope,
+    duration: entity.duration,
+    exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
+    livePhotoVideoId: entity.livePhotoVideoId,
+    tags: entity.tags?.map((tag) => mapTag(tag)),
+    people: peopleFromFaces(entity.faces),
+    checksum: hexOrBufferToBase64(entity.checksum)!,
+    stack: withStack ? mapStack(entity) : undefined,
+    isOffline: entity.isOffline,
+    imageEncoding:
+      entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
+    imageRenditions: mapImageRenditions(entity),
+    playbackCopy: mapPlaybackCopy(entity),
+    hasMetadata: true,
+    duplicateId: entity.duplicateId,
+    resized: true,
+    width: entity.width,
+    height: entity.height,
+    isEdited: entity.isEdited,
+  };
+}

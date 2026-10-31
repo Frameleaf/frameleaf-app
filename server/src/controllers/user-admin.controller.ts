@@ -1,0 +1,263 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { AssetStatsDto, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
+import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
+import { SessionResponseDto } from 'src/dtos/session.dto.js';
+import { UserPreferencesResponseDto, UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
+import {
+  UserAdminCreateDto,
+  UserAdminDeleteDto,
+  UserAdminHistoryResponseDto,
+  UserAdminHistorySearchDto,
+  UserAdminPinCodeStateResponseDto,
+  UserAdminResponseDto,
+  UserAdminSearchDto,
+  UserAdminSessionParamDto,
+  UserAdminUpdateDto,
+} from 'src/dtos/user.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { UserAdminService } from 'src/services/user-admin.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+@ApiTags(ApiTag.UsersAdmin)
+@Controller('admin/users')
+export class UserAdminController {
+  constructor(private service: UserAdminService) {}
+
+  @Get()
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Search users',
+    description: 'Search for users.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchUsersAdmin(@Auth() auth: AuthDto, @Query() dto: UserAdminSearchDto): Promise<UserAdminResponseDto[]> {
+    return this.service.search(auth, dto);
+  }
+
+  @Post()
+  @Authenticated({ permission: Permission.AdminUserCreate, admin: true })
+  @Endpoint({
+    summary: 'Create a user',
+    description: 'Create a new user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  createUserAdmin(@Auth() auth: AuthDto, @Body() createUserDto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
+    return this.service.create(auth, createUserDto);
+  }
+
+  @Get(':id')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve a user',
+    description: 'Retrieve  a specific user by their ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getUserAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<UserAdminResponseDto> {
+    return this.service.get(auth, id);
+  }
+
+  @Put(':id')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @Endpoint({
+    summary: 'Update a user',
+    description: 'Update an existing user.',
+    history: new HistoryBuilder()
+      .added('v1')
+      .beta('v1')
+      .stable('v2')
+      .deprecated('v3', { replacementId: 'updateUserAdmin' }),
+  })
+  updateUserAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UserAdminUpdateDto,
+  ): Promise<UserAdminResponseDto> {
+    return this.service.update(auth, id, dto);
+  }
+
+  @Patch(':id')
+  @ApiExcludeEndpoint()
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  updateUserAdminV3(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UserAdminUpdateDto,
+  ): Promise<UserAdminResponseDto> {
+    return this.service.update(auth, id, dto);
+  }
+
+  @Post(':id/password-link')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Email a link to choose a password',
+    description:
+      'Email the person a single-use link (valid 7 days) to choose their own password. The administrator never sees it. Needs email to be set up and a public address.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  sendUserPasswordLinkAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.sendPasswordLink(auth, id);
+  }
+
+  @Delete(':id')
+  @Authenticated({ permission: Permission.AdminUserDelete, admin: true })
+  @Endpoint({
+    summary: 'Delete a user',
+    description: 'Delete a user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  deleteUserAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UserAdminDeleteDto,
+  ): Promise<UserAdminResponseDto> {
+    return this.service.delete(auth, id, dto);
+  }
+
+  @Get(':id/calendar-heatmap')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve calendar heatmap activity',
+    description: 'Retrieve activity counts for a specified period, in a calendar heatmap format.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  getUserCalendarHeatmapAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: CalendarHeatmapDto,
+  ): Promise<CalendarHeatmapResponseDto> {
+    return this.service.getCalendarHeatmap(auth, id, dto);
+  }
+
+  // FL-76: the account detail's Activity tab. What administrators did to this account and its
+  // libraries, newest first, recorded by the services that made each change.
+  // (A line comment: a JSDoc block here is published as the endpoint summary.)
+  @Get(':id/history')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve user history',
+    description:
+      'What administrators did to a specific user and their libraries, newest first: account creation, profile, role, quota and storage label changes, password and PIN resets, signed-out devices, preference changes, deletion and restore, and library changes and scans. Page with `before` and `take`.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  getUserHistoryAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: UserAdminHistorySearchDto,
+  ): Promise<UserAdminHistoryResponseDto> {
+    return this.service.getHistory(auth, id, dto);
+  }
+
+  @Get(':id/sessions')
+  @Authenticated({ permission: Permission.AdminSessionRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve user sessions',
+    description: 'Retrieve all sessions for a specific user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getUserSessionsAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SessionResponseDto[]> {
+    return this.service.getSessions(auth, id);
+  }
+
+  // FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
+  // own sessions, so an administrator could never revoke a foreign session through it. This is
+  // the explicit, audited admin path the account detail's Security tab needs instead.
+  // (A line comment: a JSDoc block here is published as the endpoint summary.)
+  @Delete(':id/sessions/:sessionId')
+  @Authenticated({ permission: Permission.AdminSessionDelete, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a user session',
+    description: 'Delete a specific session for a specific user, signing that device out.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  deleteUserSessionAdmin(@Auth() auth: AuthDto, @Param() { id, sessionId }: UserAdminSessionParamDto): Promise<void> {
+    return this.service.deleteSession(auth, id, sessionId);
+  }
+
+  @Get(':id/pin-code')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve whether a user has a PIN',
+    description: 'Retrieve whether a specific user has a PIN code set, never the PIN itself.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getUserPinCodeStateAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<UserAdminPinCodeStateResponseDto> {
+    return this.service.getPinCodeState(auth, id);
+  }
+
+  @Get(':id/statistics')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve user statistics',
+    description: 'Retrieve asset statistics for a specific user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getUserStatisticsAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: AssetStatsDto,
+  ): Promise<AssetStatsResponseDto> {
+    return this.service.getStatistics(auth, id, dto);
+  }
+
+  @Get(':id/preferences')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve user preferences',
+    description: 'Retrieve the preferences of a specific user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getUserPreferencesAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<UserPreferencesResponseDto> {
+    return this.service.getPreferences(auth, id);
+  }
+
+  @Put(':id/preferences')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @Endpoint({
+    summary: 'Update user preferences',
+    description: 'Update the preferences of a specific user.',
+    history: new HistoryBuilder()
+      .added('v1')
+      .beta('v1')
+      .stable('v2')
+      .deprecated('v3', { replacementId: 'updateUserPreferencesAdmin' }),
+  })
+  updateUserPreferencesAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UserPreferencesUpdateDto,
+  ): Promise<UserPreferencesResponseDto> {
+    return this.service.updatePreferences(auth, id, dto);
+  }
+
+  @Patch(':id/preferences')
+  @ApiExcludeEndpoint()
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  updateUserPreferencesAdminV3(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UserPreferencesUpdateDto,
+  ): Promise<UserPreferencesResponseDto> {
+    return this.service.updatePreferences(auth, id, dto);
+  }
+
+  @Post(':id/restore')
+  @Authenticated({ permission: Permission.AdminUserDelete, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Restore a deleted user',
+    description: 'Restore a previously deleted user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  restoreUserAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<UserAdminResponseDto> {
+    return this.service.restore(auth, id);
+  }
+}

@@ -1,0 +1,370 @@
+import { RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { Reflector } from '@nestjs/core';
+import { controllers } from 'src/controllers/index.js';
+import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { MediaHealthController } from 'src/controllers/media-health.controller.js';
+import { LivePhotoRelinkDto } from 'src/dtos/live-photo.dto.js';
+import {
+  MediaHealthBulkActionDto,
+  MediaHealthChooseCandidatesDto,
+  MediaHealthDeleteCorruptDto,
+  MediaHealthListQueryDto,
+  MediaHealthLocateDto,
+  MediaHealthRecoverDto,
+  MediaHealthSummaryQueryDto,
+} from 'src/dtos/media-health.dto.js';
+import { MetadataKey } from 'src/enum.js';
+import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimitRule } from 'src/middleware/rate-limit.guard.js';
+
+const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
+  'GET admin/maintenance/status',
+  'POST admin/maintenance/login',
+  'POST admin/database-backups/start-restore',
+]);
+
+/** Admin-only routes that live outside `admin/`, i.e. `@Authenticated({ admin: true })` */
+const ADMIN_ROUTES = new Set([
+  'DELETE libraries/:id',
+  'DELETE libraries/:id/scan',
+  'GET libraries/:id/removal',
+  'GET libraries/managed-uploads',
+  'POST libraries/:id/removal',
+  'GET desktop/accounts/:id/approval',
+  'GET enrichment/options',
+  'POST enrichment/preview',
+  'DELETE ml-destinations/:id',
+  'DELETE ml-destinations/:id/consent',
+  'GET ml-destinations',
+  'GET ml-destinations/:id',
+  // Asks a worker which restoration models it holds; admin like the other destination reads (FL-114).
+  'GET ml-destinations/:id/restoration-models',
+  'GET ml-destinations/routes',
+  'POST ml-destinations',
+  'POST ml-destinations/:id/probe',
+  'PUT ml-destinations/:id',
+  'PUT ml-destinations/:id/consent',
+  'PUT ml-destinations/routes/:workload',
+  // FL-456: the processing order is admin configuration like the routes it replaces.
+  'GET ml-destinations/processing-order',
+  'PUT ml-destinations/processing-order',
+  'PUT ml-destinations/processing-order/:workload',
+  'GET system-config/image-description/requeue-estimate',
+  'GET system-config/machine-learning/hardware',
+  'GET system-config/smart-albums/reevaluate-estimate',
+  'POST server/version-check',
+  // The server owner's (administrator's) cloud backup setup progress, polled without PIN elevation (FL-234).
+  'GET users/me/cloud-backup/setup',
+  'POST system-config/image-description/defer-requeue',
+  'POST system-config/image-description/requeue',
+  'POST system-config/smart-albums/reevaluate',
+  'DELETE queues/:name/jobs',
+  'GET jobs',
+  'GET jobs/runs',
+  'GET jobs/runs/:id/items',
+  'GET libraries',
+  'GET libraries/:id',
+  'GET libraries/:id/statistics',
+  'GET media-operations/statistics',
+  'GET queues',
+  'GET queues/:name',
+  'GET queues/:name/jobs',
+  'GET queues/:name/statistics',
+  'GET server/library-setup/manager-access',
+  'GET server/statistics',
+  'GET system-config',
+  'GET system-config/config-file/activation',
+  'POST system-config/config-file/reload',
+  'GET system-config/defaults',
+  'GET system-config/storage-template-options',
+  'GET system-metadata/admin-onboarding',
+  // FL-176: first-run setup for an existing library, owned by the administrator.
+  'GET system-metadata/frameleaf-setup',
+  'GET system-metadata/frameleaf-setup/library',
+  'GET system-metadata/frameleaf-setup/storage',
+  'GET system-metadata/reverse-geocoding-state',
+  'GET system-metadata/version-check-state',
+  // Lists the server's permitted import folders; only an administrator may point an import at one.
+  'GET takeout/roots',
+  // FL-653: an Eagle library in a permitted import folder is an administrator's choice, as for takeout.
+  'GET eagle-imports/libraries',
+  'POST eagle-imports',
+  'POST eagle-imports/check',
+  'PATCH libraries/:id',
+  'POST jobs',
+  'POST libraries',
+  'POST libraries/:id/scan',
+  // FL-539: Check every file again
+  'POST libraries/:id/scan/every-file',
+  'POST libraries/:id/validate',
+  'POST preservation/server-packages',
+  // FL-71: the Job manager's Retry failed.
+  'POST queues/:name/jobs/retry-failed',
+  'POST server/library-setup/begin',
+  'POST system-metadata/admin-onboarding',
+  'POST system-metadata/frameleaf-setup/finish',
+  'PUT desktop/accounts/:id/approval',
+  'PUT jobs/:name',
+  'PUT libraries/:id',
+  'PUT queues/:name',
+  'PUT system-config',
+  'PUT system-metadata/frameleaf-setup',
+]);
+
+/** Routes a shared link (`?key=`) is allowed to reach, i.e. `@Authenticated({ sharedLink: true })` */
+const SHARED_LINK_ROUTES = new Set([
+  'DELETE assets/:id/video/stream/:sessionId',
+  'GET albums/:id',
+  // Boards: a shared collection lists its files and saved links together
+  'GET albums/:id/items',
+  'GET albums/:id/map-markers',
+  'GET assets/:id',
+  // Studio timeline filmstrips and waveforms follow the thumbnail's access
+  'GET assets/:id/filmstrip',
+  'GET assets/:id/filmstrip/sprite',
+  'GET assets/:id/original',
+  // the viewer's colours follow the thumbnail's access
+  // Boards annotations follow the picture's access, as its palette does (FL-652)
+  'GET assets/:id/annotations',
+  'GET assets/:id/palette',
+  'GET assets/:id/thumbnail',
+  'GET assets/:id/video/playback',
+  'GET assets/:id/waveform',
+  'GET assets/:id/video/stream/:sessionId/:variantIndex/:filename',
+  'GET assets/:id/video/stream/:sessionId/:variantIndex/playlist.m3u8',
+  'GET assets/:id/video/stream/main.m3u8',
+  'GET shared-links/me',
+  'GET timeline/bucket',
+  'GET timeline/buckets',
+  // FL-33: curated cards for the same album-scoped request as the buckets; places follow showExif
+  'GET timeline/highlights',
+  'POST assets',
+  'POST download/archive',
+  'POST download/info',
+  'POST search/metadata',
+  'POST shared-links/login',
+]);
+
+/**
+ * FL-161: the routes that send originals, archives or database backups, refused over the relay unless
+ * an administrator allows them. Thumbnails, previews and playback are deliberately not here.
+ */
+const ORIGINAL_TRANSFER_ROUTES = new Set([
+  'GET assets/:id/original',
+  'GET develop-batches/:id/download',
+  'POST download/archive',
+  'GET admin/database-backups/:filename',
+  'GET preservation/packages/:id/download',
+  // full-resolution masters, bundles, renders and archives, as large as originals
+  'GET assets/:id/edit-versions/:versionId/download',
+  'GET studio/bundles/exports/:id/download',
+  'GET studio/exports/:id/download',
+  // the owner-private subtitle sibling shares the export's relay refusal
+  'GET studio/exports/:id/subtitle',
+  'GET memories/exports/:id/download',
+  // the flagged file itself, usually an original
+  'GET admin/integrity/report/:id/file',
+  // can stream a full-resolution edited master or restored result (the viewer's own full-size view
+  // of a chosen restoration falls back to its preview through the relay)
+  'GET assets/:id/develop/revisions/:revisionId/file',
+  'GET assets/:id/restorations/:restorationId/file',
+]);
+
+/**
+ * FL-161: media routes deliberately left available through the relay: what a viewer needs to browse
+ * and play (thumbnails and previews; a full-size view falls back to the preview there), and small
+ * derived files.
+ */
+const RELAY_MEDIA_ROUTES = [
+  'GET assets/:id/filmstrip',
+  'GET assets/:id/filmstrip/sprite',
+  'GET assets/:id/thumbnail',
+  'GET assets/:id/video/playback',
+  'GET assets/:id/video/stream/main.m3u8',
+  'GET people/:id/thumbnail',
+  'GET preservation/packages/:id/manifest',
+  'GET assets/:id/waveform',
+  'GET users/:id/profile-image',
+];
+
+/** FL-161: the rate-limited sign-in and Frameleaf Cloud routes, by rule. */
+const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
+  'POST auth/login': RATE_LIMITS.login,
+  // Changing or removing the PIN takes the password or the current PIN: bounded per address like a sign-in.
+  'PUT auth/pin-code': RATE_LIMITS.login,
+  'DELETE auth/pin-code': RATE_LIMITS.login,
+  // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
+  'POST auth/password-link/check': RATE_LIMITS.login,
+  'POST auth/password-link': RATE_LIMITS.login,
+  // FL-292: claiming a new server is tried only a few times per address
+  'POST auth/admin-sign-up': RATE_LIMITS.frameleafSetup,
+  'POST server/setup/link': RATE_LIMITS.frameleafSetup,
+  'POST server/setup/admin': RATE_LIMITS.frameleafSetup,
+  // Starting a restore on an unclaimed server is a claim too.
+  'POST admin/database-backups/start-restore': RATE_LIMITS.frameleafSetup,
+  'POST oauth/callback': RATE_LIMITS.oauthCallback,
+  'POST oauth/link': RATE_LIMITS.oauthCallback,
+  'POST oauth/frameleaf/authorize': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/callback': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/exchange': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/handoff': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/handoff/redeem': RATE_LIMITS.frameleafSignIn,
+  'GET oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/link/confirm': RATE_LIMITS.frameleafSignIn,
+  'DELETE oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  // FL-655: Save to Frameleaf's sign-in; the exchange is public, the code being the proof
+  'POST browser-extension/sign-in/start': RATE_LIMITS.extensionSignIn,
+  'POST browser-extension/sign-in/authorize': RATE_LIMITS.extensionSignIn,
+  'POST browser-extension/sign-in/exchange': RATE_LIMITS.extensionSignIn,
+  'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
+  // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
+  'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
+  'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
+  'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
+  // FL-544: starting the combined licence+plan checkout is limited like a key
+  'POST admin/license/checkout': RATE_LIMITS.licenseActivation,
+  'PUT users/me/license': RATE_LIMITS.licenseActivation,
+  // CLD-004: a one-time link code from the account site is limited like a key
+  'POST license/link-code': RATE_LIMITS.licenseActivation,
+  'POST admin/cloud/link': RATE_LIMITS.linkStart,
+  // FL-488: Ask Frameleaf is relayed to frameleaf.app, bounded per person and address
+  'POST help/ask': RATE_LIMITS.helpAsk,
+  // FL-430: the public home-network identity proof apps ask for before each session
+  'POST server/identity/challenge': { bucket: 'server-identity-challenge', limit: 120, windowSeconds: 60 },
+  // FL-702: a studio website's public inquiry form and gallery-link request
+  'POST photography/studios/:site/inquiries': RATE_LIMITS.studioInquiry,
+};
+
+const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
+  typeof permission === 'string' && permission.startsWith('admin');
+
+const getRoutes = () => {
+  const reflector = new Reflector();
+
+  return controllers.flatMap((Controller) => {
+    const prefix = reflector.get<string>(PATH_METADATA, Controller);
+
+    return Object.getOwnPropertyNames(Controller.prototype).flatMap((name) => {
+      const handler = Object.getOwnPropertyDescriptor(Controller.prototype, name)?.value;
+      if (typeof handler !== 'function') {
+        return [];
+      }
+
+      const requestMethod = reflector.get<RequestMethod | undefined>(METHOD_METADATA, handler);
+      if (requestMethod === undefined) {
+        return [];
+      }
+
+      const method = RequestMethod[requestMethod];
+      const path = [prefix, reflector.get<string>(PATH_METADATA, handler)].filter((part) => part !== '/').join('/');
+
+      return {
+        id: `${method} ${path}`,
+        label: `${Controller.name}.${name} (${method} /${path})`,
+        path,
+        auth: getAuthenticatedOptions(reflector, handler),
+        originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
+        remoteSignInExempt: reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, handler) === true,
+        homeNetworkOnly:
+          reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) === true,
+        rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
+      };
+    });
+  });
+};
+
+describe('controllers', () => {
+  const routes = getRoutes();
+
+  it('should only allow non-admin access to bootstrap routes under admin/', () => {
+    const adminRoutes = routes.filter((route) => route.path === 'admin' || route.path.startsWith('admin/'));
+    const reachableByNonAdmins = adminRoutes.filter((route) => !route.auth?.admin).map((route) => route.id);
+
+    expect(new Set(reachableByNonAdmins)).toEqual(UNAUTHENTICATED_ADMIN_ROUTES);
+  });
+
+  it('should declare authentication on every route', () => {
+    const undeclared = routes.filter((route) => route.auth === undefined).map((route) => route.label);
+
+    expect(undeclared).toEqual([]);
+  });
+
+  it('should only allow shared link access to expected routes', () => {
+    const sharedLinkRoutes = routes.filter((route) => route.auth?.sharedLink).map((route) => route.id);
+
+    expect(new Set(sharedLinkRoutes)).toEqual(SHARED_LINK_ROUTES);
+  });
+
+  it('lets only the shared-link landing and password login skip the unlock cookie', () => {
+    const exemptions = routes.filter((route) => route.auth?.sharedLinkPassword === false).map((route) => route.id);
+    expect(new Set(exemptions)).toEqual(new Set(['GET shared-links/me', 'POST shared-links/login']));
+  });
+
+  it('should only require admin access on expected routes outside /admin', () => {
+    const adminRoutes = routes
+      .filter((route) => route.auth?.admin && route.path !== 'admin' && !route.path.startsWith('admin/'))
+      .map((route) => route.id);
+
+    expect(new Set(adminRoutes)).toEqual(ADMIN_ROUTES);
+  });
+
+  it('should mark exactly the original, archive and backup downloads as refused over the relay (FL-161)', () => {
+    const marked = routes.filter((route) => route.originalTransfer).map((route) => route.id);
+
+    expect(new Set(marked)).toEqual(ORIGINAL_TRANSFER_ROUTES);
+    for (const id of RELAY_MEDIA_ROUTES) {
+      expect(routes.find((route) => route.id === id)).toMatchObject({
+        originalTransfer: false,
+        homeNetworkOnly: false,
+      });
+    }
+  });
+
+  it('should let only signing out skip the remote sign-in rule (FL-161)', () => {
+    expect(routes.filter((route) => route.remoteSignInExempt).map((route) => route.id)).toEqual(['POST auth/logout']);
+  });
+
+  it('should keep the whole render-worker API, original inputs included, on the home network (FL-161)', () => {
+    const workerRoutes = routes.filter((route) => route.path.startsWith('render-workers/'));
+
+    expect(workerRoutes.map((route) => route.id)).toContain('GET render-workers/operations/:id/inputs/:grant');
+    expect(workerRoutes.filter((route) => !route.homeNetworkOnly)).toEqual([]);
+    expect(routes.filter((route) => route.homeNetworkOnly && !route.path.startsWith('render-workers/'))).toEqual([]);
+  });
+
+  it('should rate limit sign-in, licence activation and link start (FL-161)', () => {
+    const limited = Object.fromEntries(
+      routes.filter((route) => route.rateLimit).map((route) => [route.id, route.rateLimit]),
+    );
+
+    expect(limited).toEqual(RATE_LIMITED_ROUTES);
+  });
+
+  it('should require admin access for routes with an admin permission', () => {
+    const offenders = routes
+      .filter((route) => isAdminPermission(route.auth?.permission) && !route.auth?.admin)
+      .map((route) => route.label);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('request DTO runtime metadata', () => {
+  it.each([
+    [MediaHealthController, 'list', MediaHealthListQueryDto],
+    [MediaHealthController, 'getSummary', MediaHealthSummaryQueryDto],
+    [MediaHealthController, 'locateMissing', MediaHealthLocateDto],
+    [MediaHealthController, 'chooseCandidates', MediaHealthChooseCandidatesDto],
+    [MediaHealthController, 'recoverDamaged', MediaHealthRecoverDto],
+    [MediaHealthController, 'relinkMissing', MediaHealthBulkActionDto],
+    [MediaHealthController, 'dismiss', MediaHealthBulkActionDto],
+    [MediaHealthController, 'deleteCorrupt', MediaHealthDeleteCorruptDto],
+    [LivePhotoController, 'relinkLivePhotos', LivePhotoRelinkDto],
+  ] as const)('should retain %s.%s request validation and OpenAPI schema', (controller, method, dto) => {
+    // Nest's reflect-metadata extension stores the runtime parameter constructors.
+    // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+    expect(Reflect.getMetadata('design:paramtypes', controller.prototype, method)[1]).toBe(dto);
+  });
+});

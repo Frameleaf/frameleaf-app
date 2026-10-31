@@ -1,0 +1,82 @@
+import request from 'supertest';
+import { NotificationController } from 'src/controllers/notification.controller.js';
+import { NotificationService } from 'src/services/notification.service.js';
+import { errorDto } from 'test/medium/responses.js';
+import { factory } from 'test/small.factory.js';
+import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
+
+describe(NotificationController.name, () => {
+  let ctx: ControllerContext;
+  const service = mockBaseService(NotificationService);
+
+  beforeAll(async () => {
+    ctx = await controllerSetup(NotificationController, [{ provide: NotificationService, useValue: service }]);
+    return () => ctx.close();
+  });
+
+  beforeEach(() => {
+    service.resetAllMocks();
+    ctx.reset();
+  });
+
+  describe('GET /notifications', () => {
+    it(`should reject an invalid notification level`, async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .get(`/notifications`)
+        .query({ level: 'invalid' })
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['level'], message: expect.stringContaining('Invalid option: expected one of') },
+        ]),
+      );
+    });
+  });
+
+  describe('PUT /notifications', () => {
+    describe('ids', () => {
+      it('should require a list', async () => {
+        const { status, body } = await request(ctx.getHttpServer()).put(`/notifications`).send({ ids: true });
+        expect(status).toBe(400);
+        expect(body).toEqual(
+          errorDto.validationError([{ path: ['ids'], message: 'Invalid input: expected array, received boolean' }]),
+        );
+      });
+
+      it('should require uuids', async () => {
+        const { status, body } = await request(ctx.getHttpServer())
+          .put(`/notifications`)
+          .send({ ids: [true] });
+        expect(status).toBe(400);
+        expect(body).toEqual(
+          errorDto.validationError([{ path: ['ids', 0], message: 'Invalid input: expected string, received boolean' }]),
+        );
+      });
+
+      it('should accept valid uuids', async () => {
+        const id = factory.uuid();
+        await request(ctx.getHttpServer())
+          .put(`/notifications`)
+          .send({ ids: [id] });
+        expect(service.updateAll).toHaveBeenCalledWith(undefined, expect.objectContaining({ ids: [id] }));
+      });
+    });
+  });
+
+  describe('GET /notifications/:id', () => {
+    it('should require a valid uuid', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).get(`/notifications/123`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+  });
+
+  describe('PUT /notifications/:id', () => {
+    it('should accept a null readAt', async () => {
+      const id = factory.uuid();
+      await request(ctx.getHttpServer()).put(`/notifications/${id}`).send({ readAt: null });
+      expect(service.update).toHaveBeenCalledWith(undefined, id, expect.objectContaining({ readAt: null }));
+    });
+  });
+});

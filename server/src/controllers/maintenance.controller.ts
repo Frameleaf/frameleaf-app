@@ -1,0 +1,80 @@
+import { BadRequestException, Body, Controller, Get, Post, Res } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LoginDetails } from 'src/services/auth.service.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  MaintenanceAuthDto,
+  MaintenanceDetectInstallResponseDto,
+  MaintenanceLoginDto,
+  MaintenanceStatusResponseDto,
+  SetMaintenanceModeDto,
+} from 'src/dtos/maintenance.dto.js';
+import { ApiTag, AuthCookie, MaintenanceAction, Permission } from 'src/enum.js';
+import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { MaintenanceService } from 'src/services/maintenance.service.js';
+import { respondWithCookie } from 'src/utils/response.js';
+
+@ApiTags(ApiTag.Maintenance)
+@Controller('admin/maintenance')
+export class MaintenanceController {
+  constructor(private service: MaintenanceService) {}
+
+  @Get('status')
+  @Endpoint({
+    summary: 'Get maintenance mode status',
+    description: 'Fetch information about the currently running maintenance action.',
+    history: new HistoryBuilder().added('v2.5.0').alpha('v2.5.0'),
+  })
+  @Authenticated({ public: true })
+  getMaintenanceStatus(): MaintenanceStatusResponseDto {
+    return this.service.getMaintenanceStatus();
+  }
+
+  @Get('detect-install')
+  @Endpoint({
+    summary: 'Detect existing install',
+    description: 'Collect integrity checks and other heuristics about local data.',
+    history: new HistoryBuilder().added('v2.5.0').alpha('v2.5.0'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  detectPriorInstall(): Promise<MaintenanceDetectInstallResponseDto> {
+    return this.service.detectPriorInstall();
+  }
+
+  @Post('login')
+  @Endpoint({
+    summary: 'Log into maintenance mode',
+    description: 'Login with maintenance token or cookie to receive current information and perform further actions.',
+    history: new HistoryBuilder().added('v2.3.0').alpha('v2.3.0'),
+  })
+  @Authenticated({ public: true })
+  maintenanceLogin(@Body() _dto: MaintenanceLoginDto): MaintenanceAuthDto {
+    throw new BadRequestException('Not in maintenance mode');
+  }
+
+  @Post()
+  @Endpoint({
+    summary: 'Set maintenance mode',
+    description: 'Put Frameleaf into or take it out of maintenance mode',
+    history: new HistoryBuilder().added('v2.3.0').alpha('v2.3.0'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  async setMaintenanceMode(
+    @Auth() auth: AuthDto,
+    @Body() dto: SetMaintenanceModeDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    if (dto.action === MaintenanceAction.End) {
+      return;
+    }
+
+    const { jwt } = await this.service.startMaintenance(dto, auth.user.name);
+    return respondWithCookie(res, undefined, {
+      isSecure: loginDetails.isSecure,
+      values: [{ key: AuthCookie.MaintenanceToken, value: jwt }],
+    });
+  }
+}
