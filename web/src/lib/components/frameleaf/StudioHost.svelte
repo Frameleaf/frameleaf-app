@@ -647,6 +647,10 @@
       engine = instance;
       dispatch({ type: 'engine-mounted' });
     } catch (error) {
+      // An abandoned mount's failure must not fail the mount that replaced it.
+      if (token !== mountToken) {
+        return;
+      }
       dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
     }
   };

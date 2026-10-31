@@ -150,6 +150,9 @@
             ? PreservationRestoreItemFilter.Conflicts
             : PreservationRestoreItemFilter.Findings;
         await loadItems();
+        if (destroyed) {
+          return;
+        }
         onChanged?.();
       }
     } catch (error) {
@@ -177,9 +180,15 @@
     }
     try {
       const page = await getPreservationRestoreItems({ id: restore.id, filter, skip, take: PAGE });
+      if (destroyed) {
+        return;
+      }
       items = page.items;
       total = page.total;
     } catch (error) {
+      if (destroyed) {
+        return;
+      }
       handleError(error, $t('frameleaf_preservation_restore_error'));
     }
   };
