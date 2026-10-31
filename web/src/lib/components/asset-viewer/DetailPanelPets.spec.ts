@@ -159,6 +159,7 @@ describe('DetailPanelPets', () => {
   });
 
   it('reloads the list instead of applying an add that finishes after the original was replaced', async () => {
+    const toast = vi.spyOn(toastManager, 'primary');
     const pending = deferredPromise<PetObservationResponseDto>();
     sdkMock.createPetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.createPetObservation>);
     const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
@@ -167,10 +168,19 @@ describe('DetailPanelPets', () => {
     await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_viewer_pets_add_label }));
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Rex' }));
     await view.rerender({ asset: { ...asset, checksum: 'bmV3Cg==' }, isOwner: true });
+    await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(2));
+    // Hold the reload the late add triggers, so only a local update could show Rex.
+    const reload = deferredPromise<PetObservationResponseDto[]>();
+    sdkMock.getAssetPetObservations.mockReturnValue(
+      reload.promise as ReturnType<typeof sdkMock.getAssetPetObservations>,
+    );
     pending.resolve(observation({ petId: 'pet-rex' }));
 
     await waitFor(() => expect(sdkMock.getAssetPetObservations).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(toast).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: 'Remove Rex from this photo' })).not.toBeInTheDocument();
+    reload.resolve([]);
+    await waitFor(() => expect(screen.getByText(en.frameleaf_viewer_pets_none)).toBeInTheDocument());
   });
 
   it('reloads the list when a removal finishes after the original was replaced', async () => {

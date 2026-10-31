@@ -122,13 +122,19 @@
     }
   };
 
+  // False once the dialog is gone: a save that fails afterwards reports in a toast.
+  let alive = true;
+
   onMount(() => {
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     if (stage) {
       observer?.observe(stage);
     }
-    return () => observer?.disconnect();
+    return () => {
+      alive = false;
+      observer?.disconnect();
+    };
   });
 
   const point = (event: PointerEvent, clampToImage = false) =>
@@ -222,10 +228,10 @@
       }
     } catch (error_) {
       const message = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
-      if (stillShown(source)) {
+      if (alive && open && stillShown(source)) {
         error = message;
       } else {
-        // The viewer has moved on: say so in a toast rather than on the photo now shown.
+        // The dialog was closed or the viewer moved on: say so in a toast, never silently.
         toastManager.warning(message);
       }
     } finally {
