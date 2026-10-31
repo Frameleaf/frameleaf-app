@@ -2430,6 +2430,8 @@ export type IntegrityFindingAssetsResponseDto = {
 export type IntegrityCheckHistoryEntryDto = {
     /** Files it looked at, when counted */
     checked: number | null;
+    /** Encrypted Locked files the damage check passed over: encrypted, not checked */
+    encrypted?: number;
     finishedAt: string;
     /** Findings in its list when it ended */
     found: number;
