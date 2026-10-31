@@ -1,0 +1,7 @@
+# This site is running a Frameleaf instance.
+# Security problems in Frameleaf should be reported to the Frameleaf maintainers.
+# Security problems related to this instance should be reported to its administration.
+Policy: https://github.com/Frameleaf/frameleaf-app/security/policy
+Contact: https://github.com/Frameleaf/frameleaf-app/security/advisories/new
+Preferred-Languages: en
+Expires: 2027-05-01T23:59:00.000Z
