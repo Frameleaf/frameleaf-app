@@ -1331,6 +1331,16 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.asset.unlock).not.toHaveBeenCalled();
     });
 
+    it('asks for a sweep of the owner when an encrypted item was only marked pending (FL-721)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([{ id: assetId, ownerId: 'owner-1', pending: true }]);
+
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: { userId: 'owner-1' } });
+    });
+
     it('unlocks a large selection in bounded transactions', async () => {
       const ids = Array.from(
         { length: 450 },

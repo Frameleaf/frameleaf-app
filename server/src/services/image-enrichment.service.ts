@@ -536,6 +536,7 @@ export class ImageEnrichmentService extends BaseService {
       await this.clearSafeReviewTags(reviewed);
       await this.notifyAssetsUpdated(unlocked, auth.user.id);
       await this.recordPartnerUnlock(auth, unlocked);
+      await this.afterAssetsUnlocked(unlocked);
     }
   }
   /**
@@ -623,6 +624,7 @@ export class ImageEnrichmentService extends BaseService {
     await this.clearSafeReviewTags(reviewed);
     await this.notifyAssetsUpdated(unlocked, auth.user.id);
     await this.recordPartnerUnlock(auth, unlocked);
+    await this.afterAssetsUnlocked(unlocked);
   }
   /**
    * Writes the owner's safe review on each of `members` in `trx`, with its privacy projection. An asset

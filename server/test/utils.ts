@@ -57,6 +57,7 @@ import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -101,6 +102,7 @@ import { DB } from 'src/schema/index.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
+import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { renderSystemNotification } from 'src/utils/notification-locale.js';
@@ -301,6 +303,8 @@ export type ServiceOverrides = {
   lockedKey: LockedKeyRepository;
   /** FL-721: not a BaseService dependency either; `LockedEncryptionService` takes it explicitly. */
   lockedEncryption: LockedEncryptionRepository;
+  /** FL-721: `LockedSealService` only. */
+  lockedFile: LockedFileRepository;
   logger: LoggingRepository;
   machineLearning: MachineLearningRepository;
   map: MapRepository;
@@ -377,6 +381,7 @@ export const getMocks = () => {
   databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
   databaseMock.withAssetSidecarLock.mockImplementation((_assetId, fn) => fn(undefined as never));
   databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
+  databaseMock.withLockedKeyFileLock.mockImplementation((_userId, fn) => fn());
   databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('19beta4 (Debian 19~beta4-1.pgdg12+1)');
   databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=19.0.0 <20.0.0');
   databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);
@@ -416,6 +421,7 @@ export const getMocks = () => {
     library: automock(LibraryRepository, { strict: false }),
     lockedKey: automock(LockedKeyRepository),
     lockedEncryption: automock(LockedEncryptionRepository, { args: [database], strict: false }),
+    lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
     media: newMediaRepositoryMock(),
@@ -652,6 +658,20 @@ export const newLockedEncryptionService = (mocks: ServiceMocks) =>
     mocks.job as As<JobRepository>,
     mocks.crypto as As<CryptoRepository>,
     mocks.websocket as As<WebsocketRepository>,
+    mocks.database as As<DatabaseRepository>,
+  );
+
+/** FL-721: a LockedSealService on these mocks (it is not a BaseService). */
+export const newLockedSealService = (mocks: ServiceMocks) =>
+  new LockedSealService(
+    mocks.logger as As<LoggingRepository>,
+    mocks.lockedFile as As<LockedFileRepository>,
+    mocks.lockedKey as As<LockedKeyRepository>,
+    mocks.lockedEncryption as As<LockedEncryptionRepository>,
+    mocks.job as As<JobRepository>,
+    mocks.database as As<DatabaseRepository>,
+    mocks.websocket as As<WebsocketRepository>,
+    mocks.cron as As<CronRepository>,
   );
 
 const createPNG = (r: number, g: number, b: number) => {

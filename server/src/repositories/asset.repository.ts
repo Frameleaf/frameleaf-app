@@ -90,6 +90,7 @@ import {
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
+import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
 import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
@@ -1125,6 +1126,26 @@ export class AssetRepository {
       .execute();
     return new Set(rows.map(({ assetId }) => assetId));
   }
+  /**
+   * FL-721: which of these assets are Locked items whose files their owner's Locked encryption covers
+   * (spec §6), and whether each is on its way out of Locked (`pendingUnlockAt`). What the lock and
+   * unlock follow-ups queue seal and unseal work for.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  @ChunkedArray()
+  getLockedEncryptionItems(ids: string[]) {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
+      .select(['asset.id', 'asset.ownerId'])
+      .select((eb) => eb('asset_lock.pendingUnlockAt', 'is not', null).$castTo<boolean>().as('pending'))
+      .where('asset.id', '=', anyUuid(ids))
+      .where(encryptsFilesOf('asset'))
+      .execute();
+  }
   /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
   @ChunkedArray()
   getLockReasons(ids: string[]) {
@@ -1221,6 +1242,13 @@ export class AssetRepository {
       set inherited = false, "lockedBy" = coalesce(${lockedBy}::uuid, "lockedBy")
       where "assetId" = any(${`{${targetIds}}`}::uuid[]) and inherited = true
     `.execute(tx);
+    // FL-721 (spec §7.3): an item on its way out of Locked (its files being decrypted) that is locked
+    // again stays Locked; it counts as newly locked, so its files are sealed again
+    const { rows: relocked } = await sql<{ assetId: string }>`
+      update asset_lock set "pendingUnlockAt" = null
+      where "assetId" = any(${`{${targetIds}}`}::uuid[]) and "pendingUnlockAt" is not null
+      returning "assetId"
+    `.execute(tx);
     const { rows } = await sql<{
       assetId: string;
     }>`
@@ -1230,7 +1258,7 @@ export class AssetRepository {
       on conflict ("assetId") do nothing
       returning "assetId"
     `.execute(tx);
-    const lockedIds = rows.map(({ assetId }) => assetId);
+    const lockedIds = [...rows.map(({ assetId }) => assetId), ...relocked.map(({ assetId }) => assetId)];
     if (lockedIds.length > 0) {
       // This update waits for any Studio export publication holding these rows, so the propagation
       // below sees every version it committed (FL-106).
@@ -1326,14 +1354,36 @@ export class AssetRepository {
     }
     // the group's rows before its lock records, in id order, like every lock writer (FL-34)
     await lockAssetRowsInOrder(tx, targetIds);
-    const unlocked = await tx
-      .deleteFrom('asset_lock')
+    // FL-721 (spec §7.3): decrypt first, then unlock. An item whose files its owner's Locked encryption
+    // covers is only marked; it stays hidden until the unseal job has made every file plain and removes
+    // the lock (`LockedFileRepository.finishPendingUnlock`). It is returned like any unlocked item: the
+    // owner's choice (their review, the partner copies following) is recorded now.
+    const pending = await tx
+      .updateTable('asset_lock')
+      .set((eb) => ({ pendingUnlockAt: eb.fn.coalesce('asset_lock.pendingUnlockAt', sql<Date>`now()`) }))
       .where('asset_lock.assetId', '=', anyUuid(targetIds))
+      .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset')
+            .select('asset.id')
+            .whereRef('asset.id', '=', 'asset_lock.assetId')
+            .where(encryptsFilesOf('asset')),
+        ),
+      )
+      .returning(['asset_lock.assetId', 'asset_lock.reason'])
+      .execute();
+    const marked = new Set(pending.map(({ assetId }) => assetId));
+    const removed = await tx
+      .deleteFrom('asset_lock')
+      .where('asset_lock.assetId', '=', anyUuid(targetIds.filter((id) => !marked.has(id))))
       .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
       .returning(['asset_lock.assetId', 'asset_lock.reason'])
       .execute();
-    if (unlocked.length > 0) {
-      const unlockedIds = unlocked.map(({ assetId }) => assetId);
+    const unlocked = [...removed, ...pending];
+    if (removed.length > 0) {
+      const unlockedIds = removed.map(({ assetId }) => assetId);
       await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
       // FL-195 follow-up: Studio exports whose last locked source this was unlock with it, unless the
       // owner locked them directly. They are not part of what this unlock returns: the caller reviews

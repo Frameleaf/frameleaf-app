@@ -18,7 +18,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { SALT_ROUNDS } from 'src/constants.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   LOCKED_ASK_AGAIN_DEFAULT,
   LockedEncryptionDisableDto,
@@ -30,8 +32,9 @@ import {
   LockedEncryptionUnlockDto,
   LockedEncryptionUpdateDto,
 } from 'src/dtos/locked-encryption.dto.js';
-import { JobName } from 'src/enum.js';
+import { FrameleafWorker, JobName } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import {
   type LockedEncryptionAsset,
@@ -109,6 +112,7 @@ export class LockedEncryptionService {
     private jobRepository: JobRepository,
     private cryptoRepository: CryptoRepository,
     private websocketRepository: WebsocketRepository,
+    private databaseRepository: DatabaseRepository,
   ) {
     this.logger.setContext(LockedEncryptionService.name);
   }
@@ -641,6 +645,21 @@ export class LockedEncryptionService {
     return [...users];
   }
 
+  /**
+   * Spec §7.4: the job worker finished turning encryption off (every file is plain, the row is gone).
+   * The key this process kept pinned for it is released here and in the workers. Ignored while the
+   * row still exists: the message only says where to look.
+   */
+  @OnEvent({ name: 'LockedEncryptionOff', server: true, workers: [FrameleafWorker.Api] })
+  async onLockedEncryptionOff({ userId }: ArgOf<'LockedEncryptionOff'>): Promise<void> {
+    if (await this.lockedEncryptionRepository.get(userId)) {
+      return;
+    }
+    lockedKeys.pin(userId, false);
+    publishLockedKey({ type: 'locked-key', action: 'unpin', userId });
+    this.drop(userId);
+  }
+
   // ---- Helpers ----
 
   private async requireRow(userId: string) {
@@ -746,14 +765,18 @@ export class LockedEncryptionService {
     await (previous ? this.lockedKeyRepository.write(previous) : this.lockedKeyRepository.delete(userId));
   }
 
-  /** Runs `change` after every earlier key-file change of this person has finished (see `keyFileChanges`). */
+  /**
+   * Runs `change` after every earlier key-file change of this person has finished: in this process
+   * (see `keyFileChanges`), then across processes under the per-user database lock, which the job
+   * worker that finishes turning encryption off takes too (`LockedSealService`).
+   */
   async withKeyFileLock<T>(userId: string, change: () => Promise<T>): Promise<T> {
     const previous = keyFileChanges.get(userId);
     const { promise, resolve } = Promise.withResolvers<void>();
     keyFileChanges.set(userId, promise);
     await previous;
     try {
-      return await change();
+      return await this.databaseRepository.withLockedKeyFileLock(userId, change);
     } finally {
       resolve();
       if (keyFileChanges.get(userId) === promise) {

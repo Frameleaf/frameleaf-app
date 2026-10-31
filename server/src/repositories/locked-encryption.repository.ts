@@ -13,6 +13,8 @@ export interface LockedEncryptionAsset {
   originalPath: string;
   /** False for a file Frameleaf doesn't own (an external or read-only library), which stays plain (spec §6.3). */
   encryptable: boolean;
+  /** Set while the item is on its way out of Locked: its files are decrypted, then the lock goes (spec §7.3). */
+  pendingUnlockAt: Date | null;
 }
 
 /**
@@ -80,12 +82,12 @@ export class LockedEncryptionRepository {
     return this.db
       .selectFrom('asset')
       .innerJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
-      .select(['asset.id', 'asset.originalPath'])
+      .select(['asset.id', 'asset.originalPath', 'asset_lock.pendingUnlockAt'])
       .select((eb) => eb('asset.libraryId', 'is', null).$castTo<boolean>().as('encryptable'))
       .where('asset.ownerId', '=', asUuid(ownerId))
       .where(sql<boolean>`not exists (select 1 from public.asset_origin o where o."assetId" = "asset"."id")`)
       .orderBy('asset_lock.lockedAt', 'asc')
       .orderBy('asset.id', 'asc')
-      .execute();
+      .execute() as Promise<LockedEncryptionAsset[]>;
   }
 }

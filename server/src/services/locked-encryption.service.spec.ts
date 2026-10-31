@@ -258,6 +258,50 @@ describe(LockedEncryptionService.name, () => {
     });
   });
 
+  describe('key-file changes across processes (Task 5, Ruling 12)', () => {
+    it('every key-file change also holds the per-user database lock', async () => {
+      let inside = false;
+      mocks.database.withLockedKeyFileLock.mockImplementation(async (id, fn) => {
+        expect(id).toBe(userId);
+        inside = true;
+        try {
+          return await fn();
+        } finally {
+          inside = false;
+        }
+      });
+      mocks.lockedKey.write.mockImplementation((file) => {
+        expect(inside).toBe(true);
+        files.set(file.userId, structuredClone(file));
+        return Promise.resolve();
+      });
+
+      await enablePin();
+
+      expect(mocks.database.withLockedKeyFileLock).toHaveBeenCalledTimes(1);
+      expect(mocks.lockedKey.write).toHaveBeenCalled();
+    });
+
+    it('the worker finishing turn-off releases the pinned key in the API process once the row is gone', async () => {
+      await enablePin();
+      await sut.disable(auth, { pinCode: PIN });
+      expect(lockedKeys.has(userId)).toBe(true);
+      vi.mocked(publishLockedKey).mockClear();
+
+      // still turning off: ignored
+      await sut.onLockedEncryptionOff({ userId });
+      expect(lockedKeys.has(userId)).toBe(true);
+
+      rows.delete(userId);
+      await sut.onLockedEncryptionOff({ userId });
+
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(lockedKeys.pinnedUsers()).not.toContain(userId);
+      expect(publishLockedKey).toHaveBeenCalledWith({ type: 'locked-key', action: 'unpin', userId });
+      expect(publishLockedKey).toHaveBeenCalledWith({ type: 'locked-key', action: 'drop', userId });
+    });
+  });
+
   describe('queue failures after the change is stored (fix round 1)', () => {
     it('enable returns the recovery key when queueing the sweep fails, and logs it', async () => {
       mocks.job.queue.mockRejectedValue(new Error('redis down'));
@@ -271,7 +315,7 @@ describe(LockedEncryptionService.name, () => {
     it('a mode switch is saved when queueing the re-wrap fails, and PUT {mode} queues it again', async () => {
       await enablePin();
       mocks.lockedEncryption.getLockedAssets.mockResolvedValue([
-        { id: 'asset-1', originalPath: '/a', encryptable: true },
+        { id: 'asset-1', originalPath: '/a', encryptable: true, pendingUnlockAt: null },
       ]);
       mocks.job.queueAll.mockRejectedValueOnce(new Error('redis down'));
 
@@ -356,9 +400,9 @@ describe(LockedEncryptionService.name, () => {
     it("update(mode:'advanced') replaces the pin wrap with a passphrase wrap and queues LockedRewrap for every asset in the set", async () => {
       await enablePin();
       mocks.lockedEncryption.getLockedAssets.mockResolvedValue([
-        { id: 'asset-1', originalPath: '/a', encryptable: true },
-        { id: 'asset-2', originalPath: '/b', encryptable: true },
-        { id: 'external', originalPath: '/c', encryptable: false },
+        { id: 'asset-1', originalPath: '/a', encryptable: true, pendingUnlockAt: null },
+        { id: 'asset-2', originalPath: '/b', encryptable: true, pendingUnlockAt: null },
+        { id: 'external', originalPath: '/c', encryptable: false, pendingUnlockAt: null },
       ]);
 
       await sut.update(auth, { mode: 'advanced', currentSecret: PIN, newPassphrase: PASSPHRASE });
@@ -429,8 +473,8 @@ describe(LockedEncryptionService.name, () => {
       await enableAdvanced();
       lockedKeys.clear();
       mocks.lockedEncryption.getLockedAssets.mockResolvedValue([
-        { id: 'asset-1', originalPath: '/a', encryptable: true },
-        { id: 'external', originalPath: '/c', encryptable: false },
+        { id: 'asset-1', originalPath: '/a', encryptable: true, pendingUnlockAt: null },
+        { id: 'external', originalPath: '/c', encryptable: false, pendingUnlockAt: null },
       ]);
 
       await sut.disable(auth, { passphrase: PASSPHRASE });
@@ -460,10 +504,10 @@ describe(LockedEncryptionService.name, () => {
         await fs.writeFile(join(media, 'sealed'), 'FLLK....');
         await fs.writeFile(join(media, 'plain'), 'JPEG....');
         mocks.lockedEncryption.getLockedAssets.mockResolvedValue([
-          { id: 'a', originalPath: join(media, 'sealed'), encryptable: true },
-          { id: 'b', originalPath: join(media, 'plain'), encryptable: true },
-          { id: 'c', originalPath: join(media, 'missing'), encryptable: true },
-          { id: 'd', originalPath: '/external', encryptable: false },
+          { id: 'a', originalPath: join(media, 'sealed'), encryptable: true, pendingUnlockAt: null },
+          { id: 'b', originalPath: join(media, 'plain'), encryptable: true, pendingUnlockAt: null },
+          { id: 'c', originalPath: join(media, 'missing'), encryptable: true, pendingUnlockAt: null },
+          { id: 'd', originalPath: '/external', encryptable: false, pendingUnlockAt: null },
         ]);
 
         const status = await sut.getStatus(auth);

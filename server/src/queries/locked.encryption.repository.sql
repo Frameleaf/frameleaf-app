@@ -31,6 +31,7 @@ where
 select
   "asset"."id",
   "asset"."originalPath",
+  "asset_lock"."pendingUnlockAt",
   "asset"."libraryId" is null as "encryptable"
 from
   "asset"

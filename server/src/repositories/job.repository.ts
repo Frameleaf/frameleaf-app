@@ -122,6 +122,11 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.PartnerBackfill,
   // FL-667: removing a filler tag that is already gone changes nothing, so a re-run is harmless
   JobName.DescriptionFillerTagCleanup,
+  // FL-721: every step reads the file's header first (`FLLK`) and replaces it through a temporary file
+  JobName.LockedSeal,
+  JobName.LockedUnseal,
+  JobName.LockedRewrap,
+  JobName.LockedSweep,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -1101,6 +1106,19 @@ export class JobRepository {
       }
       case JobName.PartnerCopyAlbum: {
         return { deduplication: { id: `partner-album/${item.data.sourceAlbumId}/${item.data.targetOwnerId}` } };
+      }
+      // FL-721: one waiting job per item and step, and one sweep per person (or of everyone); a
+      // request while one runs (a new derived file, a key load) is picked up after it
+      case JobName.LockedSeal:
+      case JobName.LockedUnseal:
+      case JobName.LockedRewrap: {
+        return { deduplication: { id: `${item.name}:${item.data.id}`, keepLastIfActive: true } };
+      }
+      case JobName.LockedSweep: {
+        const id = `${item.name}:${item.data.userId ?? 'all'}`;
+        return item.data.delay
+          ? { delay: item.data.delay, deduplication: { id: `${id}:later`, keepLastIfActive: true } }
+          : { deduplication: { id, keepLastIfActive: true } };
       }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };

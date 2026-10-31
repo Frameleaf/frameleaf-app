@@ -650,7 +650,8 @@ export type JobItem =
   | { name: JobName.LockedSeal; data: { id: string } }
   | { name: JobName.LockedUnseal; data: { id: string } }
   | { name: JobName.LockedRewrap; data: { id: string } }
-  | { name: JobName.LockedSweep; data: { userId?: string } }
+  /** `delay`: a later check that turning on or off has finished, kept apart from the immediate sweeps */
+  | { name: JobName.LockedSweep; data: { userId?: string; delay?: number } }
 
   // Cleanup
   | { name: JobName.SessionCleanup; data?: IBaseJob }

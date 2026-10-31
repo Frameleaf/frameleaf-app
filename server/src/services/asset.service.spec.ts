@@ -808,6 +808,22 @@ describe(AssetService.name, () => {
       ]);
     });
 
+    it('queues a seal for an item that joins an encrypted set (FL-721)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.lock.mockResolvedValue([asset.id]);
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: asset.id, ownerId: asset.ownerId, pending: false },
+      ]);
+
+      await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+    });
+
     it('should answer from the updated row when a session without the PIN locks the asset (FL-34)', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

@@ -63,6 +63,24 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('keeps one waiting Locked encryption job per item and step, and one sweep per person (FL-721)', async () => {
+    await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedUnseal, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedRewrap, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedSweep, data: { userId: 'user' } });
+    await sut.queue({ name: JobName.LockedSweep, data: {} });
+    await sut.queue({ name: JobName.LockedSweep, data: { userId: 'user', delay: 120_000 } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: 'LockedSeal:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedUnseal:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedRewrap:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedSweep:user', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedSweep:all', keepLastIfActive: true } },
+      // the check after each seal or unseal: at most one waiting, apart from the immediate sweeps
+      { delay: 120_000, deduplication: { id: 'LockedSweep:user:later', keepLastIfActive: true } },
+    ]);
+  });
+
   it('buffers success follow-ups for the final outcome transaction with run and dependency lineage', async () => {
     const execution = context();
     await queueExecution.run(execution, () =>
