@@ -8,6 +8,7 @@ import { AlbumUpdateEmail } from 'src/emails/album-update.email.js';
 import { ItemShareEmail } from 'src/emails/item-share.email.js';
 import { PasswordLinkEmail } from 'src/emails/password-link.email.js';
 import { SignInReminderEmail } from 'src/emails/sign-in-reminder.email.js';
+import { StudioInquiryEmail } from 'src/emails/studio-inquiry.email.js';
 import { TestEmail } from 'src/emails/test.email.js';
 import { WelcomeEmail } from 'src/emails/welcome.email.js';
 import { MailSignInProvider } from 'src/enum.js';
@@ -77,6 +78,9 @@ export enum EmailTemplate {
   ALBUM_INVITE = 'album-invite',
   ALBUM_UPDATE = 'album-update',
   ITEM_SHARE = 'item-share',
+
+  // CLIENTS
+  STUDIO_INQUIRY = 'studio-inquiry',
 }
 
 interface BaseEmailProps {
@@ -137,6 +141,18 @@ export interface SignInReminderEmailProps extends BaseEmailProps {
   link: string;
 }
 
+/** FL-702: someone sent the studio website's inquiry form, or asked for their gallery link. */
+export interface StudioInquiryEmailProps extends BaseEmailProps {
+  studioName: string;
+  kind: 'inquiry' | 'gallery-link';
+  name: string;
+  email: string;
+  date: string;
+  type: string;
+  message: string;
+  link?: string;
+}
+
 export interface AlbumUpdateEmailProps extends BaseEmailProps {
   albumName: string;
   albumId: string;
@@ -180,6 +196,11 @@ export type EmailRenderRequest =
       template: EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER;
       data: SignInReminderEmailProps;
       customTemplate: string;
+    }
+  | {
+      template: EmailTemplate.STUDIO_INQUIRY;
+      data: StudioInquiryEmailProps;
+      customTemplate?: string;
     };
 
 export type SendEmailResponse = {
@@ -343,6 +364,10 @@ export class EmailRepository {
 
       case EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER: {
         return createElement(SignInReminderEmail, data);
+      }
+
+      case EmailTemplate.STUDIO_INQUIRY: {
+        return createElement(StudioInquiryEmail, data);
       }
     }
   }

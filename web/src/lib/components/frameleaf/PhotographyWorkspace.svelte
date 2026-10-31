@@ -128,8 +128,8 @@
   }: {
     /** A shoot to open first: the RAW develop editor's way back (FL-420). */
     initialShoot?: string;
-    /** `galleries`: the editor's Proof opens the shoot's galleries. */
-    initialSection?: 'galleries';
+    /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
+    initialSection?: 'galleries' | 'website';
     /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
     onRemoveFromTopBar?: () => void;
     /** Removing is being saved. */
@@ -137,7 +137,9 @@
   } = $props();
 
   // svelte-ignore state_referenced_locally
-  let section = $state<Section>(initialShoot && initialSection === 'galleries' ? 'galleries' : 'shoots');
+  let section = $state<Section>(
+    initialSection === 'website' ? 'website' : initialShoot && initialSection === 'galleries' ? 'galleries' : 'shoots',
+  );
   let shootFilter = $state<ShootFilter>('all');
   let workspace = $state<Workspace>({ revision: null, shoots: [] });
   let workflowSummaries = $state<WorkflowSummary[]>([]);
@@ -849,7 +851,10 @@
           }}
         />
       {:else if section === 'watermarks'}<PhotographyWatermarks />
-      {:else if section === 'website'}<PhotographyWebsite shoots={workspace.shoots} />
+      {:else if section === 'website'}<PhotographyWebsite
+          shoots={workspace.shoots}
+          onEditBrand={() => (section = 'branding')}
+        />
       {:else if picksShoot(section)}
         {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
               shoot={active}

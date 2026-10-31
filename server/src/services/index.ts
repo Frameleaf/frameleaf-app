@@ -123,6 +123,7 @@ import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
@@ -220,6 +221,7 @@ export const services = [
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
   PhotographyWorkflowService,
+  PhotographySiteService,
   AssetUploadResourceService,
   AssetUploadDirectService,
   BackupDeviceService,

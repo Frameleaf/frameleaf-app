@@ -172,6 +172,8 @@ export type Workflow = {
   presets: { id: string; name: string; config: WorkflowConfig }[];
   studioPresets?: StudioPresets;
   approvedVersions?: { captureId: string; revisionId: string; approvedAt: string }[];
+  /** FL-702: captures whose approved web photograph is published, so the website can show them. */
+  websiteReady?: string[];
   pendingEdits?: number;
   captures: Capture[];
   chapters: Chapter[];
@@ -277,24 +279,70 @@ export type PublicBrand = {
   font: string;
   logoUrl: string | null;
 };
+/** FL-702 studio website (FL-701 design). Mirrors `PhotographySiteSchema` on the server. */
+export type SiteTemplate = 'editorial' | 'minimal' | 'gallery' | 'cinematic' | 'noir' | 'commercial';
+export type SiteSectionId =
+  'cover' | 'portfolio' | 'about' | 'services' | 'testimonials' | 'faq' | 'inquiry' | 'clients';
+export type SiteItem = { shootId: string; captureId: string };
 export type Site = {
   enabled: boolean;
+  template: SiteTemplate;
+  colours: 'template' | 'brand';
+  coverFocal: number;
+  cover: SiteItem | null;
+  sections: { id: SiteSectionId; on: boolean }[];
   title: string;
   about: string;
-  services: string;
   contact: string;
-  portfolio: { shootId: string; captureId: string; consent: true }[];
-  presentation: {
-    layout: 'editorial' | 'grid' | 'slideshow';
-    spacing: 'compact' | 'comfortable' | 'airy';
-    font: 'editorial' | 'modern' | 'script';
-    palette: 'studio' | 'ivory' | 'charcoal';
-  };
+  collections: { id: string; name: string; items: SiteItem[] }[];
+  packages: { name: string; price: string; detail: string }[];
+  testimonials: { quote: string; name: string }[];
+  faq: { q: string; a: string }[];
+  trustedBy: string[];
+  slug: string;
+  domain: string;
+  seoTitle: string;
+  seoDescription: string;
 };
-export type StudioSite = { revision: string | null; site: Site; url?: string };
-export type PublicSite = Omit<Site, 'portfolio'> & {
-  portfolio: { shootId: string; captureId: string; url: string }[];
+export type SiteInquiry = {
+  id: string;
+  createdAt: string;
+  kind: 'inquiry' | 'gallery-link';
+  name: string;
+  email: string;
+  date: string;
+  type: string;
+  message: string;
+};
+export type StudioSite = { revision: string | null; site: Site; url: string; inquiries: SiteInquiry[] };
+export type SitePhoto = { key: string; alt: string; width: number; height: number; url: string; srcset: string };
+export type PublicSite = Pick<
+  Site,
+  | 'template'
+  | 'colours'
+  | 'coverFocal'
+  | 'sections'
+  | 'title'
+  | 'about'
+  | 'contact'
+  | 'packages'
+  | 'testimonials'
+  | 'faq'
+  | 'trustedBy'
+> & {
+  ownerId: string;
+  cover: SitePhoto | null;
+  collections: { id: string; name: string; photos: SitePhoto[] }[];
   brand: PublicBrand;
+};
+export type InquiryInput = {
+  kind: 'inquiry' | 'gallery-link';
+  name: string;
+  email: string;
+  date: string;
+  type: string;
+  message: string;
+  website?: string;
 };
 
 export async function workflowRequest<T>(id: string, path = '', method = 'GET', body?: unknown): Promise<T> {
@@ -330,13 +378,27 @@ export async function galleryLogo(id: string, session: string): Promise<Blob> {
   }
   return blob;
 }
-export async function publicStudio(ownerId: string): Promise<PublicSite> {
-  const response = await (defaults.fetch ?? fetch)(
-    `${getBaseUrl()}/photography/studios/${encodeURIComponent(ownerId)}`,
-    { headers: { Accept: 'application/json' }, credentials: 'omit', cache: 'no-store' },
-  );
+/** A studio website by its address (`/studio/<slug>`) or, for older links, its owner id. */
+export async function publicStudio(site: string): Promise<PublicSite> {
+  const response = await (defaults.fetch ?? fetch)(`${getBaseUrl()}/photography/studios/${encodeURIComponent(site)}`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'omit',
+    cache: 'no-store',
+  });
   checkResponse(response);
   return response.json();
+}
+export async function sendInquiry(site: string, inquiry: InquiryInput): Promise<void> {
+  const response = await (defaults.fetch ?? fetch)(
+    `${getBaseUrl()}/photography/studios/${encodeURIComponent(site)}/inquiries`,
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      credentials: 'omit',
+      body: JSON.stringify(inquiry),
+    },
+  );
+  checkResponse(response);
 }
 export const publicStudioMediaUrl = (ownerId: string, path: string) =>
   `${getBaseUrl()}/photography/studios/${encodeURIComponent(ownerId)}${path}`;

@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { OpenGraphTags } from 'src/utils/misc.js';
 
@@ -14,6 +15,7 @@ export const render = (index: string, meta: OpenGraphTags) => {
   );
 
   const tags = `
+    <title>${title}</title>
     <meta name="description" content="${description}" />
 
     <!-- Facebook Meta Tags -->
@@ -30,6 +32,7 @@ export class ApiService {
   constructor(
     private authService: AuthService,
     private sharedLinkService: SharedLinkService,
+    private siteService: PhotographySiteService,
     private configRepository: ConfigRepository,
     private logger: LoggingRepository,
   ) {
@@ -87,6 +90,16 @@ export class ApiService {
           const slug = shareSlug[1];
           const auth = await this.authService.validateSharedLinkSlug(slug);
           meta = await this.sharedLinkService.getMetadataTags(auth, defaultDomain);
+        } catch {
+          status = 404;
+        }
+      }
+
+      // FL-702: studio websites carry their own title, description and share image (FL-701 item 16).
+      const studio = request.path.match(/^\/studio\/([a-z0-9-]{1,48})\/?$/);
+      if (studio) {
+        try {
+          meta = await this.siteService.metadataTags(studio[1], defaultDomain);
         } catch {
           status = 404;
         }

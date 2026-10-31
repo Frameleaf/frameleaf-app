@@ -35,19 +35,32 @@ describe(ApiService.name, () => {
   });
 
   describe('ssr', () => {
+    const site = {
+      metadataTags: vi.fn((slug: string) =>
+        slug === 'cedar-and-light'
+          ? Promise.resolve({ title: 'Cedar & Light', description: 'Portraits', imageUrl: 'https://x/cover.jpg' })
+          : Promise.reject(new Error('not found')),
+      ),
+    };
+    const sent = { status: 0, html: '' };
     const serve = async (url: string) => {
       const config = { getEnv: () => ({ resourcePaths: { web: { indexHtml: '/nonexistent/index.html' } } }) };
       const logger = { setContext: vi.fn(), warn: vi.fn() };
-      const service = new ApiService({} as never, {} as never, config as never, logger as never);
+      const service = new ApiService({} as never, {} as never, site as never, config as never, logger as never);
       const headers: Record<string, string> = {};
       const res = {
-        status: () => res,
+        status: (code: number) => {
+          sent.status = code;
+          return res;
+        },
         type: () => res,
         header: (name: string, value: string) => {
           headers[name] = value;
           return res;
         },
-        send: vi.fn(),
+        send: (html: string) => {
+          sent.html = html;
+        },
       };
       const request = {
         method: 'GET',
@@ -65,6 +78,17 @@ describe(ApiService.name, () => {
     it('sends /link with no referrer, so nothing in its address leaves in a Referer (CLD-004)', async () => {
       expect((await serve('/link?target=frameleaf_license&linkCode=flc_x'))['Referrer-Policy']).toBe('no-referrer');
       expect((await serve('/photos'))['Referrer-Policy']).toBeUndefined();
+    });
+
+    it('gives a studio website its own title, description and share image (FL-702)', async () => {
+      await serve('/studio/cedar-and-light');
+      expect(sent.status).toBe(200);
+      expect(site.metadataTags).toHaveBeenCalledWith('cedar-and-light', 'https://photos.example');
+      await serve('/studio/unknown');
+      expect(sent.status).toBe(404);
+      await serve('/studio');
+      expect(sent.status).toBe(200);
+      expect(site.metadataTags).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
+import { PhotographySiteFields, PhotographySiteSchema, SiteInquiryKindSchema } from 'src/utils/photography-site.js';
 
 const blockedReasons = ['permission', 'order', 'payment', 'approval', 'render'] as const;
 // Keep runtime null validation while avoiding a null member in generated TypeScript string enums.
@@ -396,6 +397,9 @@ export const PhotographyWorkflowViewSchema = z.object({
   publication: PublicationSchema,
   receipts: z.array(ReceiptSchema),
   approvals: z.array(ApprovalSchema),
+  websiteReady: Ids.optional().describe(
+    'Captures whose approved web photograph is published, so the studio website can show them',
+  ),
 });
 export class PhotographyWorkflowDto extends createZodDto(PhotographyWorkflowViewSchema) {}
 export class PhotographyInvitationDto extends createZodDto(
@@ -474,34 +478,69 @@ export class PhotographyZipResponseDto extends createZodDto(
 export class PhotographyCallbackDto extends createZodDto(z.object({ received: z.boolean() })) {}
 
 export class PhotographyOrderAcceptDto extends createZodDto(z.strictObject({ expectedRevision: Revision })) {}
-export const PhotographySiteSchema = z.strictObject({
-  presentation: z
-    .strictObject({
-      layout: z.enum(['editorial', 'grid', 'slideshow']),
-      spacing: z.enum(['compact', 'comfortable', 'airy']),
-      font: z.enum(['editorial', 'modern', 'script']),
-      palette: z.enum(['studio', 'ivory', 'charcoal']),
-    })
-    .default({ layout: 'editorial', spacing: 'comfortable', font: 'editorial', palette: 'studio' }),
-  enabled: z.boolean(),
-  title: z.string().trim().min(1).max(200),
-  about: z.string().max(10_000),
-  services: z.string().max(10_000),
-  contact: z.string().max(5000),
-  portfolio: z.array(z.strictObject({ shootId: Id, captureId: Id, consent: z.literal(true) })).max(200),
-});
-export type PhotographySite = z.infer<typeof PhotographySiteSchema>;
+export type { PhotographySite } from 'src/utils/photography-site.js';
 export class PhotographySiteSaveDto extends createZodDto(
   z.strictObject({ expectedRevision: Revision, site: PhotographySiteSchema }),
 ) {}
 
+export const PhotographyInquirySchema = z.object({
+  id: Id,
+  createdAt: z.iso.datetime({ offset: true }),
+  kind: SiteInquiryKindSchema,
+  name: z.string(),
+  email: z.string(),
+  date: z.string(),
+  type: z.string(),
+  message: z.string(),
+});
+export type PhotographyInquiry = z.infer<typeof PhotographyInquirySchema>;
 export class PhotographySiteDto extends createZodDto(
-  z.object({ revision: Revision, site: PhotographySiteSchema, url: z.string().optional() }),
+  z.object({
+    revision: Revision,
+    site: PhotographySiteSchema,
+    url: z.string().describe('Path of the public site: /studio/<slug>'),
+    inquiries: z.array(PhotographyInquirySchema).describe('Newest first'),
+  }),
 ) {}
+const PublicSitePhotoSchema = z.object({
+  key: z.string(),
+  alt: z.string(),
+  width: z.int(),
+  height: z.int(),
+  url: z.string().describe('Largest copy; versioned, so it can be cached for a year'),
+  srcset: z.string(),
+});
 export class PhotographyPublicSiteDto extends createZodDto(
-  PhotographySiteSchema.omit({ portfolio: true }).extend({
-    portfolio: z.array(z.object({ shootId: Id, captureId: Id, url: z.string() })),
+  z.object({
+    ...PhotographySiteFields.pick({
+      template: true,
+      colours: true,
+      coverFocal: true,
+      sections: true,
+      title: true,
+      about: true,
+      contact: true,
+      packages: true,
+      testimonials: true,
+      faq: true,
+      trustedBy: true,
+    }).shape,
+    ownerId: Id,
+    cover: PublicSitePhotoSchema.nullable(),
+    collections: z.array(z.object({ id: z.string(), name: z.string(), photos: z.array(PublicSitePhotoSchema) })),
     brand: PublicBrandSchema,
+  }),
+) {}
+export class PhotographyInquiryCreateDto extends createZodDto(
+  z.strictObject({
+    kind: SiteInquiryKindSchema,
+    name: z.string().trim().max(120),
+    email: z.email().max(254),
+    date: z.union([z.literal(''), z.iso.date()]),
+    type: z.string().trim().max(60),
+    message: z.string().trim().max(5000),
+    /** Left empty by people; filled by form-filling bots, whose inquiries are dropped without saying so. */
+    website: z.string().max(500).optional(),
   }),
 ) {}
 

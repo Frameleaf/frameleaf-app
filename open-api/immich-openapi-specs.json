@@ -38639,36 +38639,6 @@
         ]
       }
     },
-    "/photography/studios/{ownerId}": {
-      "get": {
-        "operationId": "photographyPublicSite",
-        "parameters": [
-          {
-            "name": "ownerId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPublicSiteDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
     "/photography/studios/{ownerId}/logo": {
       "get": {
         "operationId": "photographyPublicLogo",
@@ -38702,6 +38672,7 @@
     },
     "/photography/studios/{ownerId}/photos/{shootId}/{captureId}": {
       "get": {
+        "description": "A website photograph at its largest width (links made before FL-702 have no width).",
         "operationId": "photographyPublicPhoto",
         "parameters": [
           {
@@ -38739,6 +38710,127 @@
                 }
               }
             },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/studios/{ownerId}/photos/{shootId}/{captureId}/{width}": {
+      "get": {
+        "description": "A website photograph at one of its widths (640, 1280, 2048).",
+        "operationId": "photographyPublicSitePhoto",
+        "parameters": [
+          {
+            "name": "captureId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shootId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "width",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/studios/{site}": {
+      "get": {
+        "description": "A studio website by its address (/studio/<slug>) or, for links made before FL-702, its owner id.",
+        "operationId": "photographyPublicSite",
+        "parameters": [
+          {
+            "name": "site",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPublicSiteDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/studios/{site}/inquiries": {
+      "post": {
+        "description": "Sends the studio an inquiry from its website, or asks for a gallery link. Always answers 204 for a working site, whatever the email address.",
+        "operationId": "photographySiteInquiry",
+        "parameters": [
+          {
+            "name": "site",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyInquiryCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
             "description": ""
           }
         },
@@ -109408,6 +109500,60 @@
         ],
         "type": "object"
       },
+      "PhotographyInquiryCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              },
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              }
+            ]
+          },
+          "email": {
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PhotographySiteInquiryKind"
+          },
+          "message": {
+            "maxLength": 5000,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 60,
+            "type": "string"
+          },
+          "website": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "email",
+          "kind",
+          "message",
+          "name",
+          "type"
+        ],
+        "type": "object"
+      },
       "PhotographyIntakeDto": {
         "additionalProperties": false,
         "properties": {
@@ -113012,6 +113158,16 @@
                   "presets"
                 ],
                 "type": "object"
+              },
+              "websiteReady": {
+                "description": "Captures whose approved web photograph is published, so the studio website can show them",
+                "items": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "type": "array"
               }
             },
             "required": [
@@ -114396,7 +114552,6 @@
         "type": "object"
       },
       "PhotographyPublicSiteDto": {
-        "additionalProperties": false,
         "properties": {
           "about": {
             "maxLength": 10000,
@@ -114446,107 +114601,244 @@
             ],
             "type": "object"
           },
-          "contact": {
-            "maxLength": 5000,
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "portfolio": {
+          "collections": {
             "items": {
               "properties": {
-                "captureId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "id": {
                   "type": "string"
                 },
-                "shootId": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "name": {
                   "type": "string"
                 },
-                "url": {
-                  "type": "string"
+                "photos": {
+                  "items": {
+                    "properties": {
+                      "alt": {
+                        "type": "string"
+                      },
+                      "height": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      "key": {
+                        "type": "string"
+                      },
+                      "srcset": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Largest copy; versioned, so it can be cached for a year",
+                        "type": "string"
+                      },
+                      "width": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "alt",
+                      "width",
+                      "height",
+                      "url",
+                      "srcset"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
                 }
               },
               "required": [
-                "shootId",
-                "captureId",
-                "url"
+                "id",
+                "name",
+                "photos"
               ],
               "type": "object"
             },
             "type": "array"
           },
-          "presentation": {
-            "additionalProperties": false,
-            "default": {
-              "font": "editorial",
-              "layout": "editorial",
-              "palette": "studio",
-              "spacing": "comfortable"
-            },
+          "colours": {
+            "$ref": "#/components/schemas/PhotographySiteColours"
+          },
+          "contact": {
+            "maxLength": 5000,
+            "type": "string"
+          },
+          "cover": {
+            "nullable": true,
             "properties": {
-              "font": {
-                "enum": [
-                  "editorial",
-                  "modern",
-                  "script"
-                ],
+              "alt": {
                 "type": "string"
               },
-              "layout": {
-                "enum": [
-                  "editorial",
-                  "grid",
-                  "slideshow"
-                ],
+              "height": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "key": {
                 "type": "string"
               },
-              "palette": {
-                "enum": [
-                  "studio",
-                  "ivory",
-                  "charcoal"
-                ],
+              "srcset": {
                 "type": "string"
               },
-              "spacing": {
-                "enum": [
-                  "compact",
-                  "comfortable",
-                  "airy"
-                ],
+              "url": {
+                "description": "Largest copy; versioned, so it can be cached for a year",
                 "type": "string"
+              },
+              "width": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
               }
             },
             "required": [
-              "layout",
-              "spacing",
-              "font",
-              "palette"
+              "key",
+              "alt",
+              "width",
+              "height",
+              "url",
+              "srcset"
             ],
             "type": "object"
           },
-          "services": {
-            "maxLength": 10000,
+          "coverFocal": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faq": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "a": {
+                  "maxLength": 2000,
+                  "type": "string"
+                },
+                "q": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q",
+                "a"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "packages": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "detail": {
+                  "maxLength": 400,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                "price": {
+                  "maxLength": 40,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "price",
+                "detail"
+              ],
+              "type": "object"
+            },
+            "maxItems": 12,
+            "type": "array"
+          },
+          "sections": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/PhotographySiteSectionId"
+                },
+                "on": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "on"
+              ],
+              "type": "object"
+            },
+            "maxItems": 8,
+            "minItems": 8,
+            "type": "array"
+          },
+          "template": {
+            "$ref": "#/components/schemas/PhotographySiteTemplate"
+          },
+          "testimonials": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                "quote": {
+                  "maxLength": 600,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "quote",
+                "name"
+              ],
+              "type": "object"
+            },
+            "maxItems": 12,
+            "type": "array"
           },
           "title": {
             "maxLength": 200,
             "minLength": 1,
             "type": "string"
+          },
+          "trustedBy": {
+            "items": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 12,
+            "type": "array"
           }
         },
         "required": [
           "about",
           "brand",
+          "collections",
+          "colours",
           "contact",
-          "enabled",
-          "portfolio",
-          "services",
-          "title"
+          "cover",
+          "coverFocal",
+          "faq",
+          "ownerId",
+          "packages",
+          "sections",
+          "template",
+          "testimonials",
+          "title",
+          "trustedBy"
         ],
         "type": "object"
       },
@@ -114860,8 +115152,62 @@
         ],
         "type": "object"
       },
+      "PhotographySiteColours": {
+        "enum": [
+          "template",
+          "brand"
+        ],
+        "type": "string"
+      },
       "PhotographySiteDto": {
         "properties": {
+          "inquiries": {
+            "description": "Newest first",
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                  "type": "string"
+                },
+                "date": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/PhotographySiteInquiryKind"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "kind",
+                "name",
+                "email",
+                "date",
+                "type",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "revision": {
             "format": "uuid",
             "nullable": true,
@@ -114875,123 +115221,257 @@
                 "maxLength": 10000,
                 "type": "string"
               },
+              "collections": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "pattern": "^[a-z0-9-]{1,48}$",
+                      "type": "string"
+                    },
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "captureId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "shootId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "shootId",
+                          "captureId"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 200,
+                      "type": "array"
+                    },
+                    "name": {
+                      "maxLength": 60,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "items"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array"
+              },
+              "colours": {
+                "$ref": "#/components/schemas/PhotographySiteColours"
+              },
               "contact": {
                 "maxLength": 5000,
+                "type": "string"
+              },
+              "cover": {
+                "additionalProperties": false,
+                "nullable": true,
+                "properties": {
+                  "captureId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "shootId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "shootId",
+                  "captureId"
+                ],
+                "type": "object"
+              },
+              "coverFocal": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "domain": {
                 "type": "string"
               },
               "enabled": {
                 "type": "boolean"
               },
-              "portfolio": {
+              "faq": {
                 "items": {
                   "additionalProperties": false,
                   "properties": {
-                    "captureId": {
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "a": {
+                      "maxLength": 2000,
                       "type": "string"
                     },
-                    "consent": {
-                      "enum": [
-                        true
-                      ],
-                      "type": "boolean"
-                    },
-                    "shootId": {
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "q": {
+                      "maxLength": 200,
                       "type": "string"
                     }
                   },
                   "required": [
-                    "shootId",
-                    "captureId",
-                    "consent"
+                    "q",
+                    "a"
                   ],
                   "type": "object"
                 },
-                "maxItems": 200,
+                "maxItems": 20,
                 "type": "array"
               },
-              "presentation": {
-                "additionalProperties": false,
-                "default": {
-                  "font": "editorial",
-                  "layout": "editorial",
-                  "palette": "studio",
-                  "spacing": "comfortable"
+              "packages": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "price": {
+                      "maxLength": 40,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "price",
+                    "detail"
+                  ],
+                  "type": "object"
                 },
-                "properties": {
-                  "font": {
-                    "enum": [
-                      "editorial",
-                      "modern",
-                      "script"
-                    ],
-                    "type": "string"
-                  },
-                  "layout": {
-                    "enum": [
-                      "editorial",
-                      "grid",
-                      "slideshow"
-                    ],
-                    "type": "string"
-                  },
-                  "palette": {
-                    "enum": [
-                      "studio",
-                      "ivory",
-                      "charcoal"
-                    ],
-                    "type": "string"
-                  },
-                  "spacing": {
-                    "enum": [
-                      "compact",
-                      "comfortable",
-                      "airy"
-                    ],
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "layout",
-                  "spacing",
-                  "font",
-                  "palette"
-                ],
-                "type": "object"
+                "maxItems": 12,
+                "type": "array"
               },
-              "services": {
-                "maxLength": 10000,
+              "sections": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "#/components/schemas/PhotographySiteSectionId"
+                    },
+                    "on": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "on"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "seoDescription": {
+                "maxLength": 300,
                 "type": "string"
+              },
+              "seoTitle": {
+                "maxLength": 120,
+                "type": "string"
+              },
+              "slug": {
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$",
+                "type": "string"
+              },
+              "template": {
+                "$ref": "#/components/schemas/PhotographySiteTemplate"
+              },
+              "testimonials": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "quote": {
+                      "maxLength": 600,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "quote",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 12,
+                "type": "array"
               },
               "title": {
                 "maxLength": 200,
                 "minLength": 1,
                 "type": "string"
+              },
+              "trustedBy": {
+                "items": {
+                  "maxLength": 60,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 12,
+                "type": "array"
               }
             },
             "required": [
               "enabled",
+              "template",
+              "colours",
+              "coverFocal",
+              "cover",
+              "sections",
               "title",
               "about",
-              "services",
               "contact",
-              "portfolio"
+              "collections",
+              "packages",
+              "testimonials",
+              "faq",
+              "trustedBy",
+              "slug",
+              "domain",
+              "seoTitle",
+              "seoDescription"
             ],
             "type": "object"
           },
           "url": {
+            "description": "Path of the public site: /studio/<slug>",
             "type": "string"
           }
         },
         "required": [
+          "inquiries",
           "revision",
-          "site"
+          "site",
+          "url"
         ],
         "type": "object"
+      },
+      "PhotographySiteInquiryKind": {
+        "enum": [
+          "inquiry",
+          "gallery-link"
+        ],
+        "type": "string"
       },
       "PhotographySiteSaveDto": {
         "additionalProperties": false,
@@ -115009,111 +115489,235 @@
                 "maxLength": 10000,
                 "type": "string"
               },
+              "collections": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "pattern": "^[a-z0-9-]{1,48}$",
+                      "type": "string"
+                    },
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "captureId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          },
+                          "shootId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "shootId",
+                          "captureId"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 200,
+                      "type": "array"
+                    },
+                    "name": {
+                      "maxLength": 60,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "items"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array"
+              },
+              "colours": {
+                "$ref": "#/components/schemas/PhotographySiteColours"
+              },
               "contact": {
                 "maxLength": 5000,
+                "type": "string"
+              },
+              "cover": {
+                "additionalProperties": false,
+                "nullable": true,
+                "properties": {
+                  "captureId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  },
+                  "shootId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "shootId",
+                  "captureId"
+                ],
+                "type": "object"
+              },
+              "coverFocal": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "domain": {
                 "type": "string"
               },
               "enabled": {
                 "type": "boolean"
               },
-              "portfolio": {
+              "faq": {
                 "items": {
                   "additionalProperties": false,
                   "properties": {
-                    "captureId": {
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "a": {
+                      "maxLength": 2000,
                       "type": "string"
                     },
-                    "consent": {
-                      "enum": [
-                        true
-                      ],
-                      "type": "boolean"
-                    },
-                    "shootId": {
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                    "q": {
+                      "maxLength": 200,
                       "type": "string"
                     }
                   },
                   "required": [
-                    "shootId",
-                    "captureId",
-                    "consent"
+                    "q",
+                    "a"
                   ],
                   "type": "object"
                 },
-                "maxItems": 200,
+                "maxItems": 20,
                 "type": "array"
               },
-              "presentation": {
-                "additionalProperties": false,
-                "default": {
-                  "font": "editorial",
-                  "layout": "editorial",
-                  "palette": "studio",
-                  "spacing": "comfortable"
+              "packages": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "price": {
+                      "maxLength": 40,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "price",
+                    "detail"
+                  ],
+                  "type": "object"
                 },
-                "properties": {
-                  "font": {
-                    "enum": [
-                      "editorial",
-                      "modern",
-                      "script"
-                    ],
-                    "type": "string"
-                  },
-                  "layout": {
-                    "enum": [
-                      "editorial",
-                      "grid",
-                      "slideshow"
-                    ],
-                    "type": "string"
-                  },
-                  "palette": {
-                    "enum": [
-                      "studio",
-                      "ivory",
-                      "charcoal"
-                    ],
-                    "type": "string"
-                  },
-                  "spacing": {
-                    "enum": [
-                      "compact",
-                      "comfortable",
-                      "airy"
-                    ],
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "layout",
-                  "spacing",
-                  "font",
-                  "palette"
-                ],
-                "type": "object"
+                "maxItems": 12,
+                "type": "array"
               },
-              "services": {
-                "maxLength": 10000,
+              "sections": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "#/components/schemas/PhotographySiteSectionId"
+                    },
+                    "on": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "on"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "seoDescription": {
+                "maxLength": 300,
                 "type": "string"
+              },
+              "seoTitle": {
+                "maxLength": 120,
+                "type": "string"
+              },
+              "slug": {
+                "pattern": "^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$",
+                "type": "string"
+              },
+              "template": {
+                "$ref": "#/components/schemas/PhotographySiteTemplate"
+              },
+              "testimonials": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "quote": {
+                      "maxLength": 600,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "quote",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 12,
+                "type": "array"
               },
               "title": {
                 "maxLength": 200,
                 "minLength": 1,
                 "type": "string"
+              },
+              "trustedBy": {
+                "items": {
+                  "maxLength": 60,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 12,
+                "type": "array"
               }
             },
             "required": [
               "enabled",
+              "template",
+              "colours",
+              "coverFocal",
+              "cover",
+              "sections",
               "title",
               "about",
-              "services",
               "contact",
-              "portfolio"
+              "collections",
+              "packages",
+              "testimonials",
+              "faq",
+              "trustedBy",
+              "slug",
+              "domain",
+              "seoTitle",
+              "seoDescription"
             ],
             "type": "object"
           }
@@ -115123,6 +115727,30 @@
           "site"
         ],
         "type": "object"
+      },
+      "PhotographySiteSectionId": {
+        "enum": [
+          "cover",
+          "portfolio",
+          "about",
+          "services",
+          "testimonials",
+          "faq",
+          "inquiry",
+          "clients"
+        ],
+        "type": "string"
+      },
+      "PhotographySiteTemplate": {
+        "enum": [
+          "editorial",
+          "minimal",
+          "gallery",
+          "cinematic",
+          "noir",
+          "commercial"
+        ],
+        "type": "string"
       },
       "PhotographyStudioPresetApplyDto": {
         "additionalProperties": false,
@@ -120475,6 +121103,16 @@
               "presets"
             ],
             "type": "object"
+          },
+          "websiteReady": {
+            "description": "Captures whose approved web photograph is published, so the studio website can show them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
           }
         },
         "required": [
