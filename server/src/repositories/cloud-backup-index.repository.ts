@@ -438,7 +438,10 @@ export class CloudBackupIndexRepository {
   }
   /** Internal facts only: completion qualifies the run, not current asset access or backup eligibility. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  getCompletedObjectVerifications(bucket: string, hashes: string[]) {
+  async getCompletedObjectVerifications(bucket: string, hashes: string[]) {
+    if (hashes.length === 0) {
+      return [];
+    }
     return this.db
       .selectFrom('cloud_backup_object_verification as proof')
       .innerJoin('media_operation as operation', 'operation.id', 'proof.operationId')

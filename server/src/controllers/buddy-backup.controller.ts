@@ -78,9 +78,10 @@ export class BuddyBackupAdminController {
   }
 
   @Post('refresh')
-  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true, refreshElevation: false })
+  @Authenticated({ permission: Permission.AdminCloudBackupUpdate, admin: true, refreshElevation: false })
   @Endpoint({ operationId: 'refreshBuddyBackup', summary: 'Refresh the Cloud pairing', history })
-  async refresh(): Promise<BuddyStatusDto> {
+  async refresh(@Auth() auth: AuthDto): Promise<BuddyStatusDto> {
+    await this.restore.administrator(auth);
     await this.service.peer.pairing();
     return this.service.status();
   }

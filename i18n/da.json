@@ -1143,6 +1143,7 @@
   "folders_feature_description": "Gennemse mappevisningen efter fotos og videoer på filsystemet",
   "forgot_pin_code_question": "Har du glemt PIN-koden?",
   "forward": "Fremad",
+  "frameleaf_play_img_missing": "{count, plural, one {# foto eller video har endnu ingen forhåndsvisning} other {# fotos og videoer har endnu ingen forhåndsvisning}}",
   "frameleaf_tools": "Værktøjer",
   "free_up_space": "Frigør plads",
   "free_up_space_description": "Flyt sikkerhedskopierede fotos og videoer til din enheds skraldespand for at frigøre plads. Dine kopier på serveren forbliver sikre.",

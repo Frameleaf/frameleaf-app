@@ -11866,7 +11866,7 @@
   "frameleaf_play_img_full": "Make full-size viewing copies",
   "frameleaf_play_img_full_help": "For RAW and HEIC photos, which browsers can’t show at full size. Uses more space.",
   "frameleaf_play_img_label": "Preview status",
-  "frameleaf_play_img_missing": "{count, plural, one {# photo has no preview yet} other {# photos have no preview yet}}",
+  "frameleaf_play_img_missing": "{count, plural, one {# photo or video has no preview yet} other {# photos and videos have no preview yet}}",
   "frameleaf_play_img_missing_body": "They show a grey square until the preview is made. Previews are made as photos arrive, and anything left over is picked up overnight.",
   "frameleaf_play_img_ok": "Every photo has a preview",
   "frameleaf_play_img_ok_body": "Previews are smaller copies that make browsing fast. Your originals are never changed.",

@@ -456,7 +456,14 @@ export class FrameleafCloudMlRepository {
     }
     const hash = createHash('sha256');
     let bytes = 0;
-    const handle = await open(destination, 'wx');
+    let handle: Awaited<ReturnType<typeof open>>;
+    try {
+      handle = await open(destination, 'wx');
+    } catch (error) {
+      // release the storage connection now rather than when the download timeout ends it
+      await response.body.cancel().catch(() => {});
+      throw error;
+    }
     let kept = false;
     try {
       for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {

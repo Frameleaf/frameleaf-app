@@ -1163,6 +1163,7 @@
   "folders_feature_description": "Przeglądanie zdjęć i filmów w widoku folderów",
   "forgot_pin_code_question": "Nie pamiętasz kodu PIN?",
   "forward": "Do przodu",
+  "frameleaf_play_img_missing": "{count, plural, one {# zdjęcie lub film nie ma jeszcze podglądu} few {# zdjęcia i filmy nie mają jeszcze podglądu} many {# zdjęć i filmów nie ma jeszcze podglądu} other {# zdjęć i filmów nie ma jeszcze podglądu}}",
   "frameleaf_tools": "Narzędzia",
   "free_up_space": "Zwolnij miejsce w pamięci",
   "free_up_space_description": "Przenieś zdjęcia i filmy z kopią zapasową do kosza urządzenia, aby zwolnić miejsce. Twoje kopie na serwerze pozostają bezpieczne.",

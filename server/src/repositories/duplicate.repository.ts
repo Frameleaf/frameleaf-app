@@ -422,7 +422,7 @@ export class DuplicateRepository {
   }
 
   @GenerateSql({
-    params: [{ targetDuplicateId: DummyValue.UUID, duplicateIds: [DummyValue.UUID], assetIds: [DummyValue.UUID] }],
+    params: [{ targetId: DummyValue.UUID, sourceIds: [DummyValue.UUID], assetIds: [DummyValue.UUID] }],
   })
   async merge(options: DuplicateMergeOptions): Promise<void> {
     await this.db
