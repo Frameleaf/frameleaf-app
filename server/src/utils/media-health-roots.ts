@@ -239,30 +239,34 @@ const holdsSameBytes = async (source: string, destination: string) => {
 const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
 /**
- * Publish a flushed staged copy where hard links are unsupported: an exclusive copy never replaces
- * anything, and a copy this call started but could not finish is removed so a retry starts clean.
+ * Publish a flushed staged copy where hard links are unsupported. The destination is created
+ * exclusively first, so it never replaces anything, and only a destination this call created is
+ * removed when the copy cannot be finished, so a retry starts clean.
  */
 const publishByCopy = async (
   staged: string,
   destination: string,
   refuseDifferent: (error: unknown) => Promise<void>,
 ) => {
+  let file;
   try {
-    await copyFile(staged, destination, constants.COPYFILE_EXCL);
+    file = await open(destination, 'wx', (await lstat(staged)).mode & 0o777);
   } catch (error) {
     if (errorCode(error) === 'EEXIST') {
       await refuseDifferent(error);
       return;
     }
+    throw error;
+  }
+  try {
+    await file.writeFile(createReadStream(staged));
+    await file.sync();
+  } catch (error) {
+    await file.close().catch(() => {});
     await unlink(destination).catch(() => {});
     throw error;
   }
-  const file = await open(destination, 'r');
-  try {
-    await file.sync();
-  } finally {
-    await file.close();
-  }
+  await file.close();
 };
 
 /**

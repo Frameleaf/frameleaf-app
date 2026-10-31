@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -20,7 +20,7 @@ import {
 // Real filesystem calls by default; single cases simulate other filesystems through `link`.
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, link: vi.fn(actual.link) };
+  return { ...actual, link: vi.fn(actual.link), open: vi.fn(actual.open) };
 });
 
 const failWith = (code: string) => Object.assign(new Error(code), { code });
@@ -189,6 +189,29 @@ describe('media-health-roots (FL-69)', () => {
       await expect(retainFile(other, destination)).rejects.toThrow('different file');
       await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
       await expect(readFile(other, 'utf8')).resolves.toBe('other');
+    });
+
+    it('never removes a destination it did not create when publishing by copy fails', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV')).mockRejectedValueOnce(failWith('EPERM'));
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(open).mockImplementation(async (file, flags, mode) => {
+        if (flags === 'wx') {
+          // Another writer takes the name, then this call's exclusive create fails for another reason.
+          await writeFile(destination, 'someone else');
+          throw failWith('EIO');
+        }
+        return actual.open(file, flags, mode);
+      });
+      onTestFinished(() => {
+        vi.mocked(open).mockImplementation(actual.open);
+      });
+
+      await expect(retainFile(source, destination)).rejects.toThrow('EIO');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('someone else');
+      await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
     });
 
     it('finishes a cross-filesystem move whose complete copy is already at the new name', async () => {
