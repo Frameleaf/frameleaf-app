@@ -54,14 +54,21 @@ const decisionKey = (assetId: string, petId: string) => `${assetId}:${petId}`;
  * This is what makes a review decision survive reprocessing. A rejection is stored as a
  * durable `rejected` observation rather than as the absence of a candidate, so when a
  * new model revision proposes the same pairing again it is filtered out here instead of
- * reappearing in the queue.
+ * reappearing in the queue. A photo the owner already confirmed a pet in is settled, so no
+ * other pet is asked about it either; a second pet in the same photo is added from the viewer.
  */
 export const filterReviewedCandidates = <T extends ProposedCandidate>(
   candidates: T[],
   decisions: DurableDecision[],
 ): T[] => {
   const answered = new Set(decisions.map(({ assetId, petId }) => decisionKey(assetId, petId)));
-  return candidates.filter((candidate) => !answered.has(decisionKey(candidate.assetId, candidate.petId)));
+  const settled = new Set(
+    decisions.filter(({ state }) => state === PetObservationState.Confirmed).map(({ assetId }) => assetId),
+  );
+  return candidates.filter(
+    (candidate) =>
+      !settled.has(candidate.assetId) && !answered.has(decisionKey(candidate.assetId, candidate.petId)),
+  );
 };
 
 /**
