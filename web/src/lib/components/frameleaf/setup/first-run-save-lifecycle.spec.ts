@@ -54,6 +54,7 @@ describe('first-run progress save ownership', () => {
             adminEmail: '',
             layout: 'keep',
             model: 'balanced',
+            modelChosen: false,
             processing: 'local',
             nightlyBackup: true,
             updates: true,

@@ -86,7 +86,7 @@ export const chapterIndex = (chapterId: SetupChapterId) =>
 
 export type ModelTier = 'light' | 'balanced' | 'best';
 /** An existing library's search model outside the tiers, left as it is (owner decision, FL-722). */
-export const KEEP_MODEL = 'keep';
+export const KEEP_MODEL = 'keep' as const;
 export type ModelChoice = ModelTier | typeof KEEP_MODEL;
 export type ProcessingChoice = 'local' | 'cloud' | 'later';
 
@@ -185,14 +185,20 @@ export const defaultTier = (
 
 /**
  * Applies the default tier to a setup the administrator has not taken a tier decision in yet: the
- * tier step (`processing`) is not reached. A tier chosen there, or saved progress past it, stays.
+ * tier step (`processing`) is not reached. A tier chosen there (`modelChosen`), or saved progress
+ * past it, stays; except that progress which never recorded a choice (older saves held the default
+ * tier) offers "keep current model" again for a library on a model outside the tiers.
  */
 export const withDefaultTier = (
   state: SetupState,
   context: { hardware?: TierHardware | null; currentModel?: string | null },
 ): SetupState => {
+  if (state.choices.modelChosen) {
+    return state;
+  }
   const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
-  if (tierStep === -1 || state.reached >= tierStep) {
+  const pastTier = tierStep === -1 || state.reached >= tierStep;
+  if (pastTier && !keepsUnlistedModel(state.flow, context.currentModel)) {
     return state;
   }
   const model = defaultTier(state.flow, context);
@@ -227,6 +233,8 @@ export type SetupChoices = {
   adminEmail: string;
   layout: string;
   model: ModelChoice;
+  /** Set once the administrator picks a model on the tier step; a default never sets it. */
+  modelChosen: boolean;
   processing: ProcessingChoice;
   nightlyBackup: boolean;
   updates: boolean;
@@ -272,6 +280,7 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
       adminEmail: '',
       layout: existing ? KEEP_LAYOUT : 'year-month',
       model: DEFAULT_TIER,
+      modelChosen: false,
       processing: 'local',
       nightlyBackup: true,
       updates: true,
@@ -385,12 +394,17 @@ export const processingOptions = (state: SetupState): ProcessingChoice[] => [
 
 /** The server's password-free progress payload for this state. */
 export const toProgress = (state: SetupState): FrameleafSetupProgressDto => {
-  const { restore, ...choices } = state.choices;
+  const { restore, model, ...choices } = state.choices;
   return {
     version: 1,
     step: flowSteps(state.flow)[state.step].id,
     reached: state.reached,
-    choices: { ...choices, ...(restore && { restore }) } as FrameleafSetupProgressDto['choices'],
+    // "keep current model" is saved as a choice with no tier
+    choices: {
+      ...choices,
+      ...(model !== KEEP_MODEL && { model }),
+      ...(restore && { restore }),
+    } as FrameleafSetupProgressDto['choices'],
   };
 };
 
@@ -439,7 +453,11 @@ export const parseSetup = (raw: unknown, flow: SetupFlow, context: SetupContext 
       adminName: text(choices.adminName),
       adminEmail: text(choices.adminEmail),
       layout: oneOf(choices.layout, [KEEP_LAYOUT, ...layoutPresets.map((entry) => entry.id)], defaults.layout),
-      model: oneOf<ModelChoice>(choices.model, [KEEP_MODEL, ...modelTiers.map((entry) => entry.id)], defaults.model),
+      model:
+        choices.model === undefined && choices.modelChosen === true
+          ? KEEP_MODEL
+          : oneOf<ModelChoice>(choices.model, [KEEP_MODEL, ...modelTiers.map((entry) => entry.id)], defaults.model),
+      modelChosen: bool(choices.modelChosen, false),
       processing: oneOf(choices.processing, ['local', 'cloud', 'later'] as const, defaults.processing),
       nightlyBackup: bool(choices.nightlyBackup, true),
       updates: bool(choices.updates, true),

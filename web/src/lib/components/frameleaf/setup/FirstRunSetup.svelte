@@ -1391,7 +1391,7 @@
                         name="frs-tier"
                         value={KEEP_MODEL}
                         checked={keepModel}
-                        onchange={() => choose({ model: KEEP_MODEL })}
+                        onchange={() => choose({ model: KEEP_MODEL, modelChosen: true })}
                         title={keepModelTitle}
                       />
                     {/if}
@@ -1400,7 +1400,7 @@
                         name="frs-tier"
                         value={entry.id}
                         checked={choices.model === entry.id}
-                        onchange={() => choose({ model: entry.id })}
+                        onchange={() => choose({ model: entry.id, modelChosen: true })}
                         title={$t('frameleaf_setup_tier_models', { values: { tier: $t(entry.label) } })}
                         detail={$t(entry.summary)}
                         recommended={entry.id === recommendedTierId}

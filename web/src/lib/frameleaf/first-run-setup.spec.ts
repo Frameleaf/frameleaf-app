@@ -347,6 +347,46 @@ describe('first-run setup state (FL-176)', () => {
       expect(needsReindex(config, best)).toBe(true);
     });
 
+    describe('saved progress past the tier step, on a library with an unlisted search model', () => {
+      const tierStep = flowSteps('existing').findIndex((entry) => entry.id === 'processing');
+      const context = { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' };
+      const saved = (choices: Record<string, unknown>) => ({
+        version: 1,
+        step: flowSteps('existing')[tierStep + 1].id,
+        reached: tierStep + 1,
+        choices: { signedIn: true, ...choices },
+      });
+      const resume = (progress: ReturnType<typeof saved>) =>
+        withDefaultTier(resumeSetup('existing', { server: progress as never }, true), context);
+
+      it('offers keeping the current model when an older save holds only the default tier', () => {
+        expect(resume(saved({ model: 'balanced' })).choices.model).toBe(KEEP_MODEL);
+        expect(resume(saved({})).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('honours a tier the administrator chose', () => {
+        const state = resume(saved({ model: 'balanced', modelChosen: true }));
+        expect(state.choices.model).toBe('balanced');
+        expect(withDefaultTier(state, context)).toBe(state);
+      });
+
+      it('saves and resumes an explicit keep without sending an unknown tier', () => {
+        const kept = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, modelChosen: true },
+        };
+        const progress = toProgress(kept);
+        expect(progress.choices).not.toHaveProperty('model');
+        expect(progress.choices.modelChosen).toBe(true);
+        expect(resume(progress as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+        // a default keep is not saved as a choice and is offered again
+        const pending = toProgress({ ...kept, choices: { ...kept.choices, modelChosen: false } });
+        expect(resume(pending as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+      });
+    });
+
     it("keeps the administrator's tier once the tier step was reached", () => {
       const steps = flowSteps('new');
       const tierStep = steps.findIndex((entry) => entry.id === 'processing');
