@@ -155,7 +155,15 @@ export class IdentityPostValidator {
       if (COMMON_NON_NAME_WORDS.has(word)) {
         return match;
       }
-      if (knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end)) {
+      // A known name, or a hyphenated spelling of known tokens ("Anne-Marie" for a stored "Anne Marie").
+      let start = offset;
+      const known = (word as string).split('-').every((part) => {
+        const end = start + part.length;
+        const inside = knownNameSpans.some(([from, to]) => start >= from && end <= to);
+        start = end + 1;
+        return inside;
+      });
+      if (known) {
         return match;
       }
       // Anything else that looks like a name mid-sentence is hallucinated.

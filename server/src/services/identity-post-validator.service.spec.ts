@@ -20,6 +20,18 @@ describe(IdentityPostValidator.name, () => {
       },
     );
 
+    it('preserves the hyphenated spelling of a known name stored with a space', () => {
+      const text = 'I saw Anne-Marie by the lake.';
+      expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('still strips a hyphenated name only partly made of known tokens', () => {
+      expect(sut.validate('I saw Anne-Sophie by the lake.', [person('Anne Marie')])).toEqual({
+        description: 'I saw Someone by the lake.',
+        flags: { hallucinatedNames: ['Anne-Sophie'] },
+      });
+    });
+
     it('still strips an unknown name beside a known compound name', () => {
       expect(sut.validate("I saw O'Brien and Madison.", [person("O'Brien")])).toEqual({
         description: "I saw O'Brien and Someone.",
