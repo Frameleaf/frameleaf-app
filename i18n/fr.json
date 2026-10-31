@@ -1161,6 +1161,7 @@
   "frameleaf_image_display": "Affichage des images",
   "frameleaf_image_display_auto": "Automatique",
   "frameleaf_image_display_sdr": "SDR",
+  "frameleaf_play_img_missing": "{count, plural, one {# photo ou vidéo n’a pas encore d’aperçu} other {# photos et vidéos n’ont pas encore d’aperçu}}",
   "frameleaf_studio_export_mastering_hint": "Saisissez les limites de votre écran de mastering pour une vidéo PQ. Les vidéos SDR et HLG n’utilisent pas ce profil.",
   "frameleaf_studio_export_mastering_invalid": "Saisissez un maximum supérieur au minimum, sans dépasser 10 000 nits, et un minimum positif ou nul. Utilisez au plus quatre décimales.",
   "frameleaf_studio_export_mastering_max": "Luminance maximale (nits)",

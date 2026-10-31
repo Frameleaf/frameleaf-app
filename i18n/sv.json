@@ -1150,6 +1150,7 @@
   "folders_feature_description": "Bläddra i mappvyn för foton och videoklipp i filsystemet",
   "forgot_pin_code_question": "Glömt din PIN-kod?",
   "forward": "Framåt",
+  "frameleaf_play_img_missing": "{count, plural, one {# foto eller video har ingen förhandsvisning ännu} other {# foton och videor har ingen förhandsvisning ännu}}",
   "frameleaf_tools": "Verktyg",
   "free_up_space": "Frigör utrymme",
   "free_up_space_description": "Flytta säkerhetskopierade foton och videor till din enhets papperskorg för att frigöra utrymme. Dina kopior på servern förblir säkra.",
