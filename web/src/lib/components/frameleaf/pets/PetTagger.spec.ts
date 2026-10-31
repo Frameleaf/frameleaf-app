@@ -200,6 +200,7 @@ describe('PetTagger', () => {
     pending.resolve(saved);
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved, biscuit, { id: 'asset-1', checksum: 'c3Vt' }));
+    expect(props.onClose).not.toHaveBeenCalled();
     expect(sdkMock.createPetObservation).toHaveBeenCalledWith({
       id: biscuit.id,
       petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3Vt' },

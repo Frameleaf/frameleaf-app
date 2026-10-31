@@ -193,6 +193,9 @@
     }
   };
 
+  const stillShown = (source: { id: string; checksum: string }) =>
+    source.id === asset.id && source.checksum === asset.checksum;
+
   const save = async (event: Event) => {
     event.preventDefault();
     const pet = pets.find(({ id }) => id === selectedPetId);
@@ -212,9 +215,14 @@
         },
       });
       onSaved(observation, pet, source);
-      open = false;
+      // A save that finishes after the viewer moved on leaves the dialog to the photo now shown.
+      if (stillShown(source)) {
+        open = false;
+      }
     } catch (error_) {
-      error = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
+      if (stillShown(source)) {
+        error = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
+      }
     } finally {
       saving = false;
     }

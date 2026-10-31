@@ -115,7 +115,7 @@
   // the list on screen while the viewer still shows it.
   type Source = { id: string; checksum: string };
   const currentSource = (): Source => ({ id: asset.id, checksum: asset.checksum });
-  const onScreen = (source: Source) => source.id === asset.id;
+  const onScreen = (source: Source) => source.id === asset.id && source.checksum === asset.checksum;
 
   const undoAdd = (observation: PetObservationResponseDto, source: Source) => async () => {
     try {

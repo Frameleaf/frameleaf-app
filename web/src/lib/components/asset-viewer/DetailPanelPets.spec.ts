@@ -11,6 +11,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -155,6 +156,22 @@ describe('DetailPanelPets', () => {
     );
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('Biscuit')).not.toBeInTheDocument();
+  });
+
+  it('leaves the list alone when the original is replaced while an add is in flight', async () => {
+    const pending = deferredPromise<PetObservationResponseDto>();
+    sdkMock.createPetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.createPetObservation>);
+    const asset = assetFactory.build({ id: 'asset-1', ownerId: owner.id, checksum: 'c3VtCg==' });
+    const view = render(DetailPanelPets, { asset, isOwner: true });
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_viewer_pets_add_label }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Rex' }));
+    await view.rerender({ asset: { ...asset, checksum: 'bmV3Cg==' }, isOwner: true });
+    pending.resolve(observation({ petId: 'pet-rex' }));
+
+    await waitFor(() => expect(sdkMock.createPetObservation).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('button', { name: 'Remove Rex from this photo' })).not.toBeInTheDocument();
   });
 
   it('says so when the original changed since the photo was opened', async () => {
