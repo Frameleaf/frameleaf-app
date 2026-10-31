@@ -1,0 +1,223 @@
+import { getAssetInfo } from '@frameleaf/sdk';
+import { fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { SvelteMap } from 'svelte/reactivity';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+import { navigate } from '$lib/utils/navigation';
+import { toTimelineAsset } from '$lib/utils/timeline-util';
+import { renderWithTooltips } from '$tests/helpers';
+import { deferredPromise } from '@test-data/deferred';
+import { assetFactory } from '@test-data/factories/asset-factory';
+import TimelineAssetViewer from './TimelineAssetViewer.svelte';
+
+vi.mock('$lib/components/asset-viewer/AssetViewer.svelte', async () => {
+  const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
+  return { default: MockViewerControls };
+});
+const { socketListeners } = vi.hoisted(() => ({ socketListeners: new Map<string, (...args: unknown[]) => void>() }));
+vi.mock('$lib/stores/websocket', async () => ({
+  ...(await vi.importActual<typeof import('$lib/stores/websocket')>('$lib/stores/websocket')),
+  websocketEvents: {
+    on: (name: string, handler: (...args: unknown[]) => void) => {
+      socketListeners.set(name, handler);
+      return () => socketListeners.delete(name);
+    },
+  },
+}));
+vi.mock('$lib/utils/navigation', async () => ({
+  ...(await vi.importActual<typeof import('$lib/utils/navigation')>('$lib/utils/navigation')),
+  navigate: vi.fn(),
+}));
+vi.mock('@frameleaf/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
+  getAssetInfo: vi.fn(),
+}));
+
+describe('TimelineAssetViewer suppression', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it.each([true, false])('removes the suppressed asset and leaves it (next asset: %s)', async (hasNext) => {
+    const asset = assetFactory.build();
+    const next = assetFactory.build();
+    const timelineManager = {
+      months: [],
+      getTimelineMonthByAssetId: vi.fn(),
+      getEarlierAsset: vi.fn().mockResolvedValue(hasNext ? next : undefined),
+      getLaterAsset: vi.fn().mockResolvedValue(undefined),
+      removeAssets: vi.fn(),
+    };
+    vi.mocked(getAssetInfo).mockResolvedValue(next);
+    assetViewerManager.setAsset(asset);
+    const { findByRole } = renderWithTooltips(TimelineAssetViewer, {
+      timelineManager: timelineManager as unknown as TimelineManager,
+      invisible: false,
+    });
+    const button = await findByRole('button', { name: 'Suppress asset' });
+    if (hasNext) {
+      await waitFor(() => expect(getAssetInfo).toHaveBeenCalled());
+    }
+
+    await fireEvent.click(button);
+
+    await waitFor(() => expect(timelineManager.removeAssets).toHaveBeenCalledWith([asset.id]));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetRoute: 'current',
+          assetId: hasNext ? next.id : null,
+        }),
+      ),
+    );
+  });
+});
+
+it.each(['none', 'unmount', 'session', 'viewer'])('undo delete respects %s ownership changes', async (retire) => {
+  vi.clearAllMocks();
+  let current = true;
+  const session = vi.spyOn(authManager, 'captureSession').mockReturnValue(() => current);
+  const [asset, replacement] = assetFactory.buildList(2);
+  const request = deferredPromise<typeof asset>();
+  vi.mocked(getAssetInfo).mockReturnValue(request.promise);
+  const manager = {
+    months: [],
+    getTimelineMonthByAssetId: vi.fn(),
+    getEarlierAsset: vi.fn().mockResolvedValue(undefined),
+    getLaterAsset: vi.fn().mockResolvedValue(undefined),
+    removeAssets: vi.fn(),
+    upsertAssets: vi.fn(),
+  };
+  assetViewerManager.setAsset(asset);
+  try {
+    const view = renderWithTooltips(TimelineAssetViewer, {
+      timelineManager: manager as unknown as TimelineManager,
+      invisible: false,
+    });
+    await fireEvent.click(await view.findByRole('button', { name: 'Undo delete' }));
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalled());
+    expect(manager.upsertAssets).toHaveBeenCalled();
+    switch (retire) {
+      case 'unmount': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        current = false;
+        break;
+      }
+      case 'viewer': {
+        assetViewerManager.setAsset(replacement);
+        break;
+      }
+      // No default
+    }
+    request.resolve(asset);
+    await tick();
+    await tick();
+    if (retire === 'none') {
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ targetRoute: 'current', assetId: asset.id }));
+    } else {
+      expect(navigate).not.toHaveBeenCalled();
+      if (retire === 'viewer') {
+        expect(assetViewerManager.asset?.id).toBe(replacement.id);
+      }
+    }
+  } finally {
+    session.mockRestore();
+  }
+});
+
+it.each(['none', 'unmount', 'session', 'replacement', 'close'] as const)(
+  'random month selection respects %s ownership',
+  async (retire) => {
+    vi.clearAllMocks();
+    const [asset, random, replacement] = assetFactory.buildList(3);
+    const pending = deferredPromise<ReturnType<typeof toTimelineAsset>>();
+    const manager = {
+      // VIEWER-P4: the filmstrip reads the open item's month (none here, so no strip).
+      months: [],
+      getTimelineMonthByAssetId: vi.fn(),
+      getEarlierAsset: vi.fn().mockResolvedValue(undefined),
+      getLaterAsset: vi.fn().mockResolvedValue(undefined),
+      getRandomAsset: vi.fn().mockReturnValue(pending.promise),
+    };
+    let current = true;
+    const session = vi.spyOn(authManager, 'captureSession').mockReturnValue(() => current);
+    assetViewerManager.setAsset(asset);
+    try {
+      const view = renderWithTooltips(TimelineAssetViewer, {
+        timelineManager: manager as unknown as TimelineManager,
+        invisible: false,
+      });
+      await fireEvent.click(await view.findByRole('button', { name: 'Random slide' }));
+      switch (retire) {
+        case 'unmount': {
+          view.unmount();
+          break;
+        }
+        case 'session': {
+          current = false;
+          break;
+        }
+        case 'replacement': {
+          assetViewerManager.setAsset(replacement);
+          break;
+        }
+        case 'close': {
+          assetViewerManager.showAssetViewer(false);
+          break;
+        }
+        // No default
+      }
+      pending.resolve(toTimelineAsset(random));
+      await pending.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (retire === 'none') {
+        expect(navigate).toHaveBeenCalledWith({ targetRoute: 'current', assetId: random.id });
+      } else {
+        expect(navigate).not.toHaveBeenCalled();
+      }
+    } finally {
+      session.mockRestore();
+    }
+  },
+);
+
+it('keeps the saved capture time when the timeline moves the item after an update (LIB-02)', async () => {
+  vi.clearAllMocks();
+  const opened = assetFactory.build();
+  opened.exifInfo = {
+    ...opened.exifInfo,
+    dateTimeOriginal: '2026-06-21T23:56:00+00:00',
+    timeZone: 'America/Vancouver',
+  };
+  const saved = {
+    ...opened,
+    exifInfo: { ...opened.exifInfo, dateTimeOriginal: '2026-07-10T00:30:00+00:00', timeZone: 'America/Edmonton' },
+  };
+  // The real lookup reads the timeline's months, so a change there re-ran the viewer's lookup effect.
+  const monthOf = new SvelteMap([[opened.id, '2026-06']]);
+  const manager = {
+    months: [],
+    getTimelineMonthByAssetId: vi.fn(),
+    getEarlierAsset: vi.fn(({ id }: { id: string }) => Promise.resolve(void monthOf.get(id))),
+    getLaterAsset: vi.fn().mockResolvedValue(undefined),
+  };
+  assetViewerManager.setAsset(opened);
+  const view = renderWithTooltips(TimelineAssetViewer, {
+    timelineManager: manager as unknown as TimelineManager,
+    invisible: false,
+  });
+  const captureTime = await view.findByTestId('viewer-capture-time');
+  expect(captureTime).toHaveTextContent(opened.exifInfo.dateTimeOriginal!);
+
+  // The server's update after the date save, then the timeline moving the item to its new month.
+  socketListeners.get('on_asset_update')?.(saved);
+  await waitFor(() => expect(captureTime).toHaveTextContent(saved.exifInfo.dateTimeOriginal));
+  monthOf.set(opened.id, '2026-07');
+  await tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(captureTime).toHaveTextContent(saved.exifInfo.dateTimeOriginal);
+});
