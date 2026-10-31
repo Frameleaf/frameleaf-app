@@ -191,6 +191,39 @@ describe('media-health-roots (FL-69)', () => {
       await expect(readFile(other, 'utf8')).resolves.toBe('other');
     });
 
+    it('runs overlapping moves to the same name one after another', async () => {
+      const first = join(root, 'first.jpg');
+      const second = join(root, 'second.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(first, 'damaged');
+      await writeFile(second, 'damaged');
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const linked: string[] = [];
+      vi.mocked(link).mockImplementation(async (from, to) => {
+        linked.push(String(from));
+        if (from === first) {
+          await gate;
+        }
+        return actual.link(from, to);
+      });
+      onTestFinished(() => {
+        vi.mocked(link).mockImplementation(actual.link);
+      });
+
+      const moves = [retainFile(first, destination), retainFile(second, destination)];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(linked).toEqual([first]);
+      release();
+      await Promise.all(moves);
+
+      expect(linked).toEqual([first, second]);
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(first)).rejects.toThrow();
+      await expect(readFile(second)).rejects.toThrow();
+    });
+
     it('never removes a destination it did not create when publishing by copy fails', async () => {
       const source = join(root, 'damaged.jpg');
       const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');

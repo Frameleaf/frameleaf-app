@@ -279,7 +279,25 @@ const publishByCopy = async (
  * just removes the old one; different bytes already at the new name are an error and nothing is
  * changed.
  */
-export const retainFile = async (source: string, destination: string): Promise<void> => {
+export const retainFile = (source: string, destination: string): Promise<void> => {
+  // Overlapping moves to one name run one after another, so a retry never accepts a copy that the
+  // other move is still writing or is about to remove.
+  const key = path.resolve(destination);
+  const previous = retainingNames.get(key) ?? Promise.resolve();
+  const current = previous.catch(() => {}).then(() => retainFileNow(source, destination));
+  const settled = current.catch(() => {});
+  retainingNames.set(key, settled);
+  void settled.then(() => {
+    if (retainingNames.get(key) === settled) {
+      retainingNames.delete(key);
+    }
+  });
+  return current;
+};
+
+const retainingNames = new Map<string, Promise<void>>();
+
+const retainFileNow = async (source: string, destination: string): Promise<void> => {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const refuseDifferent = async (error: unknown) => {
     if (!(await holdsSameBytes(source, destination))) {
