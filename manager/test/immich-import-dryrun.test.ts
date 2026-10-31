@@ -125,6 +125,22 @@ test('failed commands log the command, exit code and a redacted stderr tail', as
   assert.ok(logged.length < 3000, 'only the tail of stderr is logged');
 });
 
+test('failed commands also redact secrets passed through the environment', async (t) => {
+  const lines: string[] = [];
+  t.mock.method(console, 'error', (line: string) => lines.push(line));
+  await assert.rejects(
+    command('docker', ['-e', 'process.stderr.write("auth failed for " + process.env.PGPASSWORD);process.exit(2)'], {
+      executable: process.execPath,
+      timeout: 5000,
+      env: { PGPASSWORD: 'env-s3cret' },
+    }),
+    { message: 'docker_operation_failed' },
+  );
+  const logged = lines.join('\n');
+  assert.match(logged, /auth failed for/);
+  assert.doesNotMatch(logged, /env-s3cret/);
+});
+
 test('import failures read as reasons, not error codes', () => {
   for (const code of ['source_changed_review_again', 'port_in_use', 'docker_operation_failed', 'operation_failed']) {
     const text = readable(code);

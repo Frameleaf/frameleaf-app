@@ -34,16 +34,31 @@ generate_random_password() {
     echo 'could not read secure random bytes from /dev/urandom' >&2
     return 1
   fi
-  if ! grep -q '^DB_PASSWORD=postgres$' ./.env; then
-    echo '.env has no DB_PASSWORD=postgres placeholder to replace' >&2
+  # Shell builtins only: the password never appears in another process's arguments.
+  local line found=0
+  {
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line == 'DB_PASSWORD=postgres' ]]; then
+        line="DB_PASSWORD=${rand_pass}"
+        found=$((found + 1))
+      fi
+      printf '%s\n' "$line"
+    done <./.env
+  } >./.env.new || return 1
+  if [[ $found -ne 1 ]]; then
+    rm -f ./.env.new
+    echo '.env has no single DB_PASSWORD=postgres placeholder to replace' >&2
     return 1
   fi
-  sed -i.bak -e "s/^DB_PASSWORD=postgres$/DB_PASSWORD=${rand_pass}/" ./.env || return 1
-  rm -f ./.env.bak
-  grep -q "^DB_PASSWORD=${rand_pass}$" ./.env || {
+  mv ./.env.new ./.env || return 1
+  found=0
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == "DB_PASSWORD=${rand_pass}" ]] && found=1
+  done <./.env
+  if [[ $found -ne 1 ]]; then
     echo '.env does not contain the generated database password' >&2
     return 1
-  }
+  fi
 }
 
 start_docker_compose() {

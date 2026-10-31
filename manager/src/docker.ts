@@ -106,7 +106,7 @@ export async function command(
   } catch (error) {
     child.kill('SIGKILL');
     await Promise.allSettled([exited, ...transfers]);
-    logFailure(binary, args, exit, stderr, error);
+    logFailure(binary, args, exit, stderr, error, options.env);
     if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
     throw error;
   } finally {
@@ -120,8 +120,19 @@ const STDERR_TAIL = 2048;
 export const SERVER_ADMIN = '/usr/src/app/server/bin/frameleaf-admin';
 const SECRET_ARGUMENT = /^([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[A-Z0-9_]*)=(.*)$/is;
 /** One redacted line for the container log: what ran, how it ended and the end of stderr. */
-function logFailure(binary: string, args: string[], exit: string, stderr: string, error: unknown): void {
-  const secrets = args.map((arg) => SECRET_ARGUMENT.exec(arg)?.[2] ?? '').filter(Boolean);
+function logFailure(
+  binary: string,
+  args: string[],
+  exit: string,
+  stderr: string,
+  error: unknown,
+  env: Record<string, string> = {},
+): void {
+  // Secrets passed through the environment (PGPASSWORD) are masked like secret arguments.
+  const secrets = [
+    ...args.map((arg) => SECRET_ARGUMENT.exec(arg)?.[2] ?? ''),
+    ...Object.entries(env).map(([name, value]) => SECRET_ARGUMENT.exec(`${name}=${value}`)?.[2] ?? ''),
+  ].filter(Boolean);
   const shown = args
     .map((arg) => arg.replace(SECRET_ARGUMENT, '$1=[redacted]'))
     .map((arg) => (arg.length > 120 ? `${arg.slice(0, 117)}...` : arg))
