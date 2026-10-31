@@ -7,8 +7,6 @@ A short guide on connecting [pgAdmin](https://www.pgadmin.org/) to Frameleaf.
 Add a file `docker-compose-pgadmin.yml` next to your `docker-compose.yml` with the following content:
 
 ```
-name: immich
-
 services:
   pgadmin:
     image: dpage/pgadmin4

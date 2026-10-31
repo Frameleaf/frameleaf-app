@@ -188,8 +188,10 @@ frameleaf-machine-learning:
               - gpu
   volumes:
     - model-cache:/cache
+  # Keep server credentials out of the inference worker.
   env_file:
-    - .env
+    - path: .env.ml
+      required: false
   restart: always
 ```
 

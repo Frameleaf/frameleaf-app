@@ -37,6 +37,8 @@ services:
       # The Studio render worker can only enrol on the server's host; see the note below.
       FRAMELEAF_STUDIO_WORKER: 'false'
     restart: always
+    # The worker has no authentication. This publishes it on every interface of the host: bind it to a
+    # private address instead (for example 192.168.1.10:3003:3003), or firewall it to the Frameleaf server.
     ports:
       - 3003:3003
 
@@ -60,7 +62,7 @@ Version mismatches between both hosts may cause bugs and instability, so remembe
 
 ## Forcing remote processing
 
-Adding a new URL to the settings is recommended over replacing the existing URL (http://frameleaf-machine-learning:3003). This is because it will allow machine learning tasks to be processed successfully when the remote server is down by falling back to the local machine learning container. If you do not want machine learning tasks to be processed locally when the remote server is not available, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `frameleaf-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
+Adding a new URL to the settings is recommended over replacing the existing URL (http://frameleaf-machine-learning:3003), so the local container stays available as a destination. Each kind of library work is routed to one destination, and nothing falls back: when the worker a kind of work is routed to is unavailable, that work is refused, not moved. Route each kind of work to the remote worker under **Library analysis routes**, and route it back to the local container while the remote one is down (see [Workers and endpoints](/administration/workers-and-endpoints)). If you never want machine learning tasks processed locally, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `frameleaf-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
 
 <ComposeBuilder query="machineLearning.external=true" />
 
@@ -68,7 +70,7 @@ Do note that this will mean that Smart Search and Face Detection jobs will fail 
 
 ## Load balancing
 
-While several URLs can be provided in the settings, they are tried sequentially; there is no attempt to distribute load across multiple containers. It is recommended to use a dedicated load balancer for such use-cases and specify it as the only URL. Among other things, it may enable the use of different APIs on the same server by running multiple containers with different configurations. For example, one might run an OpenVINO container in addition to a CUDA container, or run a standard release container to maximize both CPU and GPU utilization.
+While several URLs can be provided in the settings, each kind of work is routed to one of them; there is no attempt to distribute load across multiple containers. It is recommended to use a dedicated load balancer for such use-cases and specify it as the only URL. Among other things, it may enable the use of different APIs on the same server by running multiple containers with different configurations. For example, one might run an OpenVINO container in addition to a CUDA container, or run a standard release container to maximize both CPU and GPU utilization.
 
 :::tip
 The machine learning container can be shared among several Frameleaf instances regardless of the models a particular instance uses. However, using different models will lead to higher peak memory usage.

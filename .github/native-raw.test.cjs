@@ -40,7 +40,11 @@ test("manual full RAW validation builds candidate production native runtime on b
     readFileSync(resolve(__dirname, "workflows/frameleaf-quality.yml"), "utf8"),
   );
   const job = workflow.jobs["native-raw"];
-  assert.match(job.if, /workflow_dispatch.*inputs.raw_engine != 'none'/);
+  // A workflow_call caller (Deploy) has no raw_engine input, so only an explicit engine starts the job.
+  assert.match(
+    job.if,
+    /workflow_dispatch.*inputs\.raw_engine == 'libraw' \|\| inputs\.raw_engine == 'darktable'/,
+  );
   assert.ok(!job["continue-on-error"]);
   assert.ok(job.steps.every((step) => !step["continue-on-error"]));
   assert.deepEqual(

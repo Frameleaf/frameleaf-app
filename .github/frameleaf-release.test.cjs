@@ -1675,3 +1675,39 @@ test("a rollout without a percentage is refused instead of offering the release 
     );
   assert.deepEqual(writes, []);
 });
+
+test("a withdrawal without a restore tag or reason is refused before any release lookup", async (t) => {
+  const tag = "frameleaf-v3.2.0-2";
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    calls.push(String(url));
+    return new Response(
+      JSON.stringify({ id: 2, draft: false, body: "Notes" }),
+      {
+        status: 200,
+      },
+    );
+  });
+  const base = {
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    ACTION: "withdraw",
+    RELEASE_TAG: tag,
+    RESTORE_TAG: "frameleaf-v3.2.0-1",
+    REASON: "Broken upgrade",
+    DRY_RUN: "false",
+  };
+  for (const [change, message] of [
+    [{ RESTORE_TAG: undefined }, /Give the release tag to restore/],
+    [{ RESTORE_TAG: "latest" }, /Give the release tag to restore/],
+    [{ RESTORE_TAG: tag }, /Restore another release than the one withdrawn/],
+    [{ REASON: undefined }, /A withdrawal needs a reason/],
+    [{ REASON: " " }, /A withdrawal needs a reason/],
+  ])
+    await assert.rejects(
+      releaseFlags({ ...base, ...change }, {}, () =>
+        assert.fail("must not run"),
+      ),
+      message,
+    );
+  assert.deepEqual(calls, []);
+});
