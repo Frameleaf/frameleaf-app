@@ -1,0 +1,149 @@
+import { Injectable } from '@nestjs/common';
+import { Insertable } from 'kysely';
+import type { DesktopClipReadGuard } from 'src/repositories/desktop-clip-index.repository.js';
+import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
+import { SystemConfig } from 'src/config.js';
+import { CLIP_ZERO_SHOT_LABELS, CLIP_ZERO_SHOT_PROMPT } from 'src/constants/clip-zero-shot-labels.js';
+import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
+import { afterJobCommit, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
+import { BaseService } from 'src/services/base.service.js';
+import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
+import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { upsertTags } from 'src/utils/tag.js';
+
+type LabelEmbedding = { label: string; embedding: Float32Array };
+
+// One cache entry per CLIP model name. We memoize the promise so concurrent
+// callers share a single ML round-trip during cold start.
+const QUEUE_VOCABULARY = new Map<string, LabelEmbedding[]>();
+const VOCABULARY_CACHE = new Map<string, Promise<LabelEmbedding[]>>();
+
+@Injectable()
+export class ZeroShotTaggingService extends BaseService {
+  /**
+   * Apply zero-shot CLIP tags to an asset using its existing visual
+   * embedding. Failures are logged but never thrown - tagging is a
+   * best-effort enrichment, never a hard dependency of encoding.
+   */
+  async tagAsset(
+    assetId: string,
+    ownerId: string,
+    assetEmbedding: string,
+    sourceRead?: DesktopClipReadGuard,
+  ): Promise<void> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isSmartSearchEnabled(machineLearning)) {
+      return;
+    }
+    const settings = machineLearning.clip.zeroShotTagging;
+    if (!settings.enabled) {
+      return;
+    }
+    try {
+      const read = sourceRead ?? (await this.machineLearningRepository.captureClipRead());
+      const vector = parseEmbedding(assetEmbedding);
+      if (!vector) {
+        return;
+      }
+      const labels = await this.getVocabularyEmbeddings(machineLearning.clip);
+      if (labels.length === 0) {
+        return;
+      }
+      const scored = scoreLabels(vector, labels, settings);
+      if (scored.length === 0) {
+        return;
+      }
+      await publishJobResult(async () => {
+        const inserted = await read.publish(() =>
+          this.applyTags(
+            assetId,
+            ownerId,
+            scored.map((entry) => `${ZERO_SHOT_TAG_NAMESPACE}/${entry.label}`),
+          ),
+        );
+        if (inserted) await afterJobCommit(() => this.eventRepository.emit('AssetTag', { assetId, userId: ownerId }));
+      });
+    } catch (error) {
+      if (queueExecution.getStore()) throw error;
+      this.logger.warn(
+        `Zero-shot tagging failed for asset ${assetId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private async getVocabularyEmbeddings(clip: SystemConfig['machineLearning']['clip']): Promise<LabelEmbedding[]> {
+    const producer = await this.machineLearningRepository.clipCacheKey(clip.modelName);
+    // Queue requests retain their own destination and cancellation ownership; no shared in-flight request.
+    if (queueExecution.getStore()) {
+      const selection = await this.selectClipTextDestination();
+      const key = `${selection.destinationId}/${clip.modelName}/${producer}`;
+      const ready = QUEUE_VOCABULARY.get(key);
+      if (ready) return ready;
+      const encoded = await this.encodeVocabulary(clip, selection);
+      if (QUEUE_VOCABULARY.size >= 16) QUEUE_VOCABULARY.clear();
+      QUEUE_VOCABULARY.set(key, encoded);
+      return encoded;
+    }
+    const cacheKey = `${clip.modelName}/${producer}`;
+    const cached = VOCABULARY_CACHE.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const promise = this.encodeVocabulary(clip).catch((error) => {
+      // Drop the failed promise so the next call retries.
+      VOCABULARY_CACHE.delete(cacheKey);
+      throw error;
+    });
+    VOCABULARY_CACHE.set(cacheKey, promise);
+    return promise;
+  }
+
+  private async encodeVocabulary(
+    clip: SystemConfig['machineLearning']['clip'],
+    admitted?: MlSelection,
+  ): Promise<LabelEmbedding[]> {
+    this.logger.log(`Encoding ${CLIP_ZERO_SHOT_LABELS.length} zero-shot labels for model ${clip.modelName}`);
+    const results: LabelEmbedding[] = [];
+    const selection = admitted ?? (await this.selectClipTextDestination());
+    for (const label of CLIP_ZERO_SHOT_LABELS) {
+      const raw = await this.machineLearningRepository.encodeText(selection, CLIP_ZERO_SHOT_PROMPT(label), {
+        modelName: clip.modelName,
+      });
+      const parsed = parseEmbedding(raw);
+      if (parsed) {
+        results.push({ label, embedding: l2Normalize(parsed) });
+      }
+    }
+    return results;
+  }
+
+  private async applyTags(assetId: string, ownerId: string, tags: string[]): Promise<boolean> {
+    if (tags.length === 0) {
+      return false;
+    }
+    const upserted = await upsertTags(this.tagRepository, { userId: ownerId, tags });
+    const items: Insertable<TagAssetTable>[] = upserted.map((tag) => ({ tagId: tag.id, assetId }));
+    const inserted = await this.tagRepository.upsertAssetIds(items);
+    return inserted.length > 0;
+  }
+}
+
+type Scored = { label: string; score: number };
+
+export const scoreLabels = (
+  assetEmbedding: Float32Array,
+  labels: LabelEmbedding[],
+  options: { minSimilarity: number; maxTags: number },
+): Scored[] => {
+  const normalized = l2Normalize(assetEmbedding);
+  const scored: Scored[] = [];
+  for (const { label, embedding } of labels) {
+    const score = dot(normalized, embedding); // cosine on unit vectors
+    if (score >= options.minSimilarity) {
+      scored.push({ label, score });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, options.maxTags);
+};

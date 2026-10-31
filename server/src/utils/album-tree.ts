@@ -1,0 +1,207 @@
+import {
+  AlbumCollectionResponseDto,
+  AlbumHierarchyNode,
+  AlbumHierarchyResponseDto,
+  AlbumResponseDto,
+  AlbumTreeResponseDto,
+} from 'src/dtos/album.dto.js';
+import { AlbumKind } from 'src/enum.js';
+
+/**
+ * Arrange the albums a user can see into the directory shape the Albums page
+ * and the rail consume: collections with their albums, albums that stand on
+ * their own, and shared spaces. The input order (display order from the
+ * repository) is preserved inside every group.
+ *
+ * Rules, applied to whatever is stored:
+ * - Every collection is a shelf, even one saved with a parent before the
+ *   one-level rule existed; collections never render nested.
+ * - An album belongs to a collection only when that collection is visible to
+ *   the same user. An album whose parent is invisible (or is not a collection)
+ *   stands on its own rather than disappearing.
+ * - Shared spaces are always top level.
+ */
+export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto => {
+  const collections: AlbumResponseDto[] = [];
+  const spaces: AlbumResponseDto[] = [];
+  const plainAlbums: AlbumResponseDto[] = [];
+  const collectionIds = new Set<string>();
+  // eslint-disable-next-line unicorn/no-for-each -- Match filter traversal of sparse arrays.
+  albums.forEach((album) => {
+    switch (album.kind) {
+      case AlbumKind.Collection: {
+        collections.push(album);
+        collectionIds.add(album.id);
+        break;
+      }
+      case AlbumKind.Space: {
+        spaces.push(album);
+        break;
+      }
+      case AlbumKind.Album: {
+        plainAlbums.push(album);
+        break;
+      }
+    }
+  });
+
+  const standalone: AlbumResponseDto[] = [];
+  const membersByParent = new Map<string, AlbumResponseDto[]>();
+  for (const album of plainAlbums) {
+    const parentId = album.parentId;
+    const hasCollection = parentId !== null && collectionIds.has(parentId);
+    if (hasCollection) {
+      const members = membersByParent.get(parentId);
+      if (members) {
+        members.push(album);
+      } else {
+        membersByParent.set(parentId, [album]);
+      }
+    }
+    if (!parentId || !hasCollection) {
+      standalone.push(album);
+    }
+  }
+
+  const shelves: AlbumCollectionResponseDto[] = collections.map((collection) => {
+    const members = membersByParent.get(collection.id)?.slice() ?? [];
+    return {
+      collection,
+      albums: members,
+      albumCount: members.length,
+      assetCount: members.reduce((total, album) => total + album.assetCount, collection.assetCount),
+    };
+  });
+
+  return { collections: shelves, albums: standalone, spaces };
+};
+
+/**
+ * Put every group of a directory in the person's custom order (FL-52). Items they placed come
+ * first, by position; items never placed keep the order they arrived in (the repository's display
+ * order) after them, so a new album shows up at the end of its group until it is arranged.
+ */
+export const orderAlbumTree = (tree: AlbumTreeResponseDto, positions: Map<string, number>): AlbumTreeResponseDto => {
+  if (positions.size === 0) {
+    return tree;
+  }
+  const order = <T>(items: T[], idOf: (item: T) => string): T[] =>
+    items
+      .map((item, index) => ({ item, index, position: positions.get(idOf(item)) }))
+      .sort(
+        (left, right) =>
+          (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER) ||
+          left.index - right.index,
+      )
+      .map(({ item }) => item);
+
+  return {
+    collections: order(tree.collections, (node) => node.collection.id).map((node) => ({
+      ...node,
+      albums: order(node.albums, (album) => album.id),
+    })),
+    albums: order(tree.albums, (album) => album.id),
+    spaces: order(tree.spaces, (album) => album.id),
+  };
+};
+
+type DirectoryItem = { id: string; kind: string; parentId: string | null };
+
+/**
+ * The group of a person's directory an order applies to (FL-52): the albums inside one visible
+ * collection, or — at the top level — the collections, the albums that stand on their own, or the
+ * shared spaces, picked by the kind of the first id. Undefined when the group cannot be named
+ * (an unknown collection, or a first id the person cannot see).
+ */
+export const albumOrderGroup = (
+  items: DirectoryItem[],
+  parentId: string | null,
+  firstId: string,
+  hierarchy = false,
+): string[] | undefined => {
+  if (hierarchy) {
+    const visible = new Map(items.map((item) => [item.id, item]));
+    if (parentId !== null && (!visible.has(parentId) || visible.get(parentId)!.kind === AlbumKind.Space)) {
+      return undefined;
+    }
+    const first = visible.get(firstId);
+    if (!first) return undefined;
+    return items
+      .filter((item) => {
+        const parent = item.parentId ? visible.get(item.parentId) : undefined;
+        const effectiveParent =
+          item.kind !== AlbumKind.Space && parent?.kind !== AlbumKind.Space && parent ? parent.id : null;
+        return (
+          effectiveParent === parentId &&
+          (parentId !== null || (item.kind === AlbumKind.Space) === (first.kind === AlbumKind.Space))
+        );
+      })
+      .map(({ id }) => id);
+  }
+  if (parentId !== null) {
+    if (items.every((item) => !(item.kind === AlbumKind.Collection && item.id === parentId))) {
+      return undefined;
+    }
+    return items.filter((item) => item.kind === AlbumKind.Album && item.parentId === parentId).map(({ id }) => id);
+  }
+  const first = items.find((item) => item.id === firstId);
+  if (!first) {
+    return undefined;
+  }
+  switch (first.kind) {
+    case AlbumKind.Collection: {
+      return items.filter((item) => item.kind === AlbumKind.Collection).map(({ id }) => id);
+    }
+    case AlbumKind.Space: {
+      return items.filter((item) => item.kind === AlbumKind.Space).map(({ id }) => id);
+    }
+    default: {
+      const collectionIds = new Set(items.filter((item) => item.kind === AlbumKind.Collection).map(({ id }) => id));
+      return items
+        .filter((item) => item.kind === AlbumKind.Album && !(item.parentId && collectionIds.has(item.parentId)))
+        .map(({ id }) => id);
+    }
+  }
+};
+
+/** Build the recursive view without exposing absent parents or trusting legacy cycles. */
+export const buildAlbumHierarchy = (
+  albums: AlbumResponseDto[],
+  positions: Map<string, number> = new Map(),
+): AlbumHierarchyResponseDto => {
+  const nodes = new Map<string, AlbumHierarchyNode>(
+    albums.map((album) => [album.id, { album: { ...album }, children: [] }]),
+  );
+  for (const { album } of nodes.values()) {
+    const parent = album.parentId ? nodes.get(album.parentId) : undefined;
+    if (album.kind === AlbumKind.Space || !parent || parent.album.kind === AlbumKind.Space) album.parentId = null;
+  }
+  const checked = new Set<string>();
+  for (const id of nodes.keys()) {
+    const path = new Set<string>();
+    let current: string | null = id;
+    while (current !== null && !checked.has(current)) {
+      const node: AlbumHierarchyNode = nodes.get(current)!;
+      if (path.has(current)) {
+        node.album.parentId = null;
+        break;
+      }
+      path.add(current);
+      current = node.album.parentId;
+    }
+    for (const visited of path) checked.add(visited);
+  }
+  const roots: AlbumHierarchyNode[] = [];
+  const ordered = nodes
+    .values()
+    .toArray()
+    .sort(
+      (a, b) =>
+        (positions.get(a.album.id) ?? Number.MAX_SAFE_INTEGER) - (positions.get(b.album.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+  for (const node of ordered) {
+    const parent = node.album.parentId ? nodes.get(node.album.parentId) : undefined;
+    (parent ? parent.children : roots).push(node);
+  }
+  return { roots };
+};

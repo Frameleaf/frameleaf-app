@@ -1,0 +1,1098 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { UserAdmin } from 'src/database.js';
+import {
+  AssetVisibility,
+  CacheControl,
+  CalendarHeatmapType,
+  JobName,
+  Permission,
+  ServerRole,
+  SystemMetadataKey,
+  UserMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
+import { UserService, describePreferenceChanges } from 'src/services/user.service.js';
+import { UserMetadataItem } from 'src/types.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
+import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
+import { userStub } from 'test/fixtures/user.stub.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
+
+const makeDeletedAt = (daysAgo: number) => {
+  const deletedAt = new Date();
+  deletedAt.setDate(deletedAt.getDate() - daysAgo);
+  return deletedAt;
+};
+
+describe(UserService.name, () => {
+  let sut: UserService;
+  let mocks: ServiceMocks;
+
+  beforeEach(() => {
+    ({ sut, mocks } = newTestService(UserService));
+    mocks.user.get.mockImplementation((userId) =>
+      Promise.resolve([userStub.admin, userStub.user1].find((user) => user.id === userId) ?? undefined),
+    );
+  });
+
+  describe('countLockedRules (FL-541)', () => {
+    const draft = { tagIds: [], personIds: ['00000000-0000-4000-8000-000000000001'], petIds: [] };
+
+    it('needs an unlocked session, as editing the rules does', async () => {
+      await expect(sut.countLockedRules(authStub.admin, draft)).rejects.toThrow(ForbiddenException);
+      expect(mocks.asset.countLockedRuleMatches).not.toHaveBeenCalled();
+    });
+
+    it('counts your own photos and videos the draft matches, and nothing for an empty draft', async () => {
+      mocks.asset.countLockedRuleMatches.mockResolvedValue({ photos: 12, videos: 3 });
+      await expect(sut.countLockedRules(authStub.adminWithElevatedPermission, draft)).resolves.toEqual({
+        photos: 12,
+        videos: 3,
+      });
+      expect(mocks.asset.countLockedRuleMatches).toHaveBeenCalledWith({ userId: authStub.admin.user.id, ...draft });
+
+      mocks.asset.countLockedRuleMatches.mockClear();
+      await expect(
+        sut.countLockedRules(authStub.adminWithElevatedPermission, { tagIds: [], personIds: [], petIds: [] }),
+      ).resolves.toEqual({ photos: 0, videos: 0 });
+      expect(mocks.asset.countLockedRuleMatches).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateMe', () => {
+    it.each([false, true])('rejects a conflicting email before writing, deleted=%s', async (deleted) => {
+      const existing = UserFactory.create({ email: 'used@example.com', deletedAt: deleted ? new Date() : null });
+      mocks.user.getByEmail.mockImplementation((_email, options) =>
+        Promise.resolve(!existing.deletedAt || options?.withDeleted ? existing : undefined),
+      );
+      mocks.user.update.mockRejectedValue(new Error('unique email constraint'));
+      await expect(sut.updateMe(authStub.user1, { email: existing.email })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('allows retaining the signed-in account email', async () => {
+      mocks.user.getByEmail.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      await expect(sut.updateMe(authStub.user1, { email: userStub.user1.email })).resolves.toMatchObject({
+        id: userStub.user1.id,
+        email: userStub.user1.email,
+      });
+    });
+  });
+
+  describe('getAll', () => {
+    it('admin should get all users', async () => {
+      const user = UserFactory.create();
+      const auth = AuthFactory.create(user);
+
+      mocks.user.getList.mockResolvedValue([user]);
+
+      await expect(sut.search(auth)).resolves.toEqual([expect.objectContaining({ id: user.id, email: user.email })]);
+
+      expect(mocks.user.getList).toHaveBeenCalledWith({ withDeleted: false });
+    });
+
+    it('non-admin should get all users when publicUsers enabled', async () => {
+      const user = UserFactory.create();
+      const auth = AuthFactory.create(user);
+
+      mocks.user.getList.mockResolvedValue([user]);
+
+      await expect(sut.search(auth)).resolves.toEqual([expect.objectContaining({ id: user.id, email: user.email })]);
+
+      expect(mocks.user.getList).toHaveBeenCalledWith({ withDeleted: false });
+    });
+
+    it('non-admin user should only receive itself when publicUsers is disabled', async () => {
+      mocks.user.getList.mockResolvedValue([userStub.user1]);
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.publicUsersDisabled);
+
+      await expect(sut.search(authStub.user1)).resolves.toEqual([
+        expect.objectContaining({
+          id: authStub.user1.user.id,
+          email: authStub.user1.user.email,
+        }),
+      ]);
+
+      expect(mocks.user.getList).not.toHaveBeenCalledWith({ withDeleted: false });
+    });
+  });
+
+  describe('get', () => {
+    it('should get a user by id', async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await sut.get(authStub.admin.user.id);
+
+      expect(mocks.user.get).toHaveBeenCalledWith(authStub.admin.user.id, { withDeleted: false });
+    });
+
+    it('should throw an error if a user is not found', async () => {
+      mocks.user.get.mockResolvedValue(void 0);
+
+      await expect(sut.get(authStub.admin.user.id)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.user.get).toHaveBeenCalledWith(authStub.admin.user.id, { withDeleted: false });
+    });
+  });
+
+  describe('getMe', () => {
+    it("should get the auth user's info", async () => {
+      const user = authStub.admin.user;
+
+      await expect(sut.getMe(authStub.admin)).resolves.toMatchObject({
+        id: user.id,
+        email: user.email,
+      });
+    });
+
+    describe('role on this server (FL-235)', () => {
+      const linkTo = (accountId: string | undefined) => {
+        const baseEnv = mocks.config.getEnv();
+        mocks.config.getEnv.mockReturnValue({
+          ...baseEnv,
+          frameleafCloud: { ...baseEnv.frameleafCloud, url: 'https://cloud.example.test' },
+        } as never);
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? { status: 'linked', cloudUrl: 'https://cloud.example.test', instanceId: 'instance-1', accountId }
+              : null) as never,
+          ),
+        );
+      };
+
+      it.each([
+        // the administrator whose Frameleaf account owns the server's cloud link
+        [authStub.admin, 'owner-account', 'owner', 'owner-account', ServerRole.Owner],
+        // a stale owner access after an ownership transfer is not the owner any more
+        [authStub.admin, 'previous-owner', 'owner', 'owner-account', ServerRole.Admin],
+        // without the link's account, the access recorded at sign-in decides
+        [authStub.admin, 'owner-account', 'owner', undefined, ServerRole.Owner],
+        [authStub.admin, undefined, undefined, 'owner-account', ServerRole.Admin],
+        [authStub.user1, undefined, undefined, 'owner-account', ServerRole.User],
+        // the cloud owner is never more than their role here says
+        [authStub.user1, 'owner-account', 'owner', 'owner-account', ServerRole.User],
+        // owner decision (2026-10-01): an invited viewer or editor has their own account and library
+        [authStub.user1, 'invited', 'viewer', 'owner-account', ServerRole.User],
+        [authStub.user1, 'invited', 'editor', 'owner-account', ServerRole.User],
+      ] as const)(
+        'reports %#: link %s with access %s, cloud owner %s, as %s',
+        async (auth, sub, access, owner, role) => {
+          linkTo(owner);
+          mocks.frameleafAccount.getLinkByUser.mockResolvedValue(
+            (sub ? { userId: auth.user.id, sub, access } : undefined) as never,
+          );
+
+          await expect(sut.getMe(auth)).resolves.toMatchObject({ id: auth.user.id, serverRole: role, canUpload: true });
+          expect(mocks.frameleafAccount.getLinkByUser).toHaveBeenCalledWith(auth.user.id);
+        },
+      );
+
+      it('hides backup from an API key that may not upload', async () => {
+        const auth = AuthFactory.from(authStub.user1.user)
+          .apiKey({ permissions: [Permission.AssetRead] })
+          .build();
+        mocks.user.get.mockResolvedValue(userStub.user1 as never);
+
+        await expect(sut.getMe(auth)).resolves.toMatchObject({ serverRole: ServerRole.User, canUpload: false });
+      });
+    });
+  });
+
+  describe('getCalendarHeatmap', () => {
+    it('should leave Locked media out of an ordinary session', async () => {
+      const auth = AuthFactory.create();
+      mocks.asset.getCalendarHeatmap.mockResolvedValue([]);
+
+      await sut.getCalendarHeatmap(auth, { type: CalendarHeatmapType.Upload });
+
+      expect(mocks.asset.getCalendarHeatmap).toHaveBeenCalledWith(
+        auth.user.id,
+        expect.not.objectContaining({ lockedOwnerId: expect.anything() }),
+      );
+    });
+
+    it("should count the caller's own Locked media only in an elevated session", async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      mocks.asset.getCalendarHeatmap.mockResolvedValue([]);
+
+      await sut.getCalendarHeatmap(auth, { type: CalendarHeatmapType.Upload });
+
+      expect(mocks.asset.getCalendarHeatmap).toHaveBeenCalledWith(
+        auth.user.id,
+        expect.objectContaining({ lockedOwnerId: auth.user.id }),
+      );
+    });
+  });
+
+  describe('createProfileImage', () => {
+    it('should throw an error if the user does not exist', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+
+      mocks.user.get.mockResolvedValue(void 0);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(BadRequestException);
+    });
+
+    it('should throw an error if the user profile could not be updated with the new image', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.update.mockRejectedValue(new InternalServerErrorException('mocked error'));
+
+      await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(InternalServerErrorException);
+    });
+
+    it('should throw BadRequestException and clean up raw upload when thumbnail processing fails', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+
+      mocks.user.get.mockResolvedValue(user);
+      mocks.media.generateThumbnail.mockRejectedValue(new Error('not an image'));
+
+      await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(BadRequestException);
+
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('should delete the raw upload and the previous profile image', async () => {
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+      const file = { path: '/profile/path' } as Express.Multer.File;
+
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file);
+
+      expect(mocks.job.queue.mock.calls).toEqual([
+        [{ name: JobName.FileDelete, data: { files: [file.path, user.profileImagePath] } }],
+      ]);
+    });
+
+    it('should delete only the raw upload if no previous profile image is set', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file);
+
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('records nothing as the source of an uploaded picture', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file);
+
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ profileImageAssetId: null }),
+      );
+    });
+
+    it('records the photo a picture was copied from (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create({ ownerId: authStub.admin.user.id });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file, { assetId: asset.id });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ profileImageAssetId: asset.id }),
+      );
+    });
+
+    it('refuses a Locked photo as the source and removes the upload (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create({ ownerId: authStub.admin.user.id, visibility: AssetVisibility.Locked });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toThrow(
+        'A Locked photo cannot be a profile picture',
+      );
+
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('refuses a source photo the caller may not read and removes the upload (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create();
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it("refuses another account's photo as the source and removes the upload", async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create({ ownerId: 'partner-id' });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toThrow(
+        'Only your own photo can be a profile picture',
+      );
+
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('keeps the recorded source when re-cropping the current picture', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file, { keepSource: 'true' });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.not.objectContaining({ profileImageAssetId: expect.anything() }),
+      );
+      expect(mocks.user.update.mock.calls[0][1]).not.toHaveProperty('profileImageAssetId');
+    });
+
+    it('refuses a source that is not an id and removes the upload (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: 'not-an-id' })).rejects.toThrow(
+        'Invalid profile picture source',
+      );
+
+      expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+  });
+
+  describe('deleteProfileImage', () => {
+    it('should send an http error has no profile image', async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.deleteProfileImage(authStub.admin)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('should delete the profile image if user has one', async () => {
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+      const files = [user.profileImagePath];
+
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.deleteProfileImage(authStub.admin);
+
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files } }]]);
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ profileImagePath: '', profileImageAssetId: null }),
+      );
+    });
+  });
+
+  describe('getUserProfileImage', () => {
+    it('should throw an error if the user does not exist', async () => {
+      mocks.user.get.mockResolvedValue(void 0);
+
+      await expect(sut.getProfileImage(userStub.admin.id)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mocks.user.get).toHaveBeenCalledWith(userStub.admin.id, {});
+    });
+
+    it('should throw an error if the user does not have a picture', async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.getProfileImage(userStub.admin.id)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mocks.user.get).toHaveBeenCalledWith(userStub.admin.id, {});
+    });
+
+    it('should return the profile picture', async () => {
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+      mocks.user.get.mockResolvedValue(user);
+
+      await expect(sut.getProfileImage(user.id)).resolves.toEqual(
+        new FileDownloadResponse({
+          path: '/path/to/profile.jpg',
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.None,
+        }),
+      );
+
+      expect(mocks.user.get).toHaveBeenCalledWith(user.id, {});
+    });
+
+    it('never serves a picture copied from a photo that became Locked (FL-53)', async () => {
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.hasLockedProfileImageSource.mockResolvedValue(true);
+
+      await expect(sut.getProfileImage(user.id)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mocks.user.hasLockedProfileImageSource).toHaveBeenCalledWith(user.id);
+    });
+
+    it('should return the profile picture with the content-type matching the stored file', async () => {
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.webp' });
+      mocks.user.get.mockResolvedValue(user);
+
+      await expect(sut.getProfileImage(user.id)).resolves.toEqual(
+        new FileDownloadResponse({
+          path: '/path/to/profile.webp',
+          contentType: 'image/webp',
+          cacheControl: CacheControl.None,
+        }),
+      );
+    });
+  });
+
+  describe('handleQueueUserDelete', () => {
+    it('should skip users not ready for deletion', async () => {
+      mocks.user.getDeletedAfter.mockResolvedValue([]);
+
+      await sut.handleUserDeleteCheck();
+
+      expect(mocks.user.getDeletedAfter).toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
+    });
+
+    it('should queue user ready for deletion', async () => {
+      const user = UserFactory.create();
+      mocks.user.getDeletedAfter.mockResolvedValue([{ id: user.id }]);
+
+      await sut.handleUserDeleteCheck();
+
+      expect(mocks.user.getDeletedAfter).toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.UserDelete, data: { id: user.id } }]);
+    });
+
+    it('sweeps fork rows of removed accounts, and warns while the fork schema is not writable (FL-71)', async () => {
+      mocks.user.getDeletedAfter.mockResolvedValue([]);
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue({
+        preferenceHistory: 2,
+        recipientGroups: 1,
+        memoryShowLess: 3,
+        memoryCurations: 4,
+        peopleAndPets: 3,
+        workspaceLayouts: 1,
+        utilityActivity: 5,
+      });
+
+      await sut.handleUserDeleteCheck();
+      expect(mocks.user.sweepRemovedAccountForkRows).toHaveBeenCalled();
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+      expect(mocks.logger.log).toHaveBeenCalledWith(
+        expect.stringContaining('3 memory show-less rules, 4 memory curations'),
+      );
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('5 utility activity entries'));
+
+      mocks.user.sweepRemovedAccountForkRows.mockResolvedValue(undefined);
+      await sut.handleUserDeleteCheck();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('not swept'));
+    });
+  });
+
+  describe('handleUserDelete', () => {
+    beforeEach(() => {
+      mocks.albumUser.forgetRecipient.mockResolvedValue();
+      mocks.user.deletePreferenceHistory.mockResolvedValue(true);
+    });
+
+    it('should skip users not ready for deletion', async () => {
+      const user = { id: 'user-1', deletedAt: makeDeletedAt(5) } as UserAdmin;
+
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('defers account deletion before files or assets when import cleanup still owns paths', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.hasPendingImportCleanup.mockResolvedValue(true);
+      await sut.handleUserDelete({ id: user.id });
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('should delete the user and associated assets', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      const options = { force: true, recursive: true };
+
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      // FL-44: media folders are emptied file by file through the reference guard, never recursively
+      for (const folder of ['library', 'upload', 'thumbs', 'encoded-video', 'exports']) {
+        expect(mocks.storage.walkFiles).toHaveBeenCalledWith(expect.stringContaining(`/data/${folder}/deleted-user`));
+        expect(mocks.storage.removeEmptyDirs).toHaveBeenCalledWith(
+          expect.stringContaining(`/data/${folder}/deleted-user`),
+          true,
+        );
+        expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(
+          expect.stringContaining(`/data/${folder}/deleted-user`),
+          expect.anything(),
+        );
+      }
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
+        expect.stringContaining('/data/profile/deleted-user'),
+        options,
+      );
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(
+        expect.stringContaining('/data/exports/deleted-user'),
+        expect.anything(),
+      );
+      expect(mocks.album.deleteAll).toHaveBeenCalledWith(user.id);
+      // FL-55: the account's recipient groups go, and it leaves everyone else's.
+      expect(mocks.albumUser.forgetRecipient).toHaveBeenCalledWith(user.id);
+      // FL-71 (CC-10): and its own preference history.
+      expect(mocks.user.deletePreferenceHistory).toHaveBeenCalledWith(user.id);
+      expect(mocks.asset.deleteAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
+      expect(mocks.asset.deleteAll.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.user.delete.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('should sweep its folders only once the account rows are gone', async () => {
+      // A published Studio export or a media operation attempt names the account's files until the
+      // account row cascades; sweeping before that kept them on disk for good.
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          yield* await Promise.resolve(folder.includes('/upload/') ? [`${folder}/01/a1/studio-video.mp4`] : []);
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        expect.stringContaining('/upload/deleted-user/01/a1/studio-video.mp4'),
+        expect.any(Function),
+        expect.anything(),
+      );
+      const deleted = mocks.user.delete.mock.invocationCallOrder[0]!;
+      for (const order of [
+        ...mocks.storage.walkFiles.mock.invocationCallOrder,
+        ...mocks.physicalFile.deleteUnreferencedPath.mock.invocationCallOrder,
+        ...mocks.storage.removeEmptyDirs.mock.invocationCallOrder,
+      ]) {
+        expect(order).toBeGreaterThan(deleted);
+      }
+    });
+
+    it('should delete the library path for a storage label', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10), storageLabel: 'admin' } as UserAdmin;
+
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.storage.walkFiles).toHaveBeenCalledWith(expect.stringContaining('data/library/admin'));
+    });
+
+    it('keeps files another account still references and deletes the rest (FL-44)', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      const shared = '/data/library/deleted-user/2024/shared.jpg';
+      const own = '/data/library/deleted-user/2024/own.jpg';
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          yield* await Promise.resolve(folder.endsWith('/library/deleted-user') ? [shared, own] : []);
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (path, unlink) => {
+        if (path === shared) {
+          return { deleted: false, references: 1 };
+        }
+        await unlink();
+        return { deleted: true, references: 0 };
+      });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        shared,
+        expect.any(Function),
+        expect.anything(),
+      );
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        own,
+        expect.any(Function),
+        expect.anything(),
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(own);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(shared);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Kept 1 file(s)'));
+      expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
+    });
+
+    it("sends the account's originals to the file trash, never unlinking them (universal storage)", async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      const own = '/data/library/deleted-user/2024/own.jpg';
+      const thumbnail = '/data/thumbs/deleted-user/ow/n_/own_thumbnail.webp';
+      const checksum = Buffer.from('b'.repeat(64), 'hex');
+      mocks.asset.deleteAll.mockResolvedValue([
+        {
+          id: 'asset-id',
+          originalPath: own,
+          originalFileName: 'own.jpg',
+          checksum,
+          sizeInBytes: 42,
+          reservationTemporaryPath: null,
+          libraryId: null,
+          isOffline: false,
+        },
+      ]);
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          yield* await Promise.resolve(
+            folder.endsWith('/library/deleted-user')
+              ? [own]
+              : folder.endsWith('/thumbs/deleted-user')
+                ? [thumbnail]
+                : [],
+          );
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      const original = {
+        checksum,
+        sizeInBytes: 42,
+        ownerId: user.id,
+        assetId: 'asset-id',
+        originalFileName: 'own.jpg',
+      };
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(own, expect.any(Function), {
+        trash: { move: expect.any(Function), original },
+      });
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(thumbnail, expect.any(Function), {
+        trash: { move: expect.any(Function) },
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.FileDelete,
+          data: {
+            files: [own],
+            original: { ...original, path: own, checksum: checksum.toString('hex') },
+          },
+        },
+      ]);
+    });
+
+    it('removes an account an administrator removed now (force) at once (FL-71)', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(0), status: UserStatus.Removing } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id, force: true });
+
+      expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
+    });
+
+    it('keeps an account restored since a forced removal was queued, when that job is retried (FL-71)', async () => {
+      const user = { id: 'deleted-user', deletedAt: null, status: UserStatus.Active } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id, force: true });
+
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('leaves an account deleted again without "remove now" to the delete delay, when a forced removal is retried (FL-71)', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(0), status: UserStatus.Deleted } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id, force: true });
+
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateMyPreferences (FL-77 admin casting permission)', () => {
+    const castTurnedOff = [
+      { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true, adminDisabled: true } } },
+    ] as unknown as UserMetadataItem[];
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('should refuse to turn casting on while an administrator has turned it off', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: true } })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should report casting off and keep the stored choice when other preferences are saved', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: false }, ratings: { enabled: false } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true }, ratings: { enabled: false } });
+      // the third argument is the preferences-lock transaction (FL-67); the unit mock passes undefined
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: expect.objectContaining({ cast: { gCastEnabled: true, adminDisabled: true } }),
+        },
+        undefined,
+      );
+    });
+
+    it('should never let a user set the administrator flag', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: true, adminDisabled: true } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: true, adminDisabled: false } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true } } },
+        undefined,
+      );
+    });
+
+    it('should report casting off from getMyPreferences while an administrator has turned it off', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(sut.getMyPreferences(authStub.user1)).resolves.toMatchObject({
+        cast: { gCastEnabled: false, adminDisabled: true },
+      });
+    });
+
+    it('should reject a save made against preferences an administrator changed since they were loaded', async () => {
+      const loaded = getPreferencesRevision(getPreferences([]));
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { expectedRevision: loaded, ratings: { enabled: false } }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should apply a save made against the current revision without storing the revision', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+      const { revision } = await sut.getMyPreferences(authStub.user1);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { expectedRevision: revision, ratings: { enabled: false } }),
+      ).resolves.toMatchObject({ ratings: { enabled: false } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: { ratings: { enabled: false }, cast: { gCastEnabled: true, adminDisabled: true } },
+        },
+        undefined,
+      );
+    });
+  });
+
+  describe('Locked rules (FL-67)', () => {
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+    const tagId = '0b8f7e6d-5c4b-4a39-8281-7f6e5d4c3b2a';
+    const storedRules = [
+      {
+        key: UserMetadataKey.Preferences,
+        value: { privacy: { suppression: { personIds: [personId], tagIds: [tagId], scope: 'visible' } } },
+      },
+    ] as unknown as UserMetadataItem[];
+    const unlocked = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('should refuse to change Locked rules from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { privacy: { suppression: { personIds: [] } } }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.database.withUserPreferencesLock).not.toHaveBeenCalled();
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a scope change from a session that is not unlocked', async () => {
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { privacy: { suppression: { scope: 'owned' } } }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('should still save other preferences from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false }, privacy: { suppression: {} } }),
+      ).resolves.toMatchObject({ ratings: { enabled: false } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: expect.objectContaining({
+            privacy: { suppression: { personIds: [personId], tagIds: [tagId], scope: 'visible' } },
+          }),
+        },
+        undefined,
+      );
+    });
+
+    it('should change Locked rules from an unlocked session inside the preferences lock', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [], tagIds: [tagId] } } }),
+      ).resolves.toMatchObject({ privacy: { suppression: { personIds: [], tagIds: [tagId], scope: 'visible' } } });
+      expect(mocks.database.withUserPreferencesLock).toHaveBeenCalledWith(unlocked.user.id, expect.any(Function));
+      expect(mocks.user.getMetadata).toHaveBeenCalledWith(unlocked.user.id, undefined);
+    });
+
+    it('should refuse an unlocked save made against rules that changed in another tab', async () => {
+      const loaded = getPreferencesRevision(getPreferences([]));
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(unlocked, {
+          expectedRevision: loaded,
+          privacy: { suppression: { personIds: [personId] } },
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should keep Locked people and tags out of reads from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      const locked = await sut.getMyPreferences(authStub.user1);
+      const revealed = await sut.getMyPreferences(unlocked);
+
+      expect(locked.privacy.suppression).toEqual({ tagIds: [], personIds: [], petIds: [], scope: 'visible' });
+      expect(revealed.privacy.suppression).toMatchObject({ tagIds: [tagId], personIds: [personId] });
+      // the revision covers the stored rules either way, so a stale save is still detected
+      expect(locked.revision).toBe(revealed.revision);
+      // FL-67: the response says whether the rules were revealed, so a client never edits blanked ones
+      expect(locked.lockedRulesRevealed).toBe(false);
+      expect(revealed.lockedRulesRevealed).toBe(true);
+    });
+
+    it('should keep Locked people and tags out of the response to a save from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      const response = await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false } });
+
+      expect(response.privacy.suppression.personIds).toEqual([]);
+      expect(response.privacy.suppression.tagIds).toEqual([]);
+    });
+  });
+
+  describe('handleUserSyncUsage', () => {
+    it('should sync usage', async () => {
+      await sut.handleUserSyncUsage();
+
+      expect(mocks.user.syncUsage).toHaveBeenCalledTimes(1);
+    });
+
+    it('recounts with develop artifacts where the fork schema can be used, and the photos alone elsewhere (FL-304)', async () => {
+      mocks.assetDevelop.syncUsage.mockResolvedValue(true);
+      await sut.handleUserSyncUsage();
+      expect(mocks.assetDevelop.syncUsage).toHaveBeenCalledWith(undefined);
+      expect(mocks.user.syncUsage).not.toHaveBeenCalled();
+
+      mocks.assetDevelop.syncUsage.mockResolvedValue(false);
+      await sut.handleUserSyncUsage();
+      expect(mocks.user.syncUsage).toHaveBeenCalledExactlyOnceWith(undefined);
+    });
+  });
+
+  describe('preference history (FL-71 CC-10)', () => {
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('records what a save changed with the device that saved it', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.session.getByUserId.mockResolvedValue([
+        { id: authStub.user1.session!.id, deviceOS: 'macOS', deviceType: 'Web' },
+      ] as never);
+
+      await sut.updateMyPreferences(authStub.user1, { memories: { enabled: false } });
+
+      expect(mocks.user.addPreferenceHistory).toHaveBeenCalledWith({
+        userId: authStub.user1.user.id,
+        deviceLabel: 'macOS · Web',
+        changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+        omittedChanges: 0,
+      });
+    });
+
+    it('records nothing when nothing changed', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await sut.updateMyPreferences(authStub.user1, {});
+
+      expect(mocks.user.addPreferenceHistory).not.toHaveBeenCalled();
+    });
+
+    it('never records the values of Locked-content rules, only that they changed', () => {
+      const before = getPreferences([]);
+      const after = {
+        ...before,
+        privacy: {
+          ...before.privacy,
+          suppression: { ...before.privacy.suppression, personIds: ['secret-person'] },
+        },
+      };
+
+      const changes = describePreferenceChanges(before, after);
+
+      expect(changes).toEqual([{ path: 'privacy.suppression', before: null, after: null, protected: true }]);
+      expect(JSON.stringify(changes)).not.toContain('secret-person');
+    });
+
+    it('keeps the save when the history cannot be written', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.user.addPreferenceHistory.mockRejectedValue(new Error('down'));
+
+      await expect(sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false } })).resolves.toMatchObject({
+        ratings: { enabled: false },
+      });
+    });
+
+    it("serves only the signed-in account's own history", async () => {
+      mocks.user.getPreferenceHistory.mockResolvedValue([
+        {
+          id: 'entry-1',
+          createdAt: new Date('2026-09-24T10:00:00.000Z'),
+          deviceLabel: null,
+          changes: [{ path: 'ratings.enabled', before: 'false', after: 'true' }],
+          omittedChanges: 0,
+        },
+      ]);
+
+      await expect(sut.getMyPreferenceHistory(authStub.user1)).resolves.toEqual({
+        entries: [
+          {
+            id: 'entry-1',
+            createdAt: '2026-09-24T10:00:00.000Z',
+            deviceLabel: null,
+            changes: [{ path: 'ratings.enabled', before: 'false', after: 'true' }],
+            omittedChanges: 0,
+          },
+        ],
+      });
+      expect(mocks.user.getPreferenceHistory).toHaveBeenCalledWith(authStub.user1.user.id);
+    });
+  });
+
+  describe('sync reset on preference changes (FL-218)', () => {
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+    const otherPersonId = '9d2c1b0a-8f7e-4d6c-9b5a-4e3d2c1b0a9f';
+    const storedRules = [
+      {
+        key: UserMetadataKey.Preferences,
+        value: { privacy: { suppression: { personIds: [personId, otherPersonId], scope: 'owned' } } },
+      },
+    ] as unknown as UserMetadataItem[];
+    const unlocked = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+    });
+
+    it('does not reset sync for a display preference such as Memories', async () => {
+      await sut.updateMyPreferences(authStub.user1, { memories: { enabled: false } });
+
+      expect(mocks.user.upsertMetadata).toHaveBeenCalled();
+      expect(mocks.session.requestSyncResetForUser).not.toHaveBeenCalled();
+    });
+
+    it('does not reset sync when an unlocked session saves the same Locked rules in another order', async () => {
+      await sut.updateMyPreferences(unlocked, {
+        privacy: { suppression: { personIds: [otherPersonId, personId], scope: 'owned' } },
+      });
+
+      expect(mocks.session.requestSyncResetForUser).not.toHaveBeenCalled();
+    });
+
+    it('resets sync for every session when the Locked people change', async () => {
+      await sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [personId] } } });
+
+      expect(mocks.session.requestSyncResetForUser).toHaveBeenCalledWith(unlocked.user.id);
+    });
+
+    it('resets sync for every session when the Locked scope changes', async () => {
+      await sut.updateMyPreferences(unlocked, { privacy: { suppression: { scope: 'visible' } } });
+
+      expect(mocks.session.requestSyncResetForUser).toHaveBeenCalledWith(unlocked.user.id);
+    });
+  });
+
+  describe('skipped fork writes are logged (FL-71)', () => {
+    it('warns when the preference history is not recorded because the fork schema is not writable', async () => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.session.getByUserId.mockResolvedValue([]);
+      mocks.user.addPreferenceHistory.mockResolvedValue(false);
+
+      await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false } });
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Preference history not recorded'));
+    });
+  });
+});
