@@ -54,6 +54,7 @@ const normalize = (raw: MigrateRawOptions): MigrateOptions => ({
   dryRun: !!raw.dryRun,
   includeTrashed: !!raw.includeTrashed,
   retryFailed: !!raw.retryFailed,
+  rescan: !!raw.rescan,
   faces: raw.faces,
   serve: !!raw.serve,
   port: Number(raw.port) || 2285,
@@ -217,6 +218,7 @@ async function runMigrate(raw: MigrateRawOptions) {
       options.dryRun && '--dry-run',
       options.serve && '--serve',
       options.retryFailed && '--retry-failed',
+      options.rescan && '--rescan',
       options.includeTrashed && '--include-trashed',
       !options.faces && '--no-faces',
     ].filter(Boolean);
@@ -285,7 +287,7 @@ async function runMigrate(raw: MigrateRawOptions) {
     console.log(`Resuming: ${priorCounts.assetsUploaded}/${priorCounts.assetsTotal} assets already on B.`);
   }
 
-  process.on('SIGINT', () => {
+  const onSigint = () => {
     if (controller.stopped) {
       // Already winding down and the user asked again — don't make them wait out an
       // in-flight upload. The ledger is committed per item, so this is still resumable.
@@ -295,7 +297,8 @@ async function runMigrate(raw: MigrateRawOptions) {
     console.log('\nStopping after the current items (state is saved; re-run to resume)…');
     console.log('Press Ctrl+C again to quit immediately.');
     controller.stop();
-  });
+  };
+  process.on('SIGINT', onSigint);
 
   let dashboard;
   if (options.serve) {
@@ -309,6 +312,13 @@ async function runMigrate(raw: MigrateRawOptions) {
   if (dashboard && !controller.stopped) {
     controller.phase = 'done';
     console.log('\nDashboard still running for review. Press Ctrl+C to exit.');
+    // The run is over, so Ctrl+C now just closes the review and exits with the run's status.
+    process.off('SIGINT', onSigint);
+    process.once('SIGINT', () => {
+      dashboard.close();
+      ledger.close();
+      process.exit(report?.ok ? 0 : 2);
+    });
     return; // keep the process alive via the HTTP server
   }
 
