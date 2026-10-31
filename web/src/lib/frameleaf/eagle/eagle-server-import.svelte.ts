@@ -89,6 +89,17 @@ export async function runningServerImport() {
 }
 
 const POLL_MS = 2000;
+/** Waits `ms`, or less when `signal` aborts first. */
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener('abort', done, { once: true });
+  });
 /** The server refused (not a passing failure): asking again won't help. Timeouts and rate limits retry. */
 const isRefused = (error: unknown) =>
   isHttpError(error) && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
@@ -172,19 +183,20 @@ export class ServerEagleImportRun implements EagleRunStatus {
    * account, or an import that is gone), which reads as stopped with the error.
    */
   async #follow() {
-    let signedOut = false;
-    const off = eventManager.on({ AuthLogout: () => (signedOut = true) });
-    const current = () => !signedOut;
+    // Signing out cancels the read in flight and wakes the wait, so nothing outlives the session.
+    const signOut = new AbortController();
+    const { signal } = signOut;
+    const off = eventManager.on({ AuthLogout: () => signOut.abort() });
     try {
       let wait = POLL_MS;
       for (;;) {
-        await new Promise((resolve) => setTimeout(resolve, wait));
-        if (signedOut) {
+        await sleep(wait, signal);
+        if (signal.aborted) {
           return;
         }
         try {
-          const ended = await this.#refresh(current);
-          if (signedOut) {
+          const ended = await this.#refresh(signal);
+          if (signal.aborted) {
             return;
           }
           this.unreachable = false;
@@ -193,7 +205,7 @@ export class ServerEagleImportRun implements EagleRunStatus {
             return;
           }
         } catch (error) {
-          if (signedOut) {
+          if (signal.aborted) {
             return;
           }
           if (isRefused(error)) {
@@ -212,17 +224,17 @@ export class ServerEagleImportRun implements EagleRunStatus {
   }
 
   /** Reads the import; once it has ended, reads it again with what became of every item. */
-  async #refresh(current: () => boolean) {
-    const dto = await getEagleImport({ id: this.id });
+  async #refresh(signal: AbortSignal) {
+    const dto = await getEagleImport({ id: this.id }, { signal });
     const ended = dto.status === EagleImportStatus.Stopped || dto.status === EagleImportStatus.Finished;
     if (ended && !dto.outcomes) {
-      const full = await getEagleImport({ id: this.id, outcomes: true });
-      if (current()) {
+      const full = await getEagleImport({ id: this.id, outcomes: true }, { signal });
+      if (!signal.aborted) {
         this.#apply(full);
       }
       return true;
     }
-    if (current()) {
+    if (!signal.aborted) {
       this.#apply(dto);
     }
     return ended;

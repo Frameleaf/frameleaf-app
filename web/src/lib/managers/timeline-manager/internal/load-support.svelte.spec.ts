@@ -88,6 +88,22 @@ describe('ordered page cursors', () => {
     expect(months[0].addOrderedAssets).toHaveBeenCalledTimes(1);
     expect(months[0].addOrderedAssets).toHaveBeenCalledWith(response('a', 'b'));
 
+    // A live change that also cleared the page boundaries: the retry seeks by offset, not the old cursor.
+    const paged = bind([month(), month()]);
+    const pagedManager = paged[1].timelineManager as unknown as { projectionGeneration: number };
+    sdkMock.getTimelineOrdered.mockResolvedValueOnce(response('a', 'b'));
+    await loadOrderedPage(paged[0], paged, options, signal);
+    sdkMock.getTimelineOrdered
+      .mockImplementationOnce(async () => {
+        pagedManager.projectionGeneration++;
+        clearOrderedPageCursors(paged);
+        return response('stale', 'stale');
+      })
+      .mockResolvedValueOnce(response('c', 'd'));
+    await loadOrderedPage(paged[1], paged, options, signal);
+    expect(sdkMock.getTimelineOrdered.mock.calls.at(-2)![0]).toMatchObject({ after: 'b' });
+    expect(sdkMock.getTimelineOrdered).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 500 }), { signal });
+
     const replaced = bind([month()]);
     sdkMock.getTimelineOrdered.mockImplementationOnce(async () => {
       Object.assign(replaced[0].timelineManager, { months: [] });

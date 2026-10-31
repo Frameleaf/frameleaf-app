@@ -220,19 +220,29 @@ describe('Eagle import from a folder the server can open', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(ended).toBe(true);
     expect(run).toMatchObject({ state: 'finished', unreachable: false });
-    expect(sdkMock.getEagleImport).toHaveBeenLastCalledWith({ id: 'import-1', outcomes: true });
+    expect(sdkMock.getEagleImport).toHaveBeenLastCalledWith(
+      { id: 'import-1', outcomes: true },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
   it('stops following on a refusal, and on sign-out without touching the run', async () => {
-    sdkMock.isHttpError.mockImplementation(
-      (error: unknown) => typeof error === 'object' && error !== null && 'status' in error,
+    // The production guard, and a real HttpError from the real client (a 404 from the server).
+    const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
+    sdkMock.isHttpError.mockImplementation(sdk.isHttpError);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(Response.json({ message: 'Not found', statusCode: 404 }, { status: 404 }))),
     );
+    const gone = await sdk.getEagleImport({ id: 'import-1' }).catch((error: unknown) => error);
+    vi.unstubAllGlobals();
+    expect(sdk.isHttpError(gone)).toBe(true);
+
     const begin = () =>
       ServerEagleImportRun.begin({ rootId: '0', path: 'p.library' }, { fingerprint: 'f' }, { mode: 'top' }, []);
     sdkMock.createEagleImport.mockResolvedValue(importDto());
 
     // The import is gone (404): asking again won't help, so it reads as stopped with the error.
-    const gone = Object.assign(new Error('Not found'), { status: 404 });
     sdkMock.getEagleImport.mockRejectedValue(gone);
     const refused = await begin();
     await expect(Promise.all([refused.start(), vi.advanceTimersByTimeAsync(2000)])).resolves.toBeDefined();
@@ -253,6 +263,23 @@ describe('Eagle import from a folder the server can open', () => {
     expect(ended).toBe(true);
     expect(run.done).toBe(1);
     expect(sdkMock.getEagleImport).toHaveBeenCalledTimes(1);
+
+    // Signed out while a read hangs: the read is cancelled and the loop ends at once.
+    sdkMock.getEagleImport.mockReset();
+    sdkMock.getEagleImport.mockImplementation(
+      (_: unknown, opts?: { signal?: AbortSignal | null }) =>
+        new Promise((_resolve, reject) => opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')))),
+    );
+    const hung = await begin();
+    let hungEnded = false;
+    void hung.start().then(() => (hungEnded = true));
+    await vi.advanceTimersByTimeAsync(2000);
+    const [, opts] = sdkMock.getEagleImport.mock.calls[0] as [unknown, { signal: AbortSignal }];
+    eventManager.emit('AuthLogout');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opts.signal.aborted).toBe(true);
+    expect(hungEnded).toBe(true);
+    expect(hung.unreachable).toBe(false);
   });
 
   it('finds the import the server is running', async () => {

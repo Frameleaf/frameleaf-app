@@ -113,13 +113,14 @@ export async function loadOrderedPage(
   if (page === -1) {
     return;
   }
-  let cursors = orderedPageCursors.get(months);
-  if (!cursors) {
-    cursors = new Map();
-    orderedPageCursors.set(months, cursors);
-  }
   for (let attempt = 1; ; attempt++) {
     const projection = manager.projectionGeneration;
+    // Read per attempt: a live change may have cleared the boundaries the last attempt used.
+    let cursors = orderedPageCursors.get(months);
+    if (!cursors) {
+      cursors = new Map();
+      orderedPageCursors.set(months, cursors);
+    }
     const after = cursors.get(page - 1)?.end;
     const before = after ? undefined : cursors.get(page + 1)?.start;
     const response = await getTimelineOrdered(
