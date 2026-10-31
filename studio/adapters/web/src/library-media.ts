@@ -397,7 +397,11 @@ export function createLibraryMediaSeeder(options: {
       if (fresh.length > 0) onChange()
       // Another seed may still be creating the records this one skipped: wait for them. This seed has
       // finished its own records first, so two overlapping seeds never wait on each other.
-      await Promise.all(assets.filter((asset) => !freshIds.has(asset.id)).map((asset) => pending.get(asset.id)))
+      const awaited = assets.filter((asset) => !freshIds.has(asset.id) && pending.has(asset.id))
+      await Promise.all(awaited.map((asset) => pending.get(asset.id)))
+      // That seed failed or stopped before it started some of them and released them: add them here.
+      const released = awaited.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
+      if (released.length > 0 && !controller.signal.aborted) await this.seed(released)
       // FL-97: the server names HDR originals once they are placed; record it on media the bin
       // already holds, so the project becomes HDR without a remount.
       let marked = false

@@ -271,6 +271,32 @@ describe('library media across editor remounts', () => {
     }
   })
 
+  it('adds the assets a failing overlapping seed released before the waiting seed returns', async () => {
+    let fail = true
+    const media = createLibraryMediaSeeder({
+      workspace,
+      projectId: () => {
+        if (fail) {
+          fail = false
+          throw new Error('project unavailable')
+        }
+        return 'fl-overlap-retry'
+      },
+      onChange: () => {},
+    })
+    const assets = [libraryAsset, { ...libraryAsset, id: IMPORTED }]
+    try {
+      const failing = media.seed(assets)
+      const waiting = media.seed(assets)
+      await expect(failing).rejects.toThrow('project unavailable')
+      await waiting
+      // The failed asset keeps its reservation; the one the failing seed never started is added.
+      expect(await getProjectMediaIds('fl-overlap-retry')).toEqual([IMPORTED])
+    } finally {
+      media.dispose()
+    }
+  })
+
   it('marks a restored item as HDR again when the server reports it after the restore (FL-636)', async () => {
     const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib-hdr', onChange: () => {} })
     try {
