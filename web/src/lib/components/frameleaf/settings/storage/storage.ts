@@ -2,8 +2,6 @@
  * Storage & originals (FL-365) in plain words: the rules of the pages, kept apart from the drawing so
  * they can be tested on their own.
  */
-import type { AnalyticsBucketDto } from '@frameleaf/sdk';
-
 const DAY_MS = 86_400_000;
 
 /** "Keep deleted photos for": the lengths offered. No "delete straight away" (owner call defaulted on FL-365). */
@@ -24,42 +22,8 @@ export const keepChoice = (days: number, listed: readonly number[]) =>
 /** The day something deleted today can last be brought back. */
 export const lastDay = (days: number, from: Date = new Date()) => new Date(from.getTime() + days * DAY_MS);
 
-/**
- * How fast the photos and videos grow, in bytes a day, from the growth series: the first and the last
- * period that were measured. Null while there is less than a month between them or nothing grew.
- */
-export const growthPerDay = (series: Pick<AnalyticsBucketDto, 'through' | 'physicalBytes'>[]): number | null => {
-  const measured = series.filter((row) => row.physicalBytes !== null);
-  if (measured.length < 2) {
-    return null;
-  }
-  const first = measured[0];
-  const last = measured.at(-1)!;
-  const days = (new Date(last.through).getTime() - new Date(first.through).getTime()) / DAY_MS;
-  const grew = last.physicalBytes! - first.physicalBytes!;
-  return days >= 28 && grew > 0 ? grew / days : null;
-};
-
-/** How long the free space lasts at that pace, as a unit and a count ("about 4 months"). */
-export const roomLeft = (
-  freeBytes: number,
-  perDay: number | null,
-): { unit: 'years' | 'months' | 'weeks' | 'days'; count: number } | null => {
-  if (perDay === null || perDay <= 0) {
-    return null;
-  }
-  const days = freeBytes / perDay;
-  if (days >= 730) {
-    return { unit: 'years', count: Math.floor(days / 365) };
-  }
-  if (days >= 60) {
-    return { unit: 'months', count: Math.floor(days / 30) };
-  }
-  if (days >= 14) {
-    return { unit: 'weeks', count: Math.floor(days / 7) };
-  }
-  return { unit: 'days', count: Math.max(1, Math.floor(days)) };
-};
+/** The same pace and room-left estimates the Overview shows for the same drive. */
+export { growthPerDay, roomLeft } from '$lib/components/frameleaf/settings/overview/overview';
 
 /** A named folder layout: the storage template it writes, offered as a choice with an example. */
 export type FolderLayout = { id: string; template: string };

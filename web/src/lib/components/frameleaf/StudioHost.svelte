@@ -593,7 +593,13 @@
       return mounting.done;
     }
     const token = ++mountToken;
-    const done = startMount(token).finally(() => {
+    // Mounts run one at a time: an abandoned mount finishes its own teardown before the next
+    // engine starts on the same stage.
+    const previous = mounting?.done;
+    const done = (async () => {
+      await previous?.catch(() => {});
+      await startMount(token);
+    })().finally(() => {
       if (mounting?.token === token) {
         mounting = null;
       }
@@ -629,6 +635,10 @@
       const instance = await resolution.module.mount(stage, context(), {
         ...services,
         reportFatal: (error) => {
+          // A superseded mount must not fail the mount that replaced it.
+          if (token !== mountToken) {
+            return;
+          }
           services.reportFatal(error);
           dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
         },
@@ -641,6 +651,10 @@
       engine = instance;
       dispatch({ type: 'engine-mounted' });
     } catch (error) {
+      // An abandoned mount's failure must not fail the mount that replaced it.
+      if (token !== mountToken) {
+        return;
+      }
       dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
     }
   };

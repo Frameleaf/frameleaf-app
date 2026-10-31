@@ -34,6 +34,9 @@ describe('FormatMessage component', () => {
         plural_with_html: 'You have {count, plural, other {<b>#</b> items}}',
         select_with_html: 'Item is {status, select, other {<b>disabled</b>}}',
         ordinal_with_html: '{count, selectordinal, other {<b>#th</b>}} item',
+        plural_with_apostrophe: "{count, plural, other {Chris''{name} and a '{'brace'}'}}",
+        nested_select_with_html: '{count, plural, other {{status, select, on {<b>{name}</b> is on} other {off}}}}',
+        plural_with_name: '{count, plural, one {<b>{name}</b> has # item} other {<b>{name}</b> has # items}}',
       }),
     );
 
@@ -157,6 +160,27 @@ describe('FormatMessage component', () => {
       values: { status: true },
     });
     expect(getSanitizedHTML(container)).toBe('Item is <strong>disabled</strong>');
+  });
+
+  it('keeps caller text inside a plural branch as text, never as markup or message syntax', () => {
+    const { container } = render(FormatTagB, {
+      key: 'plural_with_name' as Translations,
+      values: { count: 2, name: '<b>x</b> {oops' },
+    });
+    expect(getSanitizedHTML(container)).toBe('<strong>&lt;b&gt;x&lt;/b&gt; {oops</strong> has 2 items');
+  });
+
+  it('keeps literal apostrophes and quoted braces in a plural branch without losing its arguments', () => {
+    render(FormatMessage, { key: 'plural_with_apostrophe' as Translations, values: { count: 2, name: 'N' } });
+    expect(screen.getByText("Chris'N and a {brace}")).toBeInTheDocument();
+  });
+
+  it('renders tags inside a select nested in a plural as parts', () => {
+    const { container } = render(FormatTagB, {
+      key: 'nested_select_with_html' as Translations,
+      values: { count: 2, status: 'on', name: '<i>x</i>' },
+    });
+    expect(getSanitizedHTML(container)).toBe('<strong>&lt;i&gt;x&lt;/i&gt;</strong> is on');
   });
 
   it('supports html tags inside selectordinal', () => {
