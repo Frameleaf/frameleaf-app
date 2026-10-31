@@ -207,8 +207,11 @@ export class StudioVoiceCleanupService {
       noises,
       humHz: dto.humHz ?? null,
     };
-    // The same clean-up already queued or running is answered by that job: one cleaned track.
-    const [twin] = await this.twins(auth.user.id, projectId, cleanedImportId(snapshot));
+    // The same clean-up already queued or running is answered by that job: one cleaned track. One being
+    // cancelled will keep nothing, so a new job is queued instead.
+    const twin = (await this.twins(auth.user.id, projectId, cleanedImportId(snapshot))).find(
+      (operation) => operation.status !== MediaOperationStatus.Cancelling,
+    );
     if (twin) {
       return { id: twin.id, status: twin.status };
     }

@@ -479,6 +479,21 @@ describe(StudioVoiceCleanupService.name, () => {
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
+    it('queues a new job when the identical one is being cancelled', async () => {
+      const { sut, operation, operations } = setup();
+      const cancelling = '0195e2a0-0000-7000-8000-000000000045';
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: cancelling }]);
+      operations.getForWorker.mockResolvedValue({
+        ...operation,
+        id: cancelling,
+        status: MediaOperationStatus.Cancelling,
+      });
+      await expect(
+        sut.create(owner, projectId, { clipId: 'voice', strength: 'standard', noises: ['background', 'wind'] }),
+      ).resolves.toEqual({ id: operationId, status: 'queued' });
+      expect(operations.create).toHaveBeenCalledTimes(1);
+    });
+
     it('two identical jobs at once keep one track and never cancel the live one', async () => {
       const { sut, operation, operations, projects, imports, publications, query } = setup();
       const live = '0195e2a0-0000-7000-8000-000000000041';

@@ -154,6 +154,9 @@ export class IdentityPostValidator {
     const candidateRe =
       /(?<![\p{L}\p{M}\p{N}_-])((?:\p{Ll}{1,3}['’])?\p{Lu}(?:[\p{Ll}\p{M}]+|['’]\p{Lu}[\p{Ll}\p{M}]+)(?:-\p{Lu}[\p{Ll}\p{M}]+)*)(?![\p{L}\p{M}\p{N}_-])/gu;
     const hallucinatedNames: string[] = [];
+    // What the final description keeps: replaced candidates, and whether a hyphenated known name stays.
+    const replaced: Array<[number, number]> = [];
+    let keptCompound = false;
     let stripped = description.replaceAll(candidateRe, (match, word, offset) => {
       // Sentence-start capitals are legitimate — don't strip them.
       if (isAfterSentenceEnd(description, offset)) {
@@ -166,17 +169,21 @@ export class IdentityPostValidator {
       // A known name, or a hyphenated run of one known person's name ("Anne-Marie" for a stored
       // "Anne Marie"); parts taken from different people ("Anne-Smith") are not a known name.
       const parts = (word as string).normalize('NFC').toLowerCase().split('-');
+      if (knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end)) {
+        return match;
+      }
       if (
-        knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end) ||
-        (parts.length > 1 &&
-          knownTokenRuns.some((tokens) =>
-            tokens.some((_, at) => parts.every((part, index) => tokens[at + index] === part)),
-          ))
+        parts.length > 1 &&
+        knownTokenRuns.some((tokens) =>
+          tokens.some((_, at) => parts.every((part, index) => tokens[at + index] === part)),
+        )
       ) {
+        keptCompound = true;
         return match;
       }
       // Anything else that looks like a name mid-sentence is hallucinated.
       hallucinatedNames.push(word);
+      replaced.push([offset, offset + word.length]);
       return 'Someone';
     });
 
@@ -184,8 +191,11 @@ export class IdentityPostValidator {
       flags.hallucinatedNames = [...new Set(hallucinatedNames)];
     }
 
-    // ---- Step 2: substitute / flag generic references when no known token was present ----
-    if (knownNameSpans.length === 0 && knownPersons.length > 0) {
+    // ---- Step 2: substitute / flag generic references when no known name remains ----
+    // A known token inside a replaced name ("Anne" of "Anne-Sophie") is no longer in the description.
+    const knownRemains =
+      keptCompound || knownNameSpans.some(([start, end]) => replaced.every(([from, to]) => start < from || end > to));
+    if (!knownRemains && knownPersons.length > 0) {
       const genericMatch = GENERIC_PERSON_PATTERN.exec(stripped);
       if (genericMatch) {
         if (knownPersons.length === 1) {

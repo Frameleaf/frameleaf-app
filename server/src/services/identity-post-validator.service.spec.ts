@@ -30,6 +30,18 @@ describe(IdentityPostValidator.name, () => {
       expect(sut.validate(text, [person('Jos\u{E9} Maria')])).toEqual({ description: text, flags: {} });
     });
 
+    it('names the known person at a generic reference when only a stripped name held their token', () => {
+      expect(sut.validate('I saw Anne-Sophie and a child.', [person('Anne Marie')])).toEqual({
+        description: 'I saw Someone and Anne Marie.',
+        flags: { hallucinatedNames: ['Anne-Sophie'] },
+      });
+    });
+
+    it('does not substitute a generic reference when a hyphenated known name remains', () => {
+      const text = 'I saw Jose\u{301}-Maria and a child.';
+      expect(sut.validate(text, [person('Jos\u{E9} Maria')])).toEqual({ description: text, flags: {} });
+    });
+
     it('strips a hyphenated name built from two different known people', () => {
       expect(sut.validate('I saw Anne-Smith by the lake.', [person('Anne Jones'), person('John Smith')])).toEqual({
         description: 'I saw Someone by the lake.',
