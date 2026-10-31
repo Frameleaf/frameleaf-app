@@ -146,22 +146,26 @@ test.describe('Asset Viewer Navbar', () => {
 
   // FL-35 / FL-36: the September 24 viewer conformance (V-3, V-4, V-7) and removals elsewhere.
   test.describe('September 24 conformance', () => {
-    test('rates from the top row', async ({ context, page }) => {
+    // FL-707 item 14: the top row has no star; the 1–5 keys rate.
+    test('rates from the keys, with no star in the top row', async ({ context, page }) => {
       await updateMyPreferences(
         { userPreferencesUpdateDto: { ratings: { enabled: true } } },
         { headers: asBearerAuth(admin.accessToken) },
       );
       await utils.setAuthCookies(context, admin.accessToken);
       await page.goto(`/photos/${asset.id}`);
-      await page.getByTestId('viewer-rating-button').click();
-      await page.getByRole('group', { name: 'Rate this item' }).getByRole('button', { name: 'Rate 4 stars' }).click();
+      // The keys-only RatingAction renders nothing, so wait for the top row it mounts in.
+      await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', asset.id);
+      await expect(page.getByTestId('asset-viewer-navbar-actions')).toBeVisible();
+      await expect(page.getByTestId('viewer-rating-button')).toHaveCount(0);
+      // Pressing 4 again is harmless, so a press that lands before the shortcut is bound is retried.
       await expect
         .poll(async () => {
+          await page.keyboard.press('4');
           const info = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
           return info.exifInfo?.rating;
         })
         .toBe(4);
-      await expect(page.getByTestId('viewer-rating-button')).toHaveAccessibleName('Rating · 4 stars');
     });
 
     test('offers Restore and Delete permanently for a trashed item', async ({ context, page }) => {

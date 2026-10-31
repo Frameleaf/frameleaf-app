@@ -69,6 +69,12 @@ describe('filterReviewedCandidates', () => {
     expect(result).toEqual(candidates);
   });
 
+  it('drops a proposal about another pet in an asset the owner already confirmed a pet in', () => {
+    const candidates = [candidate('c1', 'asset-1', 'pet-2', 0.5)];
+    const result = filterReviewedCandidates(candidates, [decision('asset-1', 'pet-1', PetObservationState.Confirmed)]);
+    expect(result).toEqual([]);
+  });
+
   it('keeps a proposal about the same pet in a different asset', () => {
     const candidates = [candidate('c1', 'asset-2', 'pet-1', 0.5)];
     const result = filterReviewedCandidates(candidates, [decision('asset-1', 'pet-1', PetObservationState.Confirmed)]);

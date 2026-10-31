@@ -77,6 +77,15 @@ describe('RatingAction (V-3)', () => {
     expect(getByTestId('viewer-rating-button')).toHaveFocus();
   });
 
+  it('rates from the keys without a star in the top bar when keysOnly (FL-707 item 14)', async () => {
+    const onAction = vi.fn();
+    const asset = assetFactory.build({ ownerId: 'owner', exifInfo: { rating: null } });
+    vi.mocked(updateAsset).mockResolvedValueOnce(asset);
+    const { queryByTestId } = renderWithTooltips(RatingAction, { asset, onAction, keysOnly: true });
+    expect(queryByTestId('viewer-rating-button')).not.toBeInTheDocument();
+    await fireEvent.keyDown(document, { key: '5' });
+    await waitFor(() => expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: 5 } }));
+  });
   it('is absent when ratings are turned off', () => {
     authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
     const { queryByTestId } = render(3);

@@ -90,5 +90,14 @@ describe(ApiService.name, () => {
       expect(sent.status).toBe(200);
       expect(site.metadataTags).toHaveBeenCalledTimes(2);
     });
+
+    it('serves the Studio project library as the app, never looked up as a website (FL-711)', async () => {
+      site.metadataTags.mockClear();
+      for (const path of ['/studio/projects', '/studio/projects/', '/studio/projects?shelf=archived']) {
+        await serve(path);
+        expect(sent.status).toBe(200);
+      }
+      expect(site.metadataTags).not.toHaveBeenCalled();
+    });
   });
 });

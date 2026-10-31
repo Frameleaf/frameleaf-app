@@ -119,6 +119,13 @@ export class PetService {
     if (assetIds.length > 0) {
       await this.eventRepository.emit('AssetsChanged', { assetIds });
     }
+    // Its confirmations go with it, so a photo it settled may be open to the other pets again (FL-712).
+    const confirmed = observations
+      .filter(({ state }) => state === PetObservationState.Confirmed)
+      .map(({ assetId }) => assetId);
+    await this.jobRepository.queueAll(
+      confirmed.map((assetId) => ({ name: JobName.PetRecognition, data: { id: assetId } })),
+    );
   }
 
   /**

@@ -221,6 +221,8 @@ export type QueueFacts = {
   paused: boolean;
   /** Paused by a library move, which starts it again by itself when the move ends. */
   heldByMove: boolean;
+  /** FL-711: paused by quiet hours, which start it again by themselves when the overnight window opens. */
+  heldByQuietHours?: boolean;
 };
 
 const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count;
@@ -228,7 +230,7 @@ const byCount = (a: { count: number }, b: { count: number }) => b.count - a.coun
 /**
  * Work that stopped and cannot carry on by itself: items that failed (they stay failed until someone
  * retries or clears them), and work paused with items waiting behind the pause. A pause a library
- * move holds lifts by itself and is not listed.
+ * move or quiet hours hold lifts by itself and is not listed.
  */
 export const workSignal = (queues: QueueFacts[]): SignalResult => {
   const items: AttentionItem[] = [];
@@ -248,7 +250,7 @@ export const workSignal = (queues: QueueFacts[]): SignalResult => {
     );
   }
   const paused = queues
-    .filter((queue) => queue.paused && !queue.heldByMove)
+    .filter((queue) => queue.paused && !queue.heldByMove && !queue.heldByQuietHours)
     .map((queue) => ({ name: queue.name, count: queue.counts.waiting + queue.counts.paused }))
     .filter((queue) => queue.count > 0)
     .toSorted(byCount);

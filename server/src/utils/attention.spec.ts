@@ -218,6 +218,12 @@ describe('attention: background work that stopped', () => {
       workSignal([queue(QueueName.FaceDetection, { paused: true, heldByMove: true }, { waiting: 40 })]).items,
     ).toEqual([]);
   });
+
+  it('leaves out a pause quiet hours hold, which lifts when the overnight window opens (FL-711)', () => {
+    expect(
+      workSignal([queue(QueueName.VideoConversion, { paused: true, heldByQuietHours: true }, { paused: 3 })]).items,
+    ).toEqual([]);
+  });
 });
 
 describe('attention: a new version', () => {

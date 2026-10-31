@@ -6,6 +6,13 @@ import {
   buildExplorePlaces,
   buildExploreShortcuts,
   buildExploreThings,
+  isThingKeyword,
+  isThingTag,
+  EXPLORE_FACET_LIMIT,
+  EXPLORE_THING_LIMIT,
+  exploreThingsFacetsBody,
+  exploreThingsNeedMoreTags,
+  peopleNameSet,
   captureDay,
   emptyExploreShortcutCounts,
   EXPLORE_FACETS,
@@ -143,7 +150,11 @@ describe('explore', () => {
     });
 
     it('limits things to ten and places to eight', () => {
-      const counts = Array.from({ length: 20 }, (_, index) => ({ value: `v${index}`, count: 1 }));
+      const counts = Array.from({ length: 20 }, (_, index) => ({
+        value: `v${index}`,
+        label: `thing ${index}`,
+        count: 1,
+      }));
       expect(buildExploreThings(counts)).toHaveLength(10);
       expect(buildExplorePlaces(counts)).toHaveLength(8);
     });
@@ -166,5 +177,69 @@ describe('explore', () => {
   it('recognises videos', () => {
     expect(isVideoAsset({ type: AssetTypeEnum.Video })).toBe(true);
     expect(isVideoAsset({ type: AssetTypeEnum.Image })).toBe(false);
+  });
+
+  describe('isThingKeyword and isThingTag (FL-707 item 15)', () => {
+    const people = peopleNameSet([
+      { id: 'p1', name: 'Jamie' },
+      { id: 'p2', name: '' },
+    ]);
+    it.each([
+      'beach',
+      'Mountains',
+      'dog',
+      'DOG',
+      'TV',
+      '2024',
+      'Lake Louise',
+      'Apple pie',
+      'Sony headphones',
+      'Canon Rock',
+    ])('keeps the thing %s', (label) => {
+      expect(isThingKeyword(label, people)).toBe(true);
+    });
+    it.each([
+      'Jamie',
+      'jamie',
+      'People',
+      'Other Keywords',
+      'PINN',
+      'SFAN',
+      'IMG_4021',
+      'DSC0001',
+      'Canon EOS R5',
+      'Sony A7 III',
+      'Apple iPhone 15 Pro',
+      'Google Pixel 8',
+      'Fujifilm X-T4',
+      'Lightroom',
+      'People|Jamie',
+      '',
+    ])('leaves out %s', (label) => {
+      expect(isThingKeyword(label, people)).toBe(false);
+    });
+    it('reads a nested tag by its own name and its folders', () => {
+      expect(isThingTag('Travel/Canada/Banff', people)).toBe(true);
+      expect(isThingTag('People/Jamie', people)).toBe(false);
+      expect(isThingTag('Other Keywords/beach', people)).toBe(false);
+      expect(isThingTag('Travel/SFAN', people)).toBe(false);
+    });
+    it('asks for a fuller tag list only when a full facet page left the row short', () => {
+      const full = Array.from({ length: EXPLORE_FACET_LIMIT }, (_, index) => ({ value: `t${index}`, count: 1 }));
+      expect(exploreThingsNeedMoreTags(full, [])).toBe(true);
+      expect(exploreThingsNeedMoreTags(full.slice(0, 5), [])).toBe(false);
+      expect(exploreThingsNeedMoreTags(full, Array.from({ length: EXPLORE_THING_LIMIT }))).toBe(false);
+      expect(exploreThingsFacetsBody).toMatchObject({ facets: ['tags'], facetLimit: 100 });
+    });
+    it('drops non-things before taking the limit', () => {
+      const counts = [
+        { value: 't1', label: 'People', count: 9, coverAssetId: null },
+        { value: 't2', label: 'Jamie', count: 8, coverAssetId: null },
+        { value: 't3', label: 'PINN', count: 7, coverAssetId: null },
+        { value: 't4', label: 'beach', count: 3, coverAssetId: null },
+        { value: 't5', label: 'dog', count: 2, coverAssetId: null },
+      ];
+      expect(buildExploreThings(counts, 1, people).map(({ label }) => label)).toEqual(['beach']);
+    });
   });
 });

@@ -133,26 +133,6 @@
 <div class="fl-info">
   <!-- V-6: a missing original is explained by the viewer's offline banner (ViewerOfflineBanner), not again here. -->
 
-  <DetailPanelDescription
-    {asset}
-    {isOwner}
-    review={descriptionReview}
-    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
-  />
-  <DetailPanelImageEnrichment
-    {asset}
-    {isOwner}
-    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
-    {onAssetSuppressed}
-    onDescriptionReview={(review) => (descriptionReview = review)}
-  />
-  <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
-  <VideoMomentsPanel {asset} {isOwner} />
-  <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-  <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
-  <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
-  <DetailPanelPets {asset} {isOwner} />
-
   <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
   <section>
     <div class="fl-info-heading-row">
@@ -180,6 +160,32 @@
     -->
   <ViewerDetailRows {asset} {isOwner} />
   <DetailPanelCameraIdentification {asset} {isOwner} />
+
+  <!-- FL-707 item 13: people, rating, then the description (once, with its AI evidence) and the
+       sensitive-content check, after when, where, file and camera. -->
+  <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
+  <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
+  <DetailPanelPets {asset} {isOwner} />
+  <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  <DetailPanelImageEnrichment
+    {asset}
+    {isOwner}
+    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+    {onAssetSuppressed}
+    onDescriptionReview={(review) => (descriptionReview = review)}
+  >
+    {#snippet descriptionEditor(evidence)}
+      <DetailPanelDescription
+        {asset}
+        {isOwner}
+        review={descriptionReview}
+        {evidence}
+        onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+      />
+    {/snippet}
+  </DetailPanelImageEnrichment>
+  <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
+  <VideoMomentsPanel {asset} {isOwner} />
 
   {#if authManager.authenticated && authManager.preferences.tags.enabled}
     <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
@@ -295,15 +301,10 @@
   }
 
   /* .mv-info section (media-viewer.css:973-978): one band per part, a divider under each. */
-  .fl-info > :global(section:not(.fl-enrichment)) {
+  .fl-info > :global(section) {
     margin: 0;
     padding: var(--fl-space-4) 0;
     border-bottom: 1px solid var(--fl-viewer-border);
-  }
-
-  /* The enrichment card keeps its own frame, with the bands' rhythm around it. */
-  .fl-info > :global(.fl-enrichment) {
-    margin: var(--fl-space-4) 0;
   }
 
   .fl-info-map {

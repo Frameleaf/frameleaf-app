@@ -345,6 +345,17 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+/* FL-707 P1: the one top padding above every library-side page heading (16px on phones). */
+.frameleaf,
+.fl-scope {
+  --fl-page-top: 28px;
+}
+@media (max-width: 767px) {
+  .frameleaf,
+  .fl-scope {
+    --fl-page-top: 16px;
+  }
+}
 /*
  * Solid fallbacks for the frosted material (apple-style.css:51-57): under Increase Contrast or
  * Reduce Transparency the material is the opaque panel, its edge the ordinary border, and

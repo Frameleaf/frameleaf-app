@@ -57,6 +57,32 @@ describe('the Explore loader', () => {
     eventManager.emit('AuthLogout');
   });
 
+  it('asks once more for the tags when the busiest ones are mostly not things (FL-707 item 15)', async () => {
+    const codes = Array.from({ length: 30 }, (_, index) => ({
+      value: `code-${index}`,
+      label: `CODE${index}`,
+      count: 40,
+    }));
+    vi.mocked(searchFacets)
+      .mockResolvedValueOnce({ total: 50, facets: [{ fieldName: SearchFacetField.Tags, counts: codes }] })
+      .mockResolvedValueOnce({
+        total: 50,
+        facets: [
+          { fieldName: SearchFacetField.Tags, counts: [...codes, { value: 'beach', label: 'beach', count: 3 }] },
+        ],
+      });
+
+    const data = await open();
+
+    expect(searchFacets).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(searchFacets).mock.calls[1][0].searchFacetsDto).toMatchObject({
+      visibility: AssetVisibility.Timeline,
+      facets: [SearchFacetField.Tags],
+      facetLimit: 100,
+    });
+    expect(data.things.map(({ label }) => label)).toEqual(['beach']);
+  });
+
   it('counts and covers People, Places and Things with Timeline visibility, in one request', async () => {
     const data = await open();
 
