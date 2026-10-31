@@ -1,0 +1,242 @@
+import { schemaDiff } from '@frameleaf/sql-tools';
+import { Injectable } from '@nestjs/common';
+import { isAbsolute, join } from 'node:path';
+import { SALT_ROUNDS } from 'src/constants.js';
+import { MaintenanceAuthDto } from 'src/dtos/maintenance.dto.js';
+import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
+import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
+import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
+
+export type SchemaReport = {
+  migrations: MigrationStatus[];
+  drift: ReturnType<typeof schemaDiff>;
+};
+
+type MigrationStatus = {
+  name: string;
+  status: 'applied' | 'missing' | 'deleted';
+};
+
+@Injectable()
+export class CliService extends BaseService {
+  async schemaReport(): Promise<SchemaReport> {
+    const allFiles = await this.storageRepository.readdir(join(import.meta.dirname, '../schema/migrations'));
+    const files = new Set<string>();
+    const migrations = new Map<string, MigrationStatus['status']>();
+    for (const file of allFiles) {
+      if (!file.endsWith('.js')) {
+        continue;
+      }
+      const name = file.slice(0, -3);
+      files.add(name);
+      migrations.set(name, 'missing');
+    }
+    for (const { name } of await this.databaseRepository.getMigrations()) {
+      migrations.set(name, files.has(name) ? 'applied' : 'deleted');
+    }
+
+    const drift = await this.databaseRepository.getSchemaDrift();
+
+    return {
+      migrations: Array.from(migrations, ([name, status]) => ({ name, status })).sort((a, b) =>
+        compareCodeUnits(a.name, b.name),
+      ),
+      drift,
+    };
+  }
+
+  async listUsers(): Promise<UserAdminResponseDto[]> {
+    const users = await this.userRepository.getList({ withDeleted: true });
+    return users.map((user) => mapUserAdmin(user));
+  }
+
+  async resetAdminPassword(
+    ask: (admin: UserAdminResponseDto) => Promise<{ newPassword: string | undefined; invalidateSessions: boolean }>,
+  ) {
+    const admin = await this.userRepository.getAdmin();
+    if (!admin) {
+      throw new Error('Admin account does not exist');
+    }
+
+    const { newPassword: providedPassword, invalidateSessions } = await ask(mapUserAdmin(admin));
+    const password = providedPassword || this.cryptoRepository.randomBytesAsText(24);
+    const hashedPassword = await this.cryptoRepository.hashBcrypt(password, SALT_ROUNDS);
+
+    await this.userRepository.update(admin.id, { password: hashedPassword });
+
+    if (invalidateSessions) {
+      // frameleaf-admin has no event handlers or socket server to tell open tabs: they sign out on their
+      // next request, which the deleted session fails with 401
+      await this.sessionRepository.invalidateAll({ userId: admin.id });
+    }
+
+    return { admin, password, provided: !!providedPassword };
+  }
+
+  async disablePasswordLogin(): Promise<void> {
+    await this.updateConfigExclusively(
+      (config) => {
+        config.passwordLogin.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
+  }
+
+  async enablePasswordLogin(): Promise<void> {
+    await this.updateConfigExclusively(
+      (config) => {
+        config.passwordLogin.enabled = true;
+      },
+      { source: 'server-cli' },
+    );
+  }
+
+  async disableMaintenanceMode(): Promise<{ alreadyDisabled: boolean }> {
+    const currentState = (await this.systemMetadataRepository.get(SystemMetadataKey.MaintenanceMode)) ?? {
+      isMaintenanceMode: false as const,
+    };
+
+    if (!currentState.isMaintenanceMode) {
+      return {
+        alreadyDisabled: true,
+      };
+    }
+
+    const state = { isMaintenanceMode: false as const };
+    await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, state);
+    await this.appRepository.sendOneShotAppRestart(state);
+
+    return {
+      alreadyDisabled: false,
+    };
+  }
+
+  async enableMaintenanceMode(): Promise<{ authUrl: string; alreadyEnabled: boolean }> {
+    const { server } = await this.getConfig({ withCache: true });
+    const baseUrl = await this.getPublicUrl(server);
+
+    const payload: MaintenanceAuthDto = {
+      username: 'cli-admin',
+    };
+
+    const state = (await this.systemMetadataRepository.get(SystemMetadataKey.MaintenanceMode)) ?? {
+      isMaintenanceMode: false as const,
+    };
+
+    if (state.isMaintenanceMode) {
+      return {
+        authUrl: await createMaintenanceLoginUrl(baseUrl, payload, state.secret),
+        alreadyEnabled: true,
+      };
+    }
+
+    const secret = generateMaintenanceSecret();
+
+    await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+      isMaintenanceMode: true,
+      secret,
+      action: {
+        action: MaintenanceAction.Start,
+      },
+    });
+
+    await this.appRepository.sendOneShotAppRestart({
+      isMaintenanceMode: true,
+    });
+
+    return {
+      authUrl: await createMaintenanceLoginUrl(baseUrl, payload, secret),
+      alreadyEnabled: false,
+    };
+  }
+
+  async grantAdminAccess(email: string): Promise<void> {
+    const user = await this.userRepository.getByEmail(email);
+    if (!user) {
+      throw new Error('User does not exist');
+    }
+
+    await this.userRepository.update(user.id, { isAdmin: true });
+  }
+
+  async revokeAdminAccess(email: string): Promise<void> {
+    const user = await this.userRepository.getByEmail(email);
+    if (!user) {
+      throw new Error('User does not exist');
+    }
+
+    await this.userRepository.update(user.id, { isAdmin: false });
+  }
+
+  async disableOAuthLogin(): Promise<void> {
+    await this.updateConfigExclusively(
+      (config) => {
+        config.oauth.enabled = false;
+      },
+      { source: 'server-cli' },
+    );
+  }
+
+  async enableOAuthLogin(): Promise<void> {
+    await this.updateConfigExclusively(
+      (config) => {
+        config.oauth.enabled = true;
+      },
+      { source: 'server-cli' },
+    );
+  }
+
+  async getSampleFilePaths(): Promise<string[]> {
+    const [assets, people, users] = await Promise.all([
+      this.assetRepository.getFileSamples(),
+      this.personRepository.getFileSamples(),
+      this.userRepository.getFileSamples(),
+    ]);
+
+    const paths = Array.from(people, (person) => person.thumbnailPath);
+
+    for (const user of users) {
+      paths.push(user.profileImagePath);
+    }
+
+    for (const asset of assets) {
+      paths.push(asset.path);
+    }
+
+    return paths.filter(Boolean) as string[];
+  }
+
+  async migrateFilePaths({
+    oldValue,
+    newValue,
+    confirm,
+  }: {
+    oldValue: string;
+    newValue: string;
+    confirm: (data: { sourceFolder: string; targetFolder: string }) => Promise<boolean>;
+  }): Promise<boolean> {
+    let sourceFolder = oldValue;
+    if (sourceFolder.startsWith('./')) {
+      sourceFolder = sourceFolder.slice(2);
+    }
+
+    const targetFolder = newValue;
+    if (!isAbsolute(targetFolder)) {
+      throw new Error('Target media location must be an absolute path');
+    }
+
+    if (!(await confirm({ sourceFolder, targetFolder }))) {
+      return false;
+    }
+
+    await this.databaseRepository.migrateFilePaths(sourceFolder, targetFolder);
+
+    return true;
+  }
+
+  cleanup() {
+    return this.databaseRepository.shutdown();
+  }
+}

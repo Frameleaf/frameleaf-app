@@ -1,0 +1,50 @@
+import {
+  Column,
+  CreateDateColumn,
+  PrimaryGeneratedColumn,
+  Table,
+  Unique,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { PluginTemplate } from 'src/dtos/plugin.dto.js';
+
+@Unique({ columns: ['name', 'version'] })
+@Table('plugin')
+export class PluginTable {
+  @PrimaryGeneratedColumn('uuid')
+  id!: Generated<string>;
+
+  @Column({ type: 'boolean', default: true })
+  enabled!: Generated<boolean>;
+
+  @Column({ index: true, unique: true })
+  name!: string;
+
+  @Column()
+  version!: string;
+
+  @Column()
+  title!: string;
+
+  @Column()
+  description!: string;
+
+  @Column()
+  author!: string;
+
+  @Column({ type: 'bytea' })
+  wasmBytes!: Buffer;
+
+  @Column({ type: 'jsonb' })
+  templates!: PluginTemplate[];
+
+  @Column({ type: 'bytea' })
+  sha256hash!: Buffer;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+}

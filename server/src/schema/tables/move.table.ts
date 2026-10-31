@@ -1,0 +1,25 @@
+import { Column, PrimaryGeneratedColumn, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated } from '@frameleaf/sql-tools';
+import type { PathType } from 'src/enum.js';
+
+@Table('move_history')
+// path lock (per entity)
+@Unique({ name: 'UQ_entityId_pathType', columns: ['entityId', 'pathType'] })
+// new path lock (global)
+@Unique({ name: 'UQ_newPath', columns: ['newPath'] })
+export class MoveTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @Column({ type: 'uuid' })
+  entityId!: string;
+
+  @Column({ type: 'character varying' })
+  pathType!: PathType;
+
+  @Column({ type: 'character varying' })
+  oldPath!: string;
+
+  @Column({ type: 'character varying' })
+  newPath!: string;
+}

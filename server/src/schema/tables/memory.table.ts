@@ -1,0 +1,67 @@
+import {
+  AfterDeleteTrigger,
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  ForeignKeyColumn,
+  PrimaryGeneratedColumn,
+  Table,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { MemoryType } from 'src/enum.js';
+import { memory_delete_audit } from 'src/schema/functions.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+@Table('memory')
+@UpdatedAtTrigger('memory_updatedAt')
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: memory_delete_audit,
+  referencingOldTableAs: 'old',
+  when: 'pg_trigger_depth() = 0',
+})
+export class MemoryTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @DeleteDateColumn()
+  deletedAt!: Timestamp | null;
+
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  ownerId!: string;
+
+  @Column()
+  type!: MemoryType;
+
+  @Column({ type: 'jsonb' })
+  data!: Record<string, unknown>;
+
+  /** unless set to true, will be automatically deleted in the future */
+  @Column({ type: 'boolean', default: false })
+  isSaved!: Generated<boolean>;
+
+  /** memories are sorted in ascending order by this value */
+  @Column({ type: 'timestamp with time zone' })
+  memoryAt!: Timestamp;
+
+  /** when the user last viewed the memory */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  seenAt!: Timestamp | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  showAt!: Timestamp | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  hideAt!: Timestamp | null;
+
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
+}

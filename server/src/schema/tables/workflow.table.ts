@@ -1,0 +1,46 @@
+import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
+import {
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  PrimaryGeneratedColumn,
+  Table,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+@Table('workflow')
+@UpdatedAtTrigger('workflow_updatedAt')
+export class WorkflowTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  ownerId!: string;
+
+  @Column()
+  trigger!: WorkflowTrigger;
+
+  @Column({ nullable: true })
+  name!: string | null;
+
+  @Column({ nullable: true })
+  description!: string | null;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @UpdateIdColumn()
+  updateId!: Generated<string>;
+
+  @Column({ type: 'boolean', default: true })
+  enabled!: Generated<boolean>;
+
+  @Column({ type: 'boolean', default: false })
+  logging!: Generated<boolean>;
+}

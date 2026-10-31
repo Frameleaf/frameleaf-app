@@ -1,0 +1,1259 @@
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { parseCookie as parse } from 'cookie';
+import { DateTime } from 'luxon';
+import { IncomingHttpHeaders } from 'node:http';
+import {
+  FRAMELEAF_MOBILE_REDIRECT,
+  FRAMELEAF_MOBILE_REDIRECT_PATH,
+  LOGIN_DUMMY_HASH,
+  LOGIN_URL,
+  MOBILE_REDIRECT,
+  SALT_ROUNDS,
+} from 'src/constants.js';
+import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
+import {
+  AuthDto,
+  AuthStatusResponseDto,
+  ChangePasswordDto,
+  LoginCredentialDto,
+  LogoutResponseDto,
+  OAuthBackchannelLogoutDto,
+  OAuthCallbackDto,
+  OAuthConfigDto,
+  PasswordLinkCheckDto,
+  PasswordLinkCheckResponseDto,
+  PasswordLinkRedeemDto,
+  PinCodeChangeDto,
+  PinCodeResetDto,
+  PinCodeSetupDto,
+  SessionUnlockDto,
+  SignUpDto,
+} from 'src/dtos/auth.dto.js';
+import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
+import {
+  AdminAuditAction,
+  AuthCookie,
+  AuthType,
+  JobName,
+  Permission,
+  RequestHeader,
+  RequestQuery,
+  SystemMetadataKey,
+} from 'src/enum.js';
+import { OAuthProfile } from 'src/repositories/oauth.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { isGranted } from 'src/utils/access.js';
+import { DecimalSize } from 'src/utils/bytes.js';
+import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
+import {
+  FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
+  FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
+  type FrameleafVia,
+  claimsFrameleafVia,
+  frameleafLogoutUrl,
+  frameleafOAuthConfig,
+  frameleafVia,
+  isRemoteVia,
+  logoutTokenAudiences,
+} from 'src/utils/frameleaf-sign-in.js';
+import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
+import { generateProfileImage } from 'src/utils/profile-image.js';
+import { getUserAgentDetails } from 'src/utils/request.js';
+import { createSession } from 'src/utils/session.js';
+import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
+import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
+
+export interface LoginDetails {
+  isSecure: boolean;
+  clientIp: string;
+  deviceType: string;
+  deviceOS: string;
+  appVersion: string | null;
+  /** FL-161: how the request arrived, as the edge worker vouched for it (absent or null: not vouched for). */
+  via?: FrameleafVia | null;
+}
+
+interface ClaimOptions<T> {
+  key: string;
+  default: T;
+  isValid: (value: unknown) => boolean;
+}
+
+const ELEVATED_SESSION_DURATION_MINUTES = 60;
+const ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES = 5;
+
+// SECURITY (security.md M5): exponential backoff for PIN unlock attempts.
+// The PIN is only 6 digits (~10^6 keyspace), so without throttling an attacker
+// with a stolen session token can brute-force the full space in minutes.
+// Track failed attempts per user in-process. State resets on process restart,
+// which is conservative — fewer false lockouts at the cost of bypass via
+// process kill (only available to admins).
+const PIN_FAILURE_THRESHOLDS = [
+  { attempts: 5, lockoutMs: 60 * 1000 }, // 5 failures -> 1 minute
+  { attempts: 10, lockoutMs: 60 * 60 * 1000 }, // 10 failures -> 1 hour
+  { attempts: 15, lockoutMs: 24 * 60 * 60 * 1000 }, // 15 failures -> 24 hours
+];
+const PIN_FAILURE_RESET_MS = 30 * 60 * 1000; // failures expire after 30 min of inactivity
+
+type PinAttemptState = { failureCount: number; lastFailureAt: number; lockedUntil: number };
+const pinAttemptsByUser = new Map<string, PinAttemptState>();
+// Keep PIN backoff admission serial while bcrypt runs outside the event loop.
+const pinChecksByUser = new Map<string, Promise<void>>();
+
+/** FL-367: API key uses recorded by this process, so "last used" is written at most every few minutes. */
+const API_KEY_USE_INTERVAL_MS = 5 * 60 * 1000;
+const apiKeyUseRecorded = new Map<string, number>();
+
+function lookupPinLockoutMs(failureCount: number): number {
+  let lockout = 0;
+  for (const tier of PIN_FAILURE_THRESHOLDS) {
+    if (failureCount >= tier.attempts) {
+      lockout = tier.lockoutMs;
+    }
+  }
+  return lockout;
+}
+
+export type ValidateRequest = {
+  headers: IncomingHttpHeaders;
+  queryParams: Record<string, string>;
+  metadata: {
+    sharedLinkRoute: boolean;
+    /** Only the landing challenge and password login may skip the shared-link unlock cookie. */
+    sharedLinkPassword?: boolean;
+    adminRoute: boolean;
+    /** `false` explicitly means no permission is required, which otherwise defaults to `all` */
+    permission?: Permission | false;
+    uri: string;
+    /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
+    refreshElevation?: boolean;
+    /** FL-161: how the request arrived; `relay` and `wan` require a Frameleaf sign-in. */
+    via?: FrameleafVia | null;
+    /** FL-161: signing out, which any valid session may do through remote access. */
+    remoteSignInExempt?: boolean;
+  };
+};
+
+/** FL-161: the error code of a remote-access request that is not signed in with Frameleaf. */
+export const FRAMELEAF_SIGN_IN_REQUIRED = 'frameleaf_sign_in_required';
+export const FRAMELEAF_SIGN_IN_REQUIRED_MESSAGE =
+  'Away from home, sign in with your Frameleaf account to use this server';
+/** FL-161: the error code of an original, archive or database backup refused over the relay. */
+export const RELAY_ORIGINALS_REFUSED = 'frameleaf_relay_originals_refused';
+export const RELAY_ORIGINALS_REFUSED_MESSAGE =
+  'Originals, archives and database backups are not available through the Frameleaf relay. Download them at home, or ask your administrator to allow them.';
+
+const frameleafSignInRequired = () =>
+  new ForbiddenException({
+    message: FRAMELEAF_SIGN_IN_REQUIRED_MESSAGE,
+    error: 'Forbidden',
+    statusCode: 403,
+    code: FRAMELEAF_SIGN_IN_REQUIRED,
+  });
+
+const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
+
+/** FL-158: the refusal for an email the identity provider has not verified (every provider). */
+export const UNVERIFIED_EMAIL_MESSAGE =
+  'This email address has not been verified by the sign-in provider, so it cannot be used to sign in here';
+/** FL-158: the refusal when the provider sends no `email_verified` claim at all. */
+export const MISSING_EMAIL_VERIFIED_MESSAGE =
+  'The sign-in provider did not say whether this email address is verified, so it cannot be used to find or create an account here. Ask your administrator to map the email_verified claim in the provider.';
+
+/**
+ * FL-158: whether the provider verified the profile's email. `true` and the string `"true"` (some
+ * providers send claims as strings) count; anything else, including a missing claim, does not.
+ * Returns the refusal to give, or null when the email may be used.
+ */
+export const emailVerificationProblem = (profile: { email_verified?: unknown }): string | null => {
+  const value = profile.email_verified;
+  if (value === true || value === 'true') {
+    return null;
+  }
+  return value === undefined || value === null ? MISSING_EMAIL_VERIFIED_MESSAGE : UNVERIFIED_EMAIL_MESSAGE;
+};
+const LEGACY_MOBILE_REDIRECT_PATH = /\/oauth\/mobile-redirect\/?$/;
+
+/**
+ * The HTTP address that forwards an OAuth callback to the Frameleaf app when the mobile redirect
+ * override is on (FL-131), for identity providers that only accept `https` callbacks.
+ *
+ * The documented override is this server's `…/oauth/frameleaf-mobile-redirect`, used as is. An older
+ * `…/oauth/mobile-redirect` override still maps to its `frameleaf-mobile-redirect` sibling on the same
+ * server. Any other address may not be this server at all, so the Frameleaf callback is refused with
+ * setup guidance instead of being sent somewhere else.
+ */
+const frameleafRedirectUri = (mobileRedirectUri: string): string => {
+  let url: URL | undefined;
+  try {
+    url = new URL(mobileRedirectUri);
+  } catch {
+    url = undefined;
+  }
+  if (url && url.pathname.replace(/\/$/, '').endsWith(FRAMELEAF_MOBILE_REDIRECT_PATH)) {
+    // The override already is this server's Frameleaf forwarder (the documented setup).
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  }
+  if (!url || !LEGACY_MOBILE_REDIRECT_PATH.test(url.pathname)) {
+    throw new BadRequestException(
+      "Frameleaf app sign-in needs the mobile redirect override to be this server's " +
+        '/api/oauth/frameleaf-mobile-redirect address, registered as a redirect URI with the identity provider',
+    );
+  }
+  url.pathname = url.pathname.replace(LEGACY_MOBILE_REDIRECT_PATH, () => FRAMELEAF_MOBILE_REDIRECT_PATH);
+  url.search = '';
+  url.hash = '';
+  return url.href;
+};
+
+@Injectable()
+export class AuthService extends BaseService {
+  async login(dto: LoginCredentialDto, details: LoginDetails) {
+    const config = await this.getConfig({ withCache: false });
+    if (!config.passwordLogin.enabled) {
+      throw new UnauthorizedException('Password login has been disabled');
+    }
+
+    // FL-161: away from home a password is refused before any account is looked up, unless an
+    // administrator allowed it
+    if (isRemoteVia(details.via) && !config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
+      this.logger.warn(`Refused password sign-in over remote access (${details.via}) from ${details.clientIp}`);
+      throw frameleafSignInRequired();
+    }
+
+    const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
+    // Always run bcrypt so response time is constant regardless of whether the email
+    // is registered, preventing timing-based user enumeration.
+    const isAuthenticated = await this.cryptoRepository.compareBcrypt(dto.password, user?.password ?? LOGIN_DUMMY_HASH);
+
+    if (!user || !user.password || !isAuthenticated) {
+      this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
+      throw new UnauthorizedException('Incorrect email or password');
+    }
+
+    return this.createLoginResponse(user, details, { passwordHash: user.password });
+  }
+
+  async logout(auth: AuthDto, authType: AuthType): Promise<LogoutResponseDto> {
+    let oauthBearerToken: string | undefined;
+    let frameleafRedirect: string | null = null;
+    if (auth.session) {
+      const session = await this.sessionRepository.get(auth.session.id);
+      oauthBearerToken = session?.oauthBearerToken ?? undefined;
+      // FL-177: read before the session goes, while its Sign in with Frameleaf tag still exists
+      frameleafRedirect = await this.frameleafLogoutRedirect(auth.session.id, oauthBearerToken);
+      await this.sessionRepository.delete(auth.session.id);
+      await this.eventRepository.emit('SessionDelete', { sessionId: auth.session.id });
+    }
+
+    return {
+      successful: true,
+      redirectUri: frameleafRedirect ?? (await this.getLogoutEndpoint(authType, oauthBearerToken)),
+    };
+  }
+
+  /**
+   * FL-177 (as-built decision #32): a session Sign in with Frameleaf created ends at Frameleaf too,
+   * through the issuer's `end_session_endpoint` (RP-initiated logout). Any other session, or a
+   * Frameleaf one when the issuer cannot be reached or advertises no endpoint, signs out as before;
+   * a failure here never stops the sign-out.
+   */
+  private async frameleafLogoutRedirect(sessionId: string, idToken: string | undefined): Promise<string | null> {
+    try {
+      if (!(await this.frameleafAccountRepository.getSession(sessionId))) {
+        return null;
+      }
+      const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
+      const config = await frameleafOAuthConfig(this.frameleafDeps());
+      if (!cloudUrl || !config) {
+        return null;
+      }
+      const endpoint = await this.oauthRepository.getLogoutEndpoint(config);
+      return frameleafLogoutUrl(cloudUrl, endpoint, config.clientId, idToken);
+    } catch (error) {
+      this.logger.warn(`Could not end the Frameleaf session on sign-out: ${error}`);
+      return null;
+    }
+  }
+
+  private frameleafDeps() {
+    return {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+    };
+  }
+
+  async backchannelLogout(dto: OAuthBackchannelLogoutDto): Promise<void> {
+    // FL-158: a logout token for this server's Frameleaf client (`aud` = instance id) ends the
+    // sessions Sign in with Frameleaf created; any other goes to the administrator's own provider.
+    if (await this.frameleafBackchannelLogout(dto.logout_token)) {
+      return;
+    }
+
+    const { oauth } = await this.getConfig({ withCache: false });
+    if (!oauth.enabled) {
+      throw new BadRequestException('Received backchannel logout request but OAuth is not enabled');
+    }
+
+    let claims;
+    try {
+      claims = await this.oauthRepository.validateLogoutToken(oauth, dto.logout_token);
+    } catch (error: Error | any) {
+      this.logger.error(`Error backchannel logout: ${error.message}`);
+      this.logger.error(error);
+
+      throw new BadRequestException('Error backchannel logout: token validation failed');
+    }
+
+    if (!claims) {
+      throw new BadRequestException('Invalid logout token: no claims found');
+    }
+
+    if (!claims.sub && !claims.sid) {
+      throw new BadRequestException('Invalid logout token: it must contain either a sub or a sid claim');
+    }
+
+    const deletedSessionIds = await this.sessionRepository.invalidateOAuth({
+      oauthSid: claims.sid,
+      oauthId: claims.sub,
+    });
+
+    for (const sessionId of deletedSessionIds) {
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
+  }
+
+  /** Returns whether the token was Frameleaf's (and was handled). */
+  private async frameleafBackchannelLogout(logoutToken: string): Promise<boolean> {
+    const config = await frameleafOAuthConfig(this.frameleafDeps());
+    if (!config || !logoutTokenAudiences(logoutToken).includes(config.clientId)) {
+      return false;
+    }
+
+    let claims;
+    try {
+      claims = await this.oauthRepository.validateLogoutToken(config, logoutToken);
+    } catch (error: Error | any) {
+      this.logger.error(`Error in Frameleaf back-channel logout: ${error.message}`);
+      throw new BadRequestException('Error backchannel logout: token validation failed');
+    }
+    if (!claims?.sub && !claims?.sid) {
+      throw new BadRequestException('Invalid logout token: it must contain either a sub or a sid claim');
+    }
+
+    // FL-230: an exchange token minted before this logout is refused for as long as it could be
+    // accepted. Recorded first: an exchange that tags its session after the lookup below sees this
+    // record and ends that session. When it cannot be recorded the sessions still end, and the logout
+    // then fails so Frameleaf Cloud delivers it again.
+    const seconds = FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS + 2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
+    let revocationError: unknown;
+    try {
+      await this.frameleafAccountRepository.revokeSignIns(
+        { sid: claims.sid, sub: claims.sub },
+        new Date(Date.now() + seconds * 1000),
+      );
+    } catch (error) {
+      this.logger.error(`Could not record a Frameleaf back-channel logout for token exchange: ${error}`);
+      revocationError = error;
+    }
+
+    const tagged = await this.frameleafAccountRepository.findSessions({ sid: claims.sid, sub: claims.sub });
+    for (const { sessionId } of tagged) {
+      await this.sessionRepository.delete(sessionId);
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
+    await this.frameleafAccountRepository.deleteSessions(tagged.map(({ sessionId }) => sessionId));
+    if (revocationError) {
+      throw revocationError;
+    }
+    return true;
+  }
+
+  async changePassword(auth: AuthDto, dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
+    const { password, newPassword } = dto;
+    const user = await this.userRepository.getForChangePassword(auth.user.id);
+    const isValid = await this.validateSecret(password, user.password);
+    if (!isValid) {
+      throw new BadRequestException('Wrong password');
+    }
+
+    const hashedPassword = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
+
+    const updatedUser = await this.userRepository.update(user.id, {
+      password: hashedPassword,
+      shouldChangePassword: false,
+    });
+
+    await this.eventRepository.emit('AuthChangePassword', {
+      userId: user.id,
+      currentSessionId: auth.session?.id,
+      invalidateSessions: dto.invalidateSessions,
+    });
+
+    return mapUserAdmin(updatedUser);
+  }
+
+  /** FL-538: who an emailed "choose a password" link is for, while it can still be used. */
+  async checkPasswordLink(dto: PasswordLinkCheckDto): Promise<PasswordLinkCheckResponseDto> {
+    const user = await this.userRepository.getByPasswordLink(this.cryptoRepository.hashSha256(dto.token));
+    if (!user) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    return { name: user.name, email: user.email };
+  }
+
+  /**
+   * FL-538: choose a password with an emailed link. The link works once; every session the account
+   * had is signed out, as after any password change.
+   */
+  async redeemPasswordLink(dto: PasswordLinkRedeemDto): Promise<void> {
+    const hash = this.cryptoRepository.hashSha256(dto.token);
+    if (!(await this.userRepository.getByPasswordLink(hash))) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    const hashedPassword = await this.cryptoRepository.hashBcrypt(dto.newPassword, SALT_ROUNDS);
+    const user = await this.userRepository.redeemPasswordLink(hash, hashedPassword);
+    if (!user) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    await this.eventRepository.emit('AuthChangePassword', { userId: user.id, invalidateSessions: true });
+  }
+
+  async setupPinCode(auth: AuthDto, { pinCode }: PinCodeSetupDto) {
+    const user = await this.userRepository.getForPinCode(auth.user.id);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    if (user.pinCode) {
+      throw new BadRequestException('User already has a PIN code');
+    }
+
+    const hashed = await this.cryptoRepository.hashBcrypt(pinCode, SALT_ROUNDS);
+    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
+  }
+
+  async resetPinCode(auth: AuthDto, dto: PinCodeResetDto) {
+    const user = await this.validatePinCode(auth.user.id, dto);
+
+    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, null))) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
+    // FL-34: every open tab of every session of this account drops what it unlocked
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
+  }
+
+  async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
+    const user = await this.validatePinCode(auth.user.id, dto);
+
+    const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
+    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
+    // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
+  }
+
+  private async validatePinCode(userId: string, dto: { pinCode?: string; password?: string }) {
+    const previous = pinChecksByUser.get(userId);
+    const { promise, resolve } = Promise.withResolvers<void>();
+    pinChecksByUser.set(userId, promise);
+    await previous;
+    try {
+      // Throttle PIN brute-force per user (security.md M5).
+      let now = Date.now();
+      let state = pinAttemptsByUser.get(userId);
+      if (state && state.lockedUntil > now) {
+        const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+        throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+      }
+
+      const user = await this.userRepository.getForPinCode(userId);
+      // A pending credential read must observe failures from other requests before checking another guess.
+      now = Date.now();
+      state = pinAttemptsByUser.get(userId);
+      if (state && state.lockedUntil > now) {
+        const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
+        throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
+      }
+      try {
+        await this.validatePinCodeSecret(user, dto);
+      } catch (error) {
+        // Record failure and apply backoff. Failures expire after a quiet window.
+        const prev =
+          state && now - state.lastFailureAt < PIN_FAILURE_RESET_MS
+            ? state
+            : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
+        const failureCount = prev.failureCount + 1;
+        const lockoutMs = lookupPinLockoutMs(failureCount);
+        pinAttemptsByUser.set(userId, {
+          failureCount,
+          lastFailureAt: now,
+          lockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
+        });
+        throw error;
+      }
+
+      // Successful credential check resets the per-user counter.
+      pinAttemptsByUser.delete(userId);
+
+      return user;
+    } finally {
+      resolve();
+      if (pinChecksByUser.get(userId) === promise) {
+        pinChecksByUser.delete(userId);
+      }
+    }
+  }
+
+  private async validatePinCodeSecret(
+    user: { pinCode: string | null; password: string | null },
+    dto: { pinCode?: string; password?: string },
+  ) {
+    if (!user.pinCode) {
+      throw new BadRequestException('User does not have a PIN code');
+    }
+
+    if (dto.password) {
+      if (!(await this.validateSecret(dto.password, user.password))) {
+        throw new BadRequestException('Wrong password');
+      }
+    } else if (dto.pinCode) {
+      if (!(await this.validateSecret(dto.pinCode, user.pinCode))) {
+        throw new BadRequestException('Wrong PIN code');
+      }
+    } else {
+      throw new BadRequestException('Either password or pinCode is required');
+    }
+  }
+
+  /**
+   * `POST auth/admin-sign-up`: the first administrator. FL-292: only from the home network.
+   */
+  async adminSignUp(dto: SignUpDto, client: SetupClient): Promise<UserAdminResponseDto> {
+    return whileClaimable(this.setupGate, client, async () => {
+      const admin = await this.createUser({
+        isAdmin: true,
+        email: dto.email,
+        name: dto.name,
+        password: dto.password,
+        // The administrator chose this password themselves: there is nothing to change at first sign-in.
+        shouldChangePassword: false,
+        storageLabel: 'admin',
+      });
+      await this.recordAdminEvents([
+        {
+          userId: admin.id,
+          actorId: admin.id,
+          action: AdminAuditAction.AccountCreated,
+          subject: admin.name,
+          detail: 'server-claimed:web',
+        },
+      ]);
+      this.logger.log(`This server was set up (${client.ip}): ${admin.email} administers it`);
+      return mapUserAdmin(admin);
+    });
+  }
+
+  async authenticate({ headers, queryParams, metadata }: ValidateRequest): Promise<AuthDto> {
+    const authDto = await this.validate({ headers, queryParams }, metadata.refreshElevation !== false);
+    const { adminRoute, sharedLinkRoute, uri } = metadata;
+    const requestedPermission = metadata.permission ?? Permission.All;
+
+    if (isRemoteVia(metadata.via) && !metadata.remoteSignInExempt) {
+      await this.requireRemoteSignIn(authDto, metadata.via, uri);
+    }
+
+    if (!authDto.user.isAdmin && adminRoute) {
+      this.logger.warn(`Denied access to admin only route: ${uri}`);
+      throw new ForbiddenException('Forbidden');
+    }
+
+    if (authDto.sharedLink && !sharedLinkRoute) {
+      this.logger.warn(`Denied access to non-shared route: ${uri}`);
+      throw new ForbiddenException('Forbidden');
+    }
+
+    if (authDto.sharedLink && metadata.sharedLinkPassword !== false) {
+      const tokens = parse(headers.cookie || '')[AuthCookie.SharedLinkToken]?.split(',') ?? [];
+      await requireSharedLinkUnlocked(
+        this.cryptoRepository,
+        () => identityDirectory(this.configRepository),
+        authDto.sharedLink,
+        tokens,
+      );
+    }
+
+    if (
+      authDto.apiKey &&
+      requestedPermission !== false &&
+      !isGranted({ requested: [requestedPermission], current: authDto.apiKey.permissions })
+    ) {
+      throw new ForbiddenException(`Missing required permission: ${requestedPermission}`);
+    }
+
+    // FL-34: sensitive media is hidden by its lock record (`src/utils/locked.ts`), which every read
+    // applies, so it is no longer part of this per-session filter: anything hidden while locked is in
+    // the Locked view. The filter keeps the owner's own suppressed people, tags and pets.
+    const hiddenContent = await this.getHiddenContentFilter(authDto, false);
+    if (hasHiddenContentFilter(hiddenContent)) {
+      authDto.suppressedContent = hiddenContent;
+    }
+
+    if (hasHiddenContentFilter(hiddenContent) && !authDto.session?.hasElevatedPermission) {
+      authDto.hiddenContent = hiddenContent;
+      authDto.hideNsfwAssets = true;
+    }
+
+    return authDto;
+  }
+
+  /**
+   * FL-161 (instance contract "Via-header contract"): a request arriving through remote access
+   * (`relay` or `wan`) must come from a Frameleaf sign-in. A public shared link passes; a session
+   * passes when a Frameleaf sign-in created it (`public.frameleaf_session`), or when an
+   * administrator allowed password sign-in over remote access; an API key passes only when its
+   * owner's account here is linked to a Frameleaf account. Everything else is refused with 403
+   * `frameleaf_sign_in_required`. Requests from the home network never reach this check.
+   */
+  private async requireRemoteSignIn(auth: AuthDto, via: FrameleafVia, uri: string): Promise<void> {
+    if (auth.sharedLink) {
+      return;
+    }
+    if (auth.session) {
+      if (await this.frameleafAccountRepository.getSession(auth.session.id)) {
+        return;
+      }
+      const config = await this.getConfig({ withCache: true });
+      if (config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
+        return;
+      }
+    } else if (auth.apiKey && (await this.frameleafAccountRepository.getLinkByUser(auth.user.id))) {
+      return;
+    }
+    this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
+    throw frameleafSignInRequired();
+  }
+
+  /**
+   * FL-161: originals, archive downloads and database backups are refused over the relay unless an
+   * administrator allowed them (`frameleafCloud.remoteAccess.allowOriginalsOverRelay`). Thumbnails,
+   * previews and playback are not marked and keep working; direct and home connections are unchanged.
+   */
+  async requireOriginalTransfer(via: FrameleafVia | null | undefined, uri: string): Promise<void> {
+    if (via !== 'relay') {
+      return;
+    }
+    const config = await this.getConfig({ withCache: true });
+    if (config.frameleafCloud.remoteAccess.allowOriginalsOverRelay) {
+      return;
+    }
+    this.logger.warn(`Refused an original transfer over the relay: ${uri}`);
+    throw new ForbiddenException({
+      message: RELAY_ORIGINALS_REFUSED_MESSAGE,
+      error: 'Forbidden',
+      statusCode: 403,
+      code: RELAY_ORIGINALS_REFUSED,
+    });
+  }
+
+  /**
+   * FL-161: a websocket handshake. Its `Origin` must be this server's own, its external domain or a
+   * published Frameleaf name (the socket carries the visitor's cookies, so no other page may open it);
+   * its arrival is read from the edge worker's headers, and it then authenticates like any request.
+   */
+  async authenticateWebsocket(headers: IncomingHttpHeaders): Promise<{ auth: AuthDto; via: FrameleafVia | null }> {
+    const via = frameleafVia(headers, this.configRepository.getEnv().frameleafCloud.edge.secret);
+    if (!via && claimsFrameleafVia(headers)) {
+      // like the via middleware: an arrival claim the edge worker did not vouch for is never home
+      this.logger.warn('Refused a websocket that claims a Frameleaf arrival without the edge secret');
+      throw new ForbiddenException(
+        'This request claims to come through Frameleaf remote access, but the claim could not be verified',
+      );
+    }
+    const origin = Array.isArray(headers.origin) ? headers.origin[0] : headers.origin;
+    if (origin !== undefined && !this.configRepository.isDev()) {
+      const config = await this.getConfig({ withCache: true });
+      const { link, linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      const services: Record<string, unknown> = (linked ? link?.services : null) ?? {};
+      const origins = allowedOrigins([
+        config.server.externalDomain,
+        typeof services.relayOrigin === 'string' ? services.relayOrigin : null,
+        typeof services.publicUrl === 'string' ? services.publicUrl : null,
+      ]);
+      if (!websocketOriginAllowed(origin, { hosts: requestHosts(headers), origins })) {
+        this.logger.warn(`Refused a websocket from origin ${JSON.stringify(origin)}`);
+        throw new ForbiddenException('This page may not connect to this server');
+      }
+    }
+    const auth = await this.authenticate({
+      headers,
+      queryParams: {},
+      metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/socket.io', via },
+    });
+    return { auth, via };
+  }
+
+  private async getHiddenContentFilter(auth: AuthDto, includeNsfw: boolean): Promise<HiddenContentFilter> {
+    const metadata = (await this.userRepository.getMetadata(auth.user.id)) ?? [];
+    const suppression = getPreferences(metadata).privacy.suppression;
+
+    return {
+      userId: auth.user.id,
+      includeNsfw,
+      tagIds: suppression.tagIds,
+      personIds: suppression.personIds,
+      petIds: suppression.petIds,
+      scope: suppression.scope,
+    };
+  }
+
+  private async validate(
+    { headers, queryParams }: Omit<ValidateRequest, 'metadata'>,
+    refreshElevation = true,
+  ): Promise<AuthDto> {
+    const shareKey = (headers[RequestHeader.SharedLinkKey] || queryParams[RequestQuery.SharedLinkKey]) as string;
+    const shareSlug = (headers[RequestHeader.SharedLinkSlug] || queryParams[RequestQuery.SharedLinkSlug]) as string;
+    const session = (headers[RequestHeader.UserToken] ||
+      headers[RequestHeader.SessionToken] ||
+      queryParams[RequestQuery.SessionKey] ||
+      this.getBearerToken(headers) ||
+      this.getCookieToken(headers)) as string;
+    const apiKey = (headers[RequestHeader.ApiKey] || queryParams[RequestQuery.ApiKey]) as string;
+
+    if (shareKey) {
+      return this.validateSharedLinkKey(shareKey);
+    }
+
+    if (shareSlug) {
+      return this.validateSharedLinkSlug(shareSlug);
+    }
+
+    if (session) {
+      return this.validateSession(session, headers, refreshElevation);
+    }
+
+    if (apiKey) {
+      return this.validateApiKey(apiKey);
+    }
+
+    throw new UnauthorizedException('Authentication required');
+  }
+
+  getMobileRedirect(url: string) {
+    return `${MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
+  }
+
+  /** The Frameleaf app's counterpart of {@link getMobileRedirect} (FL-131). */
+  getFrameleafMobileRedirect(url: string) {
+    return `${FRAMELEAF_MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
+  }
+
+  async authorize(dto: OAuthConfigDto) {
+    const { oauth } = await this.getConfig({ withCache: false });
+
+    if (!oauth.enabled) {
+      throw new BadRequestException('OAuth is not enabled');
+    }
+
+    return await this.oauthRepository.authorize(
+      oauth,
+      this.resolveRedirectUri(oauth, dto.redirectUri),
+      dto.state,
+      dto.codeChallenge,
+    );
+  }
+
+  async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
+    const { oauth, user: userConfig } = await this.getConfig({ withCache: false });
+    if (!oauth.enabled) {
+      throw new BadRequestException('OAuth is not enabled');
+    }
+
+    const expectedState = dto.state ?? this.getCookieOauthState(headers);
+    if (!expectedState?.length) {
+      throw new BadRequestException('OAuth state is missing');
+    }
+
+    const codeVerifier = dto.codeVerifier ?? this.getCookieCodeVerifier(headers);
+    if (!codeVerifier?.length) {
+      throw new BadRequestException('OAuth code verifier is missing');
+    }
+
+    const url = this.resolveRedirectUri(oauth, dto.url);
+    const {
+      profile,
+      sid: oauthSid,
+      idToken: oauthBearerToken,
+    } = await this.oauthRepository.getProfileAndOAuthSid(oauth, url, expectedState, codeVerifier);
+    const normalizedEmail = profile.email ? profile.email.trim().toLowerCase() : undefined;
+    const { autoRegister, defaultStorageQuota, storageLabelClaim, storageQuotaClaim, roleClaim } = oauth;
+    this.logger.debug(`Logging in with OAuth: ${JSON.stringify(profile)}`);
+    let user: UserAdmin | undefined = await this.userRepository.getByOAuthId(profile.sub);
+
+    // FL-158: an email is used to find or create an account only when the provider verified it
+    const emailProblem = emailVerificationProblem(profile);
+
+    // link by email
+    if (!user && normalizedEmail) {
+      const emailUser = await this.userRepository.getByEmail(normalizedEmail);
+      if (emailUser) {
+        if (emailProblem) {
+          this.logger.warn(`OAuth login refused: ${normalizedEmail} is not verified by the provider`);
+          throw new BadRequestException(emailProblem);
+        }
+        if (emailUser.oauthId) {
+          this.logger.debug('OAuth login conflict: email already linked to different account');
+          throw new BadRequestException('OAuth authentication failed');
+        }
+        user = await this.userRepository.update(emailUser.id, { oauthId: profile.sub });
+      }
+    }
+
+    const role = this.getRoleClaim(profile, roleClaim);
+    const isAdmin = role === 'admin';
+
+    if (user && role && isAdmin !== user.isAdmin) {
+      user = await this.userRepository.update(user.id, { isAdmin });
+    }
+
+    // register new user
+    if (!user) {
+      if (!autoRegister) {
+        this.logger.warn(
+          `Unable to register ${profile.sub}/${normalizedEmail || '(no email)'}. User does not exist and auto registering is disabled. To enable set OAuth Auto Register to true in admin settings.`,
+        );
+        throw new BadRequestException('OAuth authentication failed');
+      }
+
+      if (!normalizedEmail) {
+        throw new BadRequestException('OAuth profile does not have an email address');
+      }
+
+      if (emailProblem) {
+        this.logger.warn(`OAuth registration refused: ${normalizedEmail} is not verified by the provider`);
+        throw new BadRequestException(emailProblem);
+      }
+
+      this.logger.log(`Registering new user: ${profile.sub}/${normalizedEmail}`);
+
+      const storageLabel = this.getClaim(profile, {
+        key: storageLabelClaim,
+        default: '',
+        isValid: (value: unknown): value is string => typeof value === 'string',
+      });
+      const storageQuota = this.getClaim(profile, {
+        key: storageQuotaClaim,
+        // FL-516: "Space for new people" decides, however the account is made; the older sign-in
+        // provider default applies only while it is unset
+        default: userConfig.newUserStorageQuota ?? defaultStorageQuota,
+        isValid: (value: unknown) => Number(value) >= 0,
+      });
+
+      user = await this.createUser({
+        name:
+          profile.name ||
+          `${profile.given_name || ''} ${profile.family_name || ''}`.trim() ||
+          profile.preferred_username ||
+          normalizedEmail,
+        email: normalizedEmail,
+        oauthId: profile.sub,
+        // D5: the claim and the default quota are decimal GB
+        quotaSizeInBytes: storageQuota === null ? null : storageQuota * DecimalSize.GB,
+        storageLabel: storageLabel || null,
+        isAdmin,
+      });
+    }
+
+    if (!user.profileImagePath && profile.picture) {
+      await this.syncProfilePicture(user, profile.picture);
+    }
+
+    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken });
+  }
+
+  private async syncProfilePicture(user: UserAdmin, url: string) {
+    try {
+      const oldPath = user.profileImagePath;
+      const data = await this.oauthRepository.getProfilePicture(url);
+
+      const config = await this.getConfig({ withCache: true });
+      const profileImagePath = await generateProfileImage(
+        { media: this.mediaRepository, crypto: this.cryptoRepository, storageCore: this.storageCore },
+        config,
+        user.id,
+        Buffer.from(data),
+      );
+
+      // a picture from the identity provider is not copied from a photo (FL-53)
+      await this.userRepository.update(user.id, {
+        profileImagePath,
+        profileImageAssetId: null,
+        profileChangedAt: new Date(),
+      });
+
+      if (oldPath) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });
+      }
+    } catch (error: Error | any) {
+      this.logger.warn(`Unable to sync oauth profile picture: ${error}\n${error?.stack}`);
+    }
+  }
+
+  async link(auth: AuthDto, dto: OAuthCallbackDto, headers: IncomingHttpHeaders): Promise<UserAdminResponseDto> {
+    const expectedState = dto.state ?? this.getCookieOauthState(headers);
+    if (!expectedState?.length) {
+      throw new BadRequestException('OAuth state is missing');
+    }
+
+    const codeVerifier = dto.codeVerifier ?? this.getCookieCodeVerifier(headers);
+    if (!codeVerifier?.length) {
+      throw new BadRequestException('OAuth code verifier is missing');
+    }
+
+    const { oauth } = await this.getConfig({ withCache: false });
+    const {
+      profile: { sub: oauthId },
+      sid,
+      idToken,
+    } = await this.oauthRepository.getProfileAndOAuthSid(oauth, dto.url, expectedState, codeVerifier);
+    const duplicate = await this.userRepository.getByOAuthId(oauthId);
+    if (duplicate && duplicate.id !== auth.user.id) {
+      this.logger.warn(`OAuth link account failed: sub is already linked to another user (${duplicate.email}).`);
+      throw new BadRequestException('This OAuth account has already been linked to another user.');
+    }
+
+    if (auth.session && (sid || idToken)) {
+      await this.sessionRepository.update(auth.session.id, {
+        oauthSid: sid,
+        oauthBearerToken: idToken,
+      });
+    }
+
+    const user = await this.userRepository.update(auth.user.id, { oauthId });
+    return mapUserAdmin(user);
+  }
+
+  async unlink(auth: AuthDto): Promise<UserAdminResponseDto> {
+    if (auth.session) {
+      await this.sessionRepository.update(auth.session.id, { oauthSid: null, oauthBearerToken: null });
+    }
+
+    const user = await this.userRepository.update(auth.user.id, { oauthId: null });
+    return mapUserAdmin(user);
+  }
+
+  private async getLogoutEndpoint(authType: AuthType, oauthBearerToken?: string | null): Promise<string> {
+    if (authType !== AuthType.OAuth) {
+      return LOGIN_URL;
+    }
+
+    const config = await this.getConfig({ withCache: false });
+    if (!config.oauth.enabled) {
+      return LOGIN_URL;
+    }
+
+    const endSessionEndpoint =
+      config.oauth.endSessionEndpoint || (await this.oauthRepository.getLogoutEndpoint(config.oauth));
+
+    if (!endSessionEndpoint) {
+      return LOGIN_URL;
+    }
+
+    const url = new URL(endSessionEndpoint);
+
+    if (oauthBearerToken) {
+      url.searchParams.set('id_token_hint', oauthBearerToken);
+    }
+
+    return url.href;
+  }
+
+  private getBearerToken(headers: IncomingHttpHeaders): string | null {
+    const [type, token] = (headers.authorization || '').split(' ', 2);
+    if (type.toLowerCase() === 'bearer') {
+      return token;
+    }
+
+    return null;
+  }
+
+  private getCookieToken(headers: IncomingHttpHeaders): string | null {
+    const cookies = parse(headers.cookie || '');
+    return cookies[AuthCookie.AccessToken] || null;
+  }
+
+  private getCookieOauthState(headers: IncomingHttpHeaders): string | null {
+    const cookies = parse(headers.cookie || '');
+    return cookies[AuthCookie.OAuthState] || null;
+  }
+
+  private getCookieCodeVerifier(headers: IncomingHttpHeaders): string | null {
+    const cookies = parse(headers.cookie || '');
+    return cookies[AuthCookie.OAuthCodeVerifier] || null;
+  }
+
+  async validateSharedLinkKey(key: string | string[]): Promise<AuthDto> {
+    key = Array.isArray(key) ? key[0] : key;
+
+    const bytes = Buffer.from(key, key.length === 100 ? 'hex' : 'base64url');
+    const sharedLink = await this.sharedLinkRepository.getByKey(bytes);
+    if (!this.isValidSharedLink(sharedLink)) {
+      throw this.invalidSharedLink(sharedLink, 'Invalid share key');
+    }
+
+    return { user: sharedLink.user, sharedLink };
+  }
+
+  async validateSharedLinkSlug(slug: string | string[]): Promise<AuthDto> {
+    slug = Array.isArray(slug) ? slug[0] : slug;
+
+    const sharedLink = await this.sharedLinkRepository.getBySlug(slug);
+    if (!this.isValidSharedLink(sharedLink)) {
+      throw this.invalidSharedLink(sharedLink, 'Invalid share slug');
+    }
+
+    return { user: sharedLink.user, sharedLink };
+  }
+
+  /**
+   * The same 401 and message for every unusable link, as official clients expect. A link that only
+   * ran out of time also says so (`reason: 'expired'`), so the public viewer can show the prototype's
+   * expired state instead of "not available"; nothing about the link or its owner is included.
+   */
+  private invalidSharedLink(sharedLink: (AuthSharedLink & { user: AuthUser | null }) | undefined, message: string) {
+    const expired = !!sharedLink?.user && !!sharedLink.expiresAt && new Date(sharedLink.expiresAt) <= new Date();
+    return expired
+      ? new UnauthorizedException({ message, error: 'Unauthorized', statusCode: 401, reason: 'expired' })
+      : new UnauthorizedException(message);
+  }
+
+  private isValidSharedLink(
+    sharedLink?: AuthSharedLink & { user: AuthUser | null },
+  ): sharedLink is AuthSharedLink & { user: AuthUser } {
+    return !!sharedLink?.user && (!sharedLink.expiresAt || new Date(sharedLink.expiresAt) > new Date());
+  }
+
+  private async validateApiKey(key: string): Promise<AuthDto> {
+    const hashed = this.cryptoRepository.hashSha256(key);
+    const apiKey = await this.apiKeyRepository.getKey(hashed);
+    if (apiKey?.user) {
+      void this.recordApiKeyUse(apiKey.id);
+      return {
+        user: apiKey.user,
+        apiKey,
+      };
+    }
+
+    throw new UnauthorizedException('Invalid API key');
+  }
+
+  /**
+   * FL-367: "Last used" for API keys. Kept in system metadata rather than on the key, so a request
+   * never writes to the key's row; recorded at most once every few minutes per key and process.
+   */
+  private async recordApiKeyUse(id: string): Promise<void> {
+    const now = Date.now();
+    if (now - (apiKeyUseRecorded.get(id) ?? 0) < API_KEY_USE_INTERVAL_MS) {
+      return;
+    }
+    apiKeyUseRecorded.set(id, now);
+    try {
+      const used = (await this.systemMetadataRepository.get(SystemMetadataKey.ApiKeyLastUsed)) ?? {};
+      await this.systemMetadataRepository.set(SystemMetadataKey.ApiKeyLastUsed, {
+        ...used,
+        [id]: new Date(now).toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(`Could not record when an API key was last used: ${error}`);
+    }
+  }
+
+  private async validateSecret(inputSecret: string, existingHash?: string | null): Promise<boolean> {
+    if (!existingHash) {
+      return false;
+    }
+
+    return this.cryptoRepository.compareBcrypt(inputSecret, existingHash);
+  }
+
+  private async validateSession(
+    token: string,
+    headers: IncomingHttpHeaders,
+    refreshElevation = true,
+  ): Promise<AuthDto> {
+    const hashed = this.cryptoRepository.hashSha256(token);
+    const session = await this.sessionRepository.getByToken(hashed);
+    if (session?.user) {
+      const { appVersion, deviceOS, deviceType } = getUserAgentDetails(headers);
+      const now = DateTime.now();
+      const updatedAt = DateTime.fromJSDate(session.updatedAt);
+      const diff = now.diff(updatedAt, ['hours']);
+      if (diff.hours > 1 || appVersion !== session.appVersion) {
+        await this.sessionRepository.update(session.id, {
+          id: session.id,
+          updatedAt: new Date(),
+          appVersion,
+          deviceOS,
+          deviceType,
+        });
+      }
+
+      // Pin check
+      let hasElevatedPermission = false;
+
+      if (session.pinExpiresAt) {
+        const pinExpiresAt = DateTime.fromJSDate(session.pinExpiresAt);
+        hasElevatedPermission = pinExpiresAt > now;
+
+        if (
+          refreshElevation &&
+          hasElevatedPermission &&
+          now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt
+        ) {
+          // FL-34: conditional, so a lock that lands after the read above is never reversed; if the
+          // refresh finds the session locked, this request is not elevated either
+          hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
+            session.id,
+            DateTime.now()
+              .plus({ minutes: await this.relockMinutes(session.user.id) })
+              .toJSDate(),
+          );
+          if (!hasElevatedPermission) {
+            // A concurrent lock leaves a valid ordinary session, but a concurrent revocation or expiry
+            // must reject the request instead of granting ordinary access from the stale read above.
+            const current = await this.sessionRepository.getByToken(hashed);
+            if (!current?.user) {
+              throw new UnauthorizedException('Invalid user token');
+            }
+          }
+        }
+      }
+
+      return {
+        user: session.user,
+        session: {
+          id: session.id,
+          hasElevatedPermission,
+        },
+      };
+    }
+
+    throw new UnauthorizedException('Invalid user token');
+  }
+
+  /** FL-517: the account's "Lock again after" choice (an hour unless it chose 5 or 15 minutes). */
+  private async relockMinutes(userId: string): Promise<number> {
+    try {
+      return relockMinutesOf(getPreferences(await this.userRepository.getMetadata(userId)));
+    } catch {
+      return ELEVATED_SESSION_DURATION_MINUTES;
+    }
+  }
+
+  async unlockSession(auth: AuthDto, dto: SessionUnlockDto): Promise<void> {
+    if (!auth.session) {
+      throw new BadRequestException('This endpoint can only be used with a session token');
+    }
+
+    const user = await this.validatePinCode(auth.user.id, { pinCode: dto.pinCode });
+
+    // FL-34: conditional on the credentials just checked, so a PIN or password change that lands
+    // in between (and locked every session) is not undone by this unlock
+    const elevated = await this.sessionRepository.elevate(
+      auth.session.id,
+      auth.user.id,
+      user,
+      DateTime.now()
+        .plus({ minutes: await this.relockMinutes(auth.user.id) })
+        .toJSDate(),
+    );
+    if (!elevated) {
+      throw new UnauthorizedException('Your PIN or password changed; unlock again');
+    }
+  }
+
+  async lockSession(auth: AuthDto): Promise<void> {
+    if (!auth.session) {
+      throw new BadRequestException('This endpoint can only be used with a session token');
+    }
+
+    await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
+    // FL-34: only once the lock is stored; the session's other tabs drop what it unlocked
+    this.websocketRepository.clientSend('on_session_lock', auth.session.id);
+  }
+
+  private async createLoginResponse(
+    user: UserAdmin,
+    loginDetails: LoginDetails,
+    identity: { sid?: string; bearerToken?: string; passwordHash?: string } = {},
+  ) {
+    const { response } = await createSession(
+      { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
+      user,
+      loginDetails,
+      identity,
+      identity.passwordHash,
+    );
+    return response;
+  }
+
+  private getClaim<T>(profile: OAuthProfile, options: ClaimOptions<T>): T {
+    const value = profile[options.key as keyof OAuthProfile];
+    return options.isValid(value) ? (value as T) : options.default;
+  }
+
+  private getRoleClaim(profile: OAuthProfile, roleClaim: string): 'admin' | 'user' | undefined {
+    const value = profile[roleClaim as keyof OAuthProfile];
+    const roles = Array.isArray(value) ? value : [value];
+    const isRole = (role: string) => roles.includes(role);
+
+    if (isRole('admin')) {
+      return 'admin';
+    }
+    if (isRole('user')) {
+      return 'user';
+    }
+  }
+
+  private resolveRedirectUri(
+    { mobileRedirectUri, mobileOverrideEnabled }: { mobileRedirectUri: string; mobileOverrideEnabled: boolean },
+    url: string,
+  ) {
+    if (mobileOverrideEnabled && mobileRedirectUri) {
+      return url
+        .replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri)
+        .replace(FRAMELEAF_CALLBACK, () => frameleafRedirectUri(mobileRedirectUri));
+    }
+    return url;
+  }
+
+  async getAuthStatus(auth: AuthDto): Promise<AuthStatusResponseDto> {
+    const user = await this.userRepository.getForPinCode(auth.user.id);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    const session = auth.session ? await this.sessionRepository.get(auth.session.id) : undefined;
+
+    return {
+      pinCode: !!user.pinCode,
+      password: !!user.password,
+      isElevated: !!auth.session?.hasElevatedPermission,
+      expiresAt: session?.expiresAt?.toISOString(),
+      pinExpiresAt: session?.pinExpiresAt?.toISOString(),
+    };
+  }
+}
