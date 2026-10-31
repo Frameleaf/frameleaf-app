@@ -1,0 +1,378 @@
+/*
+ * FL-196: the linked-server tour sheet, ported from the owner-approved prototype
+ * (design/frameleaf/template/src/cloud-tour.css, c4a009f8b5). A sheet in the Apple "what's new"
+ * pattern: a coloured icon tile, a short title, a grouped list and a quiet footer; phones get a
+ * bottom sheet with 44pt controls. The sheet chrome is the Frameleaf `.dialog` (Dialog.svelte, whose
+ * styles are scoped there): the sheet radius with continuous corners, the Sheet entrance, the shared
+ * scrim, and a crossfade under Reduce Motion. An accent hairline runs along the top edge: the tour
+ * is Frameleaf introducing Frameleaf Cloud. Step changes are animated in CloudTour.svelte, gated in JavaScript.
+ */
+.dialog.cloud-tour {
+  /* Centred in the window: the page reset zeroes the margin a modal dialog is centred by. */
+  margin: auto;
+  width: 100%;
+  max-height: calc(100dvh - 44px);
+  color: var(--fl-text);
+  background: var(--fl-panel);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sheet);
+  box-shadow: var(--fl-shadow-4);
+  animation:
+    fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
+    fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
+}
+/*
+ * The shared scrim. The fallbacks repeat the token values for engines where ::backdrop does not
+ * inherit custom properties from its dialog (the same rule as Dialog.svelte).
+ */
+.dialog.cloud-tour::backdrop {
+  background: var(--fl-scrim, rgb(0 0 0 / 40%));
+  -webkit-backdrop-filter: var(--fl-scrim-blur, blur(12px));
+  backdrop-filter: var(--fl-scrim-blur, blur(12px));
+  animation: fl-fade-in var(--fl-duration-fade, 200ms) var(--fl-ease, ease) both;
+}
+@supports (corner-shape: squircle) {
+  .dialog.cloud-tour {
+    corner-shape: squircle;
+    border-radius: calc(var(--fl-radius-sheet) * 1.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog.cloud-tour {
+    animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+  }
+}
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .dialog.cloud-tour::backdrop {
+    background: var(--fl-scrim, rgb(0 0 0 / 67%));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.dialog.cloud-tour {
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  overflow: hidden;
+}
+.dialog.cloud-tour[open] {
+  display: flex;
+  flex-direction: column;
+}
+.cloud-tour .ct-overline {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 0;
+  padding: 18px 24px 0;
+  color: var(--fl-muted);
+  font: var(--fl-type-micro);
+  letter-spacing: var(--fl-tracking-micro);
+  text-transform: uppercase;
+  font-variant-numeric: var(--fl-numeric);
+}
+.cloud-tour .ct-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 32px 8px;
+  touch-action: pan-y;
+}
+.cloud-tour .ct-linked {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border-radius: var(--fl-radius-card);
+  background: color-mix(in srgb, var(--fl-teal) 12%, var(--fl-raised));
+  font-size: var(--fl-font-callout);
+  line-height: 1.5;
+}
+.cloud-tour .ct-linked svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fl-teal);
+}
+.cloud-tour .ct-head {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.cloud-tour .ct-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 6px;
+  border-radius: var(--fl-radius-card);
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  box-shadow: inset 0 0 0 1px var(--fl-border);
+}
+/* One role colour per step, each with the text colour that clears 4.5:1 on it. */
+.cloud-tour .ct-tile[data-tone='blue'] {
+  color: var(--fl-blue-text);
+  background: var(--fl-blue);
+  box-shadow: none;
+}
+.cloud-tour .ct-tile[data-tone='teal'] {
+  color: var(--fl-teal-text);
+  background: var(--fl-teal);
+  box-shadow: none;
+}
+.cloud-tour .ct-tile[data-tone='accent'] {
+  color: var(--fl-accent-text);
+  background: var(--fl-accent);
+  box-shadow: none;
+}
+.cloud-tour .ct-tile[data-tone='ai'] {
+  color: var(--fl-ai-text);
+  background: var(--fl-ai);
+  box-shadow: none;
+}
+@supports (corner-shape: squircle) {
+  .cloud-tour .ct-tile {
+    corner-shape: squircle;
+    border-radius: calc(var(--fl-radius-card) * 1.6);
+  }
+}
+/* the reserved AI mark: a sparkle on indigo */
+.cloud-tour .ct-ai {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--fl-ai-text);
+  background: var(--fl-ai);
+  box-shadow: 0 0 0 3px var(--fl-panel);
+}
+.cloud-tour .ct-head h2 {
+  margin: 0;
+  font: var(--fl-type-title);
+  letter-spacing: var(--fl-tracking-title);
+  text-wrap: balance;
+}
+/* The heading takes focus on each step so the step is read; only a keyboard move shows the ring. */
+.cloud-tour .ct-head h2:focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+  border-radius: var(--fl-radius-xs);
+}
+.cloud-tour .ct-head p {
+  max-width: 42ch;
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-size);
+  line-height: 1.5;
+  text-wrap: balance;
+}
+/* grouped list, like a System Settings group */
+.cloud-tour .ct-points {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-raised);
+}
+.cloud-tour .ct-points li {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 16px;
+}
+.cloud-tour .ct-points li + li {
+  border-top: 1px solid var(--fl-border);
+}
+.cloud-tour .ct-points li > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--fl-accent);
+}
+.cloud-tour[data-step='processing'] .ct-points li > svg {
+  color: var(--fl-ai-ink);
+}
+.cloud-tour .ct-points span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.cloud-tour .ct-points strong {
+  font-size: var(--fl-font-size);
+  font-weight: 600;
+}
+.cloud-tour .ct-points small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-callout);
+  line-height: 1.45;
+}
+.cloud-tour .ct-where {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.cloud-tour .ct-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.cloud-tour .ct-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.cloud-tour .ct-link {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fl-accent);
+  font: inherit;
+  font-size: var(--fl-font-size);
+  font-weight: 600;
+  cursor: pointer;
+}
+.cloud-tour .ct-link:hover {
+  text-decoration: underline;
+}
+.cloud-tour .ct-footer {
+  display: grid;
+  gap: 14px;
+  padding: 14px 24px 20px;
+  border-top: 1px solid var(--fl-border);
+}
+.cloud-tour .ct-dots {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+.cloud-tour .ct-dots button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.cloud-tour .ct-dots button::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: var(--fl-radius-pill);
+  background: color-mix(in srgb, var(--fl-text) 28%, transparent);
+  transition:
+    width var(--fl-duration) var(--fl-spring),
+    background-color var(--fl-motion) var(--fl-ease);
+}
+.cloud-tour .ct-dots button[aria-current='step']::before {
+  width: 18px;
+  background: var(--fl-text);
+}
+.cloud-tour .ct-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.cloud-tour .ct-spacer {
+  flex: 1;
+}
+/* deliberately small and secondary */
+.cloud-tour .ct-skip {
+  min-height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--fl-muted);
+  font: inherit;
+  font-size: var(--fl-font-callout);
+  cursor: pointer;
+}
+.cloud-tour .ct-skip:hover {
+  color: var(--fl-text);
+}
+.cloud-tour .ct-actions .ct-next button {
+  min-width: 96px;
+  justify-content: center;
+}
+.cloud-tour .ct-back button {
+  padding-inline: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-tour .ct-dots button::before {
+    transition: background-color var(--fl-duration-reduced) var(--fl-ease);
+  }
+}
+
+/* phones: a bottom sheet with the actions in reach of the thumb */
+@media (max-width: 700px) {
+  .dialog.cloud-tour {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+    max-height: calc(100dvh - 12px - env(safe-area-inset-top));
+    border-bottom: 0;
+    border-radius: var(--fl-radius-sheet) var(--fl-radius-sheet) 0 0;
+  }
+  .cloud-tour .ct-overline {
+    padding-top: 16px;
+  }
+  .cloud-tour .ct-body {
+    padding: 12px 18px 8px;
+  }
+  .cloud-tour .ct-head h2 {
+    font: var(--fl-type-headline);
+    letter-spacing: var(--fl-tracking-headline);
+  }
+  .cloud-tour .ct-where {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cloud-tour .ct-links {
+    flex-direction: column;
+  }
+  .cloud-tour .ct-link {
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+  }
+  .cloud-tour .ct-link:hover {
+    text-decoration: none;
+  }
+  .cloud-tour .ct-footer {
+    padding: 12px 18px calc(16px + env(safe-area-inset-bottom));
+  }
+  .cloud-tour .ct-actions .ct-next button {
+    min-height: 44px;
+    min-width: 120px;
+  }
+  .cloud-tour .ct-back button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+@supports (corner-shape: squircle) {
+  @media (max-width: 700px) {
+    .dialog.cloud-tour {
+      border-radius: calc(var(--fl-radius-sheet) * 1.8) calc(var(--fl-radius-sheet) * 1.8) 0 0;
+    }
+  }
+}
