@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins/0199d3a0-5b7e-4c1d-9f20-000000f1c160/claim",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins/0199d3a0-5b7e-4c1d-9f20-000000f1c160/claim, ath, nonce>"
+    },
+    "note": "The one-time code, handed out once, with the server's own state untouched. Check the state, then exchange.",
+    "body": null
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "ready",
+    "state": "fixture-state-0000000000000000",
+    "code": "4/0FIXTURE-ONLY-not-a-real-google-code"
+  }
+}

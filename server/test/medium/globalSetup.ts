@@ -1,0 +1,71 @@
+import { Kysely } from 'kysely';
+import { fileURLToPath } from 'node:url';
+import { GenericContainer, Wait } from 'testcontainers';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+
+// Frameleaf's own Postgres image source; medium tests build it rather than pull a prebuilt database image.
+const postgresImageContext = fileURLToPath(new URL('../../../docker/postgres', import.meta.url));
+
+const globalSetup = async () => {
+  const templateName = 'frameleaf';
+  // The Dockerfile falls back to dpkg for its architecture, so the default builder is enough.
+  const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext)
+    .withBuildArgs(
+      process.env.FRAMELEAF_CI_POSTGRES_IMAGE ? { POSTGRES_IMAGE: process.env.FRAMELEAF_CI_POSTGRES_IMAGE } : {},
+    )
+    .build('frameleaf-postgres:medium', { deleteOnExit: false });
+  const postgresContainer = await postgresImage
+    .withExposedPorts(5432)
+    .withEnvironment({
+      POSTGRES_PASSWORD: 'postgres',
+      POSTGRES_USER: 'postgres',
+      POSTGRES_DB: templateName,
+    })
+    .withCommand([
+      'postgres',
+      '-c',
+      'max_wal_size=2GB',
+      '-c',
+      'shared_buffers=512MB',
+      '-c',
+      'fsync=off',
+      '-c',
+      'full_page_writes=off',
+      '-c',
+      'synchronous_commit=off',
+    ])
+    .withWaitStrategy(Wait.forAll([Wait.forLogMessage('database system is ready to accept connections', 2)]))
+    .start();
+
+  const postgresPort = postgresContainer.getMappedPort(5432);
+  const postgresUrl = `postgres://postgres:postgres@localhost:${postgresPort}/${templateName}`;
+
+  process.env.IMMICH_TEST_POSTGRES_URL = postgresUrl;
+
+  // Stop the container when the run ends instead of relying on the Ryuk reaper, which is often
+  // unavailable or disabled locally and left one Postgres container behind per run.
+  const teardown = async () => {
+    await postgresContainer.stop({ remove: true, removeVolumes: true });
+  };
+
+  const db = new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: postgresUrl }));
+  try {
+    const configRepository = new ConfigRepository();
+    const logger = LoggingRepository.create();
+    const databaseRepository = new DatabaseRepository(db, logger, configRepository);
+    await databaseRepository.runMigrations();
+    await db.destroy();
+  } catch (error) {
+    await db.destroy();
+    await teardown();
+    throw error;
+  }
+
+  return teardown;
+};
+
+export default globalSetup;

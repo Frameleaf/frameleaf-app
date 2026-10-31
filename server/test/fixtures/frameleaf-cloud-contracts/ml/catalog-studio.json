@@ -1,0 +1,214 @@
+{
+  "etag": "\"cat-eu-8c1f0d9a2b7e4f63\"",
+  "models": [
+    {
+      "sku": "ms_FDFPANX3",
+      "workload": "transcription",
+      "rank": 1,
+      "label": "Transcribe · Fast (English)",
+      "display": {
+        "model": "Parakeet TDT 0.6B v3",
+        "gpu": "L4-class, 24 GB"
+      },
+      "computeSku": "cs_NG24AXGZ",
+      "rate": {
+        "perSecondUsd": 0.000513,
+        "startFeeUsd": 0.05
+      },
+      "eta": {
+        "p50Sec": 10,
+        "p90Sec": 60
+      },
+      "limits": {
+        "maxInputs": 50,
+        "maxInputBytes": 2147483648,
+        "maxInputSeconds": 14400
+      },
+      "rev": "mr_3KX8QW2N5V7T",
+      "notice": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0",
+      "licence": {
+        "name": "CC-BY-4.0",
+        "commercialHosted": "conditions"
+      },
+      "languages": [
+        {
+          "language": "en",
+          "wer": 0.12
+        }
+      ]
+    },
+    {
+      "sku": "ms_XA8A84VQ",
+      "workload": "transcription",
+      "rank": 2,
+      "label": "Transcribe · Standard",
+      "display": {
+        "model": "Whisper large-v3",
+        "gpu": "L4-class, 24 GB"
+      },
+      "computeSku": "cs_NG24AXGZ",
+      "rate": {
+        "perSecondUsd": 0.000513,
+        "startFeeUsd": 0.05
+      },
+      "eta": {
+        "p50Sec": 10,
+        "p90Sec": 60
+      },
+      "limits": {
+        "maxInputs": 50,
+        "maxInputBytes": 2147483648,
+        "maxInputSeconds": 14400
+      },
+      "rev": "mr_7QX2M9KD4B1V",
+      "licence": {
+        "name": "MIT",
+        "commercialHosted": "yes"
+      },
+      "default": true,
+      "languages": [
+        {
+          "language": "en",
+          "wer": 0.08
+        },
+        {
+          "language": "de",
+          "wer": 0.1
+        },
+        {
+          "language": "es",
+          "wer": 0.08
+        },
+        {
+          "language": "fr",
+          "wer": 0.1
+        },
+        {
+          "language": "it",
+          "wer": 0.1
+        },
+        {
+          "language": "nl",
+          "wer": 0.1
+        },
+        {
+          "language": "pt",
+          "wer": 0.1
+        },
+        {
+          "language": "pl",
+          "wer": 0.12
+        }
+      ]
+    },
+    {
+      "sku": "ms_2MV9A89S",
+      "workload": "tts",
+      "rank": 1,
+      "label": "Voice-over · Standard",
+      "display": {
+        "model": "Kokoro 82M",
+        "gpu": "L4-class, 24 GB"
+      },
+      "computeSku": "cs_NG24AXGZ",
+      "rate": {
+        "perSecondUsd": 0.000513,
+        "startFeeUsd": 0.05
+      },
+      "eta": {
+        "p50Sec": 10,
+        "p90Sec": 60
+      },
+      "limits": {
+        "maxInputs": 100,
+        "maxInputBytes": 1048576,
+        "maxCharacters": 100000,
+        "minSpeed": 0.5,
+        "maxSpeed": 2
+      },
+      "rev": "mr_5TV0W3RZ8M2K",
+      "licence": {
+        "name": "Apache-2.0",
+        "commercialHosted": "yes"
+      },
+      "default": true,
+      "voices": [
+        {
+          "sku": "vs_KCP20QM7",
+          "label": "Heart · US English",
+          "language": "en-US"
+        },
+        {
+          "sku": "vs_52ZBJX7C",
+          "label": "Bella · US English",
+          "language": "en-US"
+        },
+        {
+          "sku": "vs_XM5RJ9R3",
+          "label": "Nicole · US English",
+          "language": "en-US"
+        },
+        {
+          "sku": "vs_VNF5R7CS",
+          "label": "Michael · US English",
+          "language": "en-US"
+        },
+        {
+          "sku": "vs_0GS0R433",
+          "label": "Fenrir · US English",
+          "language": "en-US"
+        },
+        {
+          "sku": "vs_9N4FS9VA",
+          "label": "Emma · UK English",
+          "language": "en-GB"
+        },
+        {
+          "sku": "vs_97HPE913",
+          "label": "Isabella · UK English",
+          "language": "en-GB"
+        },
+        {
+          "sku": "vs_NES3RQY3",
+          "label": "George · UK English",
+          "language": "en-GB"
+        }
+      ]
+    },
+    {
+      "sku": "ms_HQ70Q4XQ",
+      "workload": "interpolation",
+      "rank": 1,
+      "label": "Smooth motion · Standard",
+      "display": {
+        "model": "RIFE 4.25",
+        "gpu": "RTX 4090-class, 24 GB"
+      },
+      "computeSku": "cs_RN7A9KND",
+      "rate": {
+        "perSecondUsd": 0.000818,
+        "startFeeUsd": 0.05
+      },
+      "eta": {
+        "p50Sec": 10,
+        "p90Sec": 60
+      },
+      "limits": {
+        "maxInputs": 1,
+        "maxInputBytes": 2147483648,
+        "maxRuntimeSeconds": 21600,
+        "maxFactor": 4,
+        "maxFps": 120,
+        "maxOutputWidth": 3840,
+        "maxOutputHeight": 2160,
+        "chunkSeconds": 20
+      },
+      "rev": "mr_2HN8C4QW6T0P",
+      "licence": {
+        "name": "MIT",
+        "commercialHosted": "yes"
+      },
+      "default": true
+    }
+  ]
+}

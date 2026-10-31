@@ -1,0 +1,5 @@
+{
+  "alg": "EdDSA",
+  "typ": "relay+jwt",
+  "kid": "Hk7rRz1tK0y3m2aQf6P8sW9cVbN4uXe5LgJdTqYiOoA"
+}

@@ -1,0 +1,14 @@
+{
+  "measurements": [
+    {
+      "relayId": "eu1",
+      "rttMs": 24.5,
+      "ok": true
+    },
+    {
+      "relayId": "us1",
+      "rttMs": 98,
+      "ok": true
+    }
+  ]
+}
