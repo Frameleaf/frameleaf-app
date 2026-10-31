@@ -6238,7 +6238,7 @@ export type PasswordLinkCheckResponseDto = {
 export type PinCodeResetDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (6 digits) */
+    /** Current PIN code (6 digits) */
     pinCode?: string;
 };
 export type PinCodeSetupDto = {
@@ -6250,13 +6250,13 @@ export type PinCodeChangeDto = {
     newPinCode: string;
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (6 digits) */
+    /** Current PIN code (6 digits) */
     pinCode?: string;
 };
 export type SessionUnlockDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (6 digits) */
+    /** Current PIN code (6 digits) */
     pinCode?: string;
 };
 export type AuthStatusResponseDto = {

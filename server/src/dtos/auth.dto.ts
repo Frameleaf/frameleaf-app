@@ -130,7 +130,12 @@ const PinCodeSetupSchema = z
   .meta({ id: 'PinCodeSetupDto' });
 
 const PinCodeResetSchema = z.object({
-  pinCode: z.string().regex(pinCodeRegex).optional().describe('New PIN code (6 digits)').meta({ example: '123456' }),
+  pinCode: z
+    .string()
+    .regex(pinCodeRegex)
+    .optional()
+    .describe('Current PIN code (6 digits)')
+    .meta({ example: '123456' }),
   password: z
     .string()
     .optional()

@@ -122806,7 +122806,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (6 digits)",
+            "description": "Current PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -122825,7 +122825,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (6 digits)",
+            "description": "Current PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -133502,7 +133502,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (6 digits)",
+            "description": "Current PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
