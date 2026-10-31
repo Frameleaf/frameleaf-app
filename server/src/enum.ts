@@ -480,9 +480,6 @@ export enum Permission {
   UserPreferenceRead = 'userPreference.read',
   UserPreferenceUpdate = 'userPreference.update',
 
-  LockedEncryptionRead = 'lockedEncryption.read',
-  LockedEncryptionUpdate = 'lockedEncryption.update',
-
   UserProfileImageCreate = 'userProfileImage.create',
   UserProfileImageRead = 'userProfileImage.read',
   UserProfileImageUpdate = 'userProfileImage.update',
@@ -2358,13 +2355,13 @@ export enum JobName {
   FacialRecognition = 'FacialRecognition',
 
   FileDelete = 'FileDelete',
+  FileMigrationQueueAll = 'FileMigrationQueueAll',
 
   // Locked encryption
   LockedSeal = 'LockedSeal',
   LockedUnseal = 'LockedUnseal',
   LockedRewrap = 'LockedRewrap',
   LockedSweep = 'LockedSweep',
-  FileMigrationQueueAll = 'FileMigrationQueueAll',
 
   LibraryDeleteCheck = 'LibraryDeleteCheck',
   LibraryDelete = 'LibraryDelete',
