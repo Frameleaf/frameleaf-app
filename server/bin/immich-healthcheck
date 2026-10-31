@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Deprecated alias of frameleaf-healthcheck (FL-294), kept for Compose files that name it.
+
+exec "$(dirname "$0")/frameleaf-healthcheck" "$@"

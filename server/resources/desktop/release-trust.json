@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "minimumRuntimeEpoch": 2,
+  "keys": [
+    {
+      "id": "desktop-release-2026-10",
+      "publicKeyHex": "7042fdec4ddd8c21b2fcdfc80c5d7e128ef0dbb479551c7fe98cfdddb0c18366"
+    }
+  ]
+}

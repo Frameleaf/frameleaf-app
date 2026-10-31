@@ -1,0 +1,290 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  AddUsersDto,
+  AlbumDescendantCountResponseDto,
+  AlbumHierarchyResponseDto,
+  AlbumIconCatalogueResponseDto,
+  AlbumOrderDto,
+  AlbumResponseDto,
+  AlbumStatisticsResponseDto,
+  AlbumTreeResponseDto,
+  AlbumUserParamDto,
+  AlbumViewDto,
+  AlbumsAddAssetsDto,
+  AlbumsAddAssetsResponseDto,
+  CreateAlbumDto,
+  GetAlbumInfoDto,
+  GetAlbumsDto,
+  MoveAlbumDto,
+  UpdateAlbumDto,
+  UpdateAlbumUserDto,
+} from 'src/dtos/album.dto.js';
+import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { AlbumService } from 'src/services/album.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+@ApiTags(ApiTag.Albums)
+@Controller('albums')
+export class AlbumController {
+  constructor(private service: AlbumService) {}
+
+  @Get()
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'List all albums',
+    description: 'Retrieve a list of albums available to the authenticated user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getAllAlbums(@Auth() auth: AuthDto, @Query() query: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+    return this.service.getAll(auth, query);
+  }
+
+  @Post()
+  @Authenticated({ permission: Permission.AlbumCreate })
+  @Endpoint({
+    summary: 'Create an album',
+    description: 'Create a new album. The album can also be created with initial users and assets.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  createAlbum(@Auth() auth: AuthDto, @Body() dto: CreateAlbumDto): Promise<AlbumResponseDto> {
+    return this.service.create(auth, dto);
+  }
+
+  @Get('statistics')
+  @Authenticated({ permission: Permission.AlbumStatistics })
+  @Endpoint({
+    summary: 'Retrieve album statistics',
+    description: 'Returns statistics about the albums available to the authenticated user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getAlbumStatistics(@Auth() auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
+    return this.service.getStatistics(auth);
+  }
+
+  @Get('tree')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album directory',
+    description:
+      'Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. This compatibility projection flattens nested collections and promotes albums whose parent is not a visible collection. Use /albums/hierarchy for the full hierarchy.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumTree(@Auth() auth: AuthDto, @Query() query: AlbumViewDto): Promise<AlbumTreeResponseDto> {
+    return this.service.getTree(auth, query);
+  }
+
+  @Get('hierarchy')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the nested album directory',
+    description: 'Albums and collections with their visible descendants. Shared spaces remain at the top level.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumHierarchy(@Auth() auth: AuthDto, @Query() query: AlbumViewDto): Promise<AlbumHierarchyResponseDto> {
+    return this.service.getHierarchy(auth, query);
+  }
+
+  @Get('icons')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album icon catalogue',
+    description:
+      'Every Material Design Icons name an album or collection may use, plus the categorised suggested set shown first in icon choosers. Served as data so clients never bundle the catalogue.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumIconCatalogue(): AlbumIconCatalogueResponseDto {
+    return this.service.getIconCatalogue();
+  }
+
+  @Put('order')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Arrange a group of the album directory',
+    description:
+      "Save the authenticated user's own custom order for one group of their album directory: the albums inside a collection, or at the top level the collections, the albums on their own, or the shared spaces. The order is personal and changes organization only; access and membership are untouched. The ids must be exactly the group as it is now, otherwise 409.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setAlbumOrder(@Auth() auth: AuthDto, @Body() dto: AlbumOrderDto): Promise<void> {
+    return this.service.setOrder(auth, dto);
+  }
+
+  @Authenticated({ permission: Permission.AlbumRead, sharedLink: true })
+  @Get(':id')
+  @Endpoint({
+    summary: 'Retrieve an album',
+    description: 'Retrieve information about a specific album by its ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getAlbumInfo(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() query: GetAlbumInfoDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.get(auth, id, query);
+  }
+
+  @Patch(':id')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Update an album',
+    description:
+      'Update the information of a specific album by its ID. This endpoint can be used to update the album name, description, sort order, etc. However, it is not used to add or remove assets or users from the album.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  updateAlbumInfo(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UpdateAlbumDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.update(auth, id, dto);
+  }
+
+  @Delete(':id')
+  @Authenticated({ permission: Permission.AlbumDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete an album',
+    description: 'Delete a specific album by its ID. Direct children move to its parent; original media is preserved.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  deleteAlbum(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto) {
+    return this.service.delete(auth, id);
+  }
+
+  @Authenticated({ permission: Permission.AlbumRead, sharedLink: true })
+  @Get(':id/map-markers')
+  @Endpoint({
+    summary: 'Retrieve album map markers',
+    description: 'Retrieve map marker information for a specific album by its ID.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumMapMarkers(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: AlbumMapMarkerDto,
+  ): Promise<MapMarkerResponseDto[]> {
+    return this.service.getMapMarkers(auth, id, dto);
+  }
+
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Get(':id/descendant-count')
+  @Endpoint({
+    summary: 'Count descendant albums',
+    description:
+      'Return the number of descendant albums (children, grandchildren, etc.) for a specific album. Deleting an album preserves its descendants.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumDescendantCount(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<AlbumDescendantCountResponseDto> {
+    return this.service.getDescendantCount(auth, id);
+  }
+
+  @Put(':id/collection')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Move an album into or out of a collection',
+    description:
+      'Move an album or collection under an editable album or collection, or send null to move it to the top level. Only the owner can move a node. Shared spaces stay at the top level.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  moveAlbumToCollection(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: MoveAlbumDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.moveToCollection(auth, id, dto);
+  }
+
+  @Put(':id/assets')
+  @Authenticated({ permission: Permission.AlbumAssetCreate })
+  @Endpoint({
+    summary: 'Add assets to an album',
+    description: 'Add multiple assets to a specific album by its ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  addAssetsToAlbum(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: BulkIdsDto,
+  ): Promise<BulkIdResponseDto[]> {
+    return this.service.addAssets(auth, id, dto);
+  }
+
+  @Put('assets')
+  @Authenticated({ permission: Permission.AlbumAssetCreate })
+  @Endpoint({
+    summary: 'Add assets to albums',
+    description: 'Send a list of asset IDs and album IDs to add each asset to each album.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  addAssetsToAlbums(@Auth() auth: AuthDto, @Body() dto: AlbumsAddAssetsDto): Promise<AlbumsAddAssetsResponseDto> {
+    return this.service.addAssetsToAlbums(auth, dto);
+  }
+
+  @Delete(':id/assets')
+  @Authenticated({ permission: Permission.AlbumAssetDelete })
+  @Endpoint({
+    summary: 'Remove assets from an album',
+    description: 'Remove multiple assets from a specific album by its ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  removeAssetFromAlbum(
+    @Auth() auth: AuthDto,
+    @Body() dto: BulkIdsDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<BulkIdResponseDto[]> {
+    return this.service.removeAssets(auth, id, dto);
+  }
+
+  @Put(':id/users')
+  @Authenticated({ permission: Permission.AlbumUserCreate })
+  @Endpoint({
+    summary: 'Share album with users',
+    description: 'Share an album with multiple users. Each user can be given a specific role in the album.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  addUsersToAlbum(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AddUsersDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.addUsers(auth, id, dto);
+  }
+
+  @Put(':id/user/:userId')
+  @Authenticated({ permission: Permission.AlbumUserUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Update user role',
+    description: 'Change the role for a specific user in a specific album.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  updateAlbumUser(
+    @Auth() auth: AuthDto,
+    @Param() { id, userId }: AlbumUserParamDto,
+    @Body() dto: UpdateAlbumUserDto,
+  ): Promise<void> {
+    return this.service.updateUser(auth, id, userId, dto);
+  }
+
+  @Delete(':id/user/:userId')
+  @Authenticated({ permission: Permission.AlbumUserDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove user from album',
+    description: 'Remove a user from an album. Use an ID of "me" to leave a shared album.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  removeUserFromAlbum(@Auth() auth: AuthDto, @Param() { id, userId }: AlbumUserParamDto): Promise<void> {
+    return this.service.removeUser(auth, id, userId);
+  }
+}
