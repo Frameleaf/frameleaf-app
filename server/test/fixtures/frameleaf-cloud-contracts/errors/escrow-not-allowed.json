@@ -1,0 +1,6 @@
+{
+  "code": "escrow-not-allowed",
+  "message": "Key escrow is only available when this server generates its own backup key.",
+  "retryable": false,
+  "requestId": "req_01J8ZK3M4N5P6Q7X"
+}

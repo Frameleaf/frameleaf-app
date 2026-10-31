@@ -1,0 +1,40 @@
+import { Selectable } from 'kysely';
+import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { AssetEditTable } from 'src/schema/tables/asset-edit.table.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { build } from 'test/factories/builder.factory.js';
+import { AssetEditLike, AssetLike, FactoryBuilder } from 'test/factories/types.js';
+import { newDate, newUuid } from 'test/small.factory.js';
+
+export class AssetEditFactory {
+  private constructor(private readonly value: Selectable<AssetEditTable>) {}
+
+  static create(dto: AssetEditLike = {}) {
+    return AssetEditFactory.from(dto).build();
+  }
+
+  static from(dto: AssetEditLike = {}) {
+    const id = dto.id ?? newUuid();
+    const updateId = dto.updateId ?? newUuid();
+
+    return new AssetEditFactory({
+      id,
+      assetId: newUuid(),
+      action: AssetEditAction.Crop,
+      parameters: { x: 5, y: 6, width: 200, height: 100 },
+      sequence: 1,
+      updateId,
+      updatedAt: newDate(),
+      ...dto,
+    });
+  }
+
+  asset(dto: AssetLike = {}, builder?: FactoryBuilder<AssetFactory>) {
+    this.value.assetId = dto.id && !builder ? dto.id : build(AssetFactory.from(dto), builder).build().id;
+    return this;
+  }
+
+  build() {
+    return { ...this.value } as Omit<Selectable<AssetEditTable>, 'action' | 'parameters'> & AssetEditActionItem;
+  }
+}

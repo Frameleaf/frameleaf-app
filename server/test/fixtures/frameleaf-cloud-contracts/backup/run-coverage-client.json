@@ -1,0 +1,712 @@
+[
+  {
+    "label": "empty",
+    "synthetic": true,
+    "instanceId": "00000000-0000-4000-8000-000000000100",
+    "runId": "00000000-0000-4000-8000-000000000200",
+    "header": {
+      "revisionId": "00000000-0000-4000-8000-000000000001",
+      "sequence": 1,
+      "inventoryAt": "2026-10-12T12:00:00.000Z",
+      "accountCount": 0,
+      "pageCount": 0,
+      "snapshot": null
+    },
+    "pages": [],
+    "state": {
+      "published": {
+        "revisionId": "00000000-0000-4000-8000-000000000001",
+        "sequence": 1,
+        "inventoryAt": "2026-10-12T12:00:00.000Z",
+        "accountCount": 0,
+        "pageCount": 0,
+        "snapshot": null,
+        "createdAt": "2026-10-12T12:00:10.000Z",
+        "publishedAt": "2026-10-12T12:00:30.000Z",
+        "partialSelection": false
+      },
+      "pending": null
+    },
+    "reads": [
+      {
+        "revisionId": "00000000-0000-4000-8000-000000000001",
+        "sequence": 1,
+        "pageIndex": null,
+        "rows": [],
+        "nextPage": null
+      }
+    ]
+  },
+  {
+    "label": "partial",
+    "synthetic": true,
+    "instanceId": "00000000-0000-4000-8000-000000000101",
+    "runId": "00000000-0000-4000-8000-000000000201",
+    "header": {
+      "revisionId": "00000000-0000-4000-8000-000000000002",
+      "sequence": 1,
+      "inventoryAt": "2026-10-12T12:00:00.000Z",
+      "accountCount": 1,
+      "pageCount": 1,
+      "snapshot": {
+        "kind": "legacy",
+        "manifestKey": "m/2026-10-12T12:00:00.000Z.json.gz"
+      }
+    },
+    "pages": [
+      {
+        "pageIndex": 0,
+        "body": {
+          "rows": [
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            }
+          ]
+        }
+      }
+    ],
+    "state": {
+      "published": {
+        "revisionId": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "inventoryAt": "2026-10-12T12:00:00.000Z",
+        "accountCount": 1,
+        "pageCount": 1,
+        "snapshot": {
+          "kind": "legacy",
+          "manifestKey": "m/2026-10-12T12:00:00.000Z.json.gz"
+        },
+        "createdAt": "2026-10-12T12:00:10.000Z",
+        "publishedAt": "2026-10-12T12:00:30.000Z",
+        "partialSelection": true
+      },
+      "pending": null
+    },
+    "reads": [
+      {
+        "revisionId": "00000000-0000-4000-8000-000000000002",
+        "sequence": 1,
+        "pageIndex": 0,
+        "rows": [
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          }
+        ],
+        "nextPage": null
+      }
+    ]
+  },
+  {
+    "label": "33-accounts",
+    "synthetic": true,
+    "instanceId": "00000000-0000-4000-8000-000000000102",
+    "runId": "00000000-0000-4000-8000-000000000202",
+    "header": {
+      "revisionId": "00000000-0000-4000-8000-000000000003",
+      "sequence": 1,
+      "inventoryAt": "2026-10-12T12:00:00.000Z",
+      "accountCount": 33,
+      "pageCount": 2,
+      "snapshot": {
+        "kind": "legacy",
+        "manifestKey": "m/2026-10-12T12:00:00.000Z.json.gz"
+      }
+    },
+    "pages": [
+      {
+        "pageIndex": 0,
+        "body": {
+          "rows": [
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": false,
+              "includedOriginals": 0
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+              "totalOriginals": 0,
+              "selectedOriginals": 0,
+              "licenceEligible": true,
+              "includedOriginals": 0
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000002",
+              "totalOriginals": 10,
+              "selectedOriginals": 0,
+              "licenceEligible": true,
+              "includedOriginals": 0
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000003",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000004",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000005",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000006",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000007",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000008",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000009",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000a",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000b",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000c",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000d",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000e",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000f",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000010",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000011",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000012",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000013",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000014",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000015",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000016",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000017",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000018",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000019",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001a",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001b",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001d",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001e",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            },
+            {
+              "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001f",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            }
+          ]
+        }
+      },
+      {
+        "pageIndex": 1,
+        "body": {
+          "rows": [
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000020",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": 2
+            }
+          ]
+        }
+      }
+    ],
+    "state": {
+      "published": {
+        "revisionId": "00000000-0000-4000-8000-000000000003",
+        "sequence": 1,
+        "inventoryAt": "2026-10-12T12:00:00.000Z",
+        "accountCount": 33,
+        "pageCount": 2,
+        "snapshot": {
+          "kind": "legacy",
+          "manifestKey": "m/2026-10-12T12:00:00.000Z.json.gz"
+        },
+        "createdAt": "2026-10-12T12:00:10.000Z",
+        "publishedAt": "2026-10-12T12:00:30.000Z",
+        "partialSelection": true
+      },
+      "pending": null
+    },
+    "reads": [
+      {
+        "revisionId": "00000000-0000-4000-8000-000000000003",
+        "sequence": 1,
+        "pageIndex": 0,
+        "rows": [
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": false,
+            "includedOriginals": 0
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+            "totalOriginals": 0,
+            "selectedOriginals": 0,
+            "licenceEligible": true,
+            "includedOriginals": 0
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000002",
+            "totalOriginals": 10,
+            "selectedOriginals": 0,
+            "licenceEligible": true,
+            "includedOriginals": 0
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000003",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000004",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000005",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000006",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000007",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000008",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000009",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000a",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000b",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000c",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000d",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000e",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000000f",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000010",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000011",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000012",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000013",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000014",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000015",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000016",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000017",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000018",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000019",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001a",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001b",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001d",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001e",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          },
+          {
+            "userFingerprint": "000000000000000000000000000000000000000000000000000000000000001f",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          }
+        ],
+        "nextPage": "eyJpbnN0YW5jZUlkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMTAyIiwicnVuSWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAyMDIiLCJyZXZpc2lvbklkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIiwiYWZ0ZXJQYWdlIjowfQ"
+      },
+      {
+        "revisionId": "00000000-0000-4000-8000-000000000003",
+        "sequence": 1,
+        "pageIndex": 1,
+        "rows": [
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000020",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": 2
+          }
+        ],
+        "nextPage": null
+      }
+    ]
+  },
+  {
+    "label": "failed-uncommitted",
+    "synthetic": true,
+    "instanceId": "00000000-0000-4000-8000-000000000103",
+    "runId": "00000000-0000-4000-8000-000000000203",
+    "header": {
+      "revisionId": "00000000-0000-4000-8000-000000000004",
+      "sequence": 1,
+      "inventoryAt": "2026-10-12T12:00:00.000Z",
+      "accountCount": 2,
+      "pageCount": 1,
+      "snapshot": null
+    },
+    "pages": [
+      {
+        "pageIndex": 0,
+        "body": {
+          "rows": [
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": true,
+              "includedOriginals": null
+            },
+            {
+              "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000002",
+              "totalOriginals": 10,
+              "selectedOriginals": 3,
+              "licenceEligible": false,
+              "includedOriginals": null
+            }
+          ]
+        }
+      }
+    ],
+    "state": {
+      "published": {
+        "revisionId": "00000000-0000-4000-8000-000000000004",
+        "sequence": 1,
+        "inventoryAt": "2026-10-12T12:00:00.000Z",
+        "accountCount": 2,
+        "pageCount": 1,
+        "snapshot": null,
+        "createdAt": "2026-10-12T12:00:10.000Z",
+        "publishedAt": "2026-10-12T12:00:30.000Z",
+        "partialSelection": true
+      },
+      "pending": null
+    },
+    "reads": [
+      {
+        "revisionId": "00000000-0000-4000-8000-000000000004",
+        "sequence": 1,
+        "pageIndex": 0,
+        "rows": [
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": true,
+            "includedOriginals": null
+          },
+          {
+            "userFingerprint": "0000000000000000000000000000000000000000000000000000000000000002",
+            "totalOriginals": 10,
+            "selectedOriginals": 3,
+            "licenceEligible": false,
+            "includedOriginals": null
+          }
+        ],
+        "nextPage": null
+      }
+    ]
+  }
+]
