@@ -49,7 +49,6 @@
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
-    AREA_TILE_COLORS,
     backupPageFor,
     commandCenterUrl,
     hasLandingPage,
@@ -249,7 +248,7 @@
       icon: mdiFolderOutline,
     },
     utilities: {
-      title: $t('utilities'),
+      title: $t('frameleaf_tools'),
       description: $t('frameleaf_utilities_description'),
       icon: mdiTools,
     },
@@ -773,8 +772,8 @@
               aria-current={item.id === area ? 'page' : undefined}
               onclick={() => navigate(item.id)}
             >
-              <!-- FL-76: a coloured icon tile per area, like System Settings (apple-style.css:565-640). -->
-              <span class="tile fl-continuous-corners" style:--tile={AREA_TILE_COLORS[item.id]}>
+              <!-- UI review 2026-10-30 P3: a plain icon, as in the main rail (green when selected or hovered). -->
+              <span class="tile">
                 <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
               </span>
               <span>{areaCopy[item.id].title}</span>
@@ -1098,7 +1097,8 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    width: 228px;
+    /* P3: wide enough that "Computers & background work" stays on one line at the rail's 14px. */
+    width: 280px;
     padding: 14px 0 0;
     overflow: hidden;
     white-space: nowrap;
@@ -1168,7 +1168,8 @@
   .cc-nav-group > p {
     margin: 12px 22px 6px;
     color: var(--fl-muted);
-    font-size: 10px;
+    /* P5: explanatory text is at least 12px. */
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: 1.1px;
     text-transform: uppercase;
@@ -1196,26 +1197,18 @@
     color: var(--fl-text);
     box-shadow: inset 3px 0 var(--fl-accent);
   }
+  /* P3 (review-1030-shell.css): plain icons like the main rail, green when selected or hovered. */
   .tile {
     display: grid;
     flex: none;
     place-items: center;
     width: 24px;
     height: 24px;
-    color: #fff;
-    background: var(--tile, #8e8e93);
-    border-radius: 7px;
-    box-shadow: inset 0 0 0 0.5px #ffffff40;
+    color: var(--fl-muted);
   }
-  @supports (corner-shape: squircle) {
-    .tile {
-      border-radius: 10px;
-    }
-  }
-  @media (prefers-contrast: more) {
-    .tile {
-      box-shadow: inset 0 0 0 1px var(--fl-text);
-    }
+  .area:hover .tile,
+  .area.selected .tile {
+    color: var(--fl-accent);
   }
   .pending {
     flex-shrink: 0;
@@ -1263,14 +1256,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /*
-   * A long area name ("Computers & background work") takes a second line in the open rail, as in the
-   * prototype, instead of being cut short. The collapsed rail hides labels altogether.
-   */
-  .command-center:not(.cc-collapsed) .area > span:not(.tile, .pending) {
-    white-space: normal;
-    text-wrap: balance;
-  }
   .cc-nav-children button:hover,
   .cc-nav-children button[aria-current='page'] {
     color: var(--fl-text);
@@ -1282,13 +1267,14 @@
     gap: 10px;
     padding: 14px 22px;
     color: var(--fl-muted);
+    background: var(--fl-panel);
     border-top: 1px solid var(--fl-border);
-    font-size: var(--fl-font-micro);
+    font-size: 12px;
   }
   .cc-nav-foot small {
     display: block;
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .cc-nav-scrim {
     display: none;
@@ -1309,7 +1295,7 @@
     padding: 10px 28px;
     background: var(--fl-panel);
     border-bottom: 1px solid var(--fl-border);
-    font-size: var(--fl-font-micro);
+    font-size: 12px;
   }
   .cc-context {
     display: flex;
@@ -1459,7 +1445,7 @@
   /* command-center.css `.cc-subtle`. */
   .cc-subtle {
     color: var(--fl-muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.65;
     margin: 12px 0 0;
   }
@@ -1531,7 +1517,7 @@
   .cc-search-results small,
   .cc-search-results button > span > span {
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
+    font-size: var(--fl-font-small);
   }
   .cc-search-results button:focus-visible {
     outline-offset: var(--fl-focus-inset);
@@ -1600,7 +1586,7 @@
       bottom: 0;
       inset-inline-start: 0;
       z-index: 60;
-      width: 250px;
+      width: min(280px, 85vw);
       padding-top: 10px;
       visibility: hidden;
       transform: translateX(-100%);

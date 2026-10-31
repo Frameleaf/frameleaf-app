@@ -283,11 +283,11 @@
     },
     {
       "status": "looked-up",
-      "notice": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX and quantized (smoothquant) by Olicorne.",
+      "notice": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX (fp16) and quantized (int8) by Olicorne.",
       "id": "parakeet-tdt",
       "group": "studio-models",
       "name": "Parakeet TDT 0.6B v3 speech recognition (quantized ONNX)",
-      "author": "NVIDIA; smoothquant ONNX conversion by Olicorne",
+      "author": "NVIDIA; ONNX conversion by Olicorne",
       "licence": "CC-BY-4.0",
       "link": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
       "shipped": "downloaded",

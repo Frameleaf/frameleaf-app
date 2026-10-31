@@ -273,7 +273,7 @@
   <SettingsOverline>
     {#if selected && !query.trim()}
       <button type="button" onclick={() => select()}
-        >{fromCare ? $t('frameleaf_settings_area_care') : $t('utilities')}</button
+        >{fromCare ? $t('frameleaf_settings_area_care') : $t('frameleaf_tools')}</button
       >
       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden={true} />
       {$t(selected.titleKey)}
@@ -281,7 +281,7 @@
       {$t('frameleaf_settings_group_library')}
     {/if}
   </SettingsOverline>
-  <h1>{selected && !query.trim() ? $t(selected.titleKey) : $t('utilities')}</h1>
+  <h1>{selected && !query.trim() ? $t(selected.titleKey) : $t('frameleaf_tools')}</h1>
   <p>{selected && !query.trim() ? $t(selected.descriptionKey) : $t('frameleaf_utilities_description')}</p>
 </header>
 
@@ -293,20 +293,20 @@
       <Hero
         tone="warn"
         icon={mdiClipboardAlertOutline}
-        label={$t('utilities')}
+        label={$t('frameleaf_tools')}
         title={$t('frameleaf_utilities_waiting_title', { values: { count: waiting.length } })}
         body={$t('frameleaf_utilities_waiting_body')}
       />
     {:else}
       <Hero
         icon={mdiClipboardCheckOutline}
-        label={$t('utilities')}
+        label={$t('frameleaf_tools')}
         title={$t('frameleaf_utilities_calm_title')}
         body={$t('frameleaf_utilities_calm_body')}
       />
     {/if}
   {/if}
-  <SettingsDirectory {rows} areaTitle={$t('utilities')} />
+  <SettingsDirectory {rows} areaTitle={$t('frameleaf_tools')} />
   {#if rareRows.length > 0}
     <Advanced summary={$t('frameleaf_utilities_rarely_needed')}>
       <SettingsDirectory rows={rareRows} />

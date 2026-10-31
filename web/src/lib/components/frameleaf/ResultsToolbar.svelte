@@ -410,7 +410,7 @@
     </div>
   {/if}
 
-  <div class="fl-toolbar-row">
+  <div class="fl-toolbar-row" class:fl-has-more={!!onMoreActions}>
     {#if count !== null}
       <span class="fl-result-count" aria-live="polite" data-testid="frameleaf-result-count">
         {$t('items_count', { values: { count } })}
@@ -833,79 +833,59 @@
     accent-color: var(--fl-accent);
   }
   /*
-   * Phones (LIB-P5, template `styles.css` `@media (max-width: 700px)` `.app .results-toolbar`): two
-   * rows on a grid. The count, Filter, Slideshow and More on the first; Sort across the width with
-   * Grid and List at its end on the second. Filter and Slideshow are their icons.
+   * Phones (UI review 2026-10-30 #7, review-1030-shell.css): the toolbar is one line, so the photos
+   * start on the first screen. The count, Filter, View, Sort as its icon (the native picker still
+   * opens over it) and "…", every control 36px tall and 8px apart. Slideshow and Grid / List are in
+   * the "…" sheet, so neither is repeated here. A page's own choices take a line of their own.
    */
   @media (max-width: 700px) {
     .fl-toolbar-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) repeat(3, var(--fl-control-height-touch, 44px));
+      flex-wrap: wrap;
+      justify-content: flex-start;
       gap: var(--fl-space-3) var(--fl-space-2);
-      align-items: center;
     }
     .fl-result-count {
-      grid-row: 1;
-      grid-column: 1;
+      flex: 1 1 0;
+      min-width: 0;
       margin: 0;
-    }
-    .fl-filter {
-      grid-row: 1;
-      grid-column: 2;
-    }
-    .fl-tool {
-      grid-row: 1;
-      grid-column: 3;
-    }
-    .fl-slot-info {
-      display: none;
-    }
-    .fl-slot-more {
-      display: flex;
-      grid-row: 1;
-      grid-column: 4;
-    }
-    .fl-sort {
-      grid-row: 2;
-      grid-column: 1 / 3;
-      min-width: 0;
-    }
-    .fl-sort select {
-      flex: 1 1 auto;
-      width: 100%;
-      min-width: 0;
-    }
-    .fl-slot-view {
-      display: flex;
-      grid-row: 2;
-      grid-column: 3 / 5;
-      gap: var(--fl-space-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .fl-toolbar-leading {
-      grid-row: 3;
-      grid-column: 1 / -1;
+      order: 1;
+      flex: 1 0 100%;
       margin: 0;
     }
-    /* A page's own controls (Locked's Lock): beside Sort where Grid and List are not offered. */
+    /* Only where the "…" sheet exists to take them over (LibraryView offers both there on phones). */
+    .fl-has-more .fl-tool:not(.fl-view-button),
+    .fl-has-more .fl-slot-view {
+      display: none;
+    }
+    .fl-slot-info,
+    .fl-slot-more,
     .fl-slot-extra {
       display: flex;
-      grid-row: 4;
-      grid-column: 1 / -1;
-      justify-content: flex-end;
       gap: var(--fl-space-2);
     }
-    .fl-toolbar-row:not(:has(.fl-slot-view)) .fl-slot-extra {
-      grid-row: 2;
-      grid-column: 3 / 5;
-    }
-    /* Nothing of its own to show (Work's file-name toggle is not offered on phones): no empty row. */
+    /* Nothing of its own to show (Work's file-name toggle is not offered on phones): no empty box. */
     .fl-slot-extra:not(:has(> :global(:not(.fl-file-names-toggle)))) {
       display: none;
     }
     .fl-filter-button,
-    .fl-tool {
+    .fl-filter-more,
+    .fl-tool,
+    .fl-sort,
+    .fl-slot-info :global(button),
+    .fl-slot-more :global(button),
+    .fl-slot-extra :global(button) {
+      height: 36px;
+      min-height: 36px;
+    }
+    .fl-filter-button,
+    .fl-slot-more :global(button) {
       justify-content: center;
-      min-width: var(--fl-control-height-touch, 44px);
+      width: 36px;
+      min-width: 36px;
       padding: 0;
       font-size: 0;
       gap: 0;
@@ -917,12 +897,25 @@
     }
     .fl-filter-button .fl-filter-badge {
       position: absolute;
-      top: 2px;
-      inset-inline-end: 2px;
+      top: -6px;
+      inset-inline-end: -6px;
       font-size: var(--fl-font-micro, 11px);
     }
     .fl-filter-more {
       display: none;
+    }
+    /* Sort is its icon; the select covers it, invisible, so a tap opens the native picker. */
+    .fl-sort {
+      position: relative;
+      justify-content: center;
+      width: 36px;
+      padding: 0;
+    }
+    .fl-sort select {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      opacity: 0;
     }
   }
 </style>

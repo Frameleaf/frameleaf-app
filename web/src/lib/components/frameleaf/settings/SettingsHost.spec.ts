@@ -183,27 +183,18 @@ describe('the Command Center (FL-71)', () => {
     expect(screen.getByRole('button', { name: 'Storage & originals' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('gives every area a coloured icon tile, like System Settings (FL-76)', () => {
+  it('gives every area a plain icon, as in the main rail (UI review 2026-10-30 P3)', () => {
     open('/user-settings?area=storage');
     render(SettingsHost, { sections });
-    const tile = (name: string) =>
-      screen.getByRole('button', { name }).querySelector<HTMLElement>('.tile')!.style.getPropertyValue('--tile');
-    expect(tile('Overview')).toBe('#0a84ff');
-    expect(tile('Library analytics')).toBe('#bf5af2');
-    // Backup keeps the teal tile; Import & export no longer shares it (design review finding 66).
-    expect(tile('Backup')).toBe('#30b0c7');
-    expect(tile('Import & export')).toBe('#64d2ff');
-    expect(tile('Library care')).toBe('#30d158');
-    expect(tile('Notifications')).toBe('#ff453a');
     for (const button of screen
       .getByRole('navigation', { name: 'Settings navigation' })
       .querySelectorAll('button.area')) {
-      expect(button.querySelector(':scope .tile svg')).not.toBeNull();
+      const tile = button.querySelector<HTMLElement>(':scope .tile')!;
+      expect(tile.querySelector('svg')).not.toBeNull();
+      expect(tile.style.getPropertyValue('--tile')).toBe('');
     }
   });
 
-  // FL-365 / FL-367: Storage & originals and Frameleaf Cloud were the last areas drawn as a section
-  // directory; every area with several pages now opens on a landing page of its own.
   it('opens a section one at a time, with the way back to its area', async () => {
     open('/user-settings?area=cloud&section=cloud-account');
     const { container } = render(SettingsHost, { sections });

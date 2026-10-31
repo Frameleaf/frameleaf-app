@@ -1141,6 +1141,55 @@
     .fl-items-panes {
       position: relative;
     }
+    /*
+     * P8 (UI review 2026-10-30): the filters, sort, Refresh, Filter and the details switch are one
+     * row that scrolls sideways, edge to edge from the 16px gutter, every control 36px tall, instead
+     * of wrapping over three rows.
+     */
+    .fl-items-toolbar {
+      padding-inline: 0;
+    }
+    .fl-items-toolbar :global(.fl-chips) {
+      padding-inline: var(--fl-space-4);
+    }
+    .fl-items-toolbar :global(.fl-toolbar-row) {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding-inline: var(--fl-space-4);
+      scroll-padding-inline: var(--fl-space-4);
+      scrollbar-width: none;
+    }
+    .fl-items-toolbar :global(.fl-toolbar-row::-webkit-scrollbar) {
+      display: none;
+    }
+    .fl-items-toolbar :global(.fl-toolbar-row > *) {
+      flex: none;
+    }
+    .fl-items-toolbar :global(.fl-toolbar-leading) {
+      order: 0;
+      flex: none;
+    }
+    .fl-items-controls {
+      flex-wrap: nowrap;
+    }
+    .fl-items-spacer {
+      display: none;
+    }
+    .fl-items-controls :global(button),
+    .fl-items-chip,
+    .fl-items-sort select {
+      height: 36px;
+      min-height: 36px;
+      white-space: nowrap;
+    }
+    /* A popover cannot hang below a row that scrolls, so it opens over the foot of the screen. */
+    .fl-items-popover {
+      position: fixed;
+      inset: auto var(--fl-space-4) calc(var(--fl-tabbar-space, 0px) + var(--fl-space-4));
+      width: auto;
+      max-height: 70dvh;
+      z-index: 40;
+    }
     /* Over the visible screen, wherever the page is scrolled. */
     .fl-items-panel {
       position: fixed;

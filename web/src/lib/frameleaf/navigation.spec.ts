@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPhoneMenuDestinations,
   buildPrimaryDestinations,
   buildRailSections,
   currentPrimaryDestination,
@@ -222,6 +223,16 @@ describe('Frameleaf primary destinations', () => {
       labelKey: 'frameleaf_photography',
       href: Route.photography(),
     });
+  });
+
+  it('heads the phone menu with every section but Library (UI review 2026-10-30 #8)', () => {
+    expect(buildPhoneMenuDestinations().map(({ id }) => id)).toEqual(['pro', 'studio', 'activity']);
+    expect(buildPhoneMenuDestinations({ clients: true }).map(({ id }) => id)).toEqual([
+      'pro',
+      'clients',
+      'studio',
+      'activity',
+    ]);
   });
 
   it('keeps Clients current in its workspace and the RAW develop editor', () => {

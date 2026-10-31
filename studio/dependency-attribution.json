@@ -582,7 +582,7 @@
       ]
     },
     {
-      "basis": "CC-BY-4.0 model licence; attribution retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Source smoothquant repository redirects to optimized-onnx; exact variant mapping remains unqualified.",
+      "basis": "CC-BY-4.0 model licence; attribution retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Served from the Frameleaf model mirror (FL-685): the five files are Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx (formerly -smoothquant-onnx) at commit 8a9229fe6a84898bcd05abd31d541722560b80f8, the fp16/ and int8/ precisions served flat.",
       "decisions": {
         "hostedUse": "allowed",
         "localRuntime": "allowed",
@@ -598,33 +598,34 @@
       "files": [
         {
           "path": "encoder-model.fp16.onnx",
-          "sha256": null
+          "sha256": "cc6ca27b5cb61414e179b400fb38c80dc35da114ea63a82e68ebb9b6b1dd04e8"
         },
         {
           "path": "encoder-model.int8.onnx",
-          "sha256": null
+          "sha256": "6841e49453924d6320df2e830d9916683857ef613c3662491c67a6ba8cf2016d"
         },
         {
           "path": "decoder_joint-model.int8.onnx",
-          "sha256": null
+          "sha256": "63a6cd892244e5dbdd8b41541514f2643c7d3c7c454f9adcdf99ca31acb802d0"
         },
         {
           "path": "nemo128.onnx",
-          "sha256": null
+          "sha256": "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f"
         },
         {
           "path": "vocab.txt",
-          "sha256": null
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
         }
       ],
       "id": "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
       "kind": "model",
       "licenseDeclared": "cc-by-4.0",
-      "locator": "Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
-      "revision": "8a9229fe6a84898bcd05abd31d541722560b80f8",
+      "locator": "https://models.frameleaf.cloud/frameleaf/parakeet-tdt-0.6b-v3",
+      "revision": "8fdb7406cf95bd8be6d735010cfd96a17502bfa8",
       "sourceRefs": [
         "src/features/media-library/transcription/types.ts",
-        "src/features/media-library/transcription/workers/parakeet.worker.ts"
+        "src/features/media-library/transcription/workers/parakeet.worker.ts",
+        "src/shared/utils/local-model-cache.ts"
       ]
     },
     {

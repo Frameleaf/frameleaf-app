@@ -14,6 +14,7 @@
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
+  import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import {
@@ -23,7 +24,9 @@
     type FrameleafAlbumTree,
   } from '$lib/frameleaf/album-tree';
   import {
+    buildPhoneMenuDestinations,
     buildRailSections,
+    currentPrimaryDestination,
     FOLDABLE_RAIL_SECTIONS,
     isClientsEnabled,
     isDestinationCurrent,
@@ -32,6 +35,7 @@
     type RailDestination,
     type RailSectionId,
   } from '$lib/frameleaf/navigation';
+  import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
   import { canAnimate, prefersReducedMotion } from '$lib/frameleaf/motion';
   import {
     isBelowRoot,
@@ -73,6 +77,7 @@
     mdiChevronRight,
     mdiClose,
     mdiFilterVariant,
+    mdiHelpCircleOutline,
     mdiImageOutline,
     mdiImport,
     mdiInboxOutline,
@@ -253,6 +258,15 @@
   );
 
   const pathname = $derived(page.url.pathname);
+  /** UI review 2026-10-30 #8: Boards, Clients, Studio and Activity head the phone menu, then Help. */
+  const phoneSections = $derived(buildPhoneMenuDestinations({ clients: isClientsEnabled(preferences) }));
+  const openHelp = () => {
+    sidebarStore.reset();
+    // The closed menu goes inert; Help hands focus back to whatever had it when it opened, so give
+    // it the ☰ button rather than an inert row.
+    document.querySelector<HTMLButtonElement>(`#${menuButtonId}`)?.focus();
+    helpPanel.open = true;
+  };
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The icon-only rail applies on desktop only; the mobile sidebar is a full overlay.
   const wantsIconOnly = $derived($sidebarCollapsed && mediaQueryManager.isFullSidebar);
@@ -403,6 +417,8 @@
    * drawer becomes the "Collections and filters" bottom sheet (README point 13).
    */
   const boards = $derived(workspaceScope === LibraryViewScope.Design);
+  /** The phone menu's current section (Boards here, also on a Boards collection). */
+  const currentSection = $derived(currentPrimaryDestination(pathname, boards));
   type BoardsItemId = 'all' | 'images' | 'videos' | 'links' | 'unfiled';
   /** The parameter Boards' Links view sets: the server's `kinds` on library item search. */
   const BOARDS_KINDS_PARAMETER = 'kinds';
@@ -877,6 +893,18 @@
     class:is-collapsing={collapsing}
     data-theme={appTheme}
   >
+    <!-- Phones only (≤700px): the top bar has no section tabs, so the sections open from here. -->
+    {#if !iconOnly}
+      <div class="fl-phone-sections" role="group" aria-label={$t('frameleaf_primary_navigation')}>
+        {#each phoneSections as section (section.id)}
+          {@render railLink($t(section.labelKey), section.icon, section.href, currentSection === section.id, false)}
+        {/each}
+        <button type="button" class="fl-link" aria-haspopup="dialog" onclick={openHelp}>
+          <Icon icon={mdiHelpCircleOutline} size="1.25em" aria-hidden={true} class="fl-icon" />
+          <span class="fl-label">{$t('frameleaf_help_panel_open')}</span>
+        </button>
+      </div>
+    {/if}
     {#if boards}
       {@render boardsList()}
     {:else}
@@ -1302,6 +1330,27 @@
     }
   }
 
+  /* UI review 2026-10-30 #8: the phone menu's sections, above the library's own (phones only). */
+  .fl-phone-sections {
+    display: none;
+  }
+  @media (max-width: 700px) {
+    .fl-phone-sections {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--fl-border);
+    }
+  }
+  .fl-phone-sections button.fl-link {
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
   /* ---- Boards ---- */
   .fl-count {
     margin-inline-start: auto;
@@ -1340,7 +1389,8 @@
     border-radius: 999px;
     color: var(--fl-text);
     background: color-mix(in srgb, var(--fl-accent), transparent 85%);
-    font-size: 10px;
+    /* UI review 2026-10-30 P5: at least 12px. */
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -1373,7 +1423,7 @@
    * prototype screen 22): full width from the foot of the screen, rounded at the top, over the
    * tab bar. Only while open; a closed drawer is inert and keeps its zero width.
    */
-  @media (max-width: 849px) {
+  @media (min-width: 701px) and (max-width: 849px) {
     :global(html[data-fl-boards-rail] #sidebar:not([inert])) {
       position: fixed;
       inset: auto 0 0 0;

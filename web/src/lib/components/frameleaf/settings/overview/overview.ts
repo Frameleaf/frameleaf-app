@@ -71,3 +71,13 @@ export const phonesBehind = <T extends { quietForDays: number | null }>(phones: 
   phones
     .filter((phone) => phone.quietForDays !== null && phone.quietForDays >= PHONE_BEHIND_DAYS)
     .sort((a, b) => (b.quietForDays ?? 0) - (a.quietForDays ?? 0));
+
+/**
+ * Which of the status sentence's phrases are said (UI review 2026-10-30 #17). While something needs
+ * the person, only the problems: "Frameleaf is up to date" is not a need, and the checks that are
+ * fine stay in "What was checked" below. With nothing wrong, what is fine is the whole answer.
+ */
+export const statusPhrases = (phrases: readonly { wrong: boolean; text: string }[]): string[] => {
+  const wrong = phrases.filter((phrase) => phrase.wrong);
+  return (wrong.length > 0 ? wrong : phrases).map((phrase) => phrase.text);
+};

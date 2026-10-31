@@ -2039,6 +2039,32 @@
             : $t('frameleaf_library_select_all_matching_count', { values: { count: resultCount } })}
         </Button>
       {/if}
+      <!-- Phones (UI review 2026-10-30 #7): the one-line toolbar drops Slideshow and Grid / List, so they live here. -->
+      {#if canSlideshow}
+        <span class="fl-phone-action">
+          <Button
+            disabled={resultCount === 0}
+            onclick={() => {
+              moreActionsOpen = false;
+              void startSlideshow();
+            }}
+          >
+            {$t('slideshow')}
+          </Button>
+        </span>
+      {/if}
+      {#if toolbarView}
+        <span class="fl-phone-action">
+          <Button
+            onclick={() => {
+              moreActionsOpen = false;
+              changeView(toolbarView === 'grid' ? 'list' : 'grid');
+            }}
+          >
+            {$t(toolbarView === 'grid' ? 'frameleaf_library_list_view' : 'frameleaf_library_grid_view')}
+          </Button>
+        </span>
+      {/if}
       {#if canShowInfoPanel}
         <Button
           onclick={() => {
@@ -2249,6 +2275,14 @@
   }
   .fl-action-list :global(button) {
     justify-content: flex-start;
+  }
+  .fl-phone-action {
+    display: grid;
+  }
+  @media (min-width: 701px) {
+    .fl-phone-action {
+      display: none;
+    }
   }
   .fl-library-panel {
     flex: 0 0 320px;
