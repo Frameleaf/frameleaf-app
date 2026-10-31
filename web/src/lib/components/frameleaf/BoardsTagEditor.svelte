@@ -123,8 +123,12 @@
     switch (event.key) {
       case 'ArrowDown': {
         event.preventDefault();
-        open = true;
-        active = Math.min(options.length - 1, active + 1);
+        if (expanded) {
+          active = Math.min(options.length - 1, active + 1);
+        } else {
+          open = true;
+          active = 0;
+        }
         break;
       }
       case 'ArrowUp': {
@@ -134,7 +138,8 @@
       }
       case 'Enter': {
         event.preventDefault();
-        const option = options.at(active);
+        // A closed list has nothing on show to choose.
+        const option = expanded ? options.at(active) : undefined;
         if (option) {
           choose(option);
         }
