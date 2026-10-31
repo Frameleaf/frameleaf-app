@@ -565,7 +565,7 @@
   /** The welcome empty state (no projects yet), which carries its own "New project". */
   const showsWelcome = $derived(!failed && !loading && items.length === 0 && !query.trim() && shelf === 'active');
   /** Waiting for the first page: neither place shows "New project" yet, so it never jumps. */
-  const showHeaderNew = $derived(!showsWelcome && !(loading && items.length === 0 && !failed));
+  const showHeaderNew = $derived(!showsWelcome && (!loading || items.length > 0 || failed));
 </script>
 
 <main class="frameleaf fl-studio-library" aria-labelledby="fl-studio-library-title">

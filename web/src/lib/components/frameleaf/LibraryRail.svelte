@@ -14,6 +14,7 @@
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
+  import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import {
@@ -254,6 +255,9 @@
   const phoneSections = $derived(buildPhoneMenuDestinations({ clients: isClientsEnabled(preferences) }));
   const openHelp = () => {
     sidebarStore.reset();
+    // The closed menu goes inert; Help hands focus back to whatever had it when it opened, so give
+    // it the ☰ button rather than an inert row.
+    document.querySelector<HTMLButtonElement>(`#${menuButtonId}`)?.focus();
     helpPanel.open = true;
   };
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');

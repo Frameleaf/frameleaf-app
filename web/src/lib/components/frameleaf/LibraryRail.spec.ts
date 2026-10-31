@@ -4,8 +4,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
+import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';

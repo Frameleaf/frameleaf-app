@@ -371,7 +371,7 @@
     </div>
   {/if}
 
-  <div class="fl-toolbar-row">
+  <div class="fl-toolbar-row" class:fl-has-more={!!onMoreActions}>
     {#if count !== null}
       <span class="fl-result-count" aria-live="polite" data-testid="frameleaf-result-count">
         {$t('items_count', { values: { count } })}
@@ -724,8 +724,8 @@
   /*
    * Phones (UI review 2026-10-30 #7, review-1030-shell.css): the toolbar is one line, so the photos
    * start on the first screen. The count, Filter, View, Sort as its icon (the native picker still
-   * opens over it) and "…", every control 36px tall and 8px apart. Slideshow is in the "…" menu and
-   * Grid / List in View, so neither is repeated here. A page's own choices take a line of their own.
+   * opens over it) and "…", every control 36px tall and 8px apart. Slideshow and Grid / List are in
+   * the "…" sheet, so neither is repeated here. A page's own choices take a line of their own.
    */
   @media (max-width: 700px) {
     .fl-toolbar-row {
@@ -745,8 +745,9 @@
       flex: 1 0 100%;
       margin: 0;
     }
-    .fl-tool:not(.fl-view-button),
-    .fl-slot-view {
+    /* Only where the "…" sheet exists to take them over (LibraryView offers both there on phones). */
+    .fl-has-more .fl-tool:not(.fl-view-button),
+    .fl-has-more .fl-slot-view {
       display: none;
     }
     .fl-slot-info,

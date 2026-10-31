@@ -875,4 +875,21 @@
     box-shadow: 0 0 0 2px var(--fl-panel);
     pointer-events: none;
   }
+  /*
+   * Narrow phones keep every control on screen inside the 16px gutter. While work runs, the ring takes
+   * the Locked box's place under 420px; Locked stays in the ☰ menu (Library › Locked).
+   */
+  @media (max-width: 419px) {
+    .fl-topbar-actions:has(:global(.fl-activity)) .fl-locked-control {
+      display: none;
+    }
+  }
+  /* Under 352px the 8px gaps would push the account button into the gutter: 4px apart instead. */
+  @media (max-width: 351px) {
+    .fl-topbar-grid,
+    .fl-topbar-lead,
+    .fl-topbar-actions {
+      gap: var(--fl-space-1);
+    }
+  }
 </style>

@@ -314,6 +314,17 @@
         ? { wrong: true, text: $t('frameleaf_overview_says_update') }
         : { wrong: false, text: $t('frameleaf_overview_says_up_to_date') },
     );
+    // The other needs above the cards are said too, so the sentence never says all is well under a need.
+    const behind = needs.filter((need) => need.id.startsWith('phone-')).length;
+    if (behind > 0) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_phone_behind', { values: { count: behind } }) });
+    }
+    if (needs.some((need) => need.id === 'plan')) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_plan') });
+    }
+    if (needs.some((need) => need.id === 'restore-test')) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_restore_untried') });
+    }
     return sentence(say.list(statusPhrases(phrases)));
   });
 

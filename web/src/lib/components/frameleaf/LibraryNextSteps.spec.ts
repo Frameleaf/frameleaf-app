@@ -48,7 +48,7 @@ describe('LibraryNextSteps', () => {
 
   describe('on phones (UI review 2026-10-30 #7)', () => {
     beforeEach(() => {
-      vi.mocked(globalThis.matchMedia).mockImplementation(
+      vi.mocked(matchMedia).mockImplementation(
         (query: string) =>
           ({
             matches: query.includes('max-width: 700px'),

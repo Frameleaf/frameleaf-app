@@ -577,7 +577,7 @@ test.describe('Timeline', () => {
       await expect(page.getByTestId('library-status-bar')).toHaveCount(0);
     });
 
-    test('on a phone the layouts sit beside the title and the toolbar has two rows (LIB-P5)', async ({ page }) => {
+    test('on a phone the layouts sit beside the title and the toolbar is one line (UI review #7)', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await pageUtils.openPhotosPage(page);
       const toolbar = page.getByTestId('frameleaf-results-toolbar');
@@ -586,18 +586,25 @@ test.describe('Timeline', () => {
       // Timeline, Browse and Work beside the title, as the template does; no separate view menu.
       await expect(page.getByRole('group', { name: 'Layout' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'View options' })).toHaveCount(0);
-      // Row one: the count, Filter, Slideshow and more. Row two: Sort across, then Grid and List.
+      // One line: the count, Filter, Sort as its icon and "…". Slideshow and Grid / List move to "…".
       const sort = toolbar.getByRole('combobox', { name: 'Sort by' });
+      const more = toolbar.getByRole('button', { name: 'More library actions' });
       await expect(sort).toBeVisible();
-      const [countBox, moreBox, sortBox, listBox] = await Promise.all([
+      await expect(more).toBeVisible();
+      await expect(toolbar.getByRole('button', { name: 'List view' })).toBeHidden();
+      const [countBox, moreBox, sortBox] = await Promise.all([
         count.boundingBox(),
-        toolbar.getByRole('button', { name: 'More library actions' }).boundingBox(),
+        more.boundingBox(),
         sort.boundingBox(),
-        toolbar.getByRole('button', { name: 'List view' }).boundingBox(),
       ]);
       expect(Math.abs(middle(countBox) - middle(moreBox))).toBeLessThanOrEqual(12);
-      expect(sortBox!.y).toBeGreaterThanOrEqual(countBox!.y + countBox!.height);
-      expect(Math.abs(middle(sortBox) - middle(listBox))).toBeLessThanOrEqual(12);
+      expect(Math.abs(middle(countBox) - middle(sortBox))).toBeLessThanOrEqual(12);
+
+      await more.click();
+      const sheet = page.getByRole('dialog');
+      await expect(sheet.getByRole('button', { name: 'Slideshow' })).toBeVisible();
+      await sheet.getByRole('button', { name: 'List view' }).click();
+      await expect(page).toHaveURL(/%22view%22%3A%22list%22/);
 
       await timelineUtils.setLayout(page, 'Timeline');
       await expect(page.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'timeline');
