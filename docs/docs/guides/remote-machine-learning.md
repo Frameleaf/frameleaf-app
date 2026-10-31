@@ -42,7 +42,9 @@ services:
     # isolated private network. Binding to a private address (for example 192.168.1.10:3003:3003) is
     # extra defence in depth, not enough on its own: every device on that network could still reach it.
     # Plain http:// is not encrypted, so image previews cross the network readable. Across an untrusted
-    # network, put the worker behind an HTTPS (TLS) reverse proxy or a VPN and use that address.
+    # network, put the worker behind an HTTPS (TLS) reverse proxy that still lets only the Frameleaf
+    # server through (TLS encrypts, it does not restrict callers), or reach it only through a VPN, and
+    # use that address.
     ports:
       - 3003:3003
 
