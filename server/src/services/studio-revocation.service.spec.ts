@@ -117,14 +117,15 @@ describe(StudioRevocationService.name, () => {
         projectId: 'project-1',
         assetId: '0195e2a0-0000-7000-8000-00000000a002',
       },
-      {
-        // A generated intermediate or an import records no source asset, so it still stops.
-        id: 'clip-without-recorded-source',
+      // An edited master, a generated intermediate or an import records no source asset on the job,
+      // so each still stops: its lineage to the removed asset cannot be ruled out.
+      ...['clip-of-edited-master', 'clip-of-generated-intermediate', 'clip-of-import'].map((id) => ({
+        id,
         ownerId: 'owner-1',
         kind: MediaOperationKind.StudioTranscription,
         projectId: 'project-2',
         assetId: null,
-      },
+      })),
     ]);
 
     await act();
@@ -132,7 +133,9 @@ describe(StudioRevocationService.name, () => {
     expect(operations.requestCancel.mock.calls).toEqual([
       ['export-1', 'owner-1'],
       ['clip-of-removed', 'owner-1'],
-      ['clip-without-recorded-source', 'owner-1'],
+      ['clip-of-edited-master', 'owner-1'],
+      ['clip-of-generated-intermediate', 'owner-1'],
+      ['clip-of-import', 'owner-1'],
     ]);
   });
 
