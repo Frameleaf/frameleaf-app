@@ -113,10 +113,10 @@ export class SessionService extends BaseService {
     // FL-34: a password change revokes elevation everywhere, the retained session included
     await this.sessionRepository.lockAll(userId);
     this.websocketRepository.clientSend('on_session_lock', userId);
-    await this.lockedEncryption.onSessionsLocked(userId);
     const deletedIds = await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
     for (const sessionId of deletedIds) {
       await this.eventRepository.emit('SessionDelete', { sessionId });
     }
+    await this.lockedEncryption.onSessionsLocked(userId);
   }
 }

@@ -65,6 +65,15 @@ describe(LockedKeyRepository.name, () => {
     await expect(sut.exists(userId)).resolves.toBe(true);
   });
 
+  it('userIds names every key file on disk, readable or not', async () => {
+    await expect(sut.userIds()).resolves.toEqual([]);
+    await fs.mkdir(join(media, 'locked-keys'), { recursive: true });
+    await fs.writeFile(join(media, 'locked-keys', `${userId}.json`), 'not json');
+    await fs.writeFile(join(media, 'locked-keys', 'notes.txt'), '');
+    await expect(sut.userIds()).resolves.toEqual([userId]);
+    await expect(sut.list()).resolves.toEqual([]);
+  });
+
   it('reads null when no key file exists', async () => {
     await expect(sut.read(userId)).resolves.toBeNull();
     await expect(sut.list()).resolves.toEqual([]);

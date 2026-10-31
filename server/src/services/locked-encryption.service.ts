@@ -50,8 +50,12 @@ type Mode = LockedKeyFile['mode'];
 
 const FORMAT = 'frameleaf-locked-key/1';
 const HOUR_MS = 60 * 60 * 1000;
-/** PIN mode, turned on from a session that isn't PIN-unlocked: keep the key as long as an unlock would. */
-const PIN_KEY_FALLBACK_MS = HOUR_MS;
+/**
+ * One key-file change at a time per person, from reading the file to writing the row (a double
+ * submit must never write two key pairs or roll back the other request's file). Separate from the
+ * secret-check queue in `secret-attempts.ts`, which runs inside it.
+ */
+const keyFileChanges = new Map<string, Promise<void>>();
 /** How many originals are opened at once to count encrypted ones. */
 const COUNT_CONCURRENCY = 16;
 
@@ -139,7 +143,14 @@ export class LockedEncryptionService {
   }
 
   /** Spec §7.1 step 1: key pair, key file, row, loaded key; then the sweep queues the seals. */
-  async enable(auth: AuthDto, dto: LockedEncryptionEnableDto): Promise<LockedEncryptionRecoveryKeyResponseDto> {
+  enable(auth: AuthDto, dto: LockedEncryptionEnableDto): Promise<LockedEncryptionRecoveryKeyResponseDto> {
+    return this.withKeyFileLock(auth.user.id, () => this.enableLocked(auth, dto));
+  }
+
+  private async enableLocked(
+    auth: AuthDto,
+    dto: LockedEncryptionEnableDto,
+  ): Promise<LockedEncryptionRecoveryKeyResponseDto> {
     const userId = auth.user.id;
     const passphrase = dto.mode === 'advanced' ? assertPassphrase(dto.passphrase) : undefined;
     if (dto.mode === 'pin' && dto.passphrase !== undefined) {
@@ -171,6 +182,20 @@ export class LockedEncryptionService {
     const recoveryKey = generateRecoveryKey();
     let file: LockedKeyFile;
     try {
+      // the row is the claim: its primary key refuses a second turn-on before any file is written
+      try {
+        await this.lockedEncryptionRepository.create({
+          userId,
+          mode: dto.mode,
+          status: 'encrypting',
+          recoveryKeyCreatedAt: new Date(),
+        });
+      } catch (error) {
+        if (await this.lockedEncryptionRepository.get(userId)) {
+          throw new ConflictException('Locked encryption is already on');
+        }
+        throw error;
+      }
       const base = {
         format: FORMAT,
         userId,
@@ -183,16 +208,11 @@ export class LockedEncryptionService {
       } as const;
       file = await wrapKey(base, privateKey, modeKind(dto.mode), passphrase ?? dto.pinCode);
       file = await wrapKey(file, privateKey, 'recovery', recoveryKey);
-      await this.lockedKeyRepository.write(file);
       try {
-        await this.lockedEncryptionRepository.create({
-          userId,
-          mode: dto.mode,
-          status: 'encrypting',
-          recoveryKeyCreatedAt: new Date(),
-        });
+        await this.lockedKeyRepository.write(file);
       } catch (error) {
-        await this.restoreKeyFile(userId, existing);
+        // the write is atomic, so the key file is as it was; only the claim is undone
+        await this.lockedEncryptionRepository.delete(userId);
         throw error;
       }
     } catch (error) {
@@ -200,17 +220,32 @@ export class LockedEncryptionService {
       throw error;
     }
 
+    // PIN mode: the key follows the PIN unlock; sealing needs only the public key
     const expiresAt =
       dto.mode === 'pin'
-        ? ((await this.sessionRepository.getPinUnlockedUntil(userId)) ?? new Date(Date.now() + PIN_KEY_FALLBACK_MS))
+        ? await this.sessionRepository.getPinUnlockedUntil(userId)
         : this.askAgainExpiry(LOCKED_ASK_AGAIN_DEFAULT);
-    this.load(userId, file, privateKey, expiresAt);
-    await this.jobRepository.queue({ name: JobName.LockedSweep, data: { userId } });
+    if (dto.mode === 'pin' && !expiresAt) {
+      privateKey.fill(0);
+    } else {
+      this.load(userId, file, privateKey, expiresAt);
+    }
+    // turned on whatever happens next: the recovery key must reach the person; a failed queue is
+    // picked up again by the sweep
+    try {
+      await this.jobRepository.queue({ name: JobName.LockedSweep, data: { userId } });
+    } catch (error) {
+      this.logger.error(`Could not queue the Locked sweep of user ${userId}: ${(error as Error).name}`);
+    }
     return { recoveryKey };
   }
 
   /** Spec §7.4: the key stays loaded (pinned) until the last file is decrypted. */
-  async disable(auth: AuthDto, dto: LockedEncryptionDisableDto): Promise<void> {
+  disable(auth: AuthDto, dto: LockedEncryptionDisableDto): Promise<void> {
+    return this.withKeyFileLock(auth.user.id, () => this.disableLocked(auth, dto));
+  }
+
+  private async disableLocked(auth: AuthDto, dto: LockedEncryptionDisableDto): Promise<void> {
     const userId = auth.user.id;
     const row = await this.requireRow(userId);
     const file = await this.requireKeyFile(userId);
@@ -257,7 +292,11 @@ export class LockedEncryptionService {
   }
 
   /** Spec §7.5: switch mode, change the passphrase, or the ask-again time. No file is encrypted again. */
-  async update(auth: AuthDto, dto: LockedEncryptionUpdateDto): Promise<void> {
+  update(auth: AuthDto, dto: LockedEncryptionUpdateDto): Promise<void> {
+    return this.withKeyFileLock(auth.user.id, () => this.updateLocked(auth, dto));
+  }
+
+  private async updateLocked(auth: AuthDto, dto: LockedEncryptionUpdateDto): Promise<void> {
     const userId = auth.user.id;
     const row = await this.requireRow(userId);
     const askAgainHours = dto.askAgainHours === undefined ? row.askAgainHours : dto.askAgainHours;
@@ -266,10 +305,16 @@ export class LockedEncryptionService {
     const switching = target !== file.mode;
 
     if (!switching && dto.newPassphrase === undefined) {
-      if (dto.askAgainHours === undefined) {
+      if (dto.askAgainHours === undefined && dto.mode === undefined) {
         throw new BadRequestException('Nothing to change');
       }
-      await this.lockedEncryptionRepository.update(userId, { askAgainHours });
+      if (dto.askAgainHours !== undefined) {
+        await this.lockedEncryptionRepository.update(userId, { askAgainHours });
+      }
+      if (dto.mode !== undefined && row.status !== 'decrypting') {
+        // the current mode again: queue the partner re-wrap again, in case a switch couldn't (§6.2)
+        await this.queueFor(userId, JobName.LockedRewrap);
+      }
       return;
     }
     if (row.status === 'decrypting') {
@@ -298,7 +343,12 @@ export class LockedEncryptionService {
         next = removeWrap(await wrapKey({ ...file, mode: 'pin' }, privateKey, 'pin', dto.pinCode!), 'passphrase');
       }
       await this.lockedKeyRepository.write(next);
-      await this.lockedEncryptionRepository.update(userId, { mode: target, askAgainHours });
+      try {
+        await this.lockedEncryptionRepository.update(userId, { mode: target, askAgainHours });
+      } catch (error) {
+        await this.lockedKeyRepository.write(file);
+        throw error;
+      }
     } catch (error) {
       privateKey.fill(0);
       throw error;
@@ -315,12 +365,21 @@ export class LockedEncryptionService {
       this.load(userId, next, privateKey, expiresAt);
     }
     if (switching) {
-      // spec §6.2: partner entries are added (PIN) or removed (Advanced) on every file
-      await this.queueFor(userId, JobName.LockedRewrap);
+      // spec §6.2: partner entries are added (PIN) or removed (Advanced) on every file. The switch
+      // is saved either way; `PUT {mode}` with the current mode (or the sweep) queues it again.
+      try {
+        await this.queueFor(userId, JobName.LockedRewrap);
+      } catch (error) {
+        this.logger.error(`Could not queue the Locked re-wrap of user ${userId}: ${(error as Error).name}`);
+      }
     }
   }
 
-  async newRecoveryKey(
+  newRecoveryKey(auth: AuthDto, dto: LockedEncryptionRecoveryKeyDto): Promise<LockedEncryptionRecoveryKeyResponseDto> {
+    return this.withKeyFileLock(auth.user.id, () => this.newRecoveryKeyLocked(auth, dto));
+  }
+
+  private async newRecoveryKeyLocked(
     auth: AuthDto,
     dto: LockedEncryptionRecoveryKeyDto,
   ): Promise<LockedEncryptionRecoveryKeyResponseDto> {
@@ -342,7 +401,11 @@ export class LockedEncryptionService {
   }
 
   /** Spec §7.5 "Forgot PIN or passphrase": the recovery key opens the key file and a new secret wraps it. */
-  async recover(auth: AuthDto, dto: LockedEncryptionRecoverDto): Promise<void> {
+  recover(auth: AuthDto, dto: LockedEncryptionRecoverDto): Promise<void> {
+    return this.withKeyFileLock(auth.user.id, () => this.recoverLocked(auth, dto));
+  }
+
+  private async recoverLocked(auth: AuthDto, dto: LockedEncryptionRecoverDto): Promise<void> {
     const userId = auth.user.id;
     const row = await this.requireRow(userId);
     const file = await this.requireKeyFile(userId);
@@ -373,7 +436,7 @@ export class LockedEncryptionService {
         await this.lockedKeyRepository.write(next);
       }
       if (dto.newPinCode) {
-        await this.setPin(userId, dto.newPinCode, () => this.restoreKeyFile(userId, file));
+        await this.setPin(userId, dto.newPinCode, () => this.restoreKeyFile(userId, file, next));
       }
     } catch (error) {
       privateKey.fill(0);
@@ -418,7 +481,8 @@ export class LockedEncryptionService {
    * A new PIN is about to be stored (`setupPinCode`, `changePinCode`). Spec §4.1: create the key pair
    * when there is no key file; spec §7.5: in PIN mode re-wrap the `pin` wrap with the new PIN. Writes
    * the key file now and returns how to put the previous one back if storing the PIN then fails.
-   * Refuses (and changes nothing) when the key file can't be read or opened.
+   * Refuses (and changes nothing) when the key file can't be read or opened. The caller holds
+   * `withKeyFileLock` across this and storing the PIN.
    */
   async onPinSet(userId: string, pinCode: string, currentPinCode?: string): Promise<() => Promise<void>> {
     const noop = async () => {};
@@ -453,14 +517,18 @@ export class LockedEncryptionService {
       );
     }
     await this.lockedKeyRepository.write(next);
-    return () => this.restoreKeyFile(userId, file);
+    return () => this.restoreKeyFile(userId, file, next);
   }
 
   /**
    * The PIN was entered and the session elevated (`unlockSession`). PIN mode: unwrap the key and keep
    * it until the last PIN unlock ends (spec §4.3); create the key pair when there is none (§4.1).
    */
-  async onPinVerified(userId: string, pinCode: string): Promise<void> {
+  onPinVerified(userId: string, pinCode: string): Promise<void> {
+    return this.withKeyFileLock(userId, () => this.onPinVerifiedLocked(userId, pinCode));
+  }
+
+  private async onPinVerifiedLocked(userId: string, pinCode: string): Promise<void> {
     const file = await this.readKeyFile(userId);
     if (file?.mode === 'advanced') {
       return;
@@ -523,17 +591,28 @@ export class LockedEncryptionService {
     }
   }
 
-  /** Sessions were locked or signed out. PIN mode: drop the key once no elevated session remains. */
+  /**
+   * Sessions were locked or signed out. PIN mode: drop the key once no elevated session remains.
+   * Never throws (it runs after locks and revocations are stored) and fails closed: when the key
+   * file or the sessions can't be read, the key is dropped.
+   */
   async onSessionsLocked(userId: string): Promise<void> {
     const held = this.held(userId);
     if (!held) {
       return;
     }
-    const file = await this.readKeyFile(userId);
-    if (file?.mode !== 'pin') {
+    let until: Date | null;
+    try {
+      const file = await this.readKeyFile(userId);
+      if (file?.mode === 'advanced') {
+        return;
+      }
+      until = file ? await this.sessionRepository.getPinUnlockedUntil(userId) : null;
+    } catch (error) {
+      this.logger.warn(`Dropping the Locked key of user ${userId}: ${(error as Error).name}`);
+      this.drop(userId);
       return;
     }
-    const until = await this.sessionRepository.getPinUnlockedUntil(userId);
     if (!until) {
       // a pinned key (turning off) stays; the holder and the workers ignore the drop
       this.drop(userId);
@@ -543,9 +622,22 @@ export class LockedEncryptionService {
     }
   }
 
-  /** Spec §4.3: everyone whose PIN unlocks must end at boot, since the keys did not survive it. */
+  /**
+   * Spec §4.3: whose PIN unlocks must end at boot, since the keys did not survive it: everyone with a
+   * key file (readable or not) or a `locked_encryption` row, except a readable Advanced key file,
+   * where the PIN isn't the key.
+   */
   async usersWithKeyFiles(): Promise<string[]> {
-    return (await this.lockedKeyRepository.list()).map(({ userId }) => userId);
+    const users = new Set([
+      ...(await this.lockedKeyRepository.userIds()),
+      ...(await this.lockedEncryptionRepository.getAllUserIds()),
+    ]);
+    for (const file of await this.lockedKeyRepository.list()) {
+      if (file.mode === 'advanced') {
+        users.delete(file.userId);
+      }
+    }
+    return [...users];
   }
 
   // ---- Helpers ----
@@ -640,9 +732,33 @@ export class LockedEncryptionService {
     return file;
   }
 
-  /** Puts back the key file a failed change replaced, or removes the one it created. */
-  private async restoreKeyFile(userId: string, previous: LockedKeyFile | null) {
+  /**
+   * Puts back the key file a failed change replaced, or removes the one it created, but only while
+   * the file on disk is still the one this change wrote: never another change's file.
+   */
+  private async restoreKeyFile(userId: string, previous: LockedKeyFile | null, written: LockedKeyFile) {
+    const current = await this.lockedKeyRepository.read(userId).catch(() => null);
+    if (current?.publicKey !== written.publicKey || current.updatedAt !== written.updatedAt) {
+      this.logger.warn(`Left the Locked key file of user ${userId} as it is: another change wrote it`);
+      return;
+    }
     await (previous ? this.lockedKeyRepository.write(previous) : this.lockedKeyRepository.delete(userId));
+  }
+
+  /** Runs `change` after every earlier key-file change of this person has finished (see `keyFileChanges`). */
+  async withKeyFileLock<T>(userId: string, change: () => Promise<T>): Promise<T> {
+    const previous = keyFileChanges.get(userId);
+    const { promise, resolve } = Promise.withResolvers<void>();
+    keyFileChanges.set(userId, promise);
+    await previous;
+    try {
+      return await change();
+    } finally {
+      resolve();
+      if (keyFileChanges.get(userId) === promise) {
+        keyFileChanges.delete(userId);
+      }
+    }
   }
 
   /** Checks the Locked PIN against the account, under PIN unlock's attempt limit. */

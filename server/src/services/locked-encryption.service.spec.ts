@@ -56,6 +56,9 @@ describe(LockedEncryptionService.name, () => {
     mocks.lockedEncryption.get.mockImplementation((id) => Promise.resolve(rows.get(id) as never));
     mocks.lockedEncryption.create.mockImplementation((values) => {
       const row = { askAgainHours: 72, enabledAt: new Date(), ...values } as Row;
+      if (rows.has(row.userId)) {
+        return Promise.reject(new Error('duplicate key value violates unique constraint "locked_encryption_pkey"'));
+      }
       rows.set(row.userId, row);
       return Promise.resolve(row as never);
     });
@@ -64,6 +67,12 @@ describe(LockedEncryptionService.name, () => {
       rows.set(id, row);
       return Promise.resolve(row as never);
     });
+    mocks.lockedEncryption.delete.mockImplementation((id) => {
+      rows.delete(id);
+      return Promise.resolve();
+    });
+    mocks.lockedEncryption.getAllUserIds.mockImplementation(() => Promise.resolve(rows.keys().toArray()));
+    mocks.lockedKey.userIds.mockImplementation(() => Promise.resolve(files.keys().toArray()));
     mocks.lockedEncryption.getLockedAssets.mockResolvedValue([]);
     mocks.user.getForPinCode.mockImplementation(() =>
       Promise.resolve({ pinCode: `${PIN} (hashed)`, password: 'password (hashed)' }),
@@ -73,7 +82,7 @@ describe(LockedEncryptionService.name, () => {
     mocks.crypto.compareBcrypt.mockImplementation((input, hash) =>
       Promise.resolve(`${String(input)} (hashed)` === hash),
     );
-    mocks.session.getPinUnlockedUntil.mockResolvedValue(null);
+    mocks.session.getPinUnlockedUntil.mockResolvedValue(new Date(Date.now() + HOUR));
     mocks.session.lockAll.mockResolvedValue();
     vi.mocked(publishLockedKey).mockClear();
   });
@@ -101,6 +110,14 @@ describe(LockedEncryptionService.name, () => {
       const viaPin = await unwrapKey(fileOf(), 'pin', PIN);
       const viaRecovery = await unwrapKey(fileOf(), 'recovery', recoveryKey);
       expect(viaPin.equals(viaRecovery)).toBe(true);
+    });
+
+    it('enable(pin) from a session that is not PIN-unlocked leaves the key closed (sealing needs only the public key)', async () => {
+      mocks.session.getPinUnlockedUntil.mockResolvedValue(null);
+      await enablePin();
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(publishLockedKey).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'load' }));
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: { userId } });
     });
 
     it('enable(advanced) writes passphrase+recovery wraps and no pin wrap', async () => {
@@ -152,12 +169,117 @@ describe(LockedEncryptionService.name, () => {
       expect(fileOf().encrypting).toBe(true);
     });
 
-    it('puts the previous key file back when the row cannot be stored', async () => {
+    it('writes no key file when the row cannot be stored', async () => {
       mocks.lockedEncryption.create.mockRejectedValue(new Error('db down'));
       await expect(enablePin()).rejects.toThrow('db down');
       expect(files.size).toBe(0);
       expect(lockedKeys.has(userId)).toBe(false);
     });
+  });
+
+  describe('one key-file change at a time (fix round 1)', () => {
+    it('two enables at once leave exactly one key file, matching the row, and the second gets 409', async () => {
+      const results = await Promise.allSettled([enablePin(), enablePin()]);
+
+      const fulfilled = results.filter((result) => result.status === 'fulfilled');
+      const rejected = results.filter((result) => result.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+      expect(mocks.lockedKey.write).toHaveBeenCalledTimes(1);
+      expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+      expect(rows.get(userId)).toMatchObject({ mode: 'pin', status: 'encrypting' });
+      expect(fileOf()).toMatchObject({ mode: 'pin', encrypting: true });
+      // the recovery key the winner returned opens the file on disk, which is the loaded key
+      const { recoveryKey } = (fulfilled[0] as PromiseFulfilledResult<{ recoveryKey: string }>).value;
+      await expect(unwrapKey(fileOf(), 'recovery', recoveryKey)).resolves.toHaveLength(32);
+      expect(lockedKeys.list()[0].publicKey.toString('base64')).toBe(fileOf().publicKey);
+    }, 30_000);
+
+    it('a second enable whose claim loses the race gets 409 and writes nothing', async () => {
+      // the row appears between the "already on" check and the insert (another server process)
+      mocks.lockedEncryption.get.mockResolvedValueOnce(undefined);
+      rows.set(userId, { userId, mode: 'advanced', status: 'encrypting' });
+      await expect(enablePin()).rejects.toThrow(ConflictException);
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(rows.get(userId)!.mode).toBe('advanced');
+    });
+
+    it('removes only its own claim when the key file cannot be written', async () => {
+      mocks.lockedKey.write.mockRejectedValueOnce(new Error('ENOSPC'));
+      await expect(enablePin()).rejects.toThrow('ENOSPC');
+      expect(rows.size).toBe(0);
+      expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+      expect(lockedKeys.has(userId)).toBe(false);
+    });
+
+    it('a new recovery key and a passphrase change at once both survive', async () => {
+      await enableAdvanced();
+      const [{ recoveryKey }] = await Promise.all([
+        sut.newRecoveryKey(auth, { secret: PASSPHRASE }),
+        sut.update(auth, { currentSecret: PASSPHRASE, newPassphrase: 'a brand new passphrase' }),
+      ]);
+      await expect(unwrapKey(fileOf(), 'recovery', recoveryKey)).resolves.toHaveLength(32);
+      await expect(unwrapKey(fileOf(), 'passphrase', 'a brand new passphrase')).resolves.toHaveLength(32);
+    }, 30_000);
+
+    it('two first PIN unlocks at once create one key pair', async () => {
+      await Promise.all([sut.onPinVerified(userId, PIN), sut.onPinVerified(userId, PIN)]);
+      expect(mocks.lockedKey.write).toHaveBeenCalledTimes(1);
+      expect(lockedKeys.list()[0].publicKey.toString('base64')).toBe(fileOf().publicKey);
+    }, 20_000);
+
+    it('an undo never touches a key file another change wrote', async () => {
+      const undo = await sut.withKeyFileLock(userId, () => sut.onPinSet(userId, PIN));
+      const ours = structuredClone(fileOf());
+      files.set(userId, { ...ours, publicKey: Buffer.alloc(32, 9).toString('base64') });
+      const theirs = structuredClone(fileOf());
+
+      await undo();
+
+      expect(fileOf()).toEqual(theirs);
+      expect(mocks.lockedKey.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('queue failures after the change is stored (fix round 1)', () => {
+    it('enable returns the recovery key when queueing the sweep fails, and logs it', async () => {
+      mocks.job.queue.mockRejectedValue(new Error('redis down'));
+      const { recoveryKey } = await enablePin();
+      expect(recoveryKey).toMatch(RECOVERY_KEY);
+      expect(rows.get(userId)!.status).toBe('encrypting');
+      await expect(unwrapKey(fileOf(), 'recovery', recoveryKey)).resolves.toHaveLength(32);
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Locked sweep'));
+    });
+
+    it('a mode switch is saved when queueing the re-wrap fails, and PUT {mode} queues it again', async () => {
+      await enablePin();
+      mocks.lockedEncryption.getLockedAssets.mockResolvedValue([
+        { id: 'asset-1', originalPath: '/a', encryptable: true },
+      ]);
+      mocks.job.queueAll.mockRejectedValueOnce(new Error('redis down'));
+
+      await expect(
+        sut.update(auth, { mode: 'advanced', currentSecret: PIN, newPassphrase: PASSPHRASE }),
+      ).resolves.toBeUndefined();
+      expect(fileOf().mode).toBe('advanced');
+      expect(rows.get(userId)!.mode).toBe('advanced');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('re-wrap'));
+
+      mocks.job.queueAll.mockClear();
+      await sut.update(auth, { mode: 'advanced' });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: 'asset-1' } }]);
+    }, 30_000);
+
+    it('puts the key file back when the new mode cannot be stored', async () => {
+      await enablePin();
+      const before = structuredClone(fileOf());
+      mocks.lockedEncryption.update.mockRejectedValueOnce(new Error('db down'));
+      await expect(
+        sut.update(auth, { mode: 'advanced', currentSecret: PIN, newPassphrase: PASSPHRASE }),
+      ).rejects.toThrow('db down');
+      expect(fileOf()).toEqual(before);
+    }, 30_000);
   });
 
   describe('unlock', () => {
@@ -440,6 +562,35 @@ describe(LockedEncryptionService.name, () => {
       await sut.onSessionsLocked(userId);
       expect(lockedKeys.has(userId)).toBe(false);
       expect(publishLockedKey).toHaveBeenLastCalledWith({ type: 'locked-key', action: 'drop', userId });
+    });
+
+    it('onSessionsLocked never throws and drops the key when the key file cannot be read', async () => {
+      await enablePin();
+      mocks.lockedKey.read.mockRejectedValue(new SyntaxError('Unexpected token'));
+      mocks.lockedKey.exists.mockResolvedValue(true);
+
+      await expect(sut.onSessionsLocked(userId)).resolves.toBeUndefined();
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(publishLockedKey).toHaveBeenLastCalledWith({ type: 'locked-key', action: 'drop', userId });
+    });
+
+    it('onSessionsLocked drops the key when the sessions cannot be read', async () => {
+      await enablePin();
+      mocks.session.getPinUnlockedUntil.mockRejectedValue(new Error('db down'));
+      await expect(sut.onSessionsLocked(userId)).resolves.toBeUndefined();
+      expect(lockedKeys.has(userId)).toBe(false);
+    });
+
+    it('the boot list includes unreadable key files and rows without one, not readable Advanced files', async () => {
+      await enableAdvanced();
+      const unreadable = '11111111-1111-4111-8111-111111111111';
+      const rowOnly = '22222222-2222-4222-8222-222222222222';
+      const pinOnly = '33333333-3333-4333-8333-333333333333';
+      mocks.lockedKey.userIds.mockResolvedValue([userId, unreadable, pinOnly]);
+      mocks.lockedKey.list.mockResolvedValue([fileOf(), { ...fileOf(), userId: pinOnly, mode: 'pin' }]);
+      rows.set(rowOnly, { userId: rowOnly, mode: 'pin', status: 'on' });
+
+      expect((await sut.usersWithKeyFiles()).toSorted()).toEqual([unreadable, rowOnly, pinOnly].toSorted());
     });
 
     it('onSessionsLocked leaves an Advanced key loaded', async () => {

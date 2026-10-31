@@ -416,9 +416,12 @@ export class AuthService extends BaseService {
     }
 
     const hashed = await this.cryptoRepository.hashBcrypt(pinCode, SALT_ROUNDS);
-    // FL-721 (spec §4.1): everyone with a Locked PIN gets a key pair wrapped with it
-    const undo = await this.lockedEncryption.onPinSet(auth.user.id, pinCode);
-    await this.storePinCode(auth.user.id, user, hashed, undo);
+    // FL-721 (spec §4.1): everyone with a Locked PIN gets a key pair wrapped with it; one key-file
+    // change at a time, from reading the file to storing the PIN
+    await this.lockedEncryption.withKeyFileLock(auth.user.id, async () => {
+      const undo = await this.lockedEncryption.onPinSet(auth.user.id, pinCode);
+      await this.storePinCode(auth.user.id, user, hashed, undo);
+    });
   }
 
   async resetPinCode(auth: AuthDto, dto: PinCodeResetDto) {
@@ -439,8 +442,10 @@ export class AuthService extends BaseService {
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
     // FL-721 (spec §7.5): in PIN mode the key file is re-wrapped with the new PIN
-    const undo = await this.lockedEncryption.onPinSet(auth.user.id, dto.newPinCode, dto.pinCode);
-    await this.storePinCode(auth.user.id, user, hashed, undo);
+    await this.lockedEncryption.withKeyFileLock(auth.user.id, async () => {
+      const undo = await this.lockedEncryption.onPinSet(auth.user.id, dto.newPinCode, dto.pinCode);
+      await this.storePinCode(auth.user.id, user, hashed, undo);
+    });
     // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }

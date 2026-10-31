@@ -16,6 +16,17 @@ from
 where
   "userId" in ($1::uuid)
 
+-- LockedEncryptionRepository.getAllUserIds
+select
+  "userId"
+from
+  "locked_encryption"
+
+-- LockedEncryptionRepository.delete
+delete from "locked_encryption"
+where
+  "userId" = $1::uuid
+
 -- LockedEncryptionRepository.getLockedAssets
 select
   "asset"."id",

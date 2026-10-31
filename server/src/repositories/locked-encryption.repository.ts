@@ -46,6 +46,18 @@ export class LockedEncryptionRepository {
     return new Set(rows.map(({ userId }) => userId));
   }
 
+  /** Everyone with Locked encryption on, turning on or turning off. */
+  @GenerateSql()
+  async getAllUserIds(): Promise<string[]> {
+    const rows = await this.db.selectFrom('locked_encryption').select('userId').execute();
+    return rows.map(({ userId }) => userId);
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async delete(userId: string): Promise<void> {
+    await this.db.deleteFrom('locked_encryption').where('userId', '=', asUuid(userId)).execute();
+  }
+
   create(values: Insertable<LockedEncryptionTable>) {
     return this.db.insertInto('locked_encryption').values(values).returningAll().executeTakeFirstOrThrow();
   }

@@ -2865,7 +2865,12 @@ describe(AuthService.name, () => {
       const auth = AuthFactory.from().session().build();
       encryptionOn(auth.user.id);
       const { file } = await pinKeyFile(auth.user.id);
-      mocks.lockedKey.read.mockResolvedValue(file);
+      let stored = file;
+      mocks.lockedKey.read.mockImplementation(() => Promise.resolve(stored));
+      mocks.lockedKey.write.mockImplementation((written) => {
+        stored = written;
+        return Promise.resolve();
+      });
       mocks.user.setPinCodeAndLockSessions.mockResolvedValue(false);
 
       await expect(sut.changePinCode(auth, { pinCode: PIN, newPinCode: '654321' })).rejects.toThrow(
@@ -2930,6 +2935,49 @@ describe(AuthService.name, () => {
 
       expect(lockedKeys.has(auth.user.id)).toBe(false);
     });
+
+    it('lockSession still succeeds and drops the key when the key file cannot be read', async () => {
+      const auth = AuthFactory.from().session().build();
+      const { publicKey, privateKey } = await pinKeyFile(auth.user.id);
+      lockedKeys.load(auth.user.id, publicKey, privateKey, new Date(Date.now() + 60 * 60 * 1000));
+      mocks.lockedKey.read.mockRejectedValue(new SyntaxError('bad json'));
+      mocks.lockedKey.exists.mockResolvedValue(true);
+      mocks.session.update.mockResolvedValue(SessionFactory.create());
+
+      await expect(sut.lockSession(auth)).resolves.toBeUndefined();
+      expect(lockedKeys.has(auth.user.id)).toBe(false);
+    });
+
+    it('two PIN changes at once leave a key file the stored PIN opens', async () => {
+      const auth = AuthFactory.from().session().build();
+      encryptionOn(auth.user.id);
+      let stored: LockedKeyFile = (await pinKeyFile(auth.user.id)).file;
+      let pinHash = `${PIN} (hashed)`;
+      mocks.lockedKey.read.mockImplementation(() => Promise.resolve(structuredClone(stored)));
+      mocks.lockedKey.write.mockImplementation((file) => {
+        stored = structuredClone(file);
+        return Promise.resolve();
+      });
+      mocks.user.getForPinCode.mockImplementation(() => Promise.resolve({ pinCode: pinHash, password: '' }));
+      mocks.user.setPinCodeAndLockSessions.mockImplementation((_id, verified, hashed) => {
+        // conditional on the credentials the check read, as in the repository
+        if (verified.pinCode !== pinHash) {
+          return Promise.resolve(false);
+        }
+        pinHash = hashed!;
+        return Promise.resolve(true);
+      });
+
+      const outcomes = await Promise.allSettled([
+        sut.changePinCode(auth, { pinCode: PIN, newPinCode: '111111' }),
+        sut.changePinCode(auth, { pinCode: PIN, newPinCode: '222222' }),
+      ]);
+
+      expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      const pin = pinHash.replace(' (hashed)', '');
+      expect(['111111', '222222']).toContain(pin);
+      await expect(unwrapKey(stored, 'pin', pin)).resolves.toHaveLength(32);
+    }, 30_000);
 
     it('refreshPinExpiry extending an elevated session also extends the loaded key expiresAt', async () => {
       vi.useFakeTimers({ toFake: ['Date'] });

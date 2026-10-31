@@ -101,6 +101,14 @@ export class LockedKeyRepository {
     await this.flush(this.directory());
   }
 
+  /** The people with a key file on disk, by file name, whether or not it can be read. */
+  async userIds(): Promise<string[]> {
+    return (await this.names())
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => name.slice(0, -'.json'.length))
+      .filter((userId) => UUID.test(userId));
+  }
+
   async list(): Promise<LockedKeyFile[]> {
     const files: LockedKeyFile[] = [];
     for (const name of await this.names()) {
