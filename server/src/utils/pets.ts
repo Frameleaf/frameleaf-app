@@ -66,8 +66,7 @@ export const filterReviewedCandidates = <T extends ProposedCandidate>(
     decisions.filter(({ state }) => state === PetObservationState.Confirmed).map(({ assetId }) => assetId),
   );
   return candidates.filter(
-    (candidate) =>
-      !settled.has(candidate.assetId) && !answered.has(decisionKey(candidate.assetId, candidate.petId)),
+    (candidate) => !settled.has(candidate.assetId) && !answered.has(decisionKey(candidate.assetId, candidate.petId)),
   );
 };
 

@@ -525,6 +525,8 @@ export class PetRepository {
     limit: number,
     { lockedOwnerId }: LockedVisibilityOptions = {},
   ): Promise<PetReviewCandidate[]> {
+    // Answered pairs and photos with a confirmed pet are left out before the limit, so they never
+    // crowd out the proposals still waiting; `filterReviewedCandidates` states the same rule.
     return this.db
       .selectFrom('pet_candidate')
       .innerJoin('pet_detection', 'pet_detection.id', 'pet_candidate.detectionId')
@@ -552,8 +554,6 @@ export class PetRepository {
       .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
-      // Answered pairs and photos with a confirmed pet are left out before the limit, so they never
-      // crowd out the proposals still waiting; `filterReviewedCandidates` states the same rule.
       .where(({ not, exists, selectFrom }) =>
         not(
           exists(
