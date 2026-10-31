@@ -1,0 +1,354 @@
+{
+  "schemaVersion": 1,
+  "qualification": "Registry and integrity-verified package archives only; no rights or runtime approval.",
+  "archives": [
+    {
+      "location": "node_modules/@img/sharp-libvips-darwin-arm64",
+      "packageName": "@img/sharp-libvips-darwin-arm64",
+      "packageVersion": "1.3.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.4.tgz",
+      "integrity": "sha512-5R89nBYiRdUlSWJxPhO+GVtaXzXSxKnRu/xqMn3KTA3L9EB9Oy/P+Nn2f2vlhPuUdy/Zusb2DarbyTpGCfEDuw==",
+      "sha256": "e8350e62344d027995ef46cdd97a5ea1c88bc54ab82ab8c3fcb0c076d839675f",
+      "archiveBytes": 8341921,
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/@radix-ui/number",
+      "packageName": "@radix-ui/number",
+      "packageVersion": "1.1.3",
+      "resolved": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.3.tgz",
+      "integrity": "sha512-Road2bidD0uu/1BGDOWNdPI06g0lIRy6IF9GZcIrDK2KGItfor8IQwQa+yM2ERgHM1MmHxaxpTzk0/Jp42lNfA==",
+      "sha256": "d671e5fbc4bd5713614cde634b1de6bbb3d8f26836d1ff8633178e74c0566ed6",
+      "archiveBytes": 2183,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-compose-refs",
+      "packageName": "@radix-ui/react-compose-refs",
+      "packageVersion": "1.1.5",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.5.tgz",
+      "integrity": "sha512-+48PbAAbq3didjJxa+OaWY2ZwgAKsNiRGyeHKszblZMQ+kcpd9pAaT11cMkGEie0vsOi3QdeTE6d5Fe3Gn61kA==",
+      "sha256": "a355b15dc60311aaf0d21e3f503a75b7799950f7ff03dcdc3265ec31d6bb4797",
+      "archiveBytes": 3647,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-context",
+      "packageName": "@radix-ui/react-context",
+      "packageVersion": "1.3.0",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.3.0.tgz",
+      "integrity": "sha512-v5AYEocMISkbJ+1fTXzZpiFv7NRr3D2WiYbLIKf+FkmJ8VkP6d503eV2n34MFussHXY1pcoq3yfJiQH77dc4Mg==",
+      "sha256": "f8ab7aed5352809c308ae43f561475890393644eb11a91ed877e36f58bc22410",
+      "archiveBytes": 6468,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-direction",
+      "packageName": "@radix-ui/react-direction",
+      "packageVersion": "1.2.0",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.2.0.tgz",
+      "integrity": "sha512-FtRA52a/r+LKStFT+neLUm+8vSe7wbzkbQGGeU8ixFiwC8NU14Evoq9ATECqL3eGbcUzJR4fyfA4KkK/q6dfqg==",
+      "sha256": "1cad4b3759bebcf64a6817473e2dd06216057a08e72de4c5466afcd46f9728fc",
+      "archiveBytes": 3202,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-id",
+      "packageName": "@radix-ui/react-id",
+      "packageVersion": "1.1.4",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.4.tgz",
+      "integrity": "sha512-TMQp2llA+RYn7JcjnrMnz7wN4pcVttPZnRZo52PLQsoLVKzNlVwUeHmfePgTgRluXFvlD3GD5g5MOVVTJCO0qA==",
+      "sha256": "d4a52062e411906b99b152eff6320ae0da6327789a62dccefb0ae58220916570",
+      "archiveBytes": 3067,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-callback-ref",
+      "packageName": "@radix-ui/react-use-callback-ref",
+      "packageVersion": "1.1.5",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.5.tgz",
+      "integrity": "sha512-Y5GBf4NKeADoXI1geiMlMuMoURT3k9MizzzKhGb/m55H94aGigZ01PIpkvsO6lML13BA6XYAXSJ6gza7vTn5nw==",
+      "sha256": "893fd580cc0d918f3451b00c2d78ce94ed8137e47cde2a4dbbad86182e241ff6",
+      "archiveBytes": 3232,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-layout-effect",
+      "packageName": "@radix-ui/react-use-layout-effect",
+      "packageVersion": "1.1.4",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.4.tgz",
+      "integrity": "sha512-K20DkRkUwDnxEYMBPcg3Y6voLkEy5p5QQmszZgLngKKiC7dzBR/aEuK3w1qlx2JWDUNH6FluahYdgR3BP+QbYw==",
+      "sha256": "7bc22fe5fb82a07133c61b640d50a9a3553b0da16ae8e6458c19053206563ed9",
+      "archiveBytes": 2715,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-rect",
+      "packageName": "@radix-ui/react-use-rect",
+      "packageVersion": "1.1.4",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.4.tgz",
+      "integrity": "sha512-cSOCh6JlkmfjLyNcLiu2nB4v+nm+dkZ+Q5KHWk/soo4U7ZLiEQFKHK9/YmtBHjfCEaU43IBKQOc4/uJmCaiCTQ==",
+      "sha256": "cf7caba094c925dd58b7a175070682066a3d59b2c42b9fbc6d6baad3bbd234d9",
+      "archiveBytes": 3005,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-size",
+      "packageName": "@radix-ui/react-use-size",
+      "packageVersion": "1.1.5",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.5.tgz",
+      "integrity": "sha512-V1McDQkMGzgivwqdu7u96APs7oi0Jvj9LTzgq3WWrDZqxWdAqU9yZnZQqk5OizGFR8badUQwZsrlao7MOlWYOA==",
+      "sha256": "10f52a210fcb97780617c84af2d7dfdbb02e7f602e0311584826dafe1aa166e8",
+      "archiveBytes": 4076,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/rect",
+      "packageName": "@radix-ui/rect",
+      "packageVersion": "1.1.3",
+      "resolved": "https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.3.tgz",
+      "integrity": "sha512-JtyZR+mqgBibTo8xea3B6ZRmzZiM/YeVBtUkas6zMuXjAlfIFIW2FgqeM9eLyvEaYX66vr6DJMK+4U6LV0KhNw==",
+      "sha256": "0dfd24afe3d0faf68408774f8c77d52a83d1188dbb38f082ddac12cce5c28953",
+      "archiveBytes": 4104,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/html-parse-stringify",
+      "packageName": "html-parse-stringify",
+      "packageVersion": "4.0.1",
+      "resolved": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-4.0.1.tgz",
+      "integrity": "sha512-0zHsZJrK7S3K2aucXWL6ycoYJ/iNtIcFHC/nYQgFklPtrv5LpJctIiSCroWZWeuoXvuyFdzp6KzjJQ+OT5MfFw==",
+      "sha256": "a98cf41b2adc7750610acfe6557ef96330ed315bc2e02d9422b1007e9f4641cb",
+      "archiveBytes": 12839,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "3eb2802a4d0ea79f80977817451b056571dccd8373c9bf4e9be4b05f86afbf90"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/onnxruntime-common",
+      "packageName": "onnxruntime-common",
+      "packageVersion": "1.30.0",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.30.0.tgz",
+      "integrity": "sha512-7fdVWjAID1dVhH/G8qK3APARunV4VkBFoCQAP7qp4Wkab0mrorvmc+sqiT+mKXOzDqdjN5j+/Z9nb4gzNPWcyA==",
+      "sha256": "7906c439e0d3e0f4048caa23b64cdfadc0f455c377f579ce1ab2a4b778f07d5f",
+      "archiveBytes": 66795,
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/onnxruntime-node",
+      "packageName": "onnxruntime-node",
+      "packageVersion": "1.30.0",
+      "resolved": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz",
+      "integrity": "sha512-twhs1C2C/BFkz1yc5OY0KIU2GUq6DURO7hD4bx5Q2Qy3nAMJwRXW8xU3NVczE29VA9lolLOYepoD8fjTGOfIqw==",
+      "sha256": "6e3390d6b783e7be946fad629292799da28d0b42f84856e50d2c1b0383291e75",
+      "archiveBytes": 113507888,
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/onnxruntime-web",
+      "packageName": "onnxruntime-web",
+      "packageVersion": "1.30.0",
+      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz",
+      "integrity": "sha512-q0y+JrrtukXSzsBWEMccVfqX25LRmosXHF+CaRJmg8pZClzcV7svNc4rKY3jL02Vb7QmRMDs1SigqR4CXAfKYQ==",
+      "sha256": "d2228df7e4616bc3348bf504ee888f3bec43789a273f0a63f3e68d203ce3bf71",
+      "archiveBytes": 33106585,
+      "noticeFiles": []
+    },
+    {
+      "location": "node_modules/react-hotkeys-hook",
+      "packageName": "react-hotkeys-hook",
+      "packageVersion": "5.3.3",
+      "resolved": "https://registry.npmjs.org/react-hotkeys-hook/-/react-hotkeys-hook-5.3.3.tgz",
+      "integrity": "sha512-aswgyWUnE25hmhzHTfKDmKzsaSE5DJ4LKaU/o6rQSXkDd/1Bh9TfAFQbHkf6fLy11HvlYkp+cDDarGdhmCDhoQ==",
+      "sha256": "afb32632a59ee1181e246d7a3172f65188be687a59dae5b10d18b6fdbc627fc0",
+      "archiveBytes": 8790,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE",
+          "sha256": "1def416e8042d3442057400f3345c3bd089476898d94b5d5ae9669b0c0d340a8"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/react-resizable-panels",
+      "packageName": "react-resizable-panels",
+      "packageVersion": "4.14.5",
+      "resolved": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-4.14.5.tgz",
+      "integrity": "sha512-AoHgoq3sGOfciPn2ahddFrBCqsitZLse8cJIYWblvE3kQ9z39IrhdlHCjnVRrDL8XcWqvA0u/t9nLZTfWePJ5A==",
+      "sha256": "b1b3ab926b86adc31a78f2b8324535d1c92cfcea34dfd3b4d04b728bc5d13a50",
+      "archiveBytes": 247025,
+      "noticeFiles": [
+        {
+          "path": "package/LICENSE.md",
+          "sha256": "a8f1e0280bf14adcf5d017547db85eb5c3bac0feb1690ca98650874002eaa8ea"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@huggingface/transformers/node_modules/onnxruntime-common",
+      "packageName": "onnxruntime-common",
+      "packageVersion": "1.31.0-dev.20260911-2a43ec07e",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.31.0-dev.20260911-2a43ec07e.tgz",
+      "integrity": "sha512-gBuF6U32YErKIAt+yD7DeGBpjRxhJ1uJwako6ygjokSZULDU6Pd+KWComX8Tumk1hYVHRxjPj7mdMnD0ryAPOw==",
+      "sha256": "9b5bcdf0431f93ccdd8ecf74b81c9b06705c700e6d9f5a8e3ba8c913ebb70ab8",
+      "archiveBytes": 67718
+    },
+    {
+      "location": "node_modules/@huggingface/transformers/node_modules/onnxruntime-web",
+      "packageName": "onnxruntime-web",
+      "packageVersion": "1.31.0-dev.20260914-8d85527a0",
+      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.31.0-dev.20260914-8d85527a0.tgz",
+      "integrity": "sha512-Iy7rtadoBgxS/LLvDr3QW38DB1PNXRnr0GJMcL0TAt7c9qjgVQl83UlGCVyeAnK2InpmW8Uc3PL8XIuqtDeF6g==",
+      "sha256": "0de27582f3e3189dec4a2082513a0af1ea79ae7fd3039bbfe634a526e173cbe0",
+      "archiveBytes": 33185781
+    }
+  ],
+  "retiredBindings": [
+    {
+      "location": "node_modules/@radix-ui/number",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.3",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-compose-refs",
+      "oldVersion": "1.1.2",
+      "newVersion": "1.1.5",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-context",
+      "oldVersion": "1.1.2",
+      "newVersion": "1.3.0",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-direction",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.2.0",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-id",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.4",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-callback-ref",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.5",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-escape-keydown",
+      "oldVersion": "1.1.1",
+      "reason": "Absent from current lock; historical evidence and notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-layout-effect",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.4",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-previous",
+      "oldVersion": "1.1.1",
+      "reason": "Absent from current lock; historical evidence and notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-rect",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.4",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-size",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.5",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/@radix-ui/rect",
+      "oldVersion": "1.1.1",
+      "newVersion": "1.1.3",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/html-parse-stringify",
+      "oldVersion": "3.0.1",
+      "newVersion": "4.0.1",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/onnxruntime-web/node_modules/onnxruntime-common",
+      "oldVersion": "1.24.0-dev.20251116-b39e144322",
+      "reason": "Absent from current lock; historical evidence and notices retained."
+    },
+    {
+      "location": "node_modules/react-hotkeys-hook",
+      "oldVersion": "5.2.4",
+      "newVersion": "5.3.3",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    },
+    {
+      "location": "node_modules/react-resizable-panels",
+      "oldVersion": "3.0.6",
+      "newVersion": "4.14.5",
+      "reason": "Current integrity-verified archive ships root notice text; packageAttribution collects that exact installed notice automatically. Historical source notices retained."
+    }
+  ]
+}

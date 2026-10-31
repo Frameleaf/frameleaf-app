@@ -1,0 +1,987 @@
+Subject: Keep project master mute separate from device monitoring
+
+Freecut MIT adaptation. Preserve project mute through history, preview, and exports.
+
+--- a/src/features/editor/components/audio-meter-panel.tsx
++++ b/src/features/editor/components/audio-meter-panel.tsx
+@@ -242,12 +242,8 @@
+   const previewFrame = usePlaybackStore((s) => s.previewFrame)
+   const masterBusDb = usePlaybackStore((s) => s.masterBusDb)
+   const setMasterBusDb = usePlaybackStore((s) => s.setMasterBusDb)
+-  // Monitor (per-device) values — used only to post-multiply meter readings
+-  // so the display matches what the user actually hears. Does not affect
+-  // the master fader (which drives the project-scoped masterBusDb).
+-  const monitorVolume = usePlaybackStore((s) => s.volume)
+-  const muted = usePlaybackStore((s) => s.muted)
+-  const toggleMute = usePlaybackStore((s) => s.toggleMute)
++  const masterBusMuted = usePlaybackStore((s) => s.masterBusMuted)
++  const setMasterBusMuted = usePlaybackStore((s) => s.setMasterBusMuted)
+   const busAudioEq = usePlaybackStore((s) => s.busAudioEq)
+   const setBusAudioEq = usePlaybackStore((s) => s.setBusAudioEq)
+   const audioSkimMeterVersion = useSyncExternalStore(
+@@ -340,16 +336,14 @@
+   // Read bus override inside the same version-gated render cycle so playbackGain
+   // recomputes whenever the bus fader moves (subscription above guarantees re-render).
+   const liveBusOverrideDb = getLiveBusVolumeOverride()
+-  // Meter readings reflect what the user hears: project master bus (or live
+-  // drag override) × per-device monitor volume. Fader drags bypass the
+-  // stored masterBusDb via liveBusOverrideDb for no-lag feedback.
++  // Mix meters precede device monitoring. Live fader drags override the stored gain.
+   const effectiveMasterGain =
+     liveBusOverrideDb !== null
+       ? Math.pow(10, liveBusOverrideDb / 20)
+       : Math.pow(10, masterBusDb / 20)
+   const isAudioSkimMeterActive = audioSkimmingEnabled && audioSkimMeterLevel !== null && !isPlaying
+   const isMeterActive = isPlaying || isAudioSkimMeterActive
+-  const playbackGain = isMeterActive && !muted ? effectiveMasterGain * monitorVolume : 0
++  const playbackGain = isMeterActive && !masterBusMuted ? effectiveMasterGain : 0
+
+   const preloadSources = useMemo(() => {
+     void liveOverrideVersion
+@@ -362,9 +356,9 @@
+
+   // Per-track sources include track volume but not master/bus volume.
+   const perTrackSources = useMemo(() => {
+-    if (!isMeterActive || muted) return []
++    if (!isMeterActive) return []
+     return preloadSources
+-  }, [isMeterActive, muted, preloadSources])
++  }, [isMeterActive, preloadSources])
+
+   // Bus/master sources include both track volume and master volume.
+   const sources = useMemo(() => {
+@@ -921,6 +915,13 @@
+   // ---------------------------------------------------------------------------
+
+   const masterVolumeDb = useMemo(() => Math.max(-60, Math.min(12, masterBusDb)), [masterBusDb])
++
++  const handleMasterMuteToggle = useCallback(() => {
++    const snapshot = captureSnapshot()
++    setMasterBusMuted(!usePlaybackStore.getState().masterBusMuted)
++    useTimelineStore.getState().markDirty()
++    useTimelineCommandStore.getState().addUndoEntry({ type: 'UPDATE_MASTER_MUTE' }, snapshot)
++  }, [setMasterBusMuted])
+
+   const handleMasterVolumeChange = useCallback(
+     (db: number) => {
+@@ -1027,9 +1028,9 @@
+           masterEstimate={estimate}
+           isPlaying={isMeterActive}
+           masterVolumeDb={masterVolumeDb}
+-          masterMuted={muted}
++          masterMuted={masterBusMuted}
+           onMasterVolumeChange={handleMasterVolumeChange}
+-          onMasterMuteToggle={toggleMute}
++          onMasterMuteToggle={handleMasterMuteToggle}
+           onTrackVolumeChange={handleTrackVolumeChange}
+           onTrackMuteToggle={handleTrackMuteToggle}
+           onTrackSoloToggle={handleTrackSoloToggle}
+@@ -1079,9 +1080,9 @@
+             masterEstimate={estimate}
+             isPlaying={isMeterActive}
+             masterVolumeDb={masterVolumeDb}
+-            masterMuted={muted}
++            masterMuted={masterBusMuted}
+             onMasterVolumeChange={handleMasterVolumeChange}
+-            onMasterMuteToggle={toggleMute}
++            onMasterMuteToggle={handleMasterMuteToggle}
+             onTrackVolumeChange={handleTrackVolumeChange}
+             onTrackMuteToggle={handleTrackMuteToggle}
+             onTrackSoloToggle={handleTrackSoloToggle}
+--- a/src/features/export/components/export-dialog.tsx
++++ b/src/features/export/components/export-dialog.tsx
+@@ -476,8 +476,14 @@
+         inPoint: renderWholeProject || !hasInOutPoints ? null : inPoint,
+         outPoint: renderWholeProject || !hasInOutPoints ? null : outPoint,
+         source: sourceMedia,
++        busAudioEq: exportable.busAudioEq,
++        masterBusDb: exportable.masterBusDb,
++        masterBusMuted: exportable.masterBusMuted,
+       }),
+     [
++      exportable.busAudioEq,
++      exportable.masterBusDb,
++      exportable.masterBusMuted,
+       fps,
+       hasInOutPoints,
+       inPoint,
+--- a/src/features/export/hooks/use-client-render.ts
++++ b/src/features/export/hooks/use-client-render.ts
+@@ -145,6 +145,7 @@
+         const currentProject = useProjectStore.getState().currentProject
+         const busAudioEq = usePlaybackStore.getState().busAudioEq
+         const masterBusDb = usePlaybackStore.getState().masterBusDb
++        const masterBusMuted = usePlaybackStore.getState().masterBusMuted
+         const backgroundColor = currentProject?.metadata?.backgroundColor
+         // Use PROJECT resolution for composition (transform calculations match preview)
+         const projectWidth = currentProject?.metadata?.width ?? DEFAULT_PROJECT_WIDTH
+@@ -171,6 +172,7 @@
+             outPoint: effectiveOutPoint,
+             busAudioEq,
+             masterBusDb,
++            masterBusMuted,
+           },
+           signal,
+           handleProgress,
+@@ -229,6 +231,7 @@
+           backgroundColor,
+           busAudioEq,
+           masterBusDb,
++          masterBusMuted,
+         )
+
+         const totalCompositionItems = composition.tracks.reduce(
+--- a/src/features/export/hooks/use-render-queue-runner.ts
++++ b/src/features/export/hooks/use-render-queue-runner.ts
+@@ -78,6 +78,7 @@
+         outPoint: job.outPoint,
+         busAudioEq: snapshot.busAudioEq,
+         masterBusDb: snapshot.masterBusDb,
++        masterBusMuted: snapshot.masterBusMuted,
+       },
+       controller.signal,
+       (progress) => useRenderQueueStore.getState().updateJobProgress(job.id, progress),
+@@ -111,6 +112,7 @@
+       snapshot.backgroundColor,
+       snapshot.busAudioEq,
+       snapshot.masterBusDb,
++      snapshot.masterBusMuted,
+     )
+
+     // Resolve mediaIds → blob URLs fresh at render time (export never proxies).
+--- a/src/features/export/stores/render-queue-store.ts
++++ b/src/features/export/stores/render-queue-store.ts
+@@ -30,6 +30,8 @@
+   backgroundColor?: string
+   busAudioEq?: AudioEqSettings
+   masterBusDb?: number
++  /** Project mix mute; device monitoring remains separate. Defaults to false. */
++  masterBusMuted?: boolean
+ }
+
+ export interface RenderJob {
+--- a/src/features/export/utils/build-render-job.ts
++++ b/src/features/export/utils/build-render-job.ts
+@@ -70,6 +70,7 @@
+     backgroundColor: seq.backgroundColor,
+     busAudioEq: seq.busAudioEq,
+     masterBusDb: seq.masterBusDb,
++    masterBusMuted: seq.masterBusMuted,
+   }
+
+   // Distinguish exported sequence files from the Main-timeline export.
+@@ -169,6 +170,7 @@
+     outPoint,
+     busAudioEq: cap.snapshot.busAudioEq,
+     masterBusDb: cap.snapshot.masterBusDb,
++    masterBusMuted: cap.snapshot.masterBusMuted,
+   })
+   const { clientSettings, exportMode } = smartCopy.eligible
+     ? requested
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -3,6 +3,7 @@
+ import type { AudioItem, CompositionItem, TimelineTrack, VideoItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import { useCompositionsStore } from '@/features/export/deps/timeline-compositions'
++import { usePlaybackStore } from '@/shared/state/playback'
+
+ const { inputConstructor } = vi.hoisted(() => ({ inputConstructor: vi.fn() }))
+
+@@ -652,6 +653,29 @@
+       ],
+     }
+   }
++
++  it('exports the project mute in full and windowed mixes, independent of monitor settings', async () => {
++    const previous = usePlaybackStore.getState()
++    usePlaybackStore.setState({ volume: 0, muted: true })
++    try {
++      for (const masterBusMuted of [false, true]) {
++        const composition = { ...simpleComposition(), masterBusMuted }
++        const full = await processAudio(composition)
++        const windows = []
++        for await (const window of processAudioWindows(composition)) windows.push(window)
++        const expected = masterBusMuted ? 0 : 0.1
++        expect(full?.samples[0]?.[24_000]).toBeCloseTo(expected, 4)
++        expect(windows[0]?.samples[0]?.[24_000]).toBeCloseTo(expected, 4)
++        if (masterBusMuted) {
++          expect(full?.samples.every((channel) => channel.every((sample) => sample === 0))).toBe(true)
++          expect(windows.every((window) => window.samples.every((channel) => channel.every((sample) => sample === 0)))).toBe(true)
++          expect(getAudioPacketPassthroughPlan(composition)).toBeNull()
++        }
++      }
++    } finally {
++      usePlaybackStore.setState({ volume: previous.volume, muted: previous.muted })
++    }
++  })
+
+   it('uses bounded windows for ordinary long-form clips', async () => {
+     const composition = simpleComposition()
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -2249,7 +2249,10 @@
+   composition: CompositionInputProps,
+ ): AudioPacketPassthroughPlan | null {
+   const durationInFrames = composition.durationInFrames ?? 0
+-  if (durationInFrames <= 0 || composition.fps <= 0 || (composition.masterBusDb ?? 0) !== 0) {
++  if (
++    durationInFrames <= 0 || composition.fps <= 0 ||
++    composition.masterBusMuted === true || (composition.masterBusDb ?? 0) !== 0
++  ) {
+     return null
+   }
+
+@@ -2643,10 +2646,9 @@
+   const channels = 2
+   const totalSamples = Math.ceil((durationInFrames / fps) * sampleRate)
+   const chunkSamples = STREAMING_AUDIO_CHUNK_SECONDS * sampleRate
+-  const masterGain =
+-    typeof composition.masterBusDb === 'number' && composition.masterBusDb !== 0
+-      ? dbToGain(composition.masterBusDb)
+-      : 1
++  const masterGain = composition.masterBusMuted === true
++    ? 0
++    : dbToGain(composition.masterBusDb ?? 0)
+
+   const duckingSources = collectDuckingSources(composition, fps)
+
+@@ -2906,8 +2908,8 @@
+   // (per-device) is intentionally NOT applied during export — it's a
+   // preview-only setting.
+   const masterBusDb = composition.masterBusDb
+-  if (typeof masterBusDb === 'number' && masterBusDb !== 0) {
+-    const masterBusGain = dbToGain(masterBusDb)
++  if (composition.masterBusMuted === true || (typeof masterBusDb === 'number' && masterBusDb !== 0)) {
++    const masterBusGain = composition.masterBusMuted === true ? 0 : dbToGain(masterBusDb ?? 0)
+     for (const channel of mixedSamples) {
+       for (let i = 0; i < channel.length; i++) {
+         channel[i] = channel[i]! * masterBusGain
+--- a/src/features/export/utils/smart-copy.test.ts
++++ b/src/features/export/utils/smart-copy.test.ts
+@@ -97,6 +97,10 @@
+     })
+   })
+
++  it('refuses original-byte copying when the project master is muted', () => {
++    expect(assessSmartCopyEligibility(context({ masterBusMuted: true })).eligible).toBe(false)
++  })
++
+   it('returns the original blob without invoking the encoder', async () => {
+     const original = new Blob(['original-media-bytes'], { type: source.mimeType })
+     getMediaFileMock.mockResolvedValueOnce(original)
+--- a/src/features/export/utils/smart-copy.ts
++++ b/src/features/export/utils/smart-copy.ts
+@@ -40,6 +40,8 @@
+   outPoint: number | null
+   busAudioEq?: AudioEqSettings
+   masterBusDb?: number
++  /** Project mix mute; device monitoring remains separate. Defaults to false. */
++  masterBusMuted?: boolean
+   source?: MediaMetadata
+ }
+
+@@ -252,6 +254,7 @@
+     candidate.video.embeddedAudioMuted === true ||
+     itemProcessing ||
+     trackProcessing ||
++    context.masterBusMuted === true ||
+     (context.masterBusDb ?? 0) !== 0 ||
+     hasEqProcessing(context.busAudioEq)
+   )
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -50,6 +50,7 @@
+   backgroundColor?: string,
+   busAudioEq?: AudioEqSettings,
+   masterBusDb?: number,
++  masterBusMuted = false,
+ ): CompositionInputProps {
+   items = items.map((item) =>
+     item.type === 'video' ? resolveReverseConformedVideoItem(item, fps, { mode: 'export' }) : item,
+@@ -257,6 +258,7 @@
+     backgroundColor,
+     busAudioEq,
+     masterBusDb,
++    masterBusMuted,
+   }
+ }
+
+--- /dev/null
++++ b/src/features/timeline/hooks/use-timeline-audio-skim-preview.test.tsx
+@@ -0,0 +1,70 @@
++import { act, cleanup, renderHook } from '@testing-library/react'
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { clearAudioSkimMeterLevel, getAudioSkimMeterLevel } from '@/shared/state/audio-skim-meter'
++import { useTimelineAudioSkimPreview } from './use-timeline-audio-skim-preview'
++
++const { scrub, stop } = vi.hoisted(() => ({ scrub: vi.fn(async () => {}), stop: vi.fn() }))
++vi.mock('@/features/timeline/deps/media-library-audio-preview', () => ({ audioScrubPreview: { scrub, stop } }))
++vi.mock('@/features/timeline/deps/media-library-service', () => ({ importMediaLibraryService: vi.fn() }))
++vi.mock('@/features/timeline/deps/media-library-store', () => ({
++  useMediaLibraryStore: { getState: () => ({ mediaById: {} }) },
++}))
++vi.mock('../deps/composition-runtime-contract', () => ({
++  resolvePreviewAudioConformUrl: async () => null,
++  getOrDecodeAudioSliceForPlayback: vi.fn(),
++}))
++vi.mock('../stores/compositions-store', () => ({
++  useCompositionsStore: { getState: () => ({ compositionById: {} }) },
++}))
++vi.mock('../stores/items-store', () => ({ useItemsStore: { getState: () => ({ items: [], tracks: [] }) } }))
++vi.mock('../stores/timeline-store', () => {
++  const state = { audioSkimmingEnabled: true, fps: 30 }
++  return { useTimelineStore: Object.assign((select: (value: typeof state) => unknown) => select(state), { getState: () => state }) }
++})
++vi.mock('../utils/timeline-audio-skim', () => ({
++  createLatestOnlyAsyncFrameRunner: (run: (frame: number) => Promise<void>) => ({ schedule: (frame: number) => void run(frame), cancelPending: vi.fn() }),
++  selectTimelineSkimSourceAtFrame: () => ({
++    item: { type: 'audio', mediaId: 'media', trackId: 'track', src: 'blob:audio' },
++    gain: 1, timeSeconds: 0.5,
++  }),
++  getTimelineAudioBufferPeak: vi.fn(),
++  timelineAudioBufferSkimPreview: { scrub, stop },
++  timelineMediaElementAudioSkimPreview: { scrub, stop },
++}))
++
++afterEach(() => {
++  cleanup()
++  clearAudioSkimMeterLevel()
++  usePlaybackStore.setState({ volume: 1, muted: false, masterBusDb: 0, masterBusMuted: false, previewFrame: null })
++  vi.unstubAllGlobals()
++  vi.useRealTimers()
++})
++
++it('keeps pre-monitor skim meters while monitor mute or zero volume silences playback', async () => {
++  vi.useFakeTimers()
++  const frames: FrameRequestCallback[] = []
++  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
++  vi.stubGlobal('cancelAnimationFrame', vi.fn())
++  scrub.mockClear()
++  usePlaybackStore.setState({ volume: 1, muted: false, masterBusDb: 0, masterBusMuted: false, previewFrame: null, isPlaying: false })
++  renderHook(() => useTimelineAudioSkimPreview())
++  await act(async () => {
++    usePlaybackStore.getState().setPreviewFrame(15)
++    frames.splice(0).forEach((callback) => callback(0))
++  })
++  expect(scrub).toHaveBeenCalledTimes(1)
++  expect(getAudioSkimMeterLevel()).toMatchObject({ left: 0.28, right: 0.28, trackId: 'track' })
++  await act(async () => {
++    usePlaybackStore.getState().setMuted(true)
++    frames.splice(0).forEach((callback) => callback(0))
++  })
++  expect(scrub).toHaveBeenCalledTimes(1)
++  expect(getAudioSkimMeterLevel()).toMatchObject({ left: 0.28, right: 0.28, trackId: 'track' })
++  await act(async () => {
++    usePlaybackStore.setState({ muted: false, volume: 0 })
++    frames.splice(0).forEach((callback) => callback(0))
++  })
++  expect(scrub).toHaveBeenCalledTimes(1)
++  expect(getAudioSkimMeterLevel()).toMatchObject({ left: 0.28, right: 0.28, trackId: 'track' })
++})
+--- a/src/features/timeline/hooks/use-timeline-audio-skim-preview.ts
++++ b/src/features/timeline/hooks/use-timeline-audio-skim-preview.ts
+@@ -40,7 +40,7 @@
+     Map<string, { mediaUrl: string; mediaKind: 'audio' | 'video' }>
+   >(new Map())
+
+-  const stopAudioSkim = useCallback(() => {
++  const stopAudioSkim = useCallback((clearMeter = true) => {
+     requestIdRef.current += 1
+     pendingFrameRef.current = null
+     latestAudioSkimRunnerRef.current?.cancelPending()
+@@ -51,7 +51,7 @@
+     audioScrubPreview.stop()
+     timelineAudioBufferSkimPreview.stop()
+     timelineMediaElementAudioSkimPreview.stop()
+-    clearAudioSkimMeterLevel()
++    if (clearMeter) clearAudioSkimMeterLevel()
+   }, [])
+
+   const resolveSkimUrl = useCallback(
+@@ -108,7 +108,7 @@
+       }
+
+       const playback = usePlaybackStore.getState()
+-      if (playback.previewFrame === null || playback.isPlaying || playback.muted) {
++      if (playback.previewFrame === null || playback.isPlaying) {
+         stopAudioSkim()
+         return
+       }
+@@ -147,10 +147,13 @@
+         stopAudioSkim()
+         return
+       }
+-      const masterGain = Math.pow(10, (playback.masterBusDb ?? 0) / 20)
+-      const outputGain = source.gain * masterGain * playback.volume
++      const masterGain = playback.masterBusMuted ? 0 : Math.pow(10, (playback.masterBusDb ?? 0) / 20)
++      const mixGain = source.gain * masterGain
++      const outputGain = playback.muted ? 0 : mixGain * playback.volume
+       if (outputGain <= 0.0001) {
+-        stopAudioSkim()
++        stopAudioSkim(false)
++        // Keep the same pre-monitor fallback signal even when this device is silent.
++        publishAudioSkimMeterLevel({ left: 0.28 * mixGain, right: 0.28 * mixGain, trackId: item.trackId })
+         return
+       }
+
+@@ -166,8 +169,8 @@
+           gain: outputGain,
+         })
+         publishAudioSkimMeterLevel({
+-          left: 0.28 * outputGain,
+-          right: 0.28 * outputGain,
++          left: 0.28 * mixGain,
++          right: 0.28 * mixGain,
+           trackId: item.trackId,
+         })
+         timelineAudioBufferSkimPreview.stop()
+@@ -197,8 +200,8 @@
+             timeSeconds,
+           })
+           publishAudioSkimMeterLevel({
+-            left: peak.left * outputGain,
+-            right: peak.right * outputGain,
++            left: peak.left * mixGain,
++            right: peak.right * mixGain,
+             trackId: item.trackId,
+           })
+         } catch {
+@@ -214,8 +217,8 @@
+               gain: outputGain,
+             })
+             publishAudioSkimMeterLevel({
+-              left: 0.28 * outputGain,
+-              right: 0.28 * outputGain,
++              left: 0.28 * mixGain,
++              right: 0.28 * mixGain,
+               trackId: item.trackId,
+             })
+           } catch {
+@@ -259,7 +262,10 @@
+         if (prev.previewFrame !== null) stopAudioSkim()
+         return
+       }
+-      if (state.previewFrameEpoch === prev.previewFrameEpoch) return
++      const gainChanged = state.masterBusMuted !== prev.masterBusMuted ||
++        state.masterBusDb !== prev.masterBusDb || state.muted !== prev.muted || state.volume !== prev.volume
++      if (gainChanged) stopAudioSkim(false)
++      if (!gainChanged && state.previewFrameEpoch === prev.previewFrameEpoch) return
+       scheduleAudioSkim(state.previewFrame)
+     })
+   }, [scheduleAudioSkim, stopAudioSkim])
+--- a/src/features/timeline/stores/actions/export-snapshot.ts
++++ b/src/features/timeline/stores/actions/export-snapshot.ts
+@@ -39,6 +39,7 @@
+   backgroundColor?: string
+   busAudioEq?: AudioEqSettings
+   masterBusDb: number
++  masterBusMuted?: boolean
+   durationFrames: number
+   inPoint: number | null
+   outPoint: number | null
+@@ -139,6 +140,7 @@
+       backgroundColor: metadata?.backgroundColor,
+       busAudioEq,
+       masterBusDb: playback.masterBusDb,
++      masterBusMuted: playback.masterBusMuted,
+       durationFrames: furthestItemEnd(root.items),
+       ...range(nav.mainHolder),
+     }
+@@ -164,6 +166,7 @@
+     // registry entry is only up to date once we've switched away from it.
+     busAudioEq: isActiveTab ? playback.busAudioEq : comp.busAudioEq,
+     masterBusDb: playback.masterBusDb,
++    masterBusMuted: playback.masterBusMuted,
+     durationFrames: comp.durationInFrames || furthestItemEnd(comp.items),
+     ...range(comp),
+   }
+--- a/src/features/timeline/stores/commands/snapshot.ts
++++ b/src/features/timeline/stores/commands/snapshot.ts
+@@ -112,6 +112,7 @@
+     currentFrame: playbackState.currentFrame,
+     busAudioEq: playbackState.busAudioEq,
+     masterBusDb: playbackState.masterBusDb,
++    masterBusMuted: playbackState.masterBusMuted,
+     projectId: currentProject?.id ?? null,
+     projectMetadata: currentProject ? { ...currentProject.metadata } : null,
+   }
+@@ -122,7 +123,7 @@
+  * This is called during undo/redo to revert to a previous state.
+  * All stores are updated synchronously to avoid inconsistent intermediate states.
+  */
+-export function restoreSnapshot(snapshot: TimelineSnapshot): void {
++export function restoreSnapshot(snapshot: TimelineSnapshot, restoreMasterMute = false): void {
+   // Restore items and tracks
+   useItemsStore.getState().setItems(snapshot.items)
+   useItemsStore.getState().setTracks(snapshot.tracks)
+@@ -159,6 +160,9 @@
+   usePlaybackStore.getState().setCurrentFrame(snapshot.currentFrame)
+   usePlaybackStore.getState().setBusAudioEq(snapshot.busAudioEq)
+   usePlaybackStore.getState().setMasterBusDb(snapshot.masterBusDb ?? 0)
++  if (restoreMasterMute) {
++    usePlaybackStore.getState().setMasterBusMuted(snapshot.masterBusMuted === true)
++  }
+
+   // Restore current project metadata so canvas/project changes undo with the editor history.
+   restoreProjectMetadata(snapshot)
+@@ -186,6 +190,7 @@
+     a.currentFrame === b.currentFrame &&
+     JSON.stringify(a.busAudioEq ?? null) === JSON.stringify(b.busAudioEq ?? null) &&
+     a.masterBusDb === b.masterBusDb &&
++    (a.masterBusMuted === true) === (b.masterBusMuted === true) &&
+     a.projectId === b.projectId &&
+     projectMetadataEqual(a.projectMetadata, b.projectMetadata)
+   )
+--- a/src/features/timeline/stores/commands/types.ts
++++ b/src/features/timeline/stores/commands/types.ts
+@@ -28,6 +28,7 @@
+   busAudioEq?: AudioEqSettings
+   /** Project-scoped master bus gain in dB (0 = unity). */
+   masterBusDb: number
++  masterBusMuted?: boolean
+   projectId: string | null
+   projectMetadata: ProjectResolution | null
+ }
+@@ -49,5 +50,7 @@
+ export interface CommandEntry {
+   command: TimelineCommand
+   beforeSnapshot: TimelineSnapshot
++  /** Only this command may restore the project-global mute across sequence histories. */
++  masterBusMuteChanged?: boolean
+   timestamp: number
+ }
+--- a/src/features/timeline/stores/export-snapshot.test.ts
++++ b/src/features/timeline/stores/export-snapshot.test.ts
+@@ -6,6 +6,9 @@
+   setDefaultRootTimelineTracks,
+ } from '@/features/timeline/test-helpers'
+ import { useItemsStore } from './items-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { useTimelineCommandStore } from './timeline-command-store'
++import { buildTimelineFromStores } from './timeline-persistence'
+ import { useCompositionsStore } from './compositions-store'
+ import { useSequencesStore } from './sequences-store'
+ import { useCompositionNavigationStore } from './composition-navigation-store'
+@@ -45,6 +48,57 @@
+   })
+
+   afterEach(() => resetTimelineCompositionTestState())
++
++  it('persists and undoes project mute without restoring device monitoring', () => {
++    const previous = usePlaybackStore.getState()
++    useTimelineCommandStore.getState().clearHistory()
++    try {
++      usePlaybackStore.setState({ masterBusMuted: false, masterBusDb: -3, volume: 0.5, muted: false })
++      useTimelineCommandStore.getState().execute({ type: 'UPDATE_MASTER_MUTE' }, () => {
++        usePlaybackStore.getState().setMasterBusMuted(true)
++      })
++      usePlaybackStore.setState({ volume: 0, muted: true })
++      const saved = JSON.parse(JSON.stringify(buildTimelineFromStores()))
++      expect(saved).toMatchObject({ masterBusMuted: true, masterBusDb: -3 })
++      expect(saved).not.toHaveProperty('volume')
++      expect(saved).not.toHaveProperty('muted')
++      expect(getExportableSequence(null).masterBusMuted).toBe(true)
++      useTimelineCommandStore.getState().undo()
++      expect(usePlaybackStore.getState()).toMatchObject({ masterBusMuted: false, volume: 0, muted: true })
++      useTimelineCommandStore.getState().redo()
++      expect(usePlaybackStore.getState()).toMatchObject({ masterBusMuted: true, volume: 0, muted: true })
++    } finally {
++      usePlaybackStore.setState({ masterBusMuted: previous.masterBusMuted, masterBusDb: previous.masterBusDb, volume: previous.volume, muted: previous.muted })
++      useTimelineCommandStore.getState().clearHistory()
++    }
++  })
++
++  it('keeps project mute when undoing an unrelated edit in another sequence', () => {
++    const previous = usePlaybackStore.getState().masterBusMuted
++    try {
++      usePlaybackStore.getState().setMasterBusMuted(false)
++      seedSequence('seq-mute', 'mute-clip')
++      useTimelineCommandStore.getState().execute({ type: 'UPDATE_ITEM' }, () => {
++        useItemsStore.getState().setItems(useItemsStore.getState().items.map((item) => ({ ...item, label: 'Renamed' })))
++      })
++      useCompositionNavigationStore.getState().switchToSequence('seq-mute')
++      useTimelineCommandStore.getState().execute({ type: 'UPDATE_MASTER_MUTE' }, () => {
++        usePlaybackStore.getState().setMasterBusMuted(true)
++      })
++      useCompositionNavigationStore.getState().switchToSequence(null)
++      useTimelineCommandStore.getState().undo()
++      expect(usePlaybackStore.getState().masterBusMuted).toBe(true)
++      useTimelineCommandStore.getState().redo()
++      expect(usePlaybackStore.getState().masterBusMuted).toBe(true)
++      useCompositionNavigationStore.getState().switchToSequence('seq-mute')
++      useTimelineCommandStore.getState().undo()
++      expect(usePlaybackStore.getState().masterBusMuted).toBe(false)
++      useTimelineCommandStore.getState().redo()
++      expect(usePlaybackStore.getState().masterBusMuted).toBe(true)
++    } finally {
++      usePlaybackStore.getState().setMasterBusMuted(previous)
++    }
++  })
+
+   it('lists Main plus every top-level sequence', () => {
+     seedSequence('seq-a', 'a-clip')
+--- a/src/features/timeline/stores/timeline-command-store.ts
++++ b/src/features/timeline/stores/timeline-command-store.ts
+@@ -139,7 +139,11 @@
+         set((state) => ({
+           undoStack: [
+             ...state.undoStack.slice(-(maxHistory - 1)),
+-            { command, beforeSnapshot, timestamp: Date.now() },
++            {
++              command, beforeSnapshot, timestamp: Date.now(),
++              masterBusMuteChanged:
++                (beforeSnapshot.masterBusMuted === true) !== (afterSnapshot.masterBusMuted === true),
++            },
+           ],
+           redoStack: [], // Clear redo on new action
+           canUndo: true,
+@@ -160,14 +164,14 @@
+       const entry = undoStack[undoStack.length - 1]!
+
+       // Restore previous state
+-      restoreSnapshot(entry.beforeSnapshot)
++      restoreSnapshot(entry.beforeSnapshot, entry.masterBusMuteChanged === true)
+       emitUiSound('select')
+
+       set((state) => ({
+         undoStack: state.undoStack.slice(0, -1),
+         redoStack: [
+           ...state.redoStack,
+-          { command: entry.command, beforeSnapshot: currentSnapshot, timestamp: entry.timestamp },
++          { ...entry, beforeSnapshot: currentSnapshot },
+         ],
+         canUndo: state.undoStack.length > 1,
+         canRedo: true,
+@@ -184,14 +188,14 @@
+       const entry = redoStack[redoStack.length - 1]!
+
+       // Restore the "after" state (which is stored in beforeSnapshot after undo swapped it)
+-      restoreSnapshot(entry.beforeSnapshot)
++      restoreSnapshot(entry.beforeSnapshot, entry.masterBusMuteChanged === true)
+       emitUiSound('select')
+
+       set((state) => ({
+         redoStack: state.redoStack.slice(0, -1),
+         undoStack: [
+           ...state.undoStack,
+-          { command: entry.command, beforeSnapshot: currentSnapshot, timestamp: entry.timestamp },
++          { ...entry, beforeSnapshot: currentSnapshot },
+         ],
+         canUndo: true,
+         canRedo: state.redoStack.length > 1,
+@@ -241,7 +245,11 @@
+         set((state) => ({
+           undoStack: [
+             ...state.undoStack.slice(-(maxHistory - 1)),
+-            { command, beforeSnapshot, timestamp: Date.now() },
++            {
++              command, beforeSnapshot, timestamp: Date.now(),
++              masterBusMuteChanged:
++                (beforeSnapshot.masterBusMuted === true) !== (afterSnapshot.masterBusMuted === true),
++            },
+           ],
+           redoStack: [], // Clear redo on new action
+           canUndo: true,
+--- a/src/features/timeline/stores/timeline-persistence.ts
++++ b/src/features/timeline/stores/timeline-persistence.ts
+@@ -721,6 +721,7 @@
+   scrollPosition: number
+   busAudioEq?: AudioEqSettings
+   masterBusDb: number
++  masterBusMuted?: boolean
+   markers: ProjectMarker[]
+   inPoint: number | null
+   outPoint: number | null
+@@ -789,6 +790,7 @@
+       heldRoot?.scrollPosition ?? rootView?.scrollPosition ?? settings.scrollPosition,
+     busAudioEq: heldRoot ? heldRoot.busAudioEq : playback.busAudioEq,
+     masterBusDb: playback.masterBusDb,
++    masterBusMuted: playback.masterBusMuted,
+     markers: heldRoot ? heldRoot.markers : markers.markers,
+     inPoint: heldRoot ? heldRoot.inPoint : markers.inPoint,
+     outPoint: heldRoot ? heldRoot.outPoint : markers.outPoint,
+@@ -814,6 +816,7 @@
+     items: rootTimeline.items as ProjectTimeline['items'],
+     ...(snapshot.busAudioEq && { busAudioEq: snapshot.busAudioEq }),
+     masterBusDb: snapshot.masterBusDb,
++    masterBusMuted: snapshot.masterBusMuted,
+     currentFrame: snapshot.currentFrame,
+     zoomLevel: snapshot.zoomLevel,
+     scrollPosition: snapshot.scrollPosition,
+@@ -1094,6 +1097,7 @@
+   // that is what resolves each track's height. Heights are a local view
+   // preference and never come out of the project file.
+   loadTrackHeightOverrides(project.id)
++  usePlaybackStore.getState().setMasterBusMuted(project.timeline?.masterBusMuted === true)
+
+   if (project.timeline && project.timeline.tracks?.length > 0) {
+     const t = project.timeline
+--- a/src/features/timeline/stores/timeline-store-facade.test.ts
++++ b/src/features/timeline/stores/timeline-store-facade.test.ts
+@@ -13,9 +13,13 @@
+   currentFrame: 0,
+   busAudioEq: undefined,
+   masterBusDb: 0,
++  masterBusMuted: false,
+   setCurrentFrame: vi.fn(),
+   setBusAudioEq: vi.fn((value) => {
+     playbackMocks.busAudioEq = value
++  }),
++  setMasterBusMuted: vi.fn((value: boolean) => {
++    playbackMocks.masterBusMuted = value
+   }),
+   setMasterBusDb: vi.fn((value: number) => {
+     playbackMocks.masterBusDb = value
+@@ -120,11 +124,15 @@
+     playbackMocks.currentFrame = 0
+     playbackMocks.busAudioEq = undefined
+     playbackMocks.masterBusDb = 0
++    playbackMocks.masterBusMuted = false
+     playbackMocks.setCurrentFrame.mockImplementation((frame: number) => {
+       playbackMocks.currentFrame = frame
+     })
+     playbackMocks.setBusAudioEq.mockImplementation((value) => {
+       playbackMocks.busAudioEq = value
++    })
++    playbackMocks.setMasterBusMuted.mockImplementation((value: boolean) => {
++      playbackMocks.masterBusMuted = value
+     })
+     playbackMocks.setMasterBusDb.mockImplementation((value: number) => {
+       playbackMocks.masterBusDb = value
+@@ -1108,6 +1116,7 @@
+         scrollPosition: 123,
+         busAudioEq: mainBus,
+         masterBusDb: 1.5,
++        masterBusMuted: false,
+         markers: mainMarkers,
+         inPoint: 5,
+         outPoint: 150,
+@@ -1149,6 +1158,17 @@
+   })
+
+   describe('loadTimeline', () => {
++    it.each([true, false, undefined])('hydrates master mute %s without leaking the previous project', async (masterBusMuted) => {
++      playbackMocks.masterBusMuted = true
++      indexedDbMocks.getProject.mockResolvedValue({
++        id: 'project-1', metadata: { fps: 30 },
++        timeline: { tracks: [], items: [], masterBusMuted },
++      })
++      mediaValidationMocks.validateProjectMediaReferences.mockResolvedValue([])
++      await useTimelineStore.getState().loadTimeline('project-1')
++      expect(playbackMocks.masterBusMuted).toBe(masterBusMuted === true)
++    })
++
+     it('coalesces concurrent loads for the same project', async () => {
+       const storedProject = {
+         id: 'project-1',
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -229,6 +229,8 @@
+   backgroundColor?: string
+   busAudioEq?: AudioEqSettings
+   masterBusDb?: number
++  /** Project mix mute; device monitoring remains separate. Defaults to false. */
++  masterBusMuted?: boolean
+   compositions?: SubComposition[]
+   media?: HeadlessMediaSource[]
+   settings: ClientExportSettings
+@@ -603,6 +605,7 @@
+     backgroundColor,
+     busAudioEq,
+     masterBusDb,
++    masterBusMuted,
+     compositions = [],
+     media,
+     settings: requestedSettings,
+@@ -651,6 +654,7 @@
+     backgroundColor,
+     busAudioEq,
+     masterBusDb,
++    masterBusMuted,
+   )
+
+   warnings.push(...(await prepareFonts(composition.tracks)))
+@@ -726,6 +730,7 @@
+     backgroundColor: meta?.backgroundColor,
+     busAudioEq: timeline.busAudioEq,
+     masterBusDb: timeline.masterBusDb,
++    masterBusMuted: timeline.masterBusMuted,
+     compositions: (timeline.compositions ?? []) as unknown as SubComposition[],
+     media,
+     settings,
+@@ -868,6 +873,8 @@
+   backgroundColor?: string
+   busAudioEq?: AudioEqSettings
+   masterBusDb?: number
++  /** Project mix mute; device monitoring remains separate. Defaults to false. */
++  masterBusMuted?: boolean
+   /** Non-fatal findings from project normalization (overlap repairs etc.). */
+   projectWarnings: ProjectWarning[]
+ }
+@@ -893,6 +900,7 @@
+     backgroundColor: meta?.backgroundColor,
+     busAudioEq: timeline.busAudioEq,
+     masterBusDb: timeline.masterBusDb,
++    masterBusMuted: timeline.masterBusMuted,
+   }
+ }
+
+@@ -918,6 +926,7 @@
+     view.backgroundColor,
+     view.busAudioEq,
+     view.masterBusDb,
++    view.masterBusMuted,
+   )
+ }
+
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -73,6 +73,7 @@
+   const previewMasterVolume = usePlaybackStore((state) => state.volume)
+   const previewMasterMuted = usePlaybackStore((state) => state.muted)
+   const masterBusDb = usePlaybackStore((state) => state.masterBusDb)
++  const masterBusMuted = usePlaybackStore((state) => state.masterBusMuted)
+
+   const contextKeyframes = useItemKeyframesFromContext(itemId)
+   const storeKeyframes = useTimelineStore(
+@@ -119,7 +120,7 @@
+
+   const linearVolume = Math.pow(10, effectiveVolumeDb / 20)
+   const itemVolume = muted ? 0 : Math.max(0, linearVolume * fadeMultiplier)
+-  const masterBusGain = Math.pow(10, masterBusDb / 20)
++  const masterBusGain = masterBusMuted ? 0 : Math.pow(10, masterBusDb / 20)
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+
+   const mixerGain = useMixerLiveGainProduct([itemId, ...(liveGainItemIds ?? [])])
+--- /dev/null
++++ b/src/runtime/composition-runtime/components/master-mute.test.tsx
+@@ -0,0 +1,51 @@
++import { act, cleanup, renderHook } from '@testing-library/react'
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { usePlaybackStore } from '@/shared/state/playback'
++import type { VideoItem } from '@/types/timeline'
++import { useAudioPlaybackState } from './hooks/use-audio-playback-state'
++import { useVideoAudioState } from './video-audio-context'
++
++vi.mock('@/runtime/composition-runtime/deps/player', () => ({
++  useSequenceContext: () => ({ localFrame: 30 }),
++  useClockPlaybackRate: () => 1,
++  interpolate: () => 1,
++}))
++vi.mock('../hooks/use-player-compat', () => ({
++  useVideoConfig: () => ({ fps: 30 }),
++  useIsPlaying: () => true,
++}))
++vi.mock('@/runtime/composition-runtime/deps/stores', async () => ({
++  usePlaybackStore: (await import('@/shared/state/playback')).usePlaybackStore,
++  useGizmoStore: (select: (state: object) => unknown) => select({ activeGizmo: null, preview: {} }),
++  useTimelineStore: (select: (state: object) => unknown) => select({ keyframes: [] }),
++}))
++vi.mock('../contexts/keyframes-context', () => ({ useItemKeyframesFromContext: () => undefined }))
++vi.mock('./hooks/use-runtime-item-keyframes', () => ({ useRuntimeItemKeyframes: () => undefined }))
++
++afterEach(() => {
++  cleanup()
++  usePlaybackStore.setState({ volume: 1, muted: false, masterBusDb: 0, masterBusMuted: false })
++})
++
++describe('project master mute and device monitoring', () => {
++  it('mutes both preview paths and preserves the saved gain when unmuted', () => {
++    usePlaybackStore.setState({ volume: 0.5, muted: false, masterBusDb: -6, masterBusMuted: false })
++    const clip = { id: 'clip', type: 'video', durationInFrames: 90, volume: 0 } as VideoItem
++    const { result } = renderHook(() => ({
++      audio: useAudioPlaybackState({ itemId: 'clip', durationInFrames: 90 }).resolvedVolume,
++      video: useVideoAudioState(clip, false, []).audioVolume,
++    }))
++    const audible = 0.5 * Math.pow(10, -6 / 20)
++    expect(result.current.audio).toBeCloseTo(audible)
++    expect(result.current.video).toBeCloseTo(audible)
++    act(() => usePlaybackStore.getState().setMasterBusMuted(true))
++    expect(result.current).toEqual({ audio: 0, video: 0 })
++    expect(usePlaybackStore.getState()).toMatchObject({ volume: 0.5, muted: false, masterBusDb: -6 })
++    act(() => usePlaybackStore.getState().setMasterBusMuted(false))
++    expect(result.current.audio).toBeCloseTo(audible)
++    expect(result.current.video).toBeCloseTo(audible)
++    act(() => usePlaybackStore.getState().setMuted(true))
++    expect(result.current).toEqual({ audio: 0, video: 0 })
++    expect(usePlaybackStore.getState().masterBusMuted).toBe(false)
++  })
++})
+--- a/src/runtime/composition-runtime/components/video-audio-context.ts
++++ b/src/runtime/composition-runtime/components/video-audio-context.ts
+@@ -180,6 +180,7 @@
+   const previewMasterVolume = usePlaybackStore((s) => s.volume)
+   const previewMasterMuted = usePlaybackStore((s) => s.muted)
+   const masterBusDb = usePlaybackStore((s) => s.masterBusDb)
++  const masterBusMuted = usePlaybackStore((s) => s.masterBusMuted)
+
+   const itemKeyframes = useRuntimeItemKeyframes(item.id)
+
+@@ -272,7 +273,7 @@
+   const itemVolume = Math.max(0, linearVolume * fadeMultiplier)
+
+   // Apply master bus gain (project) then monitor volume (per-device).
+-  const masterBusGain = Math.pow(10, masterBusDb / 20)
++  const masterBusGain = masterBusMuted ? 0 : Math.pow(10, masterBusDb / 20)
+   const effectiveMonitorVolume = previewMasterMuted ? 0 : previewMasterVolume
+
+   return {
+--- a/src/shared/state/playback/store.ts
++++ b/src/shared/state/playback/store.ts
+@@ -115,6 +115,7 @@
+       volume: 1,
+       muted: false,
+       masterBusDb: 0,
++      masterBusMuted: false,
+       busAudioEq: undefined,
+       zoom: -1, // -1 = auto-fit, positive values = specific zoom percentage
+       previewFrame: null,
+@@ -229,6 +230,7 @@
+       setMuted: (muted) => set((state) => (state.muted === muted ? state : { muted })),
+       setMasterBusDb: (masterBusDb) =>
+         set({ masterBusDb: Math.max(-60, Math.min(12, masterBusDb)) }),
++      setMasterBusMuted: (masterBusMuted) => set({ masterBusMuted }),
+       setBusAudioEq: (busAudioEq) => set({ busAudioEq }),
+       setZoom: (zoom) => set({ zoom }),
+       setPreviewFrame: (frame, itemId) =>
+--- a/src/shared/state/playback/types.ts
++++ b/src/shared/state/playback/types.ts
+@@ -52,6 +52,8 @@
+    * Defaults to 0 (unity) for new/loaded projects.
+    */
+   masterBusDb: number
++  /** Project mix mute, persisted with the timeline and applied during export. */
++  masterBusMuted: boolean
+   busAudioEq?: AudioEqSettings
+   zoom: number
+   /** Frame to preview on hover (null when not hovering) */
+@@ -98,6 +100,7 @@
+   toggleMute: () => void
+   setMuted: (muted: boolean) => void
+   setMasterBusDb: (db: number) => void
++  setMasterBusMuted: (muted: boolean) => void
+   setBusAudioEq: (eq: AudioEqSettings | undefined) => void
+   setZoom: (zoom: number) => void
+   setPreviewFrame: (frame: number | null, itemId?: string | null) => void
+--- a/src/types/export.ts
++++ b/src/types/export.ts
+@@ -71,4 +71,6 @@
+   busAudioEq?: AudioEqSettings
+   /** Project-scoped master bus gain in dB (0 = unity). Applied to final mix. */
+   masterBusDb?: number
++  /** Project mix mute; device monitoring remains separate. Defaults to false. */
++  masterBusMuted?: boolean
+ }
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -56,6 +56,8 @@
+    * (unity) when absent.
+    */
+   masterBusDb?: number
++  /** Project mix mute; device monitoring remains separate. Defaults to false. */
++  masterBusMuted?: boolean
+   tracks: Array<{
+     id: string
+     name: string

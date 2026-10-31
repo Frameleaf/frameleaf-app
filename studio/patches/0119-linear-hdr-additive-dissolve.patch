@@ -1,0 +1,285 @@
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+index 2c9548e..e1155ed 100644
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -46,6 +46,8 @@ import { buildKeyframesMap } from './canvas-keyframes'
+ import { getLogicalCanvasSize } from './canvas-render-scale'
+ import { type AdjustmentLayerWithTrackOrder } from './canvas-effects'
+ import { GpuPipelineManager } from './gpu-pipeline-manager'
++import { isLinearHdrTransition } from '@/infrastructure/gpu-transitions/linear-additive'
++import { transitionRegistry } from '@/shared/timeline/transitions/registry'
+ import { isItemFullyOccluding, type FrameOcclusionContext } from './frame-occlusion'
+ import {
+   renderMasksToGpuTexture as renderMasksToGpuTexturePure,
+@@ -2661,7 +2663,13 @@ export async function createCompositionRenderer(
+                   false,
+                 )
+               }
+-              if (hdrWorking)
++              if (
++                hdrWorking &&
++                !isLinearHdrTransition(
++                  transitionRegistry.getRenderer(task.transition.transition.presentation)
++                    ?.gpuTransitionId ?? '',
++                )
++              )
+                 throw new HdrRenderUnavailableError(
+                   'Transitions are not migrated to linear HDR working colour',
+                 )
+@@ -2692,6 +2700,10 @@ export async function createCompositionRenderer(
+                   if (!renderedToTexture) gpu.texturePool.release(transitionTexture)
+                 }
+               }
++              if (hdrWorking)
++                throw new HdrRenderUnavailableError(
++                  'Linear HDR additive transition could not render to a float texture',
++                )
+               // Transitions: render to a dedicated canvas
+               return renderTransitionFallbackCanvas(task)
+             } finally {
+diff --git a/src/infrastructure/gpu-transitions/linear-additive.ts b/src/infrastructure/gpu-transitions/linear-additive.ts
+new file mode 100644
+index 0000000..93e40c2
+--- /dev/null
++++ b/src/infrastructure/gpu-transitions/linear-additive.ts
+@@ -0,0 +1,54 @@
++/**
++ * FL-97: additive dissolve in linear display-referred BT.709 (1 = reference white).
++ * The pinned 0.22 flash is a dimensionless light gain, not an encoded offset.
++ * Inputs are premultiplied before filtering; output is straight rgba16float.
++ * All other transition operators remain unqualified and refused.
++ */
++export function isLinearHdrTransition(id: string): boolean {
++  return id === 'additiveDissolve'
++}
++
++export const LINEAR_TRANSITION_INPUT_WGSL = /* wgsl */ `
++override inputAlreadyPremultiplied: bool = false;
++@group(0) @binding(0) var source: texture_2d<f32>;
++@fragment
++fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureLoad(source, vec2i(input.position.xy), 0);
++  let coverage = clamp(color.a, 0.0, 1.0);
++  // Sanitize each texel before bilinear filtering, including premultiplied inputs.
++  if (coverage <= 0.0) { return vec4f(0.0); }
++  if (inputAlreadyPremultiplied) { return vec4f(color.rgb, coverage); }
++  return vec4f(color.rgb * coverage, coverage);
++}`
++
++export const LINEAR_ADDITIVE_WGSL = /* wgsl */ `
++struct AdditiveDissolveParams {
++  progress: f32,
++  width: f32,
++  height: f32,
++  _pad: f32,
++};
++@group(0) @binding(0) var texSampler: sampler;
++@group(0) @binding(1) var leftTex: texture_2d<f32>;
++@group(0) @binding(2) var rightTex: texture_2d<f32>;
++@group(0) @binding(3) var<uniform> params: AdditiveDissolveParams;
++
++fn linearTransitionStraight(color: vec4f) -> vec4f {
++  let coverage = quantizeToF16(color.a);
++  if (coverage <= 0.0) { return vec4f(0.0); }
++  return vec4f(color.rgb / color.a, coverage);
++}
++
++@fragment
++fn linearAdditiveFragment(input: VertexOutput) -> @location(0) vec4f {
++  let left = textureSampleLevel(leftTex, texSampler, input.uv, 0.0);
++  let right = textureSampleLevel(rightTex, texSampler, input.uv, 0.0);
++  if (params.progress <= 0.0) { return linearTransitionStraight(left); }
++  if (params.progress >= 1.0) { return linearTransitionStraight(right); }
++  let p = params.progress;
++  // Preserve Freecut's authored envelope/coefficient, applied to linear light.
++  let flash = sin(p * PI) * 0.22;
++  let rgb = left.rgb * (1.0 - p) + right.rgb * p + (left.rgb + right.rgb) * flash;
++  let coverage = mix(left.a, right.a, p);
++  return linearTransitionStraight(vec4f(rgb, coverage));
++}`
+diff --git a/src/infrastructure/gpu-transitions/transition-pipeline.ts b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+index 8fd66ea..b9690a0 100644
+--- a/src/infrastructure/gpu-transitions/transition-pipeline.ts
++++ b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+@@ -1,5 +1,10 @@
+ import { createLogger } from '@/shared/logging/logger'
+ import { TRANSITION_COMMON_WGSL } from './common'
++import {
++  isLinearHdrTransition,
++  LINEAR_ADDITIVE_WGSL,
++  LINEAR_TRANSITION_INPUT_WGSL,
++} from './linear-additive'
+ import type { GpuTransitionDefinition } from './types'
+ import { GPU_TRANSITION_REGISTRY, getGpuTransition } from './registry'
+ import { HdrRenderUnavailableError, type WorkingRange } from '@/shared/graphics/color/managed-color'
+@@ -9,7 +14,7 @@ const log = createLogger('TransitionPipeline')
+ interface TransitionPipelineRecord {
+   pipeline: GPURenderPipeline
+   /** rgba16float output with extended range: HDR projects (FL-97). */
+-  floatPipeline: GPURenderPipeline
++  floatPipeline: GPURenderPipeline | null
+   /** rgba16float output with Freecut's display bounds: SDR projects. */
+   floatSdrPipeline: GPURenderPipeline
+   straightPipeline: GPURenderPipeline
+@@ -45,6 +50,7 @@ export class TransitionPipeline {
+   private texW = 0
+   private texH = 0
+   private premultiplyPipeline: GPURenderPipeline | null = null
++  private hdrInputPipelines = new Map<string, GPURenderPipeline>()
+   private premultipliedInputs: GPUTexture[] = []
+   private initialized = false
+
+@@ -63,7 +69,12 @@ export class TransitionPipeline {
+   }
+
+   private floatPipelineFor(record: TransitionPipelineRecord): GPURenderPipeline {
+-    return this.workingRange === 'hdr' ? record.floatPipeline : record.floatSdrPipeline
++    if (this.workingRange === 'sdr') return record.floatSdrPipeline
++    if (!record.floatPipeline)
++      throw new HdrRenderUnavailableError(
++        'Transitions are not migrated to linear HDR working colour',
++      )
++    return record.floatPipeline
+   }
+
+   static create(device?: GPUDevice): TransitionPipeline | null {
+@@ -165,18 +176,26 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+   return vec4f(color.rgb / color.a, color.a);
+ }`,
+       })
+-      const floatPipeline = this.device.createRenderPipeline({
+-        label: `transition-${id}-float-pipeline`,
+-        layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+-        vertex: { module: floatShader, entryPoint: 'vertexMain' },
+-        fragment: {
+-          module: floatShader,
+-          entryPoint: 'straightFragment',
+-          targets: [{ format: 'rgba16float' }],
+-          constants: { preserveTransitionRange: 1 },
+-        },
+-        primitive: { topology: 'triangle-list' },
+-      })
++      // Dedicated linear implementation; never run the historical encoded HDR wrapper.
++      const hdrShader = isLinearHdrTransition(id)
++        ? this.device.createShaderModule({
++            label: `transition-${id}-linear-hdr`,
++            code: `${TRANSITION_COMMON_WGSL}\n${LINEAR_ADDITIVE_WGSL}`,
++          })
++        : null
++      const floatPipeline = hdrShader
++        ? this.device.createRenderPipeline({
++            label: `transition-${id}-linear-hdr-pipeline`,
++            layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
++            vertex: { module: hdrShader, entryPoint: 'vertexMain' },
++            fragment: {
++              module: hdrShader,
++              entryPoint: 'linearAdditiveFragment',
++              targets: [{ format: 'rgba16float' }],
++            },
++            primitive: { topology: 'triangle-list' },
++          })
++        : null
+       const floatSdrPipeline = this.device.createRenderPipeline({
+         label: `transition-${id}-float-sdr-pipeline`,
+         layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+@@ -524,10 +543,20 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+       : 'premultiplied',
+     outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
+   ): boolean {
+-    if (this.workingRange === 'hdr')
+-      throw new HdrRenderUnavailableError(
+-        'Transitions are not migrated to linear HDR working colour',
++    if (this.workingRange === 'hdr') {
++      if (!isLinearHdrTransition(transitionId))
++        throw new HdrRenderUnavailableError(
++          'Transitions are not migrated to linear HDR working colour',
++        )
++      if (
++        outputTexture.format !== 'rgba16float' ||
++        leftTexture.format !== 'rgba16float' ||
++        rightTexture.format !== 'rgba16float'
+       )
++        throw new HdrRenderUnavailableError(
++          'Linear HDR transitions require linear float input and output textures',
++        )
++    }
+     const record = this.pipelines.get(transitionId)
+     const def = getGpuTransition(transitionId)
+     if (!record || !def) return false
+@@ -558,8 +587,8 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+
+     const commandEncoder = this.device.createCommandEncoder()
+     const inputs =
+-      inputAlpha === 'straight'
+-        ? this.premultiplyInputs(leftTexture, rightTexture, commandEncoder)
++      inputAlpha === 'straight' || this.workingRange === 'hdr'
++        ? this.premultiplyInputs(leftTexture, rightTexture, commandEncoder, inputAlpha)
+         : [leftTexture, rightTexture]
+     const bindGroup = this.createBindGroup(
+       record.bindGroupLayout,
+@@ -597,11 +626,16 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+     left: GPUTexture,
+     right: GPUTexture,
+     encoder: GPUCommandEncoder,
++    inputAlpha: 'straight' | 'premultiplied' = 'straight',
+   ): GPUTexture[] {
+-    if (!this.premultiplyPipeline) {
++    const hdr = this.workingRange === 'hdr'
++    let pipeline = hdr ? this.hdrInputPipelines.get(inputAlpha) : this.premultiplyPipeline
++    if (!pipeline) {
+       const module = this.device.createShaderModule({
+-        label: 'transition-premultiply',
+-        code: `${TRANSITION_COMMON_WGSL}
++        label: hdr ? 'transition-linear-hdr-input' : 'transition-premultiply',
++        code: hdr
++          ? `${TRANSITION_COMMON_WGSL}\n${LINEAR_TRANSITION_INPUT_WGSL}`
++          : `${TRANSITION_COMMON_WGSL}
+ @group(0) @binding(0) var source: texture_2d<f32>;
+ @fragment
+ fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
+@@ -609,7 +643,7 @@ fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
+   return vec4f(color.rgb * color.a, color.a);
+ }`,
+       })
+-      this.premultiplyPipeline = this.device.createRenderPipeline({
++      pipeline = this.device.createRenderPipeline({
+         label: 'transition-premultiply',
+         layout: 'auto',
+         vertex: { module, entryPoint: 'vertexMain' },
+@@ -617,9 +651,14 @@ fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
+           module,
+           entryPoint: 'premultiplyFragment',
+           targets: [{ format: 'rgba16float' }],
++          ...(hdr
++            ? { constants: { inputAlreadyPremultiplied: inputAlpha === 'premultiplied' ? 1 : 0 } }
++            : {}),
+         },
+         primitive: { topology: 'triangle-list' },
+       })
++      if (hdr) this.hdrInputPipelines.set(inputAlpha, pipeline)
++      else this.premultiplyPipeline = pipeline
+     }
+     if (
+       this.premultipliedInputs[0]?.width !== left.width ||
+@@ -644,11 +683,11 @@ fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
+           },
+         ],
+       })
+-      pass.setPipeline(this.premultiplyPipeline)
++      pass.setPipeline(pipeline)
+       pass.setBindGroup(
+         0,
+         this.device.createBindGroup({
+-          layout: this.premultiplyPipeline.getBindGroupLayout(0),
++          layout: pipeline.getBindGroupLayout(0),
+           entries: [{ binding: 0, resource: texture.createView() }],
+         }),
+       )
+@@ -666,6 +705,7 @@ fn premultiplyFragment(input: VertexOutput) -> @location(0) vec4f {
+     for (const texture of this.premultipliedInputs) texture.destroy()
+     this.premultipliedInputs = []
+     this.premultiplyPipeline = null
++    this.hdrInputPipelines.clear()
+     this.leftTexture?.destroy()
+     this.rightTexture?.destroy()
+     this.leftTexture = null

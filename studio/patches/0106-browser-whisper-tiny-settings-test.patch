@@ -1,0 +1,19 @@
+diff --git a/src/features/settings/stores/settings-store.test.ts b/src/features/settings/stores/settings-store.test.ts
+--- a/src/features/settings/stores/settings-store.test.ts
++++ b/src/features/settings/stores/settings-store.test.ts
+@@ -46,8 +46,14 @@
+       expect(useSettingsStore.getState().defaultWhisperQuantization).toBe('q8')
+     })
+ 
+-    it('normalizes legacy tiny model selections back to the default model', () => {
++    it('preserves a selected tiny model', () => {
+       useSettingsStore.getState().setSetting('defaultWhisperModel', 'whisper-tiny')
++
++      expect(useSettingsStore.getState().defaultWhisperModel).toBe('whisper-tiny')
++    })
++
++    it('normalizes unsupported model selections back to the default model', () => {
++      useSettingsStore.getState().setSetting('defaultWhisperModel', 'unsupported' as never)
+ 
+       expect(useSettingsStore.getState().defaultWhisperModel).toBe('parakeet-tdt-v3')
+     })

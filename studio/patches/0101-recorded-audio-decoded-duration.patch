@@ -1,0 +1,161 @@
+diff --git a/src/features/media-library/services/media-library-service.ts b/src/features/media-library/services/media-library-service.ts
+index 72303c8d1d..2e1863d999 100644
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -253,8 +253,9 @@ async function decodeAudioDurationSeconds(blob: Blob, fallbackSeconds: number):
+       : undefined
+   if (!Ctor) return safeFallback
+
+-  const ctx = new Ctor()
++  let ctx: AudioContext | null = null
+   try {
++    ctx = new Ctor()
+     const buffer = await blob.arrayBuffer()
+     const audio = await ctx.decodeAudioData(buffer)
+     return audio.duration > 0 ? audio.duration : safeFallback
+@@ -262,7 +263,7 @@ async function decodeAudioDurationSeconds(blob: Blob, fallbackSeconds: number):
+     logger.warn('decodeAudioData failed; using recorder timer duration', error)
+     return safeFallback
+   } finally {
+-    void ctx.close().catch(() => {})
++    void ctx?.close().catch(() => {})
+   }
+ }
+
+@@ -741,7 +742,7 @@ class MediaLibraryService {
+    * headerless `MediaRecorder` output, whose container duration frequently probes
+    * as `0`/`Infinity` and would otherwise poison downstream waveform/trim math.
+    * Duration is resolved once, here, from the best available source:
+-   * mediabunny probe → sample-accurate `decodeAudioData` → the recorder's wall
++   * sample-accurate `decodeAudioData` → mediabunny probe → the recorder's wall
+    * clock (`fallbackDurationMs`). The caller then reuses the returned `duration`
+    * instead of decoding again.
+    */
+@@ -783,12 +784,15 @@ class MediaLibraryService {
+       logger.warn('Failed to probe recorded audio; deriving duration by decoding', error)
+     }
+
+-    let duration = Number.isFinite(probedDuration) && probedDuration > 0 ? probedDuration : 0
+-    if (duration <= 0) {
+-      // Probe was unusable (common for headerless WebM) — decode for an exact
+-      // duration, then fall back to the recorder's wall-clock timer.
+-      duration = await decodeAudioDurationSeconds(file, options.fallbackDurationMs / 1000)
+-    }
++    if (options.admission && !options.admission.isCurrent()) throw new Error('recording_retired')
++
++    // Even a positive MediaRecorder container duration can omit trailing decoded
++    // samples. Prefer the actual audio; retain the probe/timer only if decoding fails.
++    const fallbackDuration =
++      Number.isFinite(probedDuration) && probedDuration > 0
++        ? probedDuration
++        : options.fallbackDurationMs / 1000
++    const duration = await decodeAudioDurationSeconds(file, fallbackDuration)
+
+     if (options.admission && !options.admission.isCurrent()) throw new Error('recording_retired')
+     const mediaId = crypto.randomUUID()
+diff --git a/src/features/media-library/services/media-library-service.test.ts b/src/features/media-library/services/media-library-service.test.ts
+index a16c237381..d0bf34678e 100644
+--- a/src/features/media-library/services/media-library-service.test.ts
++++ b/src/features/media-library/services/media-library-service.test.ts
+@@ -245,6 +245,101 @@ describe('MediaLibraryService', () => {
+       return { promise, resolve, reject }
+     }
+     beforeEach(() => { vi.clearAllMocks() })
++    it('uses decoded samples even when the recorded container reports a shorter positive duration', async () => {
++      const previousWindow = globalThis.window
++      const close = vi.fn(() => Promise.resolve())
++      const decode = vi.fn(async () => ({ duration: 1.56 }))
++      const Decoder = class {
++        decodeAudioData = decode
++        close = close
++      }
++      vi.stubGlobal('window', { AudioContext: Decoder })
++      mediaProcessorMocks.processMedia.mockResolvedValueOnce({
++        metadata: { type: 'audio', duration: 1.503, codec: 'opus', bitrate: 0 },
++      })
++      try {
++        const media = await mediaLibraryService.importRecordedAudio(
++          new File(['take'], 'take.webm', { type: 'audio/webm' }),
++          'A',
++          { fallbackDurationMs: 1490 },
++        )
++        expect(media.duration).toBe(1.56)
++        expect(decode).toHaveBeenCalledOnce()
++        expect(close).toHaveBeenCalledOnce()
++      } finally {
++        vi.stubGlobal('window', previousWindow)
++      }
++    })
++    it.each([
++      { probe: 1.503, expected: 1.503, constructorFails: false },
++      { probe: 0, expected: 1.49, constructorFails: false },
++      { probe: 1.503, expected: 1.503, constructorFails: true },
++    ])(
++      'retains probe/timer duration when recording decoding fails (probe $probe)',
++      async ({ probe, expected, constructorFails }) => {
++        const previousWindow = globalThis.window
++        const close = vi.fn(() => Promise.resolve())
++        const Decoder = class {
++          constructor() {
++            if (constructorFails) throw new Error('context unavailable')
++          }
++          decodeAudioData = vi.fn(async () => {
++            throw new Error('decode unavailable')
++          })
++          close = close
++        }
++        vi.stubGlobal('window', { AudioContext: Decoder })
++        mediaProcessorMocks.processMedia.mockResolvedValueOnce({
++          metadata: { type: 'audio', duration: probe, codec: 'opus', bitrate: 0 },
++        })
++        try {
++          const media = await mediaLibraryService.importRecordedAudio(
++            new File(['take'], 'take.webm', { type: 'audio/webm' }),
++            'A',
++            { fallbackDurationMs: 1490 },
++          )
++          expect(media.duration).toBe(expected)
++          expect(close).toHaveBeenCalledTimes(constructorFails ? 0 : 1)
++        } finally {
++          vi.stubGlobal('window', previousWindow)
++        }
++      },
++    )
++    it('does not open a decoder after recording authority retires during a positive probe', async () => {
++      const previousWindow = globalThis.window
++      const opened = vi.fn()
++      const Decoder = class {
++        constructor() {
++          opened()
++        }
++        decodeAudioData = vi.fn(async () => ({ duration: 1.56 }))
++        close = vi.fn(async () => {})
++      }
++      vi.stubGlobal('window', { AudioContext: Decoder })
++      const release = deferred<{
++        metadata: { type: 'audio'; duration: number }
++        thumbnail: undefined
++      }>()
++      mediaProcessorMocks.processMedia.mockImplementationOnce(() => release.promise)
++      let current = true
++      try {
++        const importing = mediaLibraryService.importRecordedAudio(
++          new File(['take'], 'take.webm', { type: 'audio/webm' }),
++          'A',
++          {
++            fallbackDurationMs: 1490,
++            admission: { root: asHandle(createRoot()), isCurrent: () => current },
++          },
++        )
++        current = false
++        release.resolve({ metadata: { type: 'audio', duration: 1.503 }, thumbnail: undefined })
++        await expect(importing).rejects.toThrow('recording_retired')
++        expect(opened).not.toHaveBeenCalled()
++        expect(indexedDbMocks.writeMediaSource).not.toHaveBeenCalled()
++      } finally {
++        vi.stubGlobal('window', previousWindow)
++      }
++    })
+     it('refuses after suspended probe before any storage writes', async () => {
+       const entered = deferred<void>()
+       const release = deferred<{ metadata: { type: 'audio'; duration: number; codec: string; bitrate: number }; thumbnail: undefined }>()

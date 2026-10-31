@@ -1,0 +1,140 @@
+--- a/src/infrastructure/audio/mic-recorder/mic-recorder.ts
++++ b/src/infrastructure/audio/mic-recorder/mic-recorder.ts
+@@ -89,7 +89,7 @@
+   private state: EngineState = 'idle'
+   private stream: MediaStream | null = null
+   private recorder: MediaRecorder | null = null
+-  private chunks: Blob[] = []
++  private finished: Promise<MicRecorderResult & { error: unknown }> | null = null
+   private mimeType = ''
+
+   private meterStop: (() => void) | null = null
+@@ -109,7 +109,7 @@
+    * uses that moment to align the recording with the playhead.
+    */
+   async start(options: MicRecorderOptions = {}): Promise<void> {
+-    if (this.state !== 'idle') {
++    if (this.state !== 'idle' || this.recorder) {
+       throw new Error('MicRecorder is already active')
+     }
+     this.onLevel = options.onLevel
+@@ -123,7 +123,7 @@
+     this.startMetering(this.stream)
+
+     this.mimeType = pickRecorderMimeType()
+-    this.chunks = []
++    const chunks: Blob[] = []
+     const recorder = this.mimeType
+       ? new MediaRecorder(this.stream, { mimeType: this.mimeType })
+       : new MediaRecorder(this.stream)
+@@ -133,8 +133,33 @@
+
+     recorder.addEventListener('dataavailable', (event) => {
+       if (event.data && event.data.size > 0) {
+-        this.chunks.push(event.data)
+-      }
++        chunks.push(event.data)
++      }
++    })
++
++    // Capture the terminal events now: a device can end capture before the user presses Stop.
++    const mimeType = this.mimeType
++    this.finished = new Promise((resolve) => {
++      let error: unknown
++      const onError = (event: Event) => {
++        error = (event as unknown as { error?: DOMException }).error ??
++          new Error('MediaRecorder failed to stop')
++      }
++      recorder.addEventListener('error', onError)
++      recorder.addEventListener('stop', () => {
++        recorder.removeEventListener('error', onError)
++        if (this.recorder === recorder) {
++          this.accumulatedMs = this.elapsedMs()
++          this.state = 'idle'
++          this.stopMetering()
++        }
++        resolve({
++          blob: new Blob(chunks, { type: mimeType || 'audio/webm' }),
++          mimeType,
++          durationMs: this.accumulatedMs,
++          error,
++        })
++      }, { once: true })
+     })
+
+     await new Promise<void>((resolve, reject) => {
+@@ -157,14 +182,14 @@
+   }
+
+   pause(): void {
+-    if (this.state !== 'recording' || !this.recorder) return
++    if (this.state !== 'recording' || this.recorder?.state !== 'recording') return
+     this.recorder.pause()
+     this.accumulatedMs += performance.now() - this.startedAtMs
+     this.state = 'paused'
+   }
+
+   resume(): void {
+-    if (this.state !== 'paused' || !this.recorder) return
++    if (this.state !== 'paused' || this.recorder?.state !== 'paused') return
+     this.recorder.resume()
+     this.startedAtMs = performance.now()
+     this.state = 'recording'
+@@ -184,33 +209,24 @@
+    */
+   async stop(): Promise<MicRecorderResult> {
+     const recorder = this.recorder
+-    if (!recorder || this.state === 'idle') {
++    const finished = this.finished
++    if (!recorder || !finished) {
+       throw new Error('MicRecorder is not active')
+     }
+
+-    if (this.state === 'recording') {
+-      this.accumulatedMs += performance.now() - this.startedAtMs
+-    }
+-    const durationMs = this.accumulatedMs
+-
+-    const blob = await new Promise<Blob>((resolve, reject) => {
+-      const onStop = () => {
+-        recorder.removeEventListener('error', onError)
+-        resolve(new Blob(this.chunks, { type: this.mimeType || 'audio/webm' }))
+-      }
+-      const onError = (event: Event) => {
+-        recorder.removeEventListener('stop', onStop)
+-        const error = (event as unknown as { error?: DOMException }).error
+-        reject(error ?? new Error('MediaRecorder failed to stop'))
+-      }
+-      recorder.addEventListener('stop', onStop, { once: true })
+-      recorder.addEventListener('error', onError, { once: true })
+-      recorder.stop()
+-    })
+-
+-    const mimeType = this.mimeType
+-    this.dispose()
+-    return { blob, mimeType, durationMs }
++    try {
++      if (recorder.state !== 'inactive') {
++        this.accumulatedMs = this.elapsedMs()
++        this.state = 'paused'
++        recorder.stop()
++      }
++      // Inactive means capture ended, not that its queued final data has already arrived.
++      const { error, ...result } = await finished
++      if (error) throw error
++      return result
++    } finally {
++      this.dispose()
++    }
+   }
+
+   /** Tear down the mic stream, recorder, and metering. Idempotent. */
+@@ -226,7 +242,7 @@
+       }
+     }
+     this.recorder = null
+-    this.chunks = []
++    this.finished = null
+
+     if (this.stream) {
+       for (const track of this.stream.getTracks()) {
