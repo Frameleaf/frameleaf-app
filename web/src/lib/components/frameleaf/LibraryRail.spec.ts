@@ -5,6 +5,7 @@ import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
+import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -77,6 +78,19 @@ const treeWithIcon = (icon: string | null) => ({
 });
 
 describe('LibraryRail', () => {
+  it('heads the phone menu with Boards, Studio, Activity and Help (UI review 2026-10-30 #8)', async () => {
+    const { container } = render(LibraryRail);
+    const group = container.querySelector<HTMLElement>('.fl-phone-sections')!;
+    expect(within(group).getByRole('link', { name: 'Boards' })).toHaveAttribute('href', '/pro');
+    expect(within(group).getByRole('link', { name: 'Studio' })).toHaveAttribute('href', Route.studioProjects());
+    expect(within(group).getByRole('link', { name: 'Activity' })).toHaveAttribute('href', Route.activity());
+    expect(within(group).queryByRole('link', { name: 'Library' })).not.toBeInTheDocument();
+    helpPanel.open = false;
+    await fireEvent.click(within(group).getByRole('button', { name: 'Help' }));
+    expect(helpPanel.open).toBe(true);
+    helpPanel.open = false;
+  });
+
   it('uses the shared Design hierarchy and keeps Pro context on album/create links', async () => {
     app.page.url = new URL('http://localhost/pro');
     sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(null));

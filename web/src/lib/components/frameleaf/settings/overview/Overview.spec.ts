@@ -3,7 +3,7 @@ import { addMessages } from 'svelte-i18n';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
 import en from '../../../../../../../i18n/en.json';
 import Overview from './Overview.svelte';
-import { byUrgency, growthPerDay, overviewLevel, roomLeft, sentence } from './overview';
+import { byUrgency, growthPerDay, overviewLevel, roomLeft, sentence, statusPhrases } from './overview';
 
 const sdk = vi.hoisted(() => ({
   getAttention: vi.fn(),
@@ -136,6 +136,9 @@ describe('Overview (FL-363)', () => {
     expect(screen.getAllByText(/almost out of space/i).length).toBeGreaterThan(0);
     const list = screen.getByRole('list', { name: 'Needs your attention' });
     expect(list.querySelector('li')).toHaveClass('is-now');
+    // UI review 2026-10-30 #17: the status names only the problems, and "Check again" is there once.
+    expect(screen.getByText('This drive is almost out of space and an update is ready.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Check again/ })).toHaveLength(1);
   });
 
   it('lists Studio as optional, never raising the headline, and lets it be dismissed on the server', async () => {
@@ -152,6 +155,14 @@ describe('Overview (FL-363)', () => {
 });
 
 describe('overview rules', () => {
+  it('says only what is wrong while something is (UI review 2026-10-30 #17)', () => {
+    const fine = { wrong: false, text: 'Frameleaf is up to date' };
+    const full = { wrong: true, text: 'this drive is almost full' };
+    expect(statusPhrases([fine, full])).toEqual(['this drive is almost full']);
+    expect(statusPhrases([fine])).toEqual(['Frameleaf is up to date']);
+    expect(statusPhrases([])).toEqual([]);
+  });
+
   it('answers with three levels', () => {
     expect(overviewLevel([])).toBe('ok');
     expect(overviewLevel(['look'])).toBe('attention');

@@ -12,6 +12,7 @@
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
+  import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
   import { libraryUploadScope } from '$lib/frameleaf/search-context';
   import { buildPrimaryDestinations, currentPrimaryDestination, isClientsEnabled } from '$lib/frameleaf/navigation';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
@@ -92,7 +93,6 @@
   const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname, proContext));
 
   let showNotifications = $state(false);
-  let showHelp = $state(false);
   let bellButton = $state<HTMLButtonElement>();
 
   /** Close the panel; from the keyboard (Escape, its close button) focus goes back to the bell. */
@@ -336,20 +336,20 @@
       <!-- FL-489: help for this screen, every help article and Ask Frameleaf (frameleaf-prototype #5). -->
       <button
         type="button"
-        class="fl-topbar-button"
-        onclick={() => (showHelp = true)}
+        class="fl-topbar-button fl-help-button"
+        onclick={() => (helpPanel.open = true)}
         title={$t('frameleaf_help_panel_open')}
         aria-label={$t('frameleaf_help_panel_open')}
         aria-haspopup="dialog"
-        aria-expanded={showHelp}
+        aria-expanded={helpPanel.open}
         data-testid="help-button"
       >
         <Icon icon={mdiHelpCircleOutline} size="20" aria-hidden="true" />
       </button>
-      {#if showHelp}
+      {#if helpPanel.open}
         <!-- Loaded on first use: the panel, its Markdown renderer and sanitizer stay out of every page's bundle (FL-139). -->
         {#await import('$lib/components/frameleaf/HelpPalette.svelte') then { default: HelpPalette }}
-          <HelpPalette onClose={() => (showHelp = false)} />
+          <HelpPalette onClose={() => (helpPanel.open = false)} />
         {/await}
       {/if}
 
@@ -475,10 +475,12 @@
     gap: 0.25rem;
     min-width: 10.6875rem;
   }
+  /* B1 (UI review 2026-10-30): the mark never shrinks. With `min-width: 0` the lead's overflow
+     squeezed the logo to 2px on every phone page that has the menu button. */
   .fl-topbar-brand {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
-    min-width: 0;
   }
   .fl-primary-nav {
     display: flex;
@@ -693,14 +695,60 @@
   }
   /* apple-style.css: on phones the tab bar owns Search, so the bar keeps no search field. The
      entry stays mounted (only its trigger is hidden) so the tab bar and ⌘K still open it. */
+  /*
+   * UI review 2026-10-30 #8 (review-1030-shell.css): phones have one navigation, the ☰ menu and the
+   * tab bar, so the top Library / Boards / Studio / Activity tabs go and the bar is one 56px row with
+   * the 16px phone gutter: menu, logo, then Upload, the bell, Locked, theme and account. Every box is
+   * 36px and 8px from the next; Help moves into the menu (LibraryRail `fl-phone-sections`).
+   */
   @media (max-width: 700px) {
     .fl-topbar-grid {
-      /* The spare column is the gap between the brand and Upload, so it never closes further than the others. */
-      grid-template-columns: minmax(0, auto) minmax(var(--fl-topbar-gap), 1fr) auto;
-      grid-template-areas:
-        'lead . actions'
-        'primary primary primary';
-      column-gap: 0;
+      display: flex;
+      align-items: center;
+      gap: var(--fl-space-2);
+      padding: 0 max(1rem, var(--fl-safe-right)) 0 max(1rem, var(--fl-safe-left));
+    }
+    .fl-topbar-lead {
+      gap: var(--fl-space-2);
+      overflow: visible;
+    }
+    .fl-primary-nav {
+      display: none;
+    }
+    .fl-topbar-actions {
+      flex: none;
+      gap: var(--fl-space-2);
+      margin-inline-start: auto;
+    }
+    .fl-topbar-actions > .fl-help-button {
+      display: none;
+    }
+    .fl-topbar-lead > :global(button),
+    .fl-topbar-actions > :global(button),
+    .fl-topbar-actions :global(.upload-menu .menu-root > button),
+    .fl-notif-bell,
+    .fl-locked-control {
+      width: 36px;
+      min-width: 36px;
+      height: 36px;
+      min-height: 36px;
+      padding: 0;
+    }
+    /* The bordered Locked box is the 36px; its button fills it. */
+    .fl-locked-control .fl-locked-toggle {
+      width: 100%;
+      min-width: 0;
+      height: 100%;
+      min-height: 0;
+      padding: 0;
+    }
+    .fl-topbar-button::before,
+    .fl-topbar-actions :global(.upload-menu .menu-root > button)::before {
+      inset: 0;
+    }
+    .fl-topbar-actions :global(.fl-account-button) {
+      min-height: 36px;
+      padding: 0 var(--fl-space-half);
     }
     .fl-topbar-search {
       position: absolute;

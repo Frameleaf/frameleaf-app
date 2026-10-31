@@ -40,7 +40,7 @@ describe('Utilities area', () => {
   });
   it('renders prototype grouped cards without loading a tool', async () => {
     render(UtilitiesArea);
-    expect(screen.getByRole('heading', { name: 'Utilities' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tools' })).toBeInTheDocument();
     for (const name of ['Organize', 'Repair', 'Import', 'Automate', 'Connect']) {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
@@ -137,7 +137,7 @@ describe('Utilities area', () => {
     state.url.searchParams.set('section', 'duplicates');
     state.load.mockRejectedValue(new Error('offline'));
     render(UtilitiesArea);
-    expect(screen.getByRole('button', { name: 'Utilities' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('This tool could not be loaded'));
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(state.load).toHaveBeenCalledTimes(2));

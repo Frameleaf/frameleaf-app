@@ -79,10 +79,10 @@
   <div class="fla-bg-group" role="group" aria-labelledby={headingId}>
     <h3 id={headingId} class="fla-bg-heading">
       {$t('frameleaf_activity_background_work')} <span class="fla-bg-count">{count}</span>
-      <span class="fla-bg-hint">
-        {$t('frameleaf_activity_background_hint')}
-        <a href={commandCenterUrl('processing', 'queues')}>{$t('frameleaf_activity_background_link')}</a>
-      </span>
+      <!-- UI review 2026-10-30 #18: one plain link to where background work is managed. -->
+      <a class="fla-manage" href={commandCenterUrl('processing', 'queues')}
+        >{$t('frameleaf_activity_background_manage')}<Icon icon={mdiChevronRight} size="14" aria-hidden /></a
+      >
     </h3>
     <ul class="fla-bg-list">
       {#each cards as card (card.id)}
@@ -107,7 +107,7 @@
               {/if}
             </span>
             <span class="fla-bg-link" aria-hidden="true">
-              {$t('frameleaf_activity_background_work')}
+              <span class="fla-bg-link-text">{$t('frameleaf_activity_background_work')}</span>
               <Icon icon={mdiChevronRight} size="16" />
             </span>
           </a>
@@ -135,7 +135,7 @@
               {/if}
             </span>
             <span class="fla-bg-link" aria-hidden="true">
-              {$t('frameleaf_cc_section_cloud_backup')}
+              <span class="fla-bg-link-text">{$t('frameleaf_cc_section_cloud_backup')}</span>
               <Icon icon={mdiChevronRight} size="16" />
             </span>
           </a>
@@ -173,18 +173,19 @@
     font-variant-numeric: tabular-nums;
     text-transform: none;
   }
-  .fla-bg-hint {
-    font-weight: 400;
-    text-transform: none;
+  .fla-manage {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-inline-start: var(--fl-space-2);
+    color: var(--fl-accent);
+    font-weight: 500;
     letter-spacing: 0;
+    text-decoration: none;
+    text-transform: none;
   }
-  .fla-bg-hint a {
-    color: inherit;
+  .fla-manage:hover {
     text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .fla-bg-hint a:hover {
-    color: var(--fl-text);
   }
   .fla-bg-list {
     display: flex;
@@ -282,6 +283,10 @@
     }
     .fla-bg-title {
       white-space: normal;
+    }
+    /* #18: the rows keep their text width; the chevron alone says each one opens. */
+    .fla-bg-link-text {
+      display: none;
     }
   }
 </style>

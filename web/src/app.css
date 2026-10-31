@@ -173,6 +173,13 @@
     --fl-tabbar-space: 0px;
   }
 
+  /* UI review 2026-10-30 #8: on phones the top bar is one 56px row (no top tabs, TopBar.svelte). */
+  @media (max-width: 700px) {
+    :root {
+      --fl-topbar-height-phone: calc(3.5rem + env(safe-area-inset-top, 0px));
+    }
+  }
+
   :root.dark {
     color-scheme: dark;
   }

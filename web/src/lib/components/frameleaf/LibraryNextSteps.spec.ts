@@ -45,4 +45,42 @@ describe('LibraryNextSteps', () => {
     render(LibraryNextSteps);
     expect(screen.queryByTestId('frameleaf-next-steps')).not.toBeInTheDocument();
   });
+
+  describe('on phones (UI review 2026-10-30 #7)', () => {
+    beforeEach(() => {
+      vi.mocked(globalThis.matchMedia).mockImplementation(
+        (query: string) =>
+          ({
+            matches: query.includes('max-width: 700px'),
+            media: query,
+            onchange: null,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+          }) as unknown as MediaQueryList,
+      );
+    });
+
+    it('is one row that opens to the three suggestions', async () => {
+      offerNextSteps('admin');
+      render(LibraryNextSteps);
+      const row = screen.getByTestId('frameleaf-next-steps');
+      expect(row).toHaveClass('fl-next-steps-row');
+      expect(row.querySelectorAll(':scope a')).toHaveLength(0);
+
+      const toggle = screen.getByRole('button', { expanded: false });
+      await fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const links = [...row.querySelectorAll<HTMLAnchorElement>(':scope a')];
+      expect(links.map((link) => link.dataset.step)).toEqual(['care', 'backup', 'background']);
+    });
+
+    it('dismisses for good from the row', async () => {
+      offerNextSteps('admin');
+      render(LibraryNextSteps);
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_next_steps_dismiss' }));
+      await waitFor(() => expect(screen.queryByTestId('frameleaf-next-steps')).not.toBeInTheDocument());
+      expect(nextStepsOffered('admin')).toBe(false);
+    });
+  });
 });
