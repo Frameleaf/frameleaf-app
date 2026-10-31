@@ -17,6 +17,7 @@ try:
     libann.load.argtypes = c_void_p, c_char_p, c_bool, c_bool, c_bool, c_char_p
     libann.load.restype = c_int
     libann.execute.argtypes = c_void_p, c_int, Array[c_void_p], Array[c_void_p]
+    libann.execute.restype = c_int
     libann.unload.argtypes = c_void_p, c_int
     libann.destroy.argtypes = (c_void_p,)
     libann.shape.argtypes = c_void_p, c_int, c_bool, c_int
@@ -164,7 +165,8 @@ class Ann(metaclass=_Singleton):
         inputs = input_type(*(t.ctypes.data for t in input_tensors))
         output_type = c_void_p * len(output_tensors)
         outputs = output_type(*(t.ctypes.data for t in output_tensors))
-        libann.execute(self.ann, network_id, inputs, outputs)
+        if libann.execute(self.ann, network_id, inputs, outputs) != 0:
+            raise RuntimeError(f"ANN execution failed for network {network_id}")
         return output_tensors
 
     def shape(self, network_id: int, input: bool = False, index: int = 0) -> tuple[int]:

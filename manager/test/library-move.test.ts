@@ -532,3 +532,36 @@ test('recovery with lost restart acknowledgement does not reject or overwrite ne
     assert.equal(resumed.receipts['cancelled'], 'media_move_cancelled_original_retained');
   });
 });
+
+test('a failed media copy keeps its own error when cleanup finds no container', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-move-copy-'));
+  const store = new Store(directory);
+  const controller = {
+    Image: `sha256:${'b'.repeat(64)}`,
+    State: { Running: true },
+    Config: { Labels: { 'app.frameleaf.manager.role': 'controller' }, Env: [`MANAGER_DATA=${directory}`] },
+  };
+  const calls: string[] = [];
+  const execute = async (_binary: string, args: string[]) => {
+    calls.push(args[0]);
+    if (args[0] === 'run') throw new Error('copy failed');
+    throw new Refusal('docker_operation_failed', 503);
+  };
+  const move = new LibraryMove(
+    store,
+    { inventory: async () => [controller] } as any,
+    {} as any,
+    {} as any,
+    directory,
+    '/backups',
+    execute as any,
+  );
+  const review = { id: 'c'.repeat(36), current: { mounts: [{ source: join(directory, 'media') }] } };
+  try {
+    await assert.rejects((move as any).helper('copy', review, join(directory, 'target')), /copy failed/);
+    assert.deepEqual(calls, ['inspect', 'run', 'inspect']);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

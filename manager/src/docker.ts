@@ -226,7 +226,7 @@ export class Docker {
         'exec',
         '-i',
         '--env',
-        `PGPASSWORD=${db.password}`,
+        'PGPASSWORD',
         db.container,
         'psql',
         '-X',
@@ -241,7 +241,8 @@ export class Docker {
         'ON_ERROR_STOP=1',
         '-At',
       ],
-      { input: sql },
+      // The password reaches docker through its environment, never its argv.
+      { input: sql, env: { PGPASSWORD: db.password } },
     );
   }
   async dump(db: Database, destination: string): Promise<void> {
@@ -251,7 +252,7 @@ export class Docker {
       [
         'exec',
         '--env',
-        `PGPASSWORD=${db.password}`,
+        'PGPASSWORD',
         db.container,
         'pg_dump',
         '--no-password',
@@ -265,7 +266,7 @@ export class Docker {
         '--no-owner',
         '--no-acl',
       ],
-      { outputFile: destination, timeout: 7_200_000 },
+      { outputFile: destination, timeout: 7_200_000, env: { PGPASSWORD: db.password } },
     );
   }
   async restore(db: Database, file: string): Promise<void> {
@@ -277,7 +278,7 @@ export class Docker {
         'exec',
         '-i',
         '--env',
-        `PGPASSWORD=${db.password}`,
+        'PGPASSWORD',
         db.container,
         'pg_restore',
         '--no-password',
@@ -292,7 +293,7 @@ export class Docker {
         '--no-owner',
         '--no-acl',
       ],
-      { inputFile: file, timeout: 7_200_000 },
+      { inputFile: file, timeout: 7_200_000, env: { PGPASSWORD: db.password } },
     );
   }
   async verifyDump(db: Database, file: string): Promise<void> {

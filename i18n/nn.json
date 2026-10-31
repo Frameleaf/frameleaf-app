@@ -84,7 +84,7 @@
     "image_format_description": "WebP gjev mindre filstorleik enn JPEG, men er treigare å lage.",
     "image_fullsize_description": "Bilete i full storleik utan metadata, i bruk når zooma inn",
     "image_fullsize_enabled": "Skru på generering av bilete i full storleik",
-    "image_fullsize_enabled_description": "Generer bilete i full storleik for ikkje web-tilpassa formatar. Når \"Foretrekk",
+    "image_fullsize_enabled_description": "Generer bilete i full storleik for ikkje web-tilpassa formatar. Når \"Bruk helst innebygd førehandsvisning\" er aktivert, vert innebygde førehandsvisingar brukte direkte utan konvertering. Påverkar ikkje web-tilpassa formatar som JPEG.",
     "image_fullsize_quality_description": "Kvalitet på bilete i full storleik frå 1-100. Høgare er betre, men gjev større filer.",
     "image_fullsize_title": "Innstillingar for bilete i full storleik",
     "image_prefer_embedded_preview": "Bruk helst innebygd førehandsvisning",

@@ -56,6 +56,9 @@ class TestNativeBridge(unittest.TestCase):
     def test_execute_exception_releases_network_lock(self) -> None:
         self.run_case("execute-exception")
 
+    def test_execute_failure_status_raises(self) -> None:
+        self.run_case("execute-status")
+
     def test_unload_exception_releases_runtime_lock(self) -> None:
         self.run_case("unload-exception")
 

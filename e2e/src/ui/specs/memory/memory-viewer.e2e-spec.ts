@@ -57,6 +57,7 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
       ownerId: adminUserId,
     });
 
+    assets.length = 0;
     for (const timeBucket of timelineRestData.buckets.values()) {
       assets.push(...timeBucket);
     }
@@ -506,6 +507,7 @@ test.describe('Memory Viewer - Single Asset Memory Edge Cases', () => {
       ownerId: adminUserId,
     });
 
+    assets.length = 0;
     for (const timeBucket of timelineRestData.buckets.values()) {
       assets.push(...timeBucket);
     }

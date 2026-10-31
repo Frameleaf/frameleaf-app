@@ -104,11 +104,10 @@ export class Releases {
         clearTimeout(timeout);
         reject(new Refusal('release_verification_failed'));
       });
-      worker.once('exit', (code) => {
-        if (code !== 0) {
-          clearTimeout(timeout);
-          reject(new Refusal('release_verification_failed'));
-        }
+      // Messages are delivered before 'exit'; an exit without one (even code 0) is a failed verification.
+      worker.once('exit', () => {
+        clearTimeout(timeout);
+        reject(new Refusal('release_verification_failed'));
       });
     });
   }

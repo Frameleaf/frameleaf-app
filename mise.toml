@@ -92,7 +92,6 @@ run = { task = "//:prod", args = [
   "--build",
   "-V",
   "--scale frameleaf-server=3",
-  "--scale immich-microservices",
 ] }
 
 [tasks.prod-down]

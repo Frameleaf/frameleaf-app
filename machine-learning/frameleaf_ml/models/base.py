@@ -80,8 +80,8 @@ class InferenceModel(ABC):
         if not settings.model_downloads:
             from frameleaf_ml.staging import verify_staged
 
-            # Semantic masks have their own pinned, offline snapshot verifier.
-            if self.model_task != ModelTask.SEMANTIC_MASK:
+            # Semantic masks and subject mattes have their own pinned, offline snapshot verifier.
+            if self.model_task not in (ModelTask.SEMANTIC_MASK, ModelTask.SUBJECT_MATTE):
                 verify_staged(self.cache_dir)
             if not self.cached:
                 raise ModelUnavailableError("Model is not staged; stop inference and run the model-staging command")

@@ -157,7 +157,8 @@ export class LibraryMove {
       await this.execute('docker', ['rm', prior.Id]);
     }
     await mkdir(this.state(review.id), { recursive: true, mode: 0o700 });
-    let result: string;
+    let result: string | undefined;
+    let failure: unknown;
     try {
       result = await this.execute(
         'docker',
@@ -202,12 +203,31 @@ export class LibraryMove {
         ],
         { timeout: 86_400_000 },
       );
-    } finally {
-      const owned = JSON.parse(await this.execute('docker', ['inspect', name]))[0];
-      if (owned.Config?.Labels?.['app.frameleaf.move'] !== review.id || owned.Image !== controllers[0].Image)
-        throw new Refusal('media_copy_container_changed');
-      if (!owned.State.Running) await this.execute('docker', ['rm', owned.Id]);
+    } catch (error) {
+      failure = error;
     }
+    // Cleanup never replaces the copy's own failure; a run that never started leaves no container.
+    let owned: any = null;
+    try {
+      owned = JSON.parse(await this.execute('docker', ['inspect', name]))[0];
+    } catch (error) {
+      if (result === undefined) throw failure;
+      if (!(error instanceof Refusal) || error.code !== 'docker_operation_failed') throw error;
+    }
+    if (owned) {
+      if (owned.Config?.Labels?.['app.frameleaf.move'] !== review.id || owned.Image !== controllers[0].Image) {
+        if (result === undefined) throw failure;
+        throw new Refusal('media_copy_container_changed');
+      }
+      if (!owned.State.Running) {
+        try {
+          await this.execute('docker', ['rm', owned.Id]);
+        } catch (error) {
+          throw result === undefined ? failure : error;
+        }
+      }
+    }
+    if (result === undefined) throw failure;
     const values = JSON.parse(result);
     if (
       [
