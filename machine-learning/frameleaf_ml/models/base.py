@@ -1,0 +1,267 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from pathlib import Path
+from shutil import rmtree
+from threading import Lock
+from typing import Any, ClassVar
+
+from huggingface_hub import snapshot_download
+from huggingface_hub.errors import (
+    HfHubHTTPError,
+    RemoteEntryNotFoundError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
+
+import frameleaf_ml.sessions.ann.loader
+import frameleaf_ml.sessions.rknn as rknn
+from frameleaf_ml.sessions.ort import OrtSession
+
+from ..config import clean_name, log, model_source_token, model_source_url, settings
+from ..schemas import ModelFormat, ModelIdentity, ModelSession, ModelTask, ModelType
+from ..sessions.ann import AnnSession
+
+# Organisation on the model source that holds the Frameleaf model repositories.
+MODEL_SOURCE_ORG = "frameleaf"
+
+# Status codes a Hub-compatible source returns for a repository it does not serve.
+_MISSING_MODEL_STATUSES = {401, 403, 404, 410}
+
+
+class ModelUnavailableError(RuntimeError):
+    """The configured model source does not serve the requested model."""
+
+
+class ModelRuntimeUnavailable(ImportError):
+    """This container lacks a library the model needs, so it can never run the model here.
+
+    The CPU image ships no OpenVINO GenAI, for example. Unlike a load failure it is not retried:
+    the request is refused at once with ``model_runtime_unavailable`` so the server moves on to its
+    fallback model without anything being downloaded or loaded.
+    """
+
+
+def _is_missing_model(error: BaseException) -> bool:
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, (RepositoryNotFoundError, RevisionNotFoundError, RemoteEntryNotFoundError)):
+            return True
+        if isinstance(current, HfHubHTTPError) and current.response.status_code in _MISSING_MODEL_STATUSES:
+            return True
+        current = current.__cause__
+    return False
+
+
+class InferenceModel(ABC):
+    depends: ClassVar[list[ModelIdentity]]
+    identity: ClassVar[ModelIdentity]
+    threads: ClassVar[int] = 2  # how many threads one run takes for CPU inference
+
+    def __init__(
+        self,
+        model_name: str,
+        cache_dir: Path | str | None = None,
+        model_format: ModelFormat | None = None,
+        session: ModelSession | None = None,
+        **model_kwargs: Any,
+    ) -> None:
+        self.loaded = session is not None
+        self.load_attempts = 0
+        self.load_retry_at: float | None = None
+        self._load_lock = Lock()
+        self.model_name = clean_name(model_name)
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else self._cache_dir_default
+        self.model_format = model_format if model_format is not None else self._model_format_default
+        if session is not None:
+            self.session = session
+
+    def download(self) -> None:
+        if not settings.model_downloads:
+            from frameleaf_ml.staging import verify_staged
+
+            # Semantic masks have their own pinned, offline snapshot verifier.
+            if self.model_task != ModelTask.SEMANTIC_MASK:
+                verify_staged(self.cache_dir)
+            if not self.cached:
+                raise ModelUnavailableError("Model is not staged; stop inference and run the model-staging command")
+            return
+        if not self.cached:
+            model_type = self.model_type.replace("-", " ")
+            log.info(f"Downloading {model_type} model '{self.model_name}' to {self.model_path}. This may take a while.")
+            self._download()
+
+    def load(self, *, allow_download: bool = True) -> None:
+        with self._load_lock:  # two requests may arrive for a model neither has loaded
+            if self.loaded:
+                return
+            self.load_attempts += 1
+
+            if allow_download:
+                self.download()
+            elif not self.cached:
+                raise ModelUnavailableError("Verified model cache is unavailable")
+            attempt = f"Attempt #{self.load_attempts} to load" if self.load_attempts > 1 else "Loading"
+            log.info(f"{attempt} {self.model_type.replace('-', ' ')} model '{self.model_name}' to memory")
+            self.session = self._load()
+            self.loaded = True
+
+    def unload(self) -> None:
+        with self._load_lock:
+            if self.loaded:
+                del self.session
+                self.loaded = False
+                self.load_attempts = 0
+                self.load_retry_at = None
+
+    def missing_runtime(self) -> str | None:
+        """Why this container can never run the model (a library it needs is not installed), else None."""
+        return None
+
+    def predict(self, *inputs: Any, **model_kwargs: Any) -> Any:
+        self.load()
+        if model_kwargs:
+            self.configure(**model_kwargs)
+        return self._predict(*inputs, **model_kwargs)
+
+    @abstractmethod
+    def _predict(self, *inputs: Any, **model_kwargs: Any) -> Any: ...
+
+    def configure(self, **kwargs: Any) -> None:
+        pass
+
+    def _download(self) -> None:
+        ignored_patterns: dict[ModelFormat, list[str]] = {
+            ModelFormat.ONNX: ["*.armnn", "*.rknn"],
+            ModelFormat.ARMNN: ["*.rknn"],
+            ModelFormat.RKNN: ["*.armnn"],
+        }
+
+        self._download_from_source(
+            clean_name(self.model_name), ignore_patterns=ignored_patterns.get(self.model_format, [])
+        )
+
+    def _download_from_source(self, repo: str, **snapshot_kwargs: Any) -> None:
+        """Download `MODEL_SOURCE_ORG/<repo>` from the model source into this model's cache directory."""
+        repo_id = f"{MODEL_SOURCE_ORG}/{repo}"
+        endpoint = model_source_url()
+        try:
+            snapshot_download(
+                repo_id,
+                cache_dir=self.cache_dir,
+                local_dir=self.cache_dir,
+                endpoint=endpoint,
+                # Intentional credentials are bound to this source; saved logins are never inherited.
+                token=model_source_token(),
+                **snapshot_kwargs,
+            )
+        except Exception as error:
+            if not _is_missing_model(error):
+                raise
+            raise self._unavailable(repo_id, endpoint) from error
+
+    def _unavailable(self, repo_id: str, endpoint: str, reason: str = "isn't available") -> ModelUnavailableError:
+        message = (
+            f"Model '{self.model_name}' {reason} from the model source {endpoint} "
+            f"(looked for {repo_id}). An admin can set MACHINE_LEARNING_MODEL_SOURCE_URL "
+            "to their own model source that serves this model."
+        )
+        log.error(message)
+        return ModelUnavailableError(message)
+
+    def _load(self) -> ModelSession:
+        return self._make_session(self.model_path)
+
+    def clear_cache(self) -> None:
+        is_directory = self.cache_dir.is_dir()
+        if not is_directory and not self.cache_dir.exists():
+            log.warning(
+                f"Attempted to clear cache for model '{self.model_name}', but cache directory does not exist",
+            )
+            return
+        if not rmtree.avoids_symlink_attacks:
+            raise RuntimeError("Attempted to clear cache, but rmtree is not safe on this platform")
+
+        if is_directory:
+            rmtree(self.cache_dir)
+            log.info(f"Cleared cache directory for model '{self.model_name}'.")
+        else:
+            log.warning(
+                (
+                    f"Encountered file instead of directory at cache path "
+                    f"for '{self.model_name}'. Removing file and replacing with a directory."
+                ),
+            )
+            self.cache_dir.unlink()
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _make_session(self, model_path: Path) -> ModelSession:
+        if not model_path.is_file():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+
+        match model_path.suffix:
+            case ".armnn":
+                session: ModelSession = AnnSession(model_path)
+            case ".onnx":
+                session = OrtSession(model_path, threads=self.threads)
+            case ".rknn":
+                session = rknn.RknnSession(model_path)
+            case _:
+                raise ValueError(f"Unsupported model file type: {model_path.suffix}")
+        return session
+
+    def model_path_for_format(self, model_format: ModelFormat) -> Path:
+        model_path_prefix = rknn.model_prefix if model_format == ModelFormat.RKNN else None
+        if model_path_prefix:
+            return self.model_dir / model_path_prefix / f"model.{model_format}"
+        return self.model_dir / f"model.{model_format}"
+
+    @property
+    def model_dir(self) -> Path:
+        return self.cache_dir / self.model_type.value
+
+    @property
+    def model_path(self) -> Path:
+        return self.model_path_for_format(self.model_format)
+
+    @property
+    def model_task(self) -> ModelTask:
+        return self.identity[1]
+
+    @property
+    def model_type(self) -> ModelType:
+        return self.identity[0]
+
+    @property
+    def cache_dir(self) -> Path:
+        return self._cache_dir
+
+    @cache_dir.setter
+    def cache_dir(self, cache_dir: Path) -> None:
+        self._cache_dir = cache_dir
+
+    @property
+    def _cache_dir_default(self) -> Path:
+        return settings.cache_folder / self.model_task.value / self.model_name
+
+    @property
+    def cached(self) -> bool:
+        return self.model_path.is_file()
+
+    @property
+    def model_format(self) -> ModelFormat:
+        return self._model_format
+
+    @model_format.setter
+    def model_format(self, model_format: ModelFormat) -> None:
+        log.debug(f"Setting model format to {model_format}")
+        self._model_format = model_format
+
+    @property
+    def _model_format_default(self) -> ModelFormat:
+        if rknn.is_available:
+            return ModelFormat.RKNN
+        elif frameleaf_ml.sessions.ann.loader.is_available and settings.ann:
+            return ModelFormat.ARMNN
+        else:
+            return ModelFormat.ONNX
