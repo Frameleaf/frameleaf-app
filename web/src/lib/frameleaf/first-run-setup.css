@@ -1673,7 +1673,6 @@
   }
 }
 
-
 /* ------------------------------------------------ UI review 2026-10-30 (FL-708)
    The prototype's review-1030-setup.css: items 4 and 20, P5, P6 and P7. */
 
@@ -1802,4 +1801,20 @@
 }
 .frs-restore:hover {
   color: var(--fl-text);
+}
+
+/* FL-708 (FC-222): the code a new account (or an authenticator app) asks for, and the statements a new
+   account agrees to, which Frameleaf Cloud records as shown. */
+.frs-cloud-code-title {
+  margin: 0;
+  font-size: var(--fl-font-title, 1.125rem);
+  font-weight: 600;
+}
+.frs-cloud-consent {
+  margin: 0;
+  color: var(--fl-muted);
+}
+/* FC-18: linking in the account's region is offered, never automatic. */
+.frs-cloud-region {
+  align-self: flex-start;
 }

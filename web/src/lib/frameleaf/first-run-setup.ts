@@ -9,6 +9,7 @@
  * they travel as `secrets` and only reach the sign-up and login calls.
  */
 import type { FrameleafSetupProgressDto, AdminConfigDto } from '@frameleaf/sdk';
+import { CloudAccountLinkRefusal } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { passwordStrength } from '$lib/frameleaf/auth-password';
 
@@ -328,7 +329,7 @@ export const validateStep = (state: SetupState, stepId: SetupStepId, context: Se
   const { choices } = state;
   const secrets = context.secrets ?? {};
   // FL-708: a new server always gets its local administrator here (name, email and a password of at
-  // least 12 characters); nothing else stands in for it.
+  // least 8 characters); nothing else stands in for it.
   if (stepId === 'account' && state.flow === 'new' && !choices.accountCreated) {
     if (!choices.adminName.trim()) {
       errors.name = 'frameleaf_setup_error_name';
@@ -545,7 +546,7 @@ export const FRAMELEAF_TERMS_URL = 'https://frameleaf.app/legal';
 
 /**
  * FL-708 (item 20): the optional Frameleaf account step, after the local administrator exists.
- * `create` makes a new account (name, email, a password of at least 12 characters); `sign-in` uses one
+ * `create` makes a new account (name, email, a password of at least 8 characters, as on Frameleaf Cloud); `sign-in` uses one
  * the administrator already has (email and password). The password never enters saved state.
  */
 export const validateFrameleafAccount = ({ mode, name, email, password }: FrameleafAccountForm) => {
@@ -562,6 +563,43 @@ export const validateFrameleafAccount = ({ mode, name, email, password }: Framel
     errors.password = 'frameleaf_setup_error_frameleaf_password';
   }
   return { ok: Object.keys(errors).length === 0, errors };
+};
+
+/**
+ * FL-708 (FC-222): the words for each reason Frameleaf Cloud did not link with the account. Never
+ * says whether an email has an account, except `email-taken`, which the cloud only sends after the
+ * emailed code proved the address is the person's own.
+ */
+const ACCOUNT_LINK_REFUSAL_MESSAGES: Record<CloudAccountLinkRefusal, Translations> = {
+  [CloudAccountLinkRefusal.InvalidCredentials]: 'frameleaf_setup_frameleaf_error_invalid_credentials',
+  [CloudAccountLinkRefusal.EmailTaken]: 'frameleaf_setup_frameleaf_error_email_taken',
+  [CloudAccountLinkRefusal.PasswordTooShort]: 'frameleaf_setup_error_password',
+  [CloudAccountLinkRefusal.PasswordBreached]: 'frameleaf_setup_frameleaf_error_password_breached',
+  [CloudAccountLinkRefusal.ConsentOutdated]: 'frameleaf_setup_frameleaf_error_consent_outdated',
+  [CloudAccountLinkRefusal.CodeInvalid]: 'frameleaf_setup_frameleaf_error_code_invalid',
+  [CloudAccountLinkRefusal.CodeExpired]: 'frameleaf_setup_frameleaf_error_code_expired',
+  [CloudAccountLinkRefusal.AccountRefused]: 'frameleaf_setup_frameleaf_error_account_refused',
+  [CloudAccountLinkRefusal.InstanceLimit]: 'frameleaf_setup_frameleaf_error_instance_limit',
+  [CloudAccountLinkRefusal.InstanceIdTaken]: 'frameleaf_setup_frameleaf_error_server_registered',
+  [CloudAccountLinkRefusal.KeyAlreadyLinked]: 'frameleaf_setup_frameleaf_error_server_registered',
+  [CloudAccountLinkRefusal.RegionMismatch]: 'frameleaf_setup_frameleaf_error_region_mismatch',
+  [CloudAccountLinkRefusal.RateLimited]: 'frameleaf_setup_frameleaf_error_rate_limited',
+  [CloudAccountLinkRefusal.Paused]: 'frameleaf_setup_frameleaf_error_paused',
+  [CloudAccountLinkRefusal.Unavailable]: 'frameleaf_setup_cloud_unreachable_body',
+};
+
+export const accountLinkRefusalMessage = (
+  refusal: CloudAccountLinkRefusal,
+  retryAfterSeconds: number | null = null,
+  attemptsLeft: number | null = null,
+): Translations => {
+  if (refusal === CloudAccountLinkRefusal.CodeInvalid && attemptsLeft !== null) {
+    return 'frameleaf_setup_frameleaf_error_code_invalid_left';
+  }
+  if (refusal === CloudAccountLinkRefusal.RateLimited && retryAfterSeconds) {
+    return 'frameleaf_setup_frameleaf_error_rate_limited_for';
+  }
+  return ACCOUNT_LINK_REFUSAL_MESSAGES[refusal];
 };
 
 /** The account form starts from the administrator's own name and email. */

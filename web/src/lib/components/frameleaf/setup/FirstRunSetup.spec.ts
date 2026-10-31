@@ -6,6 +6,7 @@ import en from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import FirstRunSetup from '$lib/components/frameleaf/setup/FirstRunSetup.svelte';
 import { createSetup, flowSteps } from '$lib/frameleaf/first-run-setup';
+import { cloudManager } from '$lib/managers/cloud-manager.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
 
@@ -76,7 +77,7 @@ describe('FirstRunSetup (FL-176)', () => {
     });
     expect(screen.getByRole('heading', { name: 'Create your admin account' })).toBeInTheDocument();
     // item 19: one rule (length), then a hint; no character-class rules
-    expect(screen.getByText('At least 12 characters')).toBeInTheDocument();
+    expect(screen.getByText('At least 8 characters')).toBeInTheDocument();
     expect(screen.queryByText('An uppercase letter')).toBeNull();
     await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'Correct-Horse-9' } });
     await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
@@ -253,25 +254,40 @@ describe('FirstRunSetup (FL-176)', () => {
       sdkMock.getLicenseProducts.mockResolvedValue({} as never);
       sdkMock.updateFrameleafSetup.mockResolvedValue({} as never);
     };
-    const pending = {
-      state: 'pending',
-      configured: true,
-      pending: {
-        userCode: 'BCDF-GHJK',
-        verificationUri: 'https://id.frameleaf.test/device',
-        verificationUriComplete: 'https://id.frameleaf.test/device?code=BCDF-GHJK',
-        expiresAt: '2026-09-27T12:00:00.000Z',
-        intervalSeconds: 5,
-      },
+    /** The cloud manager is shared: load this test's status before rendering, not an earlier test's link. */
+    const cloudNow = async (status: object) => {
+      cloud(status);
+      await cloudManager.refresh();
     };
+    const consents = {
+      tos: { version: '2026-10-01.1', text: 'I agree to the Frameleaf Terms of Use.' },
+      privacy: { version: '2026-10-01.2', text: 'I have read the Frameleaf privacy notice.' },
+    };
+    const linkedStatus = {
+      state: 'linked',
+      configured: true,
+      pending: null,
+      account: { id: 'account-1', label: 'Ada' },
+    };
+    const answer = (outcome: string, extra: object = {}) => ({
+      outcome,
+      challenge: null,
+      refusal: null,
+      message: null,
+      attemptsLeft: null,
+      retryAfterSeconds: null,
+      status: { state: 'unlinked', configured: true, pending: null },
+      ...extra,
+    });
 
-    it('fills the name and email from the admin and links only when asked, never sending the password', async () => {
+    it('fills the name and email from the admin, sends them with the password, and links after the emailed code', async () => {
       cloud({ state: 'unlinked' });
-      // from now on the server reports the code waiting for approval
-      sdkMock.startCloudLink.mockImplementation(() => {
-        sdkMock.getCloudStatus.mockResolvedValue(pending as never);
-        return Promise.resolve(pending as never);
-      });
+      sdkMock.getCloudAccountLinkConsents.mockResolvedValue(consents as never);
+      sdkMock.linkCloudWithAccount.mockResolvedValue(
+        answer('code-needed', {
+          challenge: { challengeId: 'challenge-1', kind: 'email-code', expiresAt: '2026-10-31T12:10:00.000Z' },
+        }) as never,
+      );
       render(FirstRunSetup, { initial: accountStep(), authenticated: true });
       expect(await screen.findByRole('heading', { name: 'Add a Frameleaf account' })).toBeInTheDocument();
       expect(screen.getByText('Account · 2 of 5')).toBeInTheDocument();
@@ -279,23 +295,100 @@ describe('FirstRunSetup (FL-176)', () => {
       expect(screen.getByLabelText('Name')).toHaveValue('Ada');
       expect(screen.getByLabelText('Email')).toHaveValue('ada@example.com');
       expect(screen.getByRole('link', { name: 'Terms of Use' })).toHaveAttribute('href', 'https://frameleaf.app/legal');
+      // FC-222: the statements Frameleaf Cloud records as shown
+      expect(await screen.findByText('I agree to the Frameleaf Terms of Use.')).toBeInTheDocument();
+      expect(screen.getByText('I have read the Frameleaf privacy notice.')).toBeInTheDocument();
       // "Skip for now" sits where Continue does
       expect(screen.getByRole('button', { name: /Skip for now/ })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^Continue/ })).toBeNull();
 
       const create = screen.getByRole('button', { name: 'Create account and link' });
-      await fireEvent.input(screen.getByLabelText('Frameleaf password'), { target: { value: 'elevenchars' } });
+      await fireEvent.input(screen.getByLabelText('Frameleaf password'), { target: { value: 'sevench' } });
       await fireEvent.click(create);
-      expect(await screen.findByText('Use at least 12 characters.')).toBeInTheDocument();
-      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
+      expect(await screen.findByText('Use at least 8 characters.')).toBeInTheDocument();
+      expect(sdkMock.linkCloudWithAccount).not.toHaveBeenCalled();
 
       await fireEvent.input(screen.getByLabelText('Frameleaf password'), { target: { value: 'a long passphrase' } });
       await fireEvent.click(create);
-      // no Cloud API takes an email and password from a server: the approval flow links it
-      await waitFor(() => expect(sdkMock.startCloudLink).toHaveBeenCalledTimes(1));
-      expect(await screen.findByText('BCDF-GHJK')).toBeInTheDocument();
-      expect(JSON.stringify(sdkMock.startCloudLink.mock.calls)).not.toContain('a long passphrase');
+      await waitFor(() =>
+        expect(sdkMock.linkCloudWithAccount).toHaveBeenCalledWith({
+          cloudAccountLinkDto: {
+            mode: 'create',
+            email: 'ada@example.com',
+            password: 'a long passphrase',
+            name: 'Ada',
+            consent: { tos: '2026-10-01.1', privacy: '2026-10-01.2' },
+          },
+        }),
+      );
+      // no approval code: the emailed code links it
+      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
+      expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+      expect(screen.getByText(/Enter the 6-digit code Frameleaf sent to ada@example.com/)).toBeInTheDocument();
       expect(localStorage.getItem('frameleaf:setup:v1')).not.toContain('a long passphrase');
+
+      sdkMock.verifyCloudAccountLink.mockResolvedValueOnce(
+        answer('refused', { refusal: 'code-invalid', attemptsLeft: 4 }) as never,
+      );
+      await fireEvent.input(screen.getByLabelText('Code'), { target: { value: '000000' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify and link' }));
+      expect(await screen.findByText("That code isn't right. 4 tries left.")).toBeInTheDocument();
+
+      sdkMock.verifyCloudAccountLink.mockImplementationOnce(() => {
+        sdkMock.getCloudStatus.mockResolvedValue(linkedStatus as never);
+        return Promise.resolve(answer('linked', { status: linkedStatus }) as never);
+      });
+      await fireEvent.input(screen.getByLabelText('Code'), { target: { value: '123456' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify and link' }));
+      await waitFor(() =>
+        expect(sdkMock.verifyCloudAccountLink).toHaveBeenLastCalledWith({
+          cloudAccountLinkVerifyDto: { challengeId: 'challenge-1', code: '123456' },
+        }),
+      );
+      expect(await screen.findByRole('heading', { name: 'Your Frameleaf account' })).toBeInTheDocument();
+    });
+
+    it('signs in to an existing account and says plainly why it did not link', async () => {
+      await cloudNow({ state: 'unlinked' });
+      sdkMock.getCloudAccountLinkConsents.mockResolvedValue(consents as never);
+      sdkMock.linkCloudWithAccount.mockResolvedValue(answer('refused', { refusal: 'invalid-credentials' }) as never);
+      render(FirstRunSetup, { initial: accountStep(), authenticated: true });
+      await fireEvent.click(await screen.findByRole('button', { name: 'I already have a Frameleaf account' }));
+      await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'x' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Sign in and link' }));
+      await waitFor(() =>
+        expect(sdkMock.linkCloudWithAccount).toHaveBeenCalledWith({
+          cloudAccountLinkDto: { mode: 'sign-in', email: 'ada@example.com', password: 'x' },
+        }),
+      );
+      expect(await screen.findByText(/That email and password don't match a Frameleaf account/)).toBeInTheDocument();
+      // the password is cleared after it was sent
+      expect(screen.getByLabelText('Password')).toHaveValue('');
+    });
+
+    it('offers, never assumes, linking in the region the account keeps its data in (FC-18)', async () => {
+      await cloudNow({ state: 'unlinked' });
+      sdkMock.getCloudAccountLinkConsents.mockResolvedValue(consents as never);
+      sdkMock.linkCloudWithAccount.mockResolvedValueOnce(
+        answer('refused', { refusal: 'region-mismatch', accountRegion: 'eu' }) as never,
+      );
+      render(FirstRunSetup, { initial: accountStep(), authenticated: true });
+      await fireEvent.click(await screen.findByRole('button', { name: 'I already have a Frameleaf account' }));
+      await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'x' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Sign in and link' }));
+      expect(await screen.findByText(/This account keeps its data in the EU/)).toBeInTheDocument();
+      expect(sdkMock.linkCloudWithAccount).toHaveBeenCalledTimes(1);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Link in the EU' }));
+      expect(screen.getByText(/cloud data will live in the EU/)).toBeInTheDocument();
+      sdkMock.linkCloudWithAccount.mockResolvedValueOnce(answer('refused', { refusal: 'rate-limited' }) as never);
+      await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'x' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Sign in and link' }));
+      await waitFor(() =>
+        expect(sdkMock.linkCloudWithAccount).toHaveBeenLastCalledWith({
+          cloudAccountLinkDto: { mode: 'sign-in', email: 'ada@example.com', password: 'x', dataRegion: 'eu' },
+        }),
+      );
     });
 
     it('switches to signing in to an existing account', async () => {
@@ -314,7 +407,7 @@ describe('FirstRunSetup (FL-176)', () => {
       render(FirstRunSetup, { initial: accountStep(), authenticated: true });
       await fireEvent.click(await screen.findByRole('button', { name: /Skip for now/ }));
       expect(await screen.findByRole('heading', { name: 'Where your library lives' })).toBeInTheDocument();
-      expect(sdkMock.startCloudLink).not.toHaveBeenCalled();
+      expect(sdkMock.linkCloudWithAccount).not.toHaveBeenCalled();
     });
 
     it('says when Frameleaf Cloud is not set up here, and can still be skipped', async () => {
@@ -332,7 +425,9 @@ describe('FirstRunSetup (FL-176)', () => {
         expect(sdkMock.markCloudTourSeen).toHaveBeenCalledWith({ cloudTourSeenDto: { ending: 'setup' } }),
       );
       expect(await screen.findByRole('heading', { name: 'Your Frameleaf account' })).toBeInTheDocument();
-      expect(screen.getByText('You can sign in here with your admin password or with Frameleaf.')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Sign in here with your admin password\. To offer Sign in with Frameleaf at home too/),
+      ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /^Continue/ })).toBeInTheDocument();
     });
   });

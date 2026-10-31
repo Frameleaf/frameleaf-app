@@ -1,6 +1,8 @@
-import type { AdminConfigDto } from '@frameleaf/sdk';
+import { CloudAccountLinkRefusal, type AdminConfigDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
+import en from '$i18n/en.json';
 import {
+  accountLinkRefusalMessage,
   accountToolProgress,
   applySetupChoices,
   chapterCount,
@@ -103,12 +105,12 @@ describe('first-run setup state (FL-176)', () => {
       });
       state = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
       expect(validateStep(state, 'account', { secrets: { password: 'weak', confirm: 'weak' } }).ok).toBe(false);
-      // FL-708 item 19: twelve characters is the only rule; no character classes
-      const eleven = { password: 'elevenchars', confirm: 'elevenchars' };
-      expect(validateStep(state, 'account', { secrets: eleven }).errors).toEqual({
+      // FL-708 item 19: eight characters is the only rule; no character classes
+      const seven = { password: 'sevench', confirm: 'sevench' };
+      expect(validateStep(state, 'account', { secrets: seven }).errors).toEqual({
         password: 'frameleaf_setup_error_password',
       });
-      const plain = { password: 'aaaaaaaaaaaa', confirm: 'aaaaaaaaaaaa' };
+      const plain = { password: 'aaaaaaaa', confirm: 'aaaaaaaa' };
       expect(validateStep(state, 'account', { secrets: plain }).ok).toBe(true);
       expect(validateStep(state, 'account', { secrets: { ...strong, confirm: 'other' } }).errors).toEqual({
         confirm: 'frameleaf_setup_error_confirm',
@@ -396,15 +398,27 @@ describe('Frameleaf account step (FL-708 item 20)', () => {
     expect(frameleafAccountForm(admin, 'sign-in').mode).toBe('sign-in');
   });
 
-  it('creates an account with a name, an email and a password of at least 12 characters', () => {
+  it('creates an account with a name, an email and a password of at least 8 characters', () => {
     const form = frameleafAccountForm(admin);
     expect(validateFrameleafAccount(form).errors).toEqual({ password: 'frameleaf_setup_error_password' });
-    expect(validateFrameleafAccount({ ...form, password: 'elevenchars' }).ok).toBe(false);
+    expect(validateFrameleafAccount({ ...form, password: 'sevench' }).ok).toBe(false);
     expect(validateFrameleafAccount({ ...form, password: 'aaaaaaaaaaaa' }).ok).toBe(true);
     expect(validateFrameleafAccount({ ...form, name: ' ', email: 'nope', password: 'aaaaaaaaaaaa' }).errors).toEqual({
       name: 'frameleaf_setup_error_name',
       email: 'frameleaf_setup_error_email',
     });
+  });
+
+  it('has words for every reason Frameleaf Cloud does not link (FC-222)', () => {
+    for (const refusal of Object.values(CloudAccountLinkRefusal)) {
+      expect(en, refusal).toHaveProperty(accountLinkRefusalMessage(refusal));
+    }
+    expect(accountLinkRefusalMessage(CloudAccountLinkRefusal.CodeInvalid, null, 2)).toBe(
+      'frameleaf_setup_frameleaf_error_code_invalid_left',
+    );
+    expect(accountLinkRefusalMessage(CloudAccountLinkRefusal.RateLimited, 90)).toBe(
+      'frameleaf_setup_frameleaf_error_rate_limited_for',
+    );
   });
 
   it('signs in to an existing account with an email and any password', () => {

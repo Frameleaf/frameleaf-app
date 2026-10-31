@@ -2,27 +2,33 @@
   /**
    * FL-708 (UI review item 20): "Add a Frameleaf account", the optional step after the local
    * administrator exists. Create an account (name and email from the administrator, plus a password),
-   * or sign in to one the administrator already has (email and password), then link this server.
-   *
-   * Frameleaf Cloud has no API yet that creates or signs in to an account with an email and password
-   * from a server: sign-up and sign-in happen on frameleaf.cloud. So the form is checked here and
-   * the link then runs through the approval flow (`SetupFrameleafLink`, the device code): the code page
-   * on frameleaf.cloud creates the account or signs in, and approves this server. The password typed
-   * here is never sent or saved; it is cleared as the approval starts.
+   * or sign in to one the administrator already has (email and password). This server sends them to
+   * Frameleaf Cloud (FC-222, `cloudManager.linkWithAccount`) and is linked straight away, with no
+   * approval code: that is for first-run setup only. A new account (and one with an authenticator app)
+   * first asks for a code. The password is sent once and never kept, here or on the server.
    */
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import SetupFrameleafLink from '$lib/components/frameleaf/setup/SetupFrameleafLink.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import {
+    accountLinkRefusalMessage,
     FRAMELEAF_TERMS_URL,
     validateFrameleafAccount,
     type FrameleafAccountForm,
     type FrameleafAccountMode,
   } from '$lib/frameleaf/first-run-setup';
+  import { dataRegionKey } from '$lib/frameleaf/cloud';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { CloudLinkRefusal } from '@frameleaf/sdk';
+  import {
+    CloudAccountLinkMode,
+    CloudLinkRefusal,
+    DataRegion,
+    getCloudAccountLinkConsents,
+    type CloudAccountConsentsResponseDto,
+    type CloudAccountLinkResponseDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiLoading } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -31,16 +37,47 @@
   type Props = { name: string; email: string; linked: boolean; onLinked: () => void };
   const { name, email, linked, onLinked }: Props = $props();
 
+  type Challenge = NonNullable<CloudAccountLinkResponseDto['challenge']>;
+
   // svelte-ignore state_referenced_locally
   let form = $state<FrameleafAccountForm>({ mode: 'create', name, email, password: '' });
   let errors = $state<Record<string, string>>({});
   let busy = $state(false);
   let formError = $state('');
+  let consents = $state<CloudAccountConsentsResponseDto | null>(null);
+  let consentsFailed = $state(false);
+  /** A new account's emailed code, or an authenticator app's, before the link is made. */
+  let challenge = $state<Challenge | null>(null);
+  let code = $state('');
+  let codeError = $state('');
+  /**
+   * FC-18: the account keeps its data in another region. Linking there changes where this server's
+   * cloud data lives, so it is the administrator's choice (`offeredRegion`), never automatic.
+   */
+  let offeredRegion = $state<DataRegion | null>(null);
+  let chosenRegion = $state<DataRegion | null>(null);
+  const regionName = (region: string | null) => {
+    const key = region ? dataRegionKey(region) : null;
+    return key ? $t(key) : null;
+  };
 
-  onMount(() => cloudManager.listen());
+  const loadConsents = async () => {
+    consentsFailed = false;
+    try {
+      consents = await getCloudAccountLinkConsents();
+    } catch {
+      consentsFailed = true;
+    }
+  };
+
+  onMount(() => {
+    const stop = cloudManager.listen();
+    void loadConsents();
+    return stop;
+  });
 
   const status = $derived(cloudManager.status);
-  /** The approval flow has the screen: a code to approve, the linked result, or a region choice. */
+  /** The link has the screen: linked, a code from an earlier approval flow, or a region choice. */
   const approving = $derived(
     linked ||
       status?.state === 'linked' ||
@@ -48,17 +85,61 @@
       (status?.state === 'unlinked' && status.linkRefusal === CloudLinkRefusal.RegionMismatch),
   );
   const unreachable = $derived((!status && !!cloudManager.error) || status?.state === 'not-configured');
-  /** Why the last approval did not link, shown above the form when it comes back. */
-  const linkResult = $derived(
-    status?.state === 'unlinked' && (status.linkResult === 'denied' || status.linkResult === 'expired')
-      ? status.linkResult
-      : null,
-  );
 
   const switchMode = (mode: FrameleafAccountMode) => {
     errors = {};
     formError = '';
     form = { ...form, mode, password: '' };
+    offeredRegion = null;
+    chosenRegion = null;
+    if (mode === 'create' && !consents) {
+      void loadConsents();
+    }
+  };
+
+  const restart = () => {
+    challenge = null;
+    code = '';
+    codeError = '';
+  };
+
+  /** What came back: linked (the linked view takes over), a code to enter, or a refusal in plain words. */
+  const answered = (answer: CloudAccountLinkResponseDto) => {
+    if (answer.outcome === 'code-needed' && answer.challenge) {
+      challenge = answer.challenge;
+      code = '';
+      codeError = '';
+      return;
+    }
+    if (answer.outcome !== 'refused' || !answer.refusal) {
+      restart();
+      return;
+    }
+    const message = $t(accountLinkRefusalMessage(answer.refusal, answer.retryAfterSeconds, answer.attemptsLeft), {
+      values: {
+        minutes: Math.max(1, Math.ceil((answer.retryAfterSeconds ?? 0) / 60)),
+        count: answer.attemptsLeft ?? 0,
+      },
+    });
+    if (challenge && answer.refusal === 'code-invalid') {
+      codeError = message;
+      return;
+    }
+    // anything else ends the code step: the form comes back with the reason
+    restart();
+    formError = message;
+    const region = answer.accountRegion;
+    if (
+      answer.refusal === 'region-mismatch' &&
+      (region === DataRegion.Eu || region === DataRegion.Na) &&
+      regionName(region)
+    ) {
+      offeredRegion = region;
+      formError = $t('frameleaf_setup_frameleaf_error_region_mismatch_in', { values: { region: regionName(region) } });
+    }
+    if (answer.refusal === 'consent-outdated') {
+      void loadConsents();
+    }
   };
 
   const submit = async (event: SubmitEvent) => {
@@ -71,38 +152,136 @@
     if (!check.ok) {
       return;
     }
+    if (form.mode === 'create' && !consents) {
+      formError = $t('frameleaf_setup_frameleaf_consents_unavailable');
+      void loadConsents();
+      return;
+    }
     busy = true;
     formError = '';
-    // Nothing on this server can use the password: frameleaf.cloud asks for it on the code page.
+    offeredRegion = null;
+    const password = form.password;
+    // the password goes to Frameleaf Cloud once; nothing on this page keeps it
     form.password = '';
     try {
-      await cloudManager.startLink();
+      answered(
+        await cloudManager.linkWithAccount({
+          mode: form.mode === 'create' ? CloudAccountLinkMode.Create : CloudAccountLinkMode.SignIn,
+          email: form.email.trim(),
+          password,
+          ...(form.mode === 'create' &&
+            consents && {
+              name: form.name.trim(),
+              consent: { tos: consents.tos.version, privacy: consents.privacy.version },
+            }),
+          ...(chosenRegion && { dataRegion: chosenRegion }),
+        }),
+      );
     } catch (error) {
       formError = getServerErrorMessage(error) || $t('frameleaf_setup_cloud_unreachable_body');
     } finally {
       busy = false;
     }
   };
+
+  const verify = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (busy || !challenge) {
+      return;
+    }
+    if (!code.trim()) {
+      codeError = $t('frameleaf_setup_frameleaf_code_required');
+      return;
+    }
+    busy = true;
+    codeError = '';
+    try {
+      answered(await cloudManager.verifyAccountLink(challenge.challengeId, code.trim()));
+    } catch (error) {
+      codeError = getServerErrorMessage(error) || $t('frameleaf_setup_cloud_unreachable_body');
+    } finally {
+      busy = false;
+    }
+  };
 </script>
+
+{#snippet spinner(label: string)}
+  <Icon icon={mdiLoading} size={ICON_SIZE.md} class="frs-spin" aria-hidden={true} />
+  <span role="status">{label}</span>
+{/snippet}
 
 {#if approving || unreachable}
   <SetupFrameleafLink mode="link" {linked} {onLinked} />
   {#if linked || status?.state === 'linked'}
     <p class="auth-note">{$t('frameleaf_setup_frameleaf_account_either')}</p>
   {/if}
-{:else}
-  <form class="frs-form frs-cloud-form" novalidate onsubmit={(event) => void submit(event)}>
-    {#if linkResult}
-      <p class="auth-error" role="alert">
-        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
-        <span>
-          {linkResult === 'denied' ? $t('frameleaf_cloud_link_denied_title') : $t('frameleaf_cloud_link_expired_title')}
-        </span>
+{:else if challenge}
+  <form class="frs-form frs-cloud-form" novalidate onsubmit={(event) => void verify(event)}>
+    <h2 class="frs-cloud-code-title">
+      {challenge.kind === 'email-code'
+        ? $t('frameleaf_setup_frameleaf_code_email_title')
+        : $t('frameleaf_setup_frameleaf_code_2fa_title')}
+    </h2>
+    <p class="auth-note">
+      {challenge.kind === 'email-code'
+        ? $t('frameleaf_setup_frameleaf_code_email_body', { values: { email: form.email.trim() } })
+        : $t('frameleaf_setup_frameleaf_code_2fa_body')}
+    </p>
+    <div class="auth-field">
+      <label for="frs-fl-code">{$t('frameleaf_setup_frameleaf_code_label')}</label>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        id="frs-fl-code"
+        autocomplete="one-time-code"
+        inputmode={challenge.kind === 'email-code' ? 'numeric' : 'text'}
+        spellcheck="false"
+        autofocus
+        bind:value={code}
+        aria-invalid={codeError ? true : undefined}
+        aria-describedby={codeError ? 'frs-fl-code-error' : undefined}
+      />
+    </div>
+    {#if codeError}
+      <p id="frs-fl-code-error" class="auth-error frs-field-error" role="alert">
+        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} /><span>{codeError}</span>
       </p>
     {/if}
+    <div class="frs-cloud-actions">
+      <button type="submit" class="button primary" disabled={busy} aria-busy={busy || undefined}>
+        {#if busy}
+          {@render spinner($t('frameleaf_setup_frameleaf_linking'))}
+        {:else}
+          {$t('frameleaf_setup_frameleaf_code_submit')}
+        {/if}
+      </button>
+      <button type="button" class="auth-link" disabled={busy} onclick={restart}>
+        {$t('frameleaf_setup_frameleaf_code_restart')}
+      </button>
+    </div>
+  </form>
+{:else}
+  <form class="frs-form frs-cloud-form" novalidate onsubmit={(event) => void submit(event)}>
     {#if formError}
       <p class="auth-error" role="alert">
         <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} /><span>{formError}</span>
+      </p>
+    {/if}
+    {#if offeredRegion}
+      <button
+        type="button"
+        class="button frs-cloud-region"
+        onclick={() => {
+          chosenRegion = offeredRegion;
+          offeredRegion = null;
+          formError = '';
+          document.querySelector<HTMLInputElement>('#frs-fl-password')?.focus();
+        }}
+      >
+        {$t('frameleaf_setup_frameleaf_region_use', { values: { region: regionName(offeredRegion) } })}
+      </button>
+    {:else if chosenRegion}
+      <p class="auth-note" role="status">
+        {$t('frameleaf_setup_frameleaf_region_chosen', { values: { region: regionName(chosenRegion) } })}
       </p>
     {/if}
     {#if form.mode === 'create'}
@@ -150,12 +329,18 @@
             >{/snippet}
         </FormatMessage>
       </p>
+      {#if consents}
+        <!-- FC-222: Frameleaf Cloud records that these statements were shown when the account is made. -->
+        <p class="auth-note frs-cloud-consent">{consents.tos.text}</p>
+        <p class="auth-note frs-cloud-consent">{consents.privacy.text}</p>
+      {:else if consentsFailed}
+        <p class="auth-note frs-cloud-consent">{$t('frameleaf_setup_frameleaf_consents_unavailable')}</p>
+      {/if}
     {/if}
     <div class="frs-cloud-actions">
       <button type="submit" class="button primary" disabled={busy} aria-busy={busy || undefined}>
         {#if busy}
-          <Icon icon={mdiLoading} size={ICON_SIZE.md} class="frs-spin" aria-hidden={true} />
-          <span role="status">{$t('frameleaf_setup_frameleaf_linking')}</span>
+          {@render spinner($t('frameleaf_setup_frameleaf_linking'))}
         {:else}
           {form.mode === 'create' ? $t('frameleaf_setup_frameleaf_create') : $t('frameleaf_setup_frameleaf_sign_in')}
         {/if}

@@ -1,10 +1,10 @@
 /**
- * The password rule (FL-708, UI review item 19): one rule, length. A password needs at least
+ * The password rule (FL-708, UI review item 19; 8 per the owner 2026-10-31, as on Frameleaf Cloud): one rule, length. A password needs at least
  * `MIN_PASSWORD_LENGTH` characters and nothing else; letters, numbers and symbols only lift the
  * strength meter, so a long passphrase is as good as a short mix. The server enforces the same
  * minimum wherever a person chooses a password (`server/src/dtos/auth.dto.ts` `MIN_PASSWORD_LENGTH`).
  */
-export const MIN_PASSWORD_LENGTH = 12;
+export const MIN_PASSWORD_LENGTH = 8;
 
 export const passwordRequirements = [
   {
@@ -26,7 +26,7 @@ const labels = [
 
 /**
  * Below the minimum reads as weak; at it, fair; a longer password or a mix of three kinds of
- * character reads as good; 20 characters, or 16 with two kinds, reads as strong.
+ * character (or 12 characters) reads as good; 20 characters, or 16 with two kinds, reads as strong.
  */
 export const passwordStrength = (value: string) => {
   const checks = Object.fromEntries(passwordRequirements.map(({ id, test }) => [id, test(value)])) as Record<
@@ -38,7 +38,7 @@ export const passwordStrength = (value: string) => {
   let score = 0;
   if (value.length > 0) {
     score = acceptable ? 2 : 1;
-    if (acceptable && (value.length >= 16 || kinds >= 3)) {
+    if (acceptable && (value.length >= 12 || kinds >= 3)) {
       score = 3;
     }
     if (acceptable && ((value.length >= 16 && kinds >= 2) || value.length >= 20)) {

@@ -816,6 +816,57 @@ export type CloudStatusResponseDto = {
     signInShowOnLocalLogin: boolean;
     state: CloudLinkState;
 };
+export type CloudAccountLinkDto = {
+    /** The statement versions shown when creating an account (from the consents endpoint) */
+    consent?: {
+        /** The privacy statement version shown */
+        privacy: string;
+        /** The Terms of Use version shown */
+        tos: string;
+    };
+    /** Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch */
+    dataRegion?: DataRegion;
+    /** The Frameleaf account’s email */
+    email: string;
+    mode: CloudAccountLinkMode;
+    /** The person’s name, for a new account */
+    name?: string;
+    /** The Frameleaf account’s password; sent to Frameleaf Cloud, never kept */
+    password: string;
+};
+export type CloudAccountLinkResponseDto = {
+    /** For region-mismatch: the region the account keeps its data in, to offer linking there */
+    accountRegion: string | null;
+    /** Codes left to try after a wrong one */
+    attemptsLeft: number | null;
+    challenge: {
+        challengeId: string;
+        expiresAt: string;
+        kind: CloudAccountLinkChallengeKind;
+    } | null;
+    /** Frameleaf Cloud’s own words for a refusal, when it sent any */
+    message: string | null;
+    outcome: CloudAccountLinkOutcome;
+    refusal: (CloudAccountLinkRefusal) | null;
+    /** When to try again after too many attempts */
+    retryAfterSeconds: number | null;
+    status: CloudStatusResponseDto;
+};
+export type CloudAccountConsentDto = {
+    /** The statement to show; Frameleaf Cloud records that it was shown */
+    text: string;
+    version: string;
+};
+export type CloudAccountConsentsResponseDto = {
+    privacy: CloudAccountConsentDto;
+    tos: CloudAccountConsentDto;
+};
+export type CloudAccountLinkVerifyDto = {
+    /** The challenge the link answered with */
+    challengeId: string;
+    /** The emailed code, the authenticator app’s code or a recovery code */
+    code: string;
+};
 export type CloudMlConsentFeaturesDto = {
     /** Face detection and recognition may run on Frameleaf Cloud */
     faceRecognition: boolean;
@@ -6115,13 +6166,13 @@ export type SignUpDto = {
     email: string;
     /** User name */
     name: string;
-    /** User password (min 12 characters) */
+    /** User password */
     password: string;
 };
 export type ChangePasswordDto = {
     /** Invalidate all other sessions */
     invalidateSessions?: boolean;
-    /** New password (min 12 characters) */
+    /** New password (min 8 characters) */
     newPassword: string;
     /** Current password */
     password: string;
@@ -6159,7 +6210,7 @@ export type LogoutResponseDto = {
     successful: boolean;
 };
 export type PasswordLinkRedeemDto = {
-    /** The password they chose (min 12 characters) */
+    /** The password they chose (min 8 characters) */
     newPassword: string;
     /** The token from the emailed link */
     token: string;
@@ -14953,7 +15004,7 @@ export type FrameleafSetupAdminDto = {
     email: string;
     /** The administrator’s name */
     name: string;
-    /** The administrator’s password (min 12 characters) */
+    /** The administrator’s password (min 8 characters) */
     password: string;
 };
 export type FrameleafSetupErrorDto = {
@@ -17444,7 +17495,7 @@ export type UserUpdateMeDto = {
     email?: string;
     /** User name */
     name?: string;
-    /** User password (deprecated, use change password endpoint; min 12 characters) */
+    /** User password (deprecated, use change password endpoint) */
     password?: string;
 };
 export type BackupDeviceWriteDto = {
@@ -20651,6 +20702,47 @@ export function startCloudLink(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Link this server with a Frameleaf account’s email and password
+ */
+export function linkCloudWithAccount({ cloudAccountLinkDto }: {
+    cloudAccountLinkDto: CloudAccountLinkDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudAccountLinkResponseDto;
+    }>("/admin/cloud/link/account", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudAccountLinkDto
+    })));
+}
+/**
+ * Get the statements a new Frameleaf account agrees to
+ */
+export function getCloudAccountLinkConsents(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudAccountConsentsResponseDto;
+    }>("/admin/cloud/link/account/consents", {
+        ...opts
+    }));
+}
+/**
+ * Send the code a Frameleaf account link asked for
+ */
+export function verifyCloudAccountLink({ cloudAccountLinkVerifyDto }: {
+    cloudAccountLinkVerifyDto: CloudAccountLinkVerifyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudAccountLinkResponseDto;
+    }>("/admin/cloud/link/account/verify", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudAccountLinkVerifyDto
+    })));
 }
 /**
  * Link in the Frameleaf account’s data region
@@ -35386,6 +35478,40 @@ export enum CloudLinkState {
     Pending = "pending",
     Linked = "linked",
     Revoked = "revoked"
+}
+export enum DataRegion {
+    Eu = "eu",
+    Na = "na"
+}
+export enum CloudAccountLinkMode {
+    Create = "create",
+    SignIn = "sign-in"
+}
+export enum CloudAccountLinkChallengeKind {
+    EmailCode = "email-code",
+    SecondFactor = "second-factor"
+}
+export enum CloudAccountLinkOutcome {
+    Linked = "linked",
+    CodeNeeded = "code-needed",
+    Refused = "refused"
+}
+export enum CloudAccountLinkRefusal {
+    InvalidCredentials = "invalid-credentials",
+    EmailTaken = "email-taken",
+    PasswordTooShort = "password-too-short",
+    PasswordBreached = "password-breached",
+    ConsentOutdated = "consent-outdated",
+    CodeInvalid = "code-invalid",
+    CodeExpired = "code-expired",
+    AccountRefused = "account-refused",
+    InstanceLimit = "instance-limit",
+    InstanceIdTaken = "instance-id-taken",
+    KeyAlreadyLinked = "key-already-linked",
+    RegionMismatch = "region-mismatch",
+    RateLimited = "rate-limited",
+    Paused = "paused",
+    Unavailable = "unavailable"
 }
 export enum CloudMlConnection {
     NotConfigured = "not-configured",

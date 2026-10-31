@@ -35,17 +35,15 @@ describe('personal access (FL-67)', () => {
   describe('password change', () => {
     const valid = { current: 'old-password', next: 'new-password', confirm: 'new-password' };
 
-    it('accepts a new, confirmed password of at least twelve characters', () => {
+    it('accepts a new, confirmed password of at least eight characters', () => {
       expect(passwordFormError(valid)).toBeUndefined();
     });
 
     it('explains what is missing or wrong', () => {
       expect(passwordFormError({ ...valid, current: '' })).toBe('required');
       expect(passwordFormError({ current: 'old-password', next: 'short', confirm: 'short' })).toBe('too_short');
-      // FL-708: twelve characters is the one rule; eleven is still too short.
-      expect(passwordFormError({ current: 'old-password', next: 'elevenchars', confirm: 'elevenchars' })).toBe(
-        'too_short',
-      );
+      // FL-708: eight characters is the one rule; seven is still too short.
+      expect(passwordFormError({ current: 'old-password', next: 'sevench', confirm: 'sevench' })).toBe('too_short');
       expect(passwordFormError({ ...valid, confirm: 'new-passw0rd' })).toBe('mismatch');
       expect(passwordFormError({ current: 'same-password', next: 'same-password', confirm: 'same-password' })).toBe(
         'unchanged',

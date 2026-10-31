@@ -24,7 +24,7 @@ describe(AuthController.name, () => {
   describe('POST /auth/admin-sign-up', () => {
     const name = 'admin';
     const email = 'admin@example.com';
-    const password = 'admin-password';
+    const password = 'password';
 
     it('should require an email address', async () => {
       const { status, body } = await request(ctx.getHttpServer()).post('/auth/admin-sign-up').send({ name, password });
@@ -42,22 +42,6 @@ describe(AuthController.name, () => {
           { path: ['password'], message: 'Invalid input: expected string, received undefined' },
         ]),
       );
-    });
-
-    it('should require a password of at least 12 characters (FL-708)', async () => {
-      const { status, body } = await request(ctx.getHttpServer())
-        .post('/auth/admin-sign-up')
-        .send({ name, email, password: 'elevenchars' });
-      expect(status).toEqual(400);
-      expect(body).toEqual(errorDto.validationError([{ path: ['password'], message: 'Use at least 12 characters' }]));
-      expect(service.adminSignUp).not.toHaveBeenCalled();
-    });
-
-    it('should accept any password of 12 characters, with no character-class rules (FL-708)', async () => {
-      const { status } = await request(ctx.getHttpServer())
-        .post('/auth/admin-sign-up')
-        .send({ name, email, password: 'aaaaaaaaaaaa' });
-      expect(status).toEqual(201);
     });
 
     it('should require a name', async () => {
@@ -82,7 +66,7 @@ describe(AuthController.name, () => {
       service.adminSignUp.mockReset();
       const { status } = await request(ctx.getHttpServer())
         .post('/auth/admin-sign-up')
-        .send({ name: 'admin', password, email: 'aDmIn@ExAmPlE.CoM' });
+        .send({ name: 'admin', password: 'password', email: 'aDmIn@ExAmPlE.CoM' });
       expect(status).toEqual(201);
       expect(service.adminSignUp).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'admin@example.com' }),
@@ -93,7 +77,7 @@ describe(AuthController.name, () => {
     it('should accept an email with a local domain', async () => {
       const { status } = await request(ctx.getHttpServer())
         .post('/auth/admin-sign-up')
-        .send({ name: 'admin', password, email: 'admin@local' });
+        .send({ name: 'admin', password: 'password', email: 'admin@local' });
       expect(status).toEqual(201);
     });
 

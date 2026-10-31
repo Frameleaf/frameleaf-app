@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { getClosestAvailableLocale, languageChoices, langs, SHIPPED_LANGUAGES } from '$lib/utils/i18n';
+import { getClosestAvailableLocale, languageChoices, languageCodeFor, langs, SHIPPED_LANGUAGES } from '$lib/utils/i18n';
 
 describe('i18n', () => {
   describe('language choices (FL-708 B4)', () => {
@@ -33,6 +33,20 @@ describe('i18n', () => {
       expect(languageChoices('ja').at(-1)).toMatchObject({ code: 'ja' });
       expect(languageChoices('fr')).toHaveLength(SHIPPED_LANGUAGES.length);
       expect(languageChoices('dev')).toHaveLength(SHIPPED_LANGUAGES.length);
+    });
+
+    it('matches a regional tag to its language file', () => {
+      expect(languageCodeFor('ja-JP')).toBe('ja');
+      expect(languageCodeFor('fr')).toBe('fr');
+      expect(languageCodeFor('nb-NO')).toBe('nb-NO');
+      expect(languageCodeFor('xx-YY')).toBeUndefined();
+      expect(languageChoices('ja-JP').at(-1)).toMatchObject({ code: 'ja' });
+    });
+
+    it('keeps the saved language selectable while another is chosen but not saved', () => {
+      const codes = languageChoices('ja', 'fr').map((entry) => entry.code);
+      expect(codes).toContain('ja');
+      expect(codes.filter((code) => code === 'fr')).toHaveLength(1);
     });
   });
 
