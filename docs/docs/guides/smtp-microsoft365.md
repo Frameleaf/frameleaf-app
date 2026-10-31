@@ -9,7 +9,7 @@ This guide walks you through how to get the information you need to set up your 
 
 ## Create an app password
 
-You will need to generate an app password to use your Microsoft email in Frameleaf. Depending on if you have a personal or business account, you can use https://go.microsoft.com/fwlink/?linkid=2274139 or https://myaccount.microsoft.com/securtiy-info respectively.
+You will need to generate an app password to use your Microsoft email in Frameleaf. Depending on if you have a personal or business account, you can use https://go.microsoft.com/fwlink/?linkid=2274139 or https://mysignins.microsoft.com/security-info respectively.
 
 ## Entering the SMTP credential in Frameleaf
 
@@ -17,7 +17,7 @@ You will need to generate an app password to use your Microsoft email in Framele
 2. Open **Notifications**, then **Email delivery**.
 3. Turn on **Enable email notifications**.
 4. Enter the following values:
-   - **Host**: `smtp-mail.outlook.com`
+   - **Host**: `smtp.office365.com` for a Microsoft 365 business mailbox, or `smtp-mail.outlook.com` for a personal Outlook.com account
    - **Port**: `587`
    - **Username**: your mail address
    - **SMTP password**: select **Replace credential** and enter the app password you created earlier

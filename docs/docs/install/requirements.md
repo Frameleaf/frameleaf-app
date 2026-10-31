@@ -74,7 +74,7 @@ Add the following line to the bottom of `docker-compose.yml`:
 ```diff
 volumes:
   model-cache:
-+ pgdata:
++  pgdata:
 ```
 
 </details>

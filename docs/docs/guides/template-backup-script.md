@@ -4,7 +4,7 @@
 
 This script assumes you have a second hard drive connected to your server for on-site backup and ssh access to a remote machine for your third off-site copy. [BorgBase](https://www.borgbase.com/) is an alternative option for off-site backups with a competitive pricing structure. You may choose to skip off-site backups entirely by removing the relevant lines from the template script.
 
-The database is saved to your Frameleaf upload folder in the `database-backup` subdirectory, then archived with your assets by Borg. Stop all API, job and upload writers before the database dump and keep them stopped until both archives finish, or use a tested consistent snapshot procedure. Taking the dump and filesystem backup at similar times does not make them consistent while writers are active. Include every external-library media root in both `borg create` commands below.
+The database is saved to your Frameleaf upload folder in the `database-backup` subdirectory, then archived with your assets by Borg. Stop all API, job and upload writers before the database dump and keep them stopped until both archives finish, or use a tested consistent snapshot procedure. Taking the dump and filesystem backup at similar times does not make them consistent while writers are active. Include every external-library media root in both `borg create` commands below. If you set `FRAMELEAF_IDENTITY_DIR` to a folder outside your media location, add that folder to both `borg create` commands too, or back it up separately as described in [private backup storage](/administration/private-backup-storage); without it a restored server cannot prove its identity.
 
 :::info
 Frameleaf's [scheduled database backups](/administration/backup-and-restore#database-backups) cover the database. This template also archives media and versions the resulting recovery points with Borg.
@@ -28,14 +28,16 @@ UPLOAD_LOCATION="/path/to/frameleaf/directory"       # Frameleaf media location,
 BACKUP_PATH="/path/to/local/backup/directory"
 
 mkdir "$UPLOAD_LOCATION/database-backup"
-borg init --encryption=none "$BACKUP_PATH/frameleaf-borg"
+borg init --encryption=repokey-blake2 "$BACKUP_PATH/frameleaf-borg"
 
 ## Remote set up
 REMOTE_HOST="remote_host@IP"
 REMOTE_BACKUP_PATH="/path/to/remote/backup/directory"
 
-borg init --encryption=none "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg"
+borg init --encryption=repokey-blake2 "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg"
 ```
+
+`borg init` asks for a passphrase. Store it in a password manager, and keep an offline copy of each repository key (`borg key export "$BACKUP_PATH/frameleaf-borg"`, and the same for the remote repository): without both, the backups cannot be read. To run the script from cron, provide the passphrase through `BORG_PASSCOMMAND` or `BORG_PASSPHRASE` in an environment only the backup user can read.
 
 Edit the following script as necessary and add it to your crontab. Note that this script assumes there are no `:`, `@`, or `"` characters in your paths. If these characters exist, you will need to escape and/or rename the paths.
 
