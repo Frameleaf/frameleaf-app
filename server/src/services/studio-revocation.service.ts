@@ -177,7 +177,7 @@ export class StudioRevocationService {
       // Streams first, so each records why it closed; the job pass then finds nothing of theirs left.
       () => this.streams.revokeForProjects(projectIds),
       async () => {
-        jobs = await this.cancelJobs(projectIds);
+        jobs = await this.cancelJobs(projectIds, undefined, assetIds);
       },
     ]);
     this.logger.log(
@@ -199,8 +199,25 @@ export class StudioRevocationService {
   }
 
   /** Cancel unfinished exports and previews; a claimed one waits for its worker to acknowledge. */
-  private async cancelJobs(projectIds: readonly string[], ownerId?: string): Promise<number> {
-    const unfinished = await this.operations.listUnfinishedForProjects(projectIds, SOURCE_BOUND_KINDS, ownerId);
+  /**
+   * With `removedAssetIds`, a clip job (transcription, stabilise, voice clean-up: one clip, its library
+   * source recorded as `assetId` when the job is queued) stops only when that source is the one removed;
+   * the project's other clips keep their work. Exports and previews read the whole project and stop.
+   */
+  private async cancelJobs(
+    projectIds: readonly string[],
+    ownerId?: string,
+    removedAssetIds?: readonly string[],
+  ): Promise<number> {
+    const removed = removedAssetIds && new Set(removedAssetIds.map((id) => id.toLowerCase()));
+    const unfinished = (
+      await this.operations.listUnfinishedForProjects(projectIds, SOURCE_BOUND_KINDS, ownerId)
+    ).filter(
+      (operation) =>
+        !removed ||
+        operation.kind !== MediaOperationKind.StudioTranscription ||
+        (operation.assetId !== null && removed.has(operation.assetId.toLowerCase())),
+    );
     let cancelled = 0;
     for (const operation of unfinished) {
       try {

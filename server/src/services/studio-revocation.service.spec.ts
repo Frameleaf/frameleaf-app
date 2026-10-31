@@ -91,6 +91,63 @@ describe(StudioRevocationService.name, () => {
     expect(operations.requestCancel).toHaveBeenCalledWith('preview-1', 'reviewer-1');
   });
 
+  it.each([
+    ['trash', () => sut.onAssetTrash({ assetId: ASSET, userId: 'owner-1' })],
+    ['delete', () => sut.onAssetDeleteAll({ assetIds: [ASSET], userId: 'owner-1' })],
+  ])('on %s stops only the clip jobs whose source is the removed asset', async (_, act) => {
+    operations.listUnfinishedForProjects.mockResolvedValue([
+      {
+        id: 'export-1',
+        ownerId: 'owner-1',
+        kind: MediaOperationKind.StudioExport,
+        projectId: 'project-1',
+        assetId: null,
+      },
+      {
+        id: 'clip-of-removed',
+        ownerId: 'owner-1',
+        kind: MediaOperationKind.StudioTranscription,
+        projectId: 'project-1',
+        assetId: ASSET.toUpperCase(),
+      },
+      {
+        id: 'clip-of-other-asset',
+        ownerId: 'owner-1',
+        kind: MediaOperationKind.StudioTranscription,
+        projectId: 'project-1',
+        assetId: '0195e2a0-0000-7000-8000-00000000a002',
+      },
+      {
+        id: 'clip-of-import',
+        ownerId: 'owner-1',
+        kind: MediaOperationKind.StudioTranscription,
+        projectId: 'project-2',
+        assetId: null,
+      },
+    ]);
+
+    await act();
+
+    expect(operations.requestCancel.mock.calls).toEqual([
+      ['export-1', 'owner-1'],
+      ['clip-of-removed', 'owner-1'],
+    ]);
+  });
+
+  it("still stops every clip job of a departing member's space work", async () => {
+    operations.listUnfinishedForProjects.mockResolvedValue([
+      {
+        id: 'clip-of-other-asset',
+        ownerId: 'member-1',
+        kind: MediaOperationKind.StudioTranscription,
+        projectId: 'project-3',
+        assetId: '0195e2a0-0000-7000-8000-00000000a002',
+      },
+    ]);
+    await sut.onAlbumUserRemove({ albumId: 'album-1', userId: 'member-1', removedById: 'owner-1' });
+    expect(operations.requestCancel).toHaveBeenCalledWith('clip-of-other-asset', 'member-1');
+  });
+
   it('does nothing when no project uses the source', async () => {
     projectRepository.getIdsReferencingAssets.mockResolvedValue([]);
     await sut.onAssetTrash({ assetId: ASSET, userId: 'owner-1' });
