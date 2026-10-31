@@ -30,15 +30,17 @@ describe('choose a password with an emailed link (FL-538)', () => {
     expect(checkPasswordLink).toHaveBeenCalledWith({ passwordLinkCheckDto: { token: 'the-token' } });
     expect(location.hash).toBe('');
 
-    await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), { target: { value: 'a-new-pass' } });
+    await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_new_password), {
+      target: { value: 'a-new-password' },
+    });
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_new_password), {
-      target: { value: 'a-new-pass' },
+      target: { value: 'a-new-password' },
     });
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_auth_choose_password_save }));
 
     await waitFor(() =>
       expect(redeemPasswordLink).toHaveBeenCalledWith({
-        passwordLinkRedeemDto: { token: 'the-token', newPassword: 'a-new-pass' },
+        passwordLinkRedeemDto: { token: 'the-token', newPassword: 'a-new-password' },
       }),
     );
     expect(goto).toHaveBeenCalledWith('/auth/login');

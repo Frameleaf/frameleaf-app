@@ -28,6 +28,9 @@ beforeEach(() => {
     totalBytes: 4e12,
   });
   sdkMock.updateFrameleafSetup.mockResolvedValue({} as never);
+  sdkMock.getCloudStatus.mockResolvedValue({ state: 'unlinked', configured: true, pending: null } as never);
+  sdkMock.getLicenseStatus.mockResolvedValue({} as never);
+  sdkMock.getLicenseProducts.mockResolvedValue({} as never);
 });
 
 describe('new server setup (FL-176)', () => {
@@ -36,10 +39,10 @@ describe('new server setup (FL-176)', () => {
     expect(screen.getByRole('button', { name: /Continue setup/ })).toBeInTheDocument();
   });
 
-  it('creates the admin with the sign-up API, signs in and moves on to the library', async () => {
+  it('creates the admin with the sign-up API, signs in and moves on to the Frameleaf account step', async () => {
     const state = createSetup('new');
     const account = flowSteps('new').findIndex((entry) => entry.id === 'account');
-    saveLocalSetup({ ...state, step: account, reached: account, choices: { ...state.choices, signIn: 'local' } });
+    saveLocalSetup({ ...state, step: account, reached: account });
     render(Page);
 
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_name), { target: { value: 'Ada' } });
@@ -58,20 +61,20 @@ describe('new server setup (FL-176)', () => {
     expect(sdkMock.login).toHaveBeenCalledWith({
       loginCredentialDto: { email: 'ada@example.test', password: 'Correct-Horse-9' },
     });
-    // The new-server flow is saved straight away at the library step, before the session loads (which
-    // redraws the page) and before the debounced progress save (FL-176 N2).
+    // The new-server flow is saved straight away at the next step, before the session loads (which
+    // redraws the page) and before the debounced progress save (FL-176 N2). FL-708: the next step is
+    // the optional Frameleaf account.
     await waitFor(() => expect(sdkMock.getFrameleafSetupStorage).toHaveBeenCalled());
     expect(sdkMock.updateFrameleafSetup).toHaveBeenNthCalledWith(1, {
       frameleafSetupUpdateDto: expect.objectContaining({
         flow: 'new',
-        progress: expect.objectContaining({ step: 'library' }),
+        progress: expect.objectContaining({ step: 'frameleaf-account' }),
       }),
     });
     const firstSave = sdkMock.updateFrameleafSetup.mock.invocationCallOrder[0];
     expect(firstSave).toBeLessThan(vi.mocked(authManager.load).mock.invocationCallOrder[0]);
     expect(firstSave).toBeLessThan(sdkMock.getFrameleafSetupStorage.mock.invocationCallOrder[0]);
-    expect(await screen.findByRole('heading', { name: en.frameleaf_setup_library_title })).toBeInTheDocument();
-    expect(await screen.findByText('Writable, 2 TB free')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: en.frameleaf_setup_frameleaf_account_add })).toBeInTheDocument();
     await waitFor(() => expect(sdkMock.updateFrameleafSetup).toHaveBeenCalled());
     const saved = JSON.stringify(sdkMock.updateFrameleafSetup.mock.calls);
     expect(saved).not.toContain('Correct-Horse-9');

@@ -46,6 +46,8 @@ export enum FrameleafCloudPublicCall {
   DeviceAuthorization = 'device-authorization',
   DeviceToken = 'device-token',
   UnlinkedLicense = 'unlinked-license',
+  /** FL-708 (FC-222): the public consent statements a new Frameleaf account agrees to. */
+  SignUpConsents = 'sign-up-consents',
 }
 
 export type FrameleafCloudRequest = {

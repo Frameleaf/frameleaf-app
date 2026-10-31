@@ -4,7 +4,7 @@
   import { Icon } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
 
-  // Advisory only: the server decides which passwords it accepts.
+  // FL-708: one rule (length); the meter rises with length and variety but never blocks.
   let { password, id }: { password: string; id?: string } = $props();
   const strength = $derived(passwordStrength(password));
 </script>
@@ -27,3 +27,4 @@
     </li>
   {/each}
 </ul>
+<p class="auth-checks-hint">{$t('frameleaf_auth_password_hint')}</p>

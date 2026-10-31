@@ -40,7 +40,7 @@
   } from '$lib/stores/preferences.store';
   import { reduceMotion } from '$lib/stores/reduce-motion.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
-  import { convertBCP47, getClosestAvailableLocale, langCodes, langs } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
   import { AssetOrder } from '@frameleaf/sdk';
   import { ThemePreference, themeManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
@@ -58,8 +58,12 @@
     };
   });
 
-  const languageOptions = langs.map((entry) => ({ label: entry.name, value: convertBCP47(entry.code) }));
-  const language = $derived(getClosestAvailableLocale([$lang], langCodes));
+  // a regional tag (ja-JP) selects its language file (ja)
+  const language = $derived(languageCodeFor($lang));
+  // FL-708 (B4): the shipped languages, plus the one in use if it isn't one of them.
+  const languageOptions = $derived(
+    languageChoices(language).map((entry) => ({ label: entry.name, value: convertBCP47(entry.code) })),
+  );
   const onLanguage = async (value: string) => {
     $lang = value;
     await i18nLocale.set(convertBCP47(value));
