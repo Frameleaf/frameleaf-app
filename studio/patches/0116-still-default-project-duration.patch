@@ -1,0 +1,283 @@
+diff --git a/src/features/timeline/stores/actions/source-edit-actions.ts b/src/features/timeline/stores/actions/source-edit-actions.ts
+index cb8693a..a9243bc 100644
+--- a/src/features/timeline/stores/actions/source-edit-actions.ts
++++ b/src/features/timeline/stores/actions/source-edit-actions.ts
+@@ -133,6 +133,9 @@ async function resolveSourceEditContext(): Promise<SourceEditContext | null> {
+       1,
+       scaleFrame(sourceRangeFrames, frameRatio(sourceFps, projectFps)),
+     )
++  } else if (mediaType === 'image' && inPoint === null && outPoint === null) {
++    // The unmarked still default is already in project frames.
++    clipDurationFrames = sourceDurationFrames
+   } else {
+     clipDurationFrames =
+       sourceFps === projectFps
+diff --git a/src/features/timeline/stores/actions/source-edit-actions.test.ts b/src/features/timeline/stores/actions/source-edit-actions.test.ts
+index b8c9b4c..1581cdf 100644
+--- a/src/features/timeline/stores/actions/source-edit-actions.test.ts
++++ b/src/features/timeline/stores/actions/source-edit-actions.test.ts
+@@ -6,6 +6,7 @@ import type { TimelineItem } from '@/types/timeline'
+ const mocks = vi.hoisted(() => ({
+   mediaById: {} as Record<string, unknown>,
+   projectId: 'project-1',
++  projectFps: 30,
+   onResolve: null as (() => void) | null,
+   resolveCount: 0,
+ }))
+@@ -19,7 +20,10 @@ vi.mock('@/features/timeline/deps/media-library-store', () => ({
+ vi.mock('@/features/timeline/deps/projects', () => ({
+   useProjectStore: {
+     getState: () => ({
+-      currentProject: { id: mocks.projectId, metadata: { width: 1920, height: 1080, fps: 30 } },
++      currentProject: {
++        id: mocks.projectId,
++        metadata: { width: 1920, height: 1080, fps: mocks.projectFps },
++      },
+     }),
+   },
+ }))
+@@ -87,6 +91,7 @@ function trackItems(trackId: string): TimelineItem[] {
+ describe('source edit actions', () => {
+   beforeEach(() => {
+     mocks.projectId = 'project-1'
++    mocks.projectFps = 30
+     mocks.onResolve = null
+     mocks.resolveCount = 0
+     useTimelineCommandStore.getState().clearHistory()
+@@ -403,13 +408,164 @@ describe('source edit actions', () => {
+     },
+   )
+
+-  it('keeps the established still fallback range', async () => {
+-    setSourceMedia({ mimeType: 'image/jpeg', duration: 0, fps: 0 })
+-    useSourcePlayerStore.setState({ inPoint: null, outPoint: null })
+-    await performInsertEdit()
+-    expect(trackItems('track-v1')).toHaveLength(1)
+-    expect(trackItems('track-v1')[0]).toMatchObject({ type: 'image', durationInFrames: 90 })
+-  })
++  it.each(
++    [
++      [24, 0, 72],
++      [30, 0, 90],
++      [60, 0, 180],
++      [60, 48, 180],
++      [29.5, 0, 89],
++    ].flatMap(([fps, metadataFps, duration]) =>
++      (['insert', 'overwrite'] as const).map((operation) => ({
++        fps: fps!,
++        metadataFps: metadataFps!,
++        duration: duration!,
++        operation,
++      })),
++    ),
++  )(
++    'uses a three-second project range for unmarked still $operation at $fps fps (metadata $metadataFps)',
++    async ({ fps, metadataFps, duration, operation }) => {
++      mocks.projectFps = fps
++      useTimelineSettingsStore.setState({ fps })
++      setSourceMedia({ mimeType: 'image/jpeg', duration: 0, fps: metadataFps })
++      useSourcePlayerStore.setState({ inPoint: null, outPoint: null })
++      useItemsStore.getState().setItems([
++        makeTimelineVideoItem({
++          id: 'before',
++          durationInFrames: 30,
++          sourceStart: 30,
++          sourceEnd: 60,
++          sourceDuration: 900,
++          sourceFps: fps,
++        }),
++        makeTimelineVideoItem({
++          id: 'middle',
++          from: 30,
++          durationInFrames: 600,
++          sourceStart: 30,
++          sourceEnd: 630,
++          sourceDuration: 900,
++          sourceFps: fps,
++        }),
++        makeTimelineVideoItem({
++          id: 'after',
++          from: 630,
++          durationInFrames: 30,
++          sourceStart: 30,
++          sourceEnd: 60,
++          sourceDuration: 900,
++          sourceFps: fps,
++        }),
++      ])
++      useTransitionsStore.getState().setTransitions([
++        {
++          id: 'incoming',
++          type: 'crossfade',
++          presentation: 'fade',
++          timing: 'linear',
++          leftClipId: 'before',
++          rightClipId: 'middle',
++          trackId: 'track-v1',
++          durationInFrames: 12,
++        },
++        {
++          id: 'outgoing',
++          type: 'crossfade',
++          presentation: 'fade',
++          timing: 'linear',
++          leftClipId: 'middle',
++          rightClipId: 'after',
++          trackId: 'track-v1',
++          durationInFrames: 12,
++        },
++      ])
++      useSelectionStore.getState().setActiveTrack('track-v1')
++      useSelectionStore.getState().selectItems(['before'])
++      usePlaybackStore.setState({ currentFrame: 60 })
++      const graph = () =>
++        JSON.stringify({
++          items: useItemsStore.getState().items,
++          tracks: useItemsStore.getState().tracks,
++          transitions: useTransitionsStore.getState().transitions,
++          selectedItemIds: useSelectionStore.getState().selectedItemIds,
++          activeTrackId: useSelectionStore.getState().activeTrackId,
++          currentFrame: usePlaybackStore.getState().currentFrame,
++        })
++      const before = graph()
++
++      await (operation === 'insert' ? performInsertEdit() : performOverwriteEdit())
++
++      const items = trackItems('track-v1')
++      expect(items).toHaveLength(5)
++      expect(items.map((item) => [item.from, item.durationInFrames])).toEqual([
++        [0, 30],
++        [30, 30],
++        [60, duration],
++        [60 + duration, operation === 'insert' ? 570 : 570 - duration],
++        [operation === 'insert' ? 630 + duration : 630, 30],
++      ])
++      expect(items[3]).toMatchObject({
++        sourceStart: operation === 'insert' ? 60 : 60 + duration,
++        sourceEnd: 630,
++      })
++      expect(items[2]).toMatchObject({
++        type: 'image',
++        mediaId: 'media-1',
++        from: 60,
++        durationInFrames: duration,
++        sourceStart: 0,
++        sourceEnd: duration,
++        sourceDuration: duration,
++        sourceFps: metadataFps || 30,
++      })
++      expect(usePlaybackStore.getState().currentFrame).toBe(60 + duration)
++      expect(useSelectionStore.getState().selectedItemIds).toEqual(['before'])
++      expect(useTransitionsStore.getState().transitions).toEqual(
++        expect.arrayContaining([
++          expect.objectContaining({ id: 'incoming', rightClipId: 'middle' }),
++          expect.objectContaining({ id: 'outgoing', leftClipId: items[3]!.id }),
++        ]),
++      )
++      const after = graph()
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      useTimelineCommandStore.getState().undo()
++      expect(graph()).toBe(before)
++      useTimelineCommandStore.getState().redo()
++      expect(graph()).toBe(after)
++    },
++  )
++
++  it.each(
++    [
++      [12, 36, 30],
++      [null, 24, 30],
++      [12, null, 210],
++    ].flatMap(([inPoint, outPoint, duration]) =>
++      (['insert', 'overwrite'] as const).map((operation) => ({
++        inPoint: inPoint ?? null,
++        outPoint: outPoint ?? null,
++        duration,
++        operation,
++      })),
++    ),
++  )(
++    'retains explicit still mark conversion ($inPoint, $outPoint) on $operation',
++    async ({ inPoint, outPoint, duration, operation }) => {
++      mocks.projectFps = 60
++      useTimelineSettingsStore.setState({ fps: 60 })
++      setSourceMedia({ mimeType: 'image/jpeg', duration: 0, fps: 48 })
++      useSourcePlayerStore.setState({ inPoint, outPoint })
++      await (operation === 'insert' ? performInsertEdit() : performOverwriteEdit())
++      expect(trackItems('track-v1')[0]).toMatchObject({
++        type: 'image',
++        durationInFrames: duration,
++        sourceStart: inPoint ?? 0,
++        sourceEnd: outPoint ?? 180,
++        sourceFps: 48,
++      })
++    },
++  )
+
+   it('revalidates linked groups changed during async resolution at both boundaries', async () => {
+     setSourceMedia({ audioCodec: 'aac' })
+@@ -430,37 +586,33 @@ describe('source edit actions', () => {
+   })
+
+   it('repairs transitions of fully covered clips after replacement', async () => {
+-    useItemsStore
+-      .getState()
+-      .setItems([
+-        makeTimelineVideoItem({
+-          id: 'covered-transition-clip',
+-          from: 0,
+-          durationInFrames: 60,
+-          sourceEnd: 60,
+-        }),
+-        makeTimelineVideoItem({
+-          id: 'following-transition-clip',
+-          from: 60,
+-          durationInFrames: 60,
+-          sourceStart: 30,
+-          sourceEnd: 90,
+-        }),
+-      ])
+-    useTransitionsStore
+-      .getState()
+-      .setTransitions([
+-        {
+-          id: 'covered-transition',
+-          type: 'crossfade',
+-          presentation: 'fade',
+-          timing: 'linear',
+-          leftClipId: 'covered-transition-clip',
+-          rightClipId: 'following-transition-clip',
+-          trackId: 'track-v1',
+-          durationInFrames: 12,
+-        },
+-      ])
++    useItemsStore.getState().setItems([
++      makeTimelineVideoItem({
++        id: 'covered-transition-clip',
++        from: 0,
++        durationInFrames: 60,
++        sourceEnd: 60,
++      }),
++      makeTimelineVideoItem({
++        id: 'following-transition-clip',
++        from: 60,
++        durationInFrames: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++      }),
++    ])
++    useTransitionsStore.getState().setTransitions([
++      {
++        id: 'covered-transition',
++        type: 'crossfade',
++        presentation: 'fade',
++        timing: 'linear',
++        leftClipId: 'covered-transition-clip',
++        rightClipId: 'following-transition-clip',
++        trackId: 'track-v1',
++        durationInFrames: 12,
++      },
++    ])
+     await performOverwriteEdit()
+     const ids = new Set(useItemsStore.getState().items.map((item) => item.id))
+     expect(

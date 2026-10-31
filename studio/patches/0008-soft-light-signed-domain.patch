@@ -1,0 +1,14 @@
+--- a/src/infrastructure/gpu-shared/blend-modes.ts
++++ b/src/infrastructure/gpu-shared/blend-modes.ts
+@@ -99,6 +99,9 @@
+ }
+ fn blendSoftLight(base: vec3f, layer: vec3f) -> vec3f {
+-  return select(
+-    base + (2.0 * layer - 1.0) * (sqrt(base) - base),
++  // Use the odd extension of sqrt for negative scene RGB; SDR is unchanged.
++  // abs keeps both eagerly evaluated select branches in the real-valued domain.
++  let signedRoot = sign(base) * sqrt(abs(base));
++  return select(
++    base + (2.0 * layer - 1.0) * (signedRoot - base),
+     base - (1.0 - 2.0 * layer) * base * (1.0 - base),
+     layer <= vec3f(0.5)

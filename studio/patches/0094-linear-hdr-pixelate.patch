@@ -1,0 +1,20 @@
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -66,3 +66,3 @@
+     type === 'gpu-vibrance' || type === 'gpu-grayscale' || type === 'gpu-sepia' || type === 'gpu-invert' ||
+-    type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur'
++    type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur' || type === 'gpu-pixelate'
+ }
+diff --git a/src/infrastructure/gpu-effects/effects/distort.ts b/src/infrastructure/gpu-effects/effects/distort.ts
+--- a/src/infrastructure/gpu-effects/effects/distort.ts
++++ b/src/infrastructure/gpu-effects/effects/distort.ts
+@@ -55,7 +55,7 @@
+     floor(input.uv.x / pixelX) * pixelX + pixelX * 0.5,
+     floor(input.uv.y / pixelY) * pixelY + pixelY * 0.5
+   );
+-  return textureSample(inputTex, texSampler, uv);
++  return fl_blur_output(fl_blur_sample(inputTex, texSampler, uv));
+ }`,
+   params: {
+     size: {

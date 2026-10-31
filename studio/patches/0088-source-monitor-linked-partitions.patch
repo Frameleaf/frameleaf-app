@@ -1,0 +1,785 @@
+--- a/src/features/timeline/stores/actions/source-edit-actions.ts
++++ b/src/features/timeline/stores/actions/source-edit-actions.ts
+@@ -2,6 +2,8 @@
+  * Source Edit Actions - Insert and Overwrite editing from the source monitor.
+  */
+ 
++import { exactCadence, frameRatio, scaleFrame } from '../../utils/project-retime'
++import { canPartitionSourceEdit, partitionSourceEditAt } from './source-edit-partitions'
+ import type { TimelineTrack } from '@/types/timeline'
+ import { useItemsStore } from '../items-store'
+ import { useTimelineSettingsStore } from '../timeline-settings-store'
+@@ -22,6 +24,8 @@
+ 
+ interface SourceEditContext {
+   sourceMediaId: string
++  tracksFingerprint: string
++  projectFingerprint: string
+   videoTrackId?: string
+   audioTrackId?: string
+   effectiveIn: number
+@@ -85,20 +89,56 @@
+     return null
+   }
+ 
++  const projectFingerprint = JSON.stringify(
++    useProjectStore.getState().currentProject && {
++      id: useProjectStore.getState().currentProject?.id,
++      metadata: useProjectStore.getState().currentProject?.metadata,
++    },
++  )
++  const tracksFingerprint = JSON.stringify(tracks)
+   const sourceFps = media.fps || 30
++  if (mediaType === 'video') {
++    try {
++      exactCadence(sourceFps)
++    } catch {
++      toast.warning('The source frame rate has no exact reading')
++      return null
++    }
++  }
+   const projectFps = useTimelineSettingsStore.getState().fps
+   const sourceDurationFrames =
+-    mediaType === 'image' ? projectFps * 3 : Math.max(1, Math.round(media.duration * sourceFps))
++    mediaType === 'image'
++      ? Math.max(1, Math.round(projectFps * 3))
++      : Math.max(1, Math.round(media.duration * sourceFps))
+ 
+   const effectiveIn = inPoint ?? 0
+   const effectiveOut = outPoint ?? sourceDurationFrames
+ 
++  if (
++    !Number.isSafeInteger(effectiveIn) ||
++    !Number.isSafeInteger(effectiveOut) ||
++    effectiveIn < 0 ||
++    effectiveOut <= effectiveIn ||
++    effectiveOut > sourceDurationFrames
++  ) {
++    toast.warning('The source range is outside the media')
++    return null
++  }
++
+   // Convert source frames to project frames
+   const sourceRangeFrames = effectiveOut - effectiveIn
+-  const clipDurationFrames =
+-    sourceFps === projectFps
+-      ? sourceRangeFrames
+-      : Math.max(1, Math.round((sourceRangeFrames * projectFps) / sourceFps))
++  let clipDurationFrames: number
++  if (mediaType === 'video') {
++    clipDurationFrames = Math.max(
++      1,
++      scaleFrame(sourceRangeFrames, frameRatio(sourceFps, projectFps)),
++    )
++  } else {
++    clipDurationFrames =
++      sourceFps === projectFps
++        ? sourceRangeFrames
++        : Math.max(1, Math.round((sourceRangeFrames * projectFps) / sourceFps))
++  }
+ 
+   const insertFrame = usePlaybackStore.getState().currentFrame
+ 
+@@ -156,6 +196,8 @@
+ 
+   return {
+     sourceMediaId,
++    tracksFingerprint,
++    projectFingerprint,
+     videoTrackId: resolvedTargets.videoTrackId,
+     audioTrackId: resolvedTargets.audioTrackId,
+     effectiveIn,
+@@ -186,12 +228,15 @@
+     return []
+   }
+   if (
+-    (ctx.mediaType === 'video' || ctx.mediaType === 'image' || ctx.mediaType === 'lottie') &&
++    (ctx.mediaType === 'image' ||
++      ctx.mediaType === 'lottie' ||
++      (ctx.mediaType === 'video' && !ctx.audioTrackId)) &&
+     !ctx.videoTrackId
+   ) {
+     return []
+   }
+ 
++  const audioOnly = ctx.mediaType === 'audio' || (ctx.mediaType === 'video' && !ctx.videoTrackId)
+   return buildMediaTimelineItems({
+     media: {
+       duration: ctx.media.duration,
+@@ -200,7 +245,7 @@
+       fps: ctx.media.fps,
+     },
+     mediaId: ctx.sourceMediaId,
+-    mediaType: ctx.mediaType,
++    mediaType: audioOnly ? 'audio' : ctx.mediaType,
+     label: ctx.media.fileName,
+     projectFps: ctx.projectFps,
+     blobUrl: ctx.blobUrl,
+@@ -212,12 +257,12 @@
+     fallbackSourceFps: 30,
+     placements: {
+       primary: {
+-        trackId: ctx.mediaType === 'audio' ? ctx.audioTrackId! : ctx.videoTrackId!,
++        trackId: audioOnly ? ctx.audioTrackId! : ctx.videoTrackId!,
+         from: ctx.insertFrame,
+         durationInFrames: ctx.clipDurationFrames,
+       },
+       linkedAudio:
+-        ctx.mediaType === 'video' && ctx.audioTrackId
++        ctx.mediaType === 'video' && !audioOnly && ctx.audioTrackId
+           ? {
+               trackId: ctx.audioTrackId,
+               from: ctx.insertFrame,
+@@ -230,6 +275,38 @@
+   })
+ }
+ 
++/** Async media resolution must never overwrite newer project/track state. */
++function validateResolvedEdit(
++  ctx: SourceEditContext,
++  targetTrackIds: string[],
++  overwrite: boolean,
++): boolean {
++  const currentProject = useProjectStore.getState().currentProject
++  const projectFingerprint = JSON.stringify(
++    currentProject && { id: currentProject.id, metadata: currentProject.metadata },
++  )
++  const store = useItemsStore.getState()
++  if (
++    projectFingerprint !== ctx.projectFingerprint ||
++    JSON.stringify(store.tracks) !== ctx.tracksFingerprint ||
++    useTimelineSettingsStore.getState().fps !== ctx.projectFps ||
++    targetTrackIds.some(
++      (id) => !ctx.resolvedTracks.some((track) => track.id === id && !track.locked),
++    ) ||
++    !canPartitionSourceEdit(
++      store.items,
++      ctx.resolvedTracks,
++      new Set(targetTrackIds),
++      ctx.insertFrame,
++      overwrite ? ctx.insertFrame + ctx.clipDurationFrames : undefined,
++    )
++  ) {
++    toast.warning('Source edit targets changed or linked ranges cannot be partitioned')
++    return false
++  }
++  return true
++}
++
+ export async function performInsertEdit(): Promise<void> {
+   const ctx = await resolveSourceEditContext()
+   if (!ctx) return
+@@ -242,31 +319,27 @@
+     return
+   }
+ 
++  if (!validateResolvedEdit(ctx, targetTrackIds, false)) return
++
+   execute(
+     'INSERT_EDIT',
+     () => {
+       const store = useItemsStore.getState()
+-      store.setTracks(ctx.resolvedTracks)
++      store.setTracks(
++        ctx.resolvedTracks.map((resolved) => {
++          const current = store.tracks.find((track) => track.id === resolved.id)
++          return !current
++            ? resolved
++            : current.kind === resolved.kind
++              ? current
++              : { ...current, kind: resolved.kind }
++        }),
++      )
+       const splitIds: string[] = []
+       const shiftedIds: string[] = []
+ 
++      splitIds.push(...partitionSourceEditAt(new Set(targetTrackIds), insertFrame))
+       for (const targetTrackId of targetTrackIds) {
+-        const straddleItem = useItemsStore
+-          .getState()
+-          .items.find(
+-            (item) =>
+-              item.trackId === targetTrackId &&
+-              item.from < insertFrame &&
+-              item.from + item.durationInFrames > insertFrame,
+-          )
+-
+-        if (straddleItem) {
+-          const splitResult = store._splitItem(straddleItem.id, insertFrame)
+-          if (splitResult) {
+-            splitIds.push(splitResult.leftItem.id, splitResult.rightItem.id)
+-          }
+-        }
+-
+         const itemsToShift = useItemsStore
+           .getState()
+           .items.filter((item) => item.trackId === targetTrackId && item.from >= insertFrame)
+@@ -307,64 +380,44 @@
+     return
+   }
+ 
++  if (!validateResolvedEdit(ctx, targetTrackIds, true)) return
++
+   execute(
+     'OVERWRITE_EDIT',
+     () => {
+       const store = useItemsStore.getState()
+-      store.setTracks(ctx.resolvedTracks)
++      store.setTracks(
++        ctx.resolvedTracks.map((resolved) => {
++          const current = store.tracks.find((track) => track.id === resolved.id)
++          return !current
++            ? resolved
++            : current.kind === resolved.kind
++              ? current
++              : { ...current, kind: resolved.kind }
++        }),
++      )
+       const affectedIds: string[] = []
+ 
+-      for (const targetTrackId of targetTrackIds) {
+-        const overlapping = useItemsStore
+-          .getState()
+-          .items.filter(
+-            (item) =>
+-              item.trackId === targetTrackId &&
+-              item.from < overwriteEnd &&
+-              item.from + item.durationInFrames > overwriteStart,
+-          )
++      const targets = new Set(targetTrackIds)
++      affectedIds.push(...partitionSourceEditAt(targets, overwriteStart))
++      affectedIds.push(...partitionSourceEditAt(targets, overwriteEnd))
++      const covered = useItemsStore
++        .getState()
++        .items.filter(
++          (item) =>
++            targets.has(item.trackId) &&
++            item.from >= overwriteStart &&
++            item.from + item.durationInFrames <= overwriteEnd,
++        )
++      store._removeItems(covered.map((item) => item.id))
+ 
+-        for (const item of overlapping) {
+-          const itemEnd = item.from + item.durationInFrames
+-          const startsBeforeRegion = item.from < overwriteStart
+-          const endsAfterRegion = itemEnd > overwriteEnd
+-
+-          if (!startsBeforeRegion && !endsAfterRegion) {
+-            store._removeItems([item.id])
+-          } else if (startsBeforeRegion && endsAfterRegion) {
+-            const splitResult = store._splitItem(item.id, overwriteStart)
+-            if (splitResult) {
+-              affectedIds.push(splitResult.leftItem.id)
+-              const splitResult2 = useItemsStore
+-                .getState()
+-                ._splitItem(splitResult.rightItem.id, overwriteEnd)
+-              if (splitResult2) {
+-                store._removeItems([splitResult2.leftItem.id])
+-                affectedIds.push(splitResult2.rightItem.id)
+-              }
+-            }
+-          } else if (startsBeforeRegion) {
+-            const splitResult = store._splitItem(item.id, overwriteStart)
+-            if (splitResult) {
+-              store._removeItems([splitResult.rightItem.id])
+-              affectedIds.push(splitResult.leftItem.id)
+-            }
+-          } else {
+-            const splitResult = store._splitItem(item.id, overwriteEnd)
+-            if (splitResult) {
+-              store._removeItems([splitResult.leftItem.id])
+-              affectedIds.push(splitResult.rightItem.id)
+-            }
+-          }
+-        }
+-      }
+-
+       for (const newItem of newItems) {
+         store._addItem(newItem)
+         affectedIds.push(newItem.id)
+       }
+ 
+-      applyTransitionRepairs(affectedIds)
++      const deletedIds = new Set(covered.map((item) => item.id))
++      applyTransitionRepairs([...affectedIds, ...deletedIds], deletedIds)
+       useTimelineSettingsStore.getState().markDirty()
+     },
+     { trackIds: targetTrackIds, overwriteStart, overwriteEnd },
+--- a/src/features/timeline/stores/actions/source-edit-actions.test.ts
++++ b/src/features/timeline/stores/actions/source-edit-actions.test.ts
+@@ -5,6 +5,9 @@
+ 
+ const mocks = vi.hoisted(() => ({
+   mediaById: {} as Record<string, unknown>,
++  projectId: 'project-1',
++  onResolve: null as (() => void) | null,
++  resolveCount: 0,
+ }))
+ 
+ vi.mock('@/features/timeline/deps/media-library-store', () => ({
+@@ -16,7 +19,7 @@
+ vi.mock('@/features/timeline/deps/projects', () => ({
+   useProjectStore: {
+     getState: () => ({
+-      currentProject: { metadata: { width: 1920, height: 1080, fps: 30 } },
++      currentProject: { id: mocks.projectId, metadata: { width: 1920, height: 1080, fps: 30 } },
+     }),
+   },
+ }))
+@@ -38,10 +41,15 @@
+         : mimeType.startsWith('image')
+           ? 'image'
+           : 'unknown',
+-  resolveMediaUrl: async () => 'blob:source-media',
++  resolveMediaUrl: async () => {
++    await Promise.resolve()
++    mocks.resolveCount++
++    mocks.onResolve?.()
++    return 'blob:source-media'
++  },
+ }))
+ 
+-import { makeTimelineTrack, makeTimelineVideoItem } from '../../test-helpers'
++import { makeTimelineTrack, makeTimelineVideoItem, makeTimelineAudioItem } from '../../test-helpers'
+ import { resetPlaybackPreviewState } from '@/shared/state/playback-preview-test-helpers'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { useSelectionStore } from '@/shared/state/selection'
+@@ -78,6 +86,9 @@
+ 
+ describe('source edit actions', () => {
+   beforeEach(() => {
++    mocks.projectId = 'project-1'
++    mocks.onResolve = null
++    mocks.resolveCount = 0
+     useTimelineCommandStore.getState().clearHistory()
+     useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
+     useItemsStore
+@@ -101,6 +112,366 @@
+     setSourceMedia()
+   })
+ 
++  it.each([
++    ['insert', performInsertEdit],
++    ['overwrite', performOverwriteEdit],
++  ] as const)(
++    'keeps cut halves independently linked after a source monitor %s',
++    async (_name, edit) => {
++      setSourceMedia({ audioCodec: 'aac' })
++      useItemsStore.getState().setItems([
++        makeTimelineVideoItem({
++          id: 'existing-video',
++          trackId: 'track-v1',
++          from: 0,
++          durationInFrames: 120,
++          sourceStart: 0,
++          sourceEnd: 120,
++          sourceDuration: 120,
++          linkedGroupId: 'existing-pair',
++        }),
++        makeTimelineAudioItem({
++          id: 'existing-audio',
++          trackId: 'track-a1',
++          from: 0,
++          durationInFrames: 120,
++          sourceStart: 0,
++          sourceEnd: 120,
++          sourceDuration: 120,
++          linkedGroupId: 'existing-pair',
++        }),
++      ])
++      usePlaybackStore.setState({ currentFrame: 30 })
++
++      const before = JSON.stringify(useItemsStore.getState().items)
++      await edit()
++
++      const groups = (trackId: string) => trackItems(trackId).map((item) => item.linkedGroupId)
++      expect(trackItems('track-v1')).toHaveLength(3)
++      expect(trackItems('track-a1')).toHaveLength(3)
++      expect(groups('track-v1')).toEqual(groups('track-a1'))
++      expect(groups('track-v1').every(Boolean)).toBe(true)
++      expect(new Set(groups('track-v1')).size).toBe(3)
++      const after = JSON.stringify(useItemsStore.getState().items)
++      useTimelineCommandStore.getState().undo()
++      expect(JSON.stringify(useItemsStore.getState().items)).toBe(before)
++      useTimelineCommandStore.getState().redo()
++      expect(JSON.stringify(useItemsStore.getState().items)).toBe(after)
++    },
++  )
++
++  it.each([
++    ['insert', performInsertEdit],
++    ['overwrite', performOverwriteEdit],
++  ] as const)('refuses an unsupported source cadence on source monitor %s', async (_name, edit) => {
++    setSourceMedia({ fps: 27.3 })
++    const historyDepth = useTimelineCommandStore.getState().undoStack.length
++
++    await edit()
++
++    // 27.3 has no supported exact cadence reading; canonical source edits already refuse it.
++    expect(mocks.resolveCount).toBe(0)
++    expect(useItemsStore.getState().items).toHaveLength(0)
++    expect(useTimelineCommandStore.getState().undoStack.length).toBe(historyDepth)
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(false)
++    expect(usePlaybackStore.getState().currentFrame).toBe(0)
++  })
++
++  it.each([performInsertEdit, performOverwriteEdit])(
++    'refuses a fully covered partial linked group',
++    async (edit) => {
++      const original = [
++        makeTimelineVideoItem({
++          id: 'head-v',
++          from: 30,
++          durationInFrames: 30,
++          linkedGroupId: 'pair',
++        }),
++        makeTimelineAudioItem({
++          id: 'head-a',
++          from: 30,
++          durationInFrames: 30,
++          linkedGroupId: 'pair',
++        }),
++      ]
++      useItemsStore.getState().setItems(original)
++      usePlaybackStore.setState({ currentFrame: 30 })
++      useEditorStore.setState({ sourcePatchAudioEnabled: false })
++      const before = JSON.stringify(useItemsStore.getState().items)
++      await edit()
++      expect(JSON.stringify(useItemsStore.getState().items)).toBe(before)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++
++  it.each([
++    [
++      'lock',
++      () =>
++        useItemsStore
++          .getState()
++          .setTracks(useItemsStore.getState().tracks.map((track) => ({ ...track, locked: true }))),
++    ],
++    [
++      'project',
++      () => {
++        mocks.projectId = 'project-2'
++      },
++    ],
++  ] as const)(
++    'refuses an async %s change without restoring stale tracks',
++    async (_name, change) => {
++      mocks.onResolve = change
++      await performOverwriteEdit()
++      expect(useItemsStore.getState().items).toHaveLength(0)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      if (_name === 'lock')
++        expect(useItemsStore.getState().tracks.every((track) => track.locked)).toBe(true)
++      expect(useTimelineSettingsStore.getState().isDirty).toBe(false)
++    },
++  )
++
++  it.each([24, 29.97, 30000 / 1001])('retains supported cadence conversion %s', async (fps) => {
++    setSourceMedia({ fps })
++    await performInsertEdit()
++    expect(trackItems('track-v1')[0]?.durationInFrames).toBe(Math.round((60 * 30) / fps))
++  })
++
++  it('keeps incoming/outgoing transition endpoints and their undo/redo after overwrite', async () => {
++    useItemsStore.getState().setItems([
++      makeTimelineVideoItem({
++        id: 'before',
++        from: 0,
++        durationInFrames: 30,
++        sourceStart: 30,
++        sourceEnd: 60,
++        sourceDuration: 300,
++      }),
++      makeTimelineVideoItem({
++        id: 'middle',
++        from: 30,
++        durationInFrames: 120,
++        sourceStart: 30,
++        sourceEnd: 150,
++        sourceDuration: 300,
++      }),
++      makeTimelineVideoItem({
++        id: 'after',
++        from: 150,
++        durationInFrames: 30,
++        sourceStart: 30,
++        sourceEnd: 60,
++        sourceDuration: 300,
++      }),
++    ])
++    useTransitionsStore.getState().setTransitions([
++      {
++        id: 'incoming',
++        type: 'crossfade',
++        presentation: 'fade',
++        timing: 'linear',
++        leftClipId: 'before',
++        rightClipId: 'middle',
++        trackId: 'track-v1',
++        durationInFrames: 12,
++      },
++      {
++        id: 'outgoing',
++        type: 'crossfade',
++        presentation: 'fade',
++        timing: 'linear',
++        leftClipId: 'middle',
++        rightClipId: 'after',
++        trackId: 'track-v1',
++        durationInFrames: 12,
++      },
++    ])
++    usePlaybackStore.setState({ currentFrame: 60 })
++    const snapshot = () =>
++      JSON.stringify({
++        items: useItemsStore.getState().items,
++        transitions: useTransitionsStore.getState().transitions,
++      })
++    const before = snapshot()
++    await performOverwriteEdit()
++    const tail = trackItems('track-v1').find((item) => item.from === 120)!
++    expect(useTransitionsStore.getState().transitions).toEqual(
++      expect.arrayContaining([
++        expect.objectContaining({ id: 'incoming', rightClipId: 'middle' }),
++        expect.objectContaining({ id: 'outgoing', leftClipId: tail.id }),
++      ]),
++    )
++    const after = snapshot()
++    useTimelineCommandStore.getState().undo()
++    expect(snapshot()).toBe(before)
++    useTimelineCommandStore.getState().redo()
++    expect(snapshot()).toBe(after)
++  })
++
++  it.each([
++    ['V-only', 'video/mp4', true, false, ['video']],
++    ['A-only video', 'video/mp4', false, true, ['audio']],
++    ['audio file', 'audio/wav', false, true, ['audio']],
++    ['V+A', 'video/mp4', true, true, ['audio', 'video']],
++  ] as const)(
++    'honors explicit patch targets for %s',
++    async (_name, mimeType, patchVideo, patchAudio, types) => {
++      setSourceMedia({ mimeType, audioCodec: 'aac', fps: mimeType.startsWith('audio') ? 0 : 30 })
++      useItemsStore
++        .getState()
++        .setTracks([
++          ...useItemsStore.getState().tracks,
++          makeTimelineTrack({ id: 'explicit-v', name: 'Explicit V', kind: 'video', order: 2 }),
++          makeTimelineTrack({ id: 'explicit-a', name: 'Explicit A', kind: 'audio', order: 3 }),
++        ])
++      useEditorStore.setState({
++        sourcePatchVideoEnabled: patchVideo,
++        sourcePatchAudioEnabled: patchAudio,
++        sourcePatchVideoTrackId: 'explicit-v',
++        sourcePatchAudioTrackId: 'explicit-a',
++      })
++      await performInsertEdit()
++      const items = useItemsStore.getState().items
++      expect(items.map((item) => item.type).sort()).toEqual(types)
++      expect(
++        items.every(
++          (item) => item.trackId === (item.type === 'video' ? 'explicit-v' : 'explicit-a'),
++        ),
++      ).toBe(true)
++    },
++  )
++
++  it.each([performInsertEdit, performOverwriteEdit])(
++    'leaves boundary-touching linked groups and unrelated locks alone',
++    async (edit) => {
++      const original = [
++        makeTimelineVideoItem({
++          id: 'v-before',
++          durationInFrames: 30,
++          sourceEnd: 30,
++          linkedGroupId: 'pair',
++        }),
++        makeTimelineAudioItem({
++          id: 'a-before',
++          durationInFrames: 30,
++          sourceEnd: 30,
++          linkedGroupId: 'pair',
++        }),
++      ]
++      useItemsStore.getState().setItems(original)
++      useItemsStore.getState().setTracks([
++        ...useItemsStore.getState().tracks,
++        makeTimelineTrack({
++          id: 'locked-unrelated',
++          name: 'Locked unrelated',
++          kind: 'video',
++          locked: true,
++          order: 2,
++        }),
++      ])
++      usePlaybackStore.setState({ currentFrame: 30 })
++      useEditorStore.setState({ sourcePatchAudioEnabled: false })
++      await edit()
++      expect(
++        useItemsStore.getState().items.filter((item) => original.some((old) => old.id === item.id)),
++      ).toEqual(original)
++      expect(useItemsStore.getState().items).toHaveLength(3)
++      expect(
++        useItemsStore.getState().tracks.find((track) => track.id === 'locked-unrelated')?.locked,
++      ).toBe(true)
++    },
++  )
++
++  it.each([performInsertEdit, performOverwriteEdit])(
++    'refuses offset linked partitions',
++    async (edit) => {
++      useItemsStore.getState().setItems([
++        makeTimelineVideoItem({ id: 'offset-v', durationInFrames: 120, linkedGroupId: 'offset' }),
++        makeTimelineAudioItem({
++          id: 'offset-a',
++          from: 10,
++          durationInFrames: 120,
++          linkedGroupId: 'offset',
++        }),
++      ])
++      setSourceMedia({ audioCodec: 'aac' })
++      usePlaybackStore.setState({ currentFrame: 30 })
++      const before = JSON.stringify(useItemsStore.getState().items)
++      await edit()
++      expect(JSON.stringify(useItemsStore.getState().items)).toBe(before)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++
++  it('keeps the established still fallback range', async () => {
++    setSourceMedia({ mimeType: 'image/jpeg', duration: 0, fps: 0 })
++    useSourcePlayerStore.setState({ inPoint: null, outPoint: null })
++    await performInsertEdit()
++    expect(trackItems('track-v1')).toHaveLength(1)
++    expect(trackItems('track-v1')[0]).toMatchObject({ type: 'image', durationInFrames: 90 })
++  })
++
++  it('revalidates linked groups changed during async resolution at both boundaries', async () => {
++    setSourceMedia({ audioCodec: 'aac' })
++    mocks.onResolve = () =>
++      useItemsStore
++        .getState()
++        .setItems([
++          makeTimelineVideoItem({ id: 'new-v', durationInFrames: 120, linkedGroupId: 'new-pair' }),
++          makeTimelineAudioItem({ id: 'new-a', durationInFrames: 60, linkedGroupId: 'new-pair' }),
++        ])
++    usePlaybackStore.setState({ currentFrame: 30 })
++    await performOverwriteEdit()
++    expect(useItemsStore.getState().items.map((item) => [item.id, item.durationInFrames])).toEqual([
++      ['new-v', 120],
++      ['new-a', 60],
++    ])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it('repairs transitions of fully covered clips after replacement', async () => {
++    useItemsStore
++      .getState()
++      .setItems([
++        makeTimelineVideoItem({
++          id: 'covered-transition-clip',
++          from: 0,
++          durationInFrames: 60,
++          sourceEnd: 60,
++        }),
++        makeTimelineVideoItem({
++          id: 'following-transition-clip',
++          from: 60,
++          durationInFrames: 60,
++          sourceStart: 30,
++          sourceEnd: 90,
++        }),
++      ])
++    useTransitionsStore
++      .getState()
++      .setTransitions([
++        {
++          id: 'covered-transition',
++          type: 'crossfade',
++          presentation: 'fade',
++          timing: 'linear',
++          leftClipId: 'covered-transition-clip',
++          rightClipId: 'following-transition-clip',
++          trackId: 'track-v1',
++          durationInFrames: 12,
++        },
++      ])
++    await performOverwriteEdit()
++    const ids = new Set(useItemsStore.getState().items.map((item) => item.id))
++    expect(
++      useTransitionsStore
++        .getState()
++        .transitions.every(
++          (transition) => ids.has(transition.leftClipId) && ids.has(transition.rightClipId),
++        ),
++    ).toBe(true)
++  })
++
+   describe('performInsertEdit', () => {
+     it('inserts the in/out range at the playhead on an empty track', async () => {
+       usePlaybackStore.setState({ currentFrame: 10 })
+--- /dev/null
++++ b/src/features/timeline/stores/actions/source-edit-partitions.ts
+@@ -0,0 +1,59 @@
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++import { getLinkedItemIds, getUniqueLinkedItemAnchorIds } from '../../utils/linked-items'
++import { useItemsStore } from '../items-store'
++import { applySplitBookkeeping, type SplitResultEntry } from './split-bookkeeping'
++
++/** Validate the whole original group, including fully covered members, before any cut/removal. */
++export function canPartitionSourceEdit(
++  items: TimelineItem[],
++  tracks: TimelineTrack[],
++  targets: ReadonlySet<string>,
++  start: number,
++  end?: number,
++): boolean {
++  const affected = items.filter(
++    (item) =>
++      targets.has(item.trackId) &&
++      (end === undefined
++        ? item.from + item.durationInFrames > start
++        : item.from < end && item.from + item.durationInFrames > start),
++  )
++  return affected.every((anchor) =>
++    getLinkedItemIds(items, anchor.id).every((id) => {
++      const item = items.find((candidate) => candidate.id === id)!
++      return (
++        targets.has(item.trackId) &&
++        tracks.some((track) => track.id === item.trackId && !track.locked) &&
++        item.from === anchor.from &&
++        item.durationInFrames === anchor.durationInFrames
++      )
++    }),
++  )
++}
++
++/** Call only after validating both boundaries. Each original group gets its own bookkeeping. */
++export function partitionSourceEditAt(targets: ReadonlySet<string>, frame: number): string[] {
++  const store = useItemsStore.getState()
++  const crossing = store.items.filter(
++    (item) =>
++      targets.has(item.trackId) && item.from < frame && item.from + item.durationInFrames > frame,
++  )
++  const anchors = getUniqueLinkedItemAnchorIds(
++    store.items,
++    crossing.map((item) => item.id),
++  )
++  const affected: string[] = []
++  for (const anchor of anchors) {
++    const current = useItemsStore.getState().items
++    const results: SplitResultEntry[] = []
++    for (const id of getLinkedItemIds(current, anchor)) {
++      const original = current.find((item) => item.id === id)!
++      const result = store._splitItem(id, frame)
++      if (!result) throw new Error('Validated source edit could not be partitioned')
++      results.push({ originalId: id, originalLinkedGroupId: original.linkedGroupId, result })
++      affected.push(result.leftItem.id, result.rightItem.id)
++    }
++    applySplitBookkeeping(results)
++  }
++  return affected
++}

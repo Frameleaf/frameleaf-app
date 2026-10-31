@@ -1,0 +1,2240 @@
+diff --git a/src/features/export/utils/canvas-audio-channel-preservation.test.ts b/src/features/export/utils/canvas-audio-channel-preservation.test.ts
+--- a/src/features/export/utils/canvas-audio-channel-preservation.test.ts
++++ b/src/features/export/utils/canvas-audio-channel-preservation.test.ts
+@@ -66,7 +66,8 @@
+   return { ALL_FORMATS: [], Input, UrlSource, AudioSampleSink }
+ })
+
+-import { clearAudioDecodeCache, processAudio, processAudioWindows } from './canvas-audio'
++import { applyAudioPanStages } from '@/shared/utils/audio-pan'
++import { clearAudioDecodeCache, getAudioPacketPassthroughPlan, processAudio, processAudioWindows } from './canvas-audio'
+
+ const layouts = [
+   { layout: 'mono', channels: ['M'] },
+@@ -177,3 +178,71 @@
+     })
+   }
+ })
++
++
++describe('track pan through both actual PCM mixers', () => {
++  for (const windowed of [false, true]) {
++    it(`${windowed ? 'windowed' : 'full'} mix pans mono/stereo and preserves untouched sibling planes`, async () => {
++      for (const channels of [1, 2]) {
++        for (const pan of [-1, -0.5, 0, 0.5, 1]) {
++          clearAudioDecodeCache()
++          const composition = channelImpulseComposition(`pan-${channels}-${pan}`, channels)
++          composition.durationInFrames = 1
++          for (const track of composition.tracks!) track.items[0]!.durationInFrames = 1
++          composition.tracks![0]!.pan = pan
++          const before = structuredClone(composition)
++          const mixed = windowed ? (await processAudioWindows(composition).next()).value : await processAudio(composition)
++          expect(mixed).not.toBeNull()
++          const outputChannels = pan === 0 ? channels : 2
++          expect(mixed!.channels).toBe(outputChannels)
++          const angle = (channels === 1 ? (pan + 1) / 2 : pan <= 0 ? pan + 1 : pan) * Math.PI / 2
++          const left = mixed!.samples[0]!
++          if (pan === 0) {
++            expect(left[32]).toBe(0.125)
++          } else {
++            expect(left[32]).toBeCloseTo(channels === 1 || pan > 0 ? 0.125 * Math.cos(angle) : 0.125, 7)
++            expect(mixed!.samples[1]![32]).toBeCloseTo(channels === 1 || pan > 0 ? 0.125 * Math.sin(angle) : 0, 7)
++            if (channels === 2) {
++              expect(left[49]).toBeCloseTo(pan <= 0 ? 0.125 * Math.cos(angle) : 0, 7)
++              expect(mixed!.samples[1]![49]).toBeCloseTo(pan <= 0 ? 0.125 * Math.sin(angle) : 0.125, 7)
++            }
++          }
++          expect(left[320]).toBe(-0.125)
++          if (outputChannels === 2) expect(mixed!.samples[1]![channels === 1 ? 320 : 339]).toBe(-0.125)
++          expect(composition).toEqual(before)
++        }
++      }
++    })
++
++    it(`${windowed ? 'windowed' : 'full'} mix refuses active pan on multichannel sources before publishing`, async () => {
++      const composition = channelImpulseComposition(`refused-pan-${windowed}`, 6)
++      composition.tracks![0]!.pan = 1
++      const result = windowed ? processAudioWindows(composition).next() : processAudio(composition)
++      await expect(result).rejects.toThrow('Track pan requires a mono or stereo source')
++    })
++  }
++
++  it('routes active pan through PCM and restores packet passthrough at neutral', () => {
++    const composition = channelImpulseComposition('pan-packet-copy', 2)
++    composition.tracks = [composition.tracks![0]!]
++    composition.tracks[0]!.items[0]!.volume = 0
++    const neutral = getAudioPacketPassthroughPlan(composition)
++    expect(neutral).not.toBeNull()
++    composition.tracks[0]!.pan = 0.5
++    expect(getAudioPacketPassthroughPlan(composition)).toBeNull()
++    composition.tracks[0]!.pan = 0
++    expect(getAudioPacketPassthroughPlan(composition)).toEqual(neutral)
++  })
++
++  it('uses ordered pan stages without mutating PCM and keeps neutral multichannel planes', () => {
++    const mono = [new Float32Array([0.25, -0.25])]
++    const before = mono.map((channel) => [...channel])
++    const result = applyAudioPanStages(mono, [-1, 1])
++    expect([...result[0]!]).toEqual([expect.closeTo(0, 7), expect.closeTo(0, 7)])
++    expect([...result[1]!]).toEqual([0.25, -0.25])
++    expect(mono.map((channel) => [...channel])).toEqual(before)
++    const multichannel = Array.from({ length: 6 }, () => new Float32Array(2))
++    expect(applyAudioPanStages(multichannel, [0])).toBe(multichannel)
++    for (const pan of [NaN, Infinity, -2, 2]) expect(() => applyAudioPanStages(mono, [pan])).toThrow('Invalid audio pan')
++  })
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -14,6 +14,7 @@
+   TimelineItem,
+   TimelineTrack,
+ } from '@/types/timeline'
++import { applyAudioPanStages, getAudioPanStages } from '@/shared/utils/audio-pan'
+ import type { AudioEqSettings, ResolvedAudioEqSettings } from '@/types/audio'
+ import type { Keyframe as VolumeKeyframe } from '@/types/keyframe'
+ import type { Transition } from '@/types/transition'
+@@ -97,6 +98,7 @@
+   fadeOutCurveX: number
+   pitchShiftSemitones: number
+   audioEqStages: ResolvedAudioEqSettings[]
++  panStages?: number[]
+   contentStartOffsetFrames?: number
+   contentEndOffsetFrames?: number
+   fadeInDelayFrames?: number
+@@ -125,6 +127,7 @@
+   trackId: string
+   muted: boolean
+   trackVolume: number
++  panStages?: number[]
+   trackAudioEq?: AudioEqSettings
+   audioEqStages?: ResolvedAudioEqSettings[]
+   type: 'video' | 'audio'
+@@ -442,6 +445,7 @@
+       sourceFps,
+       volume: (item.volume ?? 0) + entry.trackVolume,
+       trackVolumeDb: entry.trackVolume,
++      panStages: entry.panStages,
+       fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+       fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+       fadeInCurve: item.audioFadeInCurve ?? 0,
+@@ -502,6 +506,7 @@
+     if (left.isReversed !== right.isReversed) return false
+     if (Math.abs(left.volume - right.volume) > 0.0001) return false
+     if (left.muted !== right.muted) return false
++    if (JSON.stringify(left.panStages) !== JSON.stringify(right.panStages)) return false
+     if (!areAudioEqStagesEqual(left.audioEqStages, right.audioEqStages)) return false
+     if (Math.abs(left.pitchShiftSemitones - right.pitchShiftSemitones) > 0.0001) return false
+     if (left.afterFrames !== 0 || right.beforeFrames !== 0) return false
+@@ -519,6 +524,7 @@
+     sourceFps: segment.sourceFps,
+     volume: segment.volume,
+     trackVolumeDb: segment.trackVolumeDb,
++    panStages: segment.panStages,
+     fadeInFrames: segment.fadeInFrames,
+     fadeOutFrames: segment.fadeOutFrames,
+     fadeInCurve: segment.fadeInCurve,
+@@ -741,10 +747,12 @@
+   fps: number
+   audioEqStages?: ResolvedAudioEqSettings[]
+   audioPitchShiftSemitones?: number
++  panStages?: number[]
+   visited?: Set<string>
+ }): void {
+   const { segments, track, compositionItem, subComp, fps } = params
+   const visited = params.visited ?? new Set<string>()
++  const wrapperPanStages = params.panStages ?? getAudioPanStages(track.pan)
+   const wrapperAudioEqStages = appendResolvedAudioEqSources(
+     params.audioEqStages,
+     getAudioEqSettings(compositionItem),
+@@ -794,6 +802,7 @@
+         fps,
+         audioEqStages: appendResolvedAudioEqSources(wrapperAudioEqStages, subTrack?.audioEq),
+         audioPitchShiftSemitones: wrapperAudioPitchShiftSemitones,
++        panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
+         visited: nestedVisited,
+       })
+       continue
+@@ -848,6 +857,7 @@
+       sourceFps: subItem.sourceFps ?? fps,
+       volume: (subItem.volume ?? 0) + (track.volume ?? 0) + (subTrack?.volume ?? 0),
+       trackVolumeDb: (track.volume ?? 0) + (subTrack?.volume ?? 0),
++      panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
+       fadeInFrames: adjustedFadeInFrames,
+       fadeOutFrames: adjustedFadeOutFrames,
+       fadeInCurve: subItem.audioFadeInCurve ?? 0,
+@@ -952,6 +962,7 @@
+           trackId: track.id,
+           muted: (track.muted ?? false) || item.muted === true,
+           trackVolume: track.volume ?? 0,
++          panStages: getAudioPanStages(track.pan),
+           trackAudioEq: track.audioEq,
+           audioEqStages: busAudioEqStages,
+           type: 'video',
+@@ -989,6 +1000,7 @@
+           trackId: track.id,
+           muted: (track.muted ?? false) || item.muted === true,
+           trackVolume: track.volume ?? 0,
++          panStages: getAudioPanStages(track.pan),
+           trackAudioEq: track.audioEq,
+           audioEqStages: busAudioEqStages,
+           type: 'audio',
+@@ -1017,6 +1029,7 @@
+           sourceFps: audioItem.sourceFps ?? fps,
+           volume: (item.volume ?? 0) + (track.volume ?? 0),
+           trackVolumeDb: track.volume ?? 0,
++          panStages: getAudioPanStages(track.pan),
+           fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+           fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+           fadeInCurve: item.audioFadeInCurve ?? 0,
+@@ -2246,6 +2259,7 @@
+ function hasPacketCopyEffects(segment: AudioSegment): boolean {
+   return (
+     isAudioPitchShiftActive(segment.pitchShiftSemitones) ||
++    (segment.panStages?.length ?? 0) > 0 ||
+     segment.audioEqStages.some(isAudioEqStageActive)
+   )
+ }
+@@ -2557,7 +2571,7 @@
+     }
+     processed[channel] = samples
+   }
+-  return processed
++  return applyAudioPanStages(processed, segment.panStages)
+ }
+
+ function mixAudioWindowChannels(
+@@ -2589,6 +2603,7 @@
+   sampleRate: number
+   fps: number
+   decoderPool: WindowedAudioDecoderPool
++  sourceChannels: number
+   duckingSources: readonly DuckingSource[]
+ }): Promise<void> {
+   const { segment, mixed, chunkStart, chunkEnd, sampleRate, fps, decoderPool, duckingSources } =
+@@ -2610,7 +2625,7 @@
+     sourceStartTime,
+     sourceStartTime + requestedFrames / sampleRate,
+   )
+-  requireMatchingAudioPlaneCount(decoded.samples.length, mixed.length)
++  requireMatchingAudioPlaneCount(decoded.samples.length, params.sourceChannels)
+   const processed = await processAudioWindowChannels(
+     decoded,
+     segment,
+@@ -2663,6 +2678,7 @@
+
+   const sampleRate = 48_000
+   let channels = 0
++  const hasPan = segments.some((segment) => (segment.panStages?.length ?? 0) > 0)
+   const totalSamples = Math.ceil((durationInFrames / fps) * sampleRate)
+   const chunkSamples = STREAMING_AUDIO_CHUNK_SECONDS * sampleRate
+   const masterGain = composition.masterBusMuted === true
+@@ -2681,6 +2697,11 @@
+       const decoded = await decoderPool.decode(segment, sourceStart, sourceStart + 1 / sampleRate)
+       channels = requireMatchingAudioPlaneCount(decoded.samples.length, channels)
+     }
++    const sourceChannels = channels
++    if (hasPan) {
++      if (channels > 2) throw new Error('Track pan requires a mono or stereo source')
++      channels = 2
++    }
+     for (let chunkStart = 0; chunkStart < totalSamples; chunkStart += chunkSamples) {
+       if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
+
+@@ -2697,6 +2718,7 @@
+           sampleRate,
+           fps,
+           decoderPool,
++          sourceChannels,
+           duckingSources,
+         })
+       }
+@@ -2769,6 +2791,7 @@
+   // memory use on long, multi-clip timelines.
+   const mixedSamples: Float32Array[] = []
+   let sourceChannels = 0
++  const hasPan = activeSegments.some((segment) => (segment.panStages?.length ?? 0) > 0)
+
+   for (const segment of activeSegments) {
+     if (signal?.aborted) {
+@@ -2792,6 +2815,7 @@
+         segment.audioCodec,
+       )
+       sourceChannels = requireMatchingAudioPlaneCount(decoded.samples.length, sourceChannels)
++      if (hasPan && sourceChannels > 2) throw new Error('Track pan requires a mono or stereo source')
+
+       // Process audio channels.
+       // Note: decoded audio is already trimmed to the range we requested.
+@@ -2818,6 +2842,13 @@
+         decoded.sampleRate,
+         segment.audioEqStages,
+       )
++
++      if (segment.panStages?.length && decoded.samples.length === 1 && processedChannels.length === 2) {
++        // SoundTouch duplicates mono to stereo; pan the admitted mono signal.
++        processedChannels = [processedChannels[0]!]
++      }
++      processedChannels = applyAudioPanStages(processedChannels, segment.panStages)
++      if (hasPan) processedChannels = downmixToOutputChannels(processedChannels, 2)
+
+       // Normal-speed gain edits retain source planes. SoundTouch's existing
+       // explicit stereo downmix remains a separate, unqualified retiming policy.
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+--- a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+@@ -116,6 +116,7 @@
+   return (
+     <NativePitchCorrectedAudio
+       src={decodedSrc}
++      audioPanSourceChannels={fallbackBuffer.numberOfChannels}
+       itemId={itemId}
+       liveGainItemIds={liveGainItemIds}
+       trimBefore={reversedPlayback?.trimBefore ?? trimBefore}
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+@@ -15,6 +15,7 @@
+   PREVIEW_AUDIO_GAIN_RAMP_SECONDS,
+   rampPreviewClipEq,
+   rampPreviewClipGain,
++  rampPreviewClipPan,
+   type PreviewClipAudioGraph,
+ } from '../utils/preview-audio-graph'
+
+@@ -129,6 +130,7 @@
+       transportPlaybackRate,
+       resolvedVolume: audioVolume,
+       resolvedAudioEqStages,
++      resolvedAudioPanStages = [],
+     } = useAudioPlaybackState({
+       itemId,
+       liveGainItemIds,
+@@ -655,10 +657,13 @@
+       const graph = graphRef.current
+       if (!graph) return
+
+-      const safeVolume = Number.isFinite(audioVolume) ? Math.max(0, audioVolume) : 0
++      const panAdmitted = resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
++        ? true : rampPreviewClipPan(graph, resolvedAudioPanStages, audioSlice?.buffer.numberOfChannels)
++      if (!panAdmitted) graph.outputGainNode.gain.value = 0
++      const safeVolume = panAdmitted && Number.isFinite(audioVolume) ? Math.max(0, audioVolume) : 0
+       audioVolumeRef.current = safeVolume
+       rampPreviewClipGain(graph, safeVolume)
+-    }, [audioVolume])
++    }, [audioVolume, resolvedAudioPanStages, audioSlice])
+
+     useEffect(() => {
+       const graph = graphRef.current
+diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -17,6 +17,8 @@
+ import { resolvePreviewAudioPitchShiftSemitones } from '@/shared/utils/audio-pitch'
+ import { useMixerLiveGainProduct, clearMixerLiveGain } from '@/shared/state/mixer-live-gain'
+ import type { ResolvedAudioEqSettings } from '@/types/audio'
++import { useCompositionsStore } from '@/runtime/composition-runtime/deps/stores'
++import { resolveTrackAudioPanStages } from '@/shared/utils/audio-pan'
+ import type { AudioPlaybackProps } from '../audio-playback-props'
+
+ interface AudioPlaybackState {
+@@ -28,6 +30,17 @@
+   resolvedVolume: number
+   resolvedPitchShiftSemitones: number
+   resolvedAudioEqStages: ResolvedAudioEqSettings[]
++  resolvedAudioPanStages: number[]
++}
++
++export function useTrackAudioPanStages(itemId: string, ancestorItemIds?: string[]): number[] {
++  const items = useTimelineStore((state) => state.items)
++  const tracks = useTimelineStore((state) => state.tracks)
++  const compositions = useCompositionsStore((state) => state.compositions)
++  return useMemo(
++    () => resolveTrackAudioPanStages(items, tracks, compositions, itemId, ancestorItemIds),
++    [items, tracks, compositions, itemId, ancestorItemIds],
++  )
+ }
+
+ export function useAudioPlaybackState({
+@@ -55,6 +68,7 @@
+   crossfadeFadeOut,
+   volumeMultiplier = 1,
+ }: AudioPlaybackProps): AudioPlaybackState {
++  const resolvedAudioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
+   const sequenceContext = useSequenceContext()
+   const frame = sequenceContext?.localFrame ?? 0
+   const { fps } = useVideoConfig()
+@@ -160,5 +174,6 @@
+       mixerGain,
+     resolvedPitchShiftSemitones,
+     resolvedAudioEqStages,
++    resolvedAudioPanStages,
+   }
+ }
+diff --git a/src/runtime/composition-runtime/components/item-content.tsx b/src/runtime/composition-runtime/components/item-content.tsx
+--- a/src/runtime/composition-runtime/components/item-content.tsx
++++ b/src/runtime/composition-runtime/components/item-content.tsx
+@@ -42,6 +42,7 @@
+ import { resolveReverseConformedVideoItem } from '@/shared/utils/reverse-conform-item'
+ import { useNestedMediaResolutionMode } from '../contexts/nested-media-resolution-context'
+ import { useLiveItemContentTransform } from '../contexts/live-item-transform-context'
++import { useTrackAudioPanStages } from './hooks/use-audio-playback-state'
+ import { shouldRenderExternalVideoAudio } from '../utils/audio-playback-routing'
+
+ function getLogger() {
+@@ -170,6 +171,7 @@
+     renderCompositionContent,
+   }) => {
+     item = useLiveItemContentTransform(item)
++    const audioPanStages = useTrackAudioPanStages(item.id, audioGainLiveItemIds)
+
+     // Combine inherited track/parent state with the persisted clip control.
+     muted = muted || item.muted === true
+@@ -351,7 +353,7 @@
+         hasAudioSource: !!videoAudioSrc,
+         authoredReversed: isReversed,
+         reverseShuttle: isReverseShuttle,
+-        requiresPitchShift: requiresPitchShiftedVideoAudio,
++        requiresPitchShift: requiresPitchShiftedVideoAudio || audioPanStages.length > 0,
+         requiresCustomDecoder: shouldUseCustomDecodedVideoAudio,
+       })
+       const videoAudioPlaybackProps = getItemAudioPlaybackProps({
+diff --git a/src/runtime/composition-runtime/components/master-mute.test.tsx b/src/runtime/composition-runtime/components/master-mute.test.tsx
+--- a/src/runtime/composition-runtime/components/master-mute.test.tsx
++++ b/src/runtime/composition-runtime/components/master-mute.test.tsx
+@@ -17,7 +17,8 @@
+ vi.mock('@/runtime/composition-runtime/deps/stores', async () => ({
+   usePlaybackStore: (await import('@/shared/state/playback')).usePlaybackStore,
+   useGizmoStore: (select: (state: object) => unknown) => select({ activeGizmo: null, preview: {} }),
+-  useTimelineStore: (select: (state: object) => unknown) => select({ keyframes: [] }),
++  useCompositionsStore: (select: (state: object) => unknown) => select({ compositions: [] }),
++  useTimelineStore: (select: (state: object) => unknown) => select({ keyframes: [], items: [{ id: 'clip', trackId: 'audio' }], tracks: [{ id: 'audio', pan: 0.5 }] }),
+ }))
+ vi.mock('../contexts/keyframes-context', () => ({ useItemKeyframesFromContext: () => undefined }))
+ vi.mock('./hooks/use-runtime-item-keyframes', () => ({ useRuntimeItemKeyframes: () => undefined }))
+diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx b/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
+@@ -1,4 +1,4 @@
+-import { render, waitFor } from '@testing-library/react'
++import { act, render, waitFor } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { DEFAULT_AUDIO_EQ_SETTINGS } from '@/shared/utils/audio-eq'
+
+@@ -7,6 +7,7 @@
+   getOrDecodeAudioSliceForPlayback: vi.fn(),
+ }))
+ const clockRateMocks = vi.hoisted(() => ({ current: 1 }))
++const panStagesMocks = vi.hoisted(() => ({ current: [] as number[] }))
+
+ vi.mock('@/runtime/composition-runtime/deps/player', async (importOriginal) => ({
+   ...(await importOriginal<typeof import('@/runtime/composition-runtime/deps/player')>()),
+@@ -122,6 +123,7 @@
+ vi.mock('../utils/audio-decode-cache', () => audioDecodeMocks)
+ vi.mock('./hooks/use-audio-playback-state', () => ({
+   useAudioPlaybackState: vi.fn(() => playbackStateMocks.current),
++  useTrackAudioPanStages: vi.fn(() => panStagesMocks.current),
+ }))
+ vi.mock('../utils/preview-audio-element-pool', () => previewAudioMocks)
+ vi.mock('../utils/preview-audio-graph', () => previewGraphMocks)
+@@ -160,6 +162,7 @@
+   beforeEach(() => {
+     vi.clearAllMocks()
+     clockRateMocks.current = 1
++    panStagesMocks.current = []
+     playbackStateMocks.current = {
+       frame: 0,
+       fps: 30,
+@@ -231,6 +234,24 @@
+
+     expect(previewGraphMocks.createPreviewClipAudioGraph).toHaveBeenCalledTimes(1)
+     expect(previewAudioMocks.acquirePreviewAudioElement).toHaveBeenCalledTimes(1)
++  })
++
++  it('decodes active pan at 1x and never falls back to an unknown or multichannel native source', async () => {
++    panStagesMocks.current = [-0.5]
++    let admit: (value: unknown) => void = () => {}
++    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockReturnValue(new Promise((resolve) => { admit = resolve }))
++    const view = render(<PitchCorrectedAudio src="blob:pan" mediaId="pan" itemId="pan" durationInFrames={120} />)
++    await waitFor(() => expect(audioDecodeMocks.getOrDecodeAudioSliceForPlayback).toHaveBeenCalled())
++    expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
++    const multichannel = { ...makeAudioBuffer(), numberOfChannels: 6 }
++    await act(async () => { admit({ buffer: multichannel, startTime: 0, isComplete: true }); await Promise.resolve() })
++    await waitFor(() => expect(document.querySelector('[data-testid="pitch"]')).toBeNull())
++    expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
++    view.unmount()
++    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockResolvedValue({ buffer: makeAudioBuffer(), startTime: 0, isComplete: true })
++    render(<PitchCorrectedAudio src="blob:pan-stereo" mediaId="pan-stereo" itemId="pan-stereo" durationInFrames={120} />)
++    await waitFor(() => expect(document.querySelector('[data-testid="pitch"]')).not.toBeNull())
++    expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
+   })
+
+   it('uses playback-first decode for stretched clips with media ids', async () => {
+diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+@@ -16,6 +16,7 @@
+   createPreviewClipAudioGraph,
+   rampPreviewClipEq,
+   rampPreviewClipGain,
++  rampPreviewClipPan,
+   setPreviewClipGain,
+   type PreviewClipAudioGraph,
+ } from '../utils/preview-audio-graph'
+@@ -23,7 +24,7 @@
+ import type { AudioPlaybackProps } from './audio-playback-props'
+ import { getBrowserMediaPlaybackRate } from '@/shared/state/playback/shuttle'
+ import { useClockPlaybackRate } from '@/runtime/composition-runtime/deps/player'
+-import { useAudioPlaybackState } from './hooks/use-audio-playback-state'
++import { useAudioPlaybackState, useTrackAudioPanStages } from './hooks/use-audio-playback-state'
+ import {
+   hasAudioPitchOverride,
+   isAudioPitchShiftActive,
+@@ -42,6 +43,7 @@
+   src: string
+   mediaId?: string
+   sourceStartOffsetSec?: number
++  audioPanSourceChannels?: number
+ }
+
+ interface DecodedPitchSource {
+@@ -134,6 +136,7 @@
+     <NativePitchCorrectedAudio
+       {...props}
+       src={decodedSrc}
++      audioPanSourceChannels={fallbackBuffer.numberOfChannels}
+       trimBefore={reversedPlayback?.trimBefore ?? trimBefore}
+       sourceFps={sourceFps}
+       sourceStartOffsetSec={reversedPlayback ? 0 : sourceStartOffsetSec}
+@@ -154,6 +157,7 @@
+     trimBefore = 0,
+     sourceFps,
+     sourceStartOffsetSec = 0,
++    audioPanSourceChannels,
+     muted = false,
+     durationInFrames,
+     audioFadeIn = 0,
+@@ -180,6 +184,7 @@
+       transportPlaybackRate,
+       resolvedVolume: finalVolume,
+       resolvedAudioEqStages,
++      resolvedAudioPanStages = [],
+     } = useAudioPlaybackState({
+       itemId,
+       liveGainItemIds,
+@@ -268,15 +273,18 @@
+     useEffect(() => {
+       const graph = graphRef.current
+       if (!graph) return
+-      const clampedVolume = muted ? 0 : Math.max(0, finalVolume)
++      const panAdmitted = resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
++        ? true : rampPreviewClipPan(graph, resolvedAudioPanStages, audioPanSourceChannels)
++      if (!panAdmitted) graph.outputGainNode.gain.value = 0
++      const clampedVolume = muted || !panAdmitted ? 0 : Math.max(0, finalVolume)
+       rampPreviewClipGain(graph, clampedVolume)
+-    }, [finalVolume, muted])
++    }, [finalVolume, muted, resolvedAudioPanStages, audioPanSourceChannels, src])
+
+     useEffect(() => {
+       const graph = graphRef.current
+       if (!graph) return
+       rampPreviewClipEq(graph, resolvedAudioEqStages)
+-    }, [resolvedAudioEqStages])
++    }, [resolvedAudioEqStages, src])
+
+     useEffect(() => {
+       const audio = audioRef.current
+@@ -526,7 +534,8 @@
+     const frameRef = useRef(frame)
+     frameRef.current = frame
+     const isReverseShuttle = transportPlaybackRate < 0
+-    const nativeFallback = <NativePitchCorrectedAudio {...props} />
++    const audioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
++    const nativeFallback = audioPanStages.length > 0 ? null : <NativePitchCorrectedAudio {...props} />
+
+     useEffect(() => {
+       if (!mediaId || !src || isPreviewScrubbing) return
+@@ -697,6 +706,7 @@
+       return nativeFallback
+     }
+
++    if (audioPanStages.length > 0 && ![1, 2].includes(decodedSource.buffer.numberOfChannels)) return null
+     const playbackSourceStartOffsetSec = sourceStartOffsetSec + decodedSource.sourceStartOffsetSec
+     const decodedFallback = (
+       <DecodedPitchFallbackAudio
+@@ -769,7 +779,9 @@
+   const requiresPitchCorrection =
+     hasActivePitchPreview || isAudioPitchShiftActive(resolvedPitchShiftSemitones)
+   const decodeMediaId = props.mediaId ?? `legacy-src:${props.src}`
++  const audioPanStages = useTrackAudioPanStages(props.itemId, props.liveGainItemIds)
+   const shouldUseNativePath =
++    audioPanStages.length === 0 &&
+     props.isReversed !== true &&
+     !isReverseShuttle &&
+     !requiresPitchCorrection &&
+diff --git a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.test.tsx
+@@ -12,6 +12,7 @@
+     resolvedVolume: 1,
+     resolvedPitchShiftSemitones: 0,
+     resolvedAudioEqStages: [] as (typeof DEFAULT_AUDIO_EQ_SETTINGS)[],
++    resolvedAudioPanStages: [] as number[],
+   },
+ }))
+
+@@ -35,6 +36,7 @@
+   })),
+   rampPreviewClipEq: vi.fn(),
+   rampPreviewClipGain: vi.fn(),
++  rampPreviewClipPan: vi.fn((_graph: unknown, _stages: number[], channels: number) => channels === 1 || channels === 2),
+ }))
+
+ const soundTouchWorkletMocks = vi.hoisted(() => ({
+@@ -57,6 +59,7 @@
+   createPreviewClipAudioGraph: previewGraphMocks.createPreviewClipAudioGraph,
+   rampPreviewClipEq: previewGraphMocks.rampPreviewClipEq,
+   rampPreviewClipGain: previewGraphMocks.rampPreviewClipGain,
++  rampPreviewClipPan: previewGraphMocks.rampPreviewClipPan,
+ }))
+ vi.mock('../utils/soundtouch-preview-worklet', () => ({
+   ensureSoundTouchPreviewWorkletLoaded: soundTouchWorkletMocks.ensureSoundTouchPreviewWorkletLoaded,
+@@ -96,6 +99,7 @@
+       resolvedVolume: 1,
+       resolvedPitchShiftSemitones: 0,
+       resolvedAudioEqStages: [],
++      resolvedAudioPanStages: [],
+     }
+     workletNodeMocks.messages = []
+     vi.stubGlobal(
+@@ -112,6 +116,21 @@
+     )
+   })
+
++  it('configures pan before async worklet gain and silences unsupported source planes', async () => {
++    playbackStateMocks.current.resolvedAudioPanStages = [-0.5]
++    soundTouchWorkletMocks.ensureSoundTouchPreviewWorkletLoaded.mockResolvedValue(true)
++    for (const channels of [1, 6]) {
++      const buffer = { ...makeAudioBuffer(), numberOfChannels: channels }
++      const view = render(<SoundTouchWorkletAudio audioBuffer={buffer} itemId="pan" durationInFrames={120} />)
++      await waitFor(() => {
++        const graph = previewGraphMocks.createPreviewClipAudioGraph.mock.results.at(-1)!.value
++        expect(previewGraphMocks.rampPreviewClipPan).toHaveBeenCalledWith(graph, [-0.5], channels)
++        expect(graph.outputGainNode.gain.value).toBe(channels === 1 ? 1 : 0)
++      })
++      view.unmount()
++    }
++  })
++
+   it('does not render fallback while the worklet is still loading', async () => {
+     soundTouchWorkletMocks.ensureSoundTouchPreviewWorkletLoaded.mockReturnValue(
+       new Promise<boolean>(() => {}),
+diff --git a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+@@ -12,6 +12,7 @@
+   createPreviewClipAudioGraph,
+   rampPreviewClipEq,
+   rampPreviewClipGain,
++  rampPreviewClipPan,
+   type PreviewClipAudioGraph,
+ } from '../utils/preview-audio-graph'
+ import {
+@@ -75,6 +76,7 @@
+       resolvedVolume: finalVolume,
+       resolvedPitchShiftSemitones,
+       resolvedAudioEqStages,
++      resolvedAudioPanStages = [],
+     } = useAudioPlaybackState({
+       itemId,
+       liveGainItemIds,
+@@ -123,6 +125,10 @@
+     const lastPostedPlayingRef = useRef<boolean | null>(null)
+     const mutedRef = useRef(muted)
+     const finalVolumeRef = useRef(finalVolume)
++    const panStagesRef = useRef(resolvedAudioPanStages)
++    panStagesRef.current = resolvedAudioPanStages
++    const panSourceChannelsRef = useRef(audioBuffer.numberOfChannels)
++    panSourceChannelsRef.current = audioBuffer.numberOfChannels
+     mutedRef.current = muted
+     finalVolumeRef.current = finalVolume
+
+@@ -205,7 +211,9 @@
+
+           // Reapply current gain so the rebuilt graph doesn't start silent
+           const clampedVolume = mutedRef.current ? 0 : Math.max(0, finalVolumeRef.current)
+-          graph.outputGainNode.gain.value = clampedVolume
++          const panAdmitted = panStagesRef.current.length === 0 && !graph.panNodes?.length
++            ? true : rampPreviewClipPan(graph, panStagesRef.current, panSourceChannelsRef.current)
++          graph.outputGainNode.gain.value = panAdmitted ? clampedVolume : 0
+
+           setFallbackRequested(false)
+           setNodeReady(true)
+@@ -246,9 +254,12 @@
+     useEffect(() => {
+       const graph = graphRef.current
+       if (!graph) return
+-      const clampedVolume = muted ? 0 : Math.max(0, finalVolume)
++      const panAdmitted = resolvedAudioPanStages.length === 0 && !graph.panNodes?.length
++        ? true : rampPreviewClipPan(graph, resolvedAudioPanStages, audioBuffer.numberOfChannels)
++      if (!panAdmitted) graph.outputGainNode.gain.value = 0
++      const clampedVolume = muted || !panAdmitted ? 0 : Math.max(0, finalVolume)
+       rampPreviewClipGain(graph, clampedVolume)
+-    }, [finalVolume, muted])
++    }, [finalVolume, muted, resolvedAudioPanStages, audioBuffer, nodeReady])
+
+     useEffect(() => {
+       const graph = graphRef.current
+diff --git a/src/runtime/composition-runtime/utils/preview-audio-graph.test.ts b/src/runtime/composition-runtime/utils/preview-audio-graph.test.ts
+--- a/src/runtime/composition-runtime/utils/preview-audio-graph.test.ts
++++ b/src/runtime/composition-runtime/utils/preview-audio-graph.test.ts
+@@ -13,6 +13,7 @@
+ import {
+   createPreviewClipAudioGraph,
+   rampPreviewClipEq,
++  rampPreviewClipPan,
+   setPreviewClipEq,
+ } from './preview-audio-graph'
+
+@@ -89,6 +90,10 @@
+   state: AudioContextState = 'running'
+   sampleRate = 48000
+   destination = { kind: 'destination' }
++
++  createStereoPanner() {
++    return Object.assign(new ConnectableNodeMock(), { pan: new AudioParamMock() })
++  }
+
+   createGain() {
+     return new GainNodeMock()
+@@ -308,3 +313,34 @@
+     expect(getConnections(stage.outputGainNode)).toEqual([graph!.outputGainNode])
+   })
+ })
++
++
++describe('track pan admission and EQ topology', () => {
++  it('connects inside-out panners after EQ, ramps in place, refuses unknown layouts and resets the original graph', () => {
++    const graph = createPreviewClipAudioGraph()!
++    expect(rampPreviewClipPan(graph, [], undefined)).toBe(true)
++    expect(graph.panNodes).toEqual([])
++    expect(rampPreviewClipPan(graph, [-0.5, 1], 1)).toBe(true)
++    const [inner, outer] = graph.panNodes
++    expect(getConnections(graph.eqStageNodes[0]!.outputGainNode)).toEqual([inner])
++    expect(getConnections(inner)).toEqual([outer])
++    expect(getConnections(outer)).toEqual([graph.outputGainNode])
++    expect(graph.sourceInputNode.channelCount).toBe(1)
++    expect(graph.sourceInputNode.channelCountMode).toBe('explicit')
++    const nodes = [...graph.panNodes]
++    expect(rampPreviewClipPan(graph, [0.5, -1], 2)).toBe(true)
++    expect(graph.panNodes).toEqual(nodes)
++    expect(getRampCalls(inner!.pan).at(-1)?.value).toBe(0.5)
++    rampPreviewClipEq(graph, [resolveAudioEqSettings({ band1Enabled: true, band1Type: 'high-pass' })])
++    expect(getConnections(graph.eqStageNodes[0]!.outputGainNode)).toEqual([inner])
++    expect(rampPreviewClipPan(graph, [1], 6)).toBe(false)
++    expect(rampPreviewClipPan(graph, [1], undefined)).toBe(false)
++    expect(rampPreviewClipPan(graph, [NaN], 2)).toBe(false)
++    expect(rampPreviewClipPan(graph, [], 6)).toBe(true)
++    expect(graph.panNodes).toEqual([])
++    expect(graph.sourceInputNode.channelCountMode).toBe('max')
++    expect(getConnections(graph.eqStageNodes[0]!.outputGainNode)).toEqual([graph.outputGainNode])
++    for (const node of nodes) expect(getConnections(node)).toEqual([])
++    graph.dispose()
++  })
++})
+diff --git a/src/runtime/composition-runtime/utils/preview-audio-graph.ts b/src/runtime/composition-runtime/utils/preview-audio-graph.ts
+--- a/src/runtime/composition-runtime/utils/preview-audio-graph.ts
++++ b/src/runtime/composition-runtime/utils/preview-audio-graph.ts
+@@ -31,6 +31,7 @@
+   sourceInputNode: GainNode
+   outputGainNode: GainNode
+   eqStageNodes: PreviewClipAudioEqStageNodes[]
++  panNodes: StereoPannerNode[]
+   dispose: () => void
+ }
+
+@@ -367,6 +368,11 @@
+     previousNode = stageNodes.outputGainNode
+   }
+
++  for (const panNode of graph.panNodes) {
++    panNode.disconnect()
++    previousNode.connect(panNode)
++    previousNode = panNode
++  }
+   previousNode.connect(graph.outputGainNode)
+ }
+
+@@ -384,7 +390,7 @@
+
+ function getStageNextNode(graph: PreviewClipAudioGraph, index: number): AudioNode {
+   if (index >= graph.eqStageNodes.length - 1) {
+-    return graph.outputGainNode
++    return graph.panNodes[0] ?? graph.outputGainNode
+   }
+
+   return getBand1EntryNode(graph.eqStageNodes[index + 1]!)
+@@ -505,11 +511,13 @@
+     sourceInputNode,
+     outputGainNode,
+     eqStageNodes,
++    panNodes: [],
+     dispose: () => {
+       sourceInputNode.disconnect()
+       for (const stageNodes of eqStageNodes) {
+         disconnectStageInternals(stageNodes)
+       }
++      for (const panNode of graph.panNodes) panNode.disconnect()
+       outputGainNode.disconnect()
+     },
+   }
+@@ -563,3 +571,33 @@
+     applyStageParams(stageNodes, targetStage, graph.context.sampleRate)
+   }
+ }
++
++/** False keeps an unknown or unsupported channel layout silent. */
++export function rampPreviewClipPan(
++  graph: PreviewClipAudioGraph,
++  stages: readonly number[],
++  sourceChannels: number | undefined,
++): boolean {
++  if (stages.length === 0 && graph.panNodes.length === 0) return true
++  if (stages.some((pan) => !Number.isFinite(pan) || pan < -1 || pan > 1)) return false
++  if (stages.length > 0 && sourceChannels !== 1 && sourceChannels !== 2) return false
++  if (stages.length > 0 && typeof graph.context.createStereoPanner !== 'function') return false
++  // SoundTouch emits two equal planes for mono. Restore the admitted source
++  // count before panning so its mono gain law matches the export calculation.
++  graph.sourceInputNode.channelCountMode = stages.length > 0 ? 'explicit' : 'max'
++  graph.sourceInputNode.channelCount = stages.length > 0 ? sourceChannels! : 2
++  if (graph.panNodes.length !== stages.length) {
++    for (const node of graph.panNodes) node.disconnect()
++    graph.panNodes = stages.map((pan) => {
++      const node = graph.context.createStereoPanner()
++      node.pan.value = pan
++      return node
++    })
++    reconnectPreviewClipAudioGraph(graph)
++  } else {
++    stages.forEach((pan, index) => rampAudioParam(
++      graph.panNodes[index]!.pan, pan, graph.context.currentTime, PREVIEW_AUDIO_GAIN_RAMP_SECONDS,
++    ))
++  }
++  return true
++}
+diff --git a/src/shared/utils/audio-pan.ts b/src/shared/utils/audio-pan.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/audio-pan.ts
+@@ -0,0 +1,56 @@
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++
++export function getAudioPanStages(pan: number | undefined): number[] {
++  if (pan !== undefined && (!Number.isFinite(pan) || pan < -1 || pan > 1))
++    throw new Error('Invalid audio pan')
++  return pan === undefined || pan === 0 ? [] : [pan]
++}
++
++/** Leaf track first, then the audible composition wrappers from inside out. */
++export function resolveTrackAudioPanStages(
++  items: readonly TimelineItem[],
++  tracks: readonly TimelineTrack[],
++  compositions: readonly { items: TimelineItem[]; tracks: TimelineTrack[] }[],
++  itemId: string,
++  ancestorItemIds: readonly string[] = [],
++): number[] {
++  // ponytail: scan on store changes; index item owners if large timelines make this measurable.
++  const stages: number[] = []
++  for (const id of new Set([itemId, ...ancestorItemIds.toReversed()])) {
++    const owner = items.some((item) => item.id === id)
++      ? { items, tracks }
++      : compositions.find((composition) => composition.items.some((item) => item.id === id))
++    const item = owner?.items.find((candidate) => candidate.id === id)
++    stages.push(
++      ...getAudioPanStages(owner?.tracks.find((track) => track.id === item?.trackId)?.pan),
++    )
++  }
++  return stages
++}
++
++/** Web Audio StereoPanner law; zero preserves the original source planes. */
++export function applyAudioPanStages(
++  samples: Float32Array[],
++  stages: readonly number[] = [],
++): Float32Array[] {
++  for (const pan of stages) {
++    if (!Number.isFinite(pan) || pan < -1 || pan > 1) throw new Error('Invalid audio pan')
++    if (pan === 0) continue
++    if (samples.length !== 1 && samples.length !== 2)
++      throw new Error('Track pan requires a mono or stereo source')
++    const mono = samples.length === 1
++    const angle = ((mono ? (pan + 1) / 2 : pan <= 0 ? pan + 1 : pan) * Math.PI) / 2
++    const leftGain = Math.cos(angle)
++    const rightGain = Math.sin(angle)
++    const left = new Float32Array(samples[0]!.length)
++    const right = new Float32Array(left.length)
++    for (let i = 0; i < left.length; i++) {
++      const l = samples[0]![i]!
++      const r = mono ? l : samples[1]![i]!
++      left[i] = mono ? l * leftGain : pan <= 0 ? l + r * leftGain : l * leftGain
++      right[i] = mono ? r * rightGain : pan <= 0 ? r * rightGain : r + l * rightGain
++    }
++    samples = [left, right]
++  }
++  return samples
++}
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -485,6 +485,7 @@
+   muted: boolean // Audio muting (Volume icon)
+   solo: boolean
+   volume?: number // Track gain in dB (default: 0)
++  pan?: number // -1 = left, 1 = right; 0/omitted bypasses the stereo pan stage
+   audioEq?: AudioEqSettings // Per-track EQ (separate from per-clip EQ)
+   color?: string // Optional - tracks are generic containers, items have colors
+   order: number
+diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/editor/components/audio-meter-utils.ts
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -1,6 +1,7 @@
+ import type { AudioItem, CompositionItem, TimelineItem, TimelineTrack } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import { getAudioClipFadeMultiplier, getAudioFadeMultiplier } from '@/shared/utils/audio-fade-curve'
++import { applyAudioPanStages, getAudioPanStages } from '@/shared/utils/audio-pan'
+ import {
+   getManagedLinkedAudioTransitions,
+   hasLinkedAudioCompanion,
+@@ -38,6 +39,7 @@
+
+ export interface AudioMeterGraphNode {
+   fps: number
++  trackPanStages: ReadonlyMap<string, readonly number[]>
+   directSegments: Array<{
+     segment: AudioSegment | VideoAudioSegment
+     trackId: string
+@@ -83,6 +85,8 @@
+   sourceTimeSeconds: number
+   windowSeconds: number
+   trackId?: string
++  /** Leaf track first, then owned composition wrappers from inside out. */
++  panStages?: readonly number[]
+ }
+
+ export interface AudioMeterWaveform {
+@@ -266,6 +270,7 @@
+   segments: Array<AudioSegment | VideoAudioSegment>
+   sources: AudioMeterSource[]
+   trackId?: string
++  panStages?: readonly number[]
+ }): void {
+   const { frame, fps, gainMultiplier, trackVolumeGain, segments, sources } = params
+
+@@ -294,6 +299,7 @@
+       }),
+       windowSeconds: Math.max(DEFAULT_WINDOW_SECONDS, 1 / Math.max(1, fps)),
+       trackId: params.trackId ?? '',
++      ...(params.panStages?.length ? { panStages: params.panStages } : {}),
+     })
+   }
+ }
+@@ -308,6 +314,7 @@
+   wrapper: EnrichedCompositionAudioItem | EnrichedCompositionItem
+   wrapperGain: number
+   ownerTrackId?: string
++  panStages?: readonly number[]
+ }): void {
+   const {
+     frame,
+@@ -349,6 +356,7 @@
+     depth: depth + 1,
+     compositionsById,
+     ownerTrackId: ownerTrackId ?? wrapper.trackId,
++    panStages: params.panStages,
+     sources,
+   })
+ }
+@@ -360,6 +368,7 @@
+   depth: number
+   compositionsById: AudioMeterCompositionLookup
+   ownerTrackId?: string
++  panStages?: readonly number[]
+   sources: AudioMeterSource[]
+   segment: CompoundAudioSegment
+   wrapper: EnrichedCompositionAudioItem
+@@ -410,6 +419,7 @@
+     depth: depth + 1,
+     compositionsById,
+     ownerTrackId: ownerTrackId ?? wrapper.trackId,
++    panStages: params.panStages,
+     sources,
+   })
+ }
+@@ -423,6 +433,7 @@
+   depth: number
+   compositionsById: AudioMeterCompositionLookup
+   ownerTrackId?: string
++  panStages?: readonly number[]
+   sources: AudioMeterSource[]
+ }): void {
+   const {
+@@ -442,6 +453,9 @@
+   }
+
+   const effectiveTracks = resolveEffectiveTrackStates(tracks)
++  const trackPanStages = new Map(
++    effectiveTracks.map((track) => [track.id, getAudioPanStages(track.pan)]),
++  )
+   const items = effectiveTracks.flatMap((track) => track.items)
+   const renderPlan = resolveCompositionRenderPlan({ tracks: effectiveTracks, transitions })
+   const audioItems = renderPlan.audioItems
+@@ -527,6 +541,7 @@
+       segments: [segment],
+       sources,
+       trackId,
++      panStages: [...(trackPanStages.get(sourceTrackId) ?? []), ...(params.panStages ?? [])],
+     })
+   }
+
+@@ -576,6 +591,7 @@
+       sources,
+       segment,
+       wrapper,
++      panStages: [...(trackPanStages.get(wrapper.trackId) ?? []), ...(params.panStages ?? [])],
+     })
+   }
+
+@@ -592,6 +608,7 @@
+       ownerTrackId,
+       sources,
+       wrapper,
++      panStages: [...(trackPanStages.get(wrapper.trackId) ?? []), ...(params.panStages ?? [])],
+       wrapperGain:
+         toLinearGain((wrapper.volume ?? 0) + (wrapper.trackVolumeDb ?? 0)) *
+         getTrackGainCorrection(wrapper.trackId, toLinearGain(wrapper.trackVolumeDb ?? 0)),
+@@ -622,6 +639,7 @@
+       ownerTrackId,
+       sources,
+       wrapper,
++      panStages: [...(trackPanStages.get(wrapper.trackId) ?? []), ...(params.panStages ?? [])],
+       wrapperGain: getTrackGainCorrection(
+         wrapper.trackId,
+         committedTrackVolumeByTrackId.get(wrapper.trackId) ?? 1,
+@@ -810,6 +828,7 @@
+
+   return {
+     fps,
++    trackPanStages: new Map(tracks.map((track) => [track.id, getAudioPanStages(track.pan)])),
+     directSegments,
+     compoundSegments,
+     compositionWrappers,
+@@ -824,6 +843,7 @@
+   depth: number
+   sources: AudioMeterSource[]
+   ownerTrackId?: string
++  panStages?: readonly number[]
+ }): void {
+   const { graph, graphNode, frame, gainMultiplier, depth, sources, ownerTrackId } = params
+
+@@ -843,6 +863,10 @@
+       segments: [directEntry.segment],
+       sources,
+       trackId: ownerTrackId ?? directEntry.trackId,
++      panStages: [
++        ...(graphNode.trackPanStages.get(directEntry.trackId) ?? []),
++        ...(params.panStages ?? []),
++      ],
+     })
+   }
+
+@@ -885,6 +909,10 @@
+       depth: depth + 1,
+       sources,
+       ownerTrackId: ownerTrackId ?? compoundEntry.trackId,
++      panStages: [
++        ...(graphNode.trackPanStages.get(compoundEntry.trackId) ?? []),
++        ...(params.panStages ?? []),
++      ],
+     })
+   }
+
+@@ -930,6 +958,10 @@
+       depth: depth + 1,
+       sources,
+       ownerTrackId: ownerTrackId ?? compositionEntry.trackId,
++      panStages: [
++        ...(graphNode.trackPanStages.get(compositionEntry.trackId) ?? []),
++        ...(params.panStages ?? []),
++      ],
+     })
+   }
+ }
+@@ -1126,11 +1158,25 @@
+       continue
+     }
+
+-    const stereoLevel = estimateWaveformStereoLevelAtTime({
++    const panStages = source.panStages ?? []
++    const hasPan = panStages.some((pan) => pan !== 0)
++    // Independent absolute stereo peaks have no phase/coherence information for cross-channel pan.
++    // ponytail: admit mono envelopes only; stereo pan needs coherent channel samples.
++    if (hasPan && waveform.channels !== 1) {
++      unresolvedSourceCount += 1
++      continue
++    }
++
++    let stereoLevel = estimateWaveformStereoLevelAtTime({
+       waveform,
+       sourceTimeSeconds: source.sourceTimeSeconds,
+       windowSeconds: source.windowSeconds,
+     })
++    if (hasPan) {
++      // All channels originate from the same mono envelope, including nested panner stages.
++      const [left, right] = applyAudioPanStages([Float32Array.of(stereoLevel.left)], panStages)
++      stereoLevel = { left: left![0]!, right: right![0]! }
++    }
+     if (stereoLevel.left <= 0 && stereoLevel.right <= 0) {
+       resolvedSourceCount += 1
+       continue
+diff --git a/src/features/editor/components/audio-meter-utils.test.ts b/src/features/editor/components/audio-meter-utils.test.ts
+--- a/src/features/editor/components/audio-meter-utils.test.ts
++++ b/src/features/editor/components/audio-meter-utils.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from 'vite-plus/test'
+-import type { AudioItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import type { AudioItem, CompositionItem, TimelineTrack, VideoItem } from '@/types/timeline'
+ import {
+   clearLiveTrackVolumeOverride,
+   compileAudioMeterGraph,
+@@ -576,4 +576,323 @@
+     expect(estimate.resolvedSourceCount).toBe(1)
+     expect(estimate.left).toBeGreaterThan(estimate.right)
+   })
++
++  for (const compiled of [false, true]) {
++    describe(compiled ? 'compiled pan meters' : 'live pan meters', () => {
++      function resolve(params: Parameters<typeof resolveAudioMeterSources>[0]) {
++        return compiled
++          ? resolveCompiledAudioMeterSources({
++              graph: compileAudioMeterGraph(params),
++              frame: params.frame,
++              masterGain: params.masterGain,
++            })
++          : resolveAudioMeterSources(params)
++      }
++
++      const monoWaveforms = new Map([
++        ['media-audio', { peaks: Float32Array.of(1), sampleRate: 1, channels: 1 }],
++      ])
++
++      it.each([undefined, 0, -1, -0.5, 0.5, 1])('meters mono track pan %s', (pan) => {
++        const params = {
++          tracks: [makeTrack({ pan, volume: -6, items: [makeAudioItem({ volume: -3 })] })],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++          masterGain: 0.25,
++        }
++        const sources = resolve(params)
++        const neutralSources = resolve({
++          ...params,
++          tracks: params.tracks.map((t) => ({ ...t, pan: 0 })),
++        })
++        const neutral = estimateAudioMeterLevel({
++          sources: neutralSources,
++          waveformsByMediaId: monoWaveforms,
++        })
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        const angle = (((pan ?? 0) + 1) * Math.PI) / 4
++        expect(estimate.left).toBeCloseTo(neutral.left * (pan ? Math.cos(angle) : 1), 6)
++        expect(estimate.right).toBeCloseTo(neutral.right * (pan ? Math.sin(angle) : 1), 6)
++        expect(estimate.resolvedSourceCount).toBe(1)
++        expect(estimate.unresolvedSourceCount).toBe(0)
++        expect(sources[0]?.panStages).toEqual(pan ? [pan] : undefined)
++
++        const preBusSources = resolve({ ...params, masterGain: 1 })
++        const trackLevel = estimatePerTrackLevels({
++          tracks: params.tracks,
++          sources: preBusSources,
++          waveformsByMediaId: monoWaveforms,
++        }).get('track-1')!
++        expect(estimate.left).toBeCloseTo(trackLevel.left * 0.25, 6)
++        expect(estimate.right).toBeCloseTo(trackLevel.right * 0.25, 6)
++      })
++
++      it('orders leaf and owned wrapper pan from inside out without the visual companion pan', () => {
++        const outer = makeAudioItem({
++          id: 'outer',
++          compositionId: 'first',
++          linkedGroupId: 'owned',
++          src: '',
++          mediaId: undefined,
++        })
++        const visual: CompositionItem = {
++          id: 'visual',
++          type: 'composition',
++          compositionWidth: 1920,
++          compositionHeight: 1080,
++          trackId: 'visual-track',
++          compositionId: 'first',
++          linkedGroupId: 'owned',
++          from: 0,
++          durationInFrames: 30,
++          label: 'Visual',
++        }
++        const inner = makeAudioItem({
++          id: 'inner',
++          trackId: 'inner-track',
++          compositionId: 'second',
++          src: '',
++          mediaId: undefined,
++        })
++        const params = {
++          tracks: [
++            makeTrack({ pan: 1, items: [outer] }),
++            makeTrack({ id: 'visual-track', kind: 'video', pan: -1, items: [visual] }),
++          ],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++          compositionsById: {
++            first: {
++              id: 'first',
++              fps: 30,
++              transitions: [],
++              tracks: [makeTrack({ id: 'inner-track', pan: -0.5, items: [inner] })],
++            },
++            second: {
++              id: 'second',
++              fps: 30,
++              transitions: [],
++              tracks: [
++                makeTrack({ id: 'leaf', pan: 0.5, items: [makeAudioItem({ trackId: 'leaf' })] }),
++              ],
++            },
++          },
++        }
++        const sources = resolve(params)
++        expect(sources).toHaveLength(1)
++        expect(sources[0]).toMatchObject({ trackId: 'track-1', panStages: [0.5, -0.5, 1] })
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        const neutral = estimateAudioMeterLevel({
++          sources: sources.map((source) => ({ ...source, panStages: [] })),
++          waveformsByMediaId: monoWaveforms,
++        })
++        expect(estimate.left).toBeCloseTo(0, 6)
++        expect(estimate.right).toBeCloseTo(
++          neutral.right * (Math.cos((3 * Math.PI) / 8) + Math.sin((3 * Math.PI) / 8) * Math.SQRT2),
++          6,
++        )
++
++        expect(
++          resolve({
++            ...params,
++            tracks: params.tracks.map((track) =>
++              track.id === 'track-1' ? { ...track, items: [{ ...outer, muted: true }] } : track,
++            ),
++          }),
++        ).toEqual([])
++        expect(
++          resolve({
++            ...params,
++            tracks: params.tracks.map((track) =>
++              track.id === 'track-1' ? { ...track, muted: true } : track,
++            ),
++          }),
++        ).toEqual([])
++        expect(resolve({ ...params, masterGain: 0 })).toEqual([])
++      })
++
++      it('keeps pan independent of live fader correction', () => {
++        const params = {
++          tracks: [makeTrack({ pan: -0.5, volume: -12, items: [makeAudioItem()] })],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++        }
++        const before = estimateAudioMeterLevel({
++          sources: resolve(params),
++          waveformsByMediaId: monoWaveforms,
++        })
++        setLiveTrackVolumeOverride('track-1', 0)
++        try {
++          const sources = resolve(params)
++          const after = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++          expect(sources[0]?.panStages).toEqual([-0.5])
++          expect(after.left).toBeCloseTo(before.left * Math.pow(10, 12 / 20), 6)
++          expect(after.right).toBeCloseTo(before.right * Math.pow(10, 12 / 20), 6)
++        } finally {
++          clearLiveTrackVolumeOverride('track-1')
++        }
++      })
++
++      it('retains leaf then wrapper pan through managed compound transitions', () => {
++        const left = makeAudioItem({
++          id: 'left-audio',
++          compositionId: 'nested',
++          linkedGroupId: 'left',
++          src: '',
++          mediaId: undefined,
++          sourceDuration: 90,
++        })
++        const right = makeAudioItem({
++          ...left,
++          id: 'right-audio',
++          linkedGroupId: 'right',
++          from: 30,
++          sourceStart: 15,
++        })
++        const visual = (audio: AudioItem): CompositionItem => ({
++          id: audio.id + '-visual',
++          type: 'composition',
++          compositionWidth: 1920,
++          compositionHeight: 1080,
++          trackId: 'visual',
++          compositionId: 'nested',
++          linkedGroupId: audio.linkedGroupId,
++          from: audio.from,
++          durationInFrames: 30,
++          label: 'Visual',
++          sourceDuration: 90,
++          sourceStart: 0,
++          sourceFps: 30,
++        })
++        const params = {
++          tracks: [
++            makeTrack({ pan: -1, items: [left, right] }),
++            makeTrack({
++              id: 'visual',
++              kind: 'video',
++              pan: 1,
++              items: [visual(left), visual(right)],
++            }),
++          ],
++          transitions: [
++            {
++              id: 'transition',
++              type: 'crossfade' as const,
++              presentation: 'fade' as const,
++              timing: 'linear' as const,
++              leftClipId: left.id + '-visual',
++              rightClipId: right.id + '-visual',
++              trackId: 'visual',
++              durationInFrames: 10,
++            },
++          ],
++          frame: 29,
++          fps: 30,
++          compositionsById: {
++            nested: {
++              id: 'nested',
++              fps: 30,
++              transitions: [],
++              tracks: [
++                makeTrack({
++                  id: 'leaf',
++                  pan: 0.5,
++                  items: [makeAudioItem({ trackId: 'leaf', durationInFrames: 90 })],
++                }),
++              ],
++            },
++          },
++        }
++        const sources = resolve(params)
++        expect(sources).toHaveLength(2)
++        for (const source of sources) expect(source.panStages).toEqual([0.5, -1])
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        expect(estimate.left).toBeGreaterThan(0)
++        expect(estimate.right).toBeCloseTo(0, 6)
++      })
++
++      it('uses an unowned visual wrapper pan without changing neutral stereo handling', () => {
++        const wrapper: CompositionItem = {
++          id: 'visual',
++          type: 'composition',
++          compositionWidth: 1920,
++          compositionHeight: 1080,
++          trackId: 'track-1',
++          compositionId: 'nested',
++          from: 0,
++          durationInFrames: 30,
++          label: 'Visual',
++        }
++        const sources = resolve({
++          tracks: [makeTrack({ kind: 'video', pan: -1, items: [wrapper] })],
++          transitions: [],
++          frame: 0,
++          fps: 30,
++          compositionsById: {
++            nested: {
++              id: 'nested',
++              fps: 30,
++              transitions: [],
++              tracks: [makeTrack({ items: [makeAudioItem()] })],
++            },
++          },
++        })
++        expect(sources[0]?.panStages).toEqual([-1])
++        const estimate = estimateAudioMeterLevel({ sources, waveformsByMediaId: monoWaveforms })
++        expect(estimate.left).toBeGreaterThan(0)
++        expect(estimate.right).toBeCloseTo(0, 6)
++        const waveformsByMediaId = new Map([
++          ['media-audio', { peaks: Float32Array.of(1, 0.25), sampleRate: 1, channels: 2 }],
++        ])
++        const neutral = estimateAudioMeterLevel({
++          sources: sources.map((source) => ({ ...source, panStages: [0] })),
++          waveformsByMediaId,
++        })
++        expect(neutral.resolvedSourceCount).toBe(1)
++        expect(neutral.unresolvedSourceCount).toBe(0)
++        expect(neutral.left).toBeGreaterThan(neutral.right)
++      })
++
++      it.each([2, 6, 0])(
++        'refuses active pan on phase-free or unknown channel layout %s',
++        (channels) => {
++          const sources = resolve({
++            tracks: [makeTrack({ pan: 1, items: [makeAudioItem()] })],
++            transitions: [],
++            frame: 0,
++            fps: 30,
++          })
++          const waveformsByMediaId = new Map([
++            ['media-audio', { peaks: Float32Array.of(1, 1), sampleRate: 1, channels }],
++          ])
++          expect(estimateAudioMeterLevel({ sources, waveformsByMediaId })).toEqual({
++            left: 0,
++            right: 0,
++            resolvedSourceCount: 0,
++            unresolvedSourceCount: 1,
++          })
++          const neutral = estimateAudioMeterLevel({
++            sources: sources.map((source) => ({ ...source, panStages: [] })),
++            waveformsByMediaId,
++          })
++          expect(neutral.resolvedSourceCount).toBe(1)
++          expect(neutral.left).toBeGreaterThan(0)
++        },
++      )
++
++      it('rejects invalid persisted pan before estimating sources', () => {
++        expect(() =>
++          resolve({
++            tracks: [makeTrack({ pan: Number.NaN, items: [makeAudioItem()] })],
++            transitions: [],
++            frame: 0,
++            fps: 30,
++          }),
++        ).toThrow('Invalid audio pan')
++      })
++    })
++  }
+ })
+diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/editor/components/audio-meter-utils.ts
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -100,6 +100,30 @@
+   right: number
+   resolvedSourceCount: number
+   unresolvedSourceCount: number
++  /** Cached channel envelopes cannot resolve these panned sources. */
++  unresolvedPanSourceCount?: number
++}
++
++export function getAudioMeterStatus(estimate: AudioMeterEstimate | undefined, active: boolean) {
++  const resolved = estimate?.resolvedSourceCount ?? 0
++  const unresolved = estimate?.unresolvedSourceCount ?? 0
++  const panUnavailable = (estimate?.unresolvedPanSourceCount ?? 0) > 0
++  const scanning = active && resolved === 0 && unresolved > 0 && !panUnavailable
++  return {
++    label: !active
++      ? 'Idle'
++      : resolved > 0
++        ? unresolved > 0
++          ? 'Partial envelope estimate'
++          : 'Envelope estimate'
++        : unresolved > 0
++          ? panUnavailable
++            ? 'Unavailable'
++            : 'Scanning'
++          : 'No active sources',
++    reason: active && panUnavailable ? 'Pan needs channel phase data.' : undefined,
++    scanning,
++  }
+ }
+
+ // Live track volume overrides (dB) set during fader drag.
+@@ -1148,6 +1172,7 @@
+ }): AudioMeterEstimate {
+   let resolvedSourceCount = 0
+   let unresolvedSourceCount = 0
++  let unresolvedPanSourceCount = 0
+   let totalEnergyL = 0
+   let totalEnergyR = 0
+
+@@ -1164,6 +1189,7 @@
+     // ponytail: admit mono envelopes only; stereo pan needs coherent channel samples.
+     if (hasPan && waveform.channels !== 1) {
+       unresolvedSourceCount += 1
++      unresolvedPanSourceCount += 1
+       continue
+     }
+
+@@ -1193,6 +1219,7 @@
+     right: Math.sqrt(totalEnergyR),
+     resolvedSourceCount,
+     unresolvedSourceCount,
++    ...(unresolvedPanSourceCount > 0 ? { unresolvedPanSourceCount } : {}),
+   }
+ }
+
+diff --git a/src/features/editor/components/audio-meter-panel.tsx b/src/features/editor/components/audio-meter-panel.tsx
+--- a/src/features/editor/components/audio-meter-panel.tsx
++++ b/src/features/editor/components/audio-meter-panel.tsx
+@@ -47,6 +47,7 @@
+   estimateAudioMeterLevel,
+   estimatePerTrackLevels,
+   formatMeterDb,
++  getAudioMeterStatus,
+   isAudioMixerTrack,
+   linearLevelToPercent,
+   getLiveBusVolumeOverride,
+@@ -215,8 +216,7 @@
+   const audioGraphItems = useItemsStore(
+     useShallow((state) =>
+       state.items.filter(
+-        (item) =>
+-          item.type === 'audio' || item.type === 'video' || item.type === 'composition',
++        (item) => item.type === 'audio' || item.type === 'video' || item.type === 'composition',
+       ),
+     ),
+   )
+@@ -475,17 +475,10 @@
+       ? skimFallbackEstimate
+       : waveformEstimate
+   const maxLevel = Math.max(estimate.left, estimate.right)
+-  const statusLabel = !isMeterActive
+-    ? 'Idle'
+-    : estimate.unresolvedSourceCount > 0 && estimate.resolvedSourceCount === 0
+-      ? 'Scanning'
+-      : isAudioSkimMeterActive
+-        ? 'Skim'
+-        : formatMeterDb(maxLevel)
+-  const scanFallbackPercent =
+-    isMeterActive && estimate.unresolvedSourceCount > 0 && estimate.resolvedSourceCount === 0
+-      ? 18
+-      : 0
++  const meterStatus = getAudioMeterStatus(estimate, isMeterActive)
++  const statusLabel =
++    isAudioSkimMeterActive && estimate === skimFallbackEstimate ? 'Skim' : meterStatus.label
++  const scanFallbackPercent = meterStatus.scanning ? 18 : 0
+
+   // ---------------------------------------------------------------------------
+   // Meter animation (only active in meter mode, but state kept alive)
+@@ -1105,7 +1098,7 @@
+     'repeating-linear-gradient(to top, black 0px, black 3px, transparent 3px, transparent 4px)'
+   const unlitLedBg =
+     'repeating-linear-gradient(to top, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 3px, transparent 3px, transparent 4px)'
+-  const isScanningMeter = estimate.unresolvedSourceCount > 0 && estimate.resolvedSourceCount === 0
++  const isScanningMeter = meterStatus.scanning
+
+   return (
+     <>
+@@ -1127,12 +1120,12 @@
+         </div>
+
+         <div className="flex-1 px-2 py-3 min-h-0">
+-          <div className="h-full rounded-md border border-border/50 bg-black/30 px-2 py-3 shadow-[inset_0_1px_4px_rgba(0,0,0,0.4)]">
++          <div className="flex h-full min-h-0 flex-col rounded-md border border-border/50 bg-black/30 px-2 py-3 shadow-[inset_0_1px_4px_rgba(0,0,0,0.4)]">
+             <div className="mb-3 text-center text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-mono">
+               Master
+             </div>
+
+-            <div className="flex h-[calc(100%-2.75rem)] items-stretch gap-3">
++            <div className="flex min-h-0 flex-1 items-stretch gap-3">
+               {/* Scale marks */}
+               <div className="relative flex-1 min-w-0">
+                 {AUDIO_METER_SCALE_MARKS.map((mark) => {
+@@ -1212,8 +1205,15 @@
+             </div>
+
+             {/* Peak dB readout */}
+-            <div className="mt-3 text-center text-[10px] font-mono text-muted-foreground">
+-              {statusLabel}
++            <div
++              className="mt-3 shrink-0 text-center text-[10px] font-mono text-muted-foreground"
++              aria-label="Master meter status"
++            >
++              <div>{statusLabel}</div>
++              {isMeterActive && estimate.resolvedSourceCount > 0 && (
++                <div>{formatMeterDb(maxLevel)}</div>
++              )}
++              {meterStatus.reason && <div>{meterStatus.reason}</div>}
+             </div>
+           </div>
+         </div>
+diff --git a/src/features/editor/components/audio-mixer-view.tsx b/src/features/editor/components/audio-mixer-view.tsx
+--- a/src/features/editor/components/audio-mixer-view.tsx
++++ b/src/features/editor/components/audio-mixer-view.tsx
+@@ -17,6 +17,8 @@
+   clearLiveTrackVolumeOverride,
+   setLiveBusVolumeOverride,
+   clearLiveBusVolumeOverride,
++  getAudioMeterStatus,
++  type AudioMeterEstimate,
+ } from './audio-meter-utils'
+ import { getMixerLiveGain, setMixerLiveGains } from '@/shared/state/mixer-live-gain'
+
+@@ -38,21 +40,8 @@
+
+ interface AudioMixerViewProps {
+   tracks: AudioMixerTrack[]
+-  perTrackLevels: Map<
+-    string,
+-    {
+-      left: number
+-      right: number
+-      unresolvedSourceCount: number
+-      resolvedSourceCount: number
+-    }
+-  >
+-  masterEstimate: {
+-    left: number
+-    right: number
+-    unresolvedSourceCount: number
+-    resolvedSourceCount: number
+-  }
++  perTrackLevels: Map<string, AudioMeterEstimate>
++  masterEstimate: AudioMeterEstimate
+   isPlaying: boolean
+   masterVolumeDb: number
+   masterMuted: boolean
+@@ -174,22 +163,6 @@
+ // ---------------------------------------------------------------------------
+
+ const FADER_SCALE_MARKS = [12, 6, 0, -6, -12, -20, -30, -40, -50, -60] as const
+-
+-function getMeterFallbackPercent(params: {
+-  unresolvedSourceCount: number
+-  resolvedSourceCount: number
+-  isPlaying: boolean
+-}): number {
+-  if (!params.isPlaying) {
+-    return 0
+-  }
+-
+-  if (params.unresolvedSourceCount > 0 && params.resolvedSourceCount === 0) {
+-    return 18
+-  }
+-
+-  return 0
+-}
+
+ // ---------------------------------------------------------------------------
+ // Channel strip fader (per track)
+@@ -423,14 +396,7 @@
+
+ interface ChannelStripProps {
+   track: AudioMixerTrack
+-  level:
+-    | {
+-        left: number
+-        right: number
+-        unresolvedSourceCount: number
+-        resolvedSourceCount: number
+-      }
+-    | undefined
++  level: AudioMeterEstimate | undefined
+   isPlaying: boolean
+   expanded?: boolean
+   onVolumeChange: (trackId: string, volumeDb: number) => void
+@@ -468,13 +434,8 @@
+     onEqToggle?.(track.id)
+   }, [onEqToggle, track.id])
+
+-  const fallbackPercent = level
+-    ? getMeterFallbackPercent({
+-        unresolvedSourceCount: level.unresolvedSourceCount,
+-        resolvedSourceCount: level.resolvedSourceCount,
+-        isPlaying,
+-      })
+-    : 0
++  const meterStatus = getAudioMeterStatus(level, isPlaying)
++  const fallbackPercent = meterStatus.scanning ? 18 : 0
+   const leftPercent = isPlaying
+     ? Math.max(level ? linearLevelToPercent(level.left) : 0, fallbackPercent)
+     : 0
+@@ -610,6 +571,13 @@
+           </div>
+         </div>
+
++        <div
++          className="w-full shrink-0 text-center text-[8px] leading-tight text-muted-foreground"
++          aria-label={`${track.name} meter status`}
++        >
++          <div>{meterStatus.label}</div>
++          {meterStatus.reason && <div>{meterStatus.reason}</div>}
++        </div>
+         {/* dB readout — color-coded */}
+         <div ref={dbReadoutRef} className={`text-[10px] font-mono py-0.5 leading-none ${dbColor}`}>
+           {formatFaderDb(track.volume)}
+@@ -781,11 +749,8 @@
+   }, [applyBusDragValue, onVolumeChange])
+
+   // Smooth the bus meter with CSS transitions rather than rAF
+-  const fallbackPercent = getMeterFallbackPercent({
+-    unresolvedSourceCount: masterEstimate.unresolvedSourceCount,
+-    resolvedSourceCount: masterEstimate.resolvedSourceCount,
+-    isPlaying,
+-  })
++  const meterStatus = getAudioMeterStatus(masterEstimate, isPlaying)
++  const fallbackPercent = meterStatus.scanning ? 18 : 0
+   const leftPercent = isPlaying
+     ? Math.max(linearLevelToPercent(masterEstimate.left), fallbackPercent)
+     : 0
+@@ -944,6 +909,13 @@
+           </div>
+         </div>
+
++        <div
++          className="w-full shrink-0 text-center text-[8px] leading-tight text-muted-foreground"
++          aria-label="Bus meter status"
++        >
++          <div>{meterStatus.label}</div>
++          {meterStatus.reason && <div>{meterStatus.reason}</div>}
++        </div>
+         {/* dB readout */}
+         <div ref={dbReadoutRef} className={`text-[10px] font-mono py-0.5 leading-none ${dbColor}`}>
+           {formatFaderDb(volumeDb)}
+diff --git a/src/features/editor/components/audio-meter-utils.test.ts b/src/features/editor/components/audio-meter-utils.test.ts
+--- a/src/features/editor/components/audio-meter-utils.test.ts
++++ b/src/features/editor/components/audio-meter-utils.test.ts
+@@ -873,6 +873,7 @@
+             right: 0,
+             resolvedSourceCount: 0,
+             unresolvedSourceCount: 1,
++            unresolvedPanSourceCount: 1,
+           })
+           const neutral = estimateAudioMeterLevel({
+             sources: sources.map((source) => ({ ...source, panStages: [] })),
+diff --git a/src/features/editor/components/audio-mixer-view.test.tsx b/src/features/editor/components/audio-mixer-view.test.tsx
+--- a/src/features/editor/components/audio-mixer-view.test.tsx
++++ b/src/features/editor/components/audio-mixer-view.test.tsx
+@@ -1,6 +1,42 @@
+-import { fireEvent, render } from '@testing-library/react'
+-import { describe, expect, it, vi } from 'vite-plus/test'
++import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { AudioMixerView } from './audio-mixer-view'
++import { AudioMeterPanel } from './audio-meter-panel'
++import { useItemsStore, useCompositionsStore } from '@/features/editor/deps/timeline-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { makeTimelineAudioItem, makeTimelineTrack } from '@/features/timeline/test-helpers'
++import {
++  compileAudioMeterGraph,
++  resolveAudioMeterSources,
++  resolveCompiledAudioMeterSources,
++  estimateAudioMeterLevel,
++} from './audio-meter-utils'
++
++const meterCache = vi.hoisted(() => ({
++  waveforms: new Map<
++    string,
++    {
++      peaks: Float32Array
++      sampleRate: number
++      channels: number
++      stereo: boolean
++      isComplete: boolean
++    }
++  >(),
++}))
++vi.mock('@/features/editor/deps/timeline-cache', () => ({
++  importWaveformCache: async () => ({
++    waveformCache: {
++      getFromMemoryCacheSync: (id: string) => meterCache.waveforms.get(id),
++      subscribe: () => () => undefined,
++    },
++  }),
++}))
++vi.mock('@/features/editor/deps/media-library', () => ({
++  importMediaLibraryService: async () => ({
++    mediaLibraryService: { getMediaBlobUrl: async () => null },
++  }),
++}))
+
+ vi.mock('@/config/editor-layout', async (importOriginal) => {
+   const actual = await importOriginal<typeof import('@/config/editor-layout')>()
+@@ -12,6 +48,137 @@
+       timelineTracksHeaderHeight: 44,
+     },
+   }
++})
++
++describe('actual meter estimate status', () => {
++  beforeEach(() => {
++    meterCache.waveforms.clear()
++    useItemsStore.setState({ tracks: [], items: [] })
++    useCompositionsStore.setState({ compositions: [] })
++    usePlaybackStore.setState({
++      isPlaying: true,
++      currentFrame: 0,
++      previewFrame: null,
++      masterBusDb: 0,
++      masterBusMuted: false,
++    })
++  })
++  afterEach(() => {
++    cleanup()
++    usePlaybackStore.setState({ isPlaying: false })
++  })
++
++  it.each([
++    ['complete', 'Envelope estimate', true, false],
++    ['partial-phase', 'Partial envelope estimate', true, true],
++    ['phase-only', 'Unavailable', false, true],
++    ['partial-pending', 'Partial envelope estimate', true, false],
++    ['pending', 'Scanning', false, false],
++    ['empty', 'No active sources', false, false],
++  ] as const)(
++    'shows %s in the native panel and live/compiled mixer',
++    async (mode, label, resolved, phase) => {
++      const items: ReturnType<typeof makeTimelineAudioItem>[] = []
++      if (resolved) {
++        items.push(makeTimelineAudioItem({ id: 'mono', trackId: 'mono-track', mediaId: 'mono' }))
++        meterCache.waveforms.set('mono', {
++          peaks: Float32Array.of(1),
++          sampleRate: 1,
++          channels: 1,
++          stereo: false,
++          isComplete: true,
++        })
++      }
++      if (phase || mode.includes('pending')) {
++        items.push(makeTimelineAudioItem({ id: 'other', trackId: 'other-track', mediaId: 'other' }))
++        if (phase)
++          meterCache.waveforms.set('other', {
++            peaks: Float32Array.of(1, 0.5),
++            sampleRate: 1,
++            channels: 2,
++            stereo: true,
++            isComplete: true,
++          })
++      }
++      const tracks = [
++        makeTimelineTrack({ id: 'mono-track', name: 'A1', kind: 'audio', order: 0 }),
++        makeTimelineTrack({
++          id: 'other-track',
++          name: 'A2',
++          kind: 'audio',
++          order: 1,
++          pan: phase ? 1 : 0,
++        }),
++      ]
++      useItemsStore.setState({ tracks, items })
++      const panel = render(<AudioMeterPanel />)
++      await waitFor(() => expect(panel.getByText(label)).toBeInTheDocument())
++      if (phase) {
++        expect(panel.getByText('Pan needs channel phase data.')).toBeInTheDocument()
++        expect(panel.queryByText('Scanning')).toBeNull()
++        act(() => useItemsStore.setState({ tracks: tracks.map((track) => ({ ...track, pan: 0 })) }))
++        await waitFor(() => expect(panel.getByText('Envelope estimate')).toBeInTheDocument())
++        expect(panel.queryByText('Pan needs channel phase data.')).toBeNull()
++      }
++      panel.unmount()
++
++      for (const compiled of [false, true]) {
++        const params = {
++          tracks: tracks.map((track) => ({
++            ...track,
++            items: items.filter((item) => item.trackId === track.id),
++          })),
++          transitions: [],
++          fps: 30,
++          frame: 0,
++        }
++        const sources = compiled
++          ? resolveCompiledAudioMeterSources({ graph: compileAudioMeterGraph(params), frame: 0 })
++          : resolveAudioMeterSources(params)
++        const estimate = estimateAudioMeterLevel({
++          sources,
++          waveformsByMediaId: meterCache.waveforms,
++        })
++        expect(estimate.resolvedSourceCount).toBe(resolved ? 1 : 0)
++        expect(estimate.unresolvedSourceCount).toBe(phase || mode.includes('pending') ? 1 : 0)
++        expect(estimate.unresolvedPanSourceCount ?? 0).toBe(phase ? 1 : 0)
++        const view = render(
++          <AudioMixerView
++            tracks={[
++              {
++                id: 'mix',
++                name: 'Mixed',
++                kind: 'audio',
++                muted: false,
++                solo: false,
++                volume: 0,
++                itemIds: [],
++              },
++            ]}
++            perTrackLevels={new Map([['mix', estimate]])}
++            masterEstimate={estimate}
++            isPlaying
++            masterVolumeDb={0}
++            masterMuted={false}
++            onMasterVolumeChange={() => undefined}
++            onMasterMuteToggle={() => undefined}
++            onTrackVolumeChange={() => undefined}
++            onTrackMuteToggle={() => undefined}
++            onTrackSoloToggle={() => undefined}
++          />,
++        )
++        expect(view.getAllByText(label)).toHaveLength(2)
++        if (phase) {
++          expect(view.getAllByText('Pan needs channel phase data.')).toHaveLength(2)
++          expect(view.queryByText('Scanning')).toBeNull()
++        }
++        const bus = view.container.querySelector<HTMLDivElement>('[data-bus-channel="left"]')!
++        if (resolved) expect(parseFloat(bus.style.height)).toBeGreaterThan(18)
++        else expect(bus).toHaveStyle({ height: mode === 'pending' ? '18%' : '0%' })
++        view.unmount()
++      }
++    },
++  )
+ })
+
+ function getTrackFader(container: HTMLElement, trackId = 'track-1'): HTMLDivElement {
+diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/editor/components/audio-meter-utils.ts
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -93,6 +93,9 @@
+   peaks: Float32Array
+   sampleRate: number
+   channels: number // 1 = mono, 2 = interleaved stereo
++  isComplete?: boolean
++  /** Number of populated peak elements, including both interleaved channels. */
++  loadedSamples?: number
+ }
+
+ export interface AudioMeterEstimate {
+@@ -1032,8 +1035,9 @@
+   return sources
+ }
+
+-function getWaveformNormalizationPeak(peaks: Float32Array): number {
+-  const cached = normalizationPeakCache.get(peaks)
++function getWaveformNormalizationPeak(peaks: Float32Array, isComplete = true): number {
++  // Progressive decoding mutates peaks in place; cache only completed arrays.
++  const cached = isComplete ? normalizationPeakCache.get(peaks) : undefined
+   if (cached !== undefined) {
+     return cached
+   }
+@@ -1047,7 +1051,7 @@
+   }
+
+   const resolved = maxPeak > 0 ? maxPeak : 1
+-  normalizationPeakCache.set(peaks, resolved)
++  if (isComplete) normalizationPeakCache.set(peaks, resolved)
+   return resolved
+ }
+
+@@ -1070,7 +1074,10 @@
+   const halfWindow = Math.floor(samplesPerPoint / 2)
+   const windowStart = Math.max(0, peakIndex - halfWindow)
+   const windowEnd = Math.min(waveform.peaks.length, peakIndex + halfWindow + 1)
+-  const normalizationPeak = getWaveformNormalizationPeak(waveform.peaks)
++  const normalizationPeak = getWaveformNormalizationPeak(
++    waveform.peaks,
++    waveform.isComplete !== false,
++  )
+
+   let max1 = 0
+   let max2 = 0
+@@ -1128,7 +1135,10 @@
+   const halfWindow = Math.floor(samplesPerPoint / 2)
+   const windowStart = Math.max(0, peakIndex - halfWindow)
+   const windowEnd = Math.min(totalSamplesPerChannel, peakIndex + halfWindow + 1)
+-  const normalizationPeak = getWaveformNormalizationPeak(waveform.peaks)
++  const normalizationPeak = getWaveformNormalizationPeak(
++    waveform.peaks,
++    waveform.isComplete !== false,
++  )
+
+   function computeChannelLevel(channelOffset: number): number {
+     let max1 = 0
+@@ -1193,6 +1203,23 @@
+       continue
+     }
+
++    if (waveform.isComplete === false) {
++      const channels = waveform.channels === 1 ? 1 : 2
++      const peakIndex = Math.floor(source.sourceTimeSeconds * waveform.sampleRate)
++      const halfWindow = Math.floor(
++        Math.max(1, Math.ceil(source.windowSeconds * waveform.sampleRate)) / 2,
++      )
++      const windowEnd = Math.min(
++        Math.floor(waveform.peaks.length / channels),
++        peakIndex + halfWindow + 1,
++      )
++      const loadedSamples = waveform.loadedSamples ?? 0
++      if (peakIndex >= loadedSamples / channels || windowEnd * channels > loadedSamples) {
++        unresolvedSourceCount += 1
++        continue
++      }
++    }
++
+     let stereoLevel = estimateWaveformStereoLevelAtTime({
+       waveform,
+       sourceTimeSeconds: source.sourceTimeSeconds,
+diff --git a/src/features/editor/components/audio-meter-panel.tsx b/src/features/editor/components/audio-meter-panel.tsx
+--- a/src/features/editor/components/audio-meter-panel.tsx
++++ b/src/features/editor/components/audio-meter-panel.tsx
+@@ -84,7 +84,14 @@
+
+ function toWaveformSnapshot(
+   waveform:
+-    | { peaks: Float32Array; sampleRate: number; channels?: number; stereo?: boolean }
++    | {
++        peaks: Float32Array
++        sampleRate: number
++        channels?: number
++        stereo?: boolean
++        isComplete?: boolean
++        loadedSamples?: number
++      }
+     | null
+     | undefined,
+ ): AudioMeterWaveform | null {
+@@ -96,6 +103,8 @@
+     peaks: waveform.peaks,
+     sampleRate: waveform.sampleRate,
+     channels: waveform.stereo ? 2 : (waveform.channels ?? 1),
++    isComplete: waveform.isComplete,
++    loadedSamples: waveform.loadedSamples,
+   }
+ }
+
+diff --git a/src/features/editor/components/audio-mixer-view.test.tsx b/src/features/editor/components/audio-mixer-view.test.tsx
+--- a/src/features/editor/components/audio-mixer-view.test.tsx
++++ b/src/features/editor/components/audio-mixer-view.test.tsx
+@@ -1,4 +1,4 @@
+-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
++import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { AudioMixerView } from './audio-mixer-view'
+ import { AudioMeterPanel } from './audio-meter-panel'
+@@ -12,23 +12,26 @@
+   estimateAudioMeterLevel,
+ } from './audio-meter-utils'
+
++type MeterCacheEntry = {
++  peaks: Float32Array
++  sampleRate: number
++  channels: number
++  stereo: boolean
++  isComplete: boolean
++  loadedSamples?: number
++}
+ const meterCache = vi.hoisted(() => ({
+-  waveforms: new Map<
+-    string,
+-    {
+-      peaks: Float32Array
+-      sampleRate: number
+-      channels: number
+-      stereo: boolean
+-      isComplete: boolean
+-    }
+-  >(),
++  waveforms: new Map<string, MeterCacheEntry>(),
++  listeners: new Map<string, (updated: MeterCacheEntry) => void>(),
+ }))
+ vi.mock('@/features/editor/deps/timeline-cache', () => ({
+   importWaveformCache: async () => ({
+     waveformCache: {
+       getFromMemoryCacheSync: (id: string) => meterCache.waveforms.get(id),
+-      subscribe: () => () => undefined,
++      subscribe: (id: string, listener: (updated: MeterCacheEntry) => void) => {
++        meterCache.listeners.set(id, listener)
++        return () => meterCache.listeners.delete(id)
++      },
+     },
+   }),
+ }))
+@@ -53,6 +56,7 @@
+ describe('actual meter estimate status', () => {
+   beforeEach(() => {
+     meterCache.waveforms.clear()
++    meterCache.listeners.clear()
+     useItemsStore.setState({ tracks: [], items: [] })
+     useCompositionsStore.setState({ compositions: [] })
+     usePlaybackStore.setState({
+@@ -67,6 +71,126 @@
+     cleanup()
+     usePlaybackStore.setState({ isPlaying: false })
+   })
++
++  it.each([
++    ['playhead', 30, 0, 1, 1, 1, false],
++    ['mixed playhead', 30, 0, 1, 1, 1, true],
++    ['trimmed stereo', 0, 90, 1, 2, 2, false],
++    ['mixed trimmed stereo', 0, 90, 1, 2, 2, true],
++    ['window edge', 0, 0, 100, 1, 2, false],
++    ['mixed window edge', 0, 0, 100, 1, 2, true],
++  ] as const)(
++    'keeps an allocated pending %s window unresolved through cache updates',
++    async (_name, frame, sourceStart, sampleRate, channels, loadedSamples, mixed) => {
++      const track = makeTimelineTrack({ id: 'mix', name: 'Mixed', kind: 'audio', order: 0 })
++      const pendingItem = makeTimelineAudioItem({
++        id: 'pending',
++        trackId: 'mix',
++        mediaId: 'pending',
++        sourceStart,
++      })
++      const items = mixed
++        ? [pendingItem, makeTimelineAudioItem({ id: 'ready', trackId: 'mix', mediaId: 'ready' })]
++        : [pendingItem]
++      const peaks = new Float32Array(10 * sampleRate * channels)
++      peaks.fill(1, 0, loadedSamples)
++      const pending = {
++        peaks,
++        sampleRate,
++        channels,
++        stereo: channels === 2,
++        isComplete: false,
++        loadedSamples,
++      }
++      meterCache.waveforms.set('pending', pending)
++      meterCache.waveforms.set('ready', {
++        peaks: new Float32Array(10).fill(1),
++        sampleRate: 1,
++        channels: 1,
++        stereo: false,
++        isComplete: true,
++        loadedSamples: 10,
++      })
++      useItemsStore.setState({ tracks: [track], items })
++      usePlaybackStore.setState({ currentFrame: frame, previewFrame: null })
++      const panel = render(<AudioMeterPanel />)
++      const label = mixed ? 'Partial envelope estimate' : 'Scanning'
++      await waitFor(() => {
++        expect(meterCache.listeners.has('pending')).toBe(true)
++        expect(panel.getByText(label)).toBeInTheDocument()
++        expect(panel.queryByText('-inf dB')).toBeNull()
++      })
++
++      const checkMixer = (
++        expectedLabel: string,
++        expectedResolved: number,
++        expectedPending: number,
++      ) => {
++        for (const compiled of [false, true]) {
++          const params = { tracks: [{ ...track, items }], transitions: [], fps: 30, frame }
++          const sources = compiled
++            ? resolveCompiledAudioMeterSources({ graph: compileAudioMeterGraph(params), frame })
++            : resolveAudioMeterSources(params)
++          const estimate = estimateAudioMeterLevel({
++            sources,
++            waveformsByMediaId: meterCache.waveforms,
++          })
++          expect(estimate.resolvedSourceCount).toBe(expectedResolved)
++          expect(estimate.unresolvedSourceCount).toBe(expectedPending)
++          expect(estimate.unresolvedPanSourceCount ?? 0).toBe(0)
++          const view = render(
++            <AudioMixerView
++              tracks={[
++                {
++                  id: 'mix',
++                  name: 'Mixed',
++                  kind: 'audio',
++                  muted: false,
++                  solo: false,
++                  volume: 0,
++                  itemIds: items.map((item) => item.id),
++                },
++              ]}
++              perTrackLevels={new Map([['mix', estimate]])}
++              masterEstimate={estimate}
++              isPlaying
++              masterVolumeDb={0}
++              masterMuted={false}
++              onMasterVolumeChange={() => undefined}
++              onMasterMuteToggle={() => undefined}
++              onTrackVolumeChange={() => undefined}
++              onTrackMuteToggle={() => undefined}
++              onTrackSoloToggle={() => undefined}
++            />,
++          )
++          expect(within(view.container).getAllByText(expectedLabel)).toHaveLength(2)
++          const bus = view.container.querySelector<HTMLDivElement>('[data-bus-channel="left"]')!
++          if (expectedResolved) expect(parseFloat(bus.style.height)).toBeGreaterThan(18)
++          else expect(bus).toHaveStyle({ height: '18%' })
++          view.unmount()
++        }
++      }
++      checkMixer(label, mixed ? 1 : 0, 1)
++
++      // The worker fills the same allocated array and publishes new coverage snapshots.
++      peaks.fill(1)
++      const loaded = { ...pending, loadedSamples: peaks.length }
++      act(() => {
++        meterCache.waveforms.set('pending', loaded)
++        meterCache.listeners.get('pending')!(loaded)
++      })
++      await waitFor(() => expect(panel.getByText('Envelope estimate')).toBeInTheDocument())
++      checkMixer('Envelope estimate', mixed ? 2 : 1, 0)
++      const complete = { ...loaded, isComplete: true }
++      act(() => {
++        meterCache.waveforms.set('pending', complete)
++        meterCache.listeners.get('pending')!(complete)
++      })
++      await waitFor(() => expect(panel.getByText('Envelope estimate')).toBeInTheDocument())
++      checkMixer('Envelope estimate', mixed ? 2 : 1, 0)
++      panel.unmount()
++    },
++  )
+
+   it.each([
+     ['complete', 'Envelope estimate', true, false],
+diff --git a/src/features/editor/components/audio-meter-utils.test.ts b/src/features/editor/components/audio-meter-utils.test.ts
+--- a/src/features/editor/components/audio-meter-utils.test.ts
++++ b/src/features/editor/components/audio-meter-utils.test.ts
+@@ -518,6 +518,40 @@
+       mediaId: 'deep-media',
+       trackId: 'track-root',
+     })
++  })
++
++  it.each([1, 2])('refreshes progressive normalization for %i channels', (channels) => {
++    const peaks = new Float32Array(10 * channels)
++    peaks.fill(0.25, 0, 2 * channels)
++    const waveform = {
++      peaks,
++      sampleRate: 1,
++      channels,
++      loadedSamples: 2 * channels,
++      isComplete: false,
++    }
++    const sources = [
++      {
++        mediaId: 'progress',
++        gain: 1,
++        trackVolumeGain: 1,
++        sourceTimeSeconds: 0,
++        windowSeconds: 0.1,
++      },
++    ]
++    const waveformsByMediaId = new Map([['progress', waveform]])
++    const initial = estimateAudioMeterLevel({ sources, waveformsByMediaId })
++    peaks.fill(1, 2 * channels)
++    waveform.loadedSamples = peaks.length
++    const loaded = estimateAudioMeterLevel({ sources, waveformsByMediaId })
++    expect(loaded.left).toBeLessThan(initial.left)
++    const fresh = estimateAudioMeterLevel({
++      sources,
++      waveformsByMediaId: new Map([['progress', { ...waveform, peaks: peaks.slice() }]]),
++    })
++    expect(loaded).toEqual(fresh)
++    waveform.isComplete = true
++    expect(estimateAudioMeterLevel({ sources, waveformsByMediaId })).toEqual(fresh)
+   })
+
+   it('estimates a mixed level from cached waveform peaks', () => {

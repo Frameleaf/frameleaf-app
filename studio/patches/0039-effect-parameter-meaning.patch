@@ -1,0 +1,141 @@
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effect-params.ts
+@@ -0,0 +1,45 @@
++import type { GpuEffectDefinition } from './types'
++
++type EffectParams = Record<string, number | boolean | string>
++
++/**
++ * FL-99: the parameters an effect is drawn with. A value outside what the
++ * effect declares (keyframe easings that overshoot, stored or imported values
++ * out of range, a non-finite number, a select value that is no option, a
++ * non-boolean flag) reaches the shader as its declared meaning instead of an
++ * undefined one:
++ * - a finite number outside [min, max] is clamped to the range;
++ * - a non-finite or non-number value for a numeric parameter, an unknown select
++ *   option and a non-boolean flag fall back to the parameter's default.
++ * Parameters the effect does not declare (the effect clock, for one) and the
++ * structured kinds (colour, point, json, text) pass through unchanged.
++ */
++export function sanitizeEffectParams(
++  definition: GpuEffectDefinition,
++  params: EffectParams,
++): EffectParams {
++  let out: EffectParams | null = null
++  const set = (key: string, value: number | boolean | string) => {
++    if (Object.is(params[key], value)) return
++    out ??= { ...params }
++    out[key] = value
++  }
++  for (const [key, param] of Object.entries(definition.params)) {
++    if (!(key in params)) continue
++    const value = params[key]
++    if (param.type === 'number') {
++      if (typeof value !== 'number' || !Number.isFinite(value)) {
++        set(key, param.default)
++        continue
++      }
++      const low = typeof param.min === 'number' ? param.min : -Infinity
++      const high = typeof param.max === 'number' ? param.max : Infinity
++      set(key, Math.min(high, Math.max(low, value)))
++    } else if (param.type === 'select') {
++      if (!param.options?.some((option) => option.value === value)) set(key, param.default)
++    } else if (param.type === 'boolean') {
++      if (typeof value !== 'boolean') set(key, param.default)
++    }
++  }
++  return out ?? params
++}
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effect-params.test.ts
+@@ -0,0 +1,68 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { sanitizeEffectParams } from './effect-params'
++import type { GpuEffectDefinition } from './types'
++
++const definition = {
++  id: 'gpu-test',
++  params: {
++    amount: { type: 'number', label: 'Amount', default: 0.5, min: 0, max: 1 },
++    angle: { type: 'number', label: 'Angle', default: 0 },
++    mode: {
++      type: 'select',
++      label: 'Mode',
++      default: 'a',
++      options: [
++        { value: 'a', label: 'A' },
++        { value: 'b', label: 'B' },
++      ],
++    },
++    invert: { type: 'boolean', label: 'Invert', default: false },
++    tint: { type: 'color', label: 'Tint', default: '#ffffff' },
++  },
++} as unknown as GpuEffectDefinition
++
++describe('sanitizeEffectParams (FL-99 invalid parameters)', () => {
++  it('returns valid parameters as they are, the same object', () => {
++    const params = {
++      amount: 0.25,
++      angle: 720,
++      mode: 'b',
++      invert: true,
++      tint: '#ff0000',
++      __clock: 3,
++    }
++    expect(sanitizeEffectParams(definition, params)).toBe(params)
++  })
++
++  it('clamps finite numbers to the declared range and leaves unbounded ones', () => {
++    expect(sanitizeEffectParams(definition, { amount: 1001, angle: -5000 })).toEqual({
++      amount: 1,
++      angle: -5000,
++    })
++    expect(sanitizeEffectParams(definition, { amount: -0.2 })).toEqual({ amount: 0 })
++  })
++
++  it('falls back to the default for non-finite numbers, unknown options and non-booleans', () => {
++    expect(
++      sanitizeEffectParams(definition, {
++        amount: Number.NaN,
++        angle: Number.POSITIVE_INFINITY,
++        mode: 'z',
++        invert: 'yes',
++      }),
++    ).toEqual({ amount: 0.5, angle: 0, mode: 'a', invert: false })
++    expect(sanitizeEffectParams(definition, { amount: '0.7' as unknown as number })).toEqual({
++      amount: 0.5,
++    })
++  })
++
++  it('passes undeclared and structured parameters through', () => {
++    expect(
++      sanitizeEffectParams(definition, { amount: 2, tint: 'not a colour', __clock: 1.5 }),
++    ).toEqual({
++      amount: 1,
++      tint: 'not a colour',
++      __clock: 1.5,
++    })
++  })
++})
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -1,3 +1,4 @@
++import { sanitizeEffectParams } from './effect-params'
+ import { createLogger } from '@/shared/logging/logger'
+ import { drawFullscreenCanvasPass } from '@/infrastructure/gpu-shared/fullscreen-canvas-pass'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+@@ -531,9 +532,12 @@
+     let outputView = outputTex === this.pingTexture ? this.pingView! : this.pongView!
+ 
+     for (let effectIndex = 0; effectIndex < effects.length; effectIndex++) {
+-      const effect = effects[effectIndex]!
+-      const definition = getGpuEffect(effect.type)
++      const requested = effects[effectIndex]!
++      const definition = getGpuEffect(requested.type)
+       if (!definition) continue
++      // FL-99: out-of-range, non-finite and unknown values draw as their declared meaning.
++      const params = sanitizeEffectParams(definition, requested.params)
++      const effect = params === requested.params ? requested : { ...requested, params }
+ 
+       const uniformData = definition.packUniforms(effect.params, w, h)
+       let uniformBuffer: GPUBuffer | undefined

@@ -1,0 +1,189 @@
+Subject: Place the rendered preview canvas with a transform, not a snapped box
+
+Freecut MIT adaptation (FL-100). The rendered preview canvas was laid out as
+a left/top/width/height box around the player. Browsers snap such a box to
+whole device pixels, so whenever the edge padding misses a device-pixel
+boundary (most fit scales) the whole picture moved and rescaled by a fraction
+of a pixel against the DOM player, whose content is placed by a transform.
+An item edge then differed between the two presentations in the display
+column it falls in. The canvas is now laid out at its backing size and placed
+by the same kind of transform, so both presentations share one mapping.
+Backing size, padding and the central copy are unchanged.
+
+Measured in Chromium at device pixel ratio 1: both presentations are then
+identical at every tested edge position. This patch does not change the
+preview render size, so on a high-density display the canvas is still
+magnified from project resolution and its edges are filtered differently
+from the DOM player's.
+
+diff --git a/src/features/preview/utils/preview-display-canvas.ts b/src/features/preview/utils/preview-display-canvas.ts
+--- a/src/features/preview/utils/preview-display-canvas.ts
++++ b/src/features/preview/utils/preview-display-canvas.ts
+@@ -80,16 +80,29 @@
+   top: string
+   width: string
+   height: string
++  maxWidth: string
++  maxHeight: string
++  transformOrigin: string
++  transform: string
+ } {
+   const padding = getPreviewDisplayEdgePadding(playerSize, renderSize)
+-  const padX = renderSize.width > 0 ? (playerSize.width / renderSize.width) * padding : padding
+-  const padY = renderSize.height > 0 ? (playerSize.height / renderSize.height) * padding : padding
+-
++  const backingSize = getPreviewDisplayCanvasBackingSize(playerSize, renderSize)
++  const scaleX = renderSize.width > 0 ? playerSize.width / renderSize.width : 1
++  const scaleY = renderSize.height > 0 ? playerSize.height / renderSize.height : 1
++
++  // Lay the canvas out at its backing size and place it with a transform, the
++  // way the DOM player places its content. A left/width box is snapped to whole
++  // device pixels, so padding that misses a device-pixel boundary moved and
++  // rescaled the whole picture by a fraction of a pixel against the player.
+   return {
+-    left: `-${padX}px`,
+-    top: `-${padY}px`,
+-    width: `calc(100% + ${padX * 2}px)`,
+-    height: `calc(100% + ${padY * 2}px)`,
++    left: '0px',
++    top: '0px',
++    width: `${backingSize.width}px`,
++    height: `${backingSize.height}px`,
++    maxWidth: 'none',
++    maxHeight: 'none',
++    transformOrigin: '0 0',
++    transform: `translate(${-padding * scaleX}px, ${-padding * scaleY}px) scale(${scaleX}, ${scaleY})`,
+   }
+ }
+ 
+diff --git a/src/features/preview/utils/preview-display-canvas.test.ts b/src/features/preview/utils/preview-display-canvas.test.ts
+--- a/src/features/preview/utils/preview-display-canvas.test.ts
++++ b/src/features/preview/utils/preview-display-canvas.test.ts
+@@ -1,5 +1,9 @@
+ import { describe, expect, it, vi } from 'vite-plus/test'
+-import { drawSourceToPreviewDisplayCanvas } from './preview-display-canvas'
++import {
++  drawSourceToPreviewDisplayCanvas,
++  getPreviewDisplayCanvasBackingSize,
++  getPreviewDisplayCanvasStyle,
++} from './preview-display-canvas'
+ 
+ describe('preview display edge-copy cleanup', () => {
+   it('restores the caller smoothing state and rethrows an edge-copy failure', () => {
+@@ -32,3 +36,50 @@
+     expect(state.imageSmoothingQuality).toBe('high')
+   })
+ })
++
++describe('preview display canvas placement', () => {
++  it('lays the canvas out at its backing size and places it with a transform', () => {
++    // 4 source pixels of padding are 2.35 CSS pixels here: no device-pixel boundary.
++    const playerSize = { width: 752, height: 423 }
++    const renderSize = { width: 1280, height: 720 }
++
++    expect(getPreviewDisplayCanvasBackingSize(playerSize, renderSize)).toEqual({
++      width: 1288,
++      height: 728,
++    })
++    expect(getPreviewDisplayCanvasStyle(playerSize, renderSize)).toEqual({
++      left: '0px',
++      top: '0px',
++      width: '1288px',
++      height: '728px',
++      maxWidth: 'none',
++      maxHeight: 'none',
++      transformOrigin: '0 0',
++      transform: 'translate(-2.35px, -2.35px) scale(0.5875, 0.5875)',
++    })
++  })
++
++  it('maps every backing pixel by the player scale, padding included', () => {
++    for (const { playerSize, renderSize } of [
++      { playerSize: { width: 1280, height: 720 }, renderSize: { width: 1280, height: 720 } },
++      { playerSize: { width: 928, height: 522 }, renderSize: { width: 1920, height: 1080 } },
++      { playerSize: { width: 1432, height: 805.5 }, renderSize: { width: 1920, height: 1080 } },
++    ]) {
++      const backing = getPreviewDisplayCanvasBackingSize(playerSize, renderSize)
++      const style = getPreviewDisplayCanvasStyle(playerSize, renderSize)
++      const [, translateX, translateY, scaleX, scaleY] = style.transform
++        .match(/^translate\((.+)px, (.+)px\) scale\((.+), (.+)\)$/)!
++        .map(Number)
++      const padding = (backing.width - renderSize.width) / 2
++
++      expect(style.width).toBe(`${backing.width}px`)
++      expect(style.height).toBe(`${backing.height}px`)
++      expect(scaleX).toBeCloseTo(playerSize.width / renderSize.width, 12)
++      expect(scaleY).toBeCloseTo(playerSize.height / renderSize.height, 12)
++      // The first content pixel lands on the player's own origin, the last on its far edge.
++      expect(translateX! + padding * scaleX!).toBeCloseTo(0, 9)
++      expect(translateY! + padding * scaleY!).toBeCloseTo(0, 9)
++      expect(translateX! + (padding + renderSize.width) * scaleX!).toBeCloseTo(playerSize.width, 9)
++    }
++  })
++})
+diff --git a/src/features/preview/components/preview-stage.test.tsx b/src/features/preview/components/preview-stage.test.tsx
+--- a/src/features/preview/components/preview-stage.test.tsx
++++ b/src/features/preview/components/preview-stage.test.tsx
+@@ -259,12 +259,8 @@
+     expect(player.style.marginTop).toBe('')
+ 
+     canvases.forEach((canvas) => {
+-      expect(canvas).toHaveStyle({
+-        width: 'calc(100% + 4px)',
+-        height: 'calc(100% + 4px)',
+-        left: '-2px',
+-        top: '-2px',
+-      })
++      expect(canvas).toHaveStyle({ width: '1284px', height: '724px', left: '0px', top: '0px' })
++      expect(canvas.style.transform).toBe('translate(-2px, -2px) scale(1, 1)')
+     })
+   })
+ 
+@@ -278,12 +274,8 @@
+     expect(beforeLayer).toHaveStyle({ width: '100%', height: '100%' })
+     expect(beforeLayer.style.clipPath).toBe('inset(0 50% 0 0)')
+     expect(beforeLayer.style.overflow).toBe('')
+-    expect(scrubCanvas).toHaveStyle({
+-      width: 'calc(100% + 4px)',
+-      height: 'calc(100% + 4px)',
+-      left: '-2px',
+-      top: '-2px',
+-    })
++    expect(scrubCanvas).toHaveStyle({ width: '1284px', height: '724px', left: '0px', top: '0px' })
++    expect(scrubCanvas.style.transform).toBe('translate(-2px, -2px) scale(1, 1)')
+     expect(scrubCanvas.style.clipPath).toBe('')
+     expect(screen.getByLabelText('Split grade comparison')).toBeTruthy()
+     expect(screen.getByText('Before')).toBeTruthy()
+@@ -307,12 +299,8 @@
+     expect(beforeLayer).toHaveStyle({ width: '100%' })
+     expect(beforeLayer.style.clipPath).toBe('inset(0 65% 0 0)')
+     expect(beforeLayer.style.overflow).toBe('')
+-    expect(scrubCanvas).toHaveStyle({
+-      width: 'calc(100% + 4px)',
+-      height: 'calc(100% + 4px)',
+-      left: '-2px',
+-      top: '-2px',
+-    })
++    expect(scrubCanvas).toHaveStyle({ width: '1284px', height: '724px', left: '0px', top: '0px' })
++    expect(scrubCanvas.style.transform).toBe('translate(-2px, -2px) scale(1, 1)')
+     expect(scrubCanvas.style.clipPath).toBe('')
+     expect(wipeHandle).toHaveAttribute('aria-valuenow', '35')
+ 
+diff --git a/src/features/preview/components/video-preview.sync.test.tsx b/src/features/preview/components/video-preview.sync.test.tsx
+--- a/src/features/preview/components/video-preview.sync.test.tsx
++++ b/src/features/preview/components/video-preview.sync.test.tsx
+@@ -1887,10 +1887,10 @@
+       expect(beforeLayer).toHaveStyle({ width: '100%', height: '100%' })
+       expect(beforeLayer?.style.clipPath).toBe('inset(0 50% 0 0)')
+       expect(beforeLayer?.style.overflow).toBe('')
+-      expect(scrubCanvas.style.width).toMatch(/^calc\(100% \+ /)
+-      expect(scrubCanvas.style.height).toMatch(/^calc\(100% \+ /)
+-      expect(scrubCanvas.style.left).not.toBe('')
+-      expect(scrubCanvas.style.top).not.toBe('')
++      // The clip never resizes the canvas: it stays at its backing size, placed by its transform.
++      expect(scrubCanvas.style.width).toBe(`${scrubCanvas.width}px`)
++      expect(scrubCanvas.style.height).toBe(`${scrubCanvas.height}px`)
++      expect(scrubCanvas.style.transform).toMatch(/^translate\(.+\) scale\(.+\)$/)
+       expect(container.querySelector('[data-grade-comparison-after-layer="true"]')).not.toBeNull()
+     })
+ 

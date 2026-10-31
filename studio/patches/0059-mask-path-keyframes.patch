@@ -1,0 +1,149 @@
+diff --git a/src/runtime/composition-runtime/utils/frame-scene.ts b/src/runtime/composition-runtime/utils/frame-scene.ts
+index bdc970b5dc..9e4290c7ec 100644
+--- a/src/runtime/composition-runtime/utils/frame-scene.ts
++++ b/src/runtime/composition-runtime/utils/frame-scene.ts
+@@ -13,6 +13,7 @@ import {
+   resolveAnimatedTransform,
+   hasKeyframeAnimation,
+   resolveAnimatedTextItem,
++  resolveAnimatedShapeItem,
+   applyMotionAnimationLayers,
+   applyMotionModifiers,
+ } from '../deps/keyframes'
+@@ -189,7 +190,9 @@ export function resolveActiveShapeMasksAtFrame(
+       return frame >= start && frame < end
+     })
+     .map(({ mask, trackOrder }) => {
+-      const shape = applyPreviewPathVerticesToShape(mask, getPreviewPathVertices)
++      const keyframes = getKeyframes?.(mask.id)
++      const animatedMask = resolveAnimatedShapeItem(mask, keyframes, frame - mask.from)
++      const shape = applyPreviewPathVerticesToShape(animatedMask, getPreviewPathVertices)
+ 
+       return {
+         shape,
+@@ -197,7 +200,7 @@ export function resolveActiveShapeMasksAtFrame(
+         transform: resolveItemTransformAtFrame(shape, {
+           canvas,
+           frame,
+-          keyframes: getKeyframes?.(mask.id),
++          keyframes,
+           previewTransform: getPreviewTransform?.(mask.id),
+           getItem,
+           getKeyframes,
+diff --git a/src/features/export/utils/canvas-item-renderer/composition.ts b/src/features/export/utils/canvas-item-renderer/composition.ts
+index 3fb6a027bb..0bb38145e8 100644
+--- a/src/features/export/utils/canvas-item-renderer/composition.ts
++++ b/src/features/export/utils/canvas-item-renderer/composition.ts
+@@ -8,7 +8,7 @@ import { doesMaskAffectTrack } from '@/shared/utils/mask-scope'
+ import { hasMediaCrop } from '@/shared/utils/media-crop'
+ import { applyPreviewPathVerticesToShape } from '@/features/export/deps/composition-runtime'
+ import { hasCornerPin } from '@/features/export/deps/composition-runtime'
+-import { resolveAnimatedColorEffects } from '@/features/export/deps/keyframes'
++import { resolveAnimatedColorEffects, resolveAnimatedShapeItem } from '@/features/export/deps/keyframes'
+ import { getAnimatedCrop, getAnimatedTransform } from '../canvas-keyframes'
+ import {
+   renderEffectsFromMaskedSource,
+@@ -120,43 +120,7 @@ export async function renderCompositionItem(
+ 
+     // Resolve all active masks up front so each item can be masked only by
+     // shapes on higher tracks.
+-    const activeSubMasks: Array<{
+-      path?: Path2D
+-      bitmapMask?: OffscreenCanvas
+-      inverted: boolean
+-      feather: number
+-      opacity: number
+-      maskType: 'clip' | 'alpha'
+-      trackOrder: number
+-    }> = []
+-    for (const track of subData.sortedTracks) {
+-      if (!track.visible) continue
+-
+-      for (const subItem of track.items) {
+-        if (localFrame < subItem.from || localFrame >= subItem.from + subItem.durationInFrames) {
+-          continue
+-        }
+-        if (subItem.type !== 'shape' || !subItem.isMask) {
+-          continue
+-        }
+-
+-        const subItemKeyframes = subData.keyframesMap.get(subItem.id)
+-        const subItemTransform = getAnimatedTransform(
+-          subItem,
+-          subItemKeyframes,
+-          localFrame,
+-          subCanvasSettings,
+-        )
+-        const effectiveMaskItem =
+-          rctx.renderMode === 'preview'
+-            ? applyPreviewPathVerticesToShape(subItem, rctx.getPreviewPathVerticesOverride)
+-            : subItem
+-        activeSubMasks.push({
+-          ...buildPreparedMask(effectiveMaskItem, subItemTransform, subMaskSettings),
+-          trackOrder: track.order,
+-        })
+-      }
+-    }
++    const activeSubMasks = getActiveSubCompMasks(subData, localFrame, subCanvasSettings, subRctx)
+ 
+     const subAdjustmentLayers = subData.adjustmentLayers ?? []
+     const occlusionCutoffOrder = findSubCompOcclusionCutoffOrder(
+@@ -428,13 +392,15 @@ export function getActiveSubCompMasks(
+         continue
+       }
+       if (subItem.type !== 'shape' || !subItem.isMask) continue
++      const maskKeyframes = subData.keyframesMap.get(subItem.id)
++      const animatedMask = resolveAnimatedShapeItem(subItem, maskKeyframes, localFrame - subItem.from)
+       const effectiveMaskItem =
+         rctx.renderMode === 'preview'
+-          ? applyPreviewPathVerticesToShape(subItem, rctx.getPreviewPathVerticesOverride)
+-          : subItem
++          ? applyPreviewPathVerticesToShape(animatedMask, rctx.getPreviewPathVerticesOverride)
++          : animatedMask
+       const maskTransform = getAnimatedTransform(
+         subItem,
+-        subData.keyframesMap.get(subItem.id),
++        maskKeyframes,
+         localFrame,
+         subCanvasSettings,
+       )
+diff --git a/src/runtime/composition-runtime/utils/frame-scene.mask-path-keyframes.test.ts b/src/runtime/composition-runtime/utils/frame-scene.mask-path-keyframes.test.ts
+new file mode 100644
+index 0000000000..bc2965f9ea
+--- /dev/null
++++ b/src/runtime/composition-runtime/utils/frame-scene.mask-path-keyframes.test.ts
+@@ -0,0 +1,34 @@
++import { expect, it } from 'vite-plus/test'
++import type { ShapeItem } from '@/types/timeline'
++import type { ItemKeyframes } from '@/types/keyframe'
++import { resolveActiveShapeMasksAtFrame } from './frame-scene'
++
++it('resolves pen mask vertices and handles at item-relative time before live preview overrides', () => {
++  const mask: ShapeItem = {
++    id: 'mask', type: 'shape', trackId: 'mask-track', label: 'Pen mask',
++    from: 10, durationInFrames: 20, shapeType: 'path', isMask: true, fillColor: '#fff',
++    pathVertices: [{ position: [0.25, 0], inHandle: [0, 0], outHandle: [0, 0] }],
++    transform: { x: 0, y: 0, width: 64, height: 64, rotation: 0, opacity: 1 },
++  }
++  const keyframes: ItemKeyframes = { itemId: mask.id, properties: [
++    { property: 'pathVertex:0:positionX', keyframes: [
++      { id: 'p0', frame: 0, value: 0.25, easing: 'linear' },
++      { id: 'p1', frame: 10, value: 0.75, easing: 'linear' },
++    ] },
++    { property: 'pathVertex:0:outY', keyframes: [
++      { id: 'h0', frame: 0, value: 0, easing: 'linear' },
++      { id: 'h1', frame: 10, value: 0.5, easing: 'linear' },
++    ] },
++  ] }
++  const options = { canvas: { width: 64, height: 64, fps: 30 }, frame: 15,
++    getKeyframes: () => keyframes }
++  const resolved = resolveActiveShapeMasksAtFrame([mask], options)[0]!.shape
++  expect(resolved.pathVertices![0]).toMatchObject({ position: [0.5, 0], outHandle: [0, 0.25] })
++  expect(mask.pathVertices![0]).toMatchObject({ position: [0.25, 0], outHandle: [0, 0] })
++  const liveVertices = [{ position: [0.9, 0.2] as [number, number],
++    inHandle: [0, 0] as [number, number], outHandle: [0, 0] as [number, number] }]
++  expect(resolveActiveShapeMasksAtFrame([mask], { ...options,
++    getPreviewPathVertices: () => liveVertices })[0]!.shape.pathVertices).toBe(liveVertices)
++  expect(resolveActiveShapeMasksAtFrame([mask], { ...options, frame: 9 })).toEqual([])
++  expect(resolveActiveShapeMasksAtFrame([mask], { ...options, frame: 30 })).toEqual([])
++})

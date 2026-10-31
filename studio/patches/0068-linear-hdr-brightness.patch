@@ -1,0 +1,169 @@
+diff --git a/src/features/export/utils/canvas-item-renderer/gpu.ts b/src/features/export/utils/canvas-item-renderer/gpu.ts
+index 469d84f9f9..e38e482816 100644
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -26,6 +26,7 @@ import {
+   resolveAnimatedShapeItem,
+   resolveAnimatedTextItem,
+ } from '@/features/export/deps/keyframes'
++import { isLinearHdrEffectType } from '@/infrastructure/gpu-effects'
+ import type { GpuTexturePool } from '@/infrastructure/gpu-compositor'
+ import type { GpuMediaRect, GpuMediaRenderParams } from '@/infrastructure/gpu-media'
+ import { MAX_GPU_SHAPE_PATH_VERTICES } from '@/infrastructure/gpu-shapes'
+@@ -530,7 +531,14 @@ export async function prepareGpuMediaParticipant(
+   rctx: ItemRenderContext,
+ ): Promise<PreparedGpuMediaParticipant | null> {
+   if (rctx.gpuPipeline?.getWorkingRange?.() === 'hdr') {
+-    if (participant.effects.some((effect) => effect.enabled))
++    if (
++      participant.effects.some(
++        (effect) =>
++          effect.enabled &&
++          (effect.effect.type !== 'gpu-effect' ||
++            !isLinearHdrEffectType(effect.effect.gpuEffectType)),
++      )
++    )
+       throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
+     if (participant.item.blendMode && participant.item.blendMode !== 'normal')
+       throw new HdrRenderUnavailableError('Blend mode is not migrated to linear HDR working colour')
+diff --git a/src/infrastructure/gpu-effects/effects-pipeline.ts b/src/infrastructure/gpu-effects/effects-pipeline.ts
+index 8acc15cd1e..ce7ffbf5ec 100644
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -25,7 +25,7 @@ interface DataTextureCacheEntry {
+   height: number
+   depth: number
+ }
+-import { GPU_EFFECT_REGISTRY, getGpuEffect } from './registry'
++import { GPU_EFFECT_REGISTRY, getGpuEffect, isLinearHdrEffectType } from './registry'
+
+ function getLogger() {
+   return createLogger('EffectsPipeline')
+@@ -532,7 +532,10 @@ export class EffectsPipeline {
+     w: number,
+     h: number,
+   ): GPUTexture {
+-    if (this.workingRange === 'hdr' && effects.length > 0)
++    if (
++      this.workingRange === 'hdr' &&
++      (startInput.format !== 'rgba16float' || effects.some((e) => !isLinearHdrEffectType(e.type)))
++    )
+       throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
+     const format = startInput.format as EffectTextureFormat
+     let inputTex = startInput
+@@ -738,6 +741,10 @@ export class EffectsPipeline {
+     source: OffscreenCanvas | HTMLCanvasElement | HTMLVideoElement,
+     effects: GpuEffectInstance[],
+   ): OffscreenCanvas | null {
++    if (this.workingRange === 'hdr')
++      throw new HdrRenderUnavailableError(
++        'Linear HDR effects require a managed float texture route',
++      )
+     const enabled = effects.filter((e) => e.enabled)
+     if (enabled.length === 0) return null
+     if (!this.blitPipeline || !this.blitBindGroupLayout) return null
+@@ -831,7 +838,7 @@ export class EffectsPipeline {
+     outputTexture: GPUTexture,
+   ): boolean {
+     const enabled = effects.filter((e) => e.enabled)
+-    if (this.workingRange === 'hdr' && enabled.length > 0)
++    if (this.workingRange === 'hdr' && enabled.some((e) => !isLinearHdrEffectType(e.type)))
+       throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
+
+     const { width: w, height: h } = getExternalImageSourceDimensions(source)
+@@ -852,7 +859,20 @@ export class EffectsPipeline {
+         { width: w, height: h },
+       )
+       const encoder = this.device.createCommandEncoder()
+-      this.copyEffectTexture(encoder, this.pingTexture!, outputTexture, w, h, true)
++      if (enabled.length === 0) {
++        this.copyEffectTexture(encoder, this.pingTexture!, outputTexture, w, h, true)
++      } else {
++        this.copyEffectTexture(encoder, this.pingTexture!, this.pongTexture!, w, h, true)
++        const finalTex = this.runEffectChain(
++          encoder,
++          enabled,
++          this.pongTexture!,
++          this.pingTexture!,
++          w,
++          h,
++        )
++        this.copyEffectTexture(encoder, finalTex, outputTexture, w, h)
++      }
+       this.device.queue.submit([encoder.finish()])
+       return true
+     }
+@@ -950,7 +970,7 @@ export class EffectsPipeline {
+     height: number,
+   ): boolean {
+     const enabled = effects.filter((e) => e.enabled)
+-    if (this.workingRange === 'hdr' && enabled.length > 0)
++    if (this.workingRange === 'hdr' && enabled.some((e) => !isLinearHdrEffectType(e.type)))
+       throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
+     if (this.workingRange === 'hdr' && outputTexture.format !== 'rgba16float')
+       throw new HdrRenderUnavailableError('Linear HDR requires a float texture output')
+@@ -996,7 +1016,14 @@ export class EffectsPipeline {
+
+     this.ensurePingPong(width, height, format)
+     if (!this.pingTexture || !this.pongTexture) return false
+-    this.copyEffectTexture(commandEncoder, sourceTexture, this.pingTexture, width, height)
++    this.copyEffectTexture(
++      commandEncoder,
++      sourceTexture,
++      this.pingTexture,
++      width,
++      height,
++      this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',
++    )
+     const finalTex = this.runEffectChain(
+       commandEncoder,
+       enabled,
+@@ -1024,6 +1051,10 @@ export class EffectsPipeline {
+     canvasWidth: number,
+     canvasHeight: number,
+   ): OffscreenCanvas | null {
++    if (this.workingRange === 'hdr')
++      throw new HdrRenderUnavailableError(
++        'Linear HDR effects require a managed float texture route',
++      )
+     const enabled = effects.filter((e) => e.enabled)
+     if (enabled.length === 0) return null
+     if (!this.importPipeline || !this.importBindGroupLayout || !this.importUniformBuffer)
+@@ -1163,6 +1194,10 @@ export class EffectsPipeline {
+     canvasHeight: number,
+     outputTexture: GPUTexture,
+   ): boolean {
++    if (this.workingRange === 'hdr')
++      throw new HdrRenderUnavailableError(
++        'Linear HDR effects require a managed float texture route',
++      )
+     const enabled = effects.filter((e) => e.enabled)
+     if (!this.importPipeline || !this.importBindGroupLayout || !this.importUniformBuffer)
+       return false
+diff --git a/src/infrastructure/gpu-effects/index.ts b/src/infrastructure/gpu-effects/index.ts
+index 70db26e295..6232a05518 100644
+--- a/src/infrastructure/gpu-effects/index.ts
++++ b/src/infrastructure/gpu-effects/index.ts
+@@ -7,5 +7,6 @@ export {
+   getGpuEffectsByCategory,
+   getGpuCategoriesWithEffects,
+   isColorGradeEffectType,
++  isLinearHdrEffectType,
+ } from './registry'
+ export { EFFECT_CLOCK_PARAM } from './effect-clock'
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+index 61113eca1d..ef086060c4 100644
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -60,6 +60,11 @@ export function getGpuEffectDefaultParams(id: string): Record<string, number | b
+   return defaults
+ }
+
++/** Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². */
++export function isLinearHdrEffectType(type: string): boolean {
++  return type === 'gpu-brightness'
++}
++
+ /** True when the gpu effect type belongs to the color category (a "grade" effect). */
+ export function isColorGradeEffectType(gpuEffectType: string): boolean {
+   return GPU_EFFECT_REGISTRY.get(gpuEffectType)?.category === 'color'

@@ -1,0 +1,543 @@
+diff --git a/headless/lib/http-security.mjs b/headless/lib/http-security.mjs
+index b82b5dcb14..67df806e15 100644
+--- a/headless/lib/http-security.mjs
++++ b/headless/lib/http-security.mjs
+@@ -109,7 +109,141 @@ function parseSingleByteRange(header, size) {
+   return { start, end: Math.min(requestedEnd, size - 1) }
+ }
+
+-export async function serveFile(req, res, filePath, { contentType, allowRange = false } = {}) {
++export async function serveFile(
++  req,
++  res,
++  filePath,
++  { contentType, allowRange = false, authority } = {},
++) {
++  if (authority) {
++    // Only adapter-owned private media uses this branch; static pipeline semantics stay unchanged.
++    const request = new AbortController()
++    let handle
++    const buffer = Buffer.alloc(64 * 1024)
++    const abort = () => {
++      request.abort(authority.signal.reason ?? new Error('PRIVATE_REQUEST_ABORTED'))
++      res.destroy()
++    }
++    const detached = () => request.abort(new Error('PRIVATE_REQUEST_ABORTED'))
++    const admitted = async (issue) => {
++      do {
++        await authority.wait(request.signal)
++      } while (authority.isPending())
++      if (request.signal.aborted) throw request.signal.reason
++      authority.assertActive()
++      return issue() // Issuance is synchronous with the final active-state check.
++    }
++    const wait = () => admitted(() => undefined)
++    const drain = () =>
++      new Promise((resolve, reject) => {
++        const finish = (error) => {
++          res.off('drain', ready)
++          request.signal.removeEventListener('abort', stopped)
++          if (error) reject(error)
++          else resolve()
++        }
++        const ready = () => finish()
++        const stopped = () => finish(request.signal.reason)
++        res.once('drain', ready)
++        request.signal.addEventListener('abort', stopped, { once: true })
++        if (request.signal.aborted) stopped()
++      })
++    req.once('aborted', detached)
++    res.once('close', detached)
++    authority.signal.addEventListener('abort', abort, { once: true })
++    try {
++      if (req.aborted || res.destroyed || authority.signal.aborted) abort()
++      await wait()
++      filePath = await admitted(() =>
++        typeof filePath === 'function' ? filePath({ signal: request.signal }) : filePath,
++      )
++      await wait()
++      if (!filePath) throw new HttpError(404, 'NOT_FOUND', 'not found')
++      const info = await admitted(() => fs.promises.stat(filePath))
++      await wait()
++      if (!info.isFile()) throw new HttpError(404, 'NOT_FOUND', 'not found')
++      handle = await admitted(() => fs.promises.open(filePath, 'r'))
++      await wait()
++      const opened = await admitted(() => handle.stat())
++      await wait()
++      if (
++        !opened.isFile() ||
++        opened.dev !== info.dev ||
++        opened.ino !== info.ino ||
++        opened.size !== info.size
++      )
++        throw new HttpError(404, 'NOT_FOUND', 'not found')
++      const range = allowRange ? parseSingleByteRange(req.headers.range, info.size) : null
++      const type = typeof contentType === 'function' ? contentType(filePath) : contentType
++      if (type) res.setHeader('Content-Type', type)
++      if (allowRange) res.setHeader('Accept-Ranges', 'bytes')
++      if (range === false) {
++        await admitted(() => {
++          res.writeHead(416, { 'Content-Range': `bytes */${info.size}`, 'Content-Length': 0 })
++          res.end()
++        })
++        return
++      }
++      const end = range?.end ?? info.size - 1
++      let position = range?.start ?? 0
++      const headers = { 'Content-Length': Math.max(0, end - position + 1) }
++      if (range) headers['Content-Range'] = `bytes ${position}-${end}/${info.size}`
++      await admitted(() => res.writeHead(range ? 206 : 200, headers))
++      if (req.method === 'HEAD') {
++        await admitted(() => res.end())
++        return
++      }
++      while (position <= end) {
++        await wait()
++        const { bytesRead } = await admitted(() =>
++          handle.read(buffer, 0, Math.min(buffer.length, end - position + 1), position),
++        )
++        await wait()
++        if (!bytesRead) throw new HttpError(404, 'NOT_FOUND', 'not found')
++        let accepted
++        let forwarded, drained
++        await admitted(() => {
++          forwarded = new Promise((resolve, reject) => {
++            const stopped = () => {
++              request.signal.removeEventListener('abort', stopped)
++              reject(request.signal.reason)
++            }
++            request.signal.addEventListener('abort', stopped, { once: true })
++            accepted = res.write(buffer.subarray(0, bytesRead), (error) => {
++              request.signal.removeEventListener('abort', stopped)
++              if (error) reject(error)
++              else resolve()
++            })
++          })
++          forwarded.catch(() => {})
++          if (!accepted) drained = drain()
++          drained?.catch(() => {})
++        })
++        forwarded.catch(() => {})
++        position += bytesRead
++        if (!accepted) await Promise.all([forwarded, drained])
++        else await forwarded // The buffer is not reusable until Node finishes consuming it.
++      }
++      await wait()
++      await admitted(() => res.end())
++    } catch (error) {
++      if (authority.signal.aborted || request.signal.aborted) res.destroy()
++      else if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR')
++        throw new HttpError(404, 'NOT_FOUND', 'not found')
++      else throw error
++    } finally {
++      // Requests detach independently; disposal never waits on the shared renewal promise.
++      req.off('aborted', detached)
++      res.off('close', detached)
++      authority.signal.removeEventListener('abort', abort)
++      try {
++        await handle?.close()
++      } finally {
++        buffer.fill(0)
++      }
++    }
++    return
++  }
+   let info
+   try {
+     info = await fs.promises.stat(filePath)
+diff --git a/headless/server.mjs b/headless/server.mjs
+index f82d4a2308..676b31dde0 100644
+--- a/headless/server.mjs
++++ b/headless/server.mjs
+@@ -58,7 +58,12 @@ function contentType(filePath) {
+  *   to serve no media (e.g. edit-only).
+  * @returns {Promise<{ base: string, harnessUrl: string, mediaUrl: (id: string) => string, close: () => Promise<void> }>}
+  */
+-export async function createHarnessServer({ distDir, resolveMedia = () => null, port = 0 }) {
++export async function createHarnessServer({
++  distDir,
++  resolveMedia = () => null,
++  port = 0,
++  privateMediaAuthority,
++}) {
+   const resolvedDist = path.resolve(distDir)
+
+   const server = http.createServer(async (req, res) => {
+@@ -80,7 +85,15 @@ export async function createHarnessServer({ distDir, resolveMedia = () => null,
+       const mediaMatch = pathname.match(/^\/media\/(.+)$/)
+       if (mediaMatch) {
+         const mediaId = assertSinglePathComponent(mediaMatch[1], 'media id')
+-        const filePath = resolveMedia(mediaId)
++        if (privateMediaAuthority) {
++          await serveFile(req, res, ({ signal }) => resolveMedia(mediaId, { signal }), {
++            contentType: (file) => contentType(file),
++            allowRange: true,
++            authority: privateMediaAuthority,
++          })
++          return
++        }
++        const filePath = await resolveMedia(mediaId)
+         if (!filePath) {
+           res.writeHead(404)
+           res.end('media not found')
+diff --git a/headless/media-server.mjs b/headless/media-server.mjs
+index a6f8da00e2..4f9c12172c 100644
+--- a/headless/media-server.mjs
++++ b/headless/media-server.mjs
+@@ -40,7 +40,7 @@ const MIME = {
+  * @param {number} [port]  0 = ephemeral
+  * @returns {Promise<{ base: string, url: (id: string) => string, close: () => Promise<void> }>}
+  */
+-export async function createMediaServer(mediaFilesOrResolver, port = 0) {
++export async function createMediaServer(mediaFilesOrResolver, port = 0, privateMediaAuthority) {
+   const resolveMedia =
+     typeof mediaFilesOrResolver === 'function'
+       ? mediaFilesOrResolver
+@@ -61,7 +61,16 @@ export async function createMediaServer(mediaFilesOrResolver, port = 0) {
+         return
+       }
+       const mediaId = assertSinglePathComponent(match[1], 'media id')
+-      const filePath = resolveMedia(mediaId)
++      if (privateMediaAuthority) {
++        await serveFile(req, res, ({ signal }) => resolveMedia(mediaId, { signal }), {
++          contentType: (file) =>
++            MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
++          allowRange: true,
++          authority: privateMediaAuthority,
++        })
++        return
++      }
++      const filePath = await resolveMedia(mediaId)
+       if (!filePath) {
+         res.writeHead(404)
+         res.end('media not found')
+diff --git a/headless/http-security.test.mjs b/headless/http-security.test.mjs
+index 1742c57908..f409bbec77 100644
+--- a/headless/http-security.test.mjs
++++ b/headless/http-security.test.mjs
+@@ -4,6 +4,7 @@ import http from 'node:http'
+ import os from 'node:os'
+ import path from 'node:path'
+ import test from 'node:test'
++import { EventEmitter } from 'node:events'
+ import { createHarnessServer } from './server.mjs'
+ import { createMediaServer } from './media-server.mjs'
+ import {
+@@ -12,6 +13,7 @@ import {
+   resolveContained,
+   sendHttpError,
+   setHttpTimeouts,
++  serveFile,
+ } from './lib/http-security.mjs'
+ import { loadProjectById, loadProjectFile, resolveMediaFile } from './lib/workspace.mjs'
+
+@@ -247,3 +249,309 @@ test('aborted file streams are cleaned up and do not poison the server', async (
+     fs.rmSync(root, { recursive: true, force: true })
+   }
+ })
++
++// Controlled local lease barriers: these do not attest a production claim or renderer.
++function privateAuthority() {
++  let active = false
++  const controller = new AbortController()
++  const waiters = new Set()
++  let entered
++  const waiting = new Promise((resolve) => {
++    entered = resolve
++  })
++  return {
++    signal: controller.signal,
++    waiting,
++    waits: 0,
++    isPending() {
++      return !active && !controller.signal.aborted
++    },
++    assertActive() {
++      if (controller.signal.aborted) throw controller.signal.reason
++      assert.ok(active, 'PRIVATE_AUTHORITY_PENDING')
++    },
++    wait(signal) {
++      this.waits++
++      entered()
++      if (controller.signal.aborted) return Promise.reject(controller.signal.reason)
++      if (signal?.aborted) return Promise.reject(signal.reason)
++      if (active) return Promise.resolve()
++      return new Promise((resolve, reject) => {
++        const waiter = { resolve, reject }
++        const abort = () => {
++          waiters.delete(waiter)
++          reject(signal.reason)
++        }
++        waiter.resolve = () => {
++          signal?.removeEventListener('abort', abort)
++          resolve()
++        }
++        waiter.reject = (error) => {
++          signal?.removeEventListener('abort', abort)
++          reject(error)
++        }
++        waiters.add(waiter)
++        signal?.addEventListener('abort', abort, { once: true })
++      })
++    },
++    pending() {
++      active = false
++    },
++    activate() {
++      active = true
++      for (const waiter of waiters) waiter.resolve()
++      waiters.clear()
++    },
++    terminate() {
++      active = false
++      const error = Error('PRIVATE_LEASE_TERMINAL')
++      controller.abort(error)
++      for (const waiter of waiters) waiter.reject(error)
++      waiters.clear()
++    },
++  }
++}
++
++test('private media waits for acknowledgement while ordinary static stays available', async () => {
++  const { root, dist } = fixture()
++  const authority = privateAuthority()
++  const server = await createHarnessServer({
++    distDir: dist,
++    resolveMedia: () => path.join(dist, 'assets/asset.txt'),
++    privateMediaAuthority: authority,
++  })
++  try {
++    const media = rawRequest(server.base, '/media/verified')
++    media.catch(() => {})
++    await Promise.race([
++      authority.waiting,
++      media.then(() => assert.fail('PRIVATE_BYTES_FORWARDED_WHILE_PENDING')),
++    ])
++    assert.equal((await rawRequest(server.base, '/assets/asset.txt')).body.toString(), '0123456789')
++    authority.activate()
++    assert.equal((await media).body.toString(), '0123456789')
++    assert.ok(authority.waits > 1, 'resolver permission alone must not authorize serving')
++  } finally {
++    authority.terminate()
++    await server.close()
++    fs.rmSync(root, { recursive: true, force: true })
++  }
++})
++
++test('private media terminates after suspended stat before sending headers', async () => {
++  const { root, dist } = fixture()
++  const authority = privateAuthority()
++  authority.activate()
++  const originalStat = fs.promises.stat
++  let reached, release
++  const statReached = new Promise((resolve) => {
++    reached = resolve
++  })
++  const statReleased = new Promise((resolve) => {
++    release = resolve
++  })
++  fs.promises.stat = async (...args) => {
++    const info = await originalStat(...args)
++    reached()
++    await statReleased
++    return info
++  }
++  const server = await createHarnessServer({
++    distDir: dist,
++    resolveMedia: () => path.join(dist, 'assets/asset.txt'),
++    privateMediaAuthority: authority,
++  })
++  try {
++    const request = rawRequest(server.base, '/media/verified')
++    request.catch(() => {})
++    await statReached
++    authority.terminate()
++    release()
++    await assert.rejects(request)
++  } finally {
++    release()
++    fs.promises.stat = originalStat
++    authority.terminate()
++    await server.close()
++    fs.rmSync(root, { recursive: true, force: true })
++  }
++})
++
++test('private backpressured ranges stop issuing reads and forwarding chunks during renewal', async () => {
++  for (const loss of [false, true]) {
++    const { root, dist } = fixture()
++    const file = path.join(dist, 'assets/asset.txt')
++    const bytes = Buffer.alloc(160000)
++    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251
++    fs.writeFileSync(file, bytes)
++    const authority = privateAuthority()
++    authority.activate()
++    const req = new EventEmitter()
++    req.method = 'GET'
++    req.headers = { range: 'bytes=7-140000' }
++    const res = new EventEmitter()
++    res.destroyed = false
++    res.setHeader = () => {}
++    res.writeHead = (status) => assert.equal(status, 206)
++    res.destroy = () => {
++      res.destroyed = true
++      res.emit('close')
++    }
++    res.end = () => {}
++    const chunks = []
++    let reached, releaseWrite
++    const blocked = new Promise((resolve) => {
++      reached = resolve
++    })
++    res.write = (chunk, callback) => {
++      authority.assertActive()
++      chunks.push(Buffer.from(chunk))
++      if (chunks.length === 1) {
++        authority.pending()
++        releaseWrite = callback
++        reached()
++        return false
++      }
++      queueMicrotask(callback)
++      return true
++    }
++    let reads = 0
++    const originalOpen = fs.promises.open
++    fs.promises.open = async (...args) => {
++      const handle = await originalOpen(...args),
++        read = handle.read.bind(handle)
++      handle.read = (...values) => {
++        authority.assertActive()
++        reads++
++        return read(...values)
++      }
++      return handle
++    }
++    try {
++      const serving = serveFile(req, res, file, { allowRange: true, authority })
++      serving.catch(() => {})
++      await blocked
++      assert.equal(reads, 1)
++      assert.equal(chunks.length, 1)
++      if (loss) {
++        authority.terminate()
++        await serving
++        releaseWrite()
++        res.emit('drain')
++        assert.equal(res.destroyed, true)
++        assert.equal(reads, 1)
++        assert.equal(chunks.length, 1)
++      } else {
++        authority.activate()
++        releaseWrite()
++        res.emit('drain')
++        await serving
++        assert.deepEqual(Buffer.concat(chunks), bytes.subarray(7, 140001))
++      }
++    } finally {
++      fs.promises.open = originalOpen
++      authority.terminate()
++      fs.rmSync(root, { recursive: true, force: true })
++    }
++  }
++})
++
++test('aborted private reader does not cancel another reader or resume after terminal disposal', async () => {
++  const { root, dist } = fixture(),
++    authority = privateAuthority()
++  const server = await createHarnessServer({
++    distDir: dist,
++    resolveMedia: () => path.join(dist, 'assets/asset.txt'),
++    privateMediaAuthority: authority,
++  })
++  try {
++    const controller = new AbortController()
++    const first = fetch(server.mediaUrl('verified'), { signal: controller.signal })
++    first.catch(() => {})
++    const second = rawRequest(server.base, '/media/verified')
++    second.catch(() => {})
++    await authority.waiting
++    controller.abort()
++    await assert.rejects(first)
++    authority.activate()
++    assert.equal((await second).body.toString(), '0123456789')
++    authority.pending()
++    const third = rawRequest(server.base, '/media/verified')
++    third.catch(() => {})
++    // An explicit stat barrier is covered separately; terminal is sticky for all later requests.
++    authority.terminate()
++    await assert.rejects(third)
++    authority.activate()
++    await assert.rejects(rawRequest(server.base, '/media/verified'))
++  } finally {
++    authority.terminate()
++    await server.close()
++    fs.rmSync(root, { recursive: true, force: true })
++  }
++})
++
++test('renewal beginning after waiter resolution pauses the same private request', async () => {
++  const { root, dist } = fixture()
++  const authority = privateAuthority()
++  authority.activate()
++  const originalWait = authority.wait.bind(authority)
++  let suspended
++  const barrier = new Promise((resolve) => {
++    suspended = resolve
++  })
++  let first = true
++  authority.wait = async (signal) => {
++    await originalWait(signal)
++    if (first) {
++      first = false
++      authority.pending()
++      suspended()
++    }
++  }
++  const server = await createHarnessServer({
++    distDir: dist,
++    resolveMedia: () => path.join(dist, 'assets/asset.txt'),
++    privateMediaAuthority: authority,
++  })
++  try {
++    const media = rawRequest(server.base, '/media/verified')
++    media.catch(() => {})
++    await barrier
++    await new Promise((resolve) => setImmediate(resolve))
++    authority.activate()
++    assert.equal((await media).body.toString(), '0123456789')
++  } finally {
++    authority.terminate()
++    await server.close()
++    fs.rmSync(root, { recursive: true, force: true })
++  }
++})
++
++test('private byte issuance stays inside synchronous admission after an asynchronous waiter', async () => {
++  const { root, dist } = fixture()
++  const authority = privateAuthority()
++  authority.activate()
++  const assertActive = authority.assertActive.bind(authority)
++  let admissions = 0
++  authority.assertActive = () => {
++    assertActive()
++    if (++admissions === 5) {
++      queueMicrotask(() => authority.pending())
++      setTimeout(() => authority.activate(), 25)
++    }
++  }
++  const server = await createHarnessServer({
++    distDir: dist,
++    resolveMedia: () => path.join(dist, 'assets/asset.txt'),
++    privateMediaAuthority: authority,
++  })
++  try {
++    const media = await rawRequest(server.base, '/media/verified')
++    assert.equal(media.status, 200)
++    assert.equal(media.body.toString(), '0123456789')
++  } finally {
++    authority.terminate()
++    await server.close()
++    fs.rmSync(root, { recursive: true, force: true })
++  }
++})

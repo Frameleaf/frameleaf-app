@@ -1,0 +1,300 @@
+--- a/src/infrastructure/audio/mic-recorder/mic-recorder.ts
++++ b/src/infrastructure/audio/mic-recorder/mic-recorder.ts
+@@ -87,6 +87,8 @@
+
+ export class MicRecorder {
+   private state: EngineState = 'idle'
++  private disposed = false
++  private abortStart: (() => void) | null = null
+   private stream: MediaStream | null = null
+   private recorder: MediaRecorder | null = null
+   private finished: Promise<MicRecorderResult & { error: unknown }> | null = null
+@@ -109,6 +111,7 @@
+    * uses that moment to align the recording with the playhead.
+    */
+   async start(options: MicRecorderOptions = {}): Promise<void> {
++    if (this.disposed) throw new DOMException('Microphone recording retired', 'AbortError')
+     if (this.state !== 'idle' || this.recorder) {
+       throw new Error('MicRecorder is already active')
+     }
+@@ -119,66 +122,89 @@
+       video: false,
+     }
+
+-    this.stream = await navigator.mediaDevices.getUserMedia(constraints)
+-    this.startMetering(this.stream)
++    try {
++      const stream = await navigator.mediaDevices.getUserMedia(constraints)
++      if (this.disposed) {
++        for (const track of stream.getTracks()) track.stop()
++        throw new DOMException('Microphone recording retired', 'AbortError')
++      }
++      this.stream = stream
++      this.startMetering(this.stream)
+
+-    this.mimeType = pickRecorderMimeType()
+-    const chunks: Blob[] = []
+-    const recorder = this.mimeType
+-      ? new MediaRecorder(this.stream, { mimeType: this.mimeType })
+-      : new MediaRecorder(this.stream)
+-    // The browser may have picked a different container than we requested.
+-    this.mimeType = recorder.mimeType || this.mimeType
+-    this.recorder = recorder
++      this.mimeType = pickRecorderMimeType()
++      const chunks: Blob[] = []
++      const recorder = this.mimeType
++        ? new MediaRecorder(this.stream, { mimeType: this.mimeType })
++        : new MediaRecorder(this.stream)
++      // The browser may have picked a different container than we requested.
++      this.mimeType = recorder.mimeType || this.mimeType
++      this.recorder = recorder
+
+-    recorder.addEventListener('dataavailable', (event) => {
+-      if (event.data && event.data.size > 0) {
+-        chunks.push(event.data)
+-      }
+-    })
++      recorder.addEventListener('dataavailable', (event) => {
++        if (event.data && event.data.size > 0) {
++          chunks.push(event.data)
++        }
++      })
+
+-    // Capture the terminal events now: a device can end capture before the user presses Stop.
+-    const mimeType = this.mimeType
+-    this.finished = new Promise((resolve) => {
+-      let error: unknown
+-      const onError = (event: Event) => {
+-        error = (event as unknown as { error?: DOMException }).error ??
+-          new Error('MediaRecorder failed to stop')
+-      }
+-      recorder.addEventListener('error', onError)
+-      recorder.addEventListener('stop', () => {
+-        recorder.removeEventListener('error', onError)
+-        if (this.recorder === recorder) {
+-          this.accumulatedMs = this.elapsedMs()
+-          this.state = 'idle'
+-          this.stopMetering()
++      // Capture the terminal events now: a device can end capture before the user presses Stop.
++      const mimeType = this.mimeType
++      this.finished = new Promise((resolve) => {
++        let error: unknown
++        const onError = (event: Event) => {
++          error = (event as unknown as { error?: DOMException }).error ??
++            new Error('MediaRecorder failed to stop')
+         }
+-        resolve({
+-          blob: new Blob(chunks, { type: mimeType || 'audio/webm' }),
+-          mimeType,
+-          durationMs: this.accumulatedMs,
+-          error,
+-        })
+-      }, { once: true })
+-    })
++        recorder.addEventListener('error', onError)
++        recorder.addEventListener('stop', () => {
++          recorder.removeEventListener('error', onError)
++          if (this.recorder === recorder) {
++            this.accumulatedMs = this.elapsedMs()
++            this.state = 'idle'
++            this.stopMetering()
++          }
++          resolve({
++            blob: new Blob(chunks, { type: mimeType || 'audio/webm' }),
++            mimeType,
++            durationMs: this.accumulatedMs,
++            error,
++          })
++        }, { once: true })
++      })
+
+-    await new Promise<void>((resolve, reject) => {
+-      const onStart = () => {
+-        recorder.removeEventListener('error', onError)
+-        this.startedAtMs = performance.now()
+-        this.accumulatedMs = 0
+-        this.state = 'recording'
+-        resolve()
+-      }
+-      const onError = (event: Event) => {
+-        recorder.removeEventListener('start', onStart)
+-        const error = (event as unknown as { error?: DOMException }).error
+-        reject(error ?? new Error('MediaRecorder failed to start'))
+-      }
+-      recorder.addEventListener('start', onStart, { once: true })
+-      recorder.addEventListener('error', onError, { once: true })
+-      recorder.start()
+-    })
++      await new Promise<void>((resolve, reject) => {
++        const clearStart = () => {
++          recorder.removeEventListener('start', onStart)
++          recorder.removeEventListener('error', onError)
++          this.abortStart = null
++        }
++        const onStart = () => {
++          clearStart()
++          if (this.disposed) {
++            reject(new DOMException('Microphone recording retired', 'AbortError'))
++            return
++          }
++          this.startedAtMs = performance.now()
++          this.accumulatedMs = 0
++          this.state = 'recording'
++          resolve()
++        }
++        const onError = (event: Event) => {
++          clearStart()
++          const error = (event as unknown as { error?: DOMException }).error
++          reject(error ?? new Error('MediaRecorder failed to start'))
++        }
++        this.abortStart = () => {
++          clearStart()
++          reject(new DOMException('Microphone recording retired', 'AbortError'))
++        }
++        recorder.addEventListener('start', onStart, { once: true })
++        recorder.addEventListener('error', onError, { once: true })
++        recorder.start()
++      })
++    } catch (error) {
++      this.dispose()
++      throw error
++    }
+   }
+
+   pause(): void {
+@@ -231,6 +257,9 @@
+
+   /** Tear down the mic stream, recorder, and metering. Idempotent. */
+   dispose(): void {
++    // A disposed take must never acquire resources again after a late permission grant.
++    this.disposed = true
++    this.abortStart?.()
+     this.state = 'idle'
+     this.stopMetering()
+
+--- /dev/null
++++ b/src/infrastructure/audio/mic-recorder/mic-recorder-acquisition.test.ts
+@@ -0,0 +1,123 @@
++// @vitest-environment node
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++const meter = vi.hoisted(() => ({ start: vi.fn(() => vi.fn()) }))
++vi.mock('./meter', () => ({ createMicLevelMeter: meter.start }))
++import { MicRecorder } from './mic-recorder'
++
++class Capture extends EventTarget {
++  static isTypeSupported = () => true
++  static constructed = 0
++  static started = 0
++  static constructorError: Error | null = null
++  static startError: Error | null = null
++  state = 'inactive'
++  mimeType = 'audio/webm'
++  constructor() {
++    super()
++    Capture.constructed++
++    if (Capture.constructorError) throw Capture.constructorError
++  }
++  start() {
++    Capture.started++
++    if (Capture.startError) throw Capture.startError
++    this.state = 'recording'
++    queueMicrotask(() => this.dispatchEvent(new Event('start')))
++  }
++  stop() {
++    this.state = 'inactive'
++    queueMicrotask(() => {
++      this.dispatchEvent(Object.assign(new Event('dataavailable'), { data: new Blob(['take']) }))
++      this.dispatchEvent(new Event('stop'))
++    })
++  }
++}
++let stopTrack: ReturnType<typeof vi.fn>
++let stream: MediaStream
++beforeEach(() => {
++  vi.clearAllMocks()
++  Capture.constructed = Capture.started = 0
++  Capture.constructorError = Capture.startError = null
++  stopTrack = vi.fn()
++  stream = { getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream
++  vi.stubGlobal('MediaRecorder', Capture)
++  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(async () => stream) } })
++})
++afterEach(() => { vi.unstubAllGlobals() })
++
++describe('microphone acquisition retirement', () => {
++  it('stops late acquisition before starting a meter or capture on a disposed instance', async () => {
++    let release!: (value: MediaStream) => void
++    navigator.mediaDevices.getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => { release = resolve }))
++    const recorder = new MicRecorder()
++    const starting = recorder.start()
++    const refusal = expect(starting).rejects.toMatchObject({ name: 'AbortError' })
++    recorder.dispose()
++    release(stream)
++    await refusal
++    expect(stopTrack).toHaveBeenCalledOnce()
++    expect(meter.start).not.toHaveBeenCalled()
++    expect(Capture.constructed).toBe(0)
++    expect(Capture.started).toBe(0)
++    expect(recorder.getState()).toBe('idle')
++    await expect(recorder.start()).rejects.toMatchObject({ name: 'AbortError' })
++    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce()
++  })
++
++  it('retains normal acquisition, final audio and stream cleanup', async () => {
++    const recorder = new MicRecorder()
++    await recorder.start()
++    expect(meter.start).toHaveBeenCalledOnce()
++    expect(Capture.constructed).toBe(1)
++    expect(Capture.started).toBe(1)
++    const result = await recorder.stop()
++    expect(await result.blob.text()).toBe('take')
++    expect(stopTrack).toHaveBeenCalledOnce()
++    expect(recorder.getState()).toBe('idle')
++  })
++
++  it('does not revive a disposed instance when its queued start event arrives', async () => {
++    const recorder = new MicRecorder()
++    const starting = recorder.start()
++    const refusal = expect(starting).rejects.toMatchObject({ name: 'AbortError' })
++    await Promise.resolve()
++    expect(Capture.started).toBe(1)
++    recorder.dispose()
++    await refusal
++    expect(recorder.getState()).toBe('idle')
++    expect(stopTrack).toHaveBeenCalledOnce()
++  })
++
++  it('settles cancellation without waiting for a native start event', async () => {
++    const nativeStart = vi.spyOn(Capture.prototype, 'start').mockImplementation(function (this: Capture) {
++      Capture.started++
++      this.state = 'recording'
++    })
++    try {
++      const recorder = new MicRecorder()
++      const outcome = recorder.start().then(() => 'started', (error: DOMException) => error.name)
++      await Promise.resolve()
++      expect(Capture.started).toBe(1)
++      recorder.dispose()
++      const settled = await Promise.race([
++        outcome,
++        new Promise((resolve) => setTimeout(() => resolve('unsettled'), 20)),
++      ])
++      expect(settled).toBe('AbortError')
++      expect(stopTrack).toHaveBeenCalledOnce()
++      expect(recorder.getState()).toBe('idle')
++    } finally {
++      nativeStart.mockRestore()
++    }
++  })
++
++  it.each(['constructor', 'start'] as const)('releases acquisition after a synchronous recorder %s failure', async (stage) => {
++    const error = new Error(`${stage} failed`)
++    if (stage === 'constructor') Capture.constructorError = error
++    else Capture.startError = error
++    const recorder = new MicRecorder()
++    await expect(recorder.start()).rejects.toBe(error)
++    expect(stopTrack).toHaveBeenCalledOnce()
++    expect(meter.start.mock.results[0]!.value).toHaveBeenCalledOnce()
++    expect(recorder.getState()).toBe('idle')
++  })
++})

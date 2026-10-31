@@ -1,0 +1,75 @@
+Subject: Discard paused GPU scope captures after displayed frame changes (FL-98)
+
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -748,7 +748,8 @@
+         usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
+         jumpEpochRef.current !== captureJumpEpoch ||
+         (!capturePlayback.isPlaying &&
+-          usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch)
++          (usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch ||
++            requestedScopeFrame() !== captureAtFrame))
+       renderer.setRange(0, 1)
+
+       try {
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -61,6 +61,58 @@
+       for (const callback of pending) callback(time)
+     })
+   }
++
++  it.each(['gpu-canvas', 'gpu-image', 'cpu'] as const)(
++    'discards a late %s capture when the paused displayed frame changes without a seek',
++    async (path) => {
++      usePreviewBridgeStore.setState({ displayedFrame: 12 })
++      const oldCapture = deferred<HTMLCanvasElement | ImageData>()
++      const newCapture = deferred<HTMLCanvasElement | ImageData>()
++      const oldFrame = path === 'gpu-canvas' ? document.createElement('canvas') : new ImageData(2, 2)
++      const newFrame = path === 'gpu-canvas' ? document.createElement('canvas') : new ImageData(2, 2)
++      const capture = vi.fn().mockReturnValueOnce(oldCapture.promise).mockReturnValue(newCapture.promise)
++      const renderer = {
++        setMatrix: vi.fn(), setRange: vi.fn(), setGraticule: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}),
++        uploadFromCanvas: vi.fn(), uploadFrame: vi.fn(), renderWaveforms: vi.fn(),
++        renderVectorscope: vi.fn(), renderHistogram: vi.fn(), destroy: vi.fn(),
++      }
++      const context = {
++        createImageData: (width: number, height: number) => new ImageData(width, height),
++        putImageData: vi.fn(), fillRect: vi.fn(), save: vi.fn(), restore: vi.fn(),
++        beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
++        fillText: vi.fn(), arc: vi.fn(),
++      }
++      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as never)
++      createRenderer.mockResolvedValue(path === 'cpu' ? null : renderer)
++      usePreviewBridgeStore.setState(path === 'gpu-canvas'
++        ? { captureCanvasSource: capture }
++        : { captureFrameImageData: capture })
++      await act(async () => { render(<ColorScopesView open />) })
++      await tick(100)
++      expect(capture).toHaveBeenCalledOnce()
++      const seekEpoch = usePlaybackStore.getState().frameUpdateEpoch
++      await act(async () => {
++        usePreviewBridgeStore.getState().setDisplayedFrame(24)
++        oldCapture.resolve(oldFrame)
++      })
++      expect(usePlaybackStore.getState().frameUpdateEpoch).toBe(seekEpoch)
++      expect(usePlaybackStore.getState().currentFrame).toBe(12)
++      expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
++      expect(renderer.uploadFrame).not.toHaveBeenCalled()
++      expect(renderer.renderWaveforms).not.toHaveBeenCalled()
++      expect(context.putImageData).not.toHaveBeenCalled()
++      await tick(200)
++      expect(capture).toHaveBeenCalledTimes(2)
++      await act(async () => { newCapture.resolve(newFrame) })
++      if (path === 'cpu') expect(context.putImageData).toHaveBeenCalled()
++      else {
++        expect(path === 'gpu-canvas' ? renderer.uploadFromCanvas : renderer.uploadFrame)
++          .toHaveBeenCalledExactlyOnceWith(newFrame)
++        expect(renderer.renderWaveforms).toHaveBeenCalledOnce()
++      }
++      expect(screen.getByTestId('scope-color-space')).toHaveTextContent('frame 24')
++    },
++  )
+
+   it.each([
+     ['gpu-canvas', false, false], ['gpu-image', false, false], ['cpu', false, false],
