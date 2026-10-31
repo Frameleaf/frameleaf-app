@@ -134,12 +134,21 @@ export class MaintenanceWorkerController {
   @MaintenanceRoute()
   async setMaintenanceMode(@Body() dto: SetMaintenanceModeDto): Promise<void> {
     // FL-81: a conflicting action is refused with 409 before the action runs in the background.
-    // claimAction stays synchronous so a restore reservation is taken before any await.
+    // claimAction stays synchronous so a restore or End reservation is taken before any await.
     this.service.claimAction(dto);
-    if (dto.action === MaintenanceAction.End) {
-      await this.service.assertCanEnd();
+    const ending = dto.action === MaintenanceAction.End;
+    if (ending) {
+      try {
+        await this.service.assertCanEnd();
+      } catch (error) {
+        this.service.releaseEnd();
+        throw error;
+      }
     }
     void this.service.setAction(dto).catch((error: unknown) => {
+      if (ending) {
+        this.service.releaseEnd();
+      }
       this.logger.error(`Maintenance action ${dto.action} failed: ${error}`);
     });
   }

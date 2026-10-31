@@ -141,9 +141,10 @@ export class IdentityPostValidator {
     // Candidate pattern: a CamelCase word (single capital + lowercase letters)
     // that appears mid-sentence (not at sentence start, not in allow-list).
     // Whole Unicode words only, so "Zoë", "José", "O'Brien" and "Anne-Marie" are replaced as one
-    // name instead of leaving a fragment such as "Someoneë" or "O'Someone".
+    // name instead of leaving a fragment such as "Someoneë" or "O'Someone"; a short lower-case
+    // particle ("d'Artagnan", "d’Angelo") belongs to the name it starts.
     const candidateRe =
-      /(?<![\p{L}\p{M}\p{N}_-])(\p{Lu}(?:[\p{Ll}\p{M}]+|['’]\p{Lu}[\p{Ll}\p{M}]+)(?:-\p{Lu}[\p{Ll}\p{M}]+)*)(?![\p{L}\p{M}\p{N}_-])/gu;
+      /(?<![\p{L}\p{M}\p{N}_-])((?:\p{Ll}{1,3}['’])?\p{Lu}(?:[\p{Ll}\p{M}]+|['’]\p{Lu}[\p{Ll}\p{M}]+)(?:-\p{Lu}[\p{Ll}\p{M}]+)*)(?![\p{L}\p{M}\p{N}_-])/gu;
     const hallucinatedNames: string[] = [];
     let stripped = description.replaceAll(candidateRe, (match, word, offset) => {
       // Sentence-start capitals are legitimate — don't strip them.

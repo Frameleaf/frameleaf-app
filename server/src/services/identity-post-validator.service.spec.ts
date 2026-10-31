@@ -42,7 +42,7 @@ describe(IdentityPostValidator.name, () => {
       expect(flags.hallucinatedNames).toEqual(['Madison']);
     });
 
-    it.each(['Zoë', 'Zoe\u{308}', 'José', "O'Brien", 'Anne-Marie'])(
+    it.each(['Zoë', 'Zoe\u{308}', 'José', "O'Brien", 'Anne-Marie', "d'Artagnan", 'd’Angelo'])(
       'replaces the whole unknown name %s, never a fragment of it',
       (name) => {
         expect(sut.validate(`I saw ${name} and Madison.`, [])).toEqual({

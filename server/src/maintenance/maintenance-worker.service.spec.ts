@@ -457,6 +457,15 @@ describe(MaintenanceWorkerService.name, () => {
       await sut.setAction(restore);
 
       expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+      sut.releaseEnd();
+      expect(() => sut.claimAction(restore)).not.toThrow();
+    });
+
+    it('refuses a restore while an End request is pending, until that End is released', () => {
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction({ action: MaintenanceAction.End });
+      expect(() => sut.claimAction(restore)).toThrowError(ConflictException);
+      sut.releaseEnd();
       expect(() => sut.claimAction(restore)).not.toThrow();
     });
 
