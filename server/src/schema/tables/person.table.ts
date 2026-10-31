@@ -1,0 +1,78 @@
+import {
+  AfterDeleteTrigger,
+  Check,
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  Index,
+  Table,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { person_delete_audit } from 'src/schema/functions.js';
+import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+@Table('person')
+@Index({
+  name: 'idx_person_name_trigram',
+  using: 'gin',
+  expression: 'f_unaccent("name") gin_trgm_ops',
+})
+@UpdatedAtTrigger('person_updatedAt')
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: person_delete_audit,
+  referencingOldTableAs: 'old',
+  when: 'pg_trigger_depth() <= 1',
+})
+@Check({ name: 'person_birthDate_chk', expression: `"birthDate" <= CURRENT_DATE` })
+export class PersonTable {
+  @ForeignKeyColumn(() => UserTable, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+    primary: true,
+    // [ownerId, personGroupId] is the PK constraint
+    index: false,
+  })
+  ownerId!: string;
+
+  @ForeignKeyColumn(() => PersonGroupTable, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+    primary: true,
+  })
+  personGroupId!: string;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @Column({ default: '' })
+  name!: Generated<string>;
+
+  @Column({ default: '' })
+  thumbnailPath!: Generated<string>;
+
+  @Column({ type: 'boolean', default: false })
+  isHidden!: Generated<boolean>;
+
+  @Column({ type: 'date', nullable: true })
+  birthDate!: Timestamp | null;
+
+  @ForeignKeyColumn(() => AssetFaceTable, { onDelete: 'SET NULL', nullable: true })
+  faceAssetId!: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  isFavorite!: Generated<boolean>;
+
+  @Column({ type: 'character varying', nullable: true, default: null })
+  color!: string | null;
+
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
+}

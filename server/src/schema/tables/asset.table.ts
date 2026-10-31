@@ -1,0 +1,205 @@
+import {
+  AfterDeleteTrigger,
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  ForeignKeyColumn,
+  Index,
+  PrimaryGeneratedColumn,
+  Table,
+  Trigger,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
+import {
+  asset_checksum_algorithm_enum,
+  asset_visibility_enum,
+  assets_status_enum,
+  library_scope_enum,
+} from 'src/schema/enums.js';
+import {
+  asset_backup_deletion_capture,
+  asset_delete_audit,
+  asset_library_scope_refresh,
+} from 'src/schema/functions.js';
+import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
+import { StackTable } from 'src/schema/tables/stack.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
+
+@Table('asset')
+@Trigger({
+  name: 'asset_library_scope_refresh_trigger',
+  timing: 'after',
+  actions: ['update'],
+  scope: 'row',
+  functionName: asset_library_scope_refresh.name,
+})
+@Trigger({
+  name: 'asset_backup_deletion_capture_trigger',
+  timing: 'before',
+  actions: ['delete'],
+  scope: 'row',
+  functionName: asset_backup_deletion_capture.name,
+})
+@UpdatedAtTrigger('asset_updatedAt')
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: asset_delete_audit,
+  referencingOldTableAs: 'old',
+  when: 'pg_trigger_depth() = 0',
+})
+// Checksums must be unique per user and library
+@Index({
+  name: ASSET_CHECKSUM_CONSTRAINT,
+  columns: ['ownerId', 'checksum'],
+  unique: true,
+  where: '"libraryId" IS NULL',
+})
+@Index({
+  columns: ['ownerId', 'libraryId', 'checksum'],
+  unique: true,
+  where: '"libraryId" IS NOT NULL',
+})
+@Index({
+  name: 'asset_localDateTime_idx',
+  expression: `(("localDateTime" at time zone 'UTC')::date)`,
+})
+@Index({
+  name: 'asset_localDateTime_month_idx',
+  expression: `(date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)`,
+})
+@Index({
+  name: 'asset_owner_filename_order_idx',
+  expression: '"ownerId", "originalFileName" COLLATE "und-x-icu", "fileCreatedAt" DESC, id',
+})
+@Index({ name: 'asset_owner_scope_idx', columns: ['ownerId', 'libraryScope'] })
+@Index({ columns: ['originalPath', 'libraryId'] })
+@Index({ columns: ['id', 'stackId'] })
+@Index({
+  name: 'asset_originalFilename_trigram_idx',
+  using: 'gin',
+  expression: 'f_unaccent("originalFileName") gin_trgm_ops',
+})
+@Index({
+  name: 'asset_id_timeline_notDeleted_idx',
+  columns: ['id'],
+  where: `visibility = 'timeline' AND "deletedAt" IS NULL`,
+})
+// Partial index backing the privacy-gate NSFW probe (migration 2100000000010).
+@Index({
+  name: 'idx_asset_is_nsfw',
+  columns: ['is_nsfw'],
+  where: 'is_nsfw = true',
+})
+// For all assets, each originalpath must be unique per user and library
+export class AssetTable {
+  @Column({ enum: library_scope_enum, default: LibraryScope.Personal })
+  libraryScope!: Generated<LibraryScope>;
+
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  ownerId!: string;
+
+  @Column()
+  type!: AssetType;
+
+  @Column()
+  originalPath!: string;
+
+  /**
+   * FL-417: the photo's own path in its owner's library, shown and browsed instead of `originalPath`
+   * while the photo shares a stored file kept in another folder. Null when `originalPath` is its own.
+   */
+  @Column({ nullable: true })
+  libraryPath!: string | null;
+
+  @ForeignKeyColumn(() => PhysicalFileTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE', index: true })
+  physicalOriginalFileId!: string | null;
+
+  @Column({ type: 'timestamp with time zone', index: true })
+  fileCreatedAt!: Timestamp;
+
+  @Column({ type: 'timestamp with time zone' })
+  fileModifiedAt!: Timestamp;
+
+  @Column({ type: 'boolean', default: false })
+  isFavorite!: Generated<boolean>;
+
+  @Column({ type: 'integer', nullable: true })
+  duration!: number | null;
+
+  @Column({ type: 'bytea', index: true })
+  checksum!: Buffer; // SHA-256 for new uploads (32 bytes), SHA-1 for legacy rows (20 bytes); see `checksumAlgorithm`
+
+  @Column({ enum: asset_checksum_algorithm_enum })
+  checksumAlgorithm!: ChecksumAlgorithm;
+
+  @ForeignKeyColumn(() => AssetTable, { nullable: true, onUpdate: 'CASCADE', onDelete: 'SET NULL' })
+  livePhotoVideoId!: string | null;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @CreateDateColumn({ index: true })
+  createdAt!: Generated<Timestamp>;
+
+  @Column({ index: true })
+  originalFileName!: string;
+
+  @Column({ type: 'bytea', nullable: true })
+  thumbhash!: Buffer | null;
+
+  @Column({ type: 'boolean', default: false })
+  isOffline!: Generated<boolean>;
+
+  @ForeignKeyColumn(() => LibraryTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: true })
+  libraryId!: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  isExternal!: Generated<boolean>;
+
+  @DeleteDateColumn()
+  deletedAt!: Timestamp | null;
+
+  @Column({ type: 'timestamp with time zone' })
+  localDateTime!: Timestamp;
+
+  @ForeignKeyColumn(() => StackTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  stackId!: string | null;
+
+  @Column({ type: 'uuid', nullable: true, index: true })
+  duplicateId!: string | null;
+
+  @Column({ enum: assets_status_enum, default: AssetStatus.Active })
+  status!: Generated<AssetStatus>;
+
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
+
+  @Column({ enum: asset_visibility_enum, default: AssetVisibility.Timeline })
+  visibility!: Generated<AssetVisibility>;
+
+  @Column({ type: 'integer', nullable: true })
+  width!: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  height!: number | null;
+
+  @Column({ type: 'boolean', default: false })
+  isEdited!: Generated<boolean>;
+
+  /**
+   * Denormalized NSFW flag. Owned by ImageEnrichmentService — updated inside
+   * the per-asset advisory lock whenever the asset_metadata blob is written.
+   * See migration `2100000000010-AddAssetIsNsfwIndex.ts`. Index is partial on
+   * `is_nsfw = true` so the privacy-filter probe is a single index scan.
+   */
+  @Column({ type: 'boolean', default: false })
+  is_nsfw!: Generated<boolean>;
+}
