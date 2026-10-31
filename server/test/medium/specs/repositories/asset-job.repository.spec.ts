@@ -43,6 +43,10 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
+afterAll(async () => {
+  await defaultDatabase?.destroy();
+});
+
 describe(AssetJobRepository.name, () => {
   it('counts what each reading feature has read and the copies beside the originals (FL-521)', async () => {
     const { ctx, sut } = setup(await isolatedDatabase());

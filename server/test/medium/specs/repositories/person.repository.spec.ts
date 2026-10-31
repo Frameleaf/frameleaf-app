@@ -30,6 +30,10 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
+afterAll(async () => {
+  await defaultDatabase?.destroy();
+});
+
 describe(PersonRepository.name, () => {
   it('updates only selected face visibilities atomically, with hidden IDs taking precedence', async () => {
     const { ctx, sut } = setup();
