@@ -224,6 +224,8 @@ describe('sealStudioReframe', () => {
       ],
     ],
     ['an empty path', [{ clipId: 'a', path: [] }]],
+    ['a first point that is not a number', [{ clipId: 'a', path: [{ t: NaN, x: 0.5 }] }]],
+    ['an infinite position', [{ clipId: 'a', path: [{ t: 0.5, x: Infinity }] }]],
   ])('refuses %s', (_name, framing) => {
     expect(() => sealStudioReframe(project, 'vertical', '1080p', framing)).toThrow(StudioReframeError);
   });
