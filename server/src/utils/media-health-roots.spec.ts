@@ -200,10 +200,13 @@ describe('media-health-roots (FL-69)', () => {
       const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
       let release!: () => void;
       const gate = new Promise<void>((resolve) => (release = resolve));
+      let started!: () => void;
+      const firstLinked = new Promise<void>((resolve) => (started = resolve));
       const linked: string[] = [];
       vi.mocked(link).mockImplementation(async (from, to) => {
         linked.push(String(from));
         if (from === first) {
+          started();
           await gate;
         }
         return actual.link(from, to);
@@ -213,6 +216,8 @@ describe('media-health-roots (FL-69)', () => {
       });
 
       const moves = [retainFile(first, destination), retainFile(second, destination)];
+      await firstLinked;
+      // Give the second move time to start, had it not been queued.
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(linked).toEqual([first]);
       release();
@@ -222,6 +227,34 @@ describe('media-health-roots (FL-69)', () => {
       await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
       await expect(readFile(first)).rejects.toThrow();
       await expect(readFile(second)).rejects.toThrow();
+    });
+
+    it('treats an overlapping move of the same file as done once the first succeeds', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+
+      await Promise.all([retainFile(source, destination), retainFile(source, destination)]);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('tries an overlapping move of the same file afresh after the first fails', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EIO'));
+
+      const [first, second] = await Promise.allSettled([
+        retainFile(source, destination),
+        retainFile(source, destination),
+      ]);
+
+      expect(first.status).toBe('rejected');
+      expect(second.status).toBe('fulfilled');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
     });
 
     it('never removes a destination it did not create when publishing by copy fails', async () => {

@@ -281,21 +281,34 @@ const publishByCopy = async (
  */
 export const retainFile = (source: string, destination: string): Promise<void> => {
   // Overlapping moves to one name run one after another, so a retry never accepts a copy that the
-  // other move is still writing or is about to remove.
+  // other move is still writing or is about to remove. A move of the same file that succeeded meanwhile
+  // is this move done; after a failure the next one tries afresh.
   const key = path.resolve(destination);
-  const previous = retainingNames.get(key) ?? Promise.resolve();
-  const current = previous.catch(() => {}).then(() => retainFileNow(source, destination));
-  const settled = current.catch(() => {});
-  retainingNames.set(key, settled);
-  void settled.then(() => {
-    if (retainingNames.get(key) === settled) {
+  const from = path.resolve(source);
+  const previous = retainingNames.get(key);
+  const current = (async () => {
+    if (previous) {
+      const succeeded = await previous.succeeded;
+      if (succeeded && previous.source === from) {
+        return;
+      }
+    }
+    await retainFileNow(source, destination);
+  })();
+  const entry = {
+    source: from,
+    succeeded: current.then(() => true).catch(() => false),
+  };
+  retainingNames.set(key, entry);
+  void entry.succeeded.then(() => {
+    if (retainingNames.get(key) === entry) {
       retainingNames.delete(key);
     }
   });
   return current;
 };
 
-const retainingNames = new Map<string, Promise<void>>();
+const retainingNames = new Map<string, { source: string; succeeded: Promise<boolean> }>();
 
 const retainFileNow = async (source: string, destination: string): Promise<void> => {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
