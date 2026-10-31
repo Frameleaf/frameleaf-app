@@ -1,0 +1,124 @@
+diff --git a/src/infrastructure/audio/mic-recorder/mic-recorder.ts b/src/infrastructure/audio/mic-recorder/mic-recorder.ts
+--- a/src/infrastructure/audio/mic-recorder/mic-recorder.ts
++++ b/src/infrastructure/audio/mic-recorder/mic-recorder.ts
+@@ -63,6 +63,8 @@
+   autoGainControl?: boolean
+   /** Called ~30x/s with the current input level (RMS, 0..1) while a stream is live. */
+   onLevel?: (level: number) => void
++  /** Capture ended at the device/browser; the caller must finalize the retained take. */
++  onStopped?: () => void
+ }
+ 
+ /**
+@@ -157,6 +159,7 @@
+         recorder.addEventListener('error', onError)
+         recorder.addEventListener('stop', () => {
+           recorder.removeEventListener('error', onError)
++          const notify = this.recorder === recorder && !this.disposed
+           if (this.recorder === recorder) {
+             this.accumulatedMs = this.elapsedMs()
+             this.state = 'idle'
+@@ -168,6 +171,7 @@
+             durationMs: this.accumulatedMs,
+             error,
+           })
++          if (notify) options.onStopped?.()
+         }, { once: true })
+       })
+ 
+diff --git a/src/infrastructure/audio/mic-recorder/mic-recorder.test.ts b/src/infrastructure/audio/mic-recorder/mic-recorder.test.ts
+--- a/src/infrastructure/audio/mic-recorder/mic-recorder.test.ts
++++ b/src/infrastructure/audio/mic-recorder/mic-recorder.test.ts
+@@ -10,12 +10,14 @@
+ 
+ class MockMediaRecorder {
+   static isTypeSupported: (type: string) => boolean = () => true
++  static latest: MockMediaRecorder
+   state: 'inactive' | 'recording' | 'paused' = 'inactive'
+   mimeType: string
+   private listeners: Record<string, Listener[]> = {}
+ 
+   constructor(_stream: MediaStream, options?: { mimeType?: string }) {
+     this.mimeType = options?.mimeType ?? ''
++    MockMediaRecorder.latest = this
+   }
+ 
+   addEventListener(type: string, cb: Listener) {
+@@ -126,6 +128,30 @@
+     vi.restoreAllMocks()
+   })
+ 
++  it.each(['recording', 'paused'] as const)('reports a device-ended %s take once and retains its final audio', async (state) => {
++    const recorder = new MicRecorder()
++    const onStopped = vi.fn()
++    await recorder.start({ onStopped })
++    nowMs = 500
++    if (state === 'paused') recorder.pause()
++    MockMediaRecorder.latest.stop()
++    await Promise.resolve()
++    expect(onStopped).toHaveBeenCalledTimes(1)
++    const result = await recorder.stop()
++    expect(result.blob.size).toBeGreaterThan(0)
++    expect(result.durationMs).toBe(500)
++    expect(onStopped).toHaveBeenCalledTimes(1)
++  })
++
++  it('does not report a discarded take as a device-ended recording', async () => {
++    const recorder = new MicRecorder()
++    const onStopped = vi.fn()
++    await recorder.start({ onStopped })
++    recorder.dispose()
++    await Promise.resolve()
++    expect(onStopped).not.toHaveBeenCalled()
++  })
++
+   it('excludes paused spans from the recorded duration', async () => {
+     const recorder = new MicRecorder()
+ 
+diff --git a/src/features/timeline/services/mic-recording-controller.ts b/src/features/timeline/services/mic-recording-controller.ts
+--- a/src/features/timeline/services/mic-recording-controller.ts
++++ b/src/features/timeline/services/mic-recording-controller.ts
+@@ -167,6 +167,7 @@
+       noiseSuppression: store.noiseSuppression,
+       autoGainControl: store.autoGainControl,
+       onLevel: (level) => { if (isTakeCurrent(origin)) handleLevel(level) },
++      onStopped: () => { if (isTakeCurrent(origin)) void stopMicRecording() },
+     })
+   } catch (error) {
+     rec.dispose()
+diff --git a/src/features/timeline/services/mic-recording-authority.test.ts b/src/features/timeline/services/mic-recording-authority.test.ts
+--- a/src/features/timeline/services/mic-recording-authority.test.ts
++++ b/src/features/timeline/services/mic-recording-authority.test.ts
+@@ -59,6 +59,32 @@
+   return { promise, resolve, reject }
+ }
+ describe('recording finalization admission', () => {
++  it.each(['recording', 'paused'] as const)('finalizes a device-ended %s take through the existing ownership and history path', async (status) => {
++    let onStopped!: () => void
++    mocks.start.mockImplementationOnce((options) => { onStopped = options.onStopped; return Promise.resolve() })
++    await startMicRecording()
++    if (status === 'paused') pauseMicRecording()
++    onStopped()
++    await vi.waitFor(() => expect(useMicRecordingStore.getState().status).toBe('idle'))
++    expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    expect(mocks.stop).toHaveBeenCalledTimes(1)
++    expect(mocks.importAudio).toHaveBeenCalledTimes(1)
++    expect(useItemsStore.getState().items).toHaveLength(1)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  })
++
++  it('ignores a terminal notification from a retired take while its replacement records', async () => {
++    let onStopped!: () => void
++    mocks.start.mockImplementationOnce((options) => { onStopped = options.onStopped; return Promise.resolve() })
++    await startMicRecording()
++    cancelMicRecording()
++    await startMicRecording()
++    onStopped()
++    expect(useMicRecordingStore.getState().status).toBe('recording')
++    expect(mocks.stop).not.toHaveBeenCalled()
++    expect(mocks.importAudio).not.toHaveBeenCalled()
++  })
++
+   it('retires suspended acquisition and denies its old level callback without stopping the new take', async () => {
+     const entered = deferred<void>(); const release = deferred<void>()
+     let oldLevel: ((level: number) => void) | undefined

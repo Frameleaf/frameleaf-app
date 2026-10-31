@@ -1,0 +1,256 @@
+Subject: Omit verified trackless video sources from export audio
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1187,6 +1187,29 @@
+   return segments
+ }
+
++/** Missing embedded sound is valid only when the source still contains a video track. */
++async function getActiveAudioSegments(
++  composition: CompositionInputProps,
++  fps: number,
++  signal?: AbortSignal,
++): Promise<AudioSegment[]> {
++  const segments = extractAudioSegments(composition, fps).filter(segment => !segment.muted)
++  const tracklessVideos = new Map<string, boolean>()
++  for (const segment of segments) {
++    if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
++    if (segment.type !== 'video' || segment.audioCodec || tracklessVideos.has(segment.src)) continue
++    const mb = await import('mediabunny')
++    const input = new mb.Input({ formats: mb.ALL_FORMATS, source: createMediabunnyInputSource(mb, segment.src) })
++    try {
++      const audio = await input.getPrimaryAudioTrack()
++      tracklessVideos.set(segment.src, !audio && !!(await input.getPrimaryVideoTrack()))
++    } finally {
++      input.dispose()
++    }
++  }
++  return segments.filter(segment => segment.type !== 'video' || segment.audioCodec || !tracklessVideos.get(segment.src))
++}
++
+ type MediabunnyAudioSampleSink = InstanceType<(typeof import('mediabunny'))['AudioSampleSink']>
+ type MediabunnyAudioSample = InstanceType<(typeof import('mediabunny'))['AudioSample']>
+
+@@ -2738,8 +2761,7 @@
+   signal?: AbortSignal,
+ ): Promise<number> {
+   await resolveSubCompMediaUrls(composition)
+-  const segments = extractAudioSegments(composition, normalizeCompositionFps(composition.fps, 30))
+-    .filter(segment => !segment.muted)
++  const segments = await getActiveAudioSegments(composition, normalizeCompositionFps(composition.fps, 30), signal)
+   const mb = await import('mediabunny')
+   const counts = new Map<string, number>()
+   let channels = 0
+@@ -2774,8 +2796,9 @@
+   const fps=normalizeCompositionFps(rawFps,30)
+   await resolveSubCompMediaUrls(composition)
+
+-  const segments = extractAudioSegments(composition, fps).filter((segment) => !segment.muted)
+-  if (segments.length === 0 || !segments.every(supportsWindowedAudioSegment)) {
++  const segments = await getActiveAudioSegments(composition, fps, signal)
++  if (segments.length === 0) return
++  if (!segments.every(supportsWindowedAudioSegment)) {
+     throw new Error('Audio timeline requires full-segment processing')
+   }
+
+@@ -2857,11 +2880,7 @@
+
+   await resolveSubCompMediaUrls(composition)
+
+-  // Extract audio segments
+-  const segments = extractAudioSegments(composition, fps)
+-
+-  // Filter out muted segments early
+-  const activeSegments = segments.filter((s) => !s.muted)
++  const activeSegments = await getActiveAudioSegments(composition, fps, signal)
+
+   if (activeSegments.length === 0) {
+     log.info('No audio segments to process')
+@@ -3151,6 +3170,6 @@
+  */
+ export async function hasAudioContent(composition: CompositionInputProps): Promise<boolean> {
+   await resolveSubCompMediaUrls(composition)
+-  const segments = extractAudioSegments(composition, composition.fps)
+-  return segments.some((s) => !s.muted)
+-}
++  const segments = await getActiveAudioSegments(composition, normalizeCompositionFps(composition.fps, 30))
++  return segments.length > 0
++}
+diff --git a/src/features/export/utils/canvas-audio-track-absence.test.ts b/src/features/export/utils/canvas-audio-track-absence.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-audio-track-absence.test.ts
+@@ -0,0 +1,168 @@
++// @vitest-environment node
++import { execFileSync } from 'node:child_process'
++import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { afterAll, beforeAll, expect, it } from 'vite-plus/test'
++import type { CompositionInputProps } from '@/types/export'
++import type { VideoItem } from '@/types/timeline'
++import {
++  registerObjectUrl,
++  unregisterObjectUrl,
++} from '@/infrastructure/browser/object-url-registry'
++import {
++  getAudioOutputChannelCount,
++  hasAudioContent,
++  processAudio,
++  processAudioWindows,
++} from './canvas-audio'
++
++const directory = mkdtempSync(join(tmpdir(), 'studio-silent-video-'))
++const silent = 'blob:silent-export-fixture'
++const audible = 'blob:audible-export-fixture'
++const pcm = 'blob:pcm-export-fixture'
++const corrupt = 'blob:corrupt-export-fixture'
++
++function composition(src: string): CompositionInputProps {
++  return {
++    fps: 30,
++    durationInFrames: 30,
++    width: 64,
++    height: 36,
++    tracks: [
++      {
++        id: 'video',
++        name: 'Video',
++        order: 0,
++        kind: 'video',
++        height: 80,
++        visible: true,
++        locked: false,
++        muted: false,
++        solo: false,
++        volume: 0,
++        items: [
++          {
++            id: 'clip',
++            label: 'Video',
++            type: 'video',
++            trackId: 'video',
++            mediaId: 'fixture',
++            src,
++            from: 0,
++            durationInFrames: 30,
++            sourceStart: 0,
++            sourceFps: 30,
++            speed: 1,
++            volume: 0,
++            fadeIn: 0,
++            fadeOut: 0,
++          } as VideoItem,
++        ],
++      },
++    ],
++    transitions: [],
++    keyframes: [],
++  }
++}
++
++beforeAll(() => {
++  const video = join(directory, 'silent.mp4')
++  const audio = join(directory, 'audible.mp4')
++  const wave = join(directory, 'audio.wav')
++  execFileSync('ffmpeg', [
++    '-v',
++    'error',
++    '-f',
++    'lavfi',
++    '-i',
++    'color=red:size=64x36:rate=30:duration=1',
++    '-c:v',
++    'libx264',
++    '-pix_fmt',
++    'yuv420p',
++    '-an',
++    video,
++  ])
++  execFileSync('ffmpeg', [
++    '-v',
++    'error',
++    '-i',
++    video,
++    '-f',
++    'lavfi',
++    '-i',
++    'sine=frequency=440:duration=1',
++    '-c:v',
++    'copy',
++    '-c:a',
++    'aac',
++    '-shortest',
++    audio,
++  ])
++  execFileSync('ffmpeg', [
++    '-v',
++    'error',
++    '-f',
++    'lavfi',
++    '-i',
++    'sine=frequency=440:sample_rate=48000:duration=1',
++    wave,
++  ])
++  registerObjectUrl(pcm, new Blob([readFileSync(wave)], { type: 'audio/wav' }))
++  registerObjectUrl(silent, new Blob([readFileSync(video)], { type: 'video/mp4' }))
++  registerObjectUrl(audible, new Blob([readFileSync(audio)], { type: 'video/mp4' }))
++  registerObjectUrl(corrupt, new Blob(['invalid media'], { type: 'video/mp4' }))
++})
++afterAll(() => {
++  for (const src of [silent, audible, pcm, corrupt]) unregisterObjectUrl(src)
++  rmSync(directory, { recursive: true, force: true })
++})
++
++it('admits a real trackless video as a video-only export without editor metadata', async () => {
++  const input = composition(silent)
++  expect(await hasAudioContent(input)).toBe(false)
++  expect(await getAudioOutputChannelCount(input)).toBe(0)
++  expect(await processAudio(input)).toBeNull()
++  const windows = []
++  for await (const window of processAudioWindows(input)) windows.push(window)
++  expect(windows).toEqual([])
++})
++
++it('retains an actual audio track even without editor metadata', async () => {
++  const input = composition(audible)
++  expect(await hasAudioContent(input)).toBe(true)
++  expect(await getAudioOutputChannelCount(input)).toBe(1)
++})
++
++it('rejects corrupt source bytes rather than treating a failed probe as silence', async () => {
++  await expect(hasAudioContent(composition(corrupt))).rejects.toThrow()
++})
++
++it('does not silently omit an explicit audio clip whose track is missing', async () => {
++  const input = composition(silent)
++  const video = input.tracks[0]!.items[0] as VideoItem
++  input.tracks[0]!.items[0] = { ...video, type: 'audio' }
++  expect(await hasAudioContent(input)).toBe(true)
++  await expect(getAudioOutputChannelCount(input)).rejects.toThrow('No audio track found')
++})
++
++it('keeps real audio beside a trackless video in full and windowed mixes', async () => {
++  const input = composition(silent)
++  const audio = {
++    ...(composition(pcm).tracks[0]!.items[0] as VideoItem),
++    id: 'audio',
++    type: 'audio' as const,
++  }
++  input.tracks[0]!.items.push(audio)
++  expect(await hasAudioContent(input)).toBe(true)
++  expect(await getAudioOutputChannelCount(input)).toBe(1)
++  const full = await processAudio(input)
++  const windows = []
++  for await (const window of processAudioWindows(input)) windows.push(window)
++  for (const mix of [full!, ...windows]) {
++    expect(mix.channels).toBe(1)
++    expect(mix.samples[0]!.length).toBe(48_000)
++    expect(Math.max(...mix.samples[0]!)).toBeGreaterThan(0.12)
++  }
++})
