@@ -13849,7 +13849,7 @@
   "frameleaf_setup_frameleaf_error_code_expired": "That code expired or was tried too many times. Start again to get a new one.",
   "frameleaf_setup_frameleaf_error_code_invalid": "That code isn't right. Check it and try again.",
   "frameleaf_setup_frameleaf_error_code_invalid_left": "That code isn't right. {count, plural, one {# try left} other {# tries left}}.",
-  "frameleaf_setup_frameleaf_error_consent_outdated": "The Terms of Use changed while you were here. Read them again, then try once more.",
+  "frameleaf_setup_frameleaf_error_consent_outdated": "The Terms of Use or the privacy statement changed while you were here. Read them again, then try once more.",
   "frameleaf_setup_frameleaf_error_email_taken": "There's already a Frameleaf account with this email. Choose “I already have a Frameleaf account” to sign in.",
   "frameleaf_setup_frameleaf_error_instance_limit": "Your Frameleaf plan has no room for another server. Remove one on frameleaf.cloud, or skip and link later from Settings.",
   "frameleaf_setup_frameleaf_error_invalid_credentials": "That email and password don't match a Frameleaf account. If you sign in with a passkey, add a password on your Frameleaf security page first, or skip and link later from Settings.",

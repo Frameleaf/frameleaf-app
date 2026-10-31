@@ -334,6 +334,14 @@ describe('FirstRunSetup (FL-176)', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Verify and link' }));
       expect(await screen.findByText("That code isn't right. 4 tries left.")).toBeInTheDocument();
 
+      // a wait keeps the code step open: the same code can be tried again
+      sdkMock.verifyCloudAccountLink.mockResolvedValueOnce(
+        answer('refused', { refusal: 'rate-limited', retryAfterSeconds: 120 }) as never,
+      );
+      await fireEvent.click(screen.getByRole('button', { name: 'Verify and link' }));
+      expect(await screen.findByText('Too many attempts. Try again in 2 minutes.')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+
       sdkMock.verifyCloudAccountLink.mockImplementationOnce(() => {
         sdkMock.getCloudStatus.mockResolvedValue(linkedStatus as never);
         return Promise.resolve(answer('linked', { status: linkedStatus }) as never);

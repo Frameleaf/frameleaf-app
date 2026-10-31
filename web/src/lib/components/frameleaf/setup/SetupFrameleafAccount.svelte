@@ -23,6 +23,7 @@
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     CloudAccountLinkCreateMode,
+    CloudAccountLinkRefusal,
     CloudAccountLinkSignInMode,
     CloudLinkRefusal,
     DataRegion,
@@ -39,6 +40,14 @@
   const { name, email, linked, onLinked }: Props = $props();
 
   type Challenge = NonNullable<CloudAccountLinkResponseDto['challenge']>;
+
+  /** Refusals while a code is open that leave it usable (FC-222): a wrong code, too many tries, a pause. */
+  const KEEPS_CODE_STEP = new Set<CloudAccountLinkRefusal>([
+    CloudAccountLinkRefusal.CodeInvalid,
+    CloudAccountLinkRefusal.RateLimited,
+    CloudAccountLinkRefusal.Paused,
+    CloudAccountLinkRefusal.Unavailable,
+  ]);
 
   // svelte-ignore state_referenced_locally
   let form = $state<FrameleafAccountForm>({ mode: 'create', name, email, password: '' });
@@ -125,11 +134,12 @@
         count: answer.attemptsLeft ?? 0,
       },
     });
-    if (challenge && answer.refusal === 'code-invalid') {
+    if (challenge && KEEPS_CODE_STEP.has(answer.refusal)) {
+      // a wrong code, or a wait: the same code can still be tried
       codeError = message;
       return;
     }
-    // anything else ends the code step: the form comes back with the reason
+    // an expired code or a final refusal ends the code step: the form comes back with the reason
     restart();
     formError = message;
     const region = answer.accountRegion;

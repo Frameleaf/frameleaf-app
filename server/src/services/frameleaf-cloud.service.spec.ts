@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -948,6 +948,15 @@ describe(FrameleafCloudService.name, () => {
       );
       await expect(sut.getAccountLinkConsents()).rejects.toBeInstanceOf(ForbiddenException);
       expect(linkRequests()).toHaveLength(0);
+    });
+
+    it('never sends a password to a Frameleaf Cloud reached over plain HTTP, except on this machine', async () => {
+      const repository = (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository })
+        .frameleafCloudRepository;
+      const real = await repository.discovery(cloud.url);
+      vi.spyOn(repository, 'discovery').mockResolvedValue({ ...real, issuer: 'http://id.frameleaf.example' });
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(cloud.requests.filter(({ path }) => path.startsWith(LINK))).toHaveLength(0);
     });
 
     it('needs a name and the statements shown for a new account, in the request contract', () => {

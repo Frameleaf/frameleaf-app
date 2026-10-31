@@ -139,6 +139,9 @@ import { type SetupClient, setupRefusal, whileClaimable } from 'src/utils/framel
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** FL-292: the single-use link token the Frameleaf app hands a new server (as FRAMELEAF_LINK_TOKEN takes). */
+/** FL-708: the only hosts a password link may reach over plain HTTP (a cloud on this machine, in tests). */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 /** FL-708: a password link that was not refused. */
 const NO_ACCOUNT_LINK_REFUSAL = {
   refusal: null,
@@ -1095,6 +1098,14 @@ export class FrameleafCloudService extends BaseService {
     const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
     const signer = this.instanceIdentityRepository.currentSigner();
     const document = await this.discover(cloudUrl);
+    const endpoints = linkEndpoints(document);
+    // a password (and its code) only ever travels over HTTPS; plain HTTP only to this machine (tests)
+    const issuer = new URL(endpoints.passwordLink);
+    if (issuer.protocol !== 'https:' && !LOOPBACK_HOSTS.has(issuer.hostname)) {
+      throw new ServiceUnavailableException(
+        'Frameleaf Cloud is not reached over HTTPS here, so no password is sent. Link with a code instead.',
+      );
+    }
     const permissions = permissionsOf(previous);
     return {
       signer,
@@ -1102,7 +1113,7 @@ export class FrameleafCloudService extends BaseService {
       previous,
       permissions,
       instanceId,
-      endpoints: linkEndpoints(document),
+      endpoints,
       instance: {
         instanceId,
         name: (await this.serverIdentity()).name,
