@@ -1,0 +1,16 @@
+{
+  "description": "Plan certificate signed by the active key",
+  "jws": "eyJhbGciOiJFZERTQSIsInR5cCI6ImxpY2Vuc2Urand0Iiwia2lkIjoiUzFBXzE2bG9uc0RHQVctUGNEMnJUcDV1TDg3aklaUl9MR18xcTVSMVBpayJ9.eyJpc3MiOiJodHRwczovL2lkLmZyYW1lbGVhZi5jbG91ZCIsImF1ZCI6ImZyYW1lbGVhZi1zZXJ2ZXIiLCJzdWIiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtOGE2Yi03YzhkOWUwZjFhMmIiLCJpaWQiOiIwMTkyYTFiMi1jM2Q0LTdlNWYtOWE2Yi0wMDAwMDAwMDAwMDEiLCJjbmYiOnsiamt0IjoiWGozZ3RYSUxkaVFGMUZld2VRYXgtWEl6cllvdFNKNlRvVEptT2MwNHdSRSJ9LCJlbnQiOlsiQ0xPVUQiLCJSRU1PVEVfQUNDRVNTIiwiQ0xPVURfQkFDS1VQIiwiQ0xPVURfTUwiXSwibGltIjp7InJlbGF5X21icHMiOjgsInJlbGF5X2diX21vbnRoIjoyMDAsImJhY2t1cF9ieXRlcyI6MTAwMDAwMDAwMDAwMCwiaW5zdGFuY2VzIjozfSwibGljX2V4cCI6MTc5MDY0MDAwMCwidXBkIjp7ImFmdGVyIjo4NjQwMCwidXJsIjoiaHR0cHM6Ly9hcGkuZnJhbWVsZWFmLmNsb3VkL3YxL2xpY2Vuc2VzL3JlZnJlc2gifSwiZ3JhY2VfZGF5cyI6NywiaWF0IjoxNzkwMzgwODAwLCJuYmYiOjE3OTAzODA4MDAsImV4cCI6MTc5MDk4NTYwMCwianRpIjoiMDE5MmExYjItYzNkNC03ZTVmLThhNmItMDAwMDAwMDAwMGMxIn0.gkfIOrLLHWm_Is6Oawq5VCVF-oHM6qC-1qOZKPpUXyQ1h4uiT5byVsF7bJEGgo8Q7PRSYFtCZlLsaoF8HyhOCw",
+  "context": {
+    "instanceId": "0192a1b2-c3d4-7e5f-9a6b-000000000001",
+    "accountId": "0192a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b",
+    "jkt": "Xj3gtXILdiQF1FeweQax-XIzrYotSJ6ToTJmOc04wRE",
+    "now": 1790380860,
+    "allowExpired": false
+  },
+  "expect": {
+    "ok": true,
+    "kind": "plan",
+    "state": "active"
+  }
+}
