@@ -2,7 +2,7 @@ import { BinaryField, ExifDateTime } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, open as fsOpen, readFile, rm, stat as fsStat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LockableProperty } from 'src/database.js';
@@ -1562,6 +1562,46 @@ describe(MetadataService.name, () => {
       });
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('extracts the same motion bytes from a sealed MicroVideo as from the plain one (FL-721)', async () => {
+      const asset = AssetFactory.create();
+      const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const still = randomBytes(150_000);
+        const motion = randomBytes(70_000);
+        const originalPath = await locked.seal('PXL_0001.MP.jpg', Buffer.concat([still, motion]), 'image/jpeg');
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue({ ...getForMetadataExtraction(asset), originalPath });
+        mocks.storage.stat.mockImplementation((path) => fsStat(path));
+        mocks.storage.readFile.mockImplementation(async (path, options) => {
+          const { buffer, position, length } = options as { buffer: Buffer; position: number; length: number };
+          const handle = await fsOpen(path, 'r');
+          try {
+            await handle.read(buffer, 0, length, position);
+          } finally {
+            await handle.close();
+          }
+          return buffer;
+        });
+        mockReadTags({ Directory: 'foo/bar/', MotionPhoto: 1, MicroVideo: 1, MicroVideoOffset: motion.length });
+        mocks.crypto.hashSha1.mockReturnValue(randomBytes(20));
+        mocks.asset.create.mockResolvedValue(motionAsset);
+        mocks.crypto.randomUUID.mockReturnValue(motionAsset.id);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.storage.createFile).toHaveBeenCalledWith(
+          expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+          motion,
+        );
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ fileSizeInByte: still.length + motion.length }) }),
+        );
+      } finally {
+        await locked.cleanup();
+      }
     });
 
     it('should delete old motion photo video assets if they do not match what is extracted', async () => {

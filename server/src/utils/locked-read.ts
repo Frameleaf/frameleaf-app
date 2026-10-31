@@ -33,6 +33,16 @@ export const LOCKED_DEFERRAL_DELAY_MS = 60 * 60 * 1000;
 /** A job waits for a key at most this many times (one hour each), then fails as usual. */
 export const LOCKED_DEFERRAL_MAX_ATTEMPTS = 72;
 
+/**
+ * Whether an operation-owned job (an Activity edit, a restoration) may wait for a Locked key once
+ * more. Operations re-queue themselves for `LOCKED_DEFERRAL_DELAY_MS` and give the attempt back, so
+ * the cap of `LOCKED_DEFERRAL_MAX_ATTEMPTS` waits is kept as the same ceiling in time: 72 hours after
+ * the operation was created it fails as usual.
+ * ponytail: operations are not woken early by a key load; they run again at their next hourly retry.
+ */
+export const lockedOperationMayWait = (createdAt: Date | string | number, now = Date.now()) =>
+  now - new Date(createdAt).getTime() < LOCKED_DEFERRAL_DELAY_MS * LOCKED_DEFERRAL_MAX_ATTEMPTS;
+
 /** No loaded key that this viewer may use opens the file. `ownerIds` are the recipients' people, when known. */
 export class LockedKeyUnavailableError extends Error {
   name = 'LockedKeyUnavailableError';

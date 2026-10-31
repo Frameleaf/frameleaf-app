@@ -25,6 +25,7 @@ import {
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
 import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
+import { LOCKED_DEFERRAL_DELAY_MS } from 'src/utils/locked-read.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
   RESTORATION_ABANDONED_RESULT_DAYS,
@@ -37,6 +38,7 @@ import {
 } from 'src/utils/restoration.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
@@ -521,6 +523,40 @@ describe(RestorationWorkerService.name, () => {
       );
       expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['waits an hour, without using an attempt, while the Locked key is not loaded', 1, true],
+      ['fails as usual once it has waited 72 hours for the Locked key', 73, false],
+    ])('%s (FL-721)', async (_, hoursAgo, waits) => {
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        const originalPath = await locked.seal('IMG_0001.jpg', 'plain jpeg', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        } as never);
+
+        await sut.run(operation({ createdAt: new Date(Date.now() - hoursAgo * 60 * 60 * 1000) }), CLAIM);
+
+        expect(restore).not.toHaveBeenCalled();
+        if (waits) {
+          expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, {
+            delayMs: LOCKED_DEFERRAL_DELAY_MS,
+            returnAttempt: true,
+          });
+          expect(operations.fail).not.toHaveBeenCalled();
+        } else {
+          expect(operations.requeue).not.toHaveBeenCalledWith(
+            OPERATION_ID,
+            CLAIM,
+            expect.objectContaining({ delayMs: LOCKED_DEFERRAL_DELAY_MS }),
+          );
+          expect(operations.fail).toHaveBeenCalled();
+        }
+      } finally {
+        await locked.cleanup();
+      }
     });
 
     it('processes a Locked asset the owner asked for like any other', async () => {

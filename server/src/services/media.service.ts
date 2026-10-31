@@ -1567,7 +1567,8 @@ export class MediaService extends BaseService {
         videoStream,
         config: config.ffmpeg,
         originalPath: asset.originalPath,
-        sourcePath: plainOriginal,
+        // provenance is checked on the stored path; only the tools get the plain copy (FL-721)
+        sourcePath: asset.originalPath,
         outputPaths: [output],
         derivedPaths: asset.files.map((file) => file.path),
       });
@@ -1876,7 +1877,7 @@ export class MediaService extends BaseService {
         videoStream,
         config: config.ffmpeg,
         originalPath: version.sourcePath,
-        sourcePath,
+        sourcePath: version.sourcePath,
         outputPaths: [master, proxy],
         derivedPaths: asset.files.map((file) => file.path),
       });

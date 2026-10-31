@@ -3726,6 +3726,38 @@ describe(MediaService.name, () => {
         ]);
       });
 
+      it('renders a sealed video edit from a plain copy and queues LockedSeal (FL-721)', async () => {
+        const base = editedAsset();
+        const locked = await lockedFixture(base.ownerId);
+        try {
+          locked.loadKey();
+          const originalPath = await locked.seal('clip.mp4', 'plain video', 'video/mp4');
+          mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...base, originalPath });
+          mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+            { id: 'video-id', ownerId: base.ownerId, pending: false, mode: 'pin' as const },
+          ]);
+          mocks.systemMetadata.get.mockResolvedValue({
+            ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+          } as never as SystemConfig);
+          const inputs: string[] = [];
+          mocks.media.transcode.mockImplementation(async (input) => {
+            if (typeof input === 'string' && input.endsWith('/clip.mp4')) {
+              inputs.push(input);
+              expect(await readFile(input, 'utf8')).toBe('plain video');
+            }
+          });
+
+          await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+          expect(inputs.length).toBeGreaterThan(0);
+          expect(inputs.every((input) => input.startsWith(locked.tmp))).toBe(true);
+          expect(await locked.copiesLeft()).toBe(0);
+          expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: 'video-id' } }]);
+        } finally {
+          await locked.cleanup();
+        }
+      });
+
       it('does not let the playback resolution, CRF or bitrate ceiling cap the edited master', async () => {
         mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
         mocks.systemMetadata.get.mockResolvedValue({

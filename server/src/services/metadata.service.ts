@@ -311,7 +311,9 @@ export class MetadataService extends BaseService {
     const source = plainOriginal === asset.originalPath ? asset : { ...asset, originalPath: plainOriginal };
     const [exifResult, stats] = await Promise.all([
       this.getExifTags(source),
-      this.storageRepository.stat(asset.originalPath),
+      // FL-721: the plain copy's size is the file's real size (a sealed file is larger), and it
+      // carries the stored file's mtime; motion-photo offsets and fileSizeInByte depend on it
+      this.storageRepository.stat(plainOriginal),
     ]);
     const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);

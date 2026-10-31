@@ -39,6 +39,7 @@ import {
   LOCKED_DEFERRAL_DELAY_MS,
   assertPlainCopyPossible,
   isLockedKeyUnavailable,
+  lockedOperationMayWait,
   withPlainCopy,
 } from 'src/utils/locked-read.js';
 import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
@@ -1099,6 +1100,8 @@ export class RestorationWorkerService {
     if (
       isLockedKeyUnavailable(error) &&
       !ctx.signal.aborted &&
+      // the same ceiling as jobs: 72 hourly waits, kept as 72 hours since the restoration was asked for
+      lockedOperationMayWait(operation.createdAt) &&
       (await this.operationRepository.requeue(operation.id, claimToken, {
         delayMs: LOCKED_DEFERRAL_DELAY_MS,
         returnAttempt: true,
