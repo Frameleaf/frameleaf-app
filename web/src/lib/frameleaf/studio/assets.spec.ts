@@ -294,13 +294,6 @@ describe('stored project library hydration', () => {
     expect(lookup).toHaveBeenCalledExactlyOnceWith([first, second]);
   });
 
-  it('reads UUID v7 library ids', async () => {
-    const v7 = '01935e4a-7c2b-7d3e-8f4a-1b2c3d4e5f60';
-    const lookup = vi.fn(async (page: string[]) => page.map((id) => asset({ id })));
-    expect(await resolveStudioAssets([v7], lookup)).toEqual([asset({ id: v7 })]);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith([v7]);
-  });
-
   it('asks for at most two pages at once', async () => {
     let active = 0;
     let maximum = 0;

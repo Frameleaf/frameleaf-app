@@ -1,5 +1,6 @@
 import { getUtilitiesSummary } from '@frameleaf/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /** What Unused files holds: the files and their size. */
 export type UnusedFilesTotals = { files: number; bytes: number };
@@ -18,6 +19,11 @@ class UnusedFilesAccess {
   loaded = $state(false);
   #reading: Promise<void> | undefined;
   #userId: string | undefined;
+
+  constructor() {
+    // Signing out forgets the reader, so an answer still in flight is dropped and the next sign-in reads again.
+    eventManager.on({ AuthLogout: () => this.reset() });
+  }
 
   get isOwner() {
     return this.totals !== null;
