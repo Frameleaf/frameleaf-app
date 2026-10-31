@@ -125,6 +125,26 @@ describe('PetTagger', () => {
     }
   });
 
+  it('drops a region drawn on the previous photo when the viewer moves on', async () => {
+    const asset = assetFactory.build({ id: 'asset-1', checksum: 'c3Vt', originalFileName: 'garden.jpg' });
+    const props = { asset, pets: [biscuit], petId: biscuit.id, onSaved: vi.fn(), onClose: vi.fn() };
+    const view = render(PetTagger, props);
+    const image = screen.getByRole('img', { name: 'garden.jpg' });
+    Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 800 } });
+    await fireEvent.load(image);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_pet_tagger_place }));
+    expect(screen.getByRole('button', { name: en.frameleaf_pet_tagger_save })).toBeEnabled();
+
+    await view.rerender({
+      ...props,
+      asset: assetFactory.build({ id: 'asset-2', checksum: 'b3Ro', originalFileName: 'beach.jpg' }),
+    });
+
+    expect(screen.getByRole('button', { name: en.frameleaf_pet_tagger_save })).toBeDisabled();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_pet_tagger_save }));
+    expect(sdkMock.createPetObservation).not.toHaveBeenCalled();
+  });
+
   it('keeps the dialog open and explains a photo that changed meanwhile', async () => {
     sdkMock.isHttpError.mockReturnValue(true);
     sdkMock.createPetObservation.mockRejectedValue({ status: 409 });

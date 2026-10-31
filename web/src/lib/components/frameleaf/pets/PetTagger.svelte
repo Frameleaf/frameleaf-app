@@ -88,6 +88,22 @@
     }
   });
 
+  // A region belongs to the photo it was drawn on: when the viewer moves to another photo, the draft
+  // (and the measured image size) start over so Save can never send the old region.
+  let draftFor = asset.id;
+  $effect(() => {
+    if (asset.id === draftFor) {
+      return;
+    }
+    draftFor = asset.id;
+    box = null;
+    drag = null;
+    preview = null;
+    natural = null;
+    error = '';
+    imageFailed = false;
+  });
+
   const measure = () => {
     const rect = stage?.getBoundingClientRect();
     if (rect && (rect.width !== viewport.width || rect.height !== viewport.height)) {
