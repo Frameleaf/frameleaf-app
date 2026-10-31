@@ -197,16 +197,146 @@ export const buildExplorePlaces = (counts: ExploreFacetCount[], limit = EXPLORE_
     coverAssetId: coverAssetId ?? null,
   }));
 
-/** "Things in your photos" (`ExploreLibrary.jsx:196-220`): the account's tags by count. */
-export const buildExploreThings = (counts: ExploreFacetCount[], limit = EXPLORE_THING_LIMIT): ExploreCoverCard[] =>
-  counts.slice(0, limit).map(({ value, label, count, coverAssetId }) => ({
-    id: value,
-    // A nested tag's facet label is its whole path ("Travel/Canada/Banff"); the card names the tag itself.
-    label: (label || value).split('/').findLast(Boolean) ?? (label || value),
-    count,
-    href: Route.search({ tagIds: [value] }),
-    coverAssetId: coverAssetId ?? null,
-  }));
+/*
+ * FL-707 item 15 (explore-timeline.mjs `isThingKeyword`): "Things in your photos" lists things, not
+ * imported metadata. People have their own row, so their names are left out, as are catalogue folders
+ * ("People", "Other Keywords"), camera and software keywords, and catalogue codes ("PINN", "SFAN",
+ * "IMG_4021").
+ */
+const NOT_THINGS = new Set([
+  'people',
+  'person',
+  'persons',
+  'faces',
+  'other keywords',
+  'keywords',
+  'untagged',
+  'uncategorized',
+  'uncategorised',
+  'places',
+  'events',
+  'camera',
+  'lens',
+  'lightroom',
+  'adobe lightroom',
+  'photoshop',
+  'adobe photoshop',
+  'capture one',
+  'snapseed',
+  'iphone',
+  'android',
+  'canon',
+  'nikon',
+  'sony',
+  'fujifilm',
+  'panasonic',
+  'olympus',
+  'leica',
+  'apple',
+  'google',
+  'samsung',
+  'gopro',
+  'dji',
+  'raw',
+  'jpeg',
+  'hdr',
+  'edited',
+  'exported',
+  'import',
+  'imported',
+]);
+/*
+ * A camera or phone model: a maker followed by a model name or number ("Canon EOS 5D", "Sony A7 III",
+ * "Apple iPhone 15 Pro", "Google Pixel 8"). A maker followed by an ordinary word ("Apple pie", "Sony
+ * headphones") is still a thing.
+ */
+const CAMERA_MODEL =
+  /^(canon|nikon|sony|fujifilm|fuji|panasonic|olympus|om system|leica|apple|google|samsung|gopro|dji|ricoh|pentax|hasselblad)\s+(\S*\d\S*|eos|powershot|coolpix|alpha|cyber-?shot|lumix|iphone|ipad|pixel|galaxy|hero|mavic|osmo|gr)(\s|$)/i;
+/*
+ * Catalogue codes and serials: letters with digits or an underscore ("IMG_4021", "DSC0001", "A7R4"),
+ * or an all-caps run of four or more letters ("PINN", "SFAN"). Short all-caps words ("DOG", "TV",
+ * "BBQ") are things, and so is a four-digit year.
+ */
+const isCatalogueCode = (value: string) => {
+  if (/^\d{4}$/.test(value)) {
+    return false;
+  }
+  if (/^[A-Za-z][\w-]*$/.test(value) && /[\d_]/.test(value)) {
+    return true;
+  }
+  return /^[A-Z]{4,}$/.test(value);
+};
+
+/** Whether a keyword names a thing in the photo. `peopleNames` are lower-case names (and ids) of people. */
+export const isThingKeyword = (label: string | null | undefined, peopleNames: ReadonlySet<string> = new Set()) => {
+  const value = (label ?? '').trim();
+  if (!value) {
+    return false;
+  }
+  const lower = value.toLowerCase();
+  if (NOT_THINGS.has(lower) || peopleNames.has(lower) || CAMERA_MODEL.test(value)) {
+    return false;
+  }
+  if (isCatalogueCode(value)) {
+    return false;
+  }
+  // Catalogue paths written with other separators ("People|Jamie", "Places > Banff").
+  return !/[|>]/.test(value);
+};
+
+/**
+ * A tag (a nested one is its whole path, "Travel/Canada/Banff") is a thing when its own name is, and
+ * no folder above it is a catalogue folder such as "People" or "Other Keywords".
+ */
+export const isThingTag = (path: string, peopleNames: ReadonlySet<string> = new Set()) => {
+  const segments = path.split('/').filter((segment) => segment.trim());
+  const leaf = segments.at(-1);
+  if (!leaf || !isThingKeyword(leaf, peopleNames)) {
+    return false;
+  }
+  return segments.slice(0, -1).every((folder) => !NOT_THINGS.has(folder.trim().toLowerCase()));
+};
+
+/** The lower-case names and ids `isThingKeyword` leaves out: everyone in the account's people list. */
+export const peopleNameSet = (people: Pick<PersonResponseDto, 'id' | 'name'>[]) =>
+  new Set(
+    people
+      .flatMap((person) => [person.name, person.id])
+      .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+      .map((value) => value.trim().toLowerCase()),
+  );
+
+/*
+ * The facet request counts only the busiest EXPLORE_FACET_LIMIT tags, and the non-things among them
+ * are left out afterwards. When that leaves fewer than a full row and the server may hold more tags,
+ * Explore asks once more for the Tags facet alone, as many as the server returns, and ranks again.
+ */
+export const EXPLORE_THING_FACET_LIMIT = 100;
+export const exploreThingsFacetsBody: SearchFacetsDto = {
+  ...exploreFacetsBody,
+  facets: [SearchFacetField.Tags],
+  facetLimit: EXPLORE_THING_FACET_LIMIT,
+};
+export const exploreThingsNeedMoreTags = (tagCounts: readonly ExploreFacetCount[], things: readonly unknown[]) =>
+  things.length < EXPLORE_THING_LIMIT && tagCounts.length >= EXPLORE_FACET_LIMIT;
+
+/** "Things in your photos" (`ExploreLibrary.jsx:196-220`): the account's tags by count, things only. */
+export const buildExploreThings = (
+  counts: ExploreFacetCount[],
+  limit = EXPLORE_THING_LIMIT,
+  peopleNames: ReadonlySet<string> = new Set(),
+): ExploreCoverCard[] =>
+  counts
+    .filter(({ value, label }) => isThingTag(label || value, peopleNames))
+    .slice(0, limit)
+    .map(({ value, label, count, coverAssetId }) => ({
+      id: value,
+      // A nested tag's facet label is its whole path ("Travel/Canada/Banff"); the card names the tag itself.
+      label: (label || value).split('/').findLast(Boolean) ?? (label || value),
+      count,
+      href: Route.search({ tagIds: [value] }),
+      coverAssetId: coverAssetId ?? null,
+    }));
 
 /**
  * The recorded local calendar day of a capture (`explore-timeline.mjs` `captureDate(...).day`),

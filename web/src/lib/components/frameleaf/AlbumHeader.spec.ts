@@ -483,6 +483,15 @@ describe('AlbumHeader in Boards', () => {
     expect(card.querySelector('[data-color="teal"]')).not.toBeNull();
   });
 
+  it('hides an empty sub-albums block and offers New album in the … menu (FL-707 item 11)', async () => {
+    const album = albumAs(AlbumUserRole.Owner);
+    render(AlbumHeader, { album, assetCount: 3, onAlbumChange: vi.fn(), onRefresh: vi.fn() });
+    expect(screen.queryByRole('region', { name: 'Albums' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New album' })).toBeNull();
+    const menu = await openMore();
+    expect(menu.getByRole('menuitem', { name: 'New album' })).toBeInTheDocument();
+  });
+
   it('keeps a Boards collection compact: Boards path, no empty albums strip, extras in the menu (FL-670)', async () => {
     const album = albumAs(AlbumUserRole.Owner, { libraryScope: LibraryScope.Design, description: '' });
     render(AlbumHeader, {

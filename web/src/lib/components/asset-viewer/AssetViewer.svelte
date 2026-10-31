@@ -2023,7 +2023,6 @@
     <div class="absolute inset-x-0 bottom-0 z-2 col-span-4 col-start-1" data-viewer-chrome="footer">
       <ViewerFooter
         {asset}
-        {position}
         canNavigateCollection={!!(nextAsset || previousAsset)}
         canShowFilmstrip={filmstripAssets.length > 1}
         hasStack={!!stack && withStacked}

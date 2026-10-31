@@ -12,7 +12,6 @@
   import { getSharedLink } from '$lib/utils';
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
-  import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { canPlaySlideshow } from '$lib/services/asset.service';
@@ -39,7 +38,6 @@
 
   interface Props {
     asset: AssetResponseDto;
-    position?: ViewerPosition | null;
     canNavigateCollection: boolean;
     canShowFilmstrip: boolean;
     hasStack: boolean;
@@ -53,7 +51,6 @@
 
   let {
     asset,
-    position = null,
     canNavigateCollection,
     canShowFilmstrip,
     hasStack,
@@ -98,12 +95,8 @@
     >
       <Icon icon={playing ? mdiPause : mdiPlay} size="21" aria-hidden />
     </button>
-    {#if position}
-      <span class="fl-position" aria-live="polite" data-testid="viewer-position">
-        {$t('frameleaf_viewer_position', { values: { index: position.index + 1, total: position.total } })}
-      </span>
-    {/if}
-    <!-- Phones reach the slideshow settings from the More menu; the footer keeps Play, the position and the filmstrip. -->
+    <!-- FL-707 item 14: one "N of M" counter, beside the file name at the top (ViewerTitle). -->
+    <!-- Phones reach the slideshow settings from the More menu; the footer keeps Play and the filmstrip. -->
     <button
       type="button"
       class="fl-tool fl-wide-only"
@@ -299,14 +292,6 @@
     display: contents;
   }
 
-  .fl-position {
-    min-width: 58px;
-    color: var(--fl-on-material-muted);
-    font-size: var(--fl-font-small);
-    font-variant-numeric: var(--fl-numeric);
-    text-align: center;
-  }
-
   .fl-key-hint {
     color: var(--fl-on-material-muted);
     font-size: var(--fl-font-micro);
@@ -383,7 +368,7 @@
       height: var(--fl-control-height);
     }
 
-    /* One row that fits a 320px phone: Play, the position and the filmstrip, then what the item needs. */
+    /* One row that fits a 320px phone: Play and the filmstrip, then what the item needs. */
     .fl-zoom,
     .fl-wide-only {
       display: none;

@@ -1408,11 +1408,13 @@ describe('AssetViewer', () => {
     });
 
     // V-13 / V-12: the footer with the position.
-    it('draws the footer with the position in the collection', () => {
+    it('draws the footer and one position counter, beside the file name (FL-707 item 14)', () => {
       const { viewer } = renderImage({ position: { index: 2, total: 40 } });
       const footer = viewer.querySelector('[data-testid="viewer-footer"]')!;
       expect(footer).not.toBeNull();
-      expect(footer.querySelector('[data-testid="viewer-position"]')).toHaveAttribute('aria-live', 'polite');
+      expect(footer.querySelector('[data-testid="viewer-position"]')).toBeNull();
+      expect(viewer.querySelectorAll('[data-testid="viewer-title-position"]')).toHaveLength(1);
+      expect(viewer.querySelector('[data-testid="viewer-title-position"]')).toHaveAttribute('aria-live', 'polite');
     });
   });
 
