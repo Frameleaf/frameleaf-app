@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchFileNames": [
+        "machine-learning/**"
+      ],
+      "groupName": "machine-learning",
+      "rangeStrategy": "in-range-only"
+    },
+    {
+      "matchFileNames": [
+        "machine-learning/**"
+      ],
+      "matchPackageNames": [
+        "onnxruntime*",
+        "rknn-toolkit-lite2"
+      ],
+      "groupName": null
+    },
+    {
+      "description": "Frameleaf's Postgres image pins PostgreSQL 19 beta 4 and pgvector 0.8.7 by digest and checksum; change them only with a migration plan (FL-191).",
+      "matchPackageNames": ["ghcr.io/frameleaf/frameleaf-postgres", "docker.io/pgvector/pgvector"],
+      "enabled": false
+    }
+  ]
+}
