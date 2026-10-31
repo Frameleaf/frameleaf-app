@@ -45,7 +45,12 @@ export type JobDependencyReason =
   | 'destination-consent'
   | 'destination-budget'
   | 'source-unavailable'
-  | 'local-capacity';
+  | 'local-capacity'
+  /**
+   * FL-721: the job reads an encrypted Locked file and no key that opens it is loaded (or the RAM-backed
+   * temporary folder is unusable). Internal only: run reasons show it as `dependency_unavailable`.
+   */
+  | 'locked-key-unavailable';
 export type QueueClaim = {
   id: string;
   queue: string;

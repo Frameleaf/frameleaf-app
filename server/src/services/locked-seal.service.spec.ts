@@ -11,11 +11,14 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { QueueExecution } from 'src/queue/types.js';
 import { JobName, JobStatus } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { LOCKED_PATH_BUSY, type LockedFileRef, type LockedSealState } from 'src/repositories/locked-file.repository.js';
 import { FINISH_CHECK_DELAY_MS, LockedSealService } from 'src/services/locked-seal.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
+import { LockedKeyUnavailableError, deferForLockedKey } from 'src/utils/locked-read.js';
 import { ServiceMocks, getMocks, newLockedEncryptionService, newLockedSealService } from 'test/utils.js';
 
 vi.mock('@frameleaf/locked-crypto', async (importOriginal) => {
@@ -451,6 +454,16 @@ describe(LockedSealService.name, () => {
       // an extended PIN unlock loads it again: no second wake-up right away
       loadOwnerKey();
       expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+    });
+
+    it('loading the key wakes the jobs this worker deferred for it (FL-721 Task 6)', async () => {
+      await sut.onBootstrap();
+      const execution = { claim: { id: 'job-deferred', attempt: 1, data: {} } } as unknown as QueueExecution;
+      queueExecution.run(execution, () => deferForLockedKey(new LockedKeyUnavailableError([OWNER])));
+
+      loadOwnerKey();
+
+      expect(mocks.job.wakeLockedDeferrals).toHaveBeenCalledWith(['job-deferred']);
     });
 
     it('leaves an item that is still meant to be encrypted alone', async () => {

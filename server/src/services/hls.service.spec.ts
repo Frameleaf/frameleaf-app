@@ -183,6 +183,18 @@ describe(HlsService.name, () => {
     const auth = factory.auth();
     const assetId = 'asset-1';
 
+    it('refuses an encrypted Locked video: HLS would write plaintext segments (FL-721)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { realtime: { enabled: true } } });
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: assetId, ownerId: auth.user.id, pending: false, mode: 'pin' as const },
+      ]);
+
+      await expect(sut.getMainPlaylist(auth, assetId)).rejects.toThrow(BadRequestException);
+      expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([assetId]);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('HlsSessionRequest', expect.anything());
+    });
+
     const allCodecs = [VideoCodec.Av1, VideoCodec.Hevc, VideoCodec.H264];
     const allResolutions = [
       HlsVideoResolution.p480,

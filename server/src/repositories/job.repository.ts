@@ -547,6 +547,10 @@ export class JobRepository {
   retryFailed(name: QueueName) {
     return this.store.retryFailed(name);
   }
+  /** FL-721: jobs deferred for a Locked key run now; their owner's key has just been loaded. */
+  wakeLockedDeferrals(ids: string[]) {
+    return this.store.wakeDeferred(ids, 'locked-key-unavailable');
+  }
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.store.counts(name);
   }

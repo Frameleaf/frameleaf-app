@@ -95,6 +95,7 @@ import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
+import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -588,6 +589,16 @@ export class BaseService {
     }
     // FL-90: Studio previews of the newly Locked sources stop now rather than at their next read.
     if (!sequenced) await this.eventRepository.emit('AssetLocked', { assetIds });
+  }
+
+  /**
+   * FL-721 (spec §7.2): a job wrote new or derived files (thumbnails, encodes, edits, sidecars, develop
+   * or Studio results, restorations, moment frames) for `assetIds`; those in an encrypted set (the same
+   * test as `LockedFileRepository.encryptedSetOwner`: Locked, not pending, encryptable) are sealed
+   * again. A failure to queue never fails the job that wrote the files: the hourly sweep seals them.
+   */
+  protected async queueLockedSeal(assetIds: string[]): Promise<void> {
+    await queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, assetIds);
   }
 
   /**

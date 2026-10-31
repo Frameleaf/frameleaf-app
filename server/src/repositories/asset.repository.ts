@@ -1137,14 +1137,19 @@ export class AssetRepository {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
-      .select(['asset.id', 'asset.ownerId'])
-      .select((eb) => eb('asset_lock.pendingUnlockAt', 'is not', null).$castTo<boolean>().as('pending'))
-      .where('asset.id', '=', anyUuid(ids))
-      .where(encryptsFilesOf('asset'))
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
+        .innerJoin('locked_encryption', 'locked_encryption.userId', 'asset.ownerId')
+        .select(['asset.id', 'asset.ownerId'])
+        .select((eb) => eb('asset_lock.pendingUnlockAt', 'is not', null).$castTo<boolean>().as('pending'))
+        // FL-721 (spec §7.3): an Advanced owner's unlock needs their key loaded
+        .select('locked_encryption.mode')
+        .where('asset.id', '=', anyUuid(ids))
+        .where(encryptsFilesOf('asset'))
+        .execute()
+    );
   }
   /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
   @ChunkedArray()

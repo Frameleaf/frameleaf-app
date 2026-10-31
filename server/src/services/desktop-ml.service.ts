@@ -39,6 +39,7 @@ import {
 import { desktopOcrProfile, ocrEntries } from 'src/utils/desktop-ocr.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS } from 'src/utils/execution-database.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
+import { isLockedPath, readPlainFile } from 'src/utils/locked-read.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
@@ -522,6 +523,12 @@ async function readClipInput(payload: ModelPayload): Promise<Buffer> {
     const size = Buffer.byteLength(payload.text);
     if (!size || size > limit) throw new Error('desktop_input_size_invalid');
     return Buffer.from(payload.text);
+  }
+  // FL-721 (spec §8.2): a sealed image is decrypted in memory (its size is the decrypted size)
+  if (await isLockedPath(payload.imagePath)) {
+    const buffer = await readPlainFile(payload.imagePath, { maxBytes: limit });
+    if (buffer.length === 0) throw new Error('desktop_input_size_invalid');
+    return buffer;
   }
   const file = await open(payload.imagePath, 'r');
   try {

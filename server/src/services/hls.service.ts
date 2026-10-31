@@ -50,6 +50,11 @@ export class HlsService extends BaseService {
     if (!ffmpeg.realtime.enabled) {
       throw new BadRequestException('Real-time transcoding is not enabled');
     }
+    // FL-721 (spec §8.1): HLS writes segments to disk, so an encrypted Locked video is played from
+    // its encoded MP4 by range instead, decrypted as it is sent (`playbackVideo`)
+    if ((await this.assetRepository.getLockedEncryptionItems([assetId])).length > 0) {
+      throw new BadRequestException('Real-time transcoding is off for encrypted Locked videos; play the video file');
+    }
 
     const asset = await this.videoStreamRepository.getForMainPlaylist(assetId);
     if (!asset) {

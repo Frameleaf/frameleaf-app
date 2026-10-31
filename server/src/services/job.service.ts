@@ -17,6 +17,7 @@ import { afterJobCommit, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { deferForLockedKey } from 'src/utils/locked-read.js';
 import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
 import {
   isFacialRecognitionEnabled,
@@ -187,6 +188,8 @@ export class JobService extends BaseService {
       }
       await this.jobRepository.collectFollowups(() => this.onSuccess(job, response));
     } catch (error: unknown) {
+      // FL-721: waiting for a Locked key is a deferral too (spec §8)
+      deferForLockedKey(error);
       // A dependency refusal defers the job rather than failing it; the queue warns about it once.
       if (!queueExecution.getStore()?.dependencyReason) {
         await this.reportJobError(job, error);

@@ -23,6 +23,7 @@ import {
   sourceFingerprint,
   videoMomentFrameTimestamps,
 } from 'src/utils/enrichment-plan.js';
+import { withPlainCopy } from 'src/utils/locked-read.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 
 /**
@@ -66,7 +67,18 @@ const ffmpegFor = (config: Pick<SystemConfig, 'ffmpeg' | 'image'>) => ({
  * seek yields nothing (a sparse keyframe near the end) is left out rather than failing the video.
  * Returns the frames cut; removes nothing it did not write.
  */
-export const cutFrames = async (
+export const cutFrames = (
+  deps: Pick<VideoFrameDeps, 'media' | 'storage' | 'logger'>,
+  source: VideoMomentSourceRow,
+  config: Pick<SystemConfig, 'ffmpeg' | 'image'>,
+  pathFor: (frameIndex: number) => string,
+): Promise<CutFrame[]> =>
+  // FL-721 (spec §8.2): a sealed original is cut from one plain copy (a missing key defers the job)
+  withPlainCopy(source.originalPath, (originalPath) =>
+    cutFramesFrom(deps, originalPath === source.originalPath ? source : { ...source, originalPath }, config, pathFor),
+  );
+
+const cutFramesFrom = async (
   deps: Pick<VideoFrameDeps, 'media' | 'storage' | 'logger'>,
   source: VideoMomentSourceRow,
   config: Pick<SystemConfig, 'ffmpeg' | 'image'>,

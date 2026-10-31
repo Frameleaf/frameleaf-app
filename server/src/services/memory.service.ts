@@ -49,6 +49,7 @@ import {
   getHiddenContentQueryOptions,
   isSuppressedWhileLocked,
 } from 'src/utils/hidden-content.js';
+import { lockedArchiveInput } from 'src/utils/locked-read.js';
 import {
   EVENT_GAP_HOURS,
   MAX_LANDMARK_DAYS_PER_YEAR,
@@ -977,7 +978,11 @@ export class MemoryService extends BaseService {
           this.logger.warn('Unable to resolve realpath', { originalPath: asset.originalPath });
         }
 
-        zip.addFile(realpath, nextArchiveName(names, asset.originalFileName));
+        // FL-721 (spec §8.1): an encrypted original goes in decrypted (the owner's key)
+        zip.addFile(
+          await lockedArchiveInput(realpath, claimed.ownerId),
+          nextArchiveName(names, asset.originalFileName),
+        );
       }
 
       await zip.finalize();

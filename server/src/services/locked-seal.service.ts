@@ -36,6 +36,13 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import {
+  assertLockedTmpIsTmpfs,
+  isLockedKeyUnavailable,
+  lockedTmpConfig,
+  removeStalePlainCopies,
+  takeLockedDeferrals,
+} from 'src/utils/locked-read.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
@@ -137,6 +144,11 @@ export class LockedSealService {
   async onBootstrap(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = lockedKeys.onLoad((userId) => {
+      // jobs this worker deferred for this person's key run now, not at the end of their hour
+      const deferred = takeLockedDeferrals(userId);
+      if (deferred.length > 0) {
+        handlePromiseError(this.jobRepository.wakeLockedDeferrals(deferred), this.logger);
+      }
       // a PIN unlock that is extended loads the key again on every extension; one wake-up every few
       // minutes is enough, and the hourly sweep is the backstop
       const now = Date.now();
@@ -153,6 +165,22 @@ export class LockedSealService {
       start: true,
     });
     await this.removeStaleTemp();
+    // spec §8: plain copies are made only in a RAM-backed folder; without one, readers defer
+    try {
+      await assertLockedTmpIsTmpfs();
+      if (lockedTmpConfig().allowDisk) {
+        this.logger.warn(
+          'FRAMELEAF_LOCKED_TMP_ALLOW_DISK is set: plain copies of encrypted Locked files are written to disk. Use it for development only.',
+        );
+      }
+      await removeStalePlainCopies();
+    } catch (error) {
+      if (isLockedKeyUnavailable(error)) {
+        this.logger.warn(`${error.message}. Jobs that need a plain copy of an encrypted Locked file will wait.`);
+      } else {
+        throw error;
+      }
+    }
   }
 
   @OnEvent({ name: 'AppShutdown' })

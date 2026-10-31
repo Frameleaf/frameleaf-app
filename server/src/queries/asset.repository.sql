@@ -233,10 +233,12 @@ where
 select
   "asset"."id",
   "asset"."ownerId",
-  "asset_lock"."pendingUnlockAt" is not null as "pending"
+  "asset_lock"."pendingUnlockAt" is not null as "pending",
+  "locked_encryption"."mode"
 from
   "asset"
   inner join "asset_lock" on "asset_lock"."assetId" = "asset"."id"
+  inner join "locked_encryption" on "locked_encryption"."userId" = "asset"."ownerId"
 where
   "asset"."id" = any ($1::uuid[])
   and (

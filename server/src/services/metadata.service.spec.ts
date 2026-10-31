@@ -31,6 +31,7 @@ import { MetadataService, firstDateTime } from 'src/services/metadata.service.js
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { videoInfoStub } from 'test/fixtures/media.stub.js';
 import { tagStub } from 'test/fixtures/tag.stub.js';
 import { getForMetadataExtraction, getForSidecarWrite } from 'test/mappers.js';
@@ -270,6 +271,35 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it('reads the tags of a sealed original from a plain copy and seals the item again (FL-721)', async () => {
+      const asset = AssetFactory.create();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_0001.jpg', 'plain jpeg', 'image/jpeg');
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue({ ...getForMetadataExtraction(asset), originalPath });
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
+        ]);
+        const read: string[] = [];
+        mocks.metadata.readTags.mockReset();
+        mocks.metadata.readTags.mockImplementation(async (path) => {
+          read.push(path);
+          expect(await readFile(path, 'utf8')).toBe('plain jpeg');
+          return {};
+        });
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(read.length).toBeGreaterThan(0);
+        expect(read.every((path) => path.startsWith(locked.tmp))).toBe(true);
+        expect(await locked.copiesLeft()).toBe(0);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
     it.each([false, true])(
       'starts publication writes concurrently and awaits their completion (faces: %s)',
       async (faces) => {
@@ -2789,6 +2819,38 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
+    it('edits a sealed sidecar through a plain copy and queues LockedSeal afterwards (FL-721)', async () => {
+      const asset0 = AssetFactory.create();
+      const locked = await lockedFixture(asset0.ownerId);
+      try {
+        locked.loadKey();
+        const sidecar = await locked.seal('IMG_0001.jpg.xmp', '<xmp/>', 'application/xml');
+        const asset = AssetFactory.from({ ownerId: asset0.ownerId })
+          .file({ type: AssetFileType.Sidecar, path: sidecar })
+          .exif({ description: 'Managed edit' })
+          .build();
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['description']);
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
+        ]);
+        mocks.metadata.writeTags.mockImplementation(async (path) => {
+          expect(path.startsWith(locked.tmp)).toBe(true);
+          expect(await readFile(path, 'utf8')).toBe('<xmp/>');
+          await writeFile(path, '<xmp edited/>');
+        });
+
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.metadata.writeTags).toHaveBeenCalledOnce();
+        expect(await readFile(sidecar, 'utf8')).toBe('<xmp edited/>');
+        expect(await locked.copiesLeft()).toBe(0);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
     it('preserves source XMP fields through a real managed-sidecar edit and read', async () => {
       const root = await mkdtemp(join(tmpdir(), 'frameleaf-readonly-xmp-'));
       const source = join(root, 'source.jpg.xmp');

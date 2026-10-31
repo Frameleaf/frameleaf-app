@@ -55,6 +55,7 @@ import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
+import { LockedKeyUnavailableException } from 'src/services/locked-encryption.service.js';
 import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
@@ -62,6 +63,8 @@ import { requireElevatedPermission } from 'src/utils/access.js';
 import { CloudDescriptionQueueWriter, cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { withPlainCopies } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import {
   isImageDescriptionEnabled,
@@ -512,12 +515,14 @@ export class ImageEnrichmentService extends BaseService {
   async unlockAssets(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     requireElevatedPermission(auth);
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
+    await this.requireLockedKeysForUnlock(dto.ids);
     // Each chunk is one transaction: a metadata lock per group member (stacks and live photos
     // included) lives in PostgreSQL's shared lock table until commit, so an unbounded request could
     // exhaust it for every connection. A group split across chunks is unlocked whole by the first.
     for (const ids of chunk(dto.ids, UNLOCK_CHUNK_SIZE)) {
       // every metadata writer takes its assets' metadata locks, in id order, before any group's rows
       const groupIds = await this.assetRepository.findLockGroupIds(ids);
+      await this.requireLockedKeysForUnlock(groupIds);
       const { unlocked, reviewed } = await this.partnerOriginRepository.withOriginEdit('asset', groupIds, [], () =>
         this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
           const unlocked = [...new Set((await this.assetRepository.unlock(ids, trx)).map(({ assetId }) => assetId))];
@@ -539,6 +544,19 @@ export class ImageEnrichmentService extends BaseService {
       await this.afterAssetsUnlocked(unlocked);
     }
   }
+  /**
+   * FL-721 (spec §7.3, owner): an item's files are decrypted before it leaves Locked, which needs its
+   * owner's key in memory. In PIN mode the PIN that elevated this session loaded it; in Advanced mode
+   * it is there only once the passphrase was typed, so until then a person's unlock is refused (nothing
+   * is marked pending). Automatic unlocks with nobody present wait instead (`releaseDerivedResults`).
+   */
+  private async requireLockedKeysForUnlock(assetIds: string[]): Promise<void> {
+    const items = await this.assetRepository.getLockedEncryptionItems(assetIds);
+    if (items.some(({ pending, mode, ownerId }) => !pending && mode === 'advanced' && !lockedKeys.has(ownerId))) {
+      throw new LockedKeyUnavailableException('advanced', 'Type your passphrase first');
+    }
+  }
+
   /**
    * FL-326: unlocking a partner copy makes its visibility the owner's; copies of these items follow the
    * unlock (spec §4.9).
@@ -587,6 +605,7 @@ export class ImageEnrichmentService extends BaseService {
   private async markGroupSafe(auth: AuthDto, id: string): Promise<void> {
     const groupIds = await this.assetRepository.findLockGroupIds([id]);
     const lockIds = [...new Set([id, ...groupIds])];
+    await this.requireLockedKeysForUnlock(lockIds);
     const { unlocked, reviewed } = await this.partnerOriginRepository.withOriginEdit('asset', lockIds, [], () =>
       this.databaseRepository.withAssetMetadataLocks(lockIds, async (trx) => {
         const members = await this.assetRepository.lockGroupMembers([id], trx);
@@ -2331,9 +2350,16 @@ export class ImageEnrichmentService extends BaseService {
     const layout = chooseGridLayout(ordered.length);
     const selected = subsampleFrames(ordered, layout.cols * layout.rows);
     try {
-      await this.mediaRepository.composeImageGrid(
+      // FL-721 (spec §8.2): sealed frames are read from plain copies
+      await withPlainCopies(
         selected.map((f) => f.path),
-        { cols: layout.cols, rows: layout.rows, cellSize: 512, output: outputPath },
+        (paths) =>
+          this.mediaRepository.composeImageGrid(paths, {
+            cols: layout.cols,
+            rows: layout.rows,
+            cellSize: 512,
+            output: outputPath,
+          }),
       );
     } catch (error) {
       this.logger.warn(`Failed to compose video frame grid for asset ${assetId}: ${getErrorMessage(error)}`);

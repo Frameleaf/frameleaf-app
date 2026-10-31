@@ -45,11 +45,13 @@ import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
 import { personThumbnailStub } from 'test/fixtures/person.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
@@ -551,6 +553,67 @@ describe(MediaService.name, () => {
           files: expect.arrayContaining([asset.files[0].path]),
         },
       });
+    });
+
+    it('regenerating thumbnails of a sealed asset reads the original through withPlainCopy and queues LockedSeal afterwards', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_0001.jpg', 'jpeg bytes', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        });
+        mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
+        ]);
+        const seen: string[] = [];
+        mocks.media.decodeImage.mockImplementation(async (input) => {
+          if (typeof input === 'string') {
+            seen.push(input);
+            expect(await readFile(input, 'utf8')).toBe('jpeg bytes');
+          }
+          return { data: rawBuffer, info: rawInfo as OutputInfo };
+        });
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen.every((path) => path.startsWith(locked.tmp) && path.endsWith('/IMG_0001.jpg'))).toBe(true);
+        expect(await locked.copiesLeft()).toBe(0);
+        expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('defers (no error) when a sealed original has no loaded key', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        const originalPath = await locked.seal('IMG_0001.jpg', 'jpeg bytes', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        });
+        const context = {
+          claim: { id: 'job-locked', token: 'attempt', attempt: 1, name: JobName.AssetGenerateThumbnails, data: {} },
+          signal: new AbortController().signal,
+          adoptions: [],
+          followups: [],
+        } as unknown as QueueExecution;
+        await expect(queueExecution.run(context, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toThrow(
+          LockedKeyUnavailableError,
+        );
+        expect(context.dependencyReason).toBe('locked-key-unavailable');
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
     });
 
     it('should generate P3 thumbnails for a wide gamut image', async () => {

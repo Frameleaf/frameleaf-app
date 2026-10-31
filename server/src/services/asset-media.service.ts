@@ -51,8 +51,14 @@ import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
-import { FileDownloadResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
+import {
+  FileDownloadResponse,
+  getFileNameWithoutExtension,
+  getFilenameExtension,
+  lockedViewerOf,
+} from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -529,7 +535,12 @@ export class AssetMediaService extends BaseService {
           this.logger.warn('Unable to remove a temporary still export');
         });
       try {
-        await this.mediaRepository.exportPhotoStill(filePath, output, dto.format, checksum, signal);
+        // FL-721: a sealed original is exported from a plain copy, for a viewer allowed its key
+        await withPlainCopy(
+          filePath,
+          (input) => this.mediaRepository.exportPhotoStill(input, output, dto.format!, checksum, signal),
+          { viewerId: lockedViewerOf(auth) },
+        );
         signal?.throwIfAborted();
         await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
         const current = await this.assetRepository.getById(id);
@@ -609,7 +620,8 @@ export class AssetMediaService extends BaseService {
 
     switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {
-        return new FileDownloadResponse(response);
+        // FL-721: an encrypted Locked file is decrypted for this viewer (`sendFile`)
+        return new FileDownloadResponse({ ...response, viewerId: response.viewerId ?? lockedViewerOf(auth) });
       }
 
       case OriginalLocationPolicy.Refuse: {
@@ -692,6 +704,7 @@ export class AssetMediaService extends BaseService {
           path: developedPath,
           contentType: mimeTypes.lookup(developedPath),
           cacheControl: CacheControl.PrivateWithoutCache,
+          viewerId: lockedViewerOf(auth),
         });
       }
     }
@@ -717,6 +730,7 @@ export class AssetMediaService extends BaseService {
           fileName: `${base}_${type}.jpg`,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithoutCache,
+          viewerId: lockedViewerOf(auth),
         });
       }
       if (dto.dynamicRange === 'hdr') throw new NotFoundException('HDR rendition is unavailable for this still');
@@ -766,6 +780,7 @@ export class AssetMediaService extends BaseService {
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
+      viewerId: lockedViewerOf(auth),
     });
 
     // FL-54: a fullsize preview extracted from a RAW before generation-time stripping still carries the
@@ -789,6 +804,7 @@ export class AssetMediaService extends BaseService {
       fileName: `${id}-${version.id}.mp4`,
       contentType: 'video/mp4',
       cacheControl: CacheControl.PrivateWithCache,
+      viewerId: lockedViewerOf(auth),
     });
   }
 

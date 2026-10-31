@@ -1110,6 +1110,7 @@ describe(AssetMediaService.name, () => {
       } as any);
       await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: '/master.mp4',
           fileName: 'asset-1-version-1.mp4',
           contentType: 'video/mp4',
@@ -1138,6 +1139,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.originalPath,
           fileName: asset.originalFileName,
           contentType: 'image/jpeg',
@@ -1158,6 +1160,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, {})).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: editedAsset.originalPath,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -1179,6 +1182,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: true })).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: editedAsset.files[3].path,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -1220,6 +1224,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: false })).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: editedAsset.originalPath,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -1245,6 +1250,7 @@ describe(AssetMediaService.name, () => {
 
         await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toEqual(
           new FileDownloadResponse({
+            viewerId: expect.any(String),
             path: '/develop/master.webp',
             fileName: 'IMG_1.webp',
             contentType: 'image/webp',
@@ -1785,6 +1791,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1804,6 +1811,7 @@ describe(AssetMediaService.name, () => {
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1825,6 +1833,7 @@ describe(AssetMediaService.name, () => {
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'application/octet-stream',
@@ -1845,6 +1854,7 @@ describe(AssetMediaService.name, () => {
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1867,6 +1877,7 @@ describe(AssetMediaService.name, () => {
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true }),
       ).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1889,6 +1900,7 @@ describe(AssetMediaService.name, () => {
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: false }),
       ).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1960,6 +1972,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: '/encoded/v-studio-hdr.mp4',
           contentType: 'video/mp4',
           cacheControl: CacheControl.PrivateWithCache,
@@ -1996,6 +2009,29 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('playbackVideo', () => {
+    it('playbackVideo of an encrypted asset never uses HLS: the encoded MP4 is decrypted for the viewer (FL-721)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.EncodedVideo, path: '/path/to/encoded/video.mp4' })
+        .build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: asset.id, ownerId: authStub.admin.user.id, pending: false, mode: 'pin' as const },
+      ]);
+      mocks.asset.getForVideo.mockResolvedValue({
+        originalPath: asset.originalPath,
+        encodedVideoPath: asset.files[0].path,
+        editedVideoPath: null,
+        ownerId: authStub.admin.user.id,
+      });
+
+      const response = await sut.playbackVideo(authStub.admin, asset.id);
+
+      expect(response.path).toBe('/path/to/encoded/video.mp4');
+      expect(response.contentType).toBe('video/mp4');
+      expect(response.viewerId).toBe(authStub.admin.user.id);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
     it('should require asset.view permissions', async () => {
       await expect(sut.playbackVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
 
@@ -2024,6 +2060,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: '/path/to/encoded/video.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -2046,6 +2083,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -2065,6 +2103,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: '/path/to/encoded/video.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -2084,6 +2123,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -2103,6 +2143,7 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
         new FileDownloadResponse({
+          viewerId: expect.any(String),
           path: asset.originalPath,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'application/octet-stream',

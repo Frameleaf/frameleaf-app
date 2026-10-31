@@ -22,6 +22,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import {
@@ -34,6 +35,13 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getConfig } from 'src/utils/config.js';
+import {
+  LOCKED_DEFERRAL_DELAY_MS,
+  assertPlainCopyPossible,
+  isLockedKeyUnavailable,
+  withPlainCopy,
+} from 'src/utils/locked-read.js';
+import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
 import { chunkClipOutputOptions, previewClipOutputOptions, strippedStillFormat } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -173,6 +181,8 @@ export class RestorationWorkerService {
     private cryptoRepository: CryptoRepository,
     private jobRepository: JobRepository,
     private databaseRepository: DatabaseRepository,
+    /** FL-721: a restoration of a Locked item is sealed once published. */
+    private lockedFileRepository?: LockedFileRepository,
   ) {
     this.logger.setContext(RestorationWorkerService.name);
   }
@@ -480,19 +490,29 @@ export class RestorationWorkerService {
       }
       await this.progress(context, MediaOperationStatus.Preparing, 1, total);
 
+      // FL-721: wait for the Locked key before any work starts
+      await assertPlainCopyPossible(source.originalPath);
       this.storageRepository.mkdirSync(workDir);
-      const full: RunContext = { ...context, source, selection } as RunContext;
 
-      const output =
-        snapshot.sourceType === AssetRestorationSourceType.Video
-          ? stage === 'preview'
-            ? await this.previewVideo(full, total)
-            : await this.fullVideo(full, total)
-          : stage === 'preview'
-            ? await this.previewImage(full, total)
-            : await this.fullImage(full, total);
+      // FL-721 (spec §8.2): the tools read a sealed original from a plain copy
+      await withPlainCopy(source.originalPath, async (originalPath) => {
+        const full: RunContext = { ...context, source: { ...source, originalPath }, selection } as RunContext;
 
-      await this.publish(full, output, statuses);
+        const output =
+          snapshot.sourceType === AssetRestorationSourceType.Video
+            ? stage === 'preview'
+              ? await this.previewVideo(full, total)
+              : await this.fullVideo(full, total)
+            : stage === 'preview'
+              ? await this.previewImage(full, total)
+              : await this.fullImage(full, total);
+
+        await this.publish(full, output, statuses);
+      });
+      // FL-721 (spec §7.2): a Locked item's restoration files are sealed
+      await queueLockedSealOf({ lockedFile: this.lockedFileRepository, job: this.jobRepository, logger: this.logger }, [
+        source.id,
+      ]);
     } catch (error) {
       clearInterval(watch);
       // Finish the in-flight heartbeat before handing the claim back to another attempt.
@@ -1075,6 +1095,18 @@ export class RestorationWorkerService {
   ): Promise<void> {
     const { operation, claimToken, restoration } = ctx;
     const stage = statuses.running === AssetRestorationStatus.PreviewRendering ? 'preview' : 'full';
+    // FL-721 (spec §8): waiting for the owner's Locked key is not a failure; it runs again in an hour
+    if (
+      isLockedKeyUnavailable(error) &&
+      !ctx.signal.aborted &&
+      (await this.operationRepository.requeue(operation.id, claimToken, {
+        delayMs: LOCKED_DEFERRAL_DELAY_MS,
+        returnAttempt: true,
+      }))
+    ) {
+      this.logger.log(`Restoration ${restoration.id} waits for its owner's Locked key`);
+      return;
+    }
     if (error instanceof RestorationInterrupted || ctx.signal.aborted) {
       const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
       if (current?.status === MediaOperationStatus.Cancelling) {

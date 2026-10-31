@@ -37,6 +37,7 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -63,6 +64,7 @@ import {
 } from 'src/utils/enrichment-plan.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isImageDescriptionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -153,6 +155,8 @@ export class VideoMomentIndexService {
     private configRepository: ConfigRepository,
     private systemMetadata: SystemMetadataRepository,
     private jobs: JobRepository,
+    /** FL-721: newly cut frames of a Locked video are sealed. */
+    private lockedFiles?: LockedFileRepository,
   ) {
     this.logger.setContext(VideoMomentIndexService.name);
   }
@@ -161,10 +165,19 @@ export class VideoMomentIndexService {
   /* Plan stages                                                         */
   /* ------------------------------------------------------------------ */
 
+  /** `ensureVideoFrames`; FL-721 (spec §7.2): newly cut frames of a Locked video are sealed. */
+  private async ensureFrames(assetId: string, config: SystemConfig): Promise<FrameCutOutcome> {
+    const outcome = await ensureVideoFrames(this.frameDeps, assetId, config);
+    if (outcome.status === 'cut') {
+      await queueLockedSealOf({ lockedFile: this.lockedFiles, job: this.jobs, logger: this.logger }, [assetId]);
+    }
+    return outcome;
+  }
+
   /** The frames stage: cut the reusable frames when the video has none, or its original changed. */
   async runFramesStage(assetId: string): Promise<MomentStageOutcome> {
     await this.jobs.guardAssetSource(assetId);
-    return this.fromFrameOutcome(await ensureVideoFrames(this.frameDeps, assetId, await this.config()));
+    return this.fromFrameOutcome(await this.ensureFrames(assetId, await this.config()));
   }
 
   /**
@@ -699,7 +712,7 @@ export class VideoMomentIndexService {
     config: SystemConfig,
   ): Promise<MomentStageOutcome | { list: VideoMomentFrame[]; ownerId: string }> {
     await this.jobs.guardAssetSource(assetId);
-    const outcome = await ensureVideoFrames(this.frameDeps, assetId, config);
+    const outcome = await this.ensureFrames(assetId, config);
     if (outcome.status !== 'cut' && outcome.status !== 'current') {
       return this.fromFrameOutcome(outcome);
     }

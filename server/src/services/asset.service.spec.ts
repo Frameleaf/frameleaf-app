@@ -815,7 +815,7 @@ describe(AssetService.name, () => {
       mocks.asset.update.mockResolvedValue(getForAsset(asset));
       mocks.asset.lock.mockResolvedValue([asset.id]);
       mocks.asset.getLockedEncryptionItems.mockResolvedValue([
-        { id: asset.id, ownerId: asset.ownerId, pending: false },
+        { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
       ]);
 
       await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });

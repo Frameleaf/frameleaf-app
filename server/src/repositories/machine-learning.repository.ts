@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
-import { open, readFile, rm, stat } from 'node:fs/promises';
+import { open, rm, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -48,6 +48,7 @@ import { readConfig } from 'src/utils/config.js';
 import { faceEntries } from 'src/utils/desktop-face.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
+import { readPlainFile } from 'src/utils/locked-read.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
@@ -2518,7 +2519,8 @@ export class MachineLearningRepository implements RestorationInference {
     formData.append('entries', JSON.stringify(config));
 
     if ('imagePath' in payload) {
-      const fileBuffer = await readFile(payload.imagePath);
+      // FL-721 (spec §8.2): a sealed image is decrypted in memory
+      const fileBuffer = await readPlainFile(payload.imagePath);
       formData.append('image', new Blob([new Uint8Array(fileBuffer)]));
     } else if ('text' in payload) {
       formData.append('text', payload.text);

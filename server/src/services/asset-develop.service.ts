@@ -114,7 +114,15 @@ import {
 } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
-import { FileDownloadResponse } from 'src/utils/file.js';
+import { FileDownloadResponse, lockedViewerOf } from 'src/utils/file.js';
+import {
+  assertPlainCopyPossible,
+  hashPlainFile,
+  isLockedKeyUnavailable,
+  isLockedPath,
+  withPlainCopy,
+} from 'src/utils/locked-read.js';
+import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
 import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { getKeyframeCommand } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -323,10 +331,25 @@ export class AssetDevelopService {
     signal?: AbortSignal,
   ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
-    const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
-    if (!source || source.type !== AssetType.Image) {
+    const found = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
+    if (!found || found.type !== AssetType.Image) {
       throw new BadRequestException('Only images have develop previews');
     }
+    // FL-721 (spec §8.2): a sealed original is previewed from a plain copy, for a viewer allowed its key
+    return withPlainCopy(
+      found.originalPath,
+      (originalPath) =>
+        this.previewFrom(auth, originalPath === found.originalPath ? found : { ...found, originalPath }, dto, signal),
+      { viewerId: lockedViewerOf(auth) },
+    );
+  }
+
+  private async previewFrom(
+    auth: AuthDto,
+    source: DevelopSource,
+    dto: AssetDevelopPreviewDto,
+    signal?: AbortSignal,
+  ): Promise<{ buffer: Buffer; contentType: string; histogram?: HdrHistogram }> {
     const { image } = await this.getConfig();
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
     // Preserve discriminated-union narrowing for the HDR renderer.
@@ -408,7 +431,9 @@ export class AssetDevelopService {
     ) {
       const heic = format === 'hdr-heic';
       if (!heic && revision.kind === AssetDevelopRevisionKind.External) {
-        const encoding = await this.mediaRepository.inspectImageEncoding(filePath);
+        const encoding = await withPlainCopy(filePath, (path) => this.mediaRepository.inspectImageEncoding(path), {
+          viewerId: lockedViewerOf(auth),
+        });
         if (encoding.dynamicRange !== 'sdr') throw new BadRequestException('This version has no verified SDR master');
       }
       // Export copies retain the saved rendition and renderer identity. Historical SDR converts
@@ -420,17 +445,24 @@ export class AssetDevelopService {
           this.logger.warn('Unable to remove a temporary still export');
         });
       try {
-        if (heic) {
-          await this.mediaRepository.generateHdrRenditions(
-            filePath,
-            [{ path: output, format: 'heic' }],
-            undefined,
-            signal,
-            revision.hdrRenditionChecksum ?? (await this.cryptoRepository.hashFile(filePath, 'sha256')),
-          );
-        } else {
-          await this.mediaRepository.writeStrippedStill(filePath, output, 'jpeg', 'srgb', signal);
-        }
+        // FL-721 (spec §8.2): a sealed master is exported from a plain copy, for a viewer allowed its key
+        await withPlainCopy(
+          filePath,
+          async (input) => {
+            if (heic) {
+              await this.mediaRepository.generateHdrRenditions(
+                input,
+                [{ path: output, format: 'heic' }],
+                undefined,
+                signal,
+                revision.hdrRenditionChecksum ?? (await this.cryptoRepository.hashFile(input, 'sha256')),
+              );
+            } else {
+              await this.mediaRepository.writeStrippedStill(input, output, 'jpeg', 'srgb', signal);
+            }
+          },
+          { viewerId: lockedViewerOf(auth) },
+        );
         signal?.throwIfAborted();
         await requireAccess(this.accessRepository, { auth, permission: Permission.AssetDownload, ids: [assetId] });
         const current = await this.requireRevision(assetId, revisionId);
@@ -533,6 +565,8 @@ export class AssetDevelopService {
       return JobStatus.Failed;
     }
 
+    // FL-721: wait for the Locked key before the attempt starts (a deferral, never a failed version)
+    await assertPlainCopyPossible(source.originalPath);
     const revision = await this.assetDevelopRepository.beginAttempt(
       id,
       existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
@@ -570,11 +604,22 @@ export class AssetDevelopService {
           ? await this.requireMotionClip(source, parsed.keyFrame.timeMs)
           : undefined;
       const sourceChecksum = motion
-        ? await this.cryptoRepository.hashFile(motion.originalPath, 'sha256')
+        ? await this.hashPlain(motion.originalPath)
         : await this.currentSourceChecksum(revision.assetId);
       const publication: AssetDevelopRevisionUpdate = external
         ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
-        : await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image, motion);
+        : // FL-721 (spec §8.2): a sealed original is rendered from a plain copy
+          await withPlainCopy(source.originalPath, (originalPath) =>
+            this.renderRecipeRevision(
+              revision,
+              originalPath === source.originalPath ? source : { ...source, originalPath },
+              sourceChecksum,
+              outputs,
+              tmp,
+              image,
+              motion,
+            ),
+          );
       publication.sourceAssetId = motion?.id ?? source.id;
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
@@ -618,8 +663,19 @@ export class AssetDevelopService {
           if (replaced.length > 0) await this.queueFileDelete(replaced);
         }
       });
+      // FL-721 (spec §7.2): a Locked item's new develop files are sealed
+      await queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, [
+        source.id,
+        ...(motion ? [motion.id] : []),
+      ]);
       return JobStatus.Success;
     } catch (error) {
+      if (isLockedKeyUnavailable(error)) {
+        // the key went away mid-render: the version waits, queued, for the deferred job
+        await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
+        await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Queued, progress: 0 });
+        throw error;
+      }
       await this.discard(
         external
           ? [tmp.preview]
@@ -1301,14 +1357,18 @@ export class AssetDevelopService {
       if (
         verify &&
         (artifact.ownerId !== asset.ownerId ||
-          (await this.cryptoRepository.hashFile(artifact.path, 'sha256')).toString('hex') !== artifact.id)
+          (await this.hashPlain(artifact.path)).toString('hex') !== artifact.id)
       ) {
         throw new BadRequestException({
           message: 'The develop artifact changed or is not owned by this photo',
           code: 'develop_artifact_changed',
         });
       }
-      bitmaps.set(artifact.id, await this.mediaRepository.decodeDevelopArtifact(artifact.path, kind));
+      bitmaps.set(
+        artifact.id,
+        // FL-721: a sealed artifact is decoded from a plain copy
+        await withPlainCopy(artifact.path, (path) => this.mediaRepository.decodeDevelopArtifact(path, kind)),
+      );
     }
     return bitmaps;
   }
@@ -1508,10 +1568,9 @@ export class AssetDevelopService {
     const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-key-frame-'));
     try {
       const output = path.join(folder, 'frame.png');
-      await this.mediaRepository.transcode(
-        motion.originalPath,
-        output,
-        getKeyframeCommand(ffmpeg, motion.videoStream, timeMs),
+      // FL-721 (spec §8.2): a sealed motion part is read from a plain copy
+      await withPlainCopy(motion.originalPath, (input) =>
+        this.mediaRepository.transcode(input, output, getKeyframeCommand(ffmpeg, motion.videoStream, timeMs)),
       );
       const { data, info } = await this.mediaRepository.decodeImage(output, {
         colorspace: Colorspace.Srgb,
@@ -1745,6 +1804,11 @@ export class AssetDevelopService {
     );
   }
 
+  /** FL-721: SHA-256 of a file's plaintext, also when it is sealed (a sealed file's own bytes change with every seal). */
+  private async hashPlain(path: string): Promise<Buffer> {
+    return (await isLockedPath(path)) ? hashPlainFile(path, 'sha256') : this.cryptoRepository.hashFile(path, 'sha256');
+  }
+
   /**
    * SHA-256 of the asset's original bytes now. New uploads already store it; older rows (SHA-1,
    * or the path-based checksum of external libraries) are hashed from the file.
@@ -1757,7 +1821,8 @@ export class AssetDevelopService {
     if (asset.checksumAlgorithm === ChecksumAlgorithm.sha256File) {
       return asset.checksum;
     }
-    return this.cryptoRepository.hashFile(asset.originalPath, 'sha256');
+    // FL-721: the hash of the plaintext, also when the original is sealed
+    return this.hashPlain(asset.originalPath);
   }
 
   private async renderRecipeRevision(
