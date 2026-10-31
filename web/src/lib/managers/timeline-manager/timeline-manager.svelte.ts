@@ -508,10 +508,7 @@ export class TimelineManager extends VirtualScrollManager {
       await (this.initTask.loading ? this.initTask.waitUntilCompletion() : this.#init(this.#requestedOptions));
     }
 
-    const changedWidth = viewport.width !== this.viewportWidth;
-    this.viewportHeight = viewport.height;
-    this.viewportWidth = viewport.width;
-    this.updateViewportGeometry(changedWidth);
+    this.setViewportSize(viewport.width, viewport.height);
   }
 
   protected override updateViewportGeometry(changedWidth: boolean) {
@@ -560,7 +557,7 @@ export class TimelineManager extends VirtualScrollManager {
         ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
         : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
     }, cancelable);
-    if (executionStatus === 'LOADED') {
+    if (executionStatus === 'LOADED' && this.months.includes(timelineMonth)) {
       updateGeometry(this, timelineMonth, { invalidateHeight: false });
       this.updateViewportProximities();
     }

@@ -68,6 +68,10 @@ class NotificationStore {
   }
 
   #beginWrite() {
+    // A read already in flight could bring back what this write removes, so it is dropped here and
+    // read again once the write is done (in the same account, unless a newer read started meanwhile).
+    const cancelled = this.#refresh !== undefined;
+    const session = this.#session;
     this.#cancelRefresh();
     let complete!: () => void;
     const pending = new Promise<void>((resolve) => {
@@ -77,6 +81,9 @@ class NotificationStore {
     return () => {
       this.#writes.delete(pending);
       complete();
+      if (cancelled && session === this.#session && this.#refresh === undefined) {
+        void this.refresh();
+      }
     };
   }
 

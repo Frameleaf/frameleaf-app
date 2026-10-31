@@ -6,6 +6,7 @@ import {
   getEagleImport,
   getEagleImports,
   getEagleLibraries,
+  isHttpError,
   stopEagleImport,
   type EagleImportResponseDto,
   type EagleLibraryResponseDto,
@@ -14,6 +15,7 @@ import { SvelteSet } from 'svelte/reactivity';
 import type { EagleFolder, EagleItemOutcome, EagleLibrary, EagleTarget } from '$lib/frameleaf/eagle/eagle-import';
 import type { EagleRecentItem } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
 import type { EagleRunStatus } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * "In a folder your server can open" (FL-653, README points 36 and 39). The server lists the
@@ -87,6 +89,9 @@ export async function runningServerImport() {
 }
 
 const POLL_MS = 2000;
+/** The server refused (not a passing failure): asking again won't help. Timeouts and rate limits retry. */
+const isRefused = (error: unknown) =>
+  isHttpError(error) && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
 /** While the server can't be reached, it is asked again less often, up to this. */
 const POLL_MAX_MS = 30_000;
 
@@ -163,34 +168,63 @@ export class ServerEagleImportRun implements EagleRunStatus {
   /**
    * Polls until the server says the import stopped or finished, and only then. While the server
    * can't be reached (restarting, the network down) it keeps asking, less often, and says so.
+   * Signing out ends it (like the bulk tracker, FL-529), and so does a refusal (a 4xx: another
+   * account, or an import that is gone), which reads as stopped with the error.
    */
   async #follow() {
-    let wait = POLL_MS;
-    for (;;) {
-      await new Promise((resolve) => setTimeout(resolve, wait));
-      try {
-        const ended = await this.#refresh(false);
-        this.unreachable = false;
-        wait = POLL_MS;
-        if (ended) {
+    let signedOut = false;
+    const off = eventManager.on({ AuthLogout: () => (signedOut = true) });
+    const current = () => !signedOut;
+    try {
+      let wait = POLL_MS;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (signedOut) {
           return;
         }
-      } catch {
-        this.unreachable = true;
-        wait = Math.min(POLL_MAX_MS, wait * 2);
+        try {
+          const ended = await this.#refresh(current);
+          if (signedOut) {
+            return;
+          }
+          this.unreachable = false;
+          wait = POLL_MS;
+          if (ended) {
+            return;
+          }
+        } catch (error) {
+          if (signedOut) {
+            return;
+          }
+          if (isRefused(error)) {
+            this.unreachable = false;
+            this.error = error;
+            this.state = 'stopped';
+            return;
+          }
+          this.unreachable = true;
+          wait = Math.min(POLL_MAX_MS, wait * 2);
+        }
       }
+    } finally {
+      off();
     }
   }
 
   /** Reads the import; once it has ended, reads it again with what became of every item. */
-  async #refresh(withOutcomes: boolean) {
-    const dto = await getEagleImport({ id: this.id, ...(withOutcomes && { outcomes: true }) });
+  async #refresh(current: () => boolean) {
+    const dto = await getEagleImport({ id: this.id });
     const ended = dto.status === EagleImportStatus.Stopped || dto.status === EagleImportStatus.Finished;
     if (ended && !dto.outcomes) {
-      this.#apply(await getEagleImport({ id: this.id, outcomes: true }));
+      const full = await getEagleImport({ id: this.id, outcomes: true });
+      if (current()) {
+        this.#apply(full);
+      }
       return true;
     }
-    this.#apply(dto);
+    if (current()) {
+      this.#apply(dto);
+    }
     return ended;
   }
 

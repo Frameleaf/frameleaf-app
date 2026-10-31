@@ -7,6 +7,7 @@ import {
   readServerLibrary,
   runningServerImport,
 } from '$lib/frameleaf/eagle/eagle-server-import.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 const item = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
@@ -220,6 +221,38 @@ describe('Eagle import from a folder the server can open', () => {
     expect(ended).toBe(true);
     expect(run).toMatchObject({ state: 'finished', unreachable: false });
     expect(sdkMock.getEagleImport).toHaveBeenLastCalledWith({ id: 'import-1', outcomes: true });
+  });
+
+  it('stops following on a refusal, and on sign-out without touching the run', async () => {
+    sdkMock.isHttpError.mockImplementation(
+      (error: unknown) => typeof error === 'object' && error !== null && 'status' in error,
+    );
+    const begin = () =>
+      ServerEagleImportRun.begin({ rootId: '0', path: 'p.library' }, { fingerprint: 'f' }, { mode: 'top' }, []);
+    sdkMock.createEagleImport.mockResolvedValue(importDto());
+
+    // The import is gone (404): asking again won't help, so it reads as stopped with the error.
+    const gone = Object.assign(new Error('Not found'), { status: 404 });
+    sdkMock.getEagleImport.mockRejectedValue(gone);
+    const refused = await begin();
+    await expect(Promise.all([refused.start(), vi.advanceTimersByTimeAsync(2000)])).resolves.toBeDefined();
+    expect(refused).toMatchObject({ state: 'stopped', error: gone, unreachable: false });
+    expect(sdkMock.getEagleImport).toHaveBeenCalledTimes(1);
+
+    // Signed out mid-import: the loop ends and the next account never sees this run move.
+    sdkMock.getEagleImport.mockReset();
+    sdkMock.getEagleImport.mockResolvedValue(importDto({ done: 1 }));
+    const run = await begin();
+    let ended = false;
+    void run.start().then(() => (ended = true));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(run.done).toBe(1);
+    eventManager.emit('AuthLogout');
+    sdkMock.getEagleImport.mockResolvedValue(importDto({ done: 2 }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(ended).toBe(true);
+    expect(run.done).toBe(1);
+    expect(sdkMock.getEagleImport).toHaveBeenCalledTimes(1);
   });
 
   it('finds the import the server is running', async () => {

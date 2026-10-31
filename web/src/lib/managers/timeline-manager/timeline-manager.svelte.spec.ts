@@ -316,6 +316,17 @@ describe('TimelineManager', () => {
       expect(sdkMock.getTimeBucket).toHaveBeenCalledTimes(2);
     });
 
+    it('lays the timeline out once per viewport change', async () => {
+      const layout = vi.spyOn(
+        timelineManager as unknown as { updateViewportGeometry: (w: boolean) => void },
+        'updateViewportGeometry',
+      );
+      await timelineManager.updateViewport({ width: 1200, height: 900 });
+      expect(layout).toHaveBeenCalledOnce();
+      expect(layout).toHaveBeenCalledWith(true);
+      expect(timelineManager).toMatchObject({ viewportWidth: 1200, viewportHeight: 900, suspendTransitions: true });
+    });
+
     it('calculates month height', () => {
       const plainMonths = timelineManager.months.map((month) => ({
         year: month.yearMonth.year,

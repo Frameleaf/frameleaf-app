@@ -276,6 +276,10 @@ export class TimelineMonth {
     const index = this.#index;
     const heightDelta = height - this.#height;
     this.#height = height;
+    // A month a refresh replaced is no longer laid out: moving the current months by it would shift them.
+    if (index === -1) {
+      return;
+    }
     const previousTimelineMonth = timelineManager.months[index - 1];
     if (previousTimelineMonth) {
       const newTop = previousTimelineMonth.#top + previousTimelineMonth.#height;

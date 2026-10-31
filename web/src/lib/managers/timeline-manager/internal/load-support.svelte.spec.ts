@@ -50,7 +50,9 @@ describe('ordered page cursors', () => {
       controller.abort();
       return response('a', 'b');
     });
-    await loadOrderedPage(months[0], months, options, controller.signal);
+    await expect(loadOrderedPage(months[0], months, options, controller.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
     expect(months[0].addOrderedAssets).not.toHaveBeenCalled();
     const signal = new AbortController().signal;
     await loadOrderedPage(months[1], months, options, signal);
@@ -68,5 +70,32 @@ describe('ordered page cursors', () => {
       expect.objectContaining({ skip: 500, sort: 'filename', isFavorite: true }),
       { signal },
     );
+  });
+
+  it('asks again after a live change, and gives way (cancelled, not loaded) once the page is gone', async () => {
+    const months = bind([month()]);
+    const manager = months[0].timelineManager as unknown as { projectionGeneration: number; months: TimelineMonth[] };
+    const options = { orderedBy: TimelineOrderedSort.Filename };
+    const signal = new AbortController().signal;
+    sdkMock.getTimelineOrdered
+      .mockImplementationOnce(async () => {
+        manager.projectionGeneration++;
+        return response('stale', 'stale');
+      })
+      .mockResolvedValueOnce(response('a', 'b'));
+    await loadOrderedPage(months[0], months, options, signal);
+    expect(sdkMock.getTimelineOrdered).toHaveBeenCalledTimes(2);
+    expect(months[0].addOrderedAssets).toHaveBeenCalledTimes(1);
+    expect(months[0].addOrderedAssets).toHaveBeenCalledWith(response('a', 'b'));
+
+    const replaced = bind([month()]);
+    sdkMock.getTimelineOrdered.mockImplementationOnce(async () => {
+      Object.assign(replaced[0].timelineManager, { months: [] });
+      return response('c', 'd');
+    });
+    await expect(loadOrderedPage(replaced[0], replaced, options, signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(replaced[0].addOrderedAssets).not.toHaveBeenCalled();
   });
 });
