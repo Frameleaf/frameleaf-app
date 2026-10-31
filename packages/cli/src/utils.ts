@@ -1,0 +1,305 @@
+import {
+  ApiKeyResponseDto,
+  getMyApiKey,
+  getMyUser,
+  init,
+  isHttpError,
+  isMalformedResponseError,
+  Permission,
+} from '@frameleaf/sdk';
+import { convertPathToPattern, glob } from 'fast-glob';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { platform } from 'node:os';
+import { join, resolve } from 'node:path';
+import yaml from 'yaml';
+
+export interface BaseOptions {
+  configDirectory: string;
+  key?: string;
+  url?: string;
+}
+
+export type AuthDto = { url: string; key: string };
+
+export const authenticate = async (options: BaseOptions): Promise<AuthDto> => {
+  const { configDirectory: configDir, url, key } = options;
+
+  // provided in command
+  if (url && key) {
+    return connect(url, key);
+  }
+
+  // fallback to auth file
+  const config = await readAuthFile(configDir);
+  const auth = await connect(config.url, config.key);
+  if (auth.url !== config.url) {
+    await writeAuthFile(configDir, auth);
+  }
+
+  return auth;
+};
+
+export const s = (count: number) => (count === 1 ? '' : 's');
+
+/** Every permission a key holds; the server lists design permissions in their own field. */
+export const keyPermissions = (key: Pick<ApiKeyResponseDto, 'permissions' | 'designPermissions'>): Permission[] => [
+  ...(key.permissions as string[] as Permission[]),
+  ...((key.designPermissions ?? []) as string[] as Permission[]),
+];
+
+export const requirePermissions = async (permissions: Permission[]) => {
+  const granted = keyPermissions(await getMyApiKey());
+  if (granted.includes(Permission.All)) {
+    return;
+  }
+
+  const missing = permissions.filter((permission) => !granted.includes(permission));
+
+  if (missing.length > 0) {
+    const combined = missing.map((permission) => `"${permission}"`).join(', ');
+    console.log(
+      `Missing required permission${s(missing.length)}: ${combined}.
+Please make sure your API key has the correct permissions.`,
+    );
+    process.exit(1);
+  }
+};
+
+export const connect = async (url: string, key: string) => {
+  const wellKnownUrl = new URL('.well-known/immich', url);
+  try {
+    // eslint-disable-next-line unicorn/prefer-await
+    const wellKnown = (await fetch(wellKnownUrl).then((response) => response.json())) as { api: { endpoint: string } };
+    const endpoint = new URL(wellKnown.api.endpoint, url).href;
+    if (endpoint !== url) {
+      console.debug(`Discovered API at ${endpoint}`);
+    }
+    url = endpoint;
+  } catch {
+    // noop
+  }
+
+  init({ baseUrl: url, apiKey: key });
+
+  const [error] = await withError(getMyUser());
+  if (error) {
+    logError(error, `Failed to connect to server ${url}`);
+    process.exit(1);
+  }
+
+  return { url, key };
+};
+
+export const logError = (error: unknown, message: string) => {
+  if (isHttpError(error)) {
+    console.error(`${message}: ${error.status}`);
+    console.error(JSON.stringify(error.data, undefined, 2));
+  } else if (isMalformedResponseError(error)) {
+    console.error(`${message}: ${error.message}`);
+    console.error(
+      'Check that the URL points at the Frameleaf API, and that nothing in front of it (reverse proxy, SSO portal) is answering instead.',
+    );
+  } else {
+    console.error(`${message} - ${error}`);
+  }
+};
+
+export const getAuthFilePath = (dir: string) => join(dir, 'auth.yml');
+
+export const readAuthFile = async (dir: string) => {
+  try {
+    const data = await readFile(getAuthFilePath(dir));
+    const auth: unknown = yaml.parse(data.toString());
+    if (!auth || typeof auth !== 'object' || Array.isArray(auth)) {
+      throw new Error('Invalid authentication file');
+    }
+    const values = auth as Record<string, unknown>;
+    const { url, key } = values.instanceUrl && values.apiKey ? { url: values.instanceUrl, key: values.apiKey } : values;
+    if (typeof url !== 'string' || !url.trim() || typeof key !== 'string' || !key.trim()) {
+      throw new Error('Invalid authentication file');
+    }
+    return { url, key };
+  } catch (error: Error | any) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+      console.log('No auth file exists. Please login first.');
+      process.exit(1);
+    }
+    throw error;
+  }
+};
+
+export const writeAuthFile = async (dir: string, auth: AuthDto) =>
+  writeFile(getAuthFilePath(dir), yaml.stringify(auth), { mode: 0o600 });
+
+export const withError = async <T>(promise: Promise<T>): Promise<[Error, undefined] | [undefined, T]> => {
+  try {
+    const result = await promise;
+    return [undefined, result];
+  } catch (error: Error | any) {
+    return [error, undefined];
+  }
+};
+
+export interface CrawlOptions {
+  pathsToCrawl: string[];
+  recursive?: boolean;
+  includeHidden?: boolean;
+  exclusionPattern?: string;
+  extensions: string[];
+}
+
+const convertPathToPatternOnWin = (path: string) => {
+  return platform() === 'win32' ? convertPathToPattern(path) : path;
+};
+
+export const crawl = async (options: CrawlOptions): Promise<string[]> => {
+  const { extensions: extensionsWithPeriod, recursive, pathsToCrawl, exclusionPattern, includeHidden } = options;
+  const extensions = extensionsWithPeriod.map((extension) => extension.replace('.', ''));
+  // Preserve glob escapes while converting native Windows separators.
+  const ignorePattern =
+    platform() === 'win32' ? exclusionPattern?.replaceAll(/\\(?![!()+@[\]{}])/g, '/') : exclusionPattern;
+
+  if (pathsToCrawl.length === 0) {
+    return [];
+  }
+
+  const patterns: string[] = [];
+  const crawledFiles: string[] = [];
+
+  for await (const currentPath of pathsToCrawl) {
+    try {
+      const absolutePath = resolve(currentPath);
+      const stats = await stat(absolutePath);
+      if (stats.isFile() || stats.isSymbolicLink()) {
+        crawledFiles.push(absolutePath);
+      } else {
+        patterns.push(convertPathToPatternOnWin(absolutePath));
+      }
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        patterns.push(convertPathToPatternOnWin(currentPath));
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (patterns.length === 0) {
+    return crawledFiles;
+  }
+
+  const searchPatterns = patterns.map((pattern) => {
+    let escapedPattern = pattern.replaceAll("'", "[']").replaceAll('"', '["]').replaceAll('`', '[`]');
+    if (recursive) {
+      escapedPattern += '/**';
+    }
+    return `${escapedPattern}/*.{${extensions.join(',')}}`;
+  });
+
+  const globbedFiles = await glob(searchPatterns, {
+    absolute: true,
+    caseSensitiveMatch: false,
+    dot: includeHidden,
+    ignore: [`**/${ignorePattern}`],
+  });
+  globbedFiles.push(...crawledFiles);
+  return globbedFiles.toSorted();
+};
+
+export const sha1 = (filepath: string) => {
+  const hash = createHash('sha1');
+  return new Promise<string>((resolve, reject) => {
+    const rs = createReadStream(filepath);
+    rs.on('error', reject);
+    rs.on('data', (chunk) => hash.update(chunk));
+    rs.on('end', () => resolve(hash.digest('hex')));
+  });
+};
+
+/**
+ * Compute the SHA-1 and SHA-256 digests of a file in a single read pass.
+ *
+ * The server stores SHA-256 for assets uploaded after the SHA-256 transition and
+ * SHA-1 for legacy rows (see `asset.checksumAlgorithm`), and duplicate checks
+ * compare the client-supplied digest byte-for-byte. Clients therefore have to
+ * offer both digests to detect duplicates against either kind of row.
+ */
+export const hashFile = (filepath: string) => {
+  const sha1Hash = createHash('sha1');
+  const sha256Hash = createHash('sha256');
+  return new Promise<{ sha1: string; sha256: string }>((resolve, reject) => {
+    const rs = createReadStream(filepath);
+    rs.on('error', reject);
+    rs.on('data', (chunk) => {
+      sha1Hash.update(chunk);
+      sha256Hash.update(chunk);
+    });
+    rs.on('end', () => resolve({ sha1: sha1Hash.digest('hex'), sha256: sha256Hash.digest('hex') }));
+  });
+};
+
+// The server stores SHA-256 for all new uploads, so migration dedup/audit must match on SHA-256.
+export const sha256 = (filepath: string, encoding: 'hex' | 'base64' = 'base64') => {
+  const hash = createHash('sha256');
+  return new Promise<string>((resolve, reject) => {
+    const rs = createReadStream(filepath);
+    rs.on('error', reject);
+    rs.on('data', (chunk) => hash.update(chunk));
+    rs.on('end', () => resolve(hash.digest(encoding)));
+  });
+};
+
+/**
+ * Batches items and calls onBatch to process them
+ * when the batch size is reached or the debounce time has passed.
+ */
+export class Batcher<T = unknown> {
+  private items: T[] = [];
+  private readonly batchSize: number;
+  private readonly debounceTimeMs?: number;
+  private readonly onBatch: (items: T[]) => Promise<void>;
+  private debounceTimer?: NodeJS.Timeout;
+
+  constructor({
+    batchSize,
+    debounceTimeMs,
+    onBatch,
+  }: {
+    batchSize: number;
+    debounceTimeMs?: number;
+    onBatch: (items: T[]) => Promise<void>;
+  }) {
+    this.batchSize = batchSize;
+    this.debounceTimeMs = debounceTimeMs;
+    this.onBatch = onBatch;
+  }
+
+  add(item: T) {
+    this.items.push(item);
+    clearTimeout(this.debounceTimer);
+    this.debounceTimer = undefined;
+    if (this.items.length >= this.batchSize) {
+      this.dispatch();
+    } else if (this.debounceTimeMs) {
+      this.debounceTimer = setTimeout(() => this.dispatch(), this.debounceTimeMs);
+    }
+  }
+
+  private dispatch() {
+    void this.flush().catch((error) => console.error('Batch failed:', error));
+  }
+
+  async flush(): Promise<void> {
+    clearTimeout(this.debounceTimer);
+    this.debounceTimer = undefined;
+    if (this.items.length === 0) {
+      return;
+    }
+
+    const items = this.items;
+    this.items = [];
+    await this.onBatch(items);
+  }
+}
