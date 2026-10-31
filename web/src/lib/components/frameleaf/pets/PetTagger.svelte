@@ -77,7 +77,14 @@
   let error = $state('');
   let imageFailed = $state(false);
 
-  const source = $derived(getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }));
+  // The checksum is part of the cache key so a replaced original reloads (and re-measures) the image.
+  const source = $derived(
+    getAssetMediaUrl({
+      id: asset.id,
+      size: AssetMediaSize.Preview,
+      cacheKey: `${asset.thumbhash ?? ''}.${asset.checksum}`,
+    }),
+  );
   const content = $derived(imageContentRect(viewport, natural));
   const shown = $derived(preview ?? box);
   const canSave = $derived(!!selectedPetId && !saving && (wholePhoto || (!!box && !!natural)));

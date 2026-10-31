@@ -166,6 +166,22 @@ describe('PetTagger', () => {
     expect(screen.getByRole('button', { name: en.frameleaf_pet_tagger_save })).toBeDisabled();
   });
 
+  it('reloads the image after the original is replaced so a region can be placed again', async () => {
+    const asset = assetFactory.build({ id: 'asset-1', checksum: 'c3Vt', originalFileName: 'garden.jpg' });
+    const props = { asset, pets: [biscuit], petId: biscuit.id, onSaved: vi.fn(), onClose: vi.fn() };
+    const view = render(PetTagger, props);
+    const before = screen.getByRole('img', { name: 'garden.jpg' }).getAttribute('src');
+
+    await view.rerender({ ...props, asset: { ...asset, checksum: 'bmV3' } });
+    const image = screen.getByRole('img', { name: 'garden.jpg' });
+    expect(image.getAttribute('src')).not.toBe(before);
+    Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 800 } });
+    await fireEvent.load(image);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_pet_tagger_place }));
+
+    expect(screen.getByRole('button', { name: en.frameleaf_pet_tagger_save })).toBeEnabled();
+  });
+
   it('reports a save that finishes after the viewer moved on against the photo it was made on', async () => {
     const pending = deferredPromise<PetObservationResponseDto>();
     sdkMock.createPetObservation.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.createPetObservation>);
