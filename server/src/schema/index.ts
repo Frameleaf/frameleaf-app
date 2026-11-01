@@ -41,6 +41,10 @@ import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
+import {
+  AlbumSuggestionAutoAddTable,
+  AlbumSuggestionDismissalTable,
+} from 'src/schema/tables/album-suggestion.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -429,6 +433,8 @@ export class ImmichDatabase {
     SharedSpaceMentionTable,
     SharedSpacePersonTable,
     SharedSpaceVisitTable,
+    AlbumSuggestionDismissalTable,
+    AlbumSuggestionAutoAddTable,
     SmartAlbumTable,
     SmartAlbumAssetTable,
     SmartAlbumExclusionTable,
@@ -703,6 +709,9 @@ export interface DB extends QueueDatabase {
   shared_space_mention: SharedSpaceMentionTable;
   shared_space_person: SharedSpacePersonTable;
   shared_space_visit: SharedSpaceVisitTable;
+
+  album_suggestion_dismissal: AlbumSuggestionDismissalTable;
+  album_suggestion_auto_add: AlbumSuggestionAutoAddTable;
 
   smart_album: SmartAlbumTable;
   smart_album_asset: SmartAlbumAssetTable;

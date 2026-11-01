@@ -12376,6 +12376,168 @@
         "x-immich-permission": "album.read"
       }
     },
+    "/albums/{id}/suggestions": {
+      "get": {
+        "description": "Photos from your library that look like they belong to this album's trip: ones taken during it, and ones with no trustworthy date (with a suggested date). Needs permission to add to the album. Nothing is changed.",
+        "operationId": "getAlbumSuggestions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumSuggestionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Suggest photos for an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/albums/{id}/suggestions/auto-add": {
+      "put": {
+        "description": "Turn on or off adding your new photos taken during this trip at its places as they finish processing. Photos without a trustworthy date always wait for review.",
+        "operationId": "setAlbumSuggestionAutoAdd",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumSuggestionAutoAddDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Keep adding photos from this trip",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumAsset.create"
+      }
+    },
+    "/albums/{id}/suggestions/dismiss": {
+      "post": {
+        "description": "Mark photos as not from this trip so they are never suggested for this album again.",
+        "operationId": "dismissAlbumSuggestions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss album suggestions",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumAsset.create"
+      }
+    },
     "/albums/{id}/user/{userId}": {
       "delete": {
         "description": "Remove a user from an album. Use an ID of \"me\" to leave a shared album.",
@@ -66708,6 +66870,58 @@
         ],
         "type": "object"
       },
+      "AlbumDateSuggestionDto": {
+        "properties": {
+          "assetId": {
+            "description": "Suggested photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "dateTimeOriginal": {
+            "description": "The suggested date, ready for an asset update (local time with offset, e.g. 2026-08-14T20:41:00-06:00)",
+            "type": "string"
+          },
+          "fileDate": {
+            "description": "The local date it has now (YYYY-MM-DD)",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "Its file name",
+            "type": "string"
+          },
+          "precision": {
+            "description": "How precise the suggested date is: moment, day or trip",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/AlbumSuggestionReasonDto"
+            },
+            "type": "array"
+          },
+          "savedAt": {
+            "description": "When its name says it was saved or received, if it says",
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "description": "Why its date can't be trusted: facebook (saved from Facebook), whatsapp, messenger (received), or none (no capture date in the file)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "dateTimeOriginal",
+          "fileDate",
+          "fileName",
+          "precision",
+          "reasons",
+          "savedAt",
+          "source"
+        ],
+        "type": "object"
+      },
       "AlbumDescendantCountResponseDto": {
         "properties": {
           "count": {
@@ -67420,6 +67634,103 @@
         },
         "type": "object"
       },
+      "AlbumSuggestionAutoAddDto": {
+        "properties": {
+          "enabled": {
+            "description": "Add new very likely photos from this trip automatically",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "AlbumSuggestionReasonDto": {
+        "properties": {
+          "assetId": {
+            "description": "The album photo it matches, for same-scene and near-identical",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "date": {
+            "description": "Local date (YYYY-MM-DD) for during-trip, same-scene and near-identical",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "File name of that album photo",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical or people. Unknown kinds may be added; show nothing for them.",
+            "type": "string"
+          },
+          "names": {
+            "description": "Names of the people in it who are also in the album, for people",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "place": {
+            "description": "Place name for place",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "AlbumSuggestionsResponseDto": {
+        "properties": {
+          "autoAdd": {
+            "description": "Whether new photos from this trip are added for you automatically",
+            "type": "boolean"
+          },
+          "fromTrip": {
+            "description": "Photos taken during the trip that are not in the album",
+            "items": {
+              "$ref": "#/components/schemas/AlbumTripSuggestionDto"
+            },
+            "type": "array"
+          },
+          "needDate": {
+            "description": "Photos with no trustworthy date that look like they are from the trip",
+            "items": {
+              "$ref": "#/components/schemas/AlbumDateSuggestionDto"
+            },
+            "type": "array"
+          },
+          "places": {
+            "description": "The places the album was photographed, most photographed first",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tripEnd": {
+            "description": "Last local day of the trip (YYYY-MM-DD)",
+            "nullable": true,
+            "type": "string"
+          },
+          "tripStart": {
+            "description": "First local day of the trip (YYYY-MM-DD); null when the album is not a trip",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoAdd",
+          "fromTrip",
+          "needDate",
+          "places",
+          "tripEnd",
+          "tripStart"
+        ],
+        "type": "object"
+      },
       "AlbumTreeResponseDto": {
         "properties": {
           "albums": {
@@ -67448,6 +67759,37 @@
           "albums",
           "collections",
           "spaces"
+        ],
+        "type": "object"
+      },
+      "AlbumTripSuggestionDto": {
+        "properties": {
+          "assetId": {
+            "description": "Suggested photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "Its file name",
+            "type": "string"
+          },
+          "likely": {
+            "description": "Very likely (taken during the trip at its places) rather than possibly",
+            "type": "boolean"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/AlbumSuggestionReasonDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "fileName",
+          "likely",
+          "reasons"
         ],
         "type": "object"
       },
