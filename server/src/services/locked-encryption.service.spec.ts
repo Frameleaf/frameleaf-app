@@ -16,7 +16,7 @@ import { type LockedSealState } from 'src/repositories/locked-file.repository.js
 import { LockedEncryptionService, LockedKeyUnavailableException } from 'src/services/locked-encryption.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
-import { LockedKeyUnavailableError, openLockedRead } from 'src/utils/locked-read.js';
+import { LockedKeyUnavailableError, lockedKeyHttpException, openLockedRead } from 'src/utils/locked-read.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks, newLockedEncryptionService, newLockedSealService } from 'test/utils.js';
 
@@ -689,6 +689,7 @@ describe(LockedEncryptionService.name, () => {
     const seal = async (withPartner: boolean) => {
       const source = join(dir, 'plain.jpg');
       await fs.writeFile(source, plain);
+      await fs.rm(path, { force: true });
       await encryptFile(
         source,
         path,
@@ -940,6 +941,113 @@ describe(LockedEncryptionService.name, () => {
       expect((error as HttpException).getStatus()).toBe(423);
       expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
     }, 30_000);
+
+    describe('fix round 1', () => {
+      const refusal = async (viewerId = partnerId) => {
+        const error = await readAs(viewerId).catch((error_: unknown) => error_);
+        expect(error).toBeInstanceOf(LockedKeyUnavailableError);
+        return error as LockedKeyUnavailableError;
+      };
+
+      it('I1: a former partner’s own key no longer opens a copy they kept, though the stale entry is still in the file', async () => {
+        await enablePin();
+        await sut.onPinVerified(partnerId, PIN);
+        await seal(true);
+        await sut.lock(auth);
+        expect((await readAs(partnerId)).equals(plain)).toBe(true);
+
+        // the partnership ends; Taylor's key isn't open, so no re-wrap has run
+        sharing = false;
+        await sut.onPartnershipEnded(userId, partnerId);
+        expect((await readHeader(path)).keyIds).toContainEqual(keyId(publicKeyOf(partnerId)));
+        expect(lockedKeys.has(partnerId)).toBe(true);
+
+        expect((await refusal()).reason).toBe('not-ready');
+        await expect(viewOf()).resolves.toEqual({ openable: false, reason: 'not-ready', ownerName: 'Taylor' });
+        // the owner still reads their own file once their key is open
+        await sut.onPinVerified(userId, PIN);
+        expect((await readAs(userId)).equals(plain)).toBe(true);
+      }, 30_000);
+
+      it('I2: a partner’s wrong tries never lock the owner out of their own passphrase or PIN', async () => {
+        await enableAdvanced();
+        await sut.onPinVerified(partnerId, PIN);
+        await sut.lock(auth);
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await expect(
+            sut.unlockPartner(partner, { ownerId: userId, passphrase: 'not the passphrase' }),
+          ).rejects.toThrow('Wrong passphrase');
+        }
+        // the partner waits out the same backoff as a PIN unlock
+        await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+          'Too many failed',
+        );
+        expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+
+        // the owner's own counter is untouched: their passphrase and PIN work at once
+        await sut.unlock(auth, { passphrase: PASSPHRASE });
+        expect(lockedKeys.has(userId)).toBe(true);
+        await expect(sut.disable(auth, { passphrase: PASSPHRASE })).resolves.toBeUndefined();
+      }, 60_000);
+
+      it('I4: a partnership that ends during the passphrase check leaves no grant and no key loaded', async () => {
+        await enableAdvanced();
+        await sut.onPinVerified(partnerId, PIN);
+        await sut.lock(auth);
+        let ended: Promise<void> | undefined;
+        mocks.lockedEncryption.getOwnersSharingWith.mockImplementationOnce(() => {
+          // the first check passes; the owner ends the partnership while the passphrase is checked
+          setImmediate(() => {
+            sharing = false;
+            ended = sut.onPartnershipEnded(userId, partnerId);
+          });
+          return Promise.resolve([userId]);
+        });
+
+        await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+          BadRequestException,
+        );
+        await ended;
+        expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+        expect(lockedKeys.has(userId)).toBe(false);
+      }, 30_000);
+
+      it('I4: a grant made just before the partnership ends is dropped by the end hook', async () => {
+        await enableAdvanced();
+        await sut.onPinVerified(partnerId, PIN);
+        await sut.lock(auth);
+        const unlocking = sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE });
+        await unlocking;
+        sharing = false;
+        await sut.onPartnershipEnded(userId, partnerId);
+        expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+      }, 30_000);
+
+      it('a partner’s 423 says why: the owner’s passphrase, or not ready; their own key missing gives no reason', async () => {
+        await enableAdvanced();
+        await sut.onPinVerified(partnerId, PIN);
+        await seal(false);
+        await sut.lock(auth);
+        const advanced = await refusal();
+        expect(advanced.reason).toBe('owner-passphrase');
+        expect(lockedKeyHttpException(advanced).getResponse()).toMatchObject({
+          code: 'locked_key_unavailable',
+          reason: 'owner-passphrase',
+        });
+
+        rows.set(userId, { ...rows.get(userId)!, mode: 'pin' });
+        expect((await refusal()).reason).toBe('not-ready');
+
+        // sealed with Jamie's entry, but Jamie's key isn't open: their own PIN opens it, so no reason
+        await seal(true);
+        lockedKeys.drop(partnerId);
+        const own = await refusal();
+        expect(own.reason).toBeUndefined();
+        expect(lockedKeyHttpException(own).getResponse()).not.toHaveProperty('reason');
+        // and the owner reading their own file never gets one
+        expect((await refusal(userId)).reason).toBeUndefined();
+      }, 60_000);
+    });
 
     it('a partner key pair that is replaced or deleted queues a check of the owners who share with them', async () => {
       await enablePin();

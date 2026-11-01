@@ -51,7 +51,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
-import { hasUsableLockedKey } from 'src/utils/locked-read.js';
+import { hasUsableLockedKey, setLockedPartnerPolicy } from 'src/utils/locked-read.js';
 import { queueLockedPartnerChecks } from 'src/utils/locked-seal-queue.js';
 import { type PartnerLockedEncryptionView, partnerLockedEncryptionView } from 'src/utils/locked.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
@@ -92,6 +92,14 @@ const assertPassphrase = (passphrase: string | undefined): string => {
   return passphrase;
 };
 
+const notSharing = () => new BadRequestException('This person doesn’t share encrypted Locked items with you');
+/**
+ * Fix round 1, I2: a partner's tries at an owner's passphrase count on a counter of their own for
+ * that owner (same backoff as PIN unlock), never on the owner's, which guards the owner's own secrets.
+ */
+const partnerAttemptKey = (ownerId: string, partnerId: string) =>
+  `${ownerId.toLowerCase()}:partner:${partnerId.toLowerCase()}`;
+
 const unreadableKeyFile = () =>
   new ConflictException(
     'Your Locked key file is on this server but can’t be read, so nothing was changed. Restore it from a backup.',
@@ -122,6 +130,11 @@ export class LockedEncryptionService {
     private databaseRepository: DatabaseRepository,
   ) {
     this.logger.setContext(LockedEncryptionService.name);
+    // spec §6.2: the partner rules `openLockedRead` applies to a viewer's own key on another's file
+    setLockedPartnerPolicy({
+      isPartnerKey: async (ownerKeyId, viewerId) => !!(await this.partnerOwnerOf(ownerKeyId, viewerId)),
+      reasonFor: (keyIds, viewerId) => this.partnerReason(keyIds, viewerId),
+    });
   }
 
   async getStatus(auth: AuthDto): Promise<LockedEncryptionStatusResponseDto> {
@@ -301,8 +314,14 @@ export class LockedEncryptionService {
    * typing the owner's passphrase as well as their own PIN (an unlocked session) or, when they use
    * Advanced Security themselves, their own passphrase (their key open). It loads the owner's key, if
    * it isn't open, and grants this partner only, until the owner's key is closed (ask-again time, Lock
-   * now, a restart). Tries count against the owner's attempt limit, as the owner's own unlock does.
-   * A PIN-mode owner's items open with the partner's own key, so there is nothing to type.
+   * now, a restart). A PIN-mode owner's items open with the partner's own key, so there is nothing to
+   * type.
+   *
+   * - Tries are limited per partner and owner (`partnerAttemptKey`), with PIN unlock's backoff: a
+   *   partner's wrong tries never lock the owner out of their own PIN or passphrase (fix round 1, I2).
+   * - The partnership is checked again after the passphrase, under the owner's key-file lock that
+   *   `onPartnershipEnded` takes to drop grants, so a partnership that ends meanwhile leaves no grant
+   *   and no key loaded by this request (I4).
    */
   async unlockPartner(auth: AuthDto, dto: LockedEncryptionPartnerUnlockDto): Promise<void> {
     const viewerId = auth.user.id;
@@ -317,9 +336,8 @@ export class LockedEncryptionService {
     if (own?.mode === 'advanced' && !lockedKeys.has(viewerId)) {
       throw new LockedKeyUnavailableException('advanced', 'Type your own passphrase first');
     }
-    const owners = await this.lockedEncryptionRepository.getOwnersSharingWith(viewerId);
-    if (owners.every((id) => id.toLowerCase() !== ownerId)) {
-      throw new BadRequestException('This person doesn’t share encrypted Locked items with you');
+    if (!(await this.isPartner(ownerId, viewerId))) {
+      throw notSharing();
     }
     const row = await this.requireRow(ownerId);
     const file = await this.requireKeyFile(ownerId);
@@ -327,22 +345,29 @@ export class LockedEncryptionService {
       throw new BadRequestException('Their Locked items open with your own PIN');
     }
 
-    const privateKey = await this.unwrap(ownerId, file, 'passphrase', dto.passphrase);
+    const privateKey = await this.unwrap(partnerAttemptKey(ownerId, viewerId), file, 'passphrase', dto.passphrase);
     const publicKey = Buffer.from(file.publicKey, 'base64');
-    if (this.held(ownerId)?.publicKey.equals(publicKey)) {
-      // already open: the passphrase was still checked, and the grant ends with that key
-      privateKey.fill(0);
-    } else {
-      const expiresAt = row.status === 'decrypting' ? null : this.askAgainExpiry(row.askAgainHours);
-      try {
-        lockedKeys.load(ownerId, publicKey, privateKey, expiresAt);
-      } catch (error) {
+    await this.withKeyFileLock(ownerId, async () => {
+      if (!(await this.isPartner(ownerId, viewerId))) {
         privateKey.fill(0);
-        throw error;
+        throw notSharing();
       }
-    }
-    lockedKeys.grant(viewerId, ownerId);
-    this.publishHeld(ownerId);
+      // from here to the grant nothing awaits, so the partnership checked above is the one granted
+      if (this.held(ownerId)?.publicKey.equals(publicKey)) {
+        // already open: the passphrase was still checked, and the grant ends with that key
+        privateKey.fill(0);
+      } else {
+        const expiresAt = row.status === 'decrypting' ? null : this.askAgainExpiry(row.askAgainHours);
+        try {
+          lockedKeys.load(ownerId, publicKey, privateKey, expiresAt);
+        } catch (error) {
+          privateKey.fill(0);
+          throw error;
+        }
+      }
+      lockedKeys.grant(viewerId, ownerId);
+      this.publishHeld(ownerId);
+    });
   }
 
   /** Lock now. Refused while turning off, which needs the key until it finishes (spec §4.3). */
@@ -552,15 +577,66 @@ export class LockedEncryptionService {
    * removes the partner's entries from the owner's files. Never throws.
    */
   async onPartnershipEnded(ownerId: string, partnerId: string): Promise<void> {
-    const grants = lockedKeys.grantsOf(ownerId);
-    if (grants.includes(partnerId)) {
-      lockedKeys.setGrants(
-        ownerId,
-        grants.filter((id) => id !== partnerId),
-      );
-      this.publishHeld(ownerId);
+    const dropGrant = () => {
+      const grants = lockedKeys.grantsOf(ownerId);
+      if (grants.includes(partnerId)) {
+        lockedKeys.setGrants(
+          ownerId,
+          grants.filter((id) => id !== partnerId),
+        );
+        this.publishHeld(ownerId);
+      }
+    };
+    // at once, then again under the lock `unlockPartner` grants under (I4)
+    dropGrant();
+    try {
+      await this.withKeyFileLock(ownerId, () => Promise.resolve(dropGrant()));
+    } catch (error) {
+      this.logger.error(`Could not re-check the Locked grants of user ${ownerId}: ${(error as Error).name}`);
     }
     await this.queuePartnerRewrap(ownerId, partnerId);
+  }
+
+  /** Whether `ownerId` (with Locked encryption on) shares their library with `viewerId` now. */
+  private async isPartner(ownerId: string, viewerId: string): Promise<boolean> {
+    const owners = await this.lockedEncryptionRepository.getOwnersSharingWith(viewerId);
+    return owners.some((id) => id.toLowerCase() === ownerId.toLowerCase());
+  }
+
+  /** The partner whose key is `ownerKeyId` (by their key file), among those who share with `viewerId` now. */
+  private async partnerOwnerOf(ownerKeyId: Buffer, viewerId: string): Promise<string | undefined> {
+    for (const ownerId of await this.lockedEncryptionRepository.getOwnersSharingWith(viewerId)) {
+      const file = await this.lockedKeyRepository.read(ownerId).catch(() => null);
+      if (file && toKeyId(Buffer.from(file.publicKey, 'base64')).equals(ownerKeyId)) {
+        return ownerId;
+      }
+    }
+  }
+
+  /**
+   * Spec §6.2 for a viewer who can't open a file with these recipients: undefined when it is their own
+   * file (or carries their entry from a live partner: their own PIN opens it), `owner-passphrase` for
+   * a live Advanced Security partner's file, `not-ready` otherwise (no entry yet, or no longer a
+   * partner).
+   */
+  private async partnerReason(
+    keyIds: Buffer[],
+    viewerId: string,
+  ): Promise<'not-ready' | 'owner-passphrase' | undefined> {
+    const own = await this.lockedKeyRepository.read(viewerId).catch(() => null);
+    const ownKeyId = own ? toKeyId(Buffer.from(own.publicKey, 'base64')) : null;
+    if (keyIds.length === 0 || (ownKeyId && keyIds[0].equals(ownKeyId))) {
+      return undefined;
+    }
+    const ownerId = await this.partnerOwnerOf(keyIds[0], viewerId);
+    if (!ownerId) {
+      return 'not-ready';
+    }
+    if (ownKeyId && keyIds.some((id) => id.equals(ownKeyId))) {
+      return undefined;
+    }
+    const row = await this.lockedEncryptionRepository.get(ownerId);
+    return row?.mode === 'advanced' ? 'owner-passphrase' : 'not-ready';
   }
 
   /**
@@ -586,11 +662,13 @@ export class LockedEncryptionService {
     const own = await this.lockedKeyRepository.read(viewerId).catch(() => null);
     const ownKeyId = own ? toKeyId(Buffer.from(own.publicKey, 'base64')) : null;
     const row = await this.lockedEncryptionRepository.get(ownerId);
+    // carry-over 4: the viewer's own entry counts only while the owner shares with them now
+    const live = await this.isPartner(ownerId, viewerId);
     return partnerLockedEncryptionView({
       ownerName,
-      ownerMode: row?.mode ?? null,
-      usable: hasUsableLockedKey(keyIds, viewerId),
-      hasOwnEntry: !!ownKeyId && keyIds.some((id) => id.equals(ownKeyId)),
+      ownerMode: live ? (row?.mode ?? null) : null,
+      usable: await hasUsableLockedKey(keyIds, viewerId),
+      hasOwnEntry: live && !!ownKeyId && keyIds.some((id) => id.equals(ownKeyId)),
     });
   }
 
@@ -737,6 +815,7 @@ export class LockedEncryptionService {
     try {
       const file = await this.readKeyFile(userId);
       if (file?.mode === 'advanced') {
+        // the Advanced key (and so any partner grant on it) stays: grants end with Lock now, expiry or re-typing
         return;
       }
       until = file ? await this.sessionRepository.getPinUnlockedUntil(userId) : null;

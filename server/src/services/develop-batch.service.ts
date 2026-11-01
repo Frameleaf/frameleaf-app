@@ -294,7 +294,7 @@ export class DevelopBatchService {
       }
       await assertLockedReadable(file, viewerId);
     } catch (error) {
-      throw error instanceof LockedKeyUnavailableError ? lockedKeyHttpException() : error;
+      throw error instanceof LockedKeyUnavailableError ? lockedKeyHttpException(error) : error;
     }
   }
 

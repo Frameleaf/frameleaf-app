@@ -119,7 +119,7 @@ export const sendFile = async (
         res.removeHeader(name);
       }
       logger.debug('Locked key unavailable for an encrypted file');
-      next(lockedKeyHttpException());
+      next(lockedKeyHttpException(error));
       return;
     }
     const { canWrite } = onRouteError(undefined, res, error, logger);

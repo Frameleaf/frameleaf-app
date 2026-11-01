@@ -26,7 +26,7 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
   handleError(req: Request, res: Response, error: Error) {
     // FL-721 (spec §8): a request that needs a Locked key that isn't loaded answers 423
     if (error instanceof LockedKeyUnavailableError) {
-      error = lockedKeyHttpException();
+      error = lockedKeyHttpException(error);
     }
     const { canWrite } = onRouteError(req, res, error, this.logger);
     if (!canWrite) {

@@ -44,10 +44,19 @@ export const LOCKED_DEFERRAL_MAX_ATTEMPTS = 72;
 export const lockedOperationMayWait = (createdAt: Date | string | number, now = Date.now()) =>
   now - new Date(createdAt).getTime() < LOCKED_DEFERRAL_DELAY_MS * LOCKED_DEFERRAL_MAX_ATTEMPTS;
 
+/**
+ * FL-721 (spec §6.2): why a partner's read of another person's encrypted file is refused, so a client
+ * doesn't ask them for their own PIN: `owner-passphrase` (an Advanced Security owner's item, opened by
+ * typing that owner's passphrase) or `not-ready` (no entry for them yet, or no longer a partner).
+ */
+export type LockedPartnerReason = 'not-ready' | 'owner-passphrase';
+
 /** No loaded key that this viewer may use opens the file. `ownerIds` are the recipients' people, when known. */
 export class LockedKeyUnavailableError extends Error {
   name = 'LockedKeyUnavailableError';
   readonly code = 'locked_key_unavailable';
+  /** Set when the viewer reads another person's file as their partner (spec §6.2). */
+  reason?: LockedPartnerReason;
   constructor(
     public ownerIds: string[],
     message = 'The Locked key for this file is not loaded',
@@ -58,13 +67,36 @@ export class LockedKeyUnavailableError extends Error {
 
 /**
  * What a request answers when it needs a Locked key that isn't loaded: 423 with the
- * `locked_key_unavailable` code the web app turns into the PIN or passphrase prompt (spec §8).
+ * `locked_key_unavailable` code the web app turns into the PIN or passphrase prompt (spec §8). A
+ * partner's read also carries `reason` (spec §6.2), for the owner's-passphrase or "not ready" screen.
  */
-export const lockedKeyHttpException = () =>
+export const lockedKeyHttpException = (error?: LockedKeyUnavailableError) =>
   new HttpException(
-    { code: 'locked_key_unavailable', message: 'Enter your PIN or passphrase to open Locked' },
+    {
+      code: 'locked_key_unavailable',
+      message: 'Enter your PIN or passphrase to open Locked',
+      ...(error?.reason ? { reason: error.reason } : {}),
+    },
     HttpStatus.LOCKED,
   );
+
+/**
+ * FL-721 (spec §6.2, carry-over 4): the partner rules a read needs and only the database knows,
+ * registered by `LockedEncryptionService`. Without them (a process that has no such service) every
+ * partner read is refused.
+ */
+export interface LockedPartnerPolicy {
+  /** Whether the person whose key is `ownerKeyId` shares their library with `viewerId` now. */
+  isPartnerKey(ownerKeyId: Buffer, viewerId: string): Promise<boolean>;
+  /** Why `viewerId` can't open a file with these recipients as a partner; undefined when it's their own file. */
+  reasonFor(keyIds: Buffer[], viewerId: string): Promise<LockedPartnerReason | undefined>;
+}
+
+let partnerPolicy: LockedPartnerPolicy | undefined;
+
+export const setLockedPartnerPolicy = (policy: LockedPartnerPolicy | undefined) => {
+  partnerPolicy = policy;
+};
 
 /** `FRAMELEAF_LOCKED_TMP` is not RAM-backed, so no plain copy is made; the job waits like a missing key. */
 export class LockedTmpUnavailableError extends LockedKeyUnavailableError {
@@ -133,13 +165,36 @@ export const clearLockedPathCache = () => checks.clear();
 
 // ---- key choice ----
 
-/** The first loaded key among the file's recipients that this viewer may use (null: a background job). */
-const usableKey = (keyIds: Buffer[], viewerId: string | null): HeldKey | undefined => {
+/**
+ * The first loaded key among the file's recipients that this viewer may use (null: a background job).
+ *
+ * Header entries are never an access list (carry-over 4). The viewer's own key on a file whose first
+ * entry (the owner's, spec §5) is someone else's is used only while that owner shares with the viewer
+ * now: a former partner's stale entry, left until the owner's next re-wrap, opens nothing. An owner's
+ * key needs `canRead` (the viewer is the owner, or was granted it), and grants end with the
+ * partnership (`onPartnershipEnded`).
+ */
+const usableKey = async (keyIds: Buffer[], viewerId: string | null): Promise<HeldKey | undefined> => {
   for (const id of keyIds) {
     const held = lockedKeys.forKeyId(id);
-    if (held && (viewerId === null || lockedKeys.canRead(viewerId, held.userId))) {
+    if (!held) {
+      continue;
+    }
+    if (viewerId === null) {
       return held;
     }
+    if (!lockedKeys.canRead(viewerId, held.userId)) {
+      continue;
+    }
+    const ownerKeyId = keyIds[0];
+    if (
+      held.userId === viewerId &&
+      !ownerKeyId.equals(held.keyId) &&
+      !(await (partnerPolicy?.isPartnerKey(ownerKeyId, viewerId) ?? Promise.resolve(false)))
+    ) {
+      continue;
+    }
+    return held;
   }
 };
 
@@ -147,7 +202,8 @@ const usableKey = (keyIds: Buffer[], viewerId: string | null): HeldKey | undefin
  * Whether a loaded key that this viewer may use opens a file with these recipients, for what a
  * screen shows only (`getPartnerItemView`); every read still goes through `openLockedRead`.
  */
-export const hasUsableLockedKey = (keyIds: Buffer[], viewerId: string): boolean => !!usableKey(keyIds, viewerId);
+export const hasUsableLockedKey = async (keyIds: Buffer[], viewerId: string): Promise<boolean> =>
+  !!(await usableKey(keyIds, viewerId));
 
 /** keyId (hex) → userId, from the key files; read again when an unknown key id turns up (at most once a minute). */
 let keyOwners = new Map<string, string>();
@@ -180,8 +236,15 @@ export const clearLockedKeyOwners = () => {
   keyOwnersReadAt = 0;
 };
 
-const unavailable = async (keyIds: Buffer[]) => {
+const unavailable = async (keyIds: Buffer[], viewerId: string | null = null) => {
   const error = new LockedKeyUnavailableError(await ownersOf(keyIds));
+  if (viewerId && partnerPolicy) {
+    try {
+      error.reason = await partnerPolicy.reasonFor(keyIds, viewerId);
+    } catch {
+      // the reason only picks the screen; the refusal stands without it
+    }
+  }
   deferForLockedKey(error);
   return error;
 };
@@ -197,8 +260,8 @@ export async function assertLockedReadable(
   viewerId: string | null,
 ): Promise<{ plaintextLength: number }> {
   const header = await readHeader(path);
-  if (!usableKey(header.keyIds, viewerId)) {
-    throw await unavailable(header.keyIds);
+  if (!(await usableKey(header.keyIds, viewerId))) {
+    throw await unavailable(header.keyIds, viewerId);
   }
   return { plaintextLength: header.plaintextLength };
 }
@@ -214,9 +277,9 @@ export async function openLockedRead(
   range?: { start: number; end: number },
 ): Promise<{ stream: NodeJS.ReadableStream; plaintextLength: number; mime: string }> {
   const header = await readHeader(path);
-  const held = usableKey(header.keyIds, viewerId);
+  const held = await usableKey(header.keyIds, viewerId);
   if (!held) {
-    throw await unavailable(header.keyIds);
+    throw await unavailable(header.keyIds, viewerId);
   }
   if (
     range &&
@@ -487,9 +550,9 @@ export async function withPlainCopy<T>(
   const header = await readHeader(path);
   // `viewerId: undefined` (a shared link, or nobody signed in) never reads an encrypted file
   const viewerId = 'viewerId' in options ? options.viewerId : null;
-  const held = viewerId === undefined ? undefined : usableKey(header.keyIds, viewerId);
+  const held = viewerId === undefined ? undefined : await usableKey(header.keyIds, viewerId);
   if (!held) {
-    throw await unavailable(header.keyIds);
+    throw await unavailable(header.keyIds, viewerId ?? null);
   }
   try {
     await assertLockedTmpIsTmpfs();
