@@ -1617,8 +1617,16 @@ export class MediaHealthService {
     const active = await this.activeJob(ownerId);
     if (active) {
       const snapshot = parseMediaHealthSnapshot(active.snapshot);
-      if (snapshot.mode === 'scan') {
+      // FL-737: the scan under way answers only for photos it covers: a full scan covers any, a scan of
+      // chosen photos only those.
+      const covered =
+        snapshot.mode === 'scan' &&
+        (!snapshot.assetIds || (options.assetIds?.every((id) => snapshot.assetIds!.includes(id)) ?? false));
+      if (snapshot.mode === 'scan' && covered) {
         return { missingRunId: snapshot.missingRunId, corruptRunId: snapshot.corruptRunId, operationId: active.id };
+      }
+      if (snapshot.mode === 'scan') {
+        throw new ConflictException('A scan of other photos is running. Wait for it or cancel it first.');
       }
       throw new ConflictException('A search for originals is running. Wait for it or cancel it first.');
     }

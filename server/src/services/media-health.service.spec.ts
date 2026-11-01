@@ -640,6 +640,46 @@ describe(MediaHealthService.name, () => {
       expect(mediaOperationRepository.create).not.toHaveBeenCalled();
     });
 
+    it.each([
+      { active: ['asset-1'], requested: ['asset-2'], label: 'other chosen photos' },
+      { active: ['asset-1'], requested: undefined, label: 'the whole library' },
+    ])('refuses a scan of $label while a scan of chosen photos runs (FL-737)', async ({ active, requested }) => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: { mode: 'scan', userId: 'user-id', missingRunId: 'm', corruptRunId: 'c', assetIds: active },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startMissingScan(authStub.user1, requested ? { assetIds: requested } : {})).rejects.toThrow(
+        'A scan of other photos is running',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a scan of chosen photos with the full scan already under way (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: { mode: 'scan', userId: 'user-id', missingRunId: 'm', corruptRunId: 'c' },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startCorruptScan(authStub.user1, { assetIds: ['asset-2'] })).resolves.toEqual({
+        runId: 'c',
+        operationId: '0195e2a0-0000-7000-8000-0000000000d1',
+      });
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
     it('answers a second scan request with the scan already under way', async () => {
       vi.mocked(mediaOperationRepository.list).mockResolvedValue({
         items: [

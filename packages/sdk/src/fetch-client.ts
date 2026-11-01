@@ -2535,7 +2535,7 @@ export type IntegrityReportResponseDto = {
     items: {
         /** Integrity report item id */
         id: string;
-        /** The photo's own file name (FL-737); null for a file that belongs to no photo */
+        /** The photo's own file name (FL-737) when the finding is about its original; null for a thumbnail or other derived file, and for a file that belongs to no photo */
         originalFileName: string | null;
         /** Integrity report item path */
         path: string;
