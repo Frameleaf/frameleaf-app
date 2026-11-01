@@ -69,8 +69,8 @@ describe(JobRepository.name, () => {
     await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-a' } });
     await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-b' } });
     expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
-      { deduplication: { id: JobName.LandmarkInfer } },
-      { deduplication: { id: JobName.LandmarkInfer } },
+      { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
+      { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
       undefined,
       undefined,
     ]);
