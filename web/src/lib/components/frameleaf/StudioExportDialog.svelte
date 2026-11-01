@@ -89,6 +89,7 @@
     sequenceName,
     busy = false,
     deliveryResults = [],
+    retryPending = false,
     renderEvidence = [],
     outputIntent = 'sdr',
     hdrEnabled = false,
@@ -120,6 +121,8 @@
     outputIntent?: 'sdr' | 'hdr';
     hdrEnabled?: boolean;
     busy?: boolean;
+    /** Preserve reviewed choices when a batch response was lost or only partly admitted. */
+    retryPending?: boolean;
     deliveryResults?: readonly { shape: string; queued: boolean; error: string | null }[];
     /** What the qualified render workers verified, per destination (FL-42). */
     renderEvidence?: readonly StudioRenderEvidence[];
@@ -345,9 +348,9 @@
   /** The person picked a format, resolution, preset or shape in this opening. */
   let chosen = $state(false);
 
-  // Every opening starts from the prototype's defaults, or the best the render workers can produce.
+  // Fresh openings use supported defaults; a pending batch must retain its identical reviewed payload.
   $effect(() => {
-    if (!open) {
+    if (!open || untrack(() => retryPending)) {
       return;
     }
 

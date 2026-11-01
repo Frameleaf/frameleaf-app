@@ -255,6 +255,7 @@ async function renderClaim(claim, recipe, context) {
   });
   let reported = 0;
   let reportedStage = 'preparing';
+  let lastReportedAt = Date.now();
   let progressWrites = Promise.resolve();
   const report = (fraction, evidence) => {
     const measured =
@@ -274,12 +275,16 @@ async function renderClaim(claim, recipe, context) {
         ? evidence.currentFrame
         : Math.min(frameTotal, Math.floor(fraction * frameTotal));
     if (measured) frameTotal = evidence.totalFrames;
+    const now = Date.now();
     if (
       Number.isSafeInteger(processed) &&
-      (stage !== reportedStage || processed - reported >= Math.max(1, Math.floor(frameTotal / 20)))
+      (stage !== reportedStage ||
+        processed - reported >= Math.max(1, Math.floor(frameTotal / 20)) ||
+        (processed > reported && now - lastReportedAt >= 10_000))
     ) {
       reported = processed;
       reportedStage = stage;
+      lastReportedAt = now;
       progressWrites = progressWrites
         .then(() =>
           post('/progress', {

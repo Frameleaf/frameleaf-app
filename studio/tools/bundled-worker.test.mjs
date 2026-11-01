@@ -661,6 +661,37 @@ describe('bundled worker executor', () => {
     }
   });
 
+  it('reports advancing slow frames every ten seconds without refreshing unchanged progress', async (t) => {
+    let now = Date.now();
+    t.mock.method(Date, 'now', () => now);
+    const claim = claimOf();
+    const server = await fakeServer(claim);
+    const renderer = fakeRenderer({
+      onRender: async (job) => {
+        const report = (frame) => job.onProgress(frame / 120, {
+          phase: 'rendering', currentFrame: frame, totalFrames: 120,
+        });
+        report(0);
+        now += 9999;
+        report(1);
+        now += 1;
+        report(2);
+        now += 10000;
+        report(2);
+        now += 10000;
+        report(3);
+      },
+    });
+    try {
+      assert.equal((await run(claim, server, renderer)).status, 'completed');
+      const reports = server.calls.filter((call) => call.route.endsWith('/progress') && call.body.stage === 'rendering');
+      assert.deepEqual(reports.map((call) => call.body.processedUnits), [0, 2, 3, 60]);
+      assert.ok(reports.every((call) => call.body.unit === 'frames'));
+    } finally {
+      await server.close();
+    }
+  });
+
   it('plans, reads its grants, renders, uploads, validates and completes', async () => {
     const claim = claimOf();
     const server = await fakeServer(claim);

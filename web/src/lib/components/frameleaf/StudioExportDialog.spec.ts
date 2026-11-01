@@ -944,6 +944,41 @@ describe('Studio export dialog: vertical and square', () => {
     expect(exportButton()).toBeDisabled();
     expect(screen.getByText('frameleaf_studio_render_refusal_codec_unavailable')).toBeInTheDocument();
   });
+  it('preserves a pending batch and its reviewed crop across reopen, then resets for a new export', async () => {
+    const row = evidence();
+    row.candidates![0]!.landscapeReframe = true;
+    vi.mocked(getStudioFraming).mockResolvedValue(framing);
+    const onExport = vi.fn();
+    const ui = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      projectId: PROJECT,
+      revision: 3,
+      renderEvidence: [row],
+      onExport,
+    });
+    const multiple = () => screen.getByRole('checkbox', { name: 'frameleaf_studio_export_multiple' });
+    await fireEvent.click(multiple());
+    await screen.findByTestId('studio-export-reframe');
+    await fireEvent.keyDown(screen.getByTestId('studio-reframe-box'), { key: 'ArrowRight' });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_review_confirm' }));
+    await fireEvent.click(exportButton());
+    const reviewed = onExport.mock.calls[0]![0];
+    expect(reviewed.deliveries).toHaveLength(1);
+    await ui.rerender({ open: false, retryPending: true });
+    await ui.rerender({ open: true, retryPending: true });
+    expect(multiple()).toBeChecked();
+    expect(exportButton()).toBeEnabled();
+    await fireEvent.click(exportButton());
+    expect(onExport.mock.calls[1]![0]).toEqual(reviewed);
+    // Clearing a refused changed batch must not erase the deliberate next choice while open.
+    await ui.rerender({ retryPending: false });
+    expect(multiple()).toBeChecked();
+    await ui.rerender({ open: false });
+    await ui.rerender({ open: true });
+    expect(multiple()).not.toBeChecked();
+  });
+
   it('queues multiple reviewed shapes with independent crop adjustments and invalidates review when settings change', async () => {
     const row = evidence();
     row.candidates![0]!.landscapeReframe = true;

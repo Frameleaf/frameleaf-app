@@ -1285,10 +1285,12 @@
         return;
       }
     }
-    pendingDeliveries = null;
-    deliveryResults = [];
+    if (!pendingDeliveries) {
+      deliveryResults = [];
+    }
     videoExportOpen = true;
   };
+  /** Keep a reviewed batch's key until admission is acknowledged so retries reuse accepted jobs. */
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
       try {
@@ -1304,6 +1306,9 @@
     }
     exporting = true;
     try {
+      if (pendingDeliveries && !choice.deliveries) {
+        throw new Error('studio_export_batch_changed');
+      }
       if (choice.deliveries) {
         if (
           choice.reviewedRevision !== revision ||
@@ -1344,6 +1349,9 @@
           followExport(last.operation.id);
           toastManager.primary($t('frameleaf_studio_export_batch_queued', { values: { count: admitted.length } }));
         }
+        if (admitted.length > 0) {
+          saveCaptionSidecars(choice);
+        }
         const refused = batch.items.filter((item) => item.result === null);
         if (refused.length > 0) {
           toastManager.danger(
@@ -1354,7 +1362,6 @@
         } else {
           videoExportOpen = false;
           pendingDeliveries = null;
-          saveCaptionSidecars(choice);
         }
         return;
       }
@@ -1373,6 +1380,7 @@
       saveCaptionSidecars(choice);
     } catch (error) {
       if (error instanceof Error && error.message === 'studio_export_batch_changed') {
+        pendingDeliveries = null;
         toastManager.danger($t('frameleaf_studio_export_batch_changed'));
         return;
       }
@@ -1656,6 +1664,7 @@
     : 'sdr'}
   busy={exporting}
   {deliveryResults}
+  retryPending={pendingDeliveries !== null}
   {renderEvidence}
   projectId={storedRevision === null ? null : project.id}
   revision={storedRevision}
