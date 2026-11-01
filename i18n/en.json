@@ -9180,7 +9180,7 @@
   "frameleaf_le_recovery_title": "Recovery key",
   "frameleaf_le_restart_again_hours": "You’ll be asked again in {hours} hours.",
   "frameleaf_le_restart_again_restart": "You’ll be asked again after the next restart.",
-  "frameleaf_le_restart_body": "The server restarted, so your Locked files need your passphrase before your PIN can open them.",
+  "frameleaf_le_restart_body": "Your Locked files need your passphrase before your PIN can open them.",
   "frameleaf_le_restart_forgot": "Forgot it? Use your recovery key under Settings, Locked encryption.",
   "frameleaf_le_restart_title": "Type your passphrase",
   "frameleaf_le_said_advanced": "Advanced Security is on. You’ll type your passphrase after every restart.",
