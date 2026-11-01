@@ -66,7 +66,9 @@ it.each(['current', 'replace', 'close', 'session'])(
       { yearMonth: '2025-02', isLoaded: false, assetsIterator: () => [].values() },
     ];
     const load = vi.fn(async (yearMonth: string) => {
-      if (yearMonth === '2025-01') await pending.promise;
+      if (yearMonth === '2025-01') {
+        await pending.promise;
+      }
       months.find((month) => month.yearMonth === yearMonth)!.isLoaded = true;
     });
     // Like TimelineManager, a class instance keeps the test state outside Svelte's deep proxy.
