@@ -168,7 +168,13 @@
     }
     switch (checked?.result) {
       case WorkflowPreviewStepResult.Filtered: {
-        return $t('frameleaf_workflows.preview_step_filtered', { values: { count: checked.remaining ?? 0 } });
+        // a partial preview checked only the first matches, so a step's count is a lower bound
+        return $t(
+          matches?.partial
+            ? 'frameleaf_workflows.preview_step_filtered_partial'
+            : 'frameleaf_workflows.preview_step_filtered',
+          { values: { count: checked.remaining ?? 0 } },
+        );
       }
       case WorkflowPreviewStepResult.Skipped: {
         return $t('frameleaf_workflows.preview_step_skipped');
@@ -700,7 +706,7 @@
             </ul>
             {#if matches.count > matches.exampleAssetIds.length}
               <p>
-                {$t('frameleaf_workflows.more_matches', {
+                {$t(matches.partial ? 'frameleaf_workflows.more_matches_partial' : 'frameleaf_workflows.more_matches', {
                   values: { count: matches.count - matches.exampleAssetIds.length },
                 })}
               </p>

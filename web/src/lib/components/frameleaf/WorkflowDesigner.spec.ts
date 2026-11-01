@@ -205,6 +205,7 @@ describe('WorkflowDesigner', () => {
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
     expect(await screen.findByText(/^At least 10,000 eligible matches/)).toBeInTheDocument();
+    expect(screen.getByText('and at least 9,999 more')).toBeInTheDocument();
   });
 
   it('does not call a partial count a lower bound when a step could not be checked (FL-729)', async () => {
