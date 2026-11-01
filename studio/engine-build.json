@@ -704,7 +704,12 @@
       "path": "patches/0143-headless-trackless-audio-validation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "6dfc1b91a3f955b705d2aa441b20b199daf9e0fd6c8a971acfae0d0b865abd3a"
+    },
+    {
+      "path": "patches/0144-remove-upstream-community-links.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6cfda280f13ecf28de2c809692308d54a9655082f705c3b2934c44f87285ef9"
     }
   ],
-  "sourceSha256": "dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a"
+  "sourceSha256": "5904057ecc5a64e08d8499575d4ef41234af8f1c69b2903631de0da2cb5a5b1a"
 }

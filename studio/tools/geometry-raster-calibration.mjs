@@ -189,7 +189,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' ||
           // The audio-only repair retains the same raster producers and Chromium version.
           binding.sourceSha256 ===
-            'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a')),
+            'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||
+          // FL-686 toolbar link removal leaves the raster producers unchanged.
+          binding.sourceSha256 ===
+            '5904057ecc5a64e08d8499575d4ef41234af8f1c69b2903631de0da2cb5a5b1a')),
     'SOURCE_BROWSER',
   )
   check(
