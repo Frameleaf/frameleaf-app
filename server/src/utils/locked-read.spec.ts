@@ -154,6 +154,33 @@ describe('locked-read', () => {
     expect(error.code).toBe('locked_key_unavailable');
   });
 
+  it('names a person who turned encryption on within a minute of the last key file read', async () => {
+    // the first lookup reads the key files, which hold only OWNER's
+    await openLockedRead(sealed, OWNER).catch(() => {});
+
+    const other = generateKeyPair();
+    await fs.writeFile(
+      join(dir, 'locked-keys', `${VIEWER}.json`),
+      JSON.stringify({
+        format: 'frameleaf-locked-key/1',
+        userId: VIEWER,
+        publicKey: other.publicKey.toString('base64'),
+      }),
+    );
+    await fs.writeFile(join(dir, 'other.src'), plain);
+    const otherSealed = join(dir, 'other.jpg');
+    await encryptFile(join(dir, 'other.src'), otherSealed, [{ publicKey: other.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'other.jpg',
+      mime: 'image/jpeg',
+    });
+
+    // a job deferred without its owner is never woken by their unlock, only by the hourly sweep
+    const error = await openLockedRead(otherSealed, null).catch((error_) => error_);
+    expect(error.ownerIds).toEqual([VIEWER]);
+  });
+
   it("a viewer without a grant can't read an Advanced owner's file", async () => {
     loadOwner();
     await expect(openLockedRead(sealed, VIEWER)).rejects.toThrow(LockedKeyUnavailableError);
