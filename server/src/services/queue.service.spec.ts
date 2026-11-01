@@ -528,6 +528,13 @@ describe(QueueService.name, () => {
       ...overrides,
     });
 
+    it('keeps internal landmark inference jobs out of the public queue response', async () => {
+      mocks.job.searchJobs.mockResolvedValue([job({ name: JobName.LandmarkInfer })]);
+      mocks.user.getJobSubjectOwners.mockResolvedValue([]);
+      await expect(sut.searchJobs(factory.auth(), QueueName.BackgroundTask, {})).resolves.toEqual([]);
+      expect(mocks.user.getJobSubjectOwners).not.toHaveBeenCalled();
+    });
+
     it('names the server as the worker of a queue that does not call machine learning', async () => {
       mocks.job.searchJobs.mockResolvedValue([job({ name: JobName.AssetGenerateThumbnails })]);
       mocks.user.getJobSubjectOwners.mockResolvedValue([{ subjectId: assetId, ownerId, ownerName: 'Ada' }]);

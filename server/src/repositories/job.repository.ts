@@ -976,6 +976,9 @@ export class JobRepository {
   }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
+      case JobName.LandmarkInfer: {
+        return item.data?.id ? null : { deduplication: { id: JobName.LandmarkInfer } };
+      }
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
       }

@@ -135,6 +135,8 @@ const inferOne = async (db: Kysely<DB>, id: string): Promise<void> => {
         .where('producerModelKey', 'is not', null)
         .executeTakeFirst();
       if (embedding) {
+        await sql`set local hnsw.ef_search = 100`.execute(tx);
+        await sql`set local hnsw.iterative_scan = strict_order`.execute(tx);
         const neighbours = await donors
           .innerJoin('smart_search', 'smart_search.assetId', 'donor.id')
           .where('smart_search.producerModelKey', '=', embedding.producerModelKey)

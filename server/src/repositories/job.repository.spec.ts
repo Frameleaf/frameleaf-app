@@ -63,6 +63,19 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('coalesces full landmark backfills while retaining independent per-asset work', async () => {
+    await sut.queue({ name: JobName.LandmarkInfer });
+    await sut.queue({ name: JobName.LandmarkInfer, data: {} });
+    await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-a' } });
+    await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-b' } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: JobName.LandmarkInfer } },
+      { deduplication: { id: JobName.LandmarkInfer } },
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('buffers success follow-ups for the final outcome transaction with run and dependency lineage', async () => {
     const execution = context();
     await queueExecution.run(execution, () =>

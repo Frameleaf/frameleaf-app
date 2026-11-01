@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetLockReason, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -227,6 +227,52 @@ describe('landmarks inferred from local photos (FL-358)', () => {
     await db.updateTable('smart_search').set({ producerModelKey: null }).execute();
     await sut.inferLandmarks();
     await expect(matches(target)).resolves.toEqual([]);
+  });
+
+  it('finds eligible visual references beyond other owners nearest vectors without leaking search settings', async () => {
+    const before = await makeAsset({ located: true });
+    const after = await makeAsset({ located: true, minute: 60 });
+    const target = await makeAsset({ minute: 120 });
+    await embed(before, vector(0.1));
+    await embed(after, vector(0.2));
+    await embed(target);
+    const otherOwner = await mediumFactory.userWithClusterGroup(db);
+    await new UserRepository(db).create(otherOwner);
+    const others = Array.from({ length: 128 }, () => mediumFactory.assetInsert({ ownerId: otherOwner.id }));
+    await db.insertInto('asset').values(others).execute();
+    await db
+      .insertInto('asset_exif')
+      .values(others.map(({ id }) => ({ assetId: id, ...point })))
+      .execute();
+    await db
+      .insertInto('smart_search')
+      .values(others.map(({ id }) => ({ assetId: id, embedding: vector(), producerModelKey: modelKey })))
+      .execute();
+
+    await db.connection().execute(async (connection) => {
+      // Forcing index order adds planner penalties; avoid JIT startup in this correctness check.
+      await sql`select set_config('hnsw.ef_search', '1', false),
+        set_config('hnsw.iterative_scan', 'off', false), set_config('enable_sort', 'off', false),
+        set_config('jit', 'off', false)`.execute(connection);
+      try {
+        const local = new MapRepository(
+          undefined as never,
+          undefined as never,
+          { setContext() {} } as never,
+          connection as never,
+        );
+        await local.inferLandmarks(target);
+        await expect(matches(target)).resolves.toMatchObject([{ id: 'Q243', inference: 'visual' }]);
+        const { rows } = await sql<{ ef: string; iterative: string }>`select current_setting('hnsw.ef_search') ef,
+          current_setting('hnsw.iterative_scan') iterative`.execute(connection);
+        expect(rows).toEqual([{ ef: '1', iterative: 'off' }]);
+      } finally {
+        await sql`reset hnsw.ef_search`.execute(connection);
+        await sql`reset hnsw.iterative_scan`.execute(connection);
+        await sql`reset enable_sort`.execute(connection);
+        await sql`reset jit`.execute(connection);
+      }
+    });
   });
 
   it('falls back to visual evidence when another same-camera GPS in the window conflicts', async () => {
