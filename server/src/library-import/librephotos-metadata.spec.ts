@@ -25,6 +25,12 @@ const context = (name: keyof typeof content.expected.photos = 'alice') => {
 };
 
 describe('LibrePhotos authoritative photo metadata', () => {
+  it('treats a source JSON null caption as absent without restoring an embedded caption', () => {
+    const input = context();
+    input.caption.captions_json = 'null';
+    expect(normalizeLibrephotosPhoto(input).metadata.description).toBeUndefined();
+  });
+
   it('preserves actual source manual metadata, explicit owner and original relationships', () => {
     const input = context();
     const photo = normalizeLibrephotosPhoto(input);

@@ -55,7 +55,7 @@ export const normalizeLibrephotosPhoto = (input: {
     caption =
       input.caption?.captions_json === null || !input.caption
         ? undefined
-        : captionSchema.parse(JSON.parse(z.string().parse(input.caption.captions_json)));
+        : (captionSchema.nullable().parse(JSON.parse(z.string().parse(input.caption.captions_json))) ?? undefined);
     tags = input.tags.map((row) => tagSchema.parse(row));
     if ((photo.exif_gps_lat === null) !== (photo.exif_gps_lon === null)) throw new Error('Incomplete location');
   } catch {
