@@ -57,6 +57,19 @@ describe('PhotoPrism pinned SQLite extraction', () => {
   it('refuses unqualified versions', () => {
     expect(() => openPhotoprismSnapshot(path, 'unknown-release')).toThrow('PHOTOPRISM_VERSION_UNQUALIFIED');
   });
+  it.each(['261029-963b58c50-Linux-AMD64-Plus', '261029-963b58c50-Linux-ARM64'])(
+    'reports a fully migrated but unqualified executable build %s distinctly',
+    (build) => {
+      database.prepare('UPDATE versions SET version=?').run(build);
+      expect(() => openPhotoprismSnapshot(path, fixture.source.version)).toThrow('PHOTOPRISM_BUILD_UNQUALIFIED');
+    },
+  );
+  it('reports a missing or unfinished version migration before build qualification', () => {
+    database.prepare('UPDATE versions SET version=?,migrated_at=NULL').run('different-build');
+    expect(() => openPhotoprismSnapshot(path, fixture.source.version)).toThrow('PHOTOPRISM_MIGRATIONS_INCOMPLETE');
+    database.exec('DELETE FROM versions');
+    expect(() => openPhotoprismSnapshot(path, fixture.source.version)).toThrow('PHOTOPRISM_MIGRATIONS_INCOMPLETE');
+  });
   it('preserves large source integer identities without Number conversion', () => {
     database.exec("UPDATE photos SET id=9007199254740993 WHERE photo_uid='p-fixture'");
     const source = openPhotoprismSnapshot(path, fixture.source.version);
