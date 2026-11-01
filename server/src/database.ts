@@ -626,6 +626,7 @@ export const columns = {
     'asset_exif.lensModel',
     'asset_exif.livePhotoCID',
     'asset_exif.longitude',
+    'asset_exif.gpsAccuracyM',
     'asset_exif.make',
     'asset_exif.model',
     'asset_exif.modifyDate',

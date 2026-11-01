@@ -4407,6 +4407,8 @@ export type ExifResponseDto = {
     focalLength?: number | null;
     /** Video frame rate (frames per second) */
     fps?: number | null;
+    /** Reported horizontal GPS accuracy in metres */
+    gpsAccuracyM?: number | null;
     /** Whether the stored rating is rejected */
     isRejected?: boolean | null;
     /** ISO sensitivity */
@@ -4471,6 +4473,21 @@ export type LandmarkSummaryDto = {
     kind: string;
     /** Landmark name */
     name: string;
+};
+export type LocationInsightDto = {
+    address?: string | null;
+    attributions: {
+        displayName: string;
+        uri?: string;
+    }[];
+    confidence: Confidence;
+    distanceM: number;
+    mapsUrl: string;
+    matchedAt: string;
+    name: string;
+    placeId: string;
+    provider: Provider;
+    relation: Relation;
 };
 export type PersonResponseDto = {
     /** Person date of birth */
@@ -4564,6 +4581,7 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    locationInsight?: LocationInsightDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -6341,6 +6359,7 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    locationInsight?: LocationInsightDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -7353,7 +7372,7 @@ export type DesktopWorkerHeartbeatDto = {
 };
 export type DesktopModelInventoryDto = {
     protocolVersion: number;
-    provider: Provider;
+    provider: Provider2;
     runtimeSourceRevision: string;
     workloads: {
         modelKeys: string[];
@@ -17670,6 +17689,28 @@ export type CloudBackupOwnerSetupResponseDto = {
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
 };
+export type LocationScanSummaryDto = {
+    error?: string | null;
+    failed: number;
+    id: string;
+    matched: number;
+    processed: number;
+    reason?: string | null;
+    skipped: number;
+    status: Status12;
+    total: number;
+    unmatched: number;
+};
+export type LocationScanStatusResponseDto = {
+    available: boolean;
+    enabled: boolean;
+    scan: (LocationScanSummaryDto) | null;
+};
+export type StartLocationScanDto = {
+    /** Explicit permission to send photo coordinates to Frameleaf Cloud and Google */
+    consent: true;
+    refresh?: boolean;
+};
 export type OnboardingResponseDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
@@ -19373,7 +19414,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status12;
+    status: Status13;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -24147,6 +24188,17 @@ export function updateAssetImageEnrichment({ id, assetImageEnrichmentActionReque
         method: "PUT",
         body: assetImageEnrichmentActionRequestDto
     })));
+}
+/**
+ * Dismiss own inferred venue without changing GPS or EXIF
+ */
+export function dismissAssetLocationInsight({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/location-insight`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Get asset metadata
@@ -34750,6 +34802,43 @@ export function setUserLicense({ licenseActivateDto }: {
     })));
 }
 /**
+ * Read own photo location scan and Cloud availability
+ */
+export function getLocationScanStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationScanStatusResponseDto;
+    }>("/users/me/location-scans", {
+        ...opts
+    }));
+}
+/**
+ * Explicitly identify own photo locations using Frameleaf Cloud
+ */
+export function startLocationScan({ startLocationScanDto }: {
+    startLocationScanDto: StartLocationScanDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LocationScanStatusResponseDto;
+    }>("/users/me/location-scans", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: startLocationScanDto
+    })));
+}
+/**
+ * Cancel own photo location scan and purge its Cloud input
+ */
+export function cancelLocationScan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/users/me/location-scans/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Delete user onboarding
  */
 export function deleteUserOnboarding(opts?: Oazapfts.RequestOpts) {
@@ -36335,6 +36424,17 @@ export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
 }
+export enum Confidence {
+    High = "high",
+    Medium = "medium"
+}
+export enum Provider {
+    Google = "google"
+}
+export enum Relation {
+    At = "at",
+    Near = "near"
+}
 export enum LibraryBookmarkItemKind {
     Bookmark = "bookmark"
 }
@@ -37206,7 +37306,7 @@ export enum DesktopInputKind {
     Text = "text",
     Image = "image"
 }
-export enum Provider {
+export enum Provider2 {
     CpuExecutionProvider = "CPUExecutionProvider",
     CudaExecutionProvider = "CUDAExecutionProvider",
     CoreMlExecutionProvider = "CoreMLExecutionProvider",
@@ -39492,6 +39592,16 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
+export enum Status12 {
+    Queued = "queued",
+    Preparing = "preparing",
+    Uploading = "uploading",
+    Running = "running",
+    Paused = "paused",
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
 export enum Kind11 {
     Album = "album",
     SmartAlbum = "smart-album",
@@ -39637,7 +39747,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status12 {
+export enum Status13 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"

@@ -44,6 +44,7 @@ import { mergeTimeZone } from 'src/utils/date.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
+import { photoGpsAccuracy } from 'src/utils/photo-locations.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -364,6 +365,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
+      gpsAccuracyM: locationLocked ? null : photoGpsAccuracy(exifTags.GPSHPositioningError),
       ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file

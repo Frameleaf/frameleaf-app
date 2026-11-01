@@ -17291,6 +17291,50 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/location-insight": {
+      "delete": {
+        "operationId": "dismissAssetLocationInsight",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss own inferred venue without changing GPS or EXIF",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/metadata": {
       "get": {
         "description": "Retrieve all metadata key-value pairs associated with the specified asset.",
@@ -60642,6 +60686,138 @@
         "x-immich-state": "Stable"
       }
     },
+    "/users/me/location-scans": {
+      "get": {
+        "operationId": "getLocationScanStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read own photo location scan and Cloud availability",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      },
+      "post": {
+        "operationId": "startLocationScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartLocationScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Explicitly identify own photo locations using Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/location-scans/{id}": {
+      "delete": {
+        "operationId": "cancelLocationScan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel own photo location scan and purge its Cloud input",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/users/me/onboarding": {
       "delete": {
         "description": "Delete the onboarding status of the current user.",
@@ -73074,6 +73250,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "locationInsight": {
+            "$ref": "#/components/schemas/LocationInsightDto"
+          },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
             "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
@@ -75216,6 +75395,9 @@
             "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
             "format": "date-time",
             "type": "string"
+          },
+          "locationInsight": {
+            "$ref": "#/components/schemas/LocationInsightDto"
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
@@ -88291,6 +88473,13 @@
             "nullable": true,
             "type": "number"
           },
+          "gpsAccuracyM": {
+            "description": "Reported horizontal GPS accuracy in metres",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
           "isRejected": {
             "default": null,
             "description": "Whether the stored rating is rejected",
@@ -98395,6 +98584,189 @@
         "required": [
           "still",
           "video"
+        ],
+        "type": "object"
+      },
+      "LocationInsightDto": {
+        "properties": {
+          "address": {
+            "default": null,
+            "maxLength": 2048,
+            "nullable": true,
+            "type": "string"
+          },
+          "attributions": {
+            "items": {
+              "properties": {
+                "displayName": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "uri": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "displayName"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium"
+            ],
+            "type": "string"
+          },
+          "distanceM": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "mapsUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "matchedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "placeId": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "google"
+            ],
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "at",
+              "near"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "attributions",
+          "confidence",
+          "distanceM",
+          "mapsUrl",
+          "matchedAt",
+          "name",
+          "placeId",
+          "provider",
+          "relation"
+        ],
+        "type": "object"
+      },
+      "LocationScanStatusResponseDto": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "scan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocationScanSummaryDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "enabled",
+          "scan"
+        ],
+        "type": "object"
+      },
+      "LocationScanSummaryDto": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "preparing",
+              "uploading",
+              "running",
+              "paused",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmatched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "failed",
+          "id",
+          "matched",
+          "processed",
+          "skipped",
+          "status",
+          "total",
+          "unmatched"
         ],
         "type": "object"
       },
@@ -136018,6 +136390,26 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StartLocationScanDto": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "description": "Explicit permission to send photo coordinates to Frameleaf Cloud and Google",
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "refresh": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "consent"
+        ],
         "type": "object"
       },
       "StatisticsSearchDto": {
