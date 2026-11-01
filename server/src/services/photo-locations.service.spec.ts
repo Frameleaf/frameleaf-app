@@ -7,7 +7,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { PhotoLocationScanState } from 'src/schema/tables/photo-locations.table.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { MlAdmissionRefusal } from 'src/enum.js';
+import { DatabaseLock, MlAdmissionRefusal } from 'src/enum.js';
 import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { locationNoCharge } from 'src/utils/photo-locations.js';
@@ -99,7 +99,16 @@ function setup(row = scan()) {
     instanceId: row.instanceId,
     linkedAt: row.linkedAt,
   });
-  return { row, repository, service, request, logger, quote, spending };
+  return { row, repository, service, request, logger, quote, spending, database };
+}
+
+function serializeLock(database: ReturnType<typeof setup>['database']) {
+  let pending: Promise<unknown> = Promise.resolve();
+  database.withLock.mockImplementation((_lock, callback: () => Promise<unknown>) => {
+    const result = pending.then(callback);
+    pending = result.catch(() => null);
+    return result;
+  });
 }
 
 async function setupInput(row = scan()) {
@@ -239,6 +248,92 @@ it('refuses a newly insufficient wallet before reserving or creating local work'
   await expect(service.start(auth, { estimateId: quote.estimateId, consent: true })).rejects.toMatchObject({
     status: 402,
   });
+  expect(repository.create).not.toHaveBeenCalled();
+});
+
+it('leaves the shared AI admission lock free while its Cloud quote is blocked', async () => {
+  const { row, service, request, repository, quote, database } = setup();
+  serializeLock(database);
+  const quoting = Promise.withResolvers<void>();
+  const quoted = Promise.withResolvers<typeof quote>();
+  request.mockImplementation(() => {
+    quoting.resolve();
+    return quoted.promise;
+  });
+  repository.create.mockResolvedValue(row);
+  const confirming = service.start(auth, { estimateId: quote.estimateId, consent: true });
+  try {
+    await quoting.promise;
+    expect(database.withLock).not.toHaveBeenCalled();
+    const otherAdmission = vi.fn().mockResolvedValue('unblocked');
+    await expect(database.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, otherAdmission)).resolves.toBe(
+      'unblocked',
+    );
+    expect(otherAdmission).toHaveBeenCalledOnce();
+    expect(repository.create).not.toHaveBeenCalled();
+  } finally {
+    quoted.resolve(quote);
+    await confirming;
+  }
+});
+
+it('confirms the same kept quote concurrently as one job and one spending reservation', async () => {
+  const { row, service, request, repository, quote, spending, database } = setup();
+  serializeLock(database);
+  let existing: typeof row | undefined;
+  repository.getByEstimate.mockImplementation(() => Promise.resolve(existing));
+  repository.create.mockImplementation(() => {
+    existing = row;
+    repository.getEstimate.mockResolvedValue({ expiresAt: new Date(0), record: { quote } });
+    return Promise.resolve(row);
+  });
+  request.mockResolvedValue(quote);
+
+  const confirmed = await Promise.all([
+    service.start(auth, { estimateId: quote.estimateId, consent: true }),
+    service.start(auth, { estimateId: quote.estimateId, consent: true }),
+  ]);
+
+  expect(confirmed.map(({ scan }) => scan?.id)).toEqual([row.id, row.id]);
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(repository.create).toHaveBeenCalledOnce();
+  expect(spending.spendPermission).toHaveBeenCalledOnce();
+});
+
+it('rejects a kept quote that expires while Cloud is replying before it reserves local credit', async () => {
+  const { service, request, repository, quote, spending } = setup();
+  request.mockImplementation(() => {
+    repository.getEstimate.mockResolvedValue({ expiresAt: new Date(0), record: { quote } });
+    return Promise.resolve(quote);
+  });
+
+  await expect(service.start(auth, { estimateId: quote.estimateId, consent: true })).rejects.toThrow(
+    'estimate expired',
+  );
+  expect(repository.create).not.toHaveBeenCalled();
+  expect(spending.spendPermission).not.toHaveBeenCalled();
+});
+
+it('refuses an admission if the Cloud binding changes while a quote is being checked', async () => {
+  const { row, service, request, repository } = setup();
+  vi.mocked((service as unknown as { gateway: () => Promise<unknown> }).gateway)
+    .mockResolvedValueOnce({ request, cloudUrl: row.cloudUrl, instanceId: row.instanceId, linkedAt: row.linkedAt })
+    .mockRejectedValueOnce(new ForbiddenException('The Frameleaf Cloud link changed'));
+  request.mockResolvedValue({
+    estimateId: row.estimateId,
+    expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    currency: 'USD',
+    unitPriceMicros: 5000,
+    eligiblePhotos: 1,
+    selectedPhotos: 1,
+    remainingPhotos: 0,
+    holdMicros: 5000,
+    availableMicros: 1_000_000,
+  });
+
+  await expect(service.start(auth, { estimateId: row.estimateId, consent: true })).rejects.toThrow(
+    'Cloud link changed',
+  );
   expect(repository.create).not.toHaveBeenCalled();
 });
 

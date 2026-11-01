@@ -58,6 +58,7 @@ const LOCATION_INPUT_LIMITS = { compressed: LOCATION_INPUT_MAX_COMPRESSED, expan
 export const LOCATION_ACTIVE_STATUSES = ['queued', 'preparing', 'uploading', 'running', 'paused'] as const;
 
 const mapsUrl = z.url().refine((value) => {
+  if (!URL.canParse(value)) return false;
   const url = new URL(value);
   return (
     url.protocol === 'https:' &&

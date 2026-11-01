@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import {
+  LOCATION_UNIT_PRICE_MICROS,
   cloudLocationEstimateSchema,
   locationBillingSchema,
   locationInsightSchema,
@@ -61,7 +62,7 @@ export class LocationScanEstimateRequestDto extends createZodDto(
     .strictObject({
       refresh: z.boolean().optional().default(false),
       maxPhotos: z.number().int().positive().max(2_147_483_647).optional(),
-      maxSpendMicros: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+      maxSpendMicros: z.number().int().min(LOCATION_UNIT_PRICE_MICROS).max(Number.MAX_SAFE_INTEGER).optional(),
     })
     .refine(
       (value) => value.maxPhotos !== undefined || value.maxSpendMicros !== undefined,

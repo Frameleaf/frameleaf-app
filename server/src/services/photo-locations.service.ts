@@ -168,6 +168,19 @@ export class PhotoLocationsService {
 
   async start(auth: AuthDto, body: StartLocationScanDto): Promise<LocationScanStatusResponseDto> {
     if (auth.sharedLink || !body.consent) throw new BadRequestException('Explicit owner permission is required');
+    const existing = await this.repository.getByEstimate(body.estimateId, auth.user.id);
+    if (existing) return { enabled: true, available: true, scan: summary(existing) };
+    const kept = await this.repository.getEstimate(body.estimateId, auth.user.id);
+    if (!kept || new Date(kept.expiresAt).getTime() <= Date.now()) {
+      throw new ConflictException({ code: 'estimate-expired', message: 'This estimate expired; estimate again' });
+    }
+    const approved = kept.record;
+    const gateway = await this.gateway(auth.user.id, approved);
+    const quote = await this.quote(gateway, approved.quote.eligiblePhotos, {
+      refresh: approved.refresh,
+      maxPhotos: approved.quote.selectedPhotos,
+      maxSpendMicros: approved.quote.holdMicros,
+    });
     return this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
       const existing = await this.repository.getByEstimate(body.estimateId, auth.user.id);
       if (existing) return { enabled: true, available: true, scan: summary(existing) };
@@ -175,13 +188,7 @@ export class PhotoLocationsService {
       if (!kept || new Date(kept.expiresAt).getTime() <= Date.now()) {
         throw new ConflictException({ code: 'estimate-expired', message: 'This estimate expired; estimate again' });
       }
-      const approved = kept.record;
-      const gateway = await this.gateway(auth.user.id, approved);
-      const quote = await this.quote(gateway, approved.quote.eligiblePhotos, {
-        refresh: approved.refresh,
-        maxPhotos: approved.quote.selectedPhotos,
-        maxSpendMicros: approved.quote.holdMicros,
-      });
+      await this.gateway(auth.user.id, approved);
       if (quote.holdMicros > approved.quote.holdMicros)
         throw new ConflictException('The price changed; estimate again');
       if (quote.availableMicros < quote.holdMicros)

@@ -98818,9 +98818,8 @@
             "type": "integer"
           },
           "maxSpendMicros": {
-            "exclusiveMinimum": true,
             "maximum": 9007199254740991,
-            "minimum": 0,
+            "minimum": 5000,
             "type": "integer"
           },
           "refresh": {

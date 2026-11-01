@@ -10,6 +10,19 @@ import {
   writeLocationInput,
 } from 'src/utils/photo-locations.js';
 
+const match = {
+  provider: 'google',
+  placeId: 'place',
+  name: 'Cafe',
+  address: null,
+  mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Cafe&query_place_id=place',
+  relation: 'near',
+  confidence: 'medium',
+  distanceM: 25,
+  matchedAt: '2026-10-31T12:00:00Z',
+  attributions: [],
+};
+
 describe('photo location input', () => {
   it('treats unsupported optional accuracy as unknown instead of blocking a library scan', () => {
     expect(photoGpsAccuracy(100_001)).toBeNull();
@@ -65,20 +78,26 @@ describe('photo location input', () => {
   });
 
   it('refuses provider links outside Google Maps and strips unexpected result fields', () => {
-    const match = {
-      provider: 'google',
-      placeId: 'place',
-      name: 'Cafe',
-      address: null,
-      mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Cafe&query_place_id=place',
-      relation: 'near',
-      confidence: 'medium',
-      distanceM: 25,
-      matchedAt: '2026-10-31T12:00:00Z',
-      attributions: [],
-    };
     expect(locationInsightSchema.parse({ ...match, privateData: 'drop' })).toEqual(match);
     expect(locationInsightSchema.safeParse({ ...match, mapsUrl: 'https://example.com/' }).success).toBe(false);
     expect(locationInsightSchema.safeParse({ ...match, distanceM: -1 }).success).toBe(false);
+  });
+
+  it.each([
+    ['', false],
+    ['not a URL', false],
+    ['https://', false],
+    ['https://[invalid', false],
+    [match.mapsUrl.replace('https:', 'http:'), false],
+    ['https://username:password@www.google.com/maps/place/cafe', false],
+    ['https://www.google.com.evil/maps/place/cafe', false],
+    ['https://www.google.com/search?q=cafe', false],
+    ['javascript:alert(1)', false],
+    ['https://maps.google.com/?q=cafe', true],
+    ['https://google.com/maps/place/cafe', true],
+    ['https://www.google.com/maps/search/?api=1&query=cafe', true],
+  ])('validates a Maps URL without throwing: %s', (mapsUrl, success) => {
+    expect(() => locationInsightSchema.safeParse({ ...match, mapsUrl })).not.toThrow();
+    expect(locationInsightSchema.safeParse({ ...match, mapsUrl }).success).toBe(success);
   });
 });
