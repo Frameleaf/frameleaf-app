@@ -114,7 +114,7 @@ describe('Piwigo restored database transport', () => {
     await reader.next();
     expect(createConnection).toHaveBeenCalledWith(
       expect.objectContaining({
-        ssl: { ca: 'fixture-public-ca', rejectUnauthorized: true },
+        ssl: { ca: 'fixture-public-ca', rejectUnauthorized: true, verifyIdentity: true },
       }),
     );
     await reader.return(undefined);

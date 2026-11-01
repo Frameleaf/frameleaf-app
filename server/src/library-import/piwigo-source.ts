@@ -66,7 +66,7 @@ export async function* readPiwigoRestore(input: Config): AsyncGenerator<{ table:
       supportBigNumbers: true,
       bigNumberStrings: true,
       charset: 'utf8mb4',
-      ssl: config.tls ? { ...config.tls, rejectUnauthorized: true } : undefined,
+      ssl: config.tls ? { ...config.tls, rejectUnauthorized: true, verifyIdentity: true } : undefined,
       typeCast(field, next) {
         if (integerTypes.has(field.type)) {
           const value = field.string();
