@@ -53,7 +53,9 @@
   const coordinates = $derived(coordinateLabel(point));
   const mapLink = $derived(osmLink(point));
   // FL-354: the landmark the item was taken at; the server lists the best label first.
-  const landmark = $derived(asset.landmarks?.[0]);
+  const landmarks = $derived(
+    (asset.landmarks ?? []).filter((item, index) => index === 0 || item.inference === 'visual').slice(0, 2),
+  );
   const insight = $derived(point ? asset.locationInsight : undefined);
   const insightMapLink = $derived(libraryReferenceUrl(insight?.mapsUrl));
   const insightHeadingId = $props.id();
@@ -176,7 +178,7 @@
 </script>
 
 <div data-testid="frameleaf-info-location">
-  {#if place || coordinates}
+  {#if place || coordinates || landmarks.length > 0}
     <button
       type="button"
       class="flex w-full place-items-start justify-between gap-4 py-4 text-start"
@@ -202,7 +204,7 @@
       {/if}
     </button>
 
-    {#if landmark}
+    {#each landmarks as landmark (landmark.id)}
       <a
         href={landmarkHref(landmark.id)}
         class="flex items-center gap-4 pb-4 hover:text-primary"
@@ -210,11 +212,28 @@
       >
         <LandmarkBadge {landmark} size={24} />
         <div class="min-w-0">
-          <p>{$t('frameleaf_landmark_at', { values: { name: landmark.name } })}</p>
-          <p class="text-sm text-gray-500 dark:text-gray-400">{$t(landmarkKind(landmark.kind).labelKey)}</p>
+          <p>
+            {$t(
+              landmark.inference === 'visual'
+                ? 'frameleaf_landmark_visual'
+                : landmark.inference === 'temporal'
+                  ? 'frameleaf_landmark_inferred_at'
+                  : 'frameleaf_landmark_at',
+              { values: { name: landmark.name } },
+            )}
+          </p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">
+            {$t(
+              landmark.inference === 'visual'
+                ? 'frameleaf_landmark_inference_visual'
+                : landmark.inference === 'temporal'
+                  ? 'frameleaf_landmark_inference_temporal'
+                  : landmarkKind(landmark.kind).labelKey,
+            )}
+          </p>
         </div>
       </a>
-    {/if}
+    {/each}
 
     {#if mapLink}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->

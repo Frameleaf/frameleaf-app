@@ -646,7 +646,7 @@ export class BaseService {
    */
   protected async withLandmarks(data: AssetResponseDto): Promise<AssetResponseDto> {
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
-    if (reverseGeocoding.enabled && typeof data.exifInfo?.latitude === 'number') {
+    if (reverseGeocoding.enabled && data.exifInfo) {
       const landmarks = await this.searchRepository.getAssetLandmarks(data.id);
       if (landmarks.length > 0) {
         const icons = this.mapRepository.getLandmarkIcons();

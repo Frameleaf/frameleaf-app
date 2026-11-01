@@ -55,6 +55,14 @@ Use this mode when you know a folder name or part of the original asset path.
 
 Example: for /John/Projects/3D_Printing/2026-07-01/IMG_0001.jpg, searches like Projects, 3D, Printing, or 2026 match the asset.
 
+## Inferred landmarks
+
+With reverse geocoding enabled, Frameleaf can associate a photo without GPS with a landmark using nearby photos from the same camera make and model in your library. The photos must belong to the same owner and library and have been taken within five minutes. Conflicting nearby locations prevent an estimate.
+
+Frameleaf can also recognise a landmark from similar geotagged photos already in your library, including a landmark photographed from a distance. This uses stored image embeddings from the same verified search model and requires at least two independent reference photos to agree. It makes no new model or external service requests. A library needs suitable reference photos before visual recognition can work.
+
+Photo information labels these matches **Inferred at** or **Likely showing**. Recorded locations take priority. Estimates appear in landmark searches and Places, while exact map coordinates and automatic visit memories continue to use recorded GPS. Inference never writes coordinates to an original file or sidecar, and does not restore a location you deliberately removed. Locked, hidden, archived, deleted and other owners' photos cannot supply an estimate.
+
 ## Configuration
 
 Open **Settings → Search & intelligence → Visual search** to see the options available. The model is under **Advanced: search model**.

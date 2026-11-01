@@ -66,6 +66,19 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('coalesces full landmark backfills while retaining independent per-asset work', async () => {
+    await sut.queue({ name: JobName.LandmarkInfer });
+    await sut.queue({ name: JobName.LandmarkInfer, data: {} });
+    await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-a' } });
+    await sut.queue({ name: JobName.LandmarkInfer, data: { id: 'asset-b' } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
+      { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('keeps one waiting Locked encryption job per item and step, and one sweep per person (FL-721)', async () => {
     await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
     await sut.queue({ name: JobName.LockedUnseal, data: { id: 'asset' } });
@@ -93,6 +106,29 @@ describe(JobRepository.name, () => {
     expect(execution.followups).toEqual([
       expect.objectContaining({ runId: 'run', itemKey: 'asset', parentId: 'parent' }),
     ]);
+  });
+
+  it('keeps metadata and embedding inference distinct within one media run', async () => {
+    const execution = context();
+    execution.claim.rootItemKey = 'asset';
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'metadata' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'embedding' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'metadata' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset' } },
+        ]),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'asset/metadata',
+      'asset/embedding',
+      'asset/metadata',
+      'asset',
+    ]);
+    expect(execution.followups.every((item) => item.runId === 'run' && item.rootItemKey === 'asset')).toBe(true);
+    expect(execution.followups.every((item) => item.options === undefined)).toBe(true);
   });
 
   it('keys same-subject jobs with their own identity as separate run items', async () => {

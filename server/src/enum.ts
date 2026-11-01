@@ -2379,6 +2379,7 @@ export enum JobName {
   MemoryCleanup = 'MemoryCleanup',
   MemoryGenerate = 'MemoryGenerate',
   LandmarkMatchAll = 'LandmarkMatchAll',
+  LandmarkInfer = 'LandmarkInfer',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2498,7 +2499,8 @@ export enum JobName {
 // photography jobs are observed through the scoped workflow API, FL-650's seek-bar preview
 // warm-up is a background cache fill nobody watches, FL-651's video fingerprints run on the video
 // duplicate queue, observed as that queue, FL-667's filler-tag clean-up runs once, and FL-721's
-// Locked encryption jobs are observed through the Locked encryption status.
+// Locked encryption jobs are observed through the Locked encryption status. Landmark inference
+// is observed through asset details rather than the public job catalogue.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2507,6 +2509,7 @@ export const JobNameSchema = z
     JobName.AssetVideoFingerprintQueueAll,
     JobName.AssetVideoFingerprint,
     JobName.DescriptionFillerTagCleanup,
+    JobName.LandmarkInfer,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,

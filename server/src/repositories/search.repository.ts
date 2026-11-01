@@ -48,6 +48,7 @@ import {
   searchStatisticsV3Examples,
   tagIsSuppressed,
   tokenizeForSearch,
+  validLandmarkMatch,
   withExifInner,
   withHiddenContentFilter,
   withSearchOrder,
@@ -725,7 +726,8 @@ export class SearchRepository {
 
   /**
    * Landmarks the viewer has media at (FL-353), with the same owners and privacy rules as
-   * `getCityAssetCounts`. The place names are the most common among the items.
+   * `getCityAssetCounts`. Region names come only from recorded matches: a distant depiction must not
+   * move the landmark to the place the photo was taken.
    *
    * The cover is the best item taken there (FL-395), by the score the Best Photos list ranks by: scored
    * items first, a landscape one before a portrait one (it fronts a wide card), then the highest score, then
@@ -744,9 +746,10 @@ export class SearchRepository {
           .selectFrom('asset_landmark')
           .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
           .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
-          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId'])
+          .where(validLandmarkMatch())
+          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId', 'asset_landmark.inference'])
           .select(
-            sql<number>`row_number() over (partition by asset_landmark."assetId" order by ${mostSpecificLandmark})`.as(
+            sql<number>`row_number() over (partition by asset_landmark."assetId" order by asset_landmark.inference is not null, ${mostSpecificLandmark})`.as(
               'position',
             ),
           )
@@ -774,9 +777,15 @@ export class SearchRepository {
         eb.fn.min('asset.localDateTime').as('firstTakenAt'),
         eb.fn.max('asset.localDateTime').as('lastTakenAt'),
         sql<string>`(array_agg(asset.id order by ${bestCover}))[1]`.as('coverAssetId'),
-        sql<string | null>`mode() within group (order by asset_exif.city)`.as('city'),
-        sql<string | null>`mode() within group (order by asset_exif.state)`.as('state'),
-        sql<string | null>`mode() within group (order by asset_exif.country)`.as('country'),
+        sql<string | null>`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as(
+          'city',
+        ),
+        sql<string | null>`mode() within group (order by asset_exif.state) filter (where matched.inference is null)`.as(
+          'state',
+        ),
+        sql<
+          string | null
+        >`mode() within group (order by asset_exif.country) filter (where matched.inference is null)`.as('country'),
       ])
       .groupBy('landmark.id')
       .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
@@ -785,16 +794,20 @@ export class SearchRepository {
       .execute();
   }
 
-  /** The landmarks one asset was taken at, the best label for it first. */
+  /** Recorded locations first, then labelled inferences about nearby photos or the scene. */
   @GenerateSql({ params: [DummyValue.UUID] })
-  getAssetLandmarks(assetId: string) {
-    return this.db
+  async getAssetLandmarks(assetId: string) {
+    const rows = await this.db
       .selectFrom('asset_landmark')
       .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
-      .select(['landmark.id', 'landmark.name', 'landmark.kind'])
+      .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+      .select(['landmark.id', 'landmark.name', 'landmark.kind', 'asset_landmark.inference'])
       .where('asset_landmark.assetId', '=', assetId)
+      .where(validLandmarkMatch())
+      .orderBy(sql`asset_landmark.inference is not null`)
       .orderBy(mostSpecificLandmark)
       .execute();
+    return rows.map(({ inference, ...landmark }) => ({ ...landmark, ...(inference && { inference }) }));
   }
 
   async upsert(assetId: string, value: ClipEmbedding): Promise<void> {

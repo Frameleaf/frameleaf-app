@@ -357,8 +357,23 @@ describe(AssetService.name, () => {
       const unlocated = AssetFactory.from({ ownerId: auth.user.id }).exif({ latitude: null, longitude: null }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([unlocated.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(unlocated));
+      mocks.search.getAssetLandmarks.mockResolvedValue([]);
       const response = (await sut.get(auth, unlocated.id)) as AssetResponseDto;
       expect(response.landmarks).toBeUndefined();
+    });
+
+    it('returns labelled landmark inference without inventing recorded GPS', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from({ ownerId: auth.user.id }).exif({ latitude: null, longitude: null }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.search.getAssetLandmarks.mockResolvedValue([
+        { id: 'Q243', name: 'Eiffel Tower', kind: 'tower', inference: 'temporal' },
+      ]);
+      mocks.map.getLandmarkIcons.mockReturnValue(new Map());
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
+      expect(response.landmarks?.[0]).toMatchObject({ id: 'Q243', inference: 'temporal' });
+      expect(response.exifInfo).toMatchObject({ latitude: null, longitude: null });
     });
 
     it("should keep the location on someone else's asset seen through an album (FL-326)", async () => {
@@ -432,6 +447,9 @@ describe(AssetService.name, () => {
       const asset = AssetFactory.from().exif({ description: 'foo' }).build();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.search.getAssetLandmarks.mockResolvedValue([
+        { id: 'Q243', name: 'Eiffel Tower', kind: 'tower', inference: 'visual' },
+      ]);
 
       const result = await sut.get(
         { ...authStub.adminSharedLink, sharedLink: { ...authStub.adminSharedLink.sharedLink!, showExif: false } },
@@ -440,6 +458,8 @@ describe(AssetService.name, () => {
 
       expect(result).toEqual(expect.objectContaining({ hasMetadata: false }));
       expect(result).not.toHaveProperty('exifInfo');
+      expect(result).not.toHaveProperty('landmarks');
+      expect(mocks.search.getAssetLandmarks).not.toHaveBeenCalled();
       expect(mocks.access.asset.checkSharedLinkAccess).toHaveBeenCalledWith(
         authStub.adminSharedLink.sharedLink?.id,
         new Set([asset.id]),

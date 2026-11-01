@@ -641,6 +641,7 @@ export type JobItem =
   | { name: JobName.MemoryCleanup; data?: IBaseJob }
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
   | { name: JobName.LandmarkMatchAll; data?: IBaseJob }
+  | { name: JobName.LandmarkInfer; data?: IBaseJob & { id?: string; trigger?: 'metadata' | 'embedding' } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem

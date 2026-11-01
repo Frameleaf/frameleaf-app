@@ -31,6 +31,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.AssetVideoFingerprintQueueAll,
       JobName.AssetVideoFingerprint,
       JobName.DescriptionFillerTagCleanup,
+      JobName.LandmarkInfer,
       JobName.LockedSeal,
       JobName.LockedUnseal,
       JobName.LockedRewrap,
@@ -70,7 +71,7 @@ describe('public queue job compatibility (FL-283)', () => {
 
       const result = await service.searchJobs({} as AuthDto, QueueName.ThumbnailGeneration, query);
 
-      expect(searchJobs).toHaveBeenCalledWith(QueueName.ThumbnailGeneration, query);
+      expect(searchJobs).toHaveBeenCalledWith(QueueName.ThumbnailGeneration, query, undefined, true);
       expect(getJobSubjectOwners).toHaveBeenCalledWith([assetId]);
       expect(result).toEqual([
         {

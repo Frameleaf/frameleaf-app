@@ -12,7 +12,7 @@ import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
-import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import { JobName, JobNameSchema, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
@@ -116,6 +116,7 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluateAll,
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
+  JobName.LandmarkInfer,
   // FL-413: every batch saves the run's cursor; a retry carries on from it
   JobName.IdenticalFilesCheck,
   // a restart mid-batch must not leave the partner card "queued" forever; copies are keyed by
@@ -666,7 +667,10 @@ export class JobRepository {
     const subject = String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'));
     // A job with its own identity (one per workflow execution, one per album recipient) is its own run item:
     // keyed by subject alone, the second one would hit job_run_stage and be dropped.
-    const identity = options?.deduplication?.id ?? options?.jobId;
+    const identity =
+      options?.deduplication?.id ??
+      options?.jobId ??
+      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined);
     return {
       name: item.name,
       data,
@@ -951,7 +955,7 @@ export class JobRepository {
     }
   }
 
-  async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000): Promise<QueueJobRow[]> {
+  async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000, publicOnly = false): Promise<QueueJobRow[]> {
     const statuses = dto.status ?? Object.values(QueueJobStatus);
     const { rows } = await sql<QueueJobRow>`select * from (
       select j.id, j.name, case when j.sensitive then '{}'::jsonb else j.data end data,
@@ -962,7 +966,9 @@ export class JobRepository {
         when j.state in ('pending','waiting') and q.paused then 'paused'
         when j.state = 'pending' then 'waiting' else j.state end status
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
-      ) jobs where status = any(${statuses}::text[]) order by timestamp desc, id limit ${limit}`.execute(this.store.db);
+      ) jobs where status = any(${statuses}::text[])
+      and (${!publicOnly} or name = any(${JobNameSchema.options}::text[]))
+      order by timestamp desc, id limit ${limit}`.execute(this.store.db);
     return rows;
   }
 
@@ -1005,6 +1011,9 @@ export class JobRepository {
   }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
+      case JobName.LandmarkInfer: {
+        return item.data?.id ? null : { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } };
+      }
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
       }

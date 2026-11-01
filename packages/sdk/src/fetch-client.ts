@@ -4485,6 +4485,8 @@ export type LandmarkSummaryDto = {
     icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
+    /** Present for an estimated match: temporal borrows nearby GPS from a camera with the same make and model; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
+    inference?: Inference;
     /** Kind of place, for example theme_park, museum or national_park */
     kind: string;
     /** Landmark name */
@@ -4595,7 +4597,7 @@ export type AssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
-    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    /** Recorded and inferred landmarks, with recorded locations first. Included in single and batch asset-info responses. */
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
@@ -6375,7 +6377,7 @@ export type BestPhotoAssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
-    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    /** Recorded and inferred landmarks, with recorded locations first. Included in single and batch asset-info responses. */
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
@@ -14409,6 +14411,8 @@ export type SearchLandmarkResponseDto = {
     icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
+    /** Present for an estimated match: temporal borrows nearby GPS from a camera with the same make and model; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
+    inference?: Inference;
     /** Kind of place, for example theme_park, museum or national_park */
     kind: string;
     /** Local capture time of the latest photo or video here */
@@ -36740,6 +36744,10 @@ export enum DynamicRange {
 export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
+}
+export enum Inference {
+    Temporal = "temporal",
+    Visual = "visual"
 }
 export enum LocationInsightConfidence {
     High = "high",

@@ -493,10 +493,12 @@ with
     select
       "asset_landmark"."assetId",
       "asset_landmark"."landmarkId",
+      "asset_landmark"."inference",
       row_number() over (
         partition by
           asset_landmark."assetId"
         order by
+          asset_landmark.inference is not null,
           (landmark."radiusM" > $1),
           landmark.rank desc,
           landmark."radiusM",
@@ -507,7 +509,648 @@ with
       inner join "landmark" on "landmark"."id" = "asset_landmark"."landmarkId"
       inner join "asset" on "asset"."id" = "asset_landmark"."assetId"
     where
-      "asset"."ownerId" = any ($2::uuid[])
+      (
+        asset_landmark.inference is null
+        or (
+          (
+            (
+              "asset"."visibility" = 'timeline'
+              and not exists (
+                select
+                  1
+                from
+                  asset_lock
+                where
+                  asset_lock."assetId" = "asset"."id"
+              )
+            )
+            and "asset"."libraryScope" in ($2, $3)
+            and "asset"."type" = $4
+            and "asset"."deletedAt" is null
+            and not (
+              exists (
+                select
+                  1
+                from
+                  user_metadata as owner_rules
+                where
+                  owner_rules."userId" = "asset"."ownerId"
+                  and owner_rules.key = 'preferences'
+                  and (
+                    exists (
+                      select
+                        1
+                      from
+                        tag_asset
+                        inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                      where
+                        tag_asset."assetId" = "asset"."id"
+                        and tag_closure.id_ancestor in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.tagIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                    )
+                    or exists (
+                      select
+                        1
+                      from
+                        asset_face
+                      where
+                        asset_face."assetId" = "asset"."id"
+                        and asset_face."personGroupId" in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.personIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                        and asset_face."deletedAt" is null
+                        and asset_face."isVisible" is true
+                    )
+                    or exists (
+                      select
+                        1
+                      from
+                        pet_observation
+                        inner join pet on pet.id = pet_observation."petId"
+                      where
+                        pet_observation."assetId" = "asset"."id"
+                        and pet_observation."petId" in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.petIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                        and pet_observation.state = 'confirmed'
+                        and pet."ownerId" = "asset"."ownerId"
+                    )
+                  )
+              )
+              or exists (
+                with recursive
+                  owner_rules_lineage ("assetId") as (
+                    select
+                      owner_rules_source."assetId"
+                    from
+                      studio_export_version as owner_rules_export
+                      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                    where
+                      owner_rules_export."resultAssetId" = "asset"."id"
+                      and owner_rules_export.state = 'published'
+                      and owner_rules_source."assetId" is not null
+                    union
+                    select
+                      owner_rules_source."assetId"
+                    from
+                      owner_rules_lineage
+                      inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+                      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                    where
+                      owner_rules_export.state = 'published'
+                      and owner_rules_source."assetId" is not null
+                  )
+                select
+                  1
+                from
+                  owner_rules_lineage
+                  inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+                where
+                  exists (
+                    select
+                      1
+                    from
+                      user_metadata as owner_rules
+                    where
+                      owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"
+                      and owner_rules.key = 'preferences'
+                      and (
+                        exists (
+                          select
+                            1
+                          from
+                            tag_asset
+                            inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                          where
+                            tag_asset."assetId" = "owner_rules_lineage_asset"."id"
+                            and tag_closure.id_ancestor in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.tagIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                        )
+                        or exists (
+                          select
+                            1
+                          from
+                            asset_face
+                          where
+                            asset_face."assetId" = "owner_rules_lineage_asset"."id"
+                            and asset_face."personGroupId" in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.personIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                            and asset_face."deletedAt" is null
+                            and asset_face."isVisible" is true
+                        )
+                        or exists (
+                          select
+                            1
+                          from
+                            pet_observation
+                            inner join pet on pet.id = pet_observation."petId"
+                          where
+                            pet_observation."assetId" = "owner_rules_lineage_asset"."id"
+                            and pet_observation."petId" in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.petIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                            and pet_observation.state = 'confirmed'
+                            and pet."ownerId" = "owner_rules_lineage_asset"."ownerId"
+                        )
+                      )
+                  )
+              )
+            )
+          )
+          and exists (
+            select
+              1
+            from
+              asset_exif inferred_exif
+            where
+              inferred_exif."assetId" = asset.id
+              and not coalesce(
+                inferred_exif."lockedProperties" && array['latitude', 'longitude']::varchar[],
+                false
+              )
+              and (
+                asset_landmark.inference != 'temporal'
+                or (
+                  inferred_exif.latitude is null
+                  and inferred_exif.longitude is null
+                )
+              )
+          )
+          and cardinality(asset_landmark."sourceAssetIds") = (
+            select
+              count(distinct donor.checksum)
+            from
+              asset donor
+              join asset_exif donor_exif on donor_exif."assetId" = donor.id
+              join asset_exif target_exif on target_exif."assetId" = asset.id
+              join asset_landmark recorded on recorded."assetId" = donor.id
+              and recorded."landmarkId" = asset_landmark."landmarkId"
+              and recorded.inference is null
+            where
+              donor.id = any (asset_landmark."sourceAssetIds")
+              and donor.id != asset.id
+              and donor."ownerId" = asset."ownerId"
+              and (
+                (
+                  "donor"."visibility" = 'timeline'
+                  and not exists (
+                    select
+                      1
+                    from
+                      asset_lock
+                    where
+                      asset_lock."assetId" = "donor"."id"
+                  )
+                )
+                and "donor"."libraryScope" in ($5, $6)
+                and "donor"."type" = $7
+                and "donor"."deletedAt" is null
+                and not (
+                  exists (
+                    select
+                      1
+                    from
+                      user_metadata as owner_rules
+                    where
+                      owner_rules."userId" = "donor"."ownerId"
+                      and owner_rules.key = 'preferences'
+                      and (
+                        exists (
+                          select
+                            1
+                          from
+                            tag_asset
+                            inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                          where
+                            tag_asset."assetId" = "donor"."id"
+                            and tag_closure.id_ancestor in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.tagIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                        )
+                        or exists (
+                          select
+                            1
+                          from
+                            asset_face
+                          where
+                            asset_face."assetId" = "donor"."id"
+                            and asset_face."personGroupId" in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.personIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                            and asset_face."deletedAt" is null
+                            and asset_face."isVisible" is true
+                        )
+                        or exists (
+                          select
+                            1
+                          from
+                            pet_observation
+                            inner join pet on pet.id = pet_observation."petId"
+                          where
+                            pet_observation."assetId" = "donor"."id"
+                            and pet_observation."petId" in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.petIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                            and pet_observation.state = 'confirmed'
+                            and pet."ownerId" = "donor"."ownerId"
+                        )
+                      )
+                  )
+                  or exists (
+                    with recursive
+                      owner_rules_lineage ("assetId") as (
+                        select
+                          owner_rules_source."assetId"
+                        from
+                          studio_export_version as owner_rules_export
+                          inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                        where
+                          owner_rules_export."resultAssetId" = "donor"."id"
+                          and owner_rules_export.state = 'published'
+                          and owner_rules_source."assetId" is not null
+                        union
+                        select
+                          owner_rules_source."assetId"
+                        from
+                          owner_rules_lineage
+                          inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+                          inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                        where
+                          owner_rules_export.state = 'published'
+                          and owner_rules_source."assetId" is not null
+                      )
+                    select
+                      1
+                    from
+                      owner_rules_lineage
+                      inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+                    where
+                      exists (
+                        select
+                          1
+                        from
+                          user_metadata as owner_rules
+                        where
+                          owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"
+                          and owner_rules.key = 'preferences'
+                          and (
+                            exists (
+                              select
+                                1
+                              from
+                                tag_asset
+                                inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                              where
+                                tag_asset."assetId" = "owner_rules_lineage_asset"."id"
+                                and tag_closure.id_ancestor in (
+                                  select
+                                    (
+                                      jsonb_path_query(
+                                        owner_rules.value,
+                                        '$.privacy.suppression.tagIds[*]'
+                                      ) #>> '{}'
+                                    )::uuid
+                                )
+                            )
+                            or exists (
+                              select
+                                1
+                              from
+                                asset_face
+                              where
+                                asset_face."assetId" = "owner_rules_lineage_asset"."id"
+                                and asset_face."personGroupId" in (
+                                  select
+                                    (
+                                      jsonb_path_query(
+                                        owner_rules.value,
+                                        '$.privacy.suppression.personIds[*]'
+                                      ) #>> '{}'
+                                    )::uuid
+                                )
+                                and asset_face."deletedAt" is null
+                                and asset_face."isVisible" is true
+                            )
+                            or exists (
+                              select
+                                1
+                              from
+                                pet_observation
+                                inner join pet on pet.id = pet_observation."petId"
+                              where
+                                pet_observation."assetId" = "owner_rules_lineage_asset"."id"
+                                and pet_observation."petId" in (
+                                  select
+                                    (
+                                      jsonb_path_query(
+                                        owner_rules.value,
+                                        '$.privacy.suppression.petIds[*]'
+                                      ) #>> '{}'
+                                    )::uuid
+                                )
+                                and pet_observation.state = 'confirmed'
+                                and pet."ownerId" = "owner_rules_lineage_asset"."ownerId"
+                            )
+                          )
+                      )
+                  )
+                )
+              )
+              and donor_exif.latitude is not null
+              and donor_exif.longitude is not null
+              and case
+                when asset_landmark.inference = 'temporal' then donor."libraryId" is not distinct from asset."libraryId"
+                and nullif(trim(target_exif.make), '') is not null
+                and nullif(trim(target_exif.model), '') is not null
+                and donor_exif.make = target_exif.make
+                and donor_exif.model = target_exif.model
+                and abs(
+                  extract(
+                    epoch
+                    from
+                      donor."fileCreatedAt" - asset."fileCreatedAt"
+                  )
+                ) <= 300
+                and not exists (
+                  select
+                    1
+                  from
+                    asset nearby
+                    join asset_exif nearby_exif on nearby_exif."assetId" = nearby.id
+                  where
+                    nearby."ownerId" = asset."ownerId"
+                    and nearby.id != asset.id
+                    and nearby."libraryId" is not distinct from asset."libraryId"
+                    and (
+                      (
+                        "nearby"."visibility" = 'timeline'
+                        and not exists (
+                          select
+                            1
+                          from
+                            asset_lock
+                          where
+                            asset_lock."assetId" = "nearby"."id"
+                        )
+                      )
+                      and "nearby"."libraryScope" in ($8, $9)
+                      and "nearby"."type" = $10
+                      and "nearby"."deletedAt" is null
+                      and not (
+                        exists (
+                          select
+                            1
+                          from
+                            user_metadata as owner_rules
+                          where
+                            owner_rules."userId" = "nearby"."ownerId"
+                            and owner_rules.key = 'preferences'
+                            and (
+                              exists (
+                                select
+                                  1
+                                from
+                                  tag_asset
+                                  inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                                where
+                                  tag_asset."assetId" = "nearby"."id"
+                                  and tag_closure.id_ancestor in (
+                                    select
+                                      (
+                                        jsonb_path_query(
+                                          owner_rules.value,
+                                          '$.privacy.suppression.tagIds[*]'
+                                        ) #>> '{}'
+                                      )::uuid
+                                  )
+                              )
+                              or exists (
+                                select
+                                  1
+                                from
+                                  asset_face
+                                where
+                                  asset_face."assetId" = "nearby"."id"
+                                  and asset_face."personGroupId" in (
+                                    select
+                                      (
+                                        jsonb_path_query(
+                                          owner_rules.value,
+                                          '$.privacy.suppression.personIds[*]'
+                                        ) #>> '{}'
+                                      )::uuid
+                                  )
+                                  and asset_face."deletedAt" is null
+                                  and asset_face."isVisible" is true
+                              )
+                              or exists (
+                                select
+                                  1
+                                from
+                                  pet_observation
+                                  inner join pet on pet.id = pet_observation."petId"
+                                where
+                                  pet_observation."assetId" = "nearby"."id"
+                                  and pet_observation."petId" in (
+                                    select
+                                      (
+                                        jsonb_path_query(
+                                          owner_rules.value,
+                                          '$.privacy.suppression.petIds[*]'
+                                        ) #>> '{}'
+                                      )::uuid
+                                  )
+                                  and pet_observation.state = 'confirmed'
+                                  and pet."ownerId" = "nearby"."ownerId"
+                              )
+                            )
+                        )
+                        or exists (
+                          with recursive
+                            owner_rules_lineage ("assetId") as (
+                              select
+                                owner_rules_source."assetId"
+                              from
+                                studio_export_version as owner_rules_export
+                                inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                              where
+                                owner_rules_export."resultAssetId" = "nearby"."id"
+                                and owner_rules_export.state = 'published'
+                                and owner_rules_source."assetId" is not null
+                              union
+                              select
+                                owner_rules_source."assetId"
+                              from
+                                owner_rules_lineage
+                                inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+                                inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                              where
+                                owner_rules_export.state = 'published'
+                                and owner_rules_source."assetId" is not null
+                            )
+                          select
+                            1
+                          from
+                            owner_rules_lineage
+                            inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+                          where
+                            exists (
+                              select
+                                1
+                              from
+                                user_metadata as owner_rules
+                              where
+                                owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"
+                                and owner_rules.key = 'preferences'
+                                and (
+                                  exists (
+                                    select
+                                      1
+                                    from
+                                      tag_asset
+                                      inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                                    where
+                                      tag_asset."assetId" = "owner_rules_lineage_asset"."id"
+                                      and tag_closure.id_ancestor in (
+                                        select
+                                          (
+                                            jsonb_path_query(
+                                              owner_rules.value,
+                                              '$.privacy.suppression.tagIds[*]'
+                                            ) #>> '{}'
+                                          )::uuid
+                                      )
+                                  )
+                                  or exists (
+                                    select
+                                      1
+                                    from
+                                      asset_face
+                                    where
+                                      asset_face."assetId" = "owner_rules_lineage_asset"."id"
+                                      and asset_face."personGroupId" in (
+                                        select
+                                          (
+                                            jsonb_path_query(
+                                              owner_rules.value,
+                                              '$.privacy.suppression.personIds[*]'
+                                            ) #>> '{}'
+                                          )::uuid
+                                      )
+                                      and asset_face."deletedAt" is null
+                                      and asset_face."isVisible" is true
+                                  )
+                                  or exists (
+                                    select
+                                      1
+                                    from
+                                      pet_observation
+                                      inner join pet on pet.id = pet_observation."petId"
+                                    where
+                                      pet_observation."assetId" = "owner_rules_lineage_asset"."id"
+                                      and pet_observation."petId" in (
+                                        select
+                                          (
+                                            jsonb_path_query(
+                                              owner_rules.value,
+                                              '$.privacy.suppression.petIds[*]'
+                                            ) #>> '{}'
+                                          )::uuid
+                                      )
+                                      and pet_observation.state = 'confirmed'
+                                      and pet."ownerId" = "owner_rules_lineage_asset"."ownerId"
+                                  )
+                                )
+                            )
+                        )
+                      )
+                    )
+                    and nearby_exif.make = target_exif.make
+                    and nearby_exif.model = target_exif.model
+                    and nearby."fileCreatedAt" between asset."fileCreatedAt" - interval '5 minutes' and asset."fileCreatedAt" + interval '5 minutes'
+                    and nearby_exif.latitude is not null
+                    and nearby_exif.longitude is not null
+                    and earth_distance (
+                      ll_to_earth_public (donor_exif.latitude, donor_exif.longitude),
+                      ll_to_earth_public (nearby_exif.latitude, nearby_exif.longitude)
+                    ) > 200
+                )
+                else exists (
+                  select
+                    1
+                  from
+                    smart_search donor_embedding
+                    join smart_search target_embedding on target_embedding."assetId" = asset.id
+                    and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+                  where
+                    donor_embedding."assetId" = donor.id
+                    and target_embedding."producerModelKey" is not null
+                    and (
+                      donor_embedding.embedding <=> target_embedding.embedding
+                    ) <= 0.12
+                )
+              end
+          )
+        )
+      )
+      and "asset"."ownerId" = any ($11::uuid[])
       and (
         "asset"."visibility" = 'timeline'
         and not exists (
@@ -519,7 +1162,7 @@ with
             asset_lock."assetId" = "asset"."id"
         )
       )
-      and "asset"."libraryScope" in ($3, $4)
+      and "asset"."libraryScope" in ($12, $13)
       and "asset"."deletedAt" is null
   )
 select
@@ -546,14 +1189,23 @@ select
   mode() within group (
     order by
       asset_exif.city
+  ) filter (
+    where
+      matched.inference is null
   ) as "city",
   mode() within group (
     order by
       asset_exif.state
+  ) filter (
+    where
+      matched.inference is null
   ) as "state",
   mode() within group (
     order by
       asset_exif.country
+  ) filter (
+    where
+      matched.inference is null
   ) as "country"
 from
   "matched"
@@ -565,7 +1217,7 @@ group by
   "landmark"."id"
 having
   bool_or(matched.position = 1)
-  or landmark."radiusM" > $5
+  or landmark."radiusM" > $14
 order by
   "assetCount" desc,
   "landmark"."id"
@@ -574,14 +1226,658 @@ order by
 select
   "landmark"."id",
   "landmark"."name",
-  "landmark"."kind"
+  "landmark"."kind",
+  "asset_landmark"."inference"
 from
   "asset_landmark"
   inner join "landmark" on "landmark"."id" = "asset_landmark"."landmarkId"
+  inner join "asset" on "asset"."id" = "asset_landmark"."assetId"
 where
   "asset_landmark"."assetId" = $1
+  and (
+    asset_landmark.inference is null
+    or (
+      (
+        (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
+        and "asset"."libraryScope" in ($2, $3)
+        and "asset"."type" = $4
+        and "asset"."deletedAt" is null
+        and not (
+          exists (
+            select
+              1
+            from
+              user_metadata as owner_rules
+            where
+              owner_rules."userId" = "asset"."ownerId"
+              and owner_rules.key = 'preferences'
+              and (
+                exists (
+                  select
+                    1
+                  from
+                    tag_asset
+                    inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                  where
+                    tag_asset."assetId" = "asset"."id"
+                    and tag_closure.id_ancestor in (
+                      select
+                        (
+                          jsonb_path_query(
+                            owner_rules.value,
+                            '$.privacy.suppression.tagIds[*]'
+                          ) #>> '{}'
+                        )::uuid
+                    )
+                )
+                or exists (
+                  select
+                    1
+                  from
+                    asset_face
+                  where
+                    asset_face."assetId" = "asset"."id"
+                    and asset_face."personGroupId" in (
+                      select
+                        (
+                          jsonb_path_query(
+                            owner_rules.value,
+                            '$.privacy.suppression.personIds[*]'
+                          ) #>> '{}'
+                        )::uuid
+                    )
+                    and asset_face."deletedAt" is null
+                    and asset_face."isVisible" is true
+                )
+                or exists (
+                  select
+                    1
+                  from
+                    pet_observation
+                    inner join pet on pet.id = pet_observation."petId"
+                  where
+                    pet_observation."assetId" = "asset"."id"
+                    and pet_observation."petId" in (
+                      select
+                        (
+                          jsonb_path_query(
+                            owner_rules.value,
+                            '$.privacy.suppression.petIds[*]'
+                          ) #>> '{}'
+                        )::uuid
+                    )
+                    and pet_observation.state = 'confirmed'
+                    and pet."ownerId" = "asset"."ownerId"
+                )
+              )
+          )
+          or exists (
+            with recursive
+              owner_rules_lineage ("assetId") as (
+                select
+                  owner_rules_source."assetId"
+                from
+                  studio_export_version as owner_rules_export
+                  inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                where
+                  owner_rules_export."resultAssetId" = "asset"."id"
+                  and owner_rules_export.state = 'published'
+                  and owner_rules_source."assetId" is not null
+                union
+                select
+                  owner_rules_source."assetId"
+                from
+                  owner_rules_lineage
+                  inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+                  inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                where
+                  owner_rules_export.state = 'published'
+                  and owner_rules_source."assetId" is not null
+              )
+            select
+              1
+            from
+              owner_rules_lineage
+              inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+            where
+              exists (
+                select
+                  1
+                from
+                  user_metadata as owner_rules
+                where
+                  owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"
+                  and owner_rules.key = 'preferences'
+                  and (
+                    exists (
+                      select
+                        1
+                      from
+                        tag_asset
+                        inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                      where
+                        tag_asset."assetId" = "owner_rules_lineage_asset"."id"
+                        and tag_closure.id_ancestor in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.tagIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                    )
+                    or exists (
+                      select
+                        1
+                      from
+                        asset_face
+                      where
+                        asset_face."assetId" = "owner_rules_lineage_asset"."id"
+                        and asset_face."personGroupId" in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.personIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                        and asset_face."deletedAt" is null
+                        and asset_face."isVisible" is true
+                    )
+                    or exists (
+                      select
+                        1
+                      from
+                        pet_observation
+                        inner join pet on pet.id = pet_observation."petId"
+                      where
+                        pet_observation."assetId" = "owner_rules_lineage_asset"."id"
+                        and pet_observation."petId" in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.petIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                        and pet_observation.state = 'confirmed'
+                        and pet."ownerId" = "owner_rules_lineage_asset"."ownerId"
+                    )
+                  )
+              )
+          )
+        )
+      )
+      and exists (
+        select
+          1
+        from
+          asset_exif inferred_exif
+        where
+          inferred_exif."assetId" = asset.id
+          and not coalesce(
+            inferred_exif."lockedProperties" && array['latitude', 'longitude']::varchar[],
+            false
+          )
+          and (
+            asset_landmark.inference != 'temporal'
+            or (
+              inferred_exif.latitude is null
+              and inferred_exif.longitude is null
+            )
+          )
+      )
+      and cardinality(asset_landmark."sourceAssetIds") = (
+        select
+          count(distinct donor.checksum)
+        from
+          asset donor
+          join asset_exif donor_exif on donor_exif."assetId" = donor.id
+          join asset_exif target_exif on target_exif."assetId" = asset.id
+          join asset_landmark recorded on recorded."assetId" = donor.id
+          and recorded."landmarkId" = asset_landmark."landmarkId"
+          and recorded.inference is null
+        where
+          donor.id = any (asset_landmark."sourceAssetIds")
+          and donor.id != asset.id
+          and donor."ownerId" = asset."ownerId"
+          and (
+            (
+              "donor"."visibility" = 'timeline'
+              and not exists (
+                select
+                  1
+                from
+                  asset_lock
+                where
+                  asset_lock."assetId" = "donor"."id"
+              )
+            )
+            and "donor"."libraryScope" in ($5, $6)
+            and "donor"."type" = $7
+            and "donor"."deletedAt" is null
+            and not (
+              exists (
+                select
+                  1
+                from
+                  user_metadata as owner_rules
+                where
+                  owner_rules."userId" = "donor"."ownerId"
+                  and owner_rules.key = 'preferences'
+                  and (
+                    exists (
+                      select
+                        1
+                      from
+                        tag_asset
+                        inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                      where
+                        tag_asset."assetId" = "donor"."id"
+                        and tag_closure.id_ancestor in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.tagIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                    )
+                    or exists (
+                      select
+                        1
+                      from
+                        asset_face
+                      where
+                        asset_face."assetId" = "donor"."id"
+                        and asset_face."personGroupId" in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.personIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                        and asset_face."deletedAt" is null
+                        and asset_face."isVisible" is true
+                    )
+                    or exists (
+                      select
+                        1
+                      from
+                        pet_observation
+                        inner join pet on pet.id = pet_observation."petId"
+                      where
+                        pet_observation."assetId" = "donor"."id"
+                        and pet_observation."petId" in (
+                          select
+                            (
+                              jsonb_path_query(
+                                owner_rules.value,
+                                '$.privacy.suppression.petIds[*]'
+                              ) #>> '{}'
+                            )::uuid
+                        )
+                        and pet_observation.state = 'confirmed'
+                        and pet."ownerId" = "donor"."ownerId"
+                    )
+                  )
+              )
+              or exists (
+                with recursive
+                  owner_rules_lineage ("assetId") as (
+                    select
+                      owner_rules_source."assetId"
+                    from
+                      studio_export_version as owner_rules_export
+                      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                    where
+                      owner_rules_export."resultAssetId" = "donor"."id"
+                      and owner_rules_export.state = 'published'
+                      and owner_rules_source."assetId" is not null
+                    union
+                    select
+                      owner_rules_source."assetId"
+                    from
+                      owner_rules_lineage
+                      inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+                      inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                    where
+                      owner_rules_export.state = 'published'
+                      and owner_rules_source."assetId" is not null
+                  )
+                select
+                  1
+                from
+                  owner_rules_lineage
+                  inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+                where
+                  exists (
+                    select
+                      1
+                    from
+                      user_metadata as owner_rules
+                    where
+                      owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"
+                      and owner_rules.key = 'preferences'
+                      and (
+                        exists (
+                          select
+                            1
+                          from
+                            tag_asset
+                            inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                          where
+                            tag_asset."assetId" = "owner_rules_lineage_asset"."id"
+                            and tag_closure.id_ancestor in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.tagIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                        )
+                        or exists (
+                          select
+                            1
+                          from
+                            asset_face
+                          where
+                            asset_face."assetId" = "owner_rules_lineage_asset"."id"
+                            and asset_face."personGroupId" in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.personIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                            and asset_face."deletedAt" is null
+                            and asset_face."isVisible" is true
+                        )
+                        or exists (
+                          select
+                            1
+                          from
+                            pet_observation
+                            inner join pet on pet.id = pet_observation."petId"
+                          where
+                            pet_observation."assetId" = "owner_rules_lineage_asset"."id"
+                            and pet_observation."petId" in (
+                              select
+                                (
+                                  jsonb_path_query(
+                                    owner_rules.value,
+                                    '$.privacy.suppression.petIds[*]'
+                                  ) #>> '{}'
+                                )::uuid
+                            )
+                            and pet_observation.state = 'confirmed'
+                            and pet."ownerId" = "owner_rules_lineage_asset"."ownerId"
+                        )
+                      )
+                  )
+              )
+            )
+          )
+          and donor_exif.latitude is not null
+          and donor_exif.longitude is not null
+          and case
+            when asset_landmark.inference = 'temporal' then donor."libraryId" is not distinct from asset."libraryId"
+            and nullif(trim(target_exif.make), '') is not null
+            and nullif(trim(target_exif.model), '') is not null
+            and donor_exif.make = target_exif.make
+            and donor_exif.model = target_exif.model
+            and abs(
+              extract(
+                epoch
+                from
+                  donor."fileCreatedAt" - asset."fileCreatedAt"
+              )
+            ) <= 300
+            and not exists (
+              select
+                1
+              from
+                asset nearby
+                join asset_exif nearby_exif on nearby_exif."assetId" = nearby.id
+              where
+                nearby."ownerId" = asset."ownerId"
+                and nearby.id != asset.id
+                and nearby."libraryId" is not distinct from asset."libraryId"
+                and (
+                  (
+                    "nearby"."visibility" = 'timeline'
+                    and not exists (
+                      select
+                        1
+                      from
+                        asset_lock
+                      where
+                        asset_lock."assetId" = "nearby"."id"
+                    )
+                  )
+                  and "nearby"."libraryScope" in ($8, $9)
+                  and "nearby"."type" = $10
+                  and "nearby"."deletedAt" is null
+                  and not (
+                    exists (
+                      select
+                        1
+                      from
+                        user_metadata as owner_rules
+                      where
+                        owner_rules."userId" = "nearby"."ownerId"
+                        and owner_rules.key = 'preferences'
+                        and (
+                          exists (
+                            select
+                              1
+                            from
+                              tag_asset
+                              inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                            where
+                              tag_asset."assetId" = "nearby"."id"
+                              and tag_closure.id_ancestor in (
+                                select
+                                  (
+                                    jsonb_path_query(
+                                      owner_rules.value,
+                                      '$.privacy.suppression.tagIds[*]'
+                                    ) #>> '{}'
+                                  )::uuid
+                              )
+                          )
+                          or exists (
+                            select
+                              1
+                            from
+                              asset_face
+                            where
+                              asset_face."assetId" = "nearby"."id"
+                              and asset_face."personGroupId" in (
+                                select
+                                  (
+                                    jsonb_path_query(
+                                      owner_rules.value,
+                                      '$.privacy.suppression.personIds[*]'
+                                    ) #>> '{}'
+                                  )::uuid
+                              )
+                              and asset_face."deletedAt" is null
+                              and asset_face."isVisible" is true
+                          )
+                          or exists (
+                            select
+                              1
+                            from
+                              pet_observation
+                              inner join pet on pet.id = pet_observation."petId"
+                            where
+                              pet_observation."assetId" = "nearby"."id"
+                              and pet_observation."petId" in (
+                                select
+                                  (
+                                    jsonb_path_query(
+                                      owner_rules.value,
+                                      '$.privacy.suppression.petIds[*]'
+                                    ) #>> '{}'
+                                  )::uuid
+                              )
+                              and pet_observation.state = 'confirmed'
+                              and pet."ownerId" = "nearby"."ownerId"
+                          )
+                        )
+                    )
+                    or exists (
+                      with recursive
+                        owner_rules_lineage ("assetId") as (
+                          select
+                            owner_rules_source."assetId"
+                          from
+                            studio_export_version as owner_rules_export
+                            inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                          where
+                            owner_rules_export."resultAssetId" = "nearby"."id"
+                            and owner_rules_export.state = 'published'
+                            and owner_rules_source."assetId" is not null
+                          union
+                          select
+                            owner_rules_source."assetId"
+                          from
+                            owner_rules_lineage
+                            inner join studio_export_version as owner_rules_export on owner_rules_export."resultAssetId" = owner_rules_lineage."assetId"
+                            inner join studio_export_version_source as owner_rules_source on owner_rules_source."versionId" = owner_rules_export.id
+                          where
+                            owner_rules_export.state = 'published'
+                            and owner_rules_source."assetId" is not null
+                        )
+                      select
+                        1
+                      from
+                        owner_rules_lineage
+                        inner join asset as owner_rules_lineage_asset on owner_rules_lineage_asset.id = owner_rules_lineage."assetId"
+                      where
+                        exists (
+                          select
+                            1
+                          from
+                            user_metadata as owner_rules
+                          where
+                            owner_rules."userId" = "owner_rules_lineage_asset"."ownerId"
+                            and owner_rules.key = 'preferences'
+                            and (
+                              exists (
+                                select
+                                  1
+                                from
+                                  tag_asset
+                                  inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+                                where
+                                  tag_asset."assetId" = "owner_rules_lineage_asset"."id"
+                                  and tag_closure.id_ancestor in (
+                                    select
+                                      (
+                                        jsonb_path_query(
+                                          owner_rules.value,
+                                          '$.privacy.suppression.tagIds[*]'
+                                        ) #>> '{}'
+                                      )::uuid
+                                  )
+                              )
+                              or exists (
+                                select
+                                  1
+                                from
+                                  asset_face
+                                where
+                                  asset_face."assetId" = "owner_rules_lineage_asset"."id"
+                                  and asset_face."personGroupId" in (
+                                    select
+                                      (
+                                        jsonb_path_query(
+                                          owner_rules.value,
+                                          '$.privacy.suppression.personIds[*]'
+                                        ) #>> '{}'
+                                      )::uuid
+                                  )
+                                  and asset_face."deletedAt" is null
+                                  and asset_face."isVisible" is true
+                              )
+                              or exists (
+                                select
+                                  1
+                                from
+                                  pet_observation
+                                  inner join pet on pet.id = pet_observation."petId"
+                                where
+                                  pet_observation."assetId" = "owner_rules_lineage_asset"."id"
+                                  and pet_observation."petId" in (
+                                    select
+                                      (
+                                        jsonb_path_query(
+                                          owner_rules.value,
+                                          '$.privacy.suppression.petIds[*]'
+                                        ) #>> '{}'
+                                      )::uuid
+                                  )
+                                  and pet_observation.state = 'confirmed'
+                                  and pet."ownerId" = "owner_rules_lineage_asset"."ownerId"
+                              )
+                            )
+                        )
+                    )
+                  )
+                )
+                and nearby_exif.make = target_exif.make
+                and nearby_exif.model = target_exif.model
+                and nearby."fileCreatedAt" between asset."fileCreatedAt" - interval '5 minutes' and asset."fileCreatedAt" + interval '5 minutes'
+                and nearby_exif.latitude is not null
+                and nearby_exif.longitude is not null
+                and earth_distance (
+                  ll_to_earth_public (donor_exif.latitude, donor_exif.longitude),
+                  ll_to_earth_public (nearby_exif.latitude, nearby_exif.longitude)
+                ) > 200
+            )
+            else exists (
+              select
+                1
+              from
+                smart_search donor_embedding
+                join smart_search target_embedding on target_embedding."assetId" = asset.id
+                and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+              where
+                donor_embedding."assetId" = donor.id
+                and target_embedding."producerModelKey" is not null
+                and (
+                  donor_embedding.embedding <=> target_embedding.embedding
+                ) <= 0.12
+            )
+          end
+      )
+    )
+  )
 order by
-  (landmark."radiusM" > $2),
+  asset_landmark.inference is not null,
+  (landmark."radiusM" > $11),
   landmark.rank desc,
   landmark."radiusM",
   landmark.id

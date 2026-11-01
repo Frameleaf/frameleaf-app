@@ -940,6 +940,8 @@ export class AssetRepository {
               .selectFrom('asset_landmark')
               .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
               .select(['landmark.id', 'landmark.name', 'landmark.kind', 'landmark.rank', 'landmark.radiusM'])
+              // Automatic visit titles require recorded locations, rather than a prediction about the scene.
+              .where('asset_landmark.inference', 'is', null)
               .whereRef('asset_landmark.assetId', '=', 'asset.id'),
           ).as('landmarks'),
         )
@@ -972,6 +974,7 @@ export class AssetRepository {
       .selectFrom('asset_landmark')
       .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
       .select('asset_landmark.landmarkId')
+      .where('asset_landmark.inference', 'is', null)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.localDateTime', '>=', from)

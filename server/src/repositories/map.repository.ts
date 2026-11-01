@@ -17,6 +17,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetVisibility, LibraryScope, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { inferLandmarks } from 'src/repositories/landmark-inference.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -363,6 +364,11 @@ export class MapRepository {
         `.execute(manager);
       });
     }
+  }
+
+  /** Local-only inference, run in bounded slices on the existing background queue (FL-358). */
+  inferLandmarks(assetId?: string): Promise<void> {
+    return inferLandmarks(this.db, assetId);
   }
 
   /** Markers for an album: the same media the album itself shows this viewer (see `withAlbumVisibility`). */

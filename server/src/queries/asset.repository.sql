@@ -110,7 +110,8 @@ from
   "asset_landmark"
   inner join "asset" on "asset"."id" = "asset_landmark"."assetId"
 where
-  "asset"."ownerId" = $1
+  "asset_landmark"."inference" is null
+  and "asset"."ownerId" = $1
   and "asset"."deletedAt" is null
   and "asset"."localDateTime" >= $2
   and "asset"."localDateTime" <= $3

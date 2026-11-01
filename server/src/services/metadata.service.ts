@@ -182,6 +182,7 @@ export class MetadataService extends BaseService {
       } else {
         // FL-402: nothing to re-match, so the place data is complete (also clears a flag a crash left behind)
         await this.mapRepository.setPlacesRestoring(false);
+        await this.queueLandmarkInference();
       }
       // Not awaited: a download of tens of megabytes must not hold up the worker's start.
       void this.syncLandmarkIcons();
@@ -218,10 +219,36 @@ export class MetadataService extends BaseService {
   async handleLandmarkMatchAll(): Promise<JobStatus> {
     try {
       await this.mapRepository.matchAllLandmarks();
+      await this.queueLandmarkInference();
     } finally {
       // FL-402: places are back once items are matched to them again; a failure must not leave the notice up
       await this.mapRepository.setPlacesRestoring(false);
     }
+    return JobStatus.Success;
+  }
+
+  private async queueLandmarkInference(id?: string): Promise<void> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (reverseGeocoding.enabled) {
+      await this.jobRepository.queue({ name: JobName.LandmarkInfer, ...(id && { data: { id, trigger: 'metadata' } }) });
+    }
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup', workers: [FrameleafWorker.Microservices] })
+  async onNightlyLandmarkInference(): Promise<void> {
+    await this.queueLandmarkInference();
+  }
+
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
+  async onLandmarkMetadataExtracted({ assetId }: ArgOf<'AssetMetadataExtracted'>): Promise<void> {
+    await this.queueLandmarkInference(assetId);
+  }
+
+  @OnJob({ name: JobName.LandmarkInfer, queue: QueueName.BackgroundTask })
+  async handleLandmarkInfer({ id }: JobOf<JobName.LandmarkInfer> = {}): Promise<JobStatus> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (!reverseGeocoding.enabled) return JobStatus.Skipped;
+    await this.mapRepository.inferLandmarks(id);
     return JobStatus.Success;
   }
 

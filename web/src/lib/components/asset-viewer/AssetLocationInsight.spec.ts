@@ -1,3 +1,4 @@
+import { Inference } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -92,6 +93,29 @@ describe('suggested photo location', () => {
     expect(api.dismiss).toHaveBeenCalledExactlyOnceWith({ id: asset.id });
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Suggested location' })).not.toBeInTheDocument());
     expect(screen.getByText('Example City')).toBeInTheDocument();
+    expect(onAssetRefresh).toHaveBeenCalledExactlyOnceWith({ ...asset, locationInsight: undefined });
+  });
+
+  it('keeps recorded and visual landmarks when dismissing a location suggestion', async () => {
+    const asset = {
+      ...located(),
+      landmarks: [
+        { id: 'Q1', name: 'Recorded park', kind: 'park', latitude: 10, longitude: 20 },
+        { id: 'Q2', name: 'Distant tower', kind: 'tower', latitude: 11, longitude: 21, inference: Inference.Visual },
+      ],
+    };
+    const onAssetRefresh = vi.fn();
+    render(DetailPanelLocation, { asset, isOwner: true, onAssetRefresh });
+
+    expect(screen.getByText('At Recorded park')).toBeInTheDocument();
+    expect(screen.getByText('Likely showing Distant tower')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Suggested location' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss suggestion' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Suggested location' })).not.toBeInTheDocument());
+
+    expect(screen.getByText('At Recorded park')).toBeInTheDocument();
+    expect(screen.getByText('Likely showing Distant tower')).toBeInTheDocument();
+    expect(screen.getByText('10.0000, 20.0000')).toBeInTheDocument();
     expect(onAssetRefresh).toHaveBeenCalledExactlyOnceWith({ ...asset, locationInsight: undefined });
   });
 

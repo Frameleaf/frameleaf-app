@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "8deb550700647b7df7beb19589680d5b304bb63e",
+  "sourceCommit": "7f1bf33c62d096a1b77e1e8fb139c8ab76abc9af",
   "sourceHashes": {
-    "src/enum.ts": "3531db66143bd8c316c2d5f6d2b072383f3b2c8ed3f48e0a5eebd2ff3c91e006",
+    "src/enum.ts": "de869b67f250f1758c5ad53f99ee8cfc390533cc43ba87604faa9a1a02adf242",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
@@ -71,7 +71,7 @@
     "src/schema/tables/icloud-edit-authority.table.ts": "ba14f25a37c620555ca64a52d2568b08cd23353d8c88ff8c033b028749b312e5",
     "src/schema/tables/identical-file-change.table.ts": "64566fb0024838fda28c4554cbc64f3b826872c1203e830f931a4b19a03ce739",
     "src/schema/tables/integrity-report.table.ts": "8dbdb2fb24d919983fade4571fe85e6d20d632e315f0a769cc13f32c46bf56a5",
-    "src/schema/tables/landmark.table.ts": "55d54e55fd8687e74ae5c4a85a74d2b556f3fa431cd45b856731c988dd0c0596",
+    "src/schema/tables/landmark.table.ts": "6af5cfdc87cb98808070399734733648f5d7c01ddc5b3f56a5978b7caca1046a",
     "src/schema/tables/library.table.ts": "dbc20caa6eaddef3bbf1a1c5e598fc914886ccae40d7026e5d84df7a3a2304c6",
     "src/schema/tables/locked-encryption.table.ts": "c0d2309a95b9bd53f0705fda537e3daddb0e62d4e7a58ae8d05c4f56bbbf1587",
     "src/schema/tables/media-operation.table.ts": "9934aeb4c2ab6c303c88bf66ea465d56c49efb9b00c17635a2ad9de0aef7e66c",
@@ -156,6 +156,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "995d6e0116014b34d7aeb13dae0d49186a6eaaf4b9831c51621f4ec9c7785a31",
-  "rawMetadataSha256": "5e705b7ba3ebd43087e467922913c94e3762165fdc4ad1017b855795e56c4812"
+  "dumpSha256": "50a98843c3578c04fb49e722c14dae723cb9781d0e127adf8d11778fb75470a2",
+  "rawMetadataSha256": "1f7bfcf4688564ff70793106526b48b44d4972cfb6378fcb45c0c5ef475c68d2"
 }
