@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { link } from 'node:fs/promises';
+import { chmod, link, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -12,6 +12,7 @@ import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud
 import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
+import { LOCKED_KEY_BACKUP_ROLE, isEncryptedWithOlderKey, lockedKeyFilePath } from 'src/utils/locked-backup.js';
 
 /**
  * What a restore brings back (FL-164, CLD-302):
@@ -26,6 +27,8 @@ import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
  *   members added back (manifest v2).
  * - `database`: the manifest's database dump into `<media>/backups`, where the maintenance restore lists it.
  * - `library`: every file back in its place, as `asset` does for one, and the database dump as `database`.
+ *   FL-721: also each person's Locked key file, to `<media>/locked-keys/<userId>.json` with mode 0600. Only
+ *   this scope brings key files back: the dump it restores holds the `locked_encryption` rows they match.
  */
 export type CloudBackupRestoreScope = 'files' | 'asset' | 'album' | 'database' | 'library';
 
@@ -90,13 +93,15 @@ export type CloudBackupRestoreResult = {
   recreated: number;
   /** Items still in the library whose details came back. */
   detailsRestored: number;
+  /** FL-721: restored encrypted items that this server's Locked key file for their owner does not open. */
+  encryptedWithOlderKey: number;
 };
 
 /** One file a restore writes, verified against `sha256` before it lands at `target`. */
 export type CloudBackupRestoreFile = {
   fileKey: string;
   assetId: string | null;
-  /** The manifest's role for the file: `original`, `sidecar`, a thumbnail, or `profile`. */
+  /** The manifest's role for the file: `original`, `sidecar`, a thumbnail, `profile` or `locked-key`. */
   role: string;
   sha256: string;
   objectKey?: string;
@@ -130,6 +135,7 @@ export const emptyRestoreResult = (): CloudBackupRestoreResult => ({
   restoredAssetIds: [],
   recreated: 0,
   detailsRestored: 0,
+  encryptedWithOlderKey: 0,
 });
 
 /** Whether `path` is inside `folder`, after resolving `..` and the like. */
@@ -229,6 +235,25 @@ export const restorePlan = (options: {
         size: file.size,
         target,
         inPlace: target !== inFolder,
+      });
+    }
+  }
+  if (!chosen && scope === 'library') {
+    for (const [userId, file] of Object.entries(manifest.lockedKeys ?? {})) {
+      // where this server keeps the key file, whatever path the backed-up server had
+      const target = lockedKeyFilePath(mediaLocation, userId);
+      if (!target) {
+        continue;
+      }
+      files.push({
+        fileKey: `~locked-key:${userId}`,
+        assetId: null,
+        role: LOCKED_KEY_BACKUP_ROLE,
+        sha256: file.sha256,
+        ...(file.objectKey && { objectKey: file.objectKey }),
+        size: file.size,
+        target,
+        inPlace: true,
       });
     }
   }
@@ -433,16 +458,29 @@ export class CloudBackupRestorer {
         if (await this.storage.checkFileExists(staged)) await this.storage.unlink(staged);
       }
     }
+    const lockedKey = file.role === LOCKED_KEY_BACKUP_ROLE;
     const present = await this.sha256Of(file.target);
     if (present === file.sha256) {
+      if (lockedKey) {
+        await chmod(file.target, 0o600);
+      }
       return 'skipped';
     }
-    this.storage.mkdirSync(dirname(file.target));
+    if (lockedKey) {
+      // FL-721: the key folder is the server's alone before anything is staged in it
+      await mkdir(dirname(file.target), { recursive: true, mode: 0o700 });
+      await chmod(dirname(file.target), 0o700);
+    } else {
+      this.storage.mkdirSync(dirname(file.target));
+    }
     const staged = join(dirname(file.target), `.cloud-restore-${randomUUID()}.tmp`);
     try {
       const downloaded = await download(key, staged, file.sha256);
       if (downloaded.size !== file.size || downloaded.sha256 !== file.sha256) {
         throw new Error('Restore staging size or checksum mismatch');
+      }
+      if (lockedKey) {
+        await chmod(staged, 0o600);
       }
       if (present !== null) {
         await this.moveAside(file.target, options.mediaLocation, join(options.operationId, randomUUID()));
@@ -493,4 +531,26 @@ export class CloudBackupRestorer {
     if (besideTarget) await flushBuddyDirectory(dirname(path));
     this.logger.log(`Cloud backup restore ${operationId}: moved ${path} aside to ${target}`);
   }
+}
+
+/**
+ * FL-721: how many of the items a restore put back have an original encrypted with a key that this
+ * server's key file for their owner does not open (spec §9: they turned encryption off and on again
+ * since the backup). Counted once each, so the restore can say so rather than leave them unreadable.
+ */
+export async function countEncryptedWithOlderKey(
+  files: CloudBackupRestoreFile[],
+  ownerOf: (assetId: string) => string | null,
+  mediaLocation: string,
+): Promise<number> {
+  const counted = new Set<string>();
+  for (const file of files) {
+    if (!file.assetId || file.role !== 'original' || !file.inPlace || counted.has(file.assetId)) {
+      continue;
+    }
+    if (await isEncryptedWithOlderKey(file.target, ownerOf(file.assetId), mediaLocation)) {
+      counted.add(file.assetId);
+    }
+  }
+  return counted.size;
 }

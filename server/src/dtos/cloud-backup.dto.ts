@@ -357,6 +357,11 @@ const CloudBackupLastRestoreSchema = z
     destination: z.string().nullable().describe('The folder a files restore wrote to'),
     recreated: z.int().describe('Deleted items made again'),
     detailsRestored: z.int().describe('Items still in the library whose details came back'),
+    encryptedWithOlderKey: z
+      .int()
+      .describe(
+        "Restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+      ),
     databaseFile: z.string().nullable().describe('The restored dump, listed by the maintenance restore'),
     error: z.string().nullable(),
   })

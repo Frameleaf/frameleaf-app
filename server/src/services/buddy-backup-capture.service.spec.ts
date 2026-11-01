@@ -15,10 +15,12 @@ import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { BuddySettingsSchema } from 'src/dtos/buddy-backup.dto.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository, clearEnvCache } from 'src/repositories/config.repository.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { createBuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
+import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 vi.mock('src/utils/disk-usage.js', () => ({
@@ -37,6 +39,7 @@ describe('Buddy effective configuration file capture', () => {
   let studioProject: Record<string, unknown> | undefined;
   let studioImport: Record<string, unknown> | undefined;
   let queries: string[];
+  let rowsFor: (sql: string) => unknown[] | undefined;
   const plaintext = Buffer.from('{"oauth":{"clientSecret":"synthetic-config-secret"}}');
   const ring = createBuddyKeyring(randomUUID());
 
@@ -58,6 +61,7 @@ describe('Buddy effective configuration file capture', () => {
     studioProject = undefined;
     studioImport = undefined;
     queries = [];
+    rowsFor = () => {};
     class CaptureDriver extends DummyDriver {
       override async acquireConnection(): Promise<DatabaseConnection> {
         const connection = await super.acquireConnection();
@@ -66,6 +70,8 @@ describe('Buddy effective configuration file capture', () => {
           executeQuery: <R>(query: CompiledQuery) => {
             queries.push(query.sql);
             if (query.sql.includes('buddy_backup_reference')) referencePaths.push(...query.parameters);
+            const rows = rowsFor(query.sql);
+            if (rows) return Promise.resolve({ rows: rows as R[] });
             if (studioProject && query.sql.startsWith('SELECT to_jsonb(project)'))
               return Promise.resolve({ rows: [{ record: studioProject } as R] });
             if (studioImport && query.sql.includes('FROM "public"."studio_project_import" item'))
@@ -207,5 +213,89 @@ describe('Buddy effective configuration file capture', () => {
     const runId = randomUUID();
     await expect(capture(runId)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await service.readCapture(runId)).toBeNull();
+  });
+
+  describe('Locked key files (FL-721)', () => {
+    const OWNER = '00000000-0000-4000-8000-000000000001';
+    const keyText = Buffer.from('{"format":"frameleaf-locked-key/1","wraps":"wrapped-secret-material"}');
+    let keyPath: string;
+
+    beforeEach(async () => {
+      await mkdir(join(directory, 'media', 'locked-keys'), { recursive: true, mode: 0o700 });
+      keyPath = join(directory, 'media', 'locked-keys', `${OWNER}.json`);
+      await writeFile(keyPath, keyText, { mode: 0o600 });
+      await writeFile(
+        join(directory, 'media', 'locked-keys', `${OWNER}.json.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.tmp`),
+        'x',
+      );
+    });
+
+    it('Buddy capture includes locked-keys/*.json', async () => {
+      const runId = randomUUID();
+      const captured = await capture(runId);
+
+      const sha256 = createHash('sha256').update(keyText).digest('hex');
+      expect(captured.manifest.library.lockedKeys).toEqual({
+        [OWNER]: expect.objectContaining({ role: 'locked-key', path: keyPath, sha256, size: keyText.length }),
+      });
+      expect(captured.manifest.library.profiles).toEqual({});
+      // copied as it is, inside the snapshot's own encryption
+      const [id] = captured.manifest.contents[sha256].blocks;
+      const sealed = await readFile(service.blockPath(id, runId));
+      expect(sealed.includes(keyText)).toBe(false);
+      expect(
+        decryptBuddyBlock(
+          Buffer.from(ring.keys[ring.current], 'base64url'),
+          { vaultId: ring.vaultId, id, keyVersion: ring.current },
+          sealed,
+        ),
+      ).toEqual(keyText);
+    });
+
+    it('a file with a .fllk.tmp sibling is left for the next run', async () => {
+      const assetId = randomUUID();
+      const folder = join(directory, 'media', 'library', OWNER);
+      await mkdir(folder, { recursive: true });
+      const original = join(folder, 'IMG_1.jpg');
+      await writeFile(original, 'plain');
+      await writeFile(`${original}.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.fllk.tmp`, 'half sealed');
+      rowsFor = (text) => {
+        if (text.includes('SELECT "originalPath" AS path FROM public.asset') && !text.includes('isOffline'))
+          return [{ path: original }];
+        if (text.includes('"livePhotoVideoId"'))
+          return [
+            {
+              id: assetId,
+              checksum: Buffer.alloc(20),
+              checksumAlgorithm: 'sha1-path',
+              livePhotoVideoId: null,
+              libraryId: null,
+              isExternal: false,
+            },
+          ];
+      };
+      vi.spyOn(CloudBackupIndexRepository.prototype, 'listAssets')
+        .mockResolvedValueOnce([
+          {
+            id: assetId,
+            ownerId: OWNER,
+            originalPath: original,
+            sha256: null,
+            checksumSize: null,
+            verifiedAt: null,
+            checksumPathVerified: false,
+            files: [],
+          },
+        ] as never)
+        .mockResolvedValue([]);
+      vi.spyOn(CloudBackupIndexRepository.prototype, 'getAssetDetails').mockResolvedValue(
+        new Map([[assetId, { record: {}, details: EMPTY_DETAILS }]]) as never,
+      );
+
+      const captured = await capture(randomUUID());
+
+      expect(captured.manifest.library.assets[assetId]).toBeUndefined();
+      expect(Object.values(captured.manifest.library.lockedKeys ?? {})).toHaveLength(1);
+    });
   });
 });

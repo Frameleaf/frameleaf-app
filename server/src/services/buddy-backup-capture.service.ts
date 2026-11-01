@@ -48,6 +48,12 @@ import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
+import {
+  LOCKED_KEY_BACKUP_ROLE,
+  lockedKeyBackupFiles,
+  lockedKeyOwners,
+  pathsBeingReplaced,
+} from 'src/utils/locked-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 
@@ -236,6 +242,7 @@ export class BuddyBackupCaptureService {
         database: null,
         assets: {},
         profiles: {},
+        lockedKeys: {},
         albums: {},
         people: {},
       },
@@ -487,6 +494,8 @@ export class BuddyBackupCaptureService {
             try {
               let afterId: string | null = null;
               const albums = new Set<string>();
+              // FL-721 pre-flight: a file a seal, unseal or rewrap is replacing now is left for the next run
+              const lockedOwners = await lockedKeyOwners(StorageCore.getMediaLocation());
               const people = new Map<string, { ownerId: string; personId: string }>();
               while (true) {
                 const assets = await index.listAssets({
@@ -498,6 +507,18 @@ export class BuddyBackupCaptureService {
                 });
                 if (assets.length === 0) break;
                 const details = await index.getAssetDetails(assets.map((asset) => asset.id));
+                const busy =
+                  lockedOwners.size > 0
+                    ? await pathsBeingReplaced(
+                        assets
+                          .filter((asset) => lockedOwners.has(asset.ownerId))
+                          .flatMap((asset) => [
+                            asset.originalPath,
+                            ...asset.files.map((file) => file.path),
+                            ...(derivedByAsset.get(asset.id) ?? []).map((file) => file.path),
+                          ]),
+                      )
+                    : new Set<string>();
                 const originals = await trx
                   .selectFrom('asset')
                   .select(['id', 'checksum', 'checksumAlgorithm', 'livePhotoVideoId', 'libraryId', 'isExternal'])
@@ -511,7 +532,7 @@ export class BuddyBackupCaptureService {
                   const metadata = details.get(asset.id);
                   const original = originals.find((row) => row.id === asset.id);
                   if (!metadata || !original) throw new Error('Snapshot inventory is incomplete');
-                  if (!present(asset.originalPath)) continue;
+                  if (!present(asset.originalPath) || busy.has(asset.originalPath)) continue;
                   const files = [
                     await captureFile(asset.originalPath, 'original', {
                       checksum: original.checksum,
@@ -519,9 +540,9 @@ export class BuddyBackupCaptureService {
                     }),
                   ];
                   for (const file of asset.files)
-                    if (present(file.path)) files.push(await captureFile(file.path, file.type));
+                    if (present(file.path) && !busy.has(file.path)) files.push(await captureFile(file.path, file.type));
                   for (const file of derivedByAsset.get(asset.id) ?? [])
-                    if (present(file.path) && files.every((entry) => entry.path !== file.path))
+                    if (present(file.path) && !busy.has(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.role));
                   // Edited outputs and recorded version files are non-regenerable dependencies even with caches disabled.
                   const edited = await trx
@@ -531,7 +552,7 @@ export class BuddyBackupCaptureService {
                     .where('isEdited', '=', true)
                     .execute();
                   for (const file of edited)
-                    if (present(file.path) && files.every((entry) => entry.path !== file.path))
+                    if (present(file.path) && !busy.has(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.type));
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
@@ -574,6 +595,20 @@ export class BuddyBackupCaptureService {
               manifest.metadata = await new BuddyBackupMetadataRepository(trx).capture(people.values().toArray());
               for (const profile of await index.listProfileImages())
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
+              // FL-721: every Locked key file as it is (wrapped; no secret opens anything without it). Read as it is
+              // now, not pinned: a key file is replaced atomically, and one removed since it was listed is left out.
+              for (const { userId, path } of await lockedKeyBackupFiles(StorageCore.getMediaLocation())) {
+                try {
+                  manifest.library.lockedKeys![userId] = await captureFile(
+                    path,
+                    LOCKED_KEY_BACKUP_ROLE,
+                    undefined,
+                    true,
+                  );
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                }
+              }
               // Person groups can be shared across owners. Their thumbnails belong only to the
               // whole-server archive, never to an asset selected through that shared group.
               for (const entry of [

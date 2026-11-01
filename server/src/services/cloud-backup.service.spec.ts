@@ -1,9 +1,14 @@
+import {
+  encryptFile as encryptLockedFile,
+  generateKeyPair as generateLockedKeyPair,
+  isLockedFile,
+} from '@frameleaf/locked-crypto';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
-import { link, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile as copyFileOf, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -2966,6 +2971,96 @@ describe(CloudBackupService.name, () => {
       });
     });
 
+    describe('Locked key files (FL-721)', () => {
+      const OWNER = '00000000-0000-4000-8000-000000000001';
+      let media: string;
+      let previous: string;
+      let keyPath: string;
+      const keyText = '{"format":"frameleaf-locked-key/1","wraps":"wrapped-secret-material"}';
+
+      beforeEach(async () => {
+        previous = StorageCore.getMediaLocation();
+        media = await mkdtemp(join(tmpdir(), 'cloud-backup-locked-'));
+        StorageCore.setMediaLocation(media);
+        await mkdir(join(media, 'locked-keys'), { mode: 0o700 });
+        keyPath = join(media, 'locked-keys', `${OWNER}.json`);
+        await writeFile(keyPath, keyText, { mode: 0o600 });
+        // a half-written key file and anything that is not a person's key file stay out
+        await writeFile(join(media, 'locked-keys', `${OWNER}.json.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.tmp`), 'x');
+        await writeFile(join(media, 'locked-keys', 'notes.json'), 'x');
+      });
+
+      afterEach(async () => {
+        StorageCore.setMediaLocation(previous);
+        await rm(media, { recursive: true, force: true });
+      });
+
+      it('Cloud capture includes locked-keys/*.json', async () => {
+        index.getEntriesPage.mockResolvedValue([
+          entry('profile:owner-1', { assetId: null, role: 'profile', sha256: SHA_C }),
+          entry(`locked-key:${OWNER}`, {
+            assetId: null,
+            ownerId: OWNER,
+            role: 'locked-key',
+            path: keyPath,
+            sha256: SHA_B,
+          }),
+        ]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        const recorded = index.upsertEntries.mock.calls.flatMap(([, entries]) => entries as CloudBackupEntry[]);
+        expect(recorded.filter(({ role }) => role === 'locked-key')).toEqual([
+          expect.objectContaining({ fileKey: `locked-key:${OWNER}`, assetId: null, ownerId: OWNER, path: keyPath }),
+        ]);
+        expect(uploadedKeys()).toContain(objectKeyOf(hex(keyPath)));
+        // its own manifest section, never mistaken for the person's profile image
+        const manifest = manifestOf();
+        expect(manifest.lockedKeys).toEqual({
+          [OWNER]: expect.objectContaining({ role: 'locked-key', path: keyPath, sha256: SHA_B }),
+        });
+        expect(Object.keys(manifest.profiles)).toEqual(['owner-1']);
+        // the wrapped key is never read into a log line
+        const logged = Object.values(mocks.logger)
+          .filter((value) => vi.isMockFunction(value))
+          .map((fn) => fn.mock.calls as unknown[]);
+        expect(JSON.stringify(logged)).not.toContain('wrapped-secret-material');
+      });
+
+      it('a file with a .fllk.tmp sibling is left for the next run', async () => {
+        const folder = join(media, 'library', OWNER);
+        await mkdir(folder, { recursive: true });
+        const sealing = join(folder, 'IMG_1.jpg');
+        const settled = join(folder, 'IMG_2.jpg');
+        await writeFile(sealing, 'plain');
+        await writeFile(`${sealing}.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.fllk.tmp`, 'half sealed');
+        await writeFile(settled, 'sealed');
+        // another file's temporary file names only that file
+        await writeFile(join(folder, 'IMG_10.jpg.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.fllk.tmp'), 'x');
+        index.listAssets
+          .mockResolvedValueOnce([
+            { ...asset('asset-1', SHA_A), ownerId: OWNER, originalPath: sealing },
+            { ...asset('asset-2', SHA_B), ownerId: OWNER, originalPath: settled },
+          ])
+          .mockResolvedValueOnce([]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        const recorded = index.upsertEntries.mock.calls.flatMap(([, entries]) =>
+          (entries as CloudBackupEntry[]).map(({ fileKey }) => fileKey),
+        );
+        expect(recorded).toContain('asset-2:original');
+        expect(recorded).not.toContain('asset-1:original');
+        expect(uploadedKeys()).not.toContain(objectKeyOf(SHA_A));
+        expect(operations.complete).toHaveBeenCalled();
+        // counted as changed: the next run backs it up
+        const results = operations.setBulkResult.mock.calls.map(
+          (call) => (call[2] as { result: { changed: number } }).result,
+        );
+        expect(results.at(-1)).toMatchObject({ changed: 1 });
+      });
+    });
+
     describe('selected Cloud Backup (FL-362)', () => {
       const decision = {
         runId: 'run-1',
@@ -4343,6 +4438,73 @@ describe(CloudBackupService.name, () => {
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
         lastRestore: { operationId: 'restore-1', scope: 'files', status: 'completed', files: 1 },
       });
+    });
+
+    it('single-item restore into a server whose key file doesn’t open the item reports "encrypted with an older key" instead of failing silently', async () => {
+      const OWNER = '00000000-0000-4000-8000-000000000001';
+      const previous = StorageCore.getMediaLocation();
+      const media = await mkdtemp(join(tmpdir(), 'cloud-restore-older-key-'));
+      try {
+        StorageCore.setMediaLocation(media);
+        // the person turned encryption off and on again: today's key file is a new key pair
+        const older = generateLockedKeyPair();
+        const current = generateLockedKeyPair();
+        await mkdir(join(media, 'locked-keys'), { mode: 0o700 });
+        await writeFile(
+          join(media, 'locked-keys', `${OWNER}.json`),
+          JSON.stringify({
+            format: 'frameleaf-locked-key/1',
+            userId: OWNER,
+            publicKey: current.publicKey.toString('base64'),
+            mode: 'pin',
+            wraps: [],
+          }),
+          { mode: 0o600 },
+        );
+        const plain = join(media, 'plain.jpg');
+        const sealed = join(media, 'sealed.jpg');
+        await writeFile(plain, 'the photo');
+        await encryptLockedFile(plain, sealed, [{ publicKey: older.publicKey }], {
+          assetId: 'asset-1',
+          kind: 'original',
+          originalFileName: 'IMG_1.jpg',
+          mime: 'image/jpeg',
+        });
+        const target = join(media, 'library', OWNER, 'IMG_1.jpg');
+        await mkdir(join(media, 'library', OWNER), { recursive: true });
+        store.get = vi.fn().mockResolvedValue(
+          gzipSync(
+            JSON.stringify({
+              format: 'frameleaf-backup-manifest',
+              version: 1,
+              instanceId: INSTANCE_ID,
+              createdAt: '2026-09-26T03:00:00.000Z',
+              database: null,
+              assets: {
+                'asset-1': {
+                  owner: OWNER,
+                  files: [{ role: 'original', path: target, sha256: SHA_A, size: 100, mtime: null }],
+                },
+              },
+              profiles: {},
+            }),
+          ),
+        );
+        // the verified download is published at the target: the backed-up ciphertext lands there
+        vi.mocked(link).mockImplementation((_staged, to) => copyFileOf(sealed, String(to)));
+
+        await sut.run(restoreOperation('asset', ['asset-1']), 'claim-1');
+
+        expect(await isLockedFile(target)).toBe(true);
+        expect(operations.complete).toHaveBeenCalled();
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+          lastRestore: { scope: 'asset', status: 'completed', files: 1, encryptedWithOlderKey: 1 },
+        });
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('encrypted with an older key'));
+      } finally {
+        StorageCore.setMediaLocation(previous);
+        await rm(media, { recursive: true, force: true });
+      }
     });
 
     it('records a restore cancelled at its end as cancelled, never as completed', async () => {

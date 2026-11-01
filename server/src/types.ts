@@ -1143,6 +1143,8 @@ export type FrameleafCloudBackupRestore = {
   /** Deleted items made again, and items whose details came back (manifest v2). */
   recreated?: number;
   detailsRestored?: number;
+  /** FL-721: restored encrypted items that this server's Locked key file for their owner does not open. */
+  encryptedWithOlderKey?: number;
   error?: string;
 };
 

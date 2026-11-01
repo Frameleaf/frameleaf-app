@@ -412,6 +412,11 @@ export type CloudBackupManifest = {
   database: { key: string; sha256: string; size: number } | null;
   assets: Record<string, CloudBackupManifestAsset>;
   profiles: Record<string, CloudBackupManifestFile>;
+  /**
+   * FL-721: each person's Locked key file (`<media>/locked-keys/<userId>.json`) by user id, copied as it
+   * is (it is wrapped). Absent when nobody has one, and on manifests from before it.
+   */
+  lockedKeys?: Record<string, CloudBackupManifestFile>;
   /** v2: every album an item in the manifest belongs to; empty for v1. */
   albums: Record<string, CloudBackupAlbum>;
   /** v2: every person a face in the manifest names; empty for v1. */
