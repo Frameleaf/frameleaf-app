@@ -127,6 +127,8 @@ describe('bounded calendar pages', () => {
     });
     for (const query of [
       { pageSize: 0 },
+      { pageSize: 1 },
+      { pageSize: 99 },
       { pageSize: 1001 },
       { pageSize: 2.5 },
       { locateAssetId: anchor },
@@ -134,6 +136,12 @@ describe('bounded calendar pages', () => {
     ]) {
       expect(TimeBucketDto.schema.safeParse(query).success).toBe(false);
     }
+  });
+
+  it('bounds summary expansion while allowing a one-asset final page', () => {
+    expect(TimeBucketDto.schema.parse({ pageSize: 100 })).toEqual({ pageSize: 100 });
+    expect(TimeBucketDto.schema.parse({ pageSize: 1000 })).toEqual({ pageSize: 1000 });
+    expect(TimeBucketAssetDto.schema.parse({ timeBucket, take: 1, firstAssetId: anchor })).toHaveProperty('take', 1);
   });
 
   it('retains the legacy request and accepts a bounded page with an opaque asset anchor', () => {

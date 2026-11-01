@@ -126,11 +126,12 @@ const TimeBucketQueryBaseSchema = z
   .meta({ id: 'TimeBucketDto' });
 
 export const TIMELINE_CALENDAR_MAX_TAKE = 1000;
+export const TIMELINE_CALENDAR_MIN_PAGE_SIZE = 100;
 const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
   pageSize: z.coerce
     .number()
     .int()
-    .min(1)
+    .min(TIMELINE_CALENDAR_MIN_PAGE_SIZE)
     .max(TIMELINE_CALENDAR_MAX_TAKE)
     .optional()
     .describe('Return bounded calendar-page summaries instead of whole-month counts'),
@@ -142,7 +143,7 @@ const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
     .enum(['filename', 'rating', 'quality'])
     .optional()
     .describe(
-      'Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize',
+      'Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters',
     ),
 })
   .refine((value) => value.pageSize !== undefined || !value.locateAssetId, 'Asset lookup requires pageSize')
@@ -168,13 +169,13 @@ const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
     .uuid()
     .optional()
     .describe(
-      'Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected',
+      'Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected',
     ),
   lastAssetId: z
     .uuid()
     .optional()
     .describe(
-      'Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected',
+      'Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected',
     ),
   membershipAlbumId: z
     .uuid()
@@ -326,7 +327,7 @@ const TimeBucketsResponseSchema = z
     count: z
       .int()
       .describe(
-        'Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the total matching asset count',
+        'Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the located page’s asset count',
       )
       .meta({ example: 42 }),
     page: z
@@ -334,7 +335,7 @@ const TimeBucketsResponseSchema = z
       .min(0)
       .optional()
       .describe(
-        'Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize',
+        'Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize and take = pageSize, with the same sort and filters',
       ),
     after: z.uuid().nullable().optional().describe('Opaque anchor immediately before this page'),
     firstAssetId: z.uuid().optional().describe('First asset in the page snapshot'),

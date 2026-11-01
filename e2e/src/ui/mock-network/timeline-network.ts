@@ -28,19 +28,30 @@ export const setupTimelineMockApiRoutes = async (
   changes: Changes,
   testContext: TimelineTestContext,
 ) => {
-  const orderedAssets = (sort: string | null) =>
+  const orderedAssets = (params: URLSearchParams) =>
     timelineRestData.buckets
-      .values()
+      .entries()
+      .flatMap(([timeBucket, assets]) => {
+        const filtered = getTimeBucket(
+          timelineRestData,
+          timeBucket,
+          params.get('isTrashed') === 'true',
+          params.get('visibility') === 'archive',
+          params.has('isFavorite') ? params.get('isFavorite') === 'true' : undefined,
+          params.get('albumId') || undefined,
+          changes,
+        );
+        const byId = new Map(assets.map((asset) => [asset.id, asset]));
+        return filtered.id.map((id, index) => ({
+          ...byId.get(id)!,
+          isFavorite: filtered.isFavorite[index],
+          isTrashed: filtered.isTrashed[index],
+          visibility: filtered.visibility[index],
+        }));
+      })
+      .filter((asset) => asset.visibility === (params.get('visibility') ?? AssetVisibility.Timeline))
       .toArray()
-      .flat()
-      .filter(
-        (asset) =>
-          !asset.isTrashed &&
-          asset.visibility === AssetVisibility.Timeline &&
-          !changes.assetDeletions.includes(asset.id) &&
-          !changes.assetArchivals.includes(asset.id),
-      )
-      .toSorted((a, b) => (sort === 'filename' ? a.id.localeCompare(b.id) : 0));
+      .toSorted((a, b) => (params.get('sort') === 'filename' ? a.id.localeCompare(b.id) : 0));
 
   await context.route('**/api/timeline**', async (route, request) => {
     const url = new URL(request.url());
@@ -57,7 +68,7 @@ export const setupTimelineMockApiRoutes = async (
       const sort = url.searchParams.get('sort');
       const locateAssetId = url.searchParams.get('locateAssetId');
       if (sort && locateAssetId && pageSize) {
-        const assets = orderedAssets(sort);
+        const assets = orderedAssets(url.searchParams);
         const index = assets.findIndex(({ id }) => id === locateAssetId);
         const page = Math.floor(index / pageSize);
         return route.fulfill({
@@ -137,8 +148,7 @@ export const setupTimelineMockApiRoutes = async (
       // FL-30 (S-15): the library's own assets in a flat order; the mock names each file by its id.
       const skip = Number(url.searchParams.get('skip') ?? 0);
       const take = Number(url.searchParams.get('take') ?? 500);
-      const sort = url.searchParams.get('sort');
-      const assets = orderedAssets(sort).slice(skip, skip + take);
+      const assets = orderedAssets(url.searchParams).slice(skip, skip + take);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -174,6 +184,16 @@ export const setupTimelineMockApiRoutes = async (
           ]),
         );
         const ids = assets.id.slice(start, start + take);
+        const firstAssetId = url.searchParams.get('firstAssetId');
+        const lastAssetId = url.searchParams.get('lastAssetId');
+        if (
+          (firstAssetId || lastAssetId) &&
+          ((firstAssetId && ids[0] !== firstAssetId) ||
+            (lastAssetId && ids.at(-1) !== lastAssetId) ||
+            ids.length !== take)
+        ) {
+          return route.fulfill({ status: 409 });
+        }
         const membershipAlbumId = url.searchParams.get('membershipAlbumId');
         const albumIds = new Set([
           ...(timelineRestData.album?.id === membershipAlbumId ? timelineRestData.album.assetIds : []),

@@ -57637,7 +57637,7 @@
             "name": "firstAssetId",
             "required": false,
             "in": "query",
-            "description": "Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "description": "Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -57682,7 +57682,7 @@
             "name": "lastAssetId",
             "required": false,
             "in": "query",
-            "description": "Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "description": "Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -58065,7 +58065,7 @@
             "in": "query",
             "description": "Return bounded calendar-page summaries instead of whole-month counts",
             "schema": {
-              "minimum": 1,
+              "minimum": 100,
               "maximum": 1000,
               "type": "integer"
             }
@@ -58104,7 +58104,7 @@
             "name": "sort",
             "required": false,
             "in": "query",
-            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize",
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters",
             "schema": {
               "type": "string",
               "enum": [
@@ -148693,7 +148693,7 @@
             "type": "string"
           },
           "firstAssetId": {
-            "description": "Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "description": "Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -148713,7 +148713,7 @@
             "type": "string"
           },
           "lastAssetId": {
-            "description": "Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "description": "Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -149157,7 +149157,7 @@
           "pageSize": {
             "description": "Return bounded calendar-page summaries instead of whole-month counts",
             "maximum": 1000,
-            "minimum": 1,
+            "minimum": 100,
             "type": "integer"
           },
           "personId": {
@@ -149176,7 +149176,7 @@
             "type": "string"
           },
           "sort": {
-            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize",
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters",
             "enum": [
               "filename",
               "rating",
@@ -149229,7 +149229,7 @@
             "type": "string"
           },
           "count": {
-            "description": "Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the total matching asset count",
+            "description": "Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the located page’s asset count",
             "example": 42,
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -149271,7 +149271,7 @@
             "type": "string"
           },
           "page": {
-            "description": "Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize",
+            "description": "Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize and take = pageSize, with the same sort and filters",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
