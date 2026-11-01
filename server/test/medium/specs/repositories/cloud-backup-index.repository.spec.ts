@@ -619,6 +619,8 @@ describe(CloudBackupIndexRepository.name, () => {
           fileModifiedAt: expect.any(String),
           localDateTime: expect.any(String),
           duration: null,
+          checksum: asset.checksum.toString('hex'),
+          checksumAlgorithm: 'sha1',
         },
         details: {
           isFavorite: true,

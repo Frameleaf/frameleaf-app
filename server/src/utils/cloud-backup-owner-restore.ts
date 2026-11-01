@@ -3,9 +3,14 @@ import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
-import type { CloudBackupAssetRecord, CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import { AssetStatus } from 'src/enum.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
+import {
+  type CloudBackupAssetRecord,
+  type CloudBackupManifest,
+  recordedChecksum,
+  restoredChecksum,
+} from 'src/utils/cloud-backup.js';
 import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -18,6 +23,7 @@ export const readBackupAssetRecord = (asset: CloudBackupManifest['assets'][strin
         fileModifiedAt: asset.fileModifiedAt,
         localDateTime: asset.localDateTime,
         duration: asset.duration ?? null,
+        ...recordedChecksum(asset),
       }
     : null;
 
@@ -82,6 +88,9 @@ export const checkOwnerRestoreItems = async (
       original.size === 0
     )
       throw new NotFoundException('Backup item unavailable');
+    // FL-738: an encrypted original's item carries the plaintext checksum the backup recorded
+    const expected = restoredChecksum(recordedChecksum(asset), original.sha256);
+    const expectedHex = expected.checksum.toString('hex');
     const state = states.get(id);
     const current = library.get(id);
     const identities = await index.getOwnerRestoreIdentities([id]);
@@ -95,8 +104,8 @@ export const checkOwnerRestoreItems = async (
       (identity.ownerId !== owner.ownerId ||
         (before
           ? identity.originalPath !== before.originalPath ||
-            (identity.checksum !== before.checksum && identity.checksum !== original.sha256)
-          : !resumed || identity.originalPath !== original.path || identity.checksum !== original.sha256))
+            (identity.checksum !== before.checksum && identity.checksum !== expectedHex)
+          : !resumed || identity.originalPath !== original.path || identity.checksum !== expectedHex))
     )
       throw new NotFoundException('Backup item unavailable');
     if (!identity && before) throw new NotFoundException('Backup item unavailable');
@@ -106,8 +115,8 @@ export const checkOwnerRestoreItems = async (
       state.allowed &&
       state.status === AssetStatus.Active &&
       current?.record &&
-      identity?.checksumAlgorithm === 'sha256' &&
-      identity.checksum === original.sha256;
+      identity?.checksumAlgorithm === expected.checksumAlgorithm &&
+      identity.checksum === expectedHex;
     const deletion = state?.deletion;
     const motionAllowed =
       motionParent &&
@@ -118,8 +127,8 @@ export const checkOwnerRestoreItems = async (
         (!state?.ownerId &&
           deletion?.ownerId === auth.user.id &&
           deletion.evidenceVersion === 1 &&
-          deletion.checksumAlgorithm === 'sha256' &&
-          deletion.checksum?.toString('hex') === original.sha256 &&
+          deletion.checksumAlgorithm === expected.checksumAlgorithm &&
+          deletion.checksum?.equals(expected.checksum) &&
           (!deletion.wasLocked || auth.session?.hasElevatedPermission) &&
           !auth.hideNsfwAssets &&
           !hasHiddenContentFilter(auth.hiddenContent)));

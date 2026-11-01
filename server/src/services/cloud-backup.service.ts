@@ -67,7 +67,6 @@ import {
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   AssetStatus,
-  ChecksumAlgorithm,
   DatabaseLock,
   FrameleafWorker,
   JobName,
@@ -165,7 +164,11 @@ import {
   assertOwnerRestorePath,
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
-import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
+import {
+  checkOwnerRestoreItems,
+  ownerRestoreHash,
+  readBackupAssetRecord as readRecord,
+} from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import {
   type BackupRecoveryHistory,
@@ -202,6 +205,7 @@ import {
   CloudBackupManifestFile,
   CloudBackupRunResult,
   backupKeyFile,
+  backupRecordFor,
   bucketRef,
   compactIso,
   emptyRunResult,
@@ -212,6 +216,7 @@ import {
   parseBackupKey,
   parseRunResult,
   recoveryCode,
+  restoredChecksum,
   runProgress,
   s3SettingsProblem,
   signingRegion,
@@ -2897,7 +2902,7 @@ export class CloudBackupService {
     const details = new Map<string, { record: CloudBackupAssetRecord; details: CloudBackupAssetDetails }>();
     const albumIds = new Set<string>();
     const people = new Map<string, { ownerId: string; personId: string }>();
-    const assetJson = (current: ManifestAsset) => {
+    const assetJson = async (current: ManifestAsset) => {
       const known = details.get(current.id);
       details.delete(current.id);
       if (known) {
@@ -2910,10 +2915,15 @@ export class CloudBackupService {
           }
         }
       }
+      // FL-738: the item's checksum is kept only for an encrypted original (see `backupRecordFor`)
+      const original = known?.record.checksum ? current.files.find((file) => file.role === 'original') : undefined;
       const body = JSON.stringify({
         owner: current.owner,
         files: current.files,
-        ...(known && { ...known.record, details: known.details }),
+        ...(known && {
+          ...backupRecordFor(known.record, !!original && (await sealedFileOwnerKeyId(original.path)) !== null),
+          details: known.details,
+        }),
       });
       const text = `${counts.assets > 0 ? ',' : ''}${JSON.stringify(current.id)}:${body}`;
       counts.assets += 1;
@@ -2957,7 +2967,7 @@ export class CloudBackupService {
         let asset = pending.asset;
         if (asset?.id !== entry.assetId) {
           if (asset) {
-            yield assetJson(asset);
+            yield await assetJson(asset);
           }
           asset = { id: entry.assetId, owner: entry.ownerId, files: [] };
           pending.asset = asset;
@@ -2968,7 +2978,7 @@ export class CloudBackupService {
       after = page.at(-1)?.fileKey ?? after;
     }
     if (pending.asset) {
-      yield assetJson(pending.asset);
+      yield await assetJson(pending.asset);
     }
     const albums = await this.index.getAlbumRecords([...albumIds]);
     const persons = await this.index.getPersonRecords(people.values().toArray());
@@ -4219,8 +4229,7 @@ export class CloudBackupService {
                   id: assetId,
                   status: AssetStatus.Active,
                   deletedAt: null,
-                  checksum: Buffer.from(originalFile.sha256, 'hex'),
-                  checksumAlgorithm: ChecksumAlgorithm.sha256File,
+                  ...restoredChecksum(readRecord(asset), originalFile.sha256),
                 });
                 await assertOwnerRestoreFile(originalFile.target, evidence.identity);
                 return { recreated: 0, detailsRestored: changed ? 1 : 0 };
@@ -5393,19 +5402,6 @@ const albumMembersOf = (manifest: CloudBackupManifest) => {
   }
   return members;
 };
-
-/** An item's record as the manifest holds it (manifest v2), or null for a backup without one. */
-const readRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAssetRecord | null =>
-  asset.type && asset.originalFileName && asset.fileCreatedAt && asset.fileModifiedAt && asset.localDateTime
-    ? {
-        type: asset.type,
-        originalFileName: asset.originalFileName,
-        fileCreatedAt: asset.fileCreatedAt,
-        fileModifiedAt: asset.fileModifiedAt,
-        localDateTime: asset.localDateTime,
-        duration: asset.duration ?? null,
-      }
-    : null;
 
 /**
  * FL-362: what a restore says about the items it brought back without an original, by reason and per

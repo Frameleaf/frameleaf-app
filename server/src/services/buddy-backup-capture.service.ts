@@ -43,6 +43,7 @@ import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
   type CloudBackupManifest,
   type CloudBackupManifestFile,
+  backupRecordFor,
   keyFingerprint,
   parseBackupKey,
 } from 'src/utils/cloud-backup.js';
@@ -612,7 +613,8 @@ export class BuddyBackupCaptureService {
                   manifest.library.assets[asset.id] = {
                     owner: asset.ownerId,
                     files,
-                    ...metadata.record,
+                    // FL-738: the item's checksum is kept only for an encrypted original
+                    ...backupRecordFor(metadata.record, sealedPaths.has(asset.originalPath)),
                     details: metadata.details,
                   };
                   manifest.assetFidelity![asset.id] = await fidelity.capture(
