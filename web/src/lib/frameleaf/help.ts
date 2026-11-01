@@ -187,6 +187,15 @@ const ASIDE = /^:::(note|tip|caution|danger)(?:\[([^\]\n]*)\])?\n([\s\S]*?)^:::$
  * `data-help-article` (and `data-help-heading`) so the reader opens them in place; every other link
  * opens in a new tab. Images and links stay on the help website.
  */
+/** A link's heading anchor, decoded; a malformed escape (`#100%-sure`) stays as written. */
+const decodeAnchor = (hash: string) => {
+  try {
+    return decodeURIComponent(hash);
+  } catch {
+    return hash;
+  }
+};
+
 export const renderHelpArticle = (markdown: string, origin: string, ids: ReadonlySet<string>) => {
   const body = markdown
     .replace(/^# .*\n+/, '')
@@ -269,10 +278,10 @@ export const renderHelpArticle = (markdown: string, origin: string, ids: Readonl
     if (id && ids.has(id)) {
       link.dataset.helpArticle = id;
       if (target.hash) {
-        link.dataset.helpHeading = decodeURIComponent(target.hash.slice(1));
+        link.dataset.helpHeading = decodeAnchor(target.hash.slice(1));
       }
     } else if (target.hash && target.pathname === '/' && !link.getAttribute('href')?.startsWith('http')) {
-      link.dataset.helpHeading = decodeURIComponent(target.hash.slice(1));
+      link.dataset.helpHeading = decodeAnchor(target.hash.slice(1));
     } else {
       link.setAttribute('href', target.href);
       link.setAttribute('target', '_blank');

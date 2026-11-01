@@ -42,16 +42,23 @@ npm uninstall -g immich
 
 If npm is not available on your system you can try the Docker version
 
+Put the server URL and your API key in a Docker env file, so the key stays out of shell history and process arguments. Keep `frameleaf-cli.env` out of source control: do not create it inside a Git repository, and if you run Docker from one, add it to that repository's `.gitignore` first. Create `frameleaf-cli.env` in a text editor with your own values, and make it readable only by you (`chmod 600 frameleaf-cli.env`):
+
 ```bash
-docker run -it -v "$(pwd)":/import:ro -e FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api -e FRAMELEAF_API_KEY=your-api-key ghcr.io/frameleaf/frameleaf-cli:latest
+FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api
+FRAMELEAF_API_KEY=your-api-key
 ```
 
-Please modify the `FRAMELEAF_INSTANCE_URL` and `FRAMELEAF_API_KEY` environment variables as suitable. You can also use a Docker env file to store your sensitive API key.
+Then run:
+
+```bash
+docker run -it -v "$(pwd)":/import:ro --env-file frameleaf-cli.env ghcr.io/frameleaf/frameleaf-cli:latest
+```
 
 This `docker run` command will directly run the command `frameleaf` inside the container. You can directly append the desired parameters (see under "usage") to the commandline like this:
 
 ```bash
-docker run -it -v "$(pwd)":/import:ro -e FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api -e FRAMELEAF_API_KEY=your-api-key ghcr.io/frameleaf/frameleaf-cli:latest upload -a -c 5 --recursive directory/
+docker run -it -v "$(pwd)":/import:ro --env-file frameleaf-cli.env ghcr.io/frameleaf/frameleaf-cli:latest upload -a -c 5 --recursive directory/
 ```
 
 ## Usage

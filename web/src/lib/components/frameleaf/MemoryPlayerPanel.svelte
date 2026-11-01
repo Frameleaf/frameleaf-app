@@ -464,6 +464,15 @@
     handlePromiseError(handleAction('resetAndPlay', 'play'));
   };
 
+  /** A photo's preview settled (loaded or broken): start its slide, but leave a paused player paused. */
+  const onPhotoSettled = () => {
+    if (paused) {
+      handlePromiseError(progressBarController?.set(0) ?? Promise.resolve());
+      return;
+    }
+    resetAndPlay();
+  };
+
   function runTitleCardTimer() {
     if (titleCardTimer || !titleCardFor) {
       return;
@@ -1201,7 +1210,7 @@
                 ></div>
                 <MemoryPhotoViewer
                   asset={current.asset}
-                  onImageLoad={resetAndPlay}
+                  onImageLoad={onPhotoSettled}
                   motionClass={slideClass}
                   motionStyle={slideStyle}
                 />

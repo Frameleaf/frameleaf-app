@@ -1,9 +1,18 @@
-import { getTimeBucket, getTimelineOrdered } from '@frameleaf/sdk';
+import { getTimeBucket, getTimelineOrdered, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { toISOYearMonthUTC } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { TimelineManagerOptions } from '../types';
+
+/** Tries a load makes while live changes keep landing on it, before it gives way. */
+const STALE_LOAD_ATTEMPTS = 3;
+
+/**
+ * A load a newer timeline (or a live change) overtook. Thrown, not returned, so the month's loader
+ * ends cancelled and loads again later, instead of counting an empty month as loaded.
+ */
+const superseded = () => new DOMException('Timeline month load superseded', 'AbortError');
 
 export async function loadFromTimeBuckets(
   timelineManager: TimelineManager,
@@ -11,45 +20,59 @@ export async function loadFromTimeBuckets(
   options: TimelineManagerOptions,
   signal: AbortSignal,
 ): Promise<void> {
-  if (timelineMonth.getFirstAsset()) {
-    return;
-  }
-
-  const projection = timelineManager.projectionGeneration;
-  const current = () =>
-    projection === timelineManager.projectionGeneration && timelineManager.months.includes(timelineMonth);
   const timeBucket = toISOYearMonthUTC(timelineMonth.yearMonth);
-  const bucketResponse = await getTimeBucket(
-    {
-      ...authManager.params,
-      ...options,
-      timeBucket,
-    },
-    { signal },
-  );
-
-  if (!bucketResponse || signal.aborted || !current()) {
-    return;
-  }
-
-  if (options.timelineAlbumId) {
-    const albumAssets = await getTimeBucket(
+  for (let attempt = 1; ; attempt++) {
+    const projection = timelineManager.projectionGeneration;
+    const bucketResponse = await getTimeBucket(
       {
         ...authManager.params,
-        albumId: options.timelineAlbumId,
+        ...options,
         timeBucket,
       },
       { signal },
     );
-    if (!albumAssets || signal.aborted || !current()) {
+    const albumAssets =
+      options.timelineAlbumId && bucketResponse
+        ? await getTimeBucket(
+            {
+              ...authManager.params,
+              albumId: options.timelineAlbumId,
+              timeBucket,
+            },
+            { signal },
+          )
+        : undefined;
+    if (signal.aborted || !timelineManager.months.includes(timelineMonth)) {
+      throw superseded();
+    }
+    if (projection !== timelineManager.projectionGeneration) {
+      // A live change landed while this was in flight: ask again rather than keep a stale read.
+      if (attempt < STALE_LOAD_ATTEMPTS) {
+        continue;
+      }
+      throw superseded();
+    }
+    if (!bucketResponse || (options.timelineAlbumId && !albumAssets)) {
       return;
     }
-    for (const id of albumAssets.id) {
+    for (const id of albumAssets?.id ?? []) {
       timelineManager.albumAssets.add(id);
     }
+    // A month that is not loaded may still hold assets a live event put there (even during this
+    // request): read what it holds now and add only what it does not hold yet.
+    const held = new Set(timelineMonth.getAssets().map(({ id }) => id));
+    addBucketAssets(timelineMonth, bucketResponse, held);
+    return;
   }
+}
 
-  const unprocessedAssets = timelineMonth.addAssets(bucketResponse, true);
+const addBucketAssets = (
+  timelineMonth: TimelineMonth,
+  bucketResponse: TimeBucketAssetResponseDto,
+  held: ReadonlySet<string>,
+) => {
+  // Assets already held mean the response is merged in, so it is sorted rather than taken as sorted.
+  const unprocessedAssets = timelineMonth.addAssets(bucketResponse, held.size === 0, held);
   if (unprocessedAssets.length > 0) {
     console.error(
       `Warning: getTimeBucket API returning assets not in requested month: ${timelineMonth.yearMonth.month}, ${JSON.stringify(
@@ -60,7 +83,7 @@ export async function loadFromTimeBuckets(
       )}`,
     );
   }
-}
+};
 
 /** FL-30 (S-15): assets per page of a flat order. */
 export const ORDERED_PAGE_SIZE = 500;
@@ -90,34 +113,47 @@ export async function loadOrderedPage(
     return;
   }
   const manager = timelineMonth.timelineManager;
-  const projection = manager.projectionGeneration;
   const page = months.indexOf(timelineMonth);
   if (page === -1) {
     return;
   }
-  let cursors = orderedPageCursors.get(months);
-  if (!cursors) {
-    cursors = new Map();
-    orderedPageCursors.set(months, cursors);
-  }
-  const after = cursors.get(page - 1)?.end;
-  const before = after ? undefined : cursors.get(page + 1)?.start;
-  const response = await getTimelineOrdered(
-    {
-      ...authManager.params,
-      ...options,
-      sort: options.orderedBy,
-      ...(after ? { after } : before ? { before } : { skip: page * ORDERED_PAGE_SIZE }),
-      take: ORDERED_PAGE_SIZE,
-    },
-    { signal },
-  );
-  if (!response || signal.aborted || projection !== manager.projectionGeneration || manager.months !== months) {
+  for (let attempt = 1; ; attempt++) {
+    const projection = manager.projectionGeneration;
+    // Read per attempt: a live change may have cleared the boundaries the last attempt used.
+    let cursors = orderedPageCursors.get(months);
+    if (!cursors) {
+      cursors = new Map();
+      orderedPageCursors.set(months, cursors);
+    }
+    const after = cursors.get(page - 1)?.end;
+    const before = after ? undefined : cursors.get(page + 1)?.start;
+    const response = await getTimelineOrdered(
+      {
+        ...authManager.params,
+        ...options,
+        sort: options.orderedBy,
+        ...(after ? { after } : before ? { before } : { skip: page * ORDERED_PAGE_SIZE }),
+        take: ORDERED_PAGE_SIZE,
+      },
+      { signal },
+    );
+    if (signal.aborted || manager.months !== months) {
+      throw superseded();
+    }
+    if (projection !== manager.projectionGeneration) {
+      if (attempt < STALE_LOAD_ATTEMPTS) {
+        continue;
+      }
+      throw superseded();
+    }
+    if (!response) {
+      return;
+    }
+    // An update during this request may have invalidated its boundaries. Do not retain them.
+    if (orderedPageCursors.get(months) === cursors) {
+      cursors.set(page, { start: response.startCursor ?? undefined, end: response.endCursor ?? undefined });
+    }
+    timelineMonth.addOrderedAssets(response);
     return;
   }
-  // An update during this request may have invalidated its boundaries. Do not retain them.
-  if (orderedPageCursors.get(months) === cursors) {
-    cursors.set(page, { start: response.startCursor ?? undefined, end: response.endCursor ?? undefined });
-  }
-  timelineMonth.addOrderedAssets(response);
 }

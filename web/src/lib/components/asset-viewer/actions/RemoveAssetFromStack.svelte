@@ -3,6 +3,7 @@
 
   import { AssetAction } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import { removeAssetFromStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiImageMinusOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -26,7 +27,14 @@
       ...stack,
       assets: stack.assets.filter((member) => member.id !== target.id),
     };
-    await removeAssetFromStack({ id: updatedStack.id, assetId: target.id });
+    try {
+      await removeAssetFromStack({ id: updatedStack.id, assetId: target.id });
+    } catch (error) {
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.failed_to_unstack_assets'));
+      }
+      return;
+    }
     if (isCurrentSession()) {
       handleAction({ type: AssetAction.REMOVE_ASSET_FROM_STACK, stack: updatedStack, asset: target });
     }

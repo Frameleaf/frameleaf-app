@@ -12,7 +12,7 @@
   import type { AlbumIconCatalogueResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiMagnify } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -62,6 +62,11 @@
       const [loadedCatalogue, loadedPaths] = await Promise.all([loadIconCatalogue(), loadIconPaths()]);
       catalogue = loadedCatalogue;
       paths = loadedPaths;
+      if (!inline) {
+        // The field is disabled until the catalogue arrives, and a disabled field cannot take focus.
+        await tick();
+        search?.focus();
+      }
     } catch {
       failed = true;
     }
@@ -70,7 +75,6 @@
   onMount(() => {
     void load();
     if (!inline) {
-      search?.focus();
       const outside = (event: PointerEvent) => {
         if (root && !root.contains(event.target as Node)) {
           onClose?.();

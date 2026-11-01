@@ -16952,6 +16952,8 @@ export type FrameleafSetupChoicesDto = {
     adminEmail?: string;
     /** Administrator name */
     adminName?: string;
+    /** The search model "keep current model" named, saved with that choice (no tier) */
+    keptModel?: string;
     /** Language chosen on the welcome step */
     language?: string;
     /** Folder layout preset, or "keep" */
@@ -16962,6 +16964,8 @@ export type FrameleafSetupChoicesDto = {
     map?: boolean;
     /** Model tier */
     model?: FrameleafSetupModelTier;
+    /** Whether the administrator chose the model on the tier step */
+    modelChosen?: boolean;
     /** Nightly database backups */
     nightlyBackup?: boolean;
     /** Where processing runs */

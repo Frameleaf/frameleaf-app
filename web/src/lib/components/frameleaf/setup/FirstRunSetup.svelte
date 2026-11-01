@@ -41,6 +41,8 @@
     goToStep,
     itemsPerHour,
     KEEP_LAYOUT,
+    KEEP_MODEL,
+    keepsUnlistedModel,
     layoutPattern,
     layoutPresets,
     modelTiers,
@@ -56,7 +58,8 @@
     themeAfterSetup,
     toProgress,
     validateStep,
-    withDefaultTier,
+    settleFinishTier,
+    settleLoadedTier,
     type SetupChoices,
     type SetupState,
   } from '$lib/frameleaf/first-run-setup';
@@ -245,7 +248,7 @@
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
     // A2: the tier starts from what the hardware runs well (a new server) or from the models the
     // library already uses (an existing one), unless the administrator already took that decision.
-    setup = withDefaultTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
+    setup = settleLoadedTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
     serverLoading = false;
   };
 
@@ -452,6 +455,21 @@
     finishPhase = 'saving';
     try {
       const current = await getConfig();
+      // Checked against the model the server has now: the library's model changes only for a tier the
+      // administrator chose. An unchosen tier that is no longer the default, or "keep" of a model other
+      // than the one it named, goes back to the tier step to confirm it.
+      const confirm = settleFinishTier(
+        setup,
+        { hardware, currentModel: current.machineLearning.clip.modelName },
+        config?.machineLearning.clip.modelName,
+      );
+      if (confirm) {
+        direction = -1;
+        config = current;
+        setup = confirm;
+        finishPhase = '';
+        return;
+      }
       // Saved here, not through the settings service: a failed save must stop setup on this step
       // with the error in view (the service only toasts), and no "Settings saved" toast belongs in
       // the hand-off. Credentials are emptied for the save exactly as the service does.
@@ -517,6 +535,11 @@
   const preset = $derived(layoutPresets.find((entry) => entry.id === choices.layout) ?? layoutPresets[0]);
   const pathParts = $derived(examplePath(choices.layout).split('/'));
   const tier = $derived(modelTiers.find((entry) => entry.id === choices.model) ?? modelTiers[1]);
+  /** An existing library on a search model outside the tiers can keep it: no model change, no re-index. */
+  const currentModelName = $derived(config?.machineLearning.clip.modelName ?? '');
+  const keepModel = $derived(choices.model === KEEP_MODEL);
+  const offerKeepModel = $derived(keepsUnlistedModel(setup.flow, currentModelName) || keepModel);
+  const keepModelTitle = $derived($t('frameleaf_setup_tier_keep', { values: { model: currentModelName } }));
   /** The tier this hardware is recommended (A2); shown as such on the tier step whatever is chosen. */
   const recommendedTierId = $derived(recommendedTier(hardware));
   const gpu = $derived(!!hardware && hardware.ml.backend !== HardwareBackend.Cpu && hardware.ml.reachable);
@@ -564,6 +587,12 @@
     entry ? [entry.vendor, entry.model].filter(Boolean).join(' ') || entry.backend.toUpperCase() : '';
 
   const summaryRows = $derived.by(() => {
+    const where =
+      choices.processing === 'cloud'
+        ? $t('frameleaf_setup_summary_where_cloud')
+        : choices.processing === 'later'
+          ? $t('frameleaf_setup_summary_where_later')
+          : $t('frameleaf_setup_summary_where_local');
     const rows: [string, string][] = [
       [
         $t('frameleaf_setup_chapter_account'),
@@ -586,17 +615,9 @@
       ],
       [
         $t('frameleaf_setup_processing_title'),
-        $t('frameleaf_setup_summary_processing', {
-          values: {
-            tier: $t(tier.label),
-            where:
-              choices.processing === 'cloud'
-                ? $t('frameleaf_setup_summary_where_cloud')
-                : choices.processing === 'later'
-                  ? $t('frameleaf_setup_summary_where_later')
-                  : $t('frameleaf_setup_summary_where_local'),
-          },
-        }),
+        keepModel
+          ? `${keepModelTitle} · ${where}`
+          : $t('frameleaf_setup_summary_processing', { values: { tier: $t(tier.label), where } }),
       ],
       [
         $t('frameleaf_setup_summary_database_backups'),
@@ -621,13 +642,22 @@
     if (choices.processing === 'later') {
       return [];
     }
+    const health = {
+      id: 'health',
+      label: $t('frameleaf_setup_job_health'),
+      detail: $t('frameleaf_setup_job_health_detail'),
+    };
+    // keeping the current model re-indexes nothing
+    if (keepModel) {
+      return [health];
+    }
     return [
       {
         id: 'reindex',
         label: $t('frameleaf_setup_job_reindex', { values: { count: formatCount(items) } }),
         detail: $t('frameleaf_setup_job_reindex_detail', { values: { hours } }),
       },
-      { id: 'health', label: $t('frameleaf_setup_job_health'), detail: $t('frameleaf_setup_job_health_detail') },
+      health,
     ];
   });
 
@@ -1214,19 +1244,32 @@
                 </section>
                 <SetupChange>
                   {#snippet summary()}
-                    <strong>
-                      {$t('frameleaf_setup_tier_models', { values: { tier: $t(tier.label) } })}
-                      {#if tier.id === recommendedTierId}<SetupRecommended />{/if}
-                    </strong>
-                    <span>{$t(tier.summary)}</span>
+                    {#if keepModel}
+                      <strong>{keepModelTitle}</strong>
+                    {:else}
+                      <strong>
+                        {$t('frameleaf_setup_tier_models', { values: { tier: $t(tier.label) } })}
+                        {#if tier.id === recommendedTierId}<SetupRecommended />{/if}
+                      </strong>
+                      <span>{$t(tier.summary)}</span>
+                    {/if}
                   {/snippet}
                   <div class="frs-radios" role="radiogroup" aria-label={$t('frameleaf_setup_tier_label')}>
+                    {#if offerKeepModel}
+                      <SetupRadio
+                        name="frs-tier"
+                        value={KEEP_MODEL}
+                        checked={keepModel}
+                        onchange={() => choose({ model: KEEP_MODEL, modelChosen: true, keptModel: currentModelName })}
+                        title={keepModelTitle}
+                      />
+                    {/if}
                     {#each modelTiers as entry (entry.id)}
                       <SetupRadio
                         name="frs-tier"
                         value={entry.id}
                         checked={choices.model === entry.id}
-                        onchange={() => choose({ model: entry.id })}
+                        onchange={() => choose({ model: entry.id, modelChosen: true })}
                         title={$t('frameleaf_setup_tier_models', { values: { tier: $t(entry.label) } })}
                         detail={$t(entry.summary)}
                         recommended={entry.id === recommendedTierId}
@@ -1234,7 +1277,7 @@
                     {/each}
                   </div>
                 </SetupChange>
-                {#if existing}
+                {#if existing && !keepModel}
                   <p class="frs-estimate">
                     <Icon icon={mdiTimerSandComplete} size="18" aria-hidden={true} />
                     <span
@@ -1259,7 +1302,7 @@
                     recommended
                   >
                     <span>
-                      {existing
+                      {existing && !keepModel
                         ? $t('frameleaf_setup_where_here_body', { values: { hours } })
                         : $t('frameleaf_setup_where_local_only_body')}
                     </span>
@@ -1455,7 +1498,7 @@
                 type="button"
                 class="button primary frs-open"
                 onclick={() => void finish()}
-                disabled={busy}
+                disabled={busy || serverLoading}
                 aria-busy={busy || undefined}
               >
                 {#if finishPhase}

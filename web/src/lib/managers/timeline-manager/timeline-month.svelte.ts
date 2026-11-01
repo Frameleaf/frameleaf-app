@@ -195,10 +195,11 @@ export class TimelineMonth {
     };
   }
 
-  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean) {
+  /** `skipIds`: assets the month already holds, left out rather than added twice. */
+  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean, skipIds?: ReadonlySet<string>) {
     const addContext = new GroupInsertionCache();
     for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
-      if (this.timelineManager.isExcluded(timelineAsset)) {
+      if (skipIds?.has(timelineAsset.id) || this.timelineManager.isExcluded(timelineAsset)) {
         continue;
       }
 
@@ -276,6 +277,10 @@ export class TimelineMonth {
     const index = this.#index;
     const heightDelta = height - this.#height;
     this.#height = height;
+    // A month a refresh replaced is no longer laid out: moving the current months by it would shift them.
+    if (index === -1) {
+      return;
+    }
     const previousTimelineMonth = timelineManager.months[index - 1];
     if (previousTimelineMonth) {
       const newTop = previousTimelineMonth.#top + previousTimelineMonth.#height;

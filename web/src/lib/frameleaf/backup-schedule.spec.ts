@@ -18,6 +18,9 @@ describe('a stored schedule as a choice (FL-362)', () => {
     ['0 0 * * *', { every: 'day', time: '00:00' }],
     // Every day of the week is every day.
     ['0 3 * * 0-6', { every: 'day', time: '03:00' }],
+    ['0 3 * * 0-7', { every: 'day', time: '03:00' }],
+    ['0 3 * * 1-7', { every: 'day', time: '03:00' }],
+    ['0 3 * * 5-7', { every: 'days', days: [0, 5, 6], time: '03:00' }],
     ['0 3 * * 1,2,3,4,5,6,7', { every: 'day', time: '03:00' }],
     ['0 3 * * 0', { every: 'days', days: [0], time: '03:00' }],
     ['0 3 * * 7', { every: 'days', days: [0], time: '03:00' }],

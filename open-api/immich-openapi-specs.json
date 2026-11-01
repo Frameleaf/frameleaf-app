@@ -59487,7 +59487,7 @@
         "x-immich-permission": "asset.read"
       },
       "post": {
-        "description": "Requires a current elevated session and no active hidden-content filter.256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.",
+        "description": "Requires a current elevated session and no active hidden-content filter. 256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum 2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.",
         "operationId": "startBackupReconciliation",
         "parameters": [
           {
@@ -59549,7 +59549,7 @@
     },
     "/users/me/backup-devices/{id}/reconciliations/{runId}/buckets": {
       "post": {
-        "description": "Up to2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns409 and may be retried. No completed audit until every differing bucket is validated.",
+        "description": "Up to 2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns 409 and may be retried. No completed audit until every differing bucket is validated.",
         "operationId": "reconcileBackupBucket",
         "parameters": [
           {
@@ -62561,7 +62561,7 @@
     },
     {
       "name": "Libraries",
-      "description": "An external library is made up of input file paths or expressions that are scanned for asset files. Discovered files are automatically imported. Assets much be unique within a library, but can be duplicated across libraries. Each user has a default upload library, and can have one or more external libraries."
+      "description": "An external library is made up of input file paths or expressions that are scanned for asset files. Discovered files are automatically imported. Assets must be unique within a library, but can be duplicated across libraries. Each user has a default upload library, and can have one or more external libraries."
     },
     {
       "name": "Live Photo",
@@ -89104,6 +89104,11 @@
             "maxLength": 120,
             "type": "string"
           },
+          "keptModel": {
+            "description": "The search model \"keep current model\" named, saved with that choice (no tier)",
+            "maxLength": 200,
+            "type": "string"
+          },
           "language": {
             "description": "Language chosen on the welcome step",
             "maxLength": 12,
@@ -89125,6 +89130,10 @@
           "model": {
             "$ref": "#/components/schemas/FrameleafSetupModelTier",
             "description": "Model tier"
+          },
+          "modelChosen": {
+            "description": "Whether the administrator chose the model on the tier step",
+            "type": "boolean"
           },
           "nightlyBackup": {
             "description": "Nightly database backups",

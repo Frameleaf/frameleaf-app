@@ -54,6 +54,7 @@ describe('first-run progress save ownership', () => {
             adminEmail: '',
             layout: 'keep',
             model: 'balanced',
+            modelChosen: false,
             processing: 'local',
             nightlyBackup: true,
             updates: true,
@@ -151,6 +152,73 @@ describe('first-run progress save ownership', () => {
     expect(goto).toHaveBeenCalledWith('/photos', { invalidateAll: true });
     await vi.advanceTimersByTimeAsync(1000);
     expect(sdkMock.updateFrameleafSetup).not.toHaveBeenCalled();
+  });
+
+  describe('finishing on a library with an unlisted search model', () => {
+    const config = {
+      storageTemplate: { enabled: false, template: '{{y}}/{{MM}}/{{filename}}' },
+      machineLearning: {
+        clip: { enabled: true, modelName: 'custom-model' },
+        facialRecognition: { enabled: true, modelName: 'antelopev2' },
+      },
+      backup: { database: { enabled: true, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
+      newVersionCheck: { enabled: true },
+      map: { enabled: true },
+    };
+    // saved progress from before the keep option: the default tier, never chosen
+    const renderReady = () => {
+      const initial = createSetup('existing');
+      render(FirstRunSetup, {
+        initial: { ...initial, step: 9, reached: 9, choices: { ...initial.choices, signedIn: true } },
+        authenticated: true,
+      });
+    };
+
+    it('cannot finish before the server data has loaded', async () => {
+      sdkMock.getConfig.mockReturnValueOnce(new Promise(() => {}) as never);
+      renderReady();
+      await tick();
+      const open = screen.getByRole('button', { name: 'Open Frameleaf' });
+      expect(open).toBeDisabled();
+      await fireEvent.click(open);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('goes back to the tier step when the finish-time read changes the choice', async () => {
+      // the mount-time read fails; only the finish-time read answers
+      sdkMock.getConfig
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce(structuredClone(config) as never);
+      renderReady();
+      await vi.advanceTimersByTimeAsync(0);
+      await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.updateConfig).not.toHaveBeenCalled();
+      expect(sdkMock.runQueueCommandLegacy).not.toHaveBeenCalled();
+      expect(screen.getAllByText('Keep current model (custom-model)').length).toBeGreaterThan(0);
+    });
+
+    it('asks again when "keep" would now keep a different model than the one it named', async () => {
+      const moved = structuredClone(config);
+      moved.machineLearning.clip.modelName = 'other-model';
+      sdkMock.getConfig.mockResolvedValueOnce(structuredClone(config) as never).mockResolvedValueOnce(moved as never);
+      const initial = createSetup('existing');
+      render(FirstRunSetup, {
+        initial: {
+          ...initial,
+          step: 9,
+          reached: 9,
+          choices: { ...initial.choices, signedIn: true, model: 'keep', modelChosen: true },
+        },
+        authenticated: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.updateConfig).not.toHaveBeenCalled();
+      expect(screen.getAllByText('Keep current model (other-model)').length).toBeGreaterThan(0);
+    });
   });
 
   it.each([

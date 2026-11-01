@@ -275,6 +275,34 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
+    it('keeps a removed destination off when an administrator turned it off before its URL returned', async () => {
+      const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
+      mocks.mlDestination.getById.mockResolvedValue(removed);
+      mocks.mlDestination.update.mockResolvedValue(removed);
+
+      await sut.update(removed.id, { enabled: false });
+
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        removed.id,
+        expect.objectContaining({ summary: null, health: MlDestinationHealth.Unknown }),
+      );
+
+      vi.clearAllMocks();
+      const adminOff = { ...removed, lastProbeSummary: null };
+      mocks.mlDestination.getAll.mockResolvedValue([adminOff]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(adminOff);
+      mocks.mlDestination.getStoredRoute.mockResolvedValue({
+        workload: MlWorkload.Face,
+        destinationId: adminOff.id,
+        modelId: null,
+        updatedAt: new Date(),
+      });
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
+
+      await bootWith(['http://frameleaf-machine-learning:3003']);
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
     it('turns the same destination back on when its URL returns spelled differently', async () => {
       const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
       mocks.mlDestination.getAll.mockResolvedValue([removed]);

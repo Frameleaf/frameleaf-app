@@ -14,6 +14,8 @@ import {
   FRAMELEAF_TERMS_URL,
   goToStep,
   KEEP_LAYOUT,
+  KEEP_MODEL,
+  keepsUnlistedModel,
   loadAccountTool,
   loadLocalSetup,
   markSection,
@@ -21,6 +23,9 @@ import {
   parseSetup,
   processingOptions,
   recommendedTier,
+  reconcileKeptModel,
+  settleFinishTier,
+  settleLoadedTier,
   resumeSetup,
   saveAccountTool,
   saveLocalSetup,
@@ -34,6 +39,7 @@ import {
   validateStep,
   withDefaultTier,
   type TierHardware,
+  type SetupState,
 } from '$lib/frameleaf/first-run-setup';
 
 const memory = () => {
@@ -309,7 +315,7 @@ describe('first-run setup state (FL-176)', () => {
       expect(defaultTier('new', { hardware: null })).toBe('balanced');
       expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-B-32__openai' })).toBe('light');
       expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-SO400M-16-SigLIP2-384__webli' })).toBe('best');
-      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe('balanced');
+      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe(KEEP_MODEL);
       expect(defaultTier('existing', { hardware: gpu })).toBe('balanced');
 
       const fresh = withDefaultTier(createSetup('new'), { hardware: gpu });
@@ -322,6 +328,186 @@ describe('first-run setup state (FL-176)', () => {
       // no change, no new state
       const same = createSetup('new');
       expect(withDefaultTier(same, { hardware: ml({ vramGb: 8 }) })).toBe(same);
+    });
+
+    it('pre-selects keeping an unlisted search model and leaves it unchanged unless a tier is chosen', () => {
+      const config = {
+        storageTemplate: { enabled: false, template: '{{y}}/{{filename}}', hashVerificationEnabled: true },
+        machineLearning: {
+          clip: { enabled: true, modelName: 'custom-model' },
+          facialRecognition: { enabled: true, modelName: 'antelopev2' },
+        },
+        backup: { database: { enabled: false, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
+        newVersionCheck: { enabled: false },
+        map: { enabled: true, lightStyle: '', darkStyle: '' },
+      } as unknown as AdminConfigDto;
+      expect(keepsUnlistedModel('existing', 'custom-model')).toBe(true);
+      expect(keepsUnlistedModel('existing', 'ViT-B-32__openai')).toBe(false);
+      expect(keepsUnlistedModel('existing', undefined)).toBe(false);
+      expect(keepsUnlistedModel('new', 'custom-model')).toBe(false);
+      // a new server still starts at the hardware's tier
+      expect(defaultTier('new', { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' })).toBe('best');
+
+      const kept = withDefaultTier(createSetup('existing'), {
+        hardware: ml({ vramGb: 24 }),
+        currentModel: 'custom-model',
+      });
+      expect(kept.choices.model).toBe(KEEP_MODEL);
+      expect(applySetupChoices(config, kept).machineLearning).toEqual(config.machineLearning);
+      expect(needsReindex(config, kept)).toBe(false);
+      // the choice survives a resume
+      expect(parseSetup(JSON.stringify(kept), 'existing')?.choices.model).toBe(KEEP_MODEL);
+
+      // choosing a tier still switches the search model and re-indexes, as before
+      const best = { ...kept, choices: { ...kept.choices, model: 'best' as const } };
+      expect(applySetupChoices(config, best).machineLearning.clip.modelName).toBe('ViT-SO400M-16-SigLIP2-384__webli');
+      expect(needsReindex(config, best)).toBe(true);
+    });
+
+    describe('saved progress past the tier step, on a library with an unlisted search model', () => {
+      const tierStep = flowSteps('existing').findIndex((entry) => entry.id === 'processing');
+      const context = { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' };
+      const saved = (choices: Record<string, unknown>) => ({
+        version: 1,
+        step: flowSteps('existing')[tierStep + 1].id,
+        reached: tierStep + 1,
+        choices: { signedIn: true, ...choices },
+      });
+      const resume = (progress: ReturnType<typeof saved>) =>
+        withDefaultTier(resumeSetup('existing', { server: progress as never }, true), context);
+
+      it('offers keeping the current model when an older save holds only the default tier', () => {
+        expect(resume(saved({ model: 'balanced' })).choices.model).toBe(KEEP_MODEL);
+        expect(resume(saved({})).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('honours a tier the administrator chose', () => {
+        const state = resume(saved({ model: 'balanced', modelChosen: true }));
+        expect(state.choices.model).toBe('balanced');
+        expect(withDefaultTier(state, context)).toBe(state);
+      });
+
+      it('saves and resumes an explicit keep without sending an unknown tier', () => {
+        const kept = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, modelChosen: true },
+        };
+        const progress = toProgress(kept);
+        expect(progress.choices).not.toHaveProperty('model');
+        expect(progress.choices.modelChosen).toBe(true);
+        expect(resume(progress as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+        // a default keep is not saved as a choice and is offered again
+        const pending = toProgress({ ...kept, choices: { ...kept.choices, modelChosen: false } });
+        expect(resume(pending as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('resumes a default keep saved with its model, and asks again when that model changed', () => {
+        const kept = withDefaultTier(createSetup('existing'), context);
+        const past = { ...kept, step: tierStep + 1, reached: tierStep + 1 };
+        const resumed = resumeSetup('existing', { server: toProgress(past) }, true);
+        expect(resumed.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'custom-model' });
+        const listed = settleLoadedTier(resumed, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(listed.choices.model).toBe('light');
+        expect(listed.step).toBe(tierStep);
+      });
+
+      it('keeps a saved keep when the library model could not be read', () => {
+        const chosen = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, modelChosen: true, keptModel: 'custom' },
+        };
+        expect(settleLoadedTier(chosen, { hardware: null, currentModel: undefined })).toBe(chosen);
+      });
+
+      it('turns a default accepted before the data loaded into "keep" without asking, since keep changes nothing', () => {
+        const accepted = { ...createSetup('existing'), step: tierStep + 1, reached: tierStep + 1 };
+        const settled = settleLoadedTier(accepted, context);
+        expect(settled.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'custom-model' });
+        expect(settled.step).toBe(tierStep + 1);
+      });
+
+      it('returns to the tier step when the loaded default replaces a tier with another tier', () => {
+        const accepted = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, keptModel: 'custom-model' },
+        };
+        const settled = settleLoadedTier(accepted, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(settled.choices.model).toBe('light');
+        expect(settled.step).toBe(tierStep);
+      });
+
+      describe('at finish', () => {
+        const past = (choices: Partial<SetupState['choices']>) => ({
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, ...choices },
+        });
+        const listed = { ...context, currentModel: 'ViT-B-32__openai' };
+
+        it('finishes a tier the administrator chose, and a keep of the model it named', () => {
+          expect(settleFinishTier(past({ model: 'best', modelChosen: true }), listed)).toBeNull();
+          expect(settleFinishTier(past({ model: KEEP_MODEL, keptModel: 'custom-model' }), context)).toBeNull();
+          // a save that did not record the model compares with the one this page loaded
+          expect(settleFinishTier(past({ model: KEEP_MODEL }), context, 'custom-model')).toBeNull();
+        });
+
+        it('never applies an unchosen tier that is not the default for the model the server has now', () => {
+          const confirm = settleFinishTier(past({ model: 'balanced', modelChosen: false }), listed);
+          expect(confirm?.choices.model).toBe('light');
+          expect(confirm?.step).toBe(tierStep);
+          expect(settleFinishTier(past({ model: 'light', modelChosen: false }), listed)).toBeNull();
+        });
+
+        it('asks again when "keep" would keep a model other than the one it named', () => {
+          const confirm = settleFinishTier(past({ model: KEEP_MODEL, keptModel: 'custom-model' }), {
+            ...context,
+            currentModel: 'other-model',
+          });
+          expect(confirm?.choices).toMatchObject({ model: KEEP_MODEL, keptModel: 'other-model' });
+          expect(confirm?.step).toBe(tierStep);
+          const legacy = settleFinishTier(
+            past({ model: KEEP_MODEL }),
+            { ...context, currentModel: 'x' },
+            'custom-model',
+          );
+          expect(legacy?.step).toBe(tierStep);
+        });
+      });
+
+      it('keeps an older save past the tier step that holds a tier other than the default', () => {
+        expect(resume(saved({ model: 'best' })).choices.model).toBe('best');
+      });
+
+      it('saves the kept model with the choice and asks again when it changed while setup was closed', () => {
+        const kept = withDefaultTier(createSetup('existing'), context);
+        expect(kept.choices.keptModel).toBe('custom-model');
+        const chosen = {
+          ...kept,
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...kept.choices, modelChosen: true },
+        };
+        const progress = toProgress(chosen);
+        expect(progress.choices).toMatchObject({ keptModel: 'custom-model', modelChosen: true });
+        const resumed = resumeSetup('existing', { server: progress }, true);
+        expect(reconcileKeptModel(resumed, context)).toBe(resumed);
+
+        // another unlisted model now: "keep" is offered for it, and setup returns to the tier step
+        const other = reconcileKeptModel(resumed, { ...context, currentModel: 'other-model' });
+        expect(other.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'other-model' });
+        expect(other.step).toBe(tierStep);
+        // a listed model now: its tier, back on the tier step
+        const listed = reconcileKeptModel(resumed, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(listed.choices).toMatchObject({ model: 'light', modelChosen: false, keptModel: '' });
+        expect(listed.step).toBe(tierStep);
+      });
     });
 
     it("keeps the administrator's tier once the tier step was reached", () => {

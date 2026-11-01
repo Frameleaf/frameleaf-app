@@ -30,8 +30,8 @@ const ALLOWED_TAGS = [
   'hr',
 ];
 const ALLOWED_ATTR = ['href', 'title'];
-/** Web pages, email addresses, and pages of this server (a path, never `//elsewhere`). */
-const ALLOWED_URI_REGEXP = /^(?:(?:https?|mailto):|\/(?!\/)|#)/i;
+/** Web pages, email addresses, and pages of this server (a path, never `//elsewhere` or `/\elsewhere`). */
+const ALLOWED_URI_REGEXP = /^(?:(?:https?|mailto):|\/(?![/\\])|#)/i;
 
 let purifier: Purifier | undefined;
 

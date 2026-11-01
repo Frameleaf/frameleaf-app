@@ -194,7 +194,7 @@ jobs:
           docker run --rm --entrypoint python fork-ml-test -c 'import torch; import torchvision; from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration'
 
   native-raw:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.raw_engine != 'none'
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && (inputs.raw_engine == 'libraw' || inputs.raw_engine == 'darktable')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     strategy:

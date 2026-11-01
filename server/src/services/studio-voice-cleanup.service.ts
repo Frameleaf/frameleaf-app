@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -35,13 +35,16 @@ import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import {
   StudioProjectImportService,
+  mapStudioProjectImport,
   studioImportIncomingFolder,
   studioImportStagePath,
 } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
 import { toApproximateNumber } from 'src/utils/rational-time.js';
 import { StudioDestination, isStudioUuid } from 'src/utils/studio-resources.js';
@@ -93,6 +96,31 @@ type VoiceSnapshot = {
 type Job = { operation: MediaOperation; claimToken: string };
 
 /**
+ * The cleaned track's import id. The same clip and clean-up settings on the same revision always name the
+ * same import, so a retry finds what an earlier attempt kept instead of keeping a second track (owner
+ * decision 2026-10-31). The id is a hash of the job, so it never names an unrelated import.
+ */
+const cleanedImportId = (snapshot: VoiceSnapshot) => {
+  const hex = createHash('sha256')
+    .update(
+      JSON.stringify([
+        VOICE_CLEANUP_SNAPSHOT_KIND,
+        snapshot.projectId,
+        snapshot.revision,
+        snapshot.digest,
+        snapshot.clipId,
+        snapshot.mediaId,
+        snapshot.strength,
+        [...snapshot.noises].sort(),
+        snapshot.humHz,
+      ]),
+    )
+    .digest('hex');
+  const variant = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
+/**
  * Studio "Clean up voice" (FL-637, approved mock 2026-10-29).
  *
  * The analysis reads up to a minute of the clip's sound and asks the speech model what is in it. A
@@ -118,6 +146,7 @@ export class StudioVoiceCleanupService {
     private studio: StudioProjectService,
     private resources: StudioResourceService,
     private imports: StudioProjectImportService,
+    private publications: StudioImportPublicationService,
     private users: UserRepository,
     private media: MediaRepository,
     private storage: StorageRepository,
@@ -179,6 +208,14 @@ export class StudioVoiceCleanupService {
       noises,
       humHz: dto.humHz ?? null,
     };
+    // The same clean-up already queued or running is answered by that job: one cleaned track. One being
+    // cancelled will keep nothing, so a new job is queued instead.
+    const twin = (await this.twins(auth.user.id, projectId, cleanedImportId(snapshot))).find(
+      (operation) => operation.status !== MediaOperationStatus.Cancelling,
+    );
+    if (twin) {
+      return { id: twin.id, status: twin.status };
+    }
     const operation = await this.operations.create({
       ownerId: auth.user.id,
       kind: MediaOperationKind.StudioTranscription,
@@ -340,52 +377,75 @@ export class StudioVoiceCleanupService {
       if (resolved.digest !== snapshot.digest || resolved.clip.mediaId !== snapshot.mediaId) {
         throw new BadRequestException('The project revision or its clip changed');
       }
-      const info = await this.media.probe(resolved.path, { countFrames: false, signal: controller.signal });
-      if (info.audioStreams.length === 0) {
-        throw new BadRequestException('The clip has no sound to clean up');
-      }
       const window = voiceCleanupWindow(resolved.clip);
       total = Math.ceil(toApproximateNumber(window.duration) * 1000);
-      this.storage.mkdirSync(folder);
-      await this.audio.extractAudio(resolved.path, wavPath, window, controller.signal, 48_000);
-      controller.signal.throwIfAborted();
 
-      stage = MediaOperationStatus.Rendering;
-      progress = EXTRACTED_PROGRESS;
-      await monitor();
-      controller.signal.throwIfAborted();
-      const cleaned = await this.onFirstWorker(operation.id, (selection) =>
-        this.machineLearning.cleanVoice(
-          selection,
-          wavPath,
-          { strength: snapshot.strength, noises: snapshot.noises, humHz: snapshot.humHz },
-          cleanedPath,
-          controller.signal,
-          (done, frames) => {
-            processed = Math.round((done / frames) * total);
-            progress = EXTRACTED_PROGRESS + (done / frames) * (CLEANED_PROGRESS - EXTRACTED_PROGRESS);
-          },
-        ),
-      );
-      controller.signal.throwIfAborted();
+      // Kept with the project as an audio import, like music someone adds in Studio. A retry reuses the
+      // track an earlier attempt kept, and replaces one it left unfinished (owner decision 2026-10-31).
+      // Checked before any sound is read, so a retry of a finished clean-up repeats no work.
+      const importId = cleanedImportId(snapshot);
+      // Only an abandoned attempt is superseded, never one another job still holds a live claim on.
+      const live = await this.twins(operation.ownerId, snapshot.projectId, importId, operation.id);
+      if (
+        live.some(
+          (twin) => twin.claimToken && twin.claimExpiresAt && new Date(twin.claimExpiresAt).getTime() > Date.now(),
+        )
+      ) {
+        throw new Error('The same voice clean-up is running in another job');
+      }
+      const finished = await this.supersede(auth, snapshot.projectId, importId);
+      let kept = finished && mapStudioProjectImport(finished);
+      let seconds: number;
+      if (finished) {
+        // The kept track's own length; nothing is read from the clip again.
+        const keptInfo = await this.media.probe(finished.path, { countFrames: false, signal: controller.signal });
+        seconds = keptInfo.format.duration;
+      } else {
+        const info = await this.media.probe(resolved.path, { countFrames: false, signal: controller.signal });
+        if (info.audioStreams.length === 0) {
+          throw new BadRequestException('The clip has no sound to clean up');
+        }
+        this.storage.mkdirSync(folder);
+        await this.audio.extractAudio(resolved.path, wavPath, window, controller.signal, 48_000);
+        controller.signal.throwIfAborted();
 
-      // Kept with the project as an audio import, like music someone adds in Studio.
-      const name = fileSafe(resolved.clip.label) || 'Clip';
-      const fileName = `${name.slice(0, 120)} (cleaned voice).m4a`;
-      incoming = studioImportStagePath(operation.ownerId);
-      this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
-      await this.movies.encodeMusic(cleanedPath, incoming, cleaned.seconds + 1, controller.signal);
-      const { size } = await this.storage.stat(incoming);
-      controller.signal.throwIfAborted();
-      // Kept while the heartbeat still holds the claim. From here the import service owns the file, and
-      // removes it if it refuses it.
-      uploadStarted = true;
-      const kept = await this.imports.upload(auth, snapshot.projectId, randomUUID(), {
-        path: incoming,
-        size,
-        mimetype: 'audio/mp4',
-        originalname: fileName,
-      } as Express.Multer.File);
+        stage = MediaOperationStatus.Rendering;
+        progress = EXTRACTED_PROGRESS;
+        await monitor();
+        controller.signal.throwIfAborted();
+        const cleaned = await this.onFirstWorker(operation.id, (selection) =>
+          this.machineLearning.cleanVoice(
+            selection,
+            wavPath,
+            { strength: snapshot.strength, noises: snapshot.noises, humHz: snapshot.humHz },
+            cleanedPath,
+            controller.signal,
+            (done, frames) => {
+              processed = Math.round((done / frames) * total);
+              progress = EXTRACTED_PROGRESS + (done / frames) * (CLEANED_PROGRESS - EXTRACTED_PROGRESS);
+            },
+          ),
+        );
+        controller.signal.throwIfAborted();
+        seconds = cleaned.seconds;
+
+        const name = fileSafe(resolved.clip.label) || 'Clip';
+        const fileName = `${name.slice(0, 120)} (cleaned voice).m4a`;
+        incoming = studioImportStagePath(operation.ownerId);
+        this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
+        await this.movies.encodeMusic(cleanedPath, incoming, cleaned.seconds + 1, controller.signal);
+        const { size } = await this.storage.stat(incoming);
+        controller.signal.throwIfAborted();
+        // Kept while the heartbeat still holds the claim. From here the import service owns the file, and
+        // removes it if it refuses it.
+        uploadStarted = true;
+        kept = await this.imports.upload(auth, snapshot.projectId, importId, {
+          path: incoming,
+          size,
+          mimetype: 'audio/mp4',
+          originalname: fileName,
+        } as Express.Multer.File);
+      }
       clearInterval(heartbeat);
       await writing;
       controller.signal.throwIfAborted();
@@ -398,7 +458,7 @@ export class StudioVoiceCleanupService {
         noises: snapshot.noises,
         humHz: snapshot.humHz,
         sourceStartSeconds: voiceSeconds(window.handleBefore),
-        durationSeconds: cleaned.seconds,
+        durationSeconds: seconds,
       });
       const outcome = await this.operations.publishValidated(operation.id, claimToken, async (tx) => {
         // publishValidated holds the claim row; an expired lease is refused even before recovery takes it.
@@ -445,6 +505,65 @@ export class StudioVoiceCleanupService {
         await this.storage.unlink(incoming).catch(() => {});
       }
     }
+  }
+
+  /** Unfinished voice clean-ups of this owner's project that keep the same cleaned track. */
+  private async twins(ownerId: string, projectId: string, importId: string, excludeId?: string) {
+    const open = await this.operations.listUnfinishedForProjects(
+      [projectId],
+      [MediaOperationKind.StudioTranscription],
+      ownerId,
+    );
+    const twins: MediaOperation[] = [];
+    for (const row of open) {
+      const operation = row.id === excludeId ? undefined : await this.operations.getForWorker(row.id);
+      // Re-read: a job that settled since the list is no longer a twin.
+      if (
+        !operation ||
+        TERMINAL_MEDIA_OPERATION_STATUSES.includes(operation.status as MediaOperationStatus) ||
+        (operation.snapshot as { kind?: unknown } | null)?.kind !== VOICE_CLEANUP_SNAPSHOT_KIND
+      ) {
+        continue;
+      }
+      try {
+        if (cleanedImportId(this.snapshot(operation)) === importId) {
+          twins.push(operation);
+        }
+      } catch {
+        // A job with an unreadable snapshot fails on its own; it never keeps this track.
+      }
+    }
+    return twins;
+  }
+
+  /**
+   * Owner decision 2026-10-31: a retry supersedes what an earlier attempt left unfinished in the import
+   * publication journal for this cleaned track: those publications are cancelled and their files
+   * released, so the retry's re-encoded bytes are not refused as a conflict. The track an earlier attempt
+   * finished is answered as it is, never kept twice. Only publications of this job's own import id are
+   * touched.
+   */
+  private async supersede(auth: AuthDto, projectId: string, importId: string) {
+    let cursor: string | undefined;
+    do {
+      const page = await this.publications.discover(auth, projectId, cursor);
+      for (const receipt of page.items) {
+        if (
+          receipt.importId !== importId ||
+          receipt.state === 'published' ||
+          (receipt.state === 'aborted' && !receipt.cleanupPending)
+        ) {
+          continue;
+        }
+        const key = { ownerId: auth.user.id, projectId, importId, publicationId: receipt.publicationId };
+        if (receipt.state !== 'aborted') {
+          await this.publications.cancel(auth, key);
+        }
+        await this.publications.release(key);
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    return this.projects.getImport(projectId, importId);
   }
 
   /**
