@@ -1,7 +1,9 @@
 import {
+  type LockedFileInfo,
   type LockedKeyFile,
   type WrapKind,
   WrongSecretError,
+  encryptFile,
   generateKeyPair,
   generateRecoveryKey,
   isLockedFile,
@@ -585,6 +587,19 @@ export class LockedEncryptionService {
       privateKey.fill(0);
       this.drop(userId);
     }
+  }
+
+  /**
+   * FL-721 (spec §3): a file made from someone's decrypted Locked originals, such as a memory export,
+   * is stored encrypted to that person alone, so a copy of the disk can't read it and only their
+   * loaded key opens it.
+   */
+  async encryptForOwner(src: string, dst: string, ownerId: string, info: Omit<LockedFileInfo, 'kind'>) {
+    const file = await this.readKeyFile(ownerId);
+    if (!file) {
+      throw new Error(`User ${ownerId} has no Locked key pair`);
+    }
+    await encryptFile(src, dst, [{ publicKey: Buffer.from(file.publicKey, 'base64') }], { ...info, kind: 'other' });
   }
 
   // ---- Hooks ----

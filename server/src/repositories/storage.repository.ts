@@ -104,15 +104,35 @@ export class StorageRepository {
   createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
 
+    // archiver pipes an appended stream at once, which starts it (FL-721: a decrypting stream opens
+    // its file), so the entry after a stream is added only once that stream is done or the archive is
+    // gone. A long list of streamed entries then holds one open at a time, in the order they were added.
+    let queue = Promise.resolve();
     const addFile = (input: string | Buffer | Readable, filename: string) => {
-      if (typeof input === 'string') {
-        archive.file(input, { name: filename, mode: 0o644 });
-      } else {
+      queue = queue.then(() => {
+        if (typeof input === 'string') {
+          archive.file(input, { name: filename, mode: 0o644 });
+          return;
+        }
         archive.append(input, { name: filename, mode: 0o644 });
-      }
+        if (Buffer.isBuffer(input)) {
+          return;
+        }
+        return new Promise<void>((resolve) => {
+          const done = () => {
+            input.off('close', done);
+            archive.off('close', done);
+            archive.off('error', done);
+            resolve();
+          };
+          input.once('close', done);
+          archive.once('close', done);
+          archive.once('error', done);
+        });
+      });
     };
 
-    const finalize = () => archive.finalize();
+    const finalize = () => queue.then(() => archive.finalize());
 
     return { stream: archive, addFile, finalize };
   }

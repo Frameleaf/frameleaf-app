@@ -2,6 +2,7 @@ import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+import { Readable } from 'node:stream';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -225,6 +226,42 @@ describe(StorageRepository.name, () => {
       expect(archive).toContain('IMG_1.JPG.xmp');
       expect(archive).toContain('original pixels');
       expect(archive).toContain('<x:xmpmeta>details</x:xmpmeta>');
+    });
+
+    it('starts a streamed entry only once the streamed entry before it is done (FL-721)', async () => {
+      const zip = sut.createZipStream();
+      const started: string[] = [];
+      const lazy = (name: string) =>
+        Readable.from(
+          (function* () {
+            started.push(name);
+            // more than the stream buffers hold, like a real file, so it stays open until read
+            for (let index = 0; index < 64; index++) {
+              yield Buffer.alloc(65_536, name);
+            }
+            yield Buffer.from(`${name} bytes`);
+          })(),
+        );
+      const chunks: Buffer[] = [];
+      zip.stream.pause();
+      const ended = new Promise((resolve, reject) => zip.stream.on('end', resolve).on('error', reject));
+
+      zip.addFile(lazy('a'), 'a.jpg');
+      zip.addFile(lazy('b'), 'b.jpg');
+      const finalized = zip.finalize();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      // nothing reads the archive yet, so the second stream must not have been opened
+      expect(started).toEqual(['a']);
+
+      zip.stream
+        .on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        })
+        .resume();
+      await finalized;
+      await ended;
+      expect(started).toEqual(['a', 'b']);
+      expect(Buffer.concat(chunks).toString('latin1')).toContain('b bytes');
     });
   });
 
