@@ -86,8 +86,8 @@
     IntegrityCheckOutcome,
     IntegrityReport,
     ManualJobName,
-    startCorruptScan,
-    startMissingScan,
+    startCorruptAssetScan,
+    startMissingAssetScan,
     stopIntegrityChecks,
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
@@ -449,7 +449,7 @@
     try {
       const { assetIds } = await getIntegrityFindingAssets({ kind });
       if (assetIds.length > 0) {
-        const scan = kind === IntegrityFindingKind.Missing ? startMissingScan : startCorruptScan;
+        const scan = kind === IntegrityFindingKind.Missing ? startMissingAssetScan : startCorruptAssetScan;
         await scan({ mediaHealthScanDto: { assetIds } });
       }
     } catch {

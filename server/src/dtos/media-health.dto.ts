@@ -179,12 +179,7 @@ const MediaHealthRecoverSchema = z
 /** FL-737: a scan of chosen photos only, such as the ones File checks found. */
 const MediaHealthScanSchema = z
   .object({
-    assetIds: z
-      .array(z.uuidv4())
-      .min(1)
-      .max(10_000)
-      .optional()
-      .describe('Scan only these photos, and bring back no untracked media; every photo when omitted'),
+    assetIds: z.array(z.uuidv4()).min(1).max(10_000).describe('The photos to scan'),
   })
   .meta({ id: 'MediaHealthScanDto' });
 

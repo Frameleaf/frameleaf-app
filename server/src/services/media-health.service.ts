@@ -782,12 +782,12 @@ export class MediaHealthService {
     };
   }
 
-  async startMissingScan(auth: AuthDto, dto: MediaHealthScanDto = {}): Promise<MediaHealthScanResponseDto> {
+  async startMissingScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
     const { missingRunId, operationId } = await this.startDurableScan(auth, dto);
     return { runId: missingRunId, operationId };
   }
 
-  async startCorruptScan(auth: AuthDto, dto: MediaHealthScanDto = {}): Promise<MediaHealthScanResponseDto> {
+  async startCorruptScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
     const { corruptRunId, operationId } = await this.startDurableScan(auth, dto);
     return { runId: corruptRunId, operationId };
   }
@@ -1591,7 +1591,7 @@ export class MediaHealthService {
   /* ------------------------------------------------------------------ */
 
   /** A scan already under way answers with itself; a search under way has to finish first. */
-  private async startDurableScan(auth: AuthDto, { assetIds }: MediaHealthScanDto = {}): Promise<DurableScan> {
+  private async startDurableScan(auth: AuthDto, { assetIds }: Partial<MediaHealthScanDto> = {}): Promise<DurableScan> {
     // FL-737: chosen photos are scanned only where this person may see them, as their findings are listed.
     const scoped = assetIds
       ? (

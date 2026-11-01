@@ -242,24 +242,24 @@ describe('File checks (FL-366)', () => {
     sdkMock.getIntegrityFindingAssets.mockImplementation(({ kind }) =>
       Promise.resolve({ assetIds: [kind === IntegrityFindingKind.Missing ? 'a-missing' : 'a-damaged'] }),
     );
-    sdkMock.startMissingScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
-    sdkMock.startCorruptScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
+    sdkMock.startMissingAssetScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
+    sdkMock.startCorruptAssetScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
     newStore();
     render(FileChecks, { pollMs: 60_000 });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Find it again' }));
     await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=missing-media')));
-    expect(sdkMock.startMissingScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-missing'] } });
+    expect(sdkMock.startMissingAssetScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-missing'] } });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Look for a good copy' }));
     await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=corrupt-media')));
-    expect(sdkMock.startCorruptScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-damaged'] } });
+    expect(sdkMock.startCorruptAssetScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-damaged'] } });
   });
 
   it('still opens the tool when its scan cannot start (FL-737)', async () => {
     sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1));
     sdkMock.getIntegrityFindingAssets.mockResolvedValue({ assetIds: ['a'] });
-    sdkMock.startMissingScan.mockRejectedValue(new Error('409'));
+    sdkMock.startMissingAssetScan.mockRejectedValue(new Error('409'));
     newStore();
     render(FileChecks, { pollMs: 60_000 });
 

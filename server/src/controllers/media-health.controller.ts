@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiTags } from '@nestjs/swagger';
-import { ZodValidationPipe } from 'nestjs-zod';
+import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -21,9 +20,6 @@ import {
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
-
-/** FL-737: a scan request may come with no body at all (every photo), as before chosen photos could be sent. */
-const scanBody = new ZodValidationPipe(MediaHealthScanDto.schema.optional());
 
 @ApiTags(ApiTag.MediaHealth)
 @Controller('media-health')
@@ -82,15 +78,21 @@ export class MediaHealthController {
   @Authenticated()
   @Endpoint({
     summary: 'Start missing media scan',
-    description:
-      'Queue an owner-scoped scan that identifies missing files and restores supported untracked media, or a scan of chosen photos only.',
+    description: 'Queue an owner-scoped scan that identifies missing files and restores supported untracked media.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  @ApiBody({ required: false, type: MediaHealthScanDto })
-  startMissingScan(
-    @Auth() auth: AuthDto,
-    @Body(scanBody) dto: MediaHealthScanDto | undefined,
-  ): Promise<MediaHealthScanResponseDto> {
+  startMissingScan(@Auth() auth: AuthDto): Promise<MediaHealthScanResponseDto> {
+    return this.service.startMissingScan(auth);
+  }
+
+  @Post('missing/scan/assets')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Scan chosen photos for missing media',
+    description: 'Queue a scan of chosen photos only, which brings back no untracked media.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  startMissingAssetScan(@Auth() auth: AuthDto, @Body() dto: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
     return this.service.startMissingScan(auth, dto);
   }
 
@@ -121,15 +123,21 @@ export class MediaHealthController {
   @Authenticated()
   @Endpoint({
     summary: 'Start corrupt media scan',
-    description:
-      'Queue an explicit scan that validates source media integrity, of every photo or of chosen photos only.',
+    description: 'Queue an explicit scan that validates source media integrity.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  @ApiBody({ required: false, type: MediaHealthScanDto })
-  startCorruptScan(
-    @Auth() auth: AuthDto,
-    @Body(scanBody) dto: MediaHealthScanDto | undefined,
-  ): Promise<MediaHealthScanResponseDto> {
+  startCorruptScan(@Auth() auth: AuthDto): Promise<MediaHealthScanResponseDto> {
+    return this.service.startCorruptScan(auth);
+  }
+
+  @Post('corrupt/scan/assets')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Scan chosen photos for damaged media',
+    description: 'Queue a scan validating the source media of chosen photos only.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  startCorruptAssetScan(@Auth() auth: AuthDto, @Body() dto: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
     return this.service.startCorruptScan(auth, dto);
   }
 

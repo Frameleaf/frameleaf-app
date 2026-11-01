@@ -655,7 +655,7 @@ describe(MediaHealthService.name, () => {
       } as never);
       vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
 
-      await expect(sut.startMissingScan(authStub.user1, requested ? { assetIds: requested } : {})).rejects.toThrow(
+      await expect(sut.startMissingScan(authStub.user1, requested && { assetIds: requested })).rejects.toThrow(
         'A scan of other photos is running',
       );
       expect(mediaOperationRepository.create).not.toHaveBeenCalled();
@@ -702,7 +702,7 @@ describe(MediaHealthService.name, () => {
         total: 1,
       } as never);
 
-      await expect(sut.startMissingScan(authStub.user1, {})).rejects.toThrow('A scan of other photos is running');
+      await expect(sut.startMissingScan(authStub.user1)).rejects.toThrow('A scan of other photos is running');
       expect(mediaOperationRepository.create).not.toHaveBeenCalled();
     });
 

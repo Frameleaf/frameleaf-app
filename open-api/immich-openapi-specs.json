@@ -30205,19 +30205,9 @@
     },
     "/media-health/corrupt/scan": {
       "post": {
-        "description": "Queue an explicit scan that validates source media integrity, of every photo or of chosen photos only.",
+        "description": "Queue an explicit scan that validates source media integrity.",
         "operationId": "startCorruptScan",
         "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MediaHealthScanDto"
-              }
-            }
-          },
-          "required": false
-        },
         "responses": {
           "201": {
             "content": {
@@ -30252,6 +30242,61 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/corrupt/scan/assets": {
+      "post": {
+        "description": "Queue a scan validating the source media of chosen photos only.",
+        "operationId": "startCorruptAssetScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthScanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan chosen photos for damaged media",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
             "state": "Alpha"
           }
         ],
@@ -30418,19 +30463,9 @@
     },
     "/media-health/missing/scan": {
       "post": {
-        "description": "Queue an owner-scoped scan that identifies missing files and restores supported untracked media, or a scan of chosen photos only.",
+        "description": "Queue an owner-scoped scan that identifies missing files and restores supported untracked media.",
         "operationId": "startMissingScan",
         "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MediaHealthScanDto"
-              }
-            }
-          },
-          "required": false
-        },
         "responses": {
           "201": {
             "content": {
@@ -30465,6 +30500,61 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/missing/scan/assets": {
+      "post": {
+        "description": "Queue a scan of chosen photos only, which brings back no untracked media.",
+        "operationId": "startMissingAssetScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthScanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan chosen photos for missing media",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
             "state": "Alpha"
           }
         ],
@@ -100252,7 +100342,7 @@
       "MediaHealthScanDto": {
         "properties": {
           "assetIds": {
-            "description": "Scan only these photos, and bring back no untracked media; every photo when omitted",
+            "description": "The photos to scan",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -100263,6 +100353,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "assetIds"
+        ],
         "type": "object"
       },
       "MediaHealthScanResponseDto": {

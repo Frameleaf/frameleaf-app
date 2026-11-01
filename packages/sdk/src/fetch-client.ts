@@ -9536,14 +9536,14 @@ export type MediaHealthRecoverDto = {
     /** Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source */
     confirmed: boolean;
 };
-export type MediaHealthScanDto = {
-    /** Scan only these photos, and bring back no untracked media; every photo when omitted */
-    assetIds?: string[];
-};
 export type MediaHealthScanResponseDto = {
     /** The durable job doing the work, in Activity */
     operationId?: string | null;
     runId: string;
+};
+export type MediaHealthScanDto = {
+    /** The photos to scan */
+    assetIds: string[];
 };
 export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
@@ -27343,13 +27343,25 @@ export function recoverDamaged({ mediaHealthRecoverDto }: {
 /**
  * Start corrupt media scan
  */
-export function startCorruptScan({ mediaHealthScanDto }: {
-    mediaHealthScanDto?: MediaHealthScanDto;
+export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthScanResponseDto;
+    }>("/media-health/corrupt/scan", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Scan chosen photos for damaged media
+ */
+export function startCorruptAssetScan({ mediaHealthScanDto }: {
+    mediaHealthScanDto: MediaHealthScanDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: MediaHealthScanResponseDto;
-    }>("/media-health/corrupt/scan", oazapfts.json({
+    }>("/media-health/corrupt/scan/assets", oazapfts.json({
         ...opts,
         method: "POST",
         body: mediaHealthScanDto
@@ -27400,13 +27412,25 @@ export function relinkMissing({ mediaHealthBulkActionDto }: {
 /**
  * Start missing media scan
  */
-export function startMissingScan({ mediaHealthScanDto }: {
-    mediaHealthScanDto?: MediaHealthScanDto;
+export function startMissingScan(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthScanResponseDto;
+    }>("/media-health/missing/scan", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Scan chosen photos for missing media
+ */
+export function startMissingAssetScan({ mediaHealthScanDto }: {
+    mediaHealthScanDto: MediaHealthScanDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: MediaHealthScanResponseDto;
-    }>("/media-health/missing/scan", oazapfts.json({
+    }>("/media-health/missing/scan/assets", oazapfts.json({
         ...opts,
         method: "POST",
         body: mediaHealthScanDto
