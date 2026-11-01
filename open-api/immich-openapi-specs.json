@@ -138139,7 +138139,7 @@
             "$ref": "#/components/schemas/StudioExportFormat"
           },
           "framing": {
-            "description": "For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
+            "description": "For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
             "items": {
               "$ref": "#/components/schemas/StudioExportFramingDto"
             },
@@ -138214,7 +138214,7 @@
             "$ref": "#/components/schemas/StudioExportFormat"
           },
           "framing": {
-            "description": "For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
+            "description": "For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
             "items": {
               "$ref": "#/components/schemas/StudioExportFramingDto"
             },
@@ -138243,7 +138243,7 @@
           },
           "shape": {
             "$ref": "#/components/schemas/StudioExportShape",
-            "description": "Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
+            "description": "Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
           },
           "smoothMotion": {
             "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
@@ -138517,7 +138517,7 @@
         "type": "object"
       },
       "StudioExportShape": {
-        "description": "Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)",
+        "description": "Shape of the picture: the project’s own, landscape 16:9, vertical 9:16 or square 1:1",
         "enum": [
           "original",
           "landscape",

@@ -314,6 +314,12 @@ export class StudioExportService {
         );
         items.push({ shape: variant.shape, result, errorCode: null, error: null });
       } catch (error) {
+        if (!(error instanceof HttpException)) {
+          // Keep operator correlation without logging exception text, crop paths or retry keys.
+          this.logger.error(
+            `Unexpected Studio export admission failure for project ${projectId}, delivery ${variant.shape}`,
+          );
+        }
         const response = error instanceof HttpException ? error.getResponse() : null;
         const code = response && typeof response === 'object' && 'code' in response ? String(response.code) : '';
         items.push({

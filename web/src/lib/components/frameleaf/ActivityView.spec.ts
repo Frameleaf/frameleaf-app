@@ -2,6 +2,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  StudioRenderStage,
   QueueName,
   type MediaOperationDto,
   type QueueRunDto,
@@ -99,6 +100,28 @@ describe('Frameleaf Activity page', () => {
     // The row reports stopping, not stopped: the worker has not acknowledged yet.
     await vi.waitFor(() => expect(screen.getByText('Stopping')).toBeInTheDocument());
   });
+
+  it.each([MediaOperationStatus.Queued, MediaOperationStatus.Preparing])(
+    'warns about stale Studio workers only after a claim (%s)',
+    async (status) => {
+      await mount([
+        operation({
+          status,
+          startedAt: status === MediaOperationStatus.Queued ? null : '2026-09-22T09:50:00.000Z',
+          renderProgress: {
+            stage: StudioRenderStage.Preparing,
+            lastProgressAt: null,
+            framesPerSecond: null,
+            remainingRenderSeconds: null,
+          },
+        }),
+      ]);
+      await screen.findByText(/Preparing export/);
+      const warning = screen.queryByText(/No measured progress for at least a minute/);
+      if (status === MediaOperationStatus.Queued) expect(warning).not.toBeInTheDocument();
+      else expect(warning).toBeInTheDocument();
+    },
+  );
 
   it('offers retry only after a failure, and sends it to the server', async () => {
     sdkMock.retryMediaOperation.mockResolvedValue(

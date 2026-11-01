@@ -65,7 +65,7 @@ const StudioExportRangeSchema = z
 
 const StudioExportShapeSchema = z
   .enum(STUDIO_EXPORT_SHAPES)
-  .describe('Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)')
+  .describe('Shape of the picture: the project’s own, landscape 16:9, vertical 9:16 or square 1:1')
   .meta({ id: 'StudioExportShape' });
 
 export const StudioReframePointSchema = z
@@ -124,14 +124,14 @@ const StudioExportCreateSchema = z
     ),
     // FL-563
     shape: StudioExportShapeSchema.optional().describe(
-      'Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed',
+      'Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed',
     ),
     framing: z
       .array(StudioExportFramingSchema)
       .max(2000)
       .optional()
       .describe(
-        'For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored',
+        'For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored',
       ),
     // FL-162
     smoothMotion: z

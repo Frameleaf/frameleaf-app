@@ -301,6 +301,7 @@ describe(StudioExportService.name, () => {
   afterEach(() => expectLocalisedSystemNotices(events.emit));
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
+  let logError: ReturnType<typeof vi.fn>;
 
   // Model the two production reads separately: official sessions and their fork-owned proof.
   const mockRenderSessions = (fixtures: ReturnType<typeof liveSession>[]) => {
@@ -455,8 +456,9 @@ describe(StudioExportService.name, () => {
         ),
     };
 
+    logError = vi.fn();
     sut = new StudioExportService(
-      { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() } as never,
       repository as never,
       operations as never,
       projects as never,
@@ -600,6 +602,36 @@ describe(StudioExportService.name, () => {
       expect(create.mock.calls[1]![2]).toEqual(create.mock.calls[3]![2]);
       expect(create.mock.calls[0]![2].requestKey).not.toEqual(create.mock.calls[1]![2].requestKey);
       for (const call of create.mock.calls) expect(call[3]?.batch).toMatchObject({ requestKey: 'batch', revision: 3 });
+      create.mockRestore();
+    });
+
+    it('logs unexpected batch admission failures safely and still admits independent deliveries', async () => {
+      const create = vi
+        .spyOn(sut, 'create')
+        .mockRejectedValueOnce(new Error('database unavailable /private/storage?token=secret-value'))
+        .mockRejectedValueOnce(new ConflictException({ code: 'studio_export_unsupported' }))
+        .mockResolvedValue({ version: { id: VERSION }, operation: { id: RENDER } } as never);
+      const batch = StudioExportBatchCreateDto.schema.parse({
+        expectedRevision: 3,
+        requestKey: 'private-retry-key',
+        destination: 'lan',
+        variants: ['landscape', 'vertical', 'square'].map((shape) => ({
+          format: 'mp4-h264',
+          color: 'preserve',
+          resolution: '720p',
+          shape,
+        })),
+      });
+      const result = await sut.createBatch(auth(), PROJECT, batch);
+      expect(result.items.map((item) => !!item.result)).toEqual([false, false, true]);
+      expect(result.items[0]).toMatchObject({ errorCode: 'studio_export_delivery_refused' });
+      expect(logError).toHaveBeenCalledExactlyOnceWith(
+        `Unexpected Studio export admission failure for project ${PROJECT}, delivery landscape`,
+      );
+      const publicAndOperatorOutput = JSON.stringify([result, logError.mock.calls]);
+      expect(publicAndOperatorOutput).not.toContain('secret-value');
+      expect(publicAndOperatorOutput).not.toContain('/private/storage');
+      expect(publicAndOperatorOutput).not.toContain('private-retry-key');
       create.mockRestore();
     });
 

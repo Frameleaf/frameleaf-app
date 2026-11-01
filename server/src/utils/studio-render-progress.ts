@@ -120,8 +120,60 @@ export const studioRenderProgressOf = (operation: {
   };
 };
 
+const BUNDLED_EXPORT_FAILURE_GUIDANCE = new Map([
+  [
+    'bundled_effects_need_gpu',
+    'Give the machine-learning container a GPU, or remove the enabled effects, then export again from Studio.',
+  ],
+  ['bundled_missing_media', 'Relink the missing media in Studio and confirm source access, then export again.'],
+  [
+    'bundled_no_audio',
+    'Check the timeline audio and mute settings. Add audible audio, or choose a video export, then export again from Studio.',
+  ],
+  ['bundled_empty_timeline', 'Add a clip to the timeline before exporting again from Studio.'],
+  ['bundled_invalid_range', 'Choose an export range within the timeline, then export again from Studio.'],
+  [
+    'bundled_captions_changed',
+    'The captions changed after this export was queued. Save the project, review the captions, then export again from Studio.',
+  ],
+  [
+    'bundled_captions_unsupported',
+    'Review the caption mode and format. Use burned-in captions or a supported SDR video format, then export again from Studio.',
+  ],
+  [
+    'bundled_subtitles_unsupported',
+    'Review the caption mode and format. Use burned-in captions or a supported SDR video format, then export again from Studio.',
+  ],
+  [
+    'bundled_hdr_unsupported',
+    'For an HDR picture, choose MP4 with HEVC Main10 on a qualified HDR worker, then export again from Studio.',
+  ],
+  [
+    'bundled_hdr_resolution',
+    'Export an HDR master at the project size and original shape, or choose an SDR video format for a different size or shape.',
+  ],
+  [
+    'bundled_invalid_mastering',
+    'Review the HDR mastering display settings used to grade the project, then export again from Studio.',
+  ],
+  [
+    'bundled_hdr_mastering_exceeded',
+    'The picture exceeds the declared HDR mastering display. Review the grading and mastering display settings, then export again.',
+  ],
+  [
+    'bundled_hdr_master_failed',
+    'The HDR master could not be completed or verified. Check the worker’s HDR encoder support and export settings, then export again from Studio.',
+  ],
+  [
+    'bundled_inputs_too_large',
+    'Choose a worker with a larger input size limit, or reduce the project’s source media, then export again from Studio.',
+  ],
+]);
+
 /** Worker error text can contain paths or credentials. Only fixed, actionable copy leaves the server. */
 export const studioExportFailure = (code: string | null): string => {
+  const bundledGuidance = BUNDLED_EXPORT_FAILURE_GUIDANCE.get(code ?? '');
+  if (bundledGuidance) return bundledGuidance;
   if (code && /(?:source|input|media|project).*(?:changed|unavailable|missing|access)/.test(code)) {
     return 'Check that the project and its sources are still available, then export again from Studio.';
   }

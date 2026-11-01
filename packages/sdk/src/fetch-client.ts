@@ -16297,7 +16297,7 @@ export type StudioExportBatchVariantDto = {
     audio?: StudioExportAudio;
     color: StudioExportColor;
     format: StudioExportFormat;
-    /** For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    /** For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
     framing?: StudioExportFramingDto[];
     /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
     mastering?: StudioExportMastering;
@@ -16354,7 +16354,7 @@ export type StudioExportCreateDto = {
     /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
     expectedRevision?: number;
     format: StudioExportFormat;
-    /** For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    /** For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
     framing?: StudioExportFramingDto[];
     /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
     mastering?: StudioExportMastering;
@@ -16365,7 +16365,7 @@ export type StudioExportCreateDto = {
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;
-    /** Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
+    /** Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
     shape?: StudioExportShape;
     smoothMotion?: StudioExportSmoothMotionDto;
     /** Defaults to `burn` */

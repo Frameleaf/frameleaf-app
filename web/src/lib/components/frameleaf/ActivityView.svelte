@@ -509,7 +509,7 @@
             progress={item.renderProgress}
             startedAt={item.startedAt}
             finishedAt={item.finishedAt}
-            active={item.running}
+            active={item.running && (item.stage === 'starting' || item.stage === 'running')}
             online={!activitySession.unreachable}
           />
         {/if}

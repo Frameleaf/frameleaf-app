@@ -68,6 +68,33 @@ describe('Studio measured render progress', () => {
     expect(studioExportFailure('studio_export_source_changed')).toContain('sources');
     expect(studioRenderProgressOf({ ...operation(null), kind: MediaOperationKind.Bulk })).toBeNull();
   });
+  it('directs a bundled effects refusal to its GPU requirement without exposing worker details', () => {
+    expect(studioExportFailure('bundled_effects_need_gpu')).toBe(
+      'Give the machine-learning container a GPU, or remove the enabled effects, then export again from Studio.',
+    );
+    const unknown = studioExportFailure('bundled_effects_need_gpu:/private/source.mov?token=secret');
+    expect(unknown).not.toContain('GPU');
+    expect(unknown).not.toContain('/private');
+    expect(unknown).not.toContain('secret');
+  });
+  it.each([
+    ['bundled_missing_media', 'Relink the missing media'],
+    ['bundled_no_audio', 'Add audible audio'],
+    ['bundled_empty_timeline', 'Add a clip'],
+    ['bundled_invalid_range', 'export range within the timeline'],
+    ['bundled_captions_changed', 'Save the project, review the captions'],
+    ['bundled_captions_unsupported', 'caption mode and format'],
+    ['bundled_subtitles_unsupported', 'burned-in captions'],
+    ['bundled_hdr_unsupported', 'HEVC Main10'],
+    ['bundled_hdr_resolution', 'project size and original shape'],
+    ['bundled_invalid_mastering', 'HDR mastering display settings'],
+    ['bundled_hdr_mastering_exceeded', 'Review the grading'],
+    ['bundled_hdr_master_failed', 'HDR encoder support'],
+    ['bundled_inputs_too_large', 'larger input size limit'],
+  ])('gives the producer-specific remedy for %s', (code, remedy) => {
+    expect(studioExportFailure(code)).toContain(remedy);
+    expect(studioExportFailure(code)).not.toContain('worker connection');
+  });
   it('starts a new cursor when preparation work becomes measured render frames', () => {
     const preparing = advance(null, 1, { stage: 'preparing' }, 100, 100, 1000);
     const rendering = advance(preparing, 1, report, 0, 9000, 2000);
