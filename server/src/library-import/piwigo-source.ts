@@ -104,7 +104,7 @@ export async function* readPiwigoRestore(input: Config): AsyncGenerator<{ table:
     await query('SET SESSION group_concat_max_len=16777216');
     const admit = async () =>
       admitPiwigoSchema({
-        schema: await readMysqlSourceSchema(query, config.prefix),
+        schema: await readMysqlSourceSchema(query),
         prefix: config.prefix,
         version: config.version,
         databaseVersion: String(profile.version),

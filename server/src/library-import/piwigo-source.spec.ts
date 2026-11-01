@@ -70,6 +70,18 @@ beforeEach(() => {
       const index = metadataTables.findIndex((table) => sql.includes('FROM information_schema.' + table + ' '));
       if (index !== -1) {
         const section = sections[index];
+        if (mode === 'outside-prefix' && section === 'tables' && !sql.includes('LEFT('))
+          return [
+            [
+              {
+                records: JSON.stringify([
+                  ...fixture.schema.tables,
+                  { ...fixture.schema.tables[0], TABLE_NAME: 'unqualified_plugin' },
+                ]),
+              },
+            ],
+            [],
+          ];
         return [
           [{ records: JSON.stringify(mode === 'schema' && section === 'tables' ? [] : fixture.schema[section]) }],
           [],
@@ -161,6 +173,11 @@ describe('Piwigo restored database transport', () => {
       expect(destroy).toHaveBeenCalledOnce();
     },
   );
+  it('refuses an extra table outside the configured prefix before yielding source content', async () => {
+    mode = 'outside-prefix';
+    await expect(readPiwigoRestore(config).next()).rejects.toThrow('PIWIGO_SCHEMA_UNQUALIFIED');
+    expect(destroy).toHaveBeenCalledOnce();
+  });
   it('refuses source drift before declaring complete', async () => {
     let tables = 0;
     const original = query.getMockImplementation()!;
