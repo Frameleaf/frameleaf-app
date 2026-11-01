@@ -55,7 +55,7 @@ const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? jo
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
 const native = runtime === 'native'
-  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin!, join(backupRoot, 'frameleaf-database'))
+  ? await createNativeService(store, process.stdin, origin!, join(backupRoot, 'frameleaf-database'))
   : null;
 const docker = new Docker();
 const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN);
