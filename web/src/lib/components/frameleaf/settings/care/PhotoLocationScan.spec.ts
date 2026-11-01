@@ -100,8 +100,10 @@ describe('paid manual photo location scan', () => {
     });
     for (const [label, value] of [
       ['Eligible GPS photos', '1200'],
+      ['Estimated cost for all eligible photos', '$6.00'],
       ['Selected for this job', '1000'],
       ['Remaining for another job', '200'],
+      ['Estimated job charge', '$5.00'],
       ['Maximum credit reservation', '$5.00'],
       ['Available AI credit', '$10.00'],
     ]) {

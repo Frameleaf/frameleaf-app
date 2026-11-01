@@ -389,6 +389,10 @@
       <Facts
         rows={[
           { label: $t('frameleaf_location_scan_eligible'), value: String(quote.eligiblePhotos) },
+          {
+            label: $t('frameleaf_location_scan_library_cost'),
+            value: formatUsd((quote.eligiblePhotos * quote.unitPriceMicros) / 1_000_000),
+          },
           { label: $t('frameleaf_location_scan_selected'), value: String(quote.selectedPhotos) },
           { label: $t('frameleaf_location_scan_remaining'), value: String(quote.remainingPhotos) },
           { label: $t('frameleaf_location_scan_estimated_cost'), value: formatUsd(quote.estimatedMicros / 1_000_000) },
