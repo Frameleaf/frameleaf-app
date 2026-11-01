@@ -1,0 +1,38 @@
+# Piwigo import qualification
+
+The Piwigo adapter is under development. Schema admission and synthetic fixtures do not provide an importer, destination permission enforcement or migration compatibility. Keep the expanded feature internal until all ten source families pass combined qualification.
+
+## Pinned native evidence
+
+Piwigo `16.4.0` is pinned to commit `bef1a4ac424b4e986589e4cfc9f4d134f1b16f15`. The native fixture used PHP `8.4.16` on Linux ARM64 and MariaDB `11.4.5-MariaDB-ubu2404`. The structural fixture records immutable database/base-image references, the locally built PHP image identity and the source archive checksum. The local PHP image adds mysqli, GD and EXIF to the pinned base; its identity records the tested build, not a published reproducible image. Further runtime/build qualification remains required.
+
+The unmodified installer created 34 MyISAM tables with the explicitly configured `flq_` prefix. Native APIs created synthetic Alice, Bob and Mallory accounts, a group, public/private/shared albums, group and direct grants, privacy levels, four generated PNG originals, edited title/caption/date/author and a favourite. Authenticated API checks independently established four visible photos for Alice, two for Bob and one for Mallory; Bob and Mallory were denied the private photo. Alice's shared-photo favourite remains separate from Bob's empty favourites.
+
+Source services were stopped with restart disabled before a native `mariadb-dump --lock-all-tables` capture. A second isolated native database restored all 34 tables, reconciled every record in the 15 allowlisted content projections and reproduced account visibility through the application. Original bytes were independently hashed with SHA-256. Fixtures contain only generated media, structural definitions and synthetic allowlisted records. Native authentication values, sessions, keys and cached access decisions are excluded; the upstream GPL v2-or-later notice and license accompany the fixtures.
+
+## Schema admission
+
+`mysqlSchemaFingerprint` consumes complete native metadata for tables, columns, indexes, constraints, key columns, triggers, routines and events. Metadata row/property order does not affect the fingerprint. Only table-namespace identifiers are normalized against the explicitly supplied prefix; scalar values, engines, column definitions, keys and executable schema objects remain significant. Missing, duplicated, additional and altered records change the identity. Prefixes follow the pinned installer's accepted character and length constraints, including an explicitly empty prefix.
+
+`admitPiwigoSchema` admits only the pinned application version, captured MariaDB build string and exact normalized structural identity. Unknown engine versions, schema differences, malformed descriptors and mismatched namespaces refuse admission. A caller must independently establish application/database identity and completeness of metadata queries: a supplied version string or metadata object is not evidence of a consistent source snapshot. This stage does not connect to a database, read live records, transfer files or activate a destination.
+
+MyISAM tables do not gain cross-table consistency from a repeatable-read transaction. Source writers and restart mechanisms must remain fenced while capturing metadata, relationships and original hashes. Use a qualified locked capture and isolated restore, rather than treating a transaction-only dump as sufficient. Database backup consistency does not prove originals-directory consistency.
+
+## Preservation requirements
+
+| Source information                    | Captured evidence                                            | Required destination behavior                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Originals and additional formats      | Original paths, dimensions, MD5, separate format records     | Independently hash bytes; resolve uploaded files and filesystem galleries separately; never substitute generated renditions           |
+| Albums and membership                 | Categories, parents, sites and image-category links          | Preserve every relationship, including one image linked to several albums; assess visibility and inherited restrictions independently |
+| Users, groups and privacy             | Accounts, user/group memberships, grants and privacy levels  | Require explicit owner mapping and equivalent or stricter access, including original-download restrictions                            |
+| Manual metadata                       | Current title, comment, displayed author, date and locations | Preserve manual values; retain wall-clock dates separately when no timezone evidence establishes an instant                           |
+| Tags and favourites                   | Separate tag relationships and per-user favourite records    | Preserve identities and each user's state without treating a favourite as an access grant                                             |
+| Credentials, sessions and access keys | Excluded from content fixtures and future extraction         | Never migrate authentication material; new imported accounts remain inactive until securely claimed                                   |
+
+Piwigo's native upload duplicate detection can reuse an image ID for identical MD5 bytes and add album relationships. Do not infer independent photo ownership from album membership, displayed author or a byte hash. `added_by` records the uploading account; the destination still requires explicit ownership decisions. Byte deduplication must respect destination owner/library boundaries.
+
+The native upload lounge can hold committed pending image-category relationships before they reach the normal membership table. The lab finished these uploads through `pwg.images.emptyLounge` before capture. Import preflight must detect pending lounge records and require a qualified treatment; silently omitting them would lose relationships. Source completion must happen before fencing and capture, rather than mutating the frozen source during extraction. See the pinned [upload implementation](https://github.com/Piwigo/Piwigo/blob/bef1a4ac424b4e986589e4cfc9f4d134f1b16f15/admin/include/functions_upload.inc.php) and [schema](https://github.com/Piwigo/Piwigo/blob/bef1a4ac424b4e986589e4cfc9f4d134f1b16f15/install/piwigo_structure-mysql.sql).
+
+## Outstanding acceptance
+
+A product snapshot reader, live MySQL/MariaDB transport and locking, filesystem galleries, additional original formats, RAW/JPEG pairs, Live Photos, video, tags with content, missing files, hidden/inherited access and original-download restrictions need further qualification. Plugin schemas are unqualified. Destination accounts, metadata conversion, sharing, protected archive persistence, transfer/recovery, Manager integration and complete migration acceptance remain incomplete. Protected Unraid shares remain entirely outside qualification and agent access.
