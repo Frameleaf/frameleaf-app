@@ -685,6 +685,27 @@ describe(MediaHealthService.name, () => {
       expect(mediaOperationRepository.create).not.toHaveBeenCalled();
     });
 
+    it('refuses a whole-library scan while an incremental scan runs (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: {
+              mode: 'scan',
+              userId: 'user-id',
+              missingRunId: 'm',
+              corruptRunId: 'c',
+              changedSince: '2026-10-31T02:00:00.000Z',
+            },
+          },
+        ],
+        total: 1,
+      } as never);
+
+      await expect(sut.startMissingScan(authStub.user1, {})).rejects.toThrow('A scan of other photos is running');
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
     it('answers a scan of chosen photos with the full scan already under way (FL-737)', async () => {
       vi.mocked(mediaOperationRepository.list).mockResolvedValue({
         items: [
@@ -2785,7 +2806,10 @@ describe(MediaHealthService.name, () => {
       vi.useRealTimers();
     });
 
-    it('keeps a scan an account already has instead of starting a second one', async () => {
+    it.each([
+      ['a full scan', {}],
+      ['an incremental scan', { changedSince: '2026-10-31T02:00:00.000Z' }],
+    ])('keeps %s an account already has instead of starting a second one', async (_, extra) => {
       care({ healthScan: true });
       vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-a' }] as never);
       vi.mocked(mediaOperationRepository.list).mockImplementation(
@@ -2796,7 +2820,7 @@ describe(MediaHealthService.name, () => {
                   items: [
                     {
                       id: 'op-open',
-                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c' },
+                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c', ...extra },
                     },
                   ],
                   total: 1,
