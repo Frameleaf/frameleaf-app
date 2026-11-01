@@ -123,6 +123,23 @@ describe(MediaHealthOperationService.name, () => {
       },
     );
 
+    it('scans chosen photos without restoring untracked files (FL-737)', async () => {
+      const chosen = { ...scanSnapshot, assetIds: ['asset-1', 'asset-2'] };
+      mediaHealth.scanPage.mockResolvedValueOnce(page(2, 'asset-2', { missing: 1, corrupt: 1 }));
+
+      await sut.run(operationOf(chosen), 'token');
+
+      expect(mediaHealth.countScanAssets).not.toHaveBeenCalled();
+      expect(mediaHealth.scanPage).toHaveBeenCalledWith(chosen, null, MEDIA_HEALTH_SCAN_BATCH);
+      expect(mediaHealth.restoreUntracked).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'token',
+        expect.objectContaining({ totalUnits: 2, processedUnits: 2 }),
+      );
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
     it('works through the owner’s assets a batch at a time, then restores untracked files and completes', async () => {
       mediaHealth.scanPage
         .mockResolvedValueOnce(page(MEDIA_HEALTH_SCAN_BATCH, 'asset-25', { missing: 1, corrupt: 0 }))

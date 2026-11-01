@@ -37,7 +37,7 @@
     restoreUrl,
     shareOf,
     SHARES,
-    splitPath,
+    findingWhere,
     STOP_AFTER_MINUTES,
     stopAfterMinutes,
     stopAfterMs,
@@ -75,15 +75,19 @@
   import { locale } from '$lib/stores/preferences.store';
   import {
     getIntegrityCheckRuns,
+    getIntegrityFindingAssets,
     getIntegrityOverview,
     getIntegrityReport,
     getIntegrityReportSummary,
     getQueue,
     QueueName,
     getSummary,
+    IntegrityFindingKind,
     IntegrityCheckOutcome,
     IntegrityReport,
     ManualJobName,
+    startCorruptAssetScan,
+    startMissingAssetScan,
     stopIntegrityChecks,
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
@@ -436,6 +440,25 @@
       await load();
     }
   };
+  /**
+   * FL-737: Missing files and Damaged files open on what these checks found. Their scan starts for just
+   * those photos, so the list fills in moments instead of reading "Not scanned yet" until Scan again.
+   * The tool opens whatever happens; its own Scan again is still there.
+   */
+  const openTool = async (kind: IntegrityFindingKind) => {
+    try {
+      const { assetIds } = await getIntegrityFindingAssets({ kind });
+      if (assetIds.length > 0) {
+        const scan = kind === IntegrityFindingKind.Missing ? startMissingAssetScan : startCorruptAssetScan;
+        await scan({ mediaHealthScanDto: { assetIds } });
+      }
+    } catch {
+      // a scan already running, or no answer: the tool says where its scan is
+    }
+    await goto(
+      utilitiesUrl(kind === IntegrityFindingKind.Missing ? 'missing-media' : 'corrupt-media', { from: 'care' }),
+    );
+  };
   const actOnAll = (type: IntegrityReport) => handleRemoveAllIntegrityReportItems(type, count(type));
   const onIntegrityReportDeleted = () => void load();
 
@@ -574,7 +597,7 @@
           <p class="hint raw">{$t('frameleaf_care_fc_raw_to_match', { values: { count: rawToMatch } })}</p>
         {/if}
         <div class="actions">
-          <Button variant="primary" onclick={() => goto(utilitiesUrl('missing-media', { from: 'care' }))}>
+          <Button variant="primary" onclick={() => openTool(IntegrityFindingKind.Missing)}>
             {$t('frameleaf_care_fc_find_again', { values: { count: missing } })}
           </Button>
           <Button onclick={() => goto(restoreUrl('missing'))}>{$t('frameleaf_care_fc_restore')}</Button>
@@ -596,7 +619,7 @@
           <Button variant="primary" onclick={() => goto(restoreUrl('damaged'))}
             >{$t('frameleaf_care_fc_restore')}</Button
           >
-          <Button onclick={() => goto(utilitiesUrl('corrupt-media', { from: 'care' }))}>
+          <Button onclick={() => openTool(IntegrityFindingKind.Damaged)}>
             {recoveryAvailable ? $t('frameleaf_care_fc_look_copies') : $t('frameleaf_care_fc_look')}
           </Button>
           <Button onclick={() => clearList(IntegrityReport.ChecksumMismatch)}>{$t('frameleaf_care_fc_clear')}</Button>
@@ -741,7 +764,7 @@
 {#snippet findings(type: IntegrityReport, icon: string, status: string)}
   <ItemList>
     {#each shown(type) as finding (finding.id)}
-      {@const where = splitPath(finding.path)}
+      {@const where = findingWhere(finding)}
       <Item {icon} name={where.name} detail={where.folder} tone="warn" {status}>
         {#snippet action()}
           <Button

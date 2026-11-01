@@ -30292,6 +30292,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-health/corrupt/scan/assets": {
+      "post": {
+        "description": "Queue a scan validating the source media of chosen photos only.",
+        "operationId": "startCorruptAssetScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthScanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan chosen photos for damaged media",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/media-health/dismiss": {
       "post": {
         "description": "Dismiss selected media health findings without modifying assets.",
@@ -30489,6 +30544,61 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/missing/scan/assets": {
+      "post": {
+        "description": "Queue a scan of chosen photos only, which brings back no untracked media.",
+        "operationId": "startMissingAssetScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthScanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan chosen photos for missing media",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
             "state": "Alpha"
           }
         ],
@@ -95442,6 +95552,11 @@
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                   "type": "string"
                 },
+                "originalFileName": {
+                  "description": "The photo's own file name (FL-737) when the finding is about its original; null for a thumbnail or other derived file, and for a file that belongs to no photo",
+                  "nullable": true,
+                  "type": "string"
+                },
                 "path": {
                   "description": "Integrity report item path",
                   "type": "string"
@@ -95453,7 +95568,8 @@
               "required": [
                 "id",
                 "type",
-                "path"
+                "path",
+                "originalFileName"
               ],
               "type": "object"
             },
@@ -101653,6 +101769,25 @@
         "required": [
           "corrupt",
           "missing"
+        ],
+        "type": "object"
+      },
+      "MediaHealthScanDto": {
+        "properties": {
+          "assetIds": {
+            "description": "The photos to scan",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
         ],
         "type": "object"
       },

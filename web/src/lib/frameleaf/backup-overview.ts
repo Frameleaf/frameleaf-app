@@ -408,7 +408,8 @@ export const backupSummary = (places: BackupPlaces, say: BackupSayings): BackupS
 /**
  * A moment as the Backup pages say it: "Today, 2:29 AM", "Yesterday, 2:31 AM", "8 Oct, 2:28 AM", with
  * the year once it is not this one; `sentence` gives the form that sits inside one ("today at 2:29 AM").
- * In the viewer's own time zone, as every other time in the app.
+ * Such a sentence ends on the moment, so a time that ends in a period ("4:55 a.m.") gives it up to the
+ * sentence's own, never "4:55 a.m..". In the viewer's own time zone, as every other time in the app.
  */
 export const backupWhen = (
   date: Date,
@@ -425,6 +426,6 @@ export const backupWhen = (
   const kind = days === 0 ? 'today' : days === 1 ? 'yesterday' : 'day';
   return {
     key: `frameleaf_backup_when_${kind}${sentence ? '_sentence' : ''}` as Translations,
-    values: { time, day },
+    values: { time: sentence ? time.replace(/\.$/, '') : time, day },
   };
 };

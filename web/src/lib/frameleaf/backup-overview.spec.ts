@@ -246,6 +246,11 @@ describe('how a moment is said (FL-362)', () => {
     expect(at(new Date(2025, 11, 31, 2).toISOString()).values?.day).toBe('Dec 31, 2025');
     expect(at(new Date(2026, 9, 10, 2).toISOString(), true).key).toBe('frameleaf_backup_when_today_sentence');
   });
+
+  it('leaves the period after "a.m." to the sentence it ends (FL-737)', () => {
+    expect(at(new Date(2026, 9, 10, 4, 55).toISOString(), true).values?.time).toBe('4:55 a.m');
+    expect(at(new Date(2026, 9, 10, 4, 55).toISOString()).values?.time).toBe('4:55 a.m.');
+  });
 });
 
 describe('dates a library can go back to (FL-362)', () => {

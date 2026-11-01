@@ -2545,6 +2545,8 @@ export type IntegrityReportResponseDto = {
     items: {
         /** Integrity report item id */
         id: string;
+        /** The photo's own file name (FL-737) when the finding is about its original; null for a thumbnail or other derived file, and for a file that belongs to no photo */
+        originalFileName: string | null;
         /** Integrity report item path */
         path: string;
         "type": IntegrityReport;
@@ -9582,6 +9584,10 @@ export type MediaHealthScanResponseDto = {
     /** The durable job doing the work, in Activity */
     operationId?: string | null;
     runId: string;
+};
+export type MediaHealthScanDto = {
+    /** The photos to scan */
+    assetIds: string[];
 };
 export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
@@ -27555,6 +27561,21 @@ export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Scan chosen photos for damaged media
+ */
+export function startCorruptAssetScan({ mediaHealthScanDto }: {
+    mediaHealthScanDto: MediaHealthScanDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthScanResponseDto;
+    }>("/media-health/corrupt/scan/assets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthScanDto
+    })));
+}
+/**
  * Dismiss media health findings
  */
 export function dismiss({ mediaHealthBulkActionDto }: {
@@ -27607,6 +27628,21 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Scan chosen photos for missing media
+ */
+export function startMissingAssetScan({ mediaHealthScanDto }: {
+    mediaHealthScanDto: MediaHealthScanDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthScanResponseDto;
+    }>("/media-health/missing/scan/assets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthScanDto
+    })));
 }
 /**
  * Get RAW support status

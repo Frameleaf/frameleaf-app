@@ -605,6 +605,126 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('scans only the chosen photos this person may see (FL-737)', async () => {
+      vi.mocked(mediaHealthRepository.createRun)
+        .mockResolvedValueOnce({ id: 'missing-run' } as never)
+        .mockResolvedValueOnce({ id: 'corrupt-run' } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-1' }] as never);
+
+      await sut.startMissingScan(authStub.user1, { assetIds: ['asset-1', 'asset-1', 'asset-other'] });
+
+      expect(mediaHealthRepository.getAssets).toHaveBeenCalledWith(
+        ['asset-1', 'asset-other'],
+        authStub.user1.user.id,
+        expect.anything(),
+      );
+      expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: {
+            mode: 'scan',
+            userId: authStub.user1.user.id,
+            missingRunId: 'missing-run',
+            corruptRunId: 'corrupt-run',
+            assetIds: ['asset-1'],
+          },
+        }),
+      );
+    });
+
+    it('refuses a scan of photos this person cannot see (FL-737)', async () => {
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+
+      await expect(sut.startCorruptScan(authStub.user1, { assetIds: ['asset-other'] })).rejects.toThrow(
+        'None of these photos can be scanned',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { active: ['asset-1'], requested: ['asset-2'], label: 'other chosen photos' },
+      { active: ['asset-1'], requested: undefined, label: 'the whole library' },
+    ])('refuses a scan of $label while a scan of chosen photos runs (FL-737)', async ({ active, requested }) => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: { mode: 'scan', userId: 'user-id', missingRunId: 'm', corruptRunId: 'c', assetIds: active },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startMissingScan(authStub.user1, requested && { assetIds: requested })).rejects.toThrow(
+        'A scan of other photos is running',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a scan of chosen photos while an incremental scan runs (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: {
+              mode: 'scan',
+              userId: 'user-id',
+              missingRunId: 'm',
+              corruptRunId: 'c',
+              changedSince: '2026-10-31T02:00:00.000Z',
+            },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startMissingScan(authStub.user1, { assetIds: ['asset-2'] })).rejects.toThrow(
+        'A scan of other photos is running',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a whole-library scan while an incremental scan runs (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: {
+              mode: 'scan',
+              userId: 'user-id',
+              missingRunId: 'm',
+              corruptRunId: 'c',
+              changedSince: '2026-10-31T02:00:00.000Z',
+            },
+          },
+        ],
+        total: 1,
+      } as never);
+
+      await expect(sut.startMissingScan(authStub.user1)).rejects.toThrow('A scan of other photos is running');
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a scan of chosen photos with the full scan already under way (FL-737)', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: '0195e2a0-0000-7000-8000-0000000000d1',
+            snapshot: { mode: 'scan', userId: 'user-id', missingRunId: 'm', corruptRunId: 'c' },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-2' }] as never);
+
+      await expect(sut.startCorruptScan(authStub.user1, { assetIds: ['asset-2'] })).resolves.toEqual({
+        runId: 'c',
+        operationId: '0195e2a0-0000-7000-8000-0000000000d1',
+      });
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
     it('answers a second scan request with the scan already under way', async () => {
       vi.mocked(mediaOperationRepository.list).mockResolvedValue({
         items: [
@@ -2891,8 +3011,13 @@ describe(MediaHealthService.name, () => {
           scan('recent', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
           scan('recent', '2026-09-22T02:00:00.000Z'),
         ],
-        // Last full scan eight days ago: full, whatever the incremental ones since.
+        // Last full scan eight days ago: full, whatever the incremental ones since, and a scan of
+        // chosen photos (FL-737) is no full scan.
         stale: [
+          {
+            ...scan('stale', '2026-09-24T09:00:00.000Z'),
+            snapshot: { mode: 'scan', userId: 'stale', missingRunId: 'm', corruptRunId: 'c', assetIds: ['a'] },
+          },
           scan('stale', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
           scan('stale', '2026-09-17T02:00:00.000Z'),
         ],
@@ -2919,7 +3044,10 @@ describe(MediaHealthService.name, () => {
       vi.useRealTimers();
     });
 
-    it('keeps a scan an account already has instead of starting a second one', async () => {
+    it.each([
+      ['a full scan', {}],
+      ['an incremental scan', { changedSince: '2026-10-31T02:00:00.000Z' }],
+    ])('keeps %s an account already has instead of starting a second one', async (_, extra) => {
       care({ healthScan: true });
       vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-a' }] as never);
       vi.mocked(mediaOperationRepository.list).mockImplementation(
@@ -2930,7 +3058,7 @@ describe(MediaHealthService.name, () => {
                   items: [
                     {
                       id: 'op-open',
-                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c' },
+                      snapshot: { mode: 'scan', userId: 'user-a', missingRunId: 'm', corruptRunId: 'c', ...extra },
                     },
                   ],
                   total: 1,

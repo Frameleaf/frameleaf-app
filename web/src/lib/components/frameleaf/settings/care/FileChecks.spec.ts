@@ -1,5 +1,6 @@
 import {
   IntegrityCheckOutcome,
+  IntegrityFindingKind,
   IntegrityReport,
   IntegrityUnreachableFolderKind,
   type AdminConfigDto,
@@ -70,7 +71,9 @@ const counts = (missing = 0, damaged = 0, stray = 0) => ({
 const ran = '2026-10-14T09:40:00.000Z';
 const paths = (type: IntegrityReport, list: string[]) =>
   sdkMock.getIntegrityReport.mockImplementation(({ $type }) =>
-    Promise.resolve({ items: $type === type ? list.map((path, index) => ({ id: `f${index}`, path, type })) : [] }),
+    Promise.resolve({
+      items: $type === type ? list.map((path, index) => ({ id: `f${index}`, path, type, originalFileName: null })) : [],
+    }),
   );
 
 const overview = (value: Partial<IntegrityOverviewResponseDto> = {}): IntegrityOverviewResponseDto => ({
@@ -209,6 +212,59 @@ describe('File checks (FL-366)', () => {
     expect(await screen.findByText(/1 of them is a RAW file/)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Restore from a backup' }));
     expect(goto).toHaveBeenCalledWith(expect.stringContaining('area=backups&section=restore&files=missing'));
+  });
+
+  it('names a photo by the file name it came with, and a stray file by its path (FL-737)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1, 0, 1));
+    sdkMock.getIntegrityReport.mockImplementation(({ $type }) =>
+      Promise.resolve({
+        items:
+          $type === IntegrityReport.MissingFile
+            ? [{ id: 'm', type: $type, path: '/data/upload/u/0b/fb/0bfb7144.jpg', originalFileName: 'beach-1.jpg' }]
+            : $type === IntegrityReport.UntrackedFile
+              ? [{ id: 's', type: $type, path: '/data/upload/u/ab/cd/extra.jpg', originalFileName: null }]
+              : [],
+      }),
+    );
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    expect(await screen.findByText('beach-1.jpg')).toBeInTheDocument();
+    expect(screen.queryByText('0bfb7144.jpg')).not.toBeInTheDocument();
+    expect(screen.queryByText('/data/upload/u/0b/fb/')).not.toBeInTheDocument();
+    expect(screen.getByText('extra.jpg')).toBeInTheDocument();
+    expect(screen.getByText('/data/upload/u/ab/cd/')).toBeInTheDocument();
+  });
+
+  it('opens Missing files and Damaged files scanning just the photos these checks found (FL-737)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1, 1));
+    sdkMock.getSummary.mockResolvedValue({ recoveryAvailable: true } as never);
+    sdkMock.getIntegrityFindingAssets.mockImplementation(({ kind }) =>
+      Promise.resolve({ assetIds: [kind === IntegrityFindingKind.Missing ? 'a-missing' : 'a-damaged'] }),
+    );
+    sdkMock.startMissingAssetScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
+    sdkMock.startCorruptAssetScan.mockResolvedValue({ runId: 'r', operationId: 'o' });
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Find it again' }));
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=missing-media')));
+    expect(sdkMock.startMissingAssetScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-missing'] } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Look for a good copy' }));
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=corrupt-media')));
+    expect(sdkMock.startCorruptAssetScan).toHaveBeenCalledWith({ mediaHealthScanDto: { assetIds: ['a-damaged'] } });
+  });
+
+  it('still opens the tool when its scan cannot start (FL-737)', async () => {
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1));
+    sdkMock.getIntegrityFindingAssets.mockResolvedValue({ assetIds: ['a'] });
+    sdkMock.startMissingAssetScan.mockRejectedValue(new Error('409'));
+    newStore();
+    render(FileChecks, { pollMs: 60_000 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Find it again' }));
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=missing-media')));
   });
 
   it('shows a running check’s progress and stops it, keeping what was found (FL-520)', async () => {

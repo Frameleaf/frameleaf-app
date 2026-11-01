@@ -32,19 +32,21 @@ group by
 
 -- IntegrityRepository.getIntegrityReport
 select
-  "id",
-  "type",
-  "path",
-  "assetId",
-  "fileAssetId",
-  "createdAt"
+  "integrity_report"."id",
+  "integrity_report"."type",
+  "integrity_report"."path",
+  "integrity_report"."assetId",
+  "integrity_report"."fileAssetId",
+  "integrity_report"."createdAt",
+  "asset"."originalFileName"
 from
   "integrity_report"
+  left join "asset" on "asset"."id" = "integrity_report"."assetId"
 where
-  "type" = $1
-  and "id" <= $2
+  "integrity_report"."type" = $1
+  and "integrity_report"."id" <= $2
 order by
-  "id" desc
+  "integrity_report"."id" desc
 limit
   $3
 

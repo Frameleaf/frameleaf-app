@@ -33,6 +33,7 @@ import {
   MediaHealthRootResponse,
   MediaHealthRootsResponseDto,
   MediaHealthRunResponseDto,
+  MediaHealthScanDto,
   MediaHealthScanResponseDto,
   MediaHealthSummaryQueryDto,
   MediaHealthSummaryResponseDto,
@@ -364,7 +365,8 @@ export class MediaHealthService {
     for (const operation of items) {
       try {
         const snapshot = parseMediaHealthSnapshot(operation.snapshot);
-        if (snapshot.mode !== 'scan') {
+        // a scan of chosen photos (FL-737) says nothing about the rest of the library
+        if (snapshot.mode !== 'scan' || snapshot.assetIds) {
           continue;
         }
         const startedAt = asDateTimeString(operation.createdAt as unknown as Date);
@@ -781,13 +783,13 @@ export class MediaHealthService {
     };
   }
 
-  async startMissingScan(auth: AuthDto): Promise<MediaHealthScanResponseDto> {
-    const { missingRunId, operationId } = await this.startDurableScan(auth);
+  async startMissingScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
+    const { missingRunId, operationId } = await this.startDurableScan(auth, dto);
     return { runId: missingRunId, operationId };
   }
 
-  async startCorruptScan(auth: AuthDto): Promise<MediaHealthScanResponseDto> {
-    const { corruptRunId, operationId } = await this.startDurableScan(auth);
+  async startCorruptScan(auth: AuthDto, dto?: MediaHealthScanDto): Promise<MediaHealthScanResponseDto> {
+    const { corruptRunId, operationId } = await this.startDurableScan(auth, dto);
     return { runId: corruptRunId, operationId };
   }
 
@@ -1607,19 +1609,47 @@ export class MediaHealthService {
   /* ------------------------------------------------------------------ */
 
   /** A scan already under way answers with itself; a search under way has to finish first. */
-  private startDurableScan(auth: AuthDto): Promise<DurableScan> {
-    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () => this.admitDurableScan(auth.user.id));
+  private async startDurableScan(auth: AuthDto, { assetIds }: Partial<MediaHealthScanDto> = {}): Promise<DurableScan> {
+    // FL-737: chosen photos are scanned only where this person may see them, as their findings are listed.
+    const scoped = assetIds
+      ? (
+          await this.mediaHealthRepository.getAssets(
+            [...new Set(assetIds)],
+            auth.user.isAdmin ? undefined : auth.user.id,
+            this.privacyFor(auth),
+          )
+        ).map(({ id }) => id)
+      : undefined;
+    if (scoped?.length === 0) {
+      throw new BadRequestException('None of these photos can be scanned');
+    }
+    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () =>
+      this.admitDurableScan(auth.user.id, { assetIds: scoped }),
+    );
   }
 
   private async admitDurableScan(
     ownerId: string,
-    options: { changedSince?: string; scheduled?: boolean } = {},
+    options: { changedSince?: string; scheduled?: boolean; assetIds?: string[] } = {},
   ): Promise<DurableScan> {
     const active = await this.activeJob(ownerId);
     if (active) {
       const snapshot = parseMediaHealthSnapshot(active.snapshot);
-      if (snapshot.mode === 'scan') {
+      // FL-737: the scan under way answers only for photos it covers: a full scan covers any, a scan of
+      // chosen photos only those, and an incremental one only changed photos, so none chosen here and
+      // not a whole-library scan someone asked for (a scheduled one may share it: the next night catches up).
+      const covered =
+        snapshot.mode === 'scan' &&
+        (options.assetIds
+          ? snapshot.assetIds
+            ? options.assetIds.every((id) => snapshot.assetIds!.includes(id))
+            : !snapshot.changedSince
+          : !snapshot.assetIds && (!snapshot.changedSince || !!options.scheduled));
+      if (snapshot.mode === 'scan' && covered) {
         return { missingRunId: snapshot.missingRunId, corruptRunId: snapshot.corruptRunId, operationId: active.id };
+      }
+      if (snapshot.mode === 'scan') {
+        throw new ConflictException('A scan of other photos is running. Wait for it or cancel it first.');
       }
       throw new ConflictException('A search for originals is running. Wait for it or cancel it first.');
     }
@@ -1635,6 +1665,7 @@ export class MediaHealthService {
       corruptRunId: corruptRun.id,
       ...(options.changedSince && { changedSince: options.changedSince }),
       ...(options.scheduled && { scheduled: true }),
+      ...(options.assetIds && { assetIds: options.assetIds }),
     };
     try {
       const operation = await this.createHealthOperation(ownerId, snapshot, null);
@@ -1712,6 +1743,7 @@ export class MediaHealthService {
       afterId,
       limit,
       ...(snapshot.changedSince && { changedSince: new Date(snapshot.changedSince) }),
+      ...(snapshot.assetIds && { assetIds: snapshot.assetIds }),
     });
     const { checksumScan } = await this.careSettings();
     const page: MediaHealthScanPage = { checked: 0, missing: 0, corrupt: 0, lastId: afterId };
