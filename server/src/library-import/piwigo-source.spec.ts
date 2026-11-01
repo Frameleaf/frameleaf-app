@@ -121,6 +121,23 @@ describe('Piwigo restored database transport', () => {
     },
   );
 
+  it.each(['192.0.2.1', '10.0.0.1', '2001:db8::1', '::ffff:192.0.2.1'])(
+    'refuses unqualified TLS IP-literal host %s before connecting',
+    async (host) => {
+      await expect(readPiwigoRestore({ ...config, host, tls: {} }).next()).rejects.toThrow(
+        'PIWIGO_SOURCE_TLS_HOST_UNQUALIFIED',
+      );
+      expect(createConnection).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['localhost', '127.0.0.1', '::1'])('retains qualified TLS loopback host %s', async (host) => {
+    const reader = readPiwigoRestore({ ...config, host, tls: {} });
+    await reader.next();
+    await reader.return(undefined);
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
   it('uses certificate verification for an encrypted remote restore', async () => {
     const reader = readPiwigoRestore({ ...config, host: 'restore.example.invalid', tls: { ca: 'fixture-public-ca' } });
     await reader.next();

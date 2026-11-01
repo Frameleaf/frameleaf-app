@@ -1,4 +1,5 @@
 import { type Connection, type RowDataPacket, createConnection } from 'mysql2/promise';
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
@@ -47,7 +48,10 @@ export async function* readPiwigoRestore(input: Config): AsyncGenerator<{ table:
   if (!parsed.success) refuse('PIWIGO_SOURCE_CONFIG_INVALID');
   const config = parsed.data!;
   if (config.version !== fixture.source.version) refuse('PIWIGO_VERSION_UNQUALIFIED');
-  if (!config.tls && !['127.0.0.1', '::1'].includes(config.host)) refuse('PIWIGO_SOURCE_TLS_REQUIRED');
+  const loopback = ['127.0.0.1', '::1'].includes(config.host);
+  if (!config.tls && !loopback) refuse('PIWIGO_SOURCE_TLS_REQUIRED');
+  // mysql2 omits the TLS server name for IP literals; remote identity is qualified only with DNS hosts.
+  if (!loopback && isIP(config.host)) refuse('PIWIGO_SOURCE_TLS_HOST_UNQUALIFIED');
   let connection: Connection | undefined;
   let failed = false;
   let bodyFailed = false;
