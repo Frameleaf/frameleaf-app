@@ -51,7 +51,9 @@ import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import {
   LOCKED_KEY_BACKUP_ROLE,
+  lockedFileOwnerKeyId,
   lockedKeyBackupFiles,
+  lockedKeyFileKeyId,
   lockedKeyOwners,
   pathsBeingReplaced,
 } from 'src/utils/locked-backup.js';
@@ -499,12 +501,17 @@ export class BuddyBackupCaptureService {
             // before the dump and any media: turning encryption off deletes the key file once its files are
             // plain, so a copy taken later could miss the key that this snapshot's ciphertext needs. A key
             // file is replaced atomically, so it is read as it is now; one already removed is left out.
+            // The key ids (hex) of the captured key files: each encrypted file's owner key must be one of them.
+            const lockedKeyIds = new Set<string>();
             for (const { userId, path } of await lockedKeyBackupFiles(StorageCore.getMediaLocation())) {
               try {
                 manifest.library.lockedKeys![userId] = await captureFile(path, LOCKED_KEY_BACKUP_ROLE, undefined, true);
               } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                continue;
               }
+              const id = await lockedKeyFileKeyId(path, userId);
+              if (id) lockedKeyIds.add(id);
             }
             // pg_dump imports precisely this view. Internet transfer starts only after this transaction ends.
             const dump = await this.backups.createDatabaseBackup(`buddy-${options.runId}-`, {
@@ -518,8 +525,10 @@ export class BuddyBackupCaptureService {
               const albums = new Set<string>();
               // FL-721 pre-flight: a file a seal, unseal or rewrap is replacing now is left for the next run
               const lockedOwners = await lockedKeyOwners(StorageCore.getMediaLocation());
-              // FL-721: the people whose captured files are encrypted; each must have a key file in this snapshot
-              const sealedOwners = new Set<string>();
+              // FL-721: the owner key ids (first recipient, spec §5) of the captured encrypted files; each must be
+              // a key file in this snapshot. A partner copy points at its owner's file: the owner's key, not the
+              // partner's. A header that cannot be read stands for a key no snapshot has.
+              const sealedKeyIds = new Set<string>();
               const people = new Map<string, { ownerId: string; personId: string }>();
               while (true) {
                 const assets = await index.listAssets({
@@ -578,7 +587,11 @@ export class BuddyBackupCaptureService {
                   for (const file of edited)
                     if (present(file.path) && !busy.has(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.type));
-                  if (files.some((file) => sealedPaths.has(file.path))) sealedOwners.add(asset.ownerId);
+                  for (const file of files)
+                    if (sealedPaths.has(file.path))
+                      sealedKeyIds.add(
+                        (await lockedFileOwnerKeyId(file.path).catch(() => null)) ?? `unreadable:${file.path}`,
+                      );
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
                     libraryId: original.libraryId,
@@ -618,7 +631,7 @@ export class BuddyBackupCaptureService {
               // A key file that appeared or went during the capture (encryption turned on or off) would leave
               // ciphertext no key in this snapshot opens. Never hidden: the snapshot fails, and the previous
               // snapshots, with their key files, stay as they are. The next run captures a consistent pair.
-              const keyless = [...sealedOwners].filter((ownerId) => !manifest.library.lockedKeys![ownerId]);
+              const keyless = [...sealedKeyIds].filter((id) => !lockedKeyIds.has(id));
               if (keyless.length > 0)
                 throw new Error(
                   `This backup found encrypted Locked files for ${keyless.length} person(s) whose key file was not there when it started. Their encryption changed during the backup; the next backup includes it.`,

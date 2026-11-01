@@ -272,7 +272,7 @@ describe('Locked key files in a cloud backup restore (FL-721)', () => {
     );
     expect(await readFile(out)).toEqual(plain);
     // and the restore says the live key does not open the restored item
-    await expect(countEncryptedWithOlderKey(plan.files, () => OWNER, media)).resolves.toBe(1);
+    await expect(countEncryptedWithOlderKey(plan.files, media)).resolves.toBe(1);
   });
 
   it('never brings key files back into a restore folder, nor with a chosen item', () => {
@@ -342,7 +342,31 @@ describe('Locked key files in a cloud backup restore (FL-721)', () => {
         { fileKey: 'b', assetId: 'plain', role: 'original', sha256: '', size: 0, target: plainTarget, inPlace: true },
       ];
 
-      await expect(countEncryptedWithOlderKey(files, () => OWNER, media)).resolves.toBe(1);
+      await expect(countEncryptedWithOlderKey(files, media)).resolves.toBe(1);
+    });
+
+    it('never counts a partner copy of an item its owner’s live key opens, whatever key the partner has', async () => {
+      const { pair, file } = await advancedKeyFile(generateRecoveryKey());
+      await mkdir(join(media, 'locked-keys'), { recursive: true, mode: 0o700 });
+      await writeFile(join(media, 'locked-keys', `${OWNER}.json`), JSON.stringify(file), { mode: 0o600 });
+      // the partner has no key file here at all
+      const plainPath = join(directory, 'plain.jpg');
+      await writeFile(plainPath, randomBytes(1000));
+      const target = join(media, 'library', 'IMG_1.jpg');
+      await mkdir(join(media, 'library'));
+      await encryptFile(plainPath, target, [{ publicKey: pair.publicKey }], {
+        assetId: ASSET,
+        kind: 'original',
+        originalFileName: 'IMG_1.jpg',
+        mime: 'image/jpeg',
+      });
+      // the owner's asset and the partner's copy both point at the owner's file
+      const files = [
+        { fileKey: 'a', assetId: ASSET, role: 'original', sha256: '', size: 0, target, inPlace: true },
+        { fileKey: 'b', assetId: 'partner-copy', role: 'original', sha256: '', size: 0, target, inPlace: true },
+      ];
+
+      await expect(countEncryptedWithOlderKey(files, media)).resolves.toBe(0);
     });
   });
 });

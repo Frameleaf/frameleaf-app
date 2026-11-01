@@ -439,10 +439,13 @@ export type CloudBackupRunResult = {
   total: number | null;
   /**
    * FL-721: the people whose Locked key file the run backed up when it started (before the dump and any
-   * media), and the people whose backed-up files are encrypted. Each of the second must be in the first.
+   * media), and those key files' key ids (hex). `sealedKeyIds` are the owner key ids (each encrypted file's
+   * first recipient, spec §5) of the backed-up encrypted files: each must be in `lockedKeyIds`. A partner
+   * copy points at its owner's file, so it needs the owner's key file, never the partner's.
    */
   lockedKeyOwners: string[];
-  sealedOwners: string[];
+  lockedKeyIds: string[];
+  sealedKeyIds: string[];
 };
 
 export const emptyRunResult = (): CloudBackupRunResult => ({
@@ -459,7 +462,8 @@ export const emptyRunResult = (): CloudBackupRunResult => ({
   assets: 0,
   total: null,
   lockedKeyOwners: [],
-  sealedOwners: [],
+  lockedKeyIds: [],
+  sealedKeyIds: [],
 });
 
 const PHASES: ReadonlySet<CloudBackupRunResult['phase']> = new Set([
@@ -510,7 +514,8 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     assets: count(result.assets),
     total: result.total === null || result.total === undefined ? null : count(result.total),
     lockedKeyOwners: ids(result.lockedKeyOwners),
-    sealedOwners: ids(result.sealedOwners),
+    lockedKeyIds: ids(result.lockedKeyIds),
+    sealedKeyIds: ids(result.sealedKeyIds),
   };
 };
 

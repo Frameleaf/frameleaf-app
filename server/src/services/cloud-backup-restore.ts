@@ -1,3 +1,4 @@
+import { isLockedFile } from '@frameleaf/locked-crypto';
 import { randomUUID } from 'node:crypto';
 import { chmod, link, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
@@ -12,7 +13,12 @@ import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud
 import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
-import { LOCKED_KEY_BACKUP_ROLE, isEncryptedWithOlderKey, lockedKeyFilePath } from 'src/utils/locked-backup.js';
+import {
+  LOCKED_KEY_BACKUP_ROLE,
+  isEncryptedWithOlderKey,
+  liveLockedKeyIds,
+  lockedKeyFilePath,
+} from 'src/utils/locked-backup.js';
 
 /**
  * What a restore brings back (FL-164, CLD-302):
@@ -576,15 +582,19 @@ export class CloudBackupRestorer {
  */
 export async function countEncryptedWithOlderKey(
   files: CloudBackupRestoreFile[],
-  ownerOf: (assetId: string) => string | null,
   mediaLocation: string,
 ): Promise<number> {
+  let live: Set<string> | undefined;
   const counted = new Set<string>();
   for (const file of files) {
     if (!file.assetId || file.role !== 'original' || !file.inPlace || counted.has(file.assetId)) {
       continue;
     }
-    if (await isEncryptedWithOlderKey(file.target, ownerOf(file.assetId), mediaLocation)) {
+    if (!(await isLockedFile(file.target).catch(() => false))) {
+      continue;
+    }
+    live ??= await liveLockedKeyIds(mediaLocation);
+    if (await isEncryptedWithOlderKey(file.target, live)) {
       counted.add(file.assetId);
     }
   }

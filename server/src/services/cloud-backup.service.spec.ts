@@ -3068,6 +3068,63 @@ describe(CloudBackupService.name, () => {
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('had no key file when the run started'));
       });
 
+      /** OWNER's real key file (the public half is all a backup reads) and an original sealed to it. */
+      const sealedToOwner = async () => {
+        const pair = generateLockedKeyPair();
+        await writeFile(
+          keyPath,
+          JSON.stringify({
+            format: 'frameleaf-locked-key/1',
+            userId: OWNER,
+            publicKey: pair.publicKey.toString('base64'),
+          }),
+          { mode: 0o600 },
+        );
+        const folder = join(media, 'library', OWNER);
+        await mkdir(folder, { recursive: true });
+        const plain = join(media, 'plain.jpg');
+        const sealed = join(folder, 'IMG_1.jpg');
+        await writeFile(plain, 'the photo');
+        await encryptLockedFile(plain, sealed, [{ publicKey: pair.publicKey }], {
+          assetId: 'asset-1',
+          kind: 'original',
+          originalFileName: 'IMG_1.jpg',
+          mime: 'image/jpeg',
+        });
+        return sealed;
+      };
+
+      it('a partner copy of an encrypted item needs the owner’s key file, never the partner’s', async () => {
+        const PARTNER = '00000000-0000-4000-8000-000000000002';
+        const sealed = await sealedToOwner();
+        // the partner never set a Locked PIN: no key file. Their copy points at the owner's file.
+        index.listAssets
+          .mockResolvedValueOnce([
+            { ...asset('asset-1', null), ownerId: OWNER, originalPath: sealed },
+            { ...asset('asset-2', null), ownerId: PARTNER, originalPath: sealed },
+          ])
+          .mockResolvedValueOnce([]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.complete).toHaveBeenCalled();
+        expect(mocks.logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('had no key file'));
+      });
+
+      it('an encrypted file on the verified fast path still needs its owner’s key file', async () => {
+        const sealed = await sealedToOwner();
+        await rm(keyPath);
+        // its checksum is on record and verified at this path: the file is never hashed again
+        index.listAssets
+          .mockResolvedValueOnce([{ ...asset('asset-1', SHA_A), ownerId: OWNER, originalPath: sealed }])
+          .mockResolvedValueOnce([]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('had no key file when the run started'));
+      });
+
       it('a file with a .fllk.tmp sibling is left for the next run', async () => {
         const folder = join(media, 'library', OWNER);
         await mkdir(folder, { recursive: true });

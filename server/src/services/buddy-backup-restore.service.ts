@@ -1710,15 +1710,8 @@ export class BuddyBackupRestoreService {
         });
         if (!done) throw new RestoreStopped();
         await this.verifyFiles(operation.id, plan.files);
-        // FL-721: an encrypted item this server's key file for its (mapped) owner does not open is said so
-        const encryptedWithOlderKey = await countEncryptedWithOlderKey(
-          plan.files,
-          (assetId) => {
-            const owner = manifest.library.assets[assetId]?.owner;
-            return owner ? restoreOwner(job, owner) : null;
-          },
-          StorageCore.getMediaLocation(),
-        );
+        // FL-721: an encrypted item no key file on this server opens for its owner is said so
+        const encryptedWithOlderKey = await countEncryptedWithOlderKey(plan.files, StorageCore.getMediaLocation());
         if (encryptedWithOlderKey > 0)
           this.logger.warn(
             `Buddy restore ${operation.id}: ${encryptedWithOlderKey} restored items are encrypted with an older key that this server's Locked key file does not open`,

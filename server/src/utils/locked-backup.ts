@@ -88,27 +88,50 @@ export async function pathsBeingReplaced(paths: Iterable<string>): Promise<Set<s
 }
 
 /**
- * Whether `path` is an encrypted file that this person's key file on this server does not open: no
- * key file, or one whose key is not among the file's recipients (they turned encryption off and on
- * again since the backup). The key id comes from the public key, so no secret is needed to tell.
+ * FL-721: the key id (hex) of the person an encrypted file belongs to: its first recipient, always the
+ * owner (spec §5). A partner copy points at its owner's file, so this names the owner, never the partner
+ * whose asset row lists the path. Null when the file is not encrypted (or cannot be read as such).
  */
-export async function isEncryptedWithOlderKey(
-  path: string,
-  ownerId: string | null,
-  mediaLocation: string,
-): Promise<boolean> {
+export async function lockedFileOwnerKeyId(path: string): Promise<string | null> {
   if (!(await isLockedFile(path).catch(() => false))) {
-    return false;
+    return null;
   }
   const { keyIds } = await readHeader(path);
-  const keyPath = ownerId ? lockedKeyFilePath(mediaLocation, ownerId) : null;
-  // missing or unreadable: it opens nothing
-  const file = keyPath && ownerId ? await readLockedKeyFile(keyPath, ownerId) : null;
-  if (!file) {
-    return true;
+  return keyIds[0]?.toString('hex') ?? null;
+}
+
+/** The key id (hex) of this person's key file at `path`; null when it is missing, unreadable or someone else's. */
+export async function lockedKeyFileKeyId(path: string, userId: string): Promise<string | null> {
+  const file = await readLockedKeyFile(path, userId);
+  try {
+    return file ? keyId(Buffer.from(file.publicKey, 'base64')).toString('hex') : null;
+  } catch {
+    // a public key that is not one opens nothing
+    return null;
   }
-  const current = keyId(Buffer.from(file.publicKey, 'base64'));
-  return keyIds.every((id) => !id.equals(current));
+}
+
+/** The key id (hex) of every live key file under the media root. */
+export async function liveLockedKeyIds(mediaLocation: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const { userId, path } of await lockedKeyBackupFiles(mediaLocation)) {
+    const id = await lockedKeyFileKeyId(path, userId);
+    if (id) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Whether `path` is an encrypted file that no key file on this server opens for its owner: its owner (the
+ * first recipient, spec §5) has no key file here, or a newer one (they turned encryption off and on again
+ * since the backup). The key id comes from the public key, so no secret is needed to tell. The owner is
+ * read from the file, never from the asset row: a partner copy's row names the partner.
+ */
+export async function isEncryptedWithOlderKey(path: string, liveKeyIds: ReadonlySet<string>): Promise<boolean> {
+  const owner = await lockedFileOwnerKeyId(path);
+  return owner !== null && !liveKeyIds.has(owner);
 }
 
 /** A version-1 key file for this person at `path`; null when it is missing, unreadable or someone else's. */

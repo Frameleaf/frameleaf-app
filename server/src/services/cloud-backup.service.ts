@@ -1,4 +1,3 @@
-import { isLockedFile } from '@frameleaf/locked-crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -254,7 +253,9 @@ import {
 } from 'src/utils/frameleaf-push.js';
 import {
   LOCKED_KEY_BACKUP_ROLE,
+  lockedFileOwnerKeyId,
   lockedKeyBackupFiles,
+  lockedKeyFileKeyId,
   lockedKeyFilePath,
   lockedKeyOwners,
   matchLockedEncryptionRow,
@@ -2375,11 +2376,15 @@ export class CloudBackupService {
       })),
     );
     // one removed since it was listed (encryption finished turning off) is not counted as missing media
-    run.progress.result = {
-      ...run.progress.result,
-      missing: before,
-      lockedKeyOwners: recorded.map(({ ownerId }) => ownerId).filter((ownerId): ownerId is string => !!ownerId),
-    };
+    const lockedKeyOwners = recorded.map(({ ownerId }) => ownerId).filter((ownerId): ownerId is string => !!ownerId);
+    const lockedKeyIds: string[] = [];
+    for (const { ownerId, path } of recorded) {
+      const id = ownerId ? await lockedKeyFileKeyId(path, ownerId) : null;
+      if (id) {
+        lockedKeyIds.push(id);
+      }
+    }
+    run.progress.result = { ...run.progress.result, missing: before, lockedKeyOwners, lockedKeyIds };
   }
 
   /**
@@ -2589,9 +2594,10 @@ export class CloudBackupService {
     );
     // FL-721: encrypted files whose owner had no key file when the run started (encryption turned on, or
     // off and on, during the run) would make a backup no secret can open. Never hidden: the run fails
-    // before its manifest, and the earlier backups, with their key files, stay as they are.
-    const keyed = new Set(run.progress.result.lockedKeyOwners);
-    const keyless = run.progress.result.sealedOwners.filter((ownerId) => !keyed.has(ownerId));
+    // before its manifest, and the earlier backups, with their key files, stay as they are. The owner is
+    // the file's first recipient, so a partner copy needs the owner's key file, never the partner's.
+    const keyed = new Set(run.progress.result.lockedKeyIds);
+    const keyless = run.progress.result.sealedKeyIds.filter((id) => !keyed.has(id));
     if (keyless.length > 0) {
       this.logger.warn(
         `Cloud backup run ${run.id}: encrypted Locked files of ${keyless.length} person(s) had no key file when the run started`,
@@ -2706,6 +2712,19 @@ export class CloudBackupService {
       return null;
     }
 
+    // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's, so a
+    // mismatch is not a change; its owner (the first recipient, whoever's asset row lists the path) must
+    // have a key file in this backup (see `backUpProfiles`). Checked before the verified fast path too.
+    const ownerKeyId =
+      file.role === LOCKED_KEY_BACKUP_ROLE ? null : await lockedFileOwnerKeyId(file.path).catch(() => null);
+    const sealed = ownerKeyId !== null;
+    if (ownerKeyId && !run.progress.result.sealedKeyIds.includes(ownerKeyId)) {
+      run.progress.result = {
+        ...run.progress.result,
+        sealedKeyIds: [...run.progress.result.sealedKeyIds, ownerKeyId],
+      };
+    }
+
     // The checksum on record stands for the file only while its size is the same and it has not been
     // written since the checksum was taken; anything else is hashed now.
     const { recorded } = file;
@@ -2718,15 +2737,6 @@ export class CloudBackupService {
     }
 
     const sha256 = (await this.cryptoRepository.hashFile(file.path, 'sha256')).toString('hex');
-    // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's, so a
-    // mismatch is not a change; its owner must have a key file in this backup (see `backUpProfiles`).
-    const sealed = file.role !== LOCKED_KEY_BACKUP_ROLE && (await isLockedFile(file.path).catch(() => false));
-    if (sealed && file.ownerId && !run.progress.result.sealedOwners.includes(file.ownerId)) {
-      run.progress.result = {
-        ...run.progress.result,
-        sealedOwners: [...run.progress.result.sealedOwners, file.ownerId],
-      };
-    }
     if (recorded && recorded.sha256 !== sha256 && !sealed) {
       run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + 1 };
     }
@@ -3482,11 +3492,7 @@ export class CloudBackupService {
       if (done && inPlace) {
         // FL-721: an encrypted item this server's key file for its owner does not open is said so, never left
         // silent; saved with the last checkpoint, so the owner's Activity entry carries it too
-        done.encryptedWithOlderKey = await countEncryptedWithOlderKey(
-          plan.files,
-          (assetId) => library.get(assetId)?.ownerId ?? manifest.assets[assetId]?.owner ?? null,
-          mediaLocation,
-        );
+        done.encryptedWithOlderKey = await countEncryptedWithOlderKey(plan.files, mediaLocation);
         if (done.encryptedWithOlderKey > 0) {
           this.logger.warn(
             `Cloud backup restore ${operation.id}: ${done.encryptedWithOlderKey} restored items are encrypted with an older key that this server's Locked key file does not open`,
