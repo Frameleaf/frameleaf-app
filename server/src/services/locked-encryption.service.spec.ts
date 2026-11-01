@@ -460,6 +460,42 @@ describe(LockedEncryptionService.name, () => {
       await sut.update(auth, { askAgainHours: 24 });
       expect(rows.get(userId)!.askAgainHours).toBe(24);
     });
+
+    it('a shorter ask-again time shortens the open key now and tells the workers (M3)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+      await enableAdvanced();
+      await sut.lock(auth);
+      await sut.unlock(auth, { passphrase: PASSPHRASE });
+      expect(lockedKeys.expiresAt(userId)).toEqual(new Date('2026-11-03T12:00:00.000Z'));
+      vi.mocked(publishLockedKey).mockClear();
+
+      await sut.update(auth, { askAgainHours: 8 });
+
+      expect(lockedKeys.expiresAt(userId)).toEqual(new Date('2026-10-31T20:00:00.000Z'));
+      expect(publishLockedKey).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'load', userId, expiresAt: '2026-10-31T20:00:00.000Z' }),
+      );
+      vi.useRealTimers();
+    }, 30_000);
+
+    it('a longer ask-again time, or only after a restart, needs an unlocked session or the current secret (M3)', async () => {
+      await enableAdvanced();
+      await sut.update(auth, { askAgainHours: 8 });
+
+      await expect(sut.update(auth, { askAgainHours: 24 })).rejects.toThrow(ForbiddenException);
+      await expect(sut.update(auth, { askAgainHours: null })).rejects.toThrow(ForbiddenException);
+      await expect(sut.update(auth, { askAgainHours: null, currentSecret: 'not the passphrase' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(rows.get(userId)!.askAgainHours).toBe(8);
+
+      await sut.update(auth, { askAgainHours: null, currentSecret: PASSPHRASE });
+      expect(rows.get(userId)!.askAgainHours).toBeNull();
+      const elevated = { ...auth, session: { ...auth.session!, hasElevatedPermission: true } };
+      await sut.update(elevated, { askAgainHours: 24 });
+      expect(rows.get(userId)!.askAgainHours).toBe(24);
+    }, 60_000);
   });
 
   describe('recover', () => {
@@ -988,6 +1024,20 @@ describe(LockedEncryptionService.name, () => {
       await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
         BadRequestException,
       );
+    }, 30_000);
+
+    it('unlockPartner is refused while the owner is turning encryption off (M4)', async () => {
+      await enableAdvanced();
+      await sut.onPinVerified(partnerId, PIN);
+      await sut.lock(auth);
+      rows.set(userId, { ...rows.get(userId)!, status: 'decrypting' });
+
+      await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+        'Their items are being decrypted',
+      );
+      // the owner's turn-off never resumes from a partner's passphrase
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
     }, 30_000);
 
     it('an Advanced partner must have typed their own passphrase first (423)', async () => {

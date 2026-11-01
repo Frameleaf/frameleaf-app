@@ -351,6 +351,10 @@ export class LockedEncryptionService {
       throw notSharing();
     }
     const row = await this.requireRow(ownerId);
+    if (row.status === 'decrypting') {
+      // M4: only the owner's own secret resumes their turn-off (spec §7.4)
+      throw new ConflictException('Their items are being decrypted');
+    }
     const file = await this.requireKeyFile(ownerId);
     if (file.mode !== 'advanced') {
       throw new BadRequestException('Their Locked items open with your own PIN');
@@ -359,6 +363,11 @@ export class LockedEncryptionService {
     const privateKey = await this.unwrap(partnerAttemptKey(ownerId, viewerId), file, 'passphrase', dto.passphrase);
     const publicKey = Buffer.from(file.publicKey, 'base64');
     await this.withKeyFileLock(ownerId, async () => {
+      // turning off takes this lock too: checked again here, so it never starts between the two
+      if ((await this.lockedEncryptionRepository.get(ownerId))?.status === 'decrypting') {
+        privateKey.fill(0);
+        throw new ConflictException('Their items are being decrypted');
+      }
       if (!(await this.isPartner(ownerId, viewerId))) {
         privateKey.fill(0);
         throw notSharing();
@@ -368,7 +377,7 @@ export class LockedEncryptionService {
         // already open: the passphrase was still checked, and the grant ends with that key
         privateKey.fill(0);
       } else {
-        const expiresAt = row.status === 'decrypting' ? null : this.askAgainExpiry(row.askAgainHours);
+        const expiresAt = this.askAgainExpiry(row.askAgainHours);
         try {
           lockedKeys.load(ownerId, publicKey, privateKey, expiresAt);
         } catch (error) {
@@ -414,7 +423,18 @@ export class LockedEncryptionService {
         throw new BadRequestException('Nothing to change');
       }
       if (dto.askAgainHours !== undefined) {
+        // M3: keeping Locked open longer (or until a restart) needs the PIN unlock or the current secret
+        const longer = row.askAgainHours !== null && (askAgainHours === null || askAgainHours > row.askAgainHours);
+        if (longer && !auth.session?.hasElevatedPermission) {
+          if (!dto.currentSecret) {
+            throw new ForbiddenException('Enter your PIN or passphrase to keep Locked open longer');
+          }
+          (await this.unwrap(userId, file, modeKind(file.mode), dto.currentSecret)).fill(0);
+        }
         await this.lockedEncryptionRepository.update(userId, { askAgainHours });
+        if (file.mode === 'advanced' && row.status !== 'decrypting') {
+          this.shorten(userId, file, askAgainHours);
+        }
       }
       if (dto.mode !== undefined && row.status !== 'decrypting') {
         // the current mode again: queue the partner re-wrap again, in case a switch couldn't (§6.2)
@@ -1072,6 +1092,19 @@ export class LockedEncryptionService {
 
   private held(userId: string) {
     return lockedKeys.list().find((key) => key.userId === userId);
+  }
+
+  /** M3: a shorter ask-again time applies to the key that is open now, here and in the job workers. */
+  private shorten(userId: string, file: LockedKeyFile, hours: number | null) {
+    const held = this.held(userId);
+    const until = this.askAgainExpiry(hours);
+    if (!held || !until || !held.publicKey.equals(Buffer.from(file.publicKey, 'base64'))) {
+      return;
+    }
+    if (!held.expiresAt || held.expiresAt > until) {
+      lockedKeys.load(userId, held.publicKey, held.privateKey, until);
+      this.publishLoad(userId, file.publicKey, held.privateKey, until);
+    }
   }
 
   /** Keeps the loaded key of `file` until `until` if that is later. False when it isn't loaded. */
