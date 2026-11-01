@@ -18,15 +18,15 @@ This reader preserves source records; it does not interpret access predicates or
 
 ## Preservation requirements
 
-| Source information | Captured evidence | Required destination behavior |
-| --- | --- | --- |
-| Directories, media and metadata files | Directory hierarchy, media/file identities and names | Resolve actual originals and required sidecars through a verified storage root; independently hash bytes and retain every relationship |
-| Captions, titles, dates and location | Current metadata columns, source date value and separate nullable offset | Preserve current values ahead of stale embedded metadata; do not infer a known timezone from a missing offset |
-| People and faces | Person records, junctions and source metadata fields | Retain unsupported data in the protected archive; assign names/coordinates only after verified orientation and geometry conversion |
-| Saved searches | Album identity, name and serialized search predicate | Preserve the predicate; materialize unsupported dynamic albums as explicitly identified, verified membership snapshots |
-| Users and privacy | Roles and per-user override/allow/block predicates, plus separate global configuration | Require explicit mappings and evaluate inherited settings and block precedence; missing or unsupported privacy evidence blocks activation |
-| Public sharing | Creator, search predicate, expiry and password-presence flag | Never migrate bearer keys or password hashes; recreate only equivalent or stricter sharing, otherwise restrict affected content |
-| Projection caches | Excluded from extraction | Regenerate from preserved source records and destination permissions |
+| Source information                    | Captured evidence                                                                      | Required destination behavior                                                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Directories, media and metadata files | Directory hierarchy, media/file identities and names                                   | Resolve actual originals and required sidecars through a verified storage root; independently hash bytes and retain every relationship    |
+| Captions, titles, dates and location  | Current metadata columns, source date value and separate nullable offset               | Preserve current values ahead of stale embedded metadata; do not infer a known timezone from a missing offset                             |
+| People and faces                      | Person records, junctions and source metadata fields                                   | Retain unsupported data in the protected archive; assign names/coordinates only after verified orientation and geometry conversion        |
+| Saved searches                        | Album identity, name and serialized search predicate                                   | Preserve the predicate; materialize unsupported dynamic albums as explicitly identified, verified membership snapshots                    |
+| Users and privacy                     | Roles and per-user override/allow/block predicates, plus separate global configuration | Require explicit mappings and evaluate inherited settings and block precedence; missing or unsupported privacy evidence blocks activation |
+| Public sharing                        | Creator, search predicate, expiry and password-presence flag                           | Never migrate bearer keys or password hashes; recreate only equivalent or stricter sharing, otherwise restrict affected content           |
+| Projection caches                     | Excluded from extraction                                                               | Regenerate from preserved source records and destination permissions                                                                      |
 
 ## Native comparison and limits
 
