@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { upload } from 'src/commands/asset.js';
 import { login, logout } from 'src/commands/auth.js';
+import { runLockedDecrypt } from 'src/commands/locked.js';
 import { migrate } from 'src/commands/migrate/index.js';
 import { serverInfo } from 'src/commands/server-info.js';
 import { applyCliEnvAliases, preferExisting } from 'src/env-aliases.js';
@@ -151,5 +152,17 @@ program
       .default(2285),
   )
   .action((options) => migrate(options));
+
+const locked = program.command('locked').description('Work with encrypted Locked files');
+locked
+  .command('decrypt')
+  .description('Decrypt encrypted Locked files from a copy of the library (offline; no server or login needed)')
+  .requiredOption('--library <directory>', 'The library folder (the one holding locked-keys/)')
+  .requiredOption('--to <directory>', 'Where to write the decrypted files (must be outside the library)')
+  .option('--user <name or ID>', "Whose files to decrypt (asked when there's more than one)")
+  .option('--all', 'Also decrypt thumbnails, previews and other derived files into derived/<item ID>/', false)
+  .action(async (options) => {
+    process.exitCode = await runLockedDecrypt(options);
+  });
 
 program.parse(process.argv);
