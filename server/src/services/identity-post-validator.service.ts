@@ -102,8 +102,11 @@ const isAfterSentenceEnd = (text: string, index: number): boolean => {
 /** Ends with the preposition "in" as a whole word, followed by whitespace. */
 const PLACE_PREPOSITION = /(?<![\p{L}\p{M}\p{N}_])in\s+$/iu;
 
-/** What follows a name that makes it a possessive: "'s", or ", Name and Name's" naming more owners. */
-const POSSESSIVE_AFTER_NAME = /^(?:\s*(?:,|and|&)\s*(?:and\s+)?\p{Lu}[\p{L}\p{M}'’-]*?)*['’]s(?![\p{L}\p{M}\p{N}_])/u;
+/**
+ * What follows a name that makes it a possessive: "'s", or ", Name and Name's" naming more owners.
+ * "and" stands alone between spaces; ", and" starts a new clause ("in Paris, and Mary's child").
+ */
+const POSSESSIVE_AFTER_NAME = /^(?:(?:\s*[,&]\s*|\s+and\s+)\p{Lu}[\p{L}\p{M}'’-]*?)*['’]s(?![\p{L}\p{M}\p{N}_])/u;
 
 const escapeRegExp = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 

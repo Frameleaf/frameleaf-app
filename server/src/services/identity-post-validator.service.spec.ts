@@ -47,6 +47,17 @@ describe(IdentityPostValidator.name, () => {
       });
     });
 
+    it('keeps a place after "in" when a new clause starts with a possessive', () => {
+      const text = "Anne was in Paris, and Mary's child smiled.";
+      expect(sut.validate(text, [person('Anne'), person('Mary')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('strips a list of possessive names after "in"', () => {
+      expect(sut.validate("The child is in Zoë, Chloé & Max's arms.", [person('Anne')])).toMatchObject({
+        description: "Anne is in Someone, Someone & Someone's arms.",
+      });
+    });
+
     it('preserves the hyphenated spelling of a known name stored with a space', () => {
       const text = 'I saw Anne-Marie by the lake.';
       expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });
