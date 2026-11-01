@@ -16,7 +16,7 @@ export const sourceKinds = [
 export type SourceKind = (typeof sourceKinds)[number];
 const id = z.string().min(1).max(1024);
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
-const path = z
+export const importFilePathSchema = z
   .string()
   .min(1)
   .max(4096)
@@ -58,7 +58,7 @@ const manifestSchema = z.strictObject({
   files: z.array(
     z.strictObject({
       id,
-      path,
+      path: importFilePathSchema,
       bytes: z.string().regex(/^(0|[1-9]\d*)$/),
       sha256,
       role: z.enum(['original', 'sidecar', 'companion']),
