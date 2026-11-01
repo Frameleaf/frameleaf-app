@@ -88,7 +88,8 @@ export class IdenticalFilesRepository {
   }
 
   /**
-   * Upgrades a SHA-1 record to the SHA-256 just read. Devices keep seeing the SHA-1 (`asset_checksum`).
+   * Upgrades a SHA-1 record to the SHA-256 just read, which is what devices see (`syncChecksum`). The SHA-1
+   * stays in `asset_checksum` for upstream clients' duplicate checks.
    * False when the owner already holds a photo with that SHA-256 (its identical twin, merged later) or the
    * photo changed meanwhile; the photo then keeps its SHA-1.
    */

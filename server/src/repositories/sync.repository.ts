@@ -85,14 +85,17 @@ const personFaceAssetId = (options: HiddenContentQueryOptions) => {
     : sql<string | null>`person."faceAssetId"`.as('faceAssetId');
 };
 /**
- * The sha1 a device compares its local files against. No recorded digest of an asset with a path checksum
- * (an external-library original, however it was recorded), nor any external scan's (FL-69), is sent:
- * bytes on an external mount are not a managed copy, so a device must never treat its own photo as backed
- * up because of them.
+ * The SHA-256 a device compares its local files against: the iPhone, Android and desktop apps hash originals
+ * with SHA-256. It is the one recorded in `asset_checksum` (at upload, or read from disk by the nightly
+ * checksum check), so a legacy asset whose own checksum is still SHA-1 sends its SHA-256 too; an asset with
+ * none recorded sends its own checksum. No recorded digest of an asset with a path checksum (an
+ * external-library original, however it was recorded), nor any external scan's (FL-69), is sent: bytes on an
+ * external mount are not a managed copy, so a device must never treat its own photo as backed up because of
+ * them.
  */
 const syncChecksum = () =>
   sql<Buffer>`coalesce(
-    (select checksum.sha1 from public.asset_checksum checksum where checksum."assetId" = asset.id
+    (select checksum.sha256 from public.asset_checksum checksum where checksum."assetId" = asset.id
       and asset."checksumAlgorithm" != ${sql.lit(ChecksumAlgorithm.sha1Path)}
       and checksum.evidence ->> 'source' is distinct from ${sql.lit(EXTERNAL_SCAN_CHECKSUM)}),
     asset.checksum

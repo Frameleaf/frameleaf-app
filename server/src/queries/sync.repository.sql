@@ -561,7 +561,7 @@ select
   coalesce(
     (
       select
-        checksum.sha1
+        checksum.sha256
       from
         public.asset_checksum checksum
       where
@@ -680,7 +680,7 @@ select
   coalesce(
     (
       select
-        checksum.sha1
+        checksum.sha256
       from
         public.asset_checksum checksum
       where
@@ -801,7 +801,7 @@ select
   coalesce(
     (
       select
-        checksum.sha1
+        checksum.sha256
       from
         public.asset_checksum checksum
       where
@@ -1391,7 +1391,7 @@ select
   coalesce(
     (
       select
-        checksum.sha1
+        checksum.sha256
       from
         public.asset_checksum checksum
       where
@@ -1549,7 +1549,7 @@ select
   coalesce(
     (
       select
-        checksum.sha1
+        checksum.sha256
       from
         public.asset_checksum checksum
       where
