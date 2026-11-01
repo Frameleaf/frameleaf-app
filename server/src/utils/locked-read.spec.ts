@@ -315,3 +315,25 @@ describe('locked-read', () => {
     });
   });
 });
+
+describe('dynamic imports in the built server', () => {
+  // FL-721 Task 12: the build rewrites the `src/` alias of static imports only, so `import('src/…')`
+  // throws in the built server (vitest resolves the alias, so the other specs never saw it). The key
+  // owners lookup swallowed the error: a job deferred for a Locked key named no owner, and a key load
+  // never woke it.
+  it('never imports through the src/ alias', async () => {
+    const root = join(import.meta.dirname, '..');
+    const offenders: string[] = [];
+    for (const name of await fs.readdir(root, { recursive: true })) {
+      if (!name.endsWith('.ts') || name.endsWith('.spec.ts')) {
+        continue;
+      }
+      const text = await fs.readFile(join(root, name), 'utf8');
+      // a runtime import (awaited or chained); `import('src/…').Type` in a type is erased
+      if (/\bawait\s+import\(\s*['"`]src\/|\bimport\(\s*['"`]src\/[^'"`]*['"`]\s*\)\s*\.(?:then|catch)\b/.test(text)) {
+        offenders.push(name);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

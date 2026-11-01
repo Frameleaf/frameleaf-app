@@ -15,7 +15,7 @@ import type { QueueExecution } from 'src/queue/types.js';
 import { JobName, JobStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { LOCKED_PATH_BUSY, type LockedFileRef, type LockedSealState } from 'src/repositories/locked-file.repository.js';
-import { FINISH_CHECK_DELAY_MS, LockedSealService } from 'src/services/locked-seal.service.js';
+import { FINISH_CHECK_DELAY_MS, LATE_WAKE_DELAYS_MS, LockedSealService } from 'src/services/locked-seal.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
 import { LockedKeyUnavailableError, deferForLockedKey } from 'src/utils/locked-read.js';
@@ -402,7 +402,7 @@ describe(LockedSealService.name, () => {
       ]);
       row = undefined;
       const status = await newLockedEncryptionService(mocks).getStatus({ user: { id: OWNER } } as never);
-      expect(status.counts).toEqual({ encrypted: 0, notEncryptable: 1 });
+      expect(status.counts).toEqual({ encrypted: 0, notEncryptable: 1, missing: 0 });
     });
   });
 
@@ -466,6 +466,25 @@ describe(LockedSealService.name, () => {
       loadOwnerKey();
 
       expect(mocks.job.wakeLockedDeferrals).toHaveBeenCalledWith(['job-deferred']);
+    });
+
+    it('wakes the deferred jobs again a little later, for one still running when the key loaded (FL-721 Task 12)', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      try {
+        await sut.onBootstrap();
+        const execution = { claim: { id: 'job-running', attempt: 1, data: {} } } as unknown as QueueExecution;
+        queueExecution.run(execution, () => deferForLockedKey(new LockedKeyUnavailableError([OWNER])));
+
+        loadOwnerKey();
+        expect(mocks.job.wakeLockedDeferrals).toHaveBeenCalledTimes(1);
+        for (const [index, delay] of LATE_WAKE_DELAYS_MS.entries()) {
+          await vi.advanceTimersByTimeAsync(delay - (LATE_WAKE_DELAYS_MS[index - 1] ?? 0));
+          expect(mocks.job.wakeLockedDeferrals).toHaveBeenCalledTimes(index + 2);
+          expect(mocks.job.wakeLockedDeferrals).toHaveBeenLastCalledWith(['job-running']);
+        }
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('leaves an item that is still meant to be encrypted alone', async () => {
@@ -696,6 +715,33 @@ describe(LockedSealService.name, () => {
         await expect(sut.handleRewrap({ id: ASSET })).resolves.toBe(JobStatus.Success);
         expect((await readHeader(path)).keyIds).toEqual([keyId(owner.publicKey), keyId(replaced.publicKey)]);
         expect((await decrypted(path, replaced.privateKey)).equals(plain.get(path)!)).toBe(true);
+      });
+
+      it('a re-wrap that waited for the key sweeps on the very next key load (FL-721 Task 12)', async () => {
+        row = { userId: OWNER, mode: 'pin', status: 'on' };
+        state.status = 'on';
+        const path = await write('original.jpg', 'original', 'asset');
+        await sut.handleSeal({ id: ASSET });
+        expect((await readHeader(path)).keyIds).toHaveLength(1);
+        await sut.onBootstrap();
+        loadOwnerKey();
+        mocks.job.queue.mockClear();
+
+        // a new partner while the owner's key is closed: nothing can be re-wrapped yet
+        lockedKeys.clear();
+        mocks.lockedFile.partnerRecipients.mockResolvedValue([{ userId: PARTNER, publicKey: partner.publicKey }]);
+        mocks.job.queueAll.mockClear();
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+
+        // the owner's next unlock, a minute after the last: it sweeps, though wake-ups are spaced out
+        loadOwnerKey();
+        expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({ name: JobName.LockedSweep, data: { userId: OWNER } });
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: ASSET } }]);
+        // and an extension right after that is spaced out again
+        loadOwnerKey();
+        expect(mocks.job.queue).toHaveBeenCalledTimes(1);
       });
 
       it('never deletes a key file it cannot read', async () => {

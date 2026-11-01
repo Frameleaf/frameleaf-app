@@ -217,8 +217,9 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
     try {
       const next = new Map<string, string>();
       // imported when first needed: file.ts (and so every controller) imports this module, and the
-      // key repository's storage imports would make a cycle
-      const { LockedKeyRepository } = await import('src/repositories/locked-key.repository.js');
+      // key repository's storage imports would make a cycle. The path is relative because the build
+      // rewrites the `src/` alias of static imports only; `import('src/…')` fails in the built server.
+      const { LockedKeyRepository } = await import('../repositories/locked-key.repository.js');
       for (const file of await new LockedKeyRepository().list()) {
         next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
       }

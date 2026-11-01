@@ -54,6 +54,8 @@ export const LOCKED_TEMP_SUFFIX = '.fllk.tmp';
 const STALE_TEMP = LOCKED_TEMP_NAME;
 /** How long after a seal or unseal the sweep checks whether turning on or off has finished. */
 export const FINISH_CHECK_DELAY_MS = 2 * 60 * 1000;
+/** After a key load, when the jobs deferred for it are woken again (Task 12: a job still running at the load). */
+export const LATE_WAKE_DELAYS_MS = [5000, 30_000, 120_000];
 /** The least time between two sweeps a key load queues for one person. */
 const WAKE_INTERVAL_MS = 5 * 60 * 1000;
 /** How many files the sweep opens at once to read their headers. */
@@ -127,6 +129,8 @@ type Pass = 'done' | 'moved' | 'stopped' | 'busy';
 export class LockedSealService {
   private unsubscribe?: () => void;
   private wokenAt = new Map<string, number>();
+  /** People whose files need a re-wrap their key wasn't loaded for: their next key load sweeps at once. */
+  private rewrapWaiting = new Set<string>();
 
   constructor(
     private logger: LoggingRepository,
@@ -150,11 +154,22 @@ export class LockedSealService {
       const deferred = takeLockedDeferrals(userId);
       if (deferred.length > 0) {
         handlePromiseError(this.jobRepository.wakeLockedDeferrals(deferred), this.logger);
+        // a job that hit the missing key just before this load is still running, and is only deferred
+        // (for an hour) after this wake; waking the same ids again a little later catches it. A job
+        // already woken or finished is left alone (the wake only moves jobs still waiting for a key).
+        for (const delay of LATE_WAKE_DELAYS_MS) {
+          setTimeout(
+            () => handlePromiseError(this.jobRepository.wakeLockedDeferrals(deferred), this.logger),
+            delay,
+          ).unref();
+        }
       }
       // a PIN unlock that is extended loads the key again on every extension; one wake-up every few
       // minutes is enough, and the hourly sweep is the backstop
       const now = Date.now();
-      if (now - (this.wokenAt.get(userId) ?? 0) < WAKE_INTERVAL_MS) {
+      // a re-wrap left waiting for this key (a new partner, a mode switch) is never held back
+      const waiting = this.rewrapWaiting.delete(userId);
+      if (!waiting && now - (this.wokenAt.get(userId) ?? 0) < WAKE_INTERVAL_MS) {
         return;
       }
       this.wokenAt.set(userId, now);
@@ -714,6 +729,7 @@ export class LockedSealService {
     const rewrap: string[] = [];
     let plainLeft = 0;
     let sealedLeft = 0;
+    let rewrapWaits = false;
     for (const asset of assets) {
       const files = await this.fileStates(await this.lockedFileRepository.filesOf(asset.id));
       const sealedFiles = files.filter((file) => file.state === 'sealed' || file.state === 'damaged');
@@ -734,14 +750,21 @@ export class LockedSealService {
         plainLeft++;
         seal.push(asset.id);
       } else if (
-        keyLoaded &&
         wanted &&
         sealedFiles.some((file) => file.state === 'sealed' && !this.sameRecipients(file.keyIds, wanted))
       ) {
-        rewrap.push(asset.id);
+        if (keyLoaded) {
+          rewrap.push(asset.id);
+        } else {
+          rewrapWaits = true;
+        }
       }
     }
 
+    if (rewrapWaits) {
+      // spec §6.2: the re-wrap runs on the owner's next unlock, whenever that is
+      this.rewrapWaiting.add(userId);
+    }
     const jobs = [
       ...seal.map((id) => ({ name: JobName.LockedSeal as const, data: { id } })),
       ...unseal.map((id) => ({ name: JobName.LockedUnseal as const, data: { id } })),
