@@ -36,7 +36,7 @@ import {
   toDefinition,
   workflowIssues,
 } from 'src/utils/workflow-definition.js';
-import { type PreviewAsset, getPreviewFilter, isCoreMethod, passesPreviewFilter } from 'src/utils/workflow-preview.js';
+import { type PreviewAsset, getPreviewFilter, isCoreAction, passesPreviewFilter } from 'src/utils/workflow-preview.js';
 import {
   type WorkflowSource,
   nextWorkflowOccurrence,
@@ -135,7 +135,7 @@ export class WorkflowService extends BaseService {
       at,
       auth.user.id,
     );
-    const result = definition.steps.some((step) => step.enabled && getPreviewFilter(step.method))
+    const result = definition.steps.some((step) => step.enabled && getPreviewFilter(step.method, step.config))
       ? this.previewFilters(
           definition.steps,
           await this.workflowRepository.previewAssets(
@@ -152,7 +152,7 @@ export class WorkflowService extends BaseService {
           steps: definition.steps.map((step) => ({
             method: step.method,
             result: step.enabled
-              ? isCoreMethod(step.method)
+              ? isCoreAction(step.method)
                 ? ('skipped' as const)
                 : ('unchecked' as const)
               : ('disabled' as const),
@@ -170,7 +170,8 @@ export class WorkflowService extends BaseService {
 
   /**
    * FL-729: a dry run of the steps over the matches. Built-in filters are checked on the server; actions
-   * and other plugins' steps are not run, and another plugin's step is assumed to let every match through.
+   * and other plugins' steps are not run, and a step the preview cannot check (another plugin's step, or a
+   * regular-expression filter) is assumed to let every match through.
    */
   private previewFilters(
     steps: WorkflowDefinitionInput['steps'],
@@ -182,12 +183,12 @@ export class WorkflowService extends BaseService {
       if (!step.enabled) {
         return { method: step.method, result: 'disabled' as const, remaining: null };
       }
-      const filter = getPreviewFilter(step.method);
+      const filter = getPreviewFilter(step.method, step.config);
       if (filter) {
         remaining = remaining.filter((asset) => passesPreviewFilter(filter, step.config, asset));
         return { method: step.method, result: 'filtered' as const, remaining: remaining.length };
       }
-      const result = isCoreMethod(step.method) ? ('skipped' as const) : ('unchecked' as const);
+      const result = isCoreAction(step.method) ? ('skipped' as const) : ('unchecked' as const);
       return { method: step.method, result, remaining: remaining.length };
     });
     return {

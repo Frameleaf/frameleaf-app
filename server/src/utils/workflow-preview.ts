@@ -144,12 +144,23 @@ const filters: Record<string, (config: Config, asset: PreviewAsset) => boolean> 
 
 const CORE_PLUGIN = 'immich-plugin-core#';
 
-/** The read-only check for a built-in filter step, or none when the step can only be known by running it. */
-export const getPreviewFilter = (method: string) =>
-  method.startsWith(CORE_PLUGIN) ? filters[method.slice(CORE_PLUGIN.length)] : undefined;
+const coreName = (method: string) => (method.startsWith(CORE_PLUGIN) ? method.slice(CORE_PLUGIN.length) : undefined);
 
-/** Whether a step is one of the built-in plugin's methods (an action, when it is not a filter). */
-export const isCoreMethod = (method: string) => method.startsWith(CORE_PLUGIN);
+/**
+ * The read-only check for a built-in filter step, or none when the step can only be known by running it.
+ * A regular-expression match is left to the run: a run evaluates it inside the plugin sandbox, and the
+ * server must not run an owner's pattern over thousands of assets on its own event loop (ReDoS).
+ */
+export const getPreviewFilter = (method: string, config?: Config | null) => {
+  const name = coreName(method);
+  return name && config?.matchType !== 'regex' ? filters[name] : undefined;
+};
+
+/** Whether a step is one of the built-in plugin's actions, which a preview never runs. */
+export const isCoreAction = (method: string) => {
+  const name = coreName(method);
+  return !!name && !Object.hasOwn(filters, name);
+};
 
 /** Whether the asset gets past this filter in a run. A filter that throws fails the run there, so the asset stops. */
 export const passesPreviewFilter = (

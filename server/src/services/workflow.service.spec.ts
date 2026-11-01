@@ -646,6 +646,29 @@ describe('preview with filter steps (FL-729)', () => {
     expect(result.exampleAssetIds).toHaveLength(12);
   });
 
+  it('does not run a regular-expression filter on the server, and says it cannot check it', async () => {
+    const { sut, mocks } = setup();
+    mocks.plugin.getForValidation.mockResolvedValue([coreMethod('assetFileFilter'), coreMethod('assetTypeFilter')]);
+    const video = previewAsset('VIDEO');
+    mocks.workflow.previewAssets.mockResolvedValue([previewAsset('IMAGE'), video] as never);
+    const result = await sut.preview(factory.auth(), {
+      trigger: 'AssetCreate',
+      source: { filter: {} },
+      steps: [
+        { method: 'immich-plugin-core#assetFileFilter', config: { pattern: '(a+)+$', matchType: 'regex' } },
+        { method: 'immich-plugin-core#assetTypeFilter', config: { allowedTypes: ['VIDEO'] } },
+      ],
+    } as never);
+    expect(result).toMatchObject({
+      count: 1,
+      exampleAssetIds: [video.id],
+      steps: [
+        { method: 'immich-plugin-core#assetFileFilter', result: 'unchecked', remaining: 2 },
+        { method: 'immich-plugin-core#assetTypeFilter', result: 'filtered', remaining: 1 },
+      ],
+    });
+  });
+
   it('keeps the plain count when no built-in filter is enabled', async () => {
     const { sut, mocks } = setup();
     mocks.workflow.previewSource.mockResolvedValue({ count: 80, exampleAssetIds: [] });

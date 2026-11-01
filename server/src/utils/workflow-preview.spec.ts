@@ -1,4 +1,4 @@
-import { type PreviewAsset, getPreviewFilter, isCoreMethod, passesPreviewFilter } from 'src/utils/workflow-preview.js';
+import { type PreviewAsset, getPreviewFilter, isCoreAction, passesPreviewFilter } from 'src/utils/workflow-preview.js';
 
 // the core plugin's own methods, unwrapped, so each case is checked against what a run would decide
 vi.mock('@frameleaf/plugin-sdk', () => ({ wrapper: (methods: unknown) => methods }));
@@ -95,14 +95,22 @@ describe('workflow preview filters (FL-729)', () => {
     expect(passesPreviewFilter(filter, config as never, value)).toBe(runs(name, config, value));
   });
 
+  it('leaves a regular-expression match to the run, where the plugin sandbox evaluates it', () => {
+    for (const name of ['assetFileFilter', 'assetExifFilter']) {
+      expect(getPreviewFilter(`immich-plugin-core#${name}`, { pattern: '(a+)+$', matchType: 'regex' })).toBeUndefined();
+      expect(getPreviewFilter(`immich-plugin-core#${name}`, { pattern: 'a', matchType: 'contains' })).toBeDefined();
+    }
+  });
+
   it('covers every core filter and no action', () => {
     const coreFilters = Object.keys(core).filter((name) => name.endsWith('Filter'));
     expect(coreFilters.every((name) => getPreviewFilter(`immich-plugin-core#${name}`))).toBe(true);
     for (const action of ['assetAddTags', 'assetAddToAlbums', 'assetArchive', 'webhook']) {
       expect(getPreviewFilter(`immich-plugin-core#${action}`)).toBeUndefined();
-      expect(isCoreMethod(`immich-plugin-core#${action}`)).toBe(true);
+      expect(isCoreAction(`immich-plugin-core#${action}`)).toBe(true);
     }
+    expect(isCoreAction('immich-plugin-core#assetFileFilter')).toBe(false);
     expect(getPreviewFilter('third-party#assetTypeFilter')).toBeUndefined();
-    expect(isCoreMethod('third-party#assetTypeFilter')).toBe(false);
+    expect(isCoreAction('third-party#assetTypeFilter')).toBe(false);
   });
 });
