@@ -1,12 +1,12 @@
 <script lang="ts">
   /**
    * Your Locked PIN, from the `pin` section of the design template's `PersonalAccess`: whether a
-   * PIN is set, Create or Change PIN, Clear PIN, and "Forgot your PIN?" to clear it with the
+   * PIN is set, Create or Change PIN, Clear PIN, and "Forgot it?" to clear it with the
    * account password. The state comes from the server (`getAuthStatus`) and follows PIN changes
    * made anywhere on this page.
    *
    * FL-721 (prototype PR 20 `Personal.jsx` LockedPin): while Locked encryption is on, the PIN can't be
-   * cleared, "Forgot your PIN?" asks for the recovery key instead of the password, and a row opens the
+   * cleared, "Forgot it?" asks for the recovery key instead of the password, and a row opens the
    * Locked encryption page.
    */
   import { goto } from '$app/navigation';
@@ -133,6 +133,9 @@
         <Button onclick={() => open(pinEnabled ? 'change' : 'create')}>
           {pinEnabled ? $t('frameleaf_access_pin_change') : $t('frameleaf_access_pin_create')}
         </Button>
+        {#if pinEnabled}
+          <Button onclick={() => void forgot()}>{$t('frameleaf_le_forgot')}</Button>
+        {/if}
         {#if pinEnabled && !encrypted}
           <Button disabled={!encryptionKnown} onclick={() => open('clear')}>{$t('frameleaf_access_pin_clear')}</Button>
         {/if}
@@ -142,26 +145,7 @@
     {/if}
   </div>
   {#if pinEnabled}
-    {#if relock !== undefined}
-      <label class="fl-access-relock">
-        <span>
-          <strong>{$t('frameleaf_access_relock_label')}</strong>
-          <small>{$t('frameleaf_access_relock_help', { values: { time: relockWords(relock) } })}</small>
-        </span>
-        <select
-          value={String(relock)}
-          disabled={savingRelock}
-          onchange={(event) => void saveRelock(Number(event.currentTarget.value))}
-        >
-          {#each RELOCK_CHOICES as minutes (minutes)}
-            <option value={String(minutes)}>{relockWords(minutes)}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
-    <div>
-      <Button variant="quiet" onclick={() => void forgot()}>{$t('frameleaf_access_pin_forgot')}</Button>
-    </div>
+    <!-- FL-721 (prototype LockedPin): Locked encryption sits straight under the PIN itself -->
     <div class="fl-access-head fl-access-encryption">
       <div>
         <h3>{$t('frameleaf_le_title')}</h3>
@@ -180,6 +164,23 @@
         <Icon icon={mdiChevronRight} size="18" aria-hidden />
       </Button>
     </div>
+    {#if relock !== undefined}
+      <label class="fl-access-relock">
+        <span>
+          <strong>{$t('frameleaf_access_relock_label')}</strong>
+          <small>{$t('frameleaf_access_relock_help', { values: { time: relockWords(relock) } })}</small>
+        </span>
+        <select
+          value={String(relock)}
+          disabled={savingRelock}
+          onchange={(event) => void saveRelock(Number(event.currentTarget.value))}
+        >
+          {#each RELOCK_CHOICES as minutes (minutes)}
+            <option value={String(minutes)}>{relockWords(minutes)}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
   {/if}
 </section>
 

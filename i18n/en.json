@@ -2207,7 +2207,6 @@
   "frameleaf_access_pin_disabled": "Set a PIN before opening Locked photos.",
   "frameleaf_access_pin_enabled": "A six-digit PIN opens your Locked photos and videos.",
   "frameleaf_access_pin_failed": "The PIN could not be changed.",
-  "frameleaf_access_pin_forgot": "Forgot your PIN?",
   "frameleaf_access_pin_group_description": "Opens your Locked photos and videos.",
   "frameleaf_access_pin_mismatch": "The two PINs do not match.",
   "frameleaf_access_pin_new": "New six-digit PIN",
