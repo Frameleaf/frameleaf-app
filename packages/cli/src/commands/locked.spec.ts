@@ -293,25 +293,29 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
     expect(await run(['--help'])).toBe(0);
   });
 
-  it('counts symlinks it skips and carries on past an unreadable folder', async () => {
-    const lib = join(root, `links-${randomUUID()}`);
-    await mkdir(join(lib, 'locked-keys'), { recursive: true });
-    await copyFile(join(library, 'locked-keys', `${aliceId}.json`), join(lib, 'locked-keys', `${aliceId}.json`));
-    await symlink(library, join(lib, 'link'));
-    await mkdir(join(lib, 'sealed'));
-    await chmod(join(lib, 'sealed'), 0);
-    try {
-      const result = await lockedDecrypt({
-        library: lib,
-        to: join(root, `l-${randomUUID()}`),
-        user: 'Alice',
-        secret: '482915',
-      });
-      expect(result.skippedLinks).toBe(1);
-      expect(result.failed).toHaveLength(1);
-      expect(result.failed[0]).toContain('sealed');
-    } finally {
-      await chmod(join(lib, 'sealed'), 0o700);
-    }
-  });
+  // Windows ignores chmod 0, so the folder stays readable there.
+  it.skipIf(process.platform === 'win32')(
+    'counts symlinks it skips and carries on past an unreadable folder',
+    async () => {
+      const lib = join(root, `links-${randomUUID()}`);
+      await mkdir(join(lib, 'locked-keys'), { recursive: true });
+      await copyFile(join(library, 'locked-keys', `${aliceId}.json`), join(lib, 'locked-keys', `${aliceId}.json`));
+      await symlink(library, join(lib, 'link'));
+      await mkdir(join(lib, 'sealed'));
+      await chmod(join(lib, 'sealed'), 0);
+      try {
+        const result = await lockedDecrypt({
+          library: lib,
+          to: join(root, `l-${randomUUID()}`),
+          user: 'Alice',
+          secret: '482915',
+        });
+        expect(result.skippedLinks).toBe(1);
+        expect(result.failed).toHaveLength(1);
+        expect(result.failed[0]).toContain('sealed');
+      } finally {
+        await chmod(join(lib, 'sealed'), 0o700);
+      }
+    },
+  );
 });
