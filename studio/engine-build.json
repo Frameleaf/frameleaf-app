@@ -799,7 +799,22 @@
       "path": "patches/0173-remove-upstream-community-links.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e6cfda280f13ecf28de2c809692308d54a9655082f705c3b2934c44f87285ef9"
+    },
+    {
+      "path": "patches/0174-trim-to-playhead.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "267f95400f2102f3d73207e0c8b26e4fdede9bda42619c514a0fac0cd2a67c1a"
+    },
+    {
+      "path": "patches/0175-caption-quality-checks.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e57fe5b2c01e71244a7c76c29d4dfcf1db96e9bf746e95940134186595720bec"
+    },
+    {
+      "path": "patches/0176-chapter-text-export.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4d4579d5a53b39babac5daae3921f61618be691e8682e7c04504c693e3a8528c"
     }
   ],
-  "sourceSha256": "cdcfa3a502ad4529a9b726c4de4b1d40a3cf132bb4da84112f10d6dbeafa4700"
+  "sourceSha256": "27ee0089c32ce1f8976ca10eeda2a745d93970e913c042fc66672b8e1e4ce6f4"
 }
