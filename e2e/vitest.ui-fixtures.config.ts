@@ -10,6 +10,7 @@ export default defineConfig({
       'src/ui/generators/timeline/images.spec.ts',
       'src/ui/generators/memory/model-objects.spec.ts',
       'src/ui/generators/timeline/rest-response.spec.ts',
+      'src/ui/mock-network/timeline-network.spec.ts',
     ],
   },
   resolve: { tsconfigPaths: true },

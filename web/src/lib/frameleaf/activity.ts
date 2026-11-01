@@ -1,4 +1,5 @@
 import {
+  StudioRenderStage,
   CloudMlJobPurpose,
   CloudMlJobStage,
   MediaOperationBulkAction,
@@ -207,6 +208,9 @@ export type ActivityItem = {
   projectId?: string;
   /** The server's measured estimate of the time left, in seconds, when it has one. */
   estimateSeconds?: number;
+  /** Studio rates come only from durable worker frame samples; never infer them from a percentage. */
+  renderProgress?: NonNullable<MediaOperationDto['renderProgress']>;
+  finishedAt?: number;
   /** The server's estimate of the output size, in bytes, when it has one (prototype "Done · 12 MB"). */
   sizeBytes?: number;
   /**
@@ -590,6 +594,21 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
     ...(operation.projectId && STUDIO_RENDER_KINDS.has(operation.kind) && { projectId: operation.projectId }),
     ...estimateOf(operation),
+    ...(operation.kind === MediaOperationKind.StudioExport && {
+      renderProgress: operation.renderProgress ?? {
+        stage:
+          status === MediaOperationStatus.Validating
+            ? StudioRenderStage.Finalising
+            : status === MediaOperationStatus.Rendering
+              ? StudioRenderStage.Rendering
+              : StudioRenderStage.Preparing,
+        lastProgressAt: null,
+        framesPerSecond: null,
+        remainingRenderSeconds: null,
+      },
+      estimateSeconds: undefined,
+      finishedAt: operation.finishedAt ? Date.parse(operation.finishedAt) : undefined,
+    }),
     ...((operation.encryptedWithOlderKey ?? 0) > 0 && { encryptedWithOlderKey: operation.encryptedWithOlderKey! }),
     ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
     stage: mediaOperationStage(operation),
@@ -957,9 +976,20 @@ export const activityIndicatorState = (items: readonly ActivityItem[]) => {
 
 /** Seconds left at the rate so far, or null when there is no honest estimate yet. */
 export const activityEtaSeconds = (
-  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running' | 'estimateSeconds'>,
+  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running' | 'estimateSeconds' | 'renderProgress'>,
   now: number,
 ): number | null => {
+  if (item.renderProgress) {
+    const last = item.renderProgress.lastProgressAt ? Date.parse(item.renderProgress.lastProgressAt) : NaN;
+    const seconds = item.renderProgress.remainingRenderSeconds;
+    return item.running &&
+      item.renderProgress.stage === 'rendering' &&
+      Number.isFinite(last) &&
+      now - last < 60_000 &&
+      seconds !== null
+      ? Math.ceil(seconds)
+      : null;
+  }
   // The server's own measurement wins over a guess from elapsed time.
   if (item.running && item.estimateSeconds !== undefined) {
     return item.estimateSeconds > 0 ? Math.ceil(item.estimateSeconds) : null;
@@ -981,7 +1011,15 @@ export const activityEtaSeconds = (
 export const activityStatusText = (
   item: Pick<
     ActivityItem,
-    'statusKey' | 'progress' | 'startedAt' | 'running' | 'paused' | 'finished' | 'estimateSeconds' | 'sizeBytes'
+    | 'statusKey'
+    | 'progress'
+    | 'startedAt'
+    | 'running'
+    | 'paused'
+    | 'finished'
+    | 'estimateSeconds'
+    | 'sizeBytes'
+    | 'renderProgress'
   >,
   {
     translate,

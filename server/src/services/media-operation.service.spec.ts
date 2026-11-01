@@ -120,6 +120,39 @@ describe(MediaOperationService.name, () => {
     );
   });
 
+  it('exposes only safe Studio export failures and current-attempt render measurements', () => {
+    const operation = operationStub({
+      kind: MediaOperationKind.StudioExport,
+      errorCode: 'studio_export_source_changed',
+      error: '/private/media/customer.mov?token=secret',
+      result: {
+        studioRenderProgress: {
+          attempt: 1,
+          stage: 'rendering',
+          unit: 'frames',
+          processed: 20,
+          total: 100,
+          lastProgressAt: 3000,
+          samples: [
+            { at: 1000, frames: 0 },
+            { at: 2000, frames: 10 },
+            { at: 3000, frames: 20 },
+          ],
+        },
+      },
+      attempt: 1,
+    });
+    const mapped = mapOperation(operation);
+    expect(mapped.error).toContain('sources');
+    expect(JSON.stringify(mapped)).not.toContain('/private/media');
+    expect(JSON.stringify(mapped)).not.toContain('secret');
+    expect(mapped.renderProgress?.framesPerSecond).toBe(10);
+    expect(mapOperation({ ...operation, attempt: 2 }).renderProgress?.framesPerSecond).toBeNull();
+    expect(
+      mapOperation(operationStub({ kind: MediaOperationKind.Restoration, error: 'Existing generic error' })).error,
+    ).toBe('Existing generic error');
+  });
+
   describe('internal speech compatibility boundary', () => {
     it('keeps speech outside the legacy public enum and fails closed at the shared mapper', () => {
       expect(MediaOperationKindSchema.safeParse(MediaOperationKind.SpeechTranscription).success).toBe(false);

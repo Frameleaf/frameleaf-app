@@ -19,18 +19,34 @@
 import { applyShapedCaptionLooks } from './bundled-worker-word-captions.mjs';
 
 export const REFRAME_PROFILE = 'reframe-v1';
+export const LANDSCAPE_REFRAME_PROFILE = 'reframe-landscape-v1';
 export const REFRAME_VERSION = 1;
-export const REFRAME_SHAPES = Object.freeze({ vertical: 9 / 16, square: 1 });
+export const REFRAME_SHAPES = Object.freeze({
+  landscape: 16 / 9,
+  vertical: 9 / 16,
+  square: 1,
+});
 export const REFRAME_MAX_POINTS = 8;
 
 /** The short side of each export resolution (mirrors `RESOLUTION_SHORT_SIDE`). */
-const SHORT_SIDE = Object.freeze({ '720p': 720, '1080p': 1080, '1440p': 1440, '2160p': 2160 });
+const SHORT_SIDE = Object.freeze({
+  '720p': 720,
+  '1080p': 1080,
+  '1440p': 1440,
+  '2160p': 2160,
+});
 
 /**
  * Where titles and captions may sit, as fractions of the shaped frame: clear of the edges, and for a
  * vertical film clear of the top and bottom where phone apps draw their own buttons and captions.
  */
 export const SAFE_AREA = Object.freeze({
+  landscape: Object.freeze({
+    left: 0.06,
+    right: 0.06,
+    top: 0.06,
+    bottom: 0.08,
+  }),
   vertical: Object.freeze({ left: 0.06, right: 0.06, top: 0.1, bottom: 0.18 }),
   square: Object.freeze({ left: 0.06, right: 0.06, top: 0.06, bottom: 0.08 }),
 });
@@ -59,7 +75,11 @@ const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 export const shapedOutputSize = (shape, resolution) => {
   const short = SHORT_SIDE[resolution];
   if (!short || !Object.hasOwn(REFRAME_SHAPES, shape)) return null;
-  return shape === 'vertical' ? { width: short, height: even((short * 16) / 9) } : { width: short, height: short };
+  return shape === 'landscape'
+    ? { width: even((short * 16) / 9), height: short }
+    : shape === 'vertical'
+      ? { width: short, height: even((short * 16) / 9) }
+      : { width: short, height: short };
 };
 
 /**
@@ -69,9 +89,17 @@ export const shapedOutputSize = (shape, resolution) => {
 export const cropRegion = (canvas, shape) => {
   const aspect = REFRAME_SHAPES[shape];
   if (canvas.width / canvas.height >= aspect) {
-    return { width: canvas.height * aspect, height: canvas.height, horizontal: true };
+    return {
+      width: canvas.height * aspect,
+      height: canvas.height,
+      horizontal: true,
+    };
   }
-  return { width: canvas.width, height: canvas.width / aspect, horizontal: false };
+  return {
+    width: canvas.width,
+    height: canvas.width / aspect,
+    horizontal: false,
+  };
 };
 
 /** The crop centre of a shot at progress 0..1 along its path (linear between points). */
@@ -155,7 +183,9 @@ const groupOf = (groups, property) =>
   (Array.isArray(groups) ? groups : []).find((group) => group?.property === property && group.keyframes?.length > 0);
 
 const expressionOn = (entry, properties) =>
-  (entry?.expressions ?? []).some((expression) => expression?.enabled !== false && properties.has(expression?.targetProperty));
+  (entry?.expressions ?? []).some(
+    (expression) => expression?.enabled !== false && properties.has(expression?.targetProperty),
+  );
 
 const POSITION = new Set(['x', 'y', 'position']);
 
@@ -170,8 +200,7 @@ const shiftHorizontally = (item, entry, dx) => {
   }
 };
 
-const animatedSideways = (entry) =>
-  !!groupOf(entry?.properties, 'x') || !!groupOf(entry?.vectorProperties, 'position');
+const animatedSideways = (entry) => !!groupOf(entry?.properties, 'x') || !!groupOf(entry?.vectorProperties, 'position');
 
 /**
  * Titles and captions: the box narrows to the safe width and the box centre moves inside the safe
@@ -188,7 +217,9 @@ const placeText = (item, entry, frame, original, safe) => {
   const newWidth = Math.min(width, safeWidth);
   const placeX = (x) => clamp(x, safeCentreX - (safeWidth - newWidth) / 2, safeCentreX + (safeWidth - newWidth) / 2);
   const placeY = (y) =>
-    height >= safeBottom - safeTop ? (safeTop + safeBottom) / 2 : clamp(y, safeTop + height / 2, safeBottom - height / 2);
+    height >= safeBottom - safeTop
+      ? (safeTop + safeBottom) / 2
+      : clamp(y, safeTop + height / 2, safeBottom - height / 2);
   item.transform = {
     ...transform,
     width: newWidth,
@@ -207,7 +238,11 @@ const placeText = (item, entry, frame, original, safe) => {
   }
   for (const keyframe of groupOf(entry?.vectorProperties, 'position')?.keyframes ?? []) {
     if (finite(keyframe.value?.x) && finite(keyframe.value?.y)) {
-      keyframe.value = { ...keyframe.value, x: placeX(keyframe.value.x), y: placeY(keyframe.value.y) };
+      keyframe.value = {
+        ...keyframe.value,
+        x: placeX(keyframe.value.x),
+        y: placeY(keyframe.value.y),
+      };
     }
   }
 };
@@ -232,10 +267,17 @@ const centreUnder = (items, shots, orders, frame) => {
  */
 export const reframeGraph = (graph, reframe) => {
   const derived = structuredClone(graph);
-  const original = { width: graph.metadata.width, height: graph.metadata.height };
+  const original = {
+    width: graph.metadata.width,
+    height: graph.metadata.height,
+  };
   const crop = cropRegion(original, reframe.shape);
   const frame = { width: even(crop.width), height: even(crop.height) };
-  derived.metadata = { ...derived.metadata, width: frame.width, height: frame.height };
+  derived.metadata = {
+    ...derived.metadata,
+    width: frame.width,
+    height: frame.height,
+  };
   const timeline = derived.timeline;
   const items = timeline.items;
   const orders = trackOrder(timeline);
@@ -270,7 +312,12 @@ export const reframeGraph = (graph, reframe) => {
     }
     // Pictures and everything else that draws keep their size on the project canvas.
     const box = pictureBox(item, original);
-    if (box) item.transform = { ...item.transform, width: box.width, height: box.height };
+    if (box)
+      item.transform = {
+        ...item.transform,
+        width: box.width,
+        height: box.height,
+      };
     else if (PICTURE_TYPES.has(item.type)) {
       refuse('reframe_unsupported', `A ${item.type} clip has no picture size to reframe.`);
     }

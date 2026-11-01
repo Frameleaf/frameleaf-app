@@ -55,9 +55,8 @@ type GroupSession = {
 };
 
 /**
- * Select or clear a whole group. Clearing needs no loading: ids of months that were never loaded
- * cannot be in the selection. Selecting loads the missing months first and selects only when every
- * month loaded and the session is still on the revision the click was made in.
+ * Collect ids one page at a time before its assets can be evicted. Clearing also reads missing
+ * pages: previously selected ids can outlive their loaded assets.
  */
 export const selectGroupAfterLoading = async <M>(
   session: GroupSession,
@@ -70,23 +69,29 @@ export const selectGroupAfterLoading = async <M>(
   }: Omit<GroupLoadOptions<M>, 'isCurrent'> & {
     months: readonly M[];
     checked: boolean;
-    /** The group's ids, read once its months are loaded. */
-    idsOf: () => string[];
+    /** One page's ids, read immediately after that page loads. */
+    idsOf: (month: M) => string[];
     /** Whether no newer group click superseded this one. */
     isLatest?: () => boolean;
   },
 ): Promise<GroupLoadOutcome> => {
-  if (!checked) {
-    session.selectGroup(idsOf(), false);
-    return 'done';
-  }
   const revision = session.revision;
-  const outcome = await loadMonthsInOrder(months, {
-    ...options,
-    isCurrent: () => session.revision === revision && isLatest(),
-  });
-  if (outcome === 'done') {
-    session.selectGroup(idsOf(), true);
+  const ids = new Set<string>();
+  for (const month of months) {
+    const outcome = await loadMonthsInOrder([month], {
+      ...options,
+      isCurrent: () => session.revision === revision && isLatest(),
+    });
+    if (outcome !== 'done') {
+      return outcome;
+    }
+    for (const id of idsOf(month)) {
+      ids.add(id);
+    }
   }
-  return outcome;
+  if (session.revision !== revision || !isLatest()) {
+    return 'stale';
+  }
+  session.selectGroup([...ids], checked);
+  return 'done';
 };

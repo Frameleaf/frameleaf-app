@@ -245,27 +245,78 @@ async function renderClaim(claim, recipe, context) {
     }
   }
 
+  const fonts = await prepareClaimFonts(claim, downloaded, lease.signal);
+  let frameTotal = recipe.frames * (recipe.pass === 'hdr' && recipe.hdr.transfer === 'pq' ? 2 : 1);
   await post('/progress', {
-    status: 'rendering',
+    status: 'preparing',
+    stage: 'preparing',
     processedUnits: 0,
-    totalUnits: recipe.frames,
+    totalUnits: frameTotal,
   });
   let reported = 0;
-  const report = (fraction) => {
-    const processed = Math.min(recipe.frames, Math.floor(fraction * recipe.frames));
-    if (processed - reported >= Math.max(1, Math.floor(recipe.frames / 20))) {
+  let reportedStage = 'preparing';
+  let lastReportedAt = Date.now();
+  let progressWrites = Promise.resolve();
+  const report = (fraction, evidence) => {
+    const measured =
+      evidence?.phase === 'rendering' &&
+      Number.isSafeInteger(evidence.currentFrame) &&
+      Number.isSafeInteger(evidence.totalFrames) &&
+      evidence.currentFrame >= 0 &&
+      evidence.totalFrames > 0 &&
+      evidence.currentFrame <= evidence.totalFrames;
+    const stage = ['encoding', 'finalizing'].includes(evidence?.phase)
+      ? 'finalising'
+      : evidence?.phase === 'preparing'
+        ? 'preparing'
+        : 'rendering';
+    const processed =
+      measured || (stage === 'finalising' && Number.isSafeInteger(evidence?.currentFrame))
+        ? evidence.currentFrame
+        : Math.min(frameTotal, Math.floor(fraction * frameTotal));
+    if (measured) frameTotal = evidence.totalFrames;
+    const now = Date.now();
+    if (
+      Number.isSafeInteger(processed) &&
+      (stage !== reportedStage ||
+        processed - reported >= Math.max(1, Math.floor(frameTotal / 20)) ||
+        (processed > reported && now - lastReportedAt >= 10_000))
+    ) {
       reported = processed;
-      void post('/progress', {
-        status: 'rendering',
-        processedUnits: processed,
-        totalUnits: recipe.frames,
-      }).catch(() => {});
+      reportedStage = stage;
+      lastReportedAt = now;
+      progressWrites = progressWrites
+        .then(() =>
+          post('/progress', {
+            status: stage === 'preparing' ? 'preparing' : 'rendering',
+            stage,
+            ...(measured && { unit: 'frames' }),
+            processedUnits: processed,
+            totalUnits: frameTotal,
+          }),
+        )
+        .catch(() => {});
     }
   };
+  const finalising = async () => {
+    await progressWrites;
+    await post('/progress', {
+      status: 'rendering',
+      stage: 'finalising',
+      processedUnits: frameTotal,
+      totalUnits: frameTotal,
+    });
+  };
   const engineOutput = path.join(folder, recipe.pass === 'engine' ? 'export.mp4' : 'master.mp4');
-  const fonts = await prepareClaimFonts(claim, downloaded, lease.signal);
   if (recipe.pass === 'hdr') {
-    const outputPath = await renderHdrMaster(recipe, { ...context, files, fonts, engineOutput, report });
+    const outputPath = await renderHdrMaster(recipe, {
+      ...context,
+      files,
+      fonts,
+      engineOutput,
+      report,
+    });
+    await finalising();
     onBytes((await stat(outputPath)).size);
     const mismatch = outputMismatch(recipe, await probe(outputPath, { signal: lease.signal }));
     if (mismatch) throw new BundledRefusal('output_mismatch', `The export was not written as promised: ${mismatch}.`);
@@ -282,6 +333,7 @@ async function renderClaim(claim, recipe, context) {
     onProgress: report,
   });
   lease.assertLive();
+  await finalising();
   let outputPath = engineOutput;
   if (recipe.pass !== 'engine') {
     outputPath = await secondPass(recipe, engineOutput, { ...context, ffmpeg });
@@ -299,7 +351,18 @@ async function renderClaim(claim, recipe, context) {
  * before it can be uploaded (`writeHdrMaster`). The engine's ordinary render supplies only the sound.
  */
 async function renderHdrMaster(recipe, context) {
-  const { renderer, probe, folder, lease, files, fonts, engineOutput, report, ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = context;
+  const {
+    renderer,
+    probe,
+    folder,
+    lease,
+    files,
+    fonts,
+    engineOutput,
+    report,
+    ffmpeg = 'ffmpeg',
+    ffprobe = 'ffprobe',
+  } = context;
   let audio;
   if (recipe.contractAudio) {
     await renderer.render({
@@ -316,7 +379,11 @@ async function renderHdrMaster(recipe, context) {
     const sound = (await probe(engineOutput, { signal: lease.signal })).streams.find(
       (stream) => stream.codec_type === 'audio',
     );
-    if (!sound) throw new BundledRefusal('no_audio', 'The engine wrote no sound for this project, so the HDR master would be silent.');
+    if (!sound)
+      throw new BundledRefusal(
+        'no_audio',
+        'The engine wrote no sound for this project, so the HDR master would be silent.',
+      );
     const plan = audioPlan(recipe.target, sound, new Set(renderer.encoders ?? ['aac']));
     audio = { path: engineOutput, stream: 0, codecArgs: plan.args };
   }
@@ -348,9 +415,14 @@ async function renderHdrMaster(recipe, context) {
   } catch (error) {
     if (lease.signal.aborted) throw lease.signal.reason;
     if (error instanceof BundledRefusal) throw error;
-    const reason = String(error?.message ?? error).trim().split('\n')[0];
+    const reason = String(error?.message ?? error)
+      .trim()
+      .split('\n')[0];
     if (/mastering display/.test(reason)) throw new BundledRefusal('hdr_mastering_exceeded', reason);
-    throw new BundledRefusal('hdr_master_failed', `The HDR master failed its decode-back check (${reason}); nothing was exported.`);
+    throw new BundledRefusal(
+      'hdr_master_failed',
+      `The HDR master failed its decode-back check (${reason}); nothing was exported.`,
+    );
   } finally {
     await rm(engineOutput, { force: true });
   }

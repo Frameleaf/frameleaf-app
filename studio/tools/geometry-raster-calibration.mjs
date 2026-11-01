@@ -240,7 +240,13 @@ export function validateBaseRaster(capture, envelope, binding) {
             '49c10b84ca0ea183e5b1d8056ba0be96a06fcb57a88a5c80a6a64f52b920e9ee' ||
           // FL-686 toolbar link removal; raster unchanged.
           binding.sourceSha256 ===
-            'cdcfa3a502ad4529a9b726c4de4b1d40a3cf132bb4da84112f10d6dbeafa4700')),
+            'cdcfa3a502ad4529a9b726c4de4b1d40a3cf132bb4da84112f10d6dbeafa4700' ||
+          // FL-731–733 editor workflows; verified raster producers unchanged.
+          binding.sourceSha256 ===
+            '27ee0089c32ce1f8976ca10eeda2a745d93970e913c042fc66672b8e1e4ce6f4' ||
+          // FL-734–736 workflows; verified raster producers unchanged.
+          binding.sourceSha256 ===
+            '253ed9a82591ab9c2aa765c387036438fcce858052fb9f88430aad2da69ee3d3')),
     'SOURCE_BROWSER',
   )
   check(

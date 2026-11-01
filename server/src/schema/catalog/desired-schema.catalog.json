@@ -35414,6 +35414,100 @@
       "synchronize": true
     },
     {
+      "name": "asset_landmark",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_landmark",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "landmarkId",
+          "tableName": "asset_landmark",
+          "nullable": false,
+          "isArray": false,
+          "length": 20,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "inference",
+          "tableName": "asset_landmark",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceAssetIds",
+          "tableName": "asset_landmark",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_landmark_landmarkId_idx",
+          "definition": "CREATE INDEX \"asset_landmark_landmarkId_idx\" ON public.asset_landmark USING btree (\"landmarkId\")",
+          "tableName": "asset_landmark",
+          "columnNames": [
+            "landmarkId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_landmark_pkey",
+          "definition": "PRIMARY KEY (\"assetId\", \"landmarkId\")",
+          "tableName": "asset_landmark",
+          "columnNames": [
+            "assetId",
+            "landmarkId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_landmark_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_landmark",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_landmark_inference_check",
+          "definition": "CHECK (((((inference IS NULL) AND (\"sourceAssetIds\" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality(\"sourceAssetIds\") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality(\"sourceAssetIds\") >= 2) AND (cardinality(\"sourceAssetIds\") <= 3)))) IS TRUE))",
+          "tableName": "asset_landmark",
+          "expression": "(((((inference IS NULL) AND (\"sourceAssetIds\" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality(\"sourceAssetIds\") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality(\"sourceAssetIds\") >= 2) AND (cardinality(\"sourceAssetIds\") <= 3)))) IS TRUE))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "render_worker",
       "columns": [
         {
@@ -42666,6 +42760,36 @@
           "using": "btree",
           "unique": false,
           "synchronize": true
+        },
+        {
+          "name": "asset_owner_added_page_idx",
+          "definition": "CREATE INDEX asset_owner_added_page_idx ON public.asset USING btree (\"ownerId\", (date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), (((\"createdAt\" AT TIME ZONE 'UTC'::text))::date), \"createdAt\", \"originalFileName\", id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "createdAt",
+            "originalFileName",
+            "id"
+          ],
+          "expression": "(date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"createdAt\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_owner_taken_page_idx",
+          "definition": "CREATE INDEX asset_owner_taken_page_idx ON public.asset USING btree (\"ownerId\", (date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), (((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date), \"fileCreatedAt\", \"originalFileName\", id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "fileCreatedAt",
+            "originalFileName",
+            "id"
+          ],
+          "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
         }
       ],
       "triggers": [
@@ -47232,308 +47356,6 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_landmark",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_landmark",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "landmarkId",
-          "tableName": "asset_landmark",
-          "nullable": false,
-          "isArray": false,
-          "length": 20,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "inference",
-          "tableName": "asset_landmark",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sourceAssetIds",
-          "tableName": "asset_landmark",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_landmark_landmarkId_idx",
-          "definition": "CREATE INDEX \"asset_landmark_landmarkId_idx\" ON public.asset_landmark USING btree (\"landmarkId\")",
-          "tableName": "asset_landmark",
-          "columnNames": [
-            "landmarkId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_landmark_pkey",
-          "definition": "PRIMARY KEY (\"assetId\", \"landmarkId\")",
-          "tableName": "asset_landmark",
-          "columnNames": [
-            "assetId",
-            "landmarkId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_landmark_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_landmark",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_landmark_inference_check",
-          "definition": "CHECK (((((inference IS NULL) AND (\"sourceAssetIds\" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality(\"sourceAssetIds\") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality(\"sourceAssetIds\") >= 2) AND (cardinality(\"sourceAssetIds\") <= 3)))) IS TRUE))",
-          "tableName": "asset_landmark",
-          "expression": "(((((inference IS NULL) AND (\"sourceAssetIds\" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality(\"sourceAssetIds\") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality(\"sourceAssetIds\") >= 2) AND (cardinality(\"sourceAssetIds\") <= 3)))) IS TRUE))",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "album_suggestion_dismissal",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumId",
-          "tableName": "album_suggestion_dismissal",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "album_suggestion_dismissal",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "album_suggestion_dismissal",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "album_suggestion_dismissal_assetId_idx",
-          "definition": "CREATE INDEX \"album_suggestion_dismissal_assetId_idx\" ON public.album_suggestion_dismissal USING btree (\"assetId\")",
-          "tableName": "album_suggestion_dismissal",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_suggestion_dismissal_albumId_idx",
-          "definition": "CREATE INDEX \"album_suggestion_dismissal_albumId_idx\" ON public.album_suggestion_dismissal USING btree (\"albumId\")",
-          "tableName": "album_suggestion_dismissal",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "album_suggestion_dismissal_pkey",
-          "definition": "PRIMARY KEY (\"albumId\", \"assetId\")",
-          "tableName": "album_suggestion_dismissal",
-          "columnNames": [
-            "albumId",
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_suggestion_dismissal_albumId_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON DELETE CASCADE",
-          "tableName": "album_suggestion_dismissal",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_suggestion_dismissal_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
-          "tableName": "album_suggestion_dismissal",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "album_suggestion_auto_add",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumId",
-          "tableName": "album_suggestion_auto_add",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "album_suggestion_auto_add",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "album_suggestion_auto_add",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "album_suggestion_auto_add_albumId_idx",
-          "definition": "CREATE INDEX \"album_suggestion_auto_add_albumId_idx\" ON public.album_suggestion_auto_add USING btree (\"albumId\")",
-          "tableName": "album_suggestion_auto_add",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_suggestion_auto_add_userId_idx",
-          "definition": "CREATE INDEX \"album_suggestion_auto_add_userId_idx\" ON public.album_suggestion_auto_add USING btree (\"userId\")",
-          "tableName": "album_suggestion_auto_add",
-          "columnNames": [
-            "userId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "album_suggestion_auto_add_pkey",
-          "definition": "PRIMARY KEY (\"albumId\", \"userId\")",
-          "tableName": "album_suggestion_auto_add",
-          "columnNames": [
-            "albumId",
-            "userId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_suggestion_auto_add_albumId_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON DELETE CASCADE",
-          "tableName": "album_suggestion_auto_add",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_suggestion_auto_add_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
-          "tableName": "album_suggestion_auto_add",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],

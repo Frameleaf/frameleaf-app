@@ -378,6 +378,7 @@ const StudioRenderCandidateSchema = z
       .boolean()
       .optional()
       .describe('This session renders vertical and square exports of its SDR video formats (FL-563)'),
+    landscapeReframe: z.boolean().optional().describe('This session renders true 16:9 landscape delivery crops'),
     sdrTenBit: z
       .boolean()
       .optional()

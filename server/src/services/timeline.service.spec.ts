@@ -23,6 +23,24 @@ describe(TimelineService.name, () => {
   });
 
   describe('getTimeBuckets', () => {
+    it('rejects sorted asset lookup when a shared link hides EXIF', async () => {
+      const auth = { ...authStub.admin, sharedLink: { showExif: false } } as typeof authStub.admin;
+      await expect(
+        sut.getTimeBuckets(auth, { pageSize: 500, locateAssetId: auth.user.id, sort: 'rating' }),
+      ).rejects.toThrow('does not allow sorting');
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+    });
+
+    it('keeps page summary options separate from the authorized asset filters', async () => {
+      const locateAssetId = '00000000-0000-4000-8000-000000000001';
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      await sut.getTimeBuckets(authStub.admin, { pageSize: 500, locateAssetId });
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({ userIds: [authStub.admin.user.id] }, authStub.admin, {
+        pageSize: 500,
+        locateAssetId,
+      });
+    });
+
     it("should return buckets if userId and albumId aren't set", async () => {
       mocks.asset.getTimeBuckets.mockResolvedValue([{ timeBucket: 'bucket', count: 1 }]);
 
@@ -192,6 +210,73 @@ describe(TimelineService.name, () => {
   });
 
   describe('getTimeBucket', () => {
+    it('rejects a changed page snapshot instead of overlapping adjacent pages', async () => {
+      mocks.asset.getTimeBucket.mockResolvedValue({
+        assets: JSON.stringify({ startCursor: 'new', endCursor: 'last' }),
+      });
+      await expect(
+        sut.getTimeBucket(authStub.admin, {
+          timeBucket: '2024-01-01',
+          take: 500,
+          firstAssetId: 'first',
+          lastAssetId: 'last',
+        }),
+      ).rejects.toThrow('Calendar page changed');
+    });
+
+    it('refreshes a page when an interior deletion keeps both boundary IDs', async () => {
+      mocks.asset.getTimeBucket.mockResolvedValue({
+        assets: JSON.stringify({ id: ['first', 'last'], startCursor: 'first', endCursor: 'last' }),
+      });
+      await expect(
+        sut.getTimeBucket(authStub.admin, {
+          timeBucket: '2024-01-01',
+          take: 3,
+          firstAssetId: 'first',
+          lastAssetId: 'last',
+        }),
+      ).rejects.toThrow('Calendar page changed');
+    });
+
+    it('checks album read access before returning page membership', async () => {
+      await expect(
+        sut.getTimeBucket(authStub.admin, {
+          timeBucket: '2024-01-01',
+          take: 500,
+          membershipAlbumId: 'private-album',
+        }),
+      ).rejects.toThrow();
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set(['private-album']),
+      );
+    });
+
+    it('requests membership only for the authorized bounded page', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{"id":[],"inAlbum":[]}' });
+      await sut.getTimeBucket(authStub.admin, { timeBucket: '2024-01-01', take: 500, membershipAlbumId: 'album-id' });
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        '2024-01-01',
+        { userIds: [authStub.admin.user.id], timeBucket: '2024-01-01' },
+        authStub.admin,
+        { take: 500, membershipAlbumId: 'album-id' },
+      );
+    });
+
+    it('keeps calendar pagination separate from the authorized timeline filters', async () => {
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{"id":[]}' });
+      const after = '00000000-0000-4000-8000-000000000001';
+      await sut.getTimeBucket(authStub.admin, { timeBucket: '2024-01-01', take: 500, after });
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        '2024-01-01',
+        { timeBucket: '2024-01-01', userIds: [authStub.admin.user.id] },
+        authStub.admin,
+        { take: 500, after },
+      );
+    });
+
     it('should return the assets for a album time bucket if user has album.read', async () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
       const json = `[{ id: ['asset-id'] }]`;

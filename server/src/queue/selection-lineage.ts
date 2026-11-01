@@ -60,16 +60,20 @@ export async function mirrorSelectionLineage(
       : sql`exists (select 1 from jsonb_to_recordset(${JSON.stringify(source.items)}::text::jsonb)
         as changed("runId" uuid, "itemKey" text, stage text)
         where (changed."runId", changed."itemKey", changed.stage) = (i."runId", i."itemKey", i.stage))`;
-  const { rows } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`update job_run_item shadow
-    set "jobId" = i."jobId", state = i.state from job_run_item i
+  // The empty-source guard prevents scanning a growing manifest before discovering there is no lineage.
+  const { rows } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`with source as materialized (
+    select i."jobId", i.state, membership."runId", origin."itemKey", origin.stage
+    from job_run_item i
     join job_selection_lineage origin on (origin."runId", origin."itemKey", origin.stage) = (i."runId", i."itemKey", i.stage)
     join job_selection_run membership on membership."selectionId" = origin."selectionId"
     where ${selected} and not origin.superseded
-      and (shadow."runId", shadow."itemKey", shadow.stage) = (membership."runId", origin."itemKey", origin.stage)
+  ) update job_run_item shadow set "jobId" = source."jobId", state = source.state from source
+    where exists (select 1 from source)
+      and (shadow."runId", shadow."itemKey", shadow.stage) = (source."runId", source."itemKey", source.stage)
       -- Only an unresolved copy may acquire its owner's outcome. Linked jobs already sync directly;
       -- a deliberately detached terminal request must never inherit a replacement's execution.
       and shadow."jobId" is null and shadow.state in ('pending','waiting')
-      and (shadow."jobId", shadow.state) is distinct from (i."jobId", i.state)
+      and (shadow."jobId", shadow.state) is distinct from (source."jobId", source.state)
     returning shadow."runId", shadow."itemKey", shadow.stage, shadow."rootItemKey"`.execute(tx);
   return rows;
 }

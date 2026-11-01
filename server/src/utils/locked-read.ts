@@ -240,15 +240,24 @@ const usableKey = async (keyIds: Buffer[], viewerId: string | null): Promise<Hel
 export const hasUsableLockedKey = async (keyIds: Buffer[], viewerId: string): Promise<boolean> =>
   !!(await usableKey(keyIds, viewerId));
 
-/** keyId (hex) → userId, from the key files; read again when an unknown key id turns up (at most once a minute). */
+/**
+ * keyId (hex) → userId, from the key files; read again when an unknown key id turns up. Each id that
+ * the key files lacked is looked for again at most once a minute (a former partner's stale entry), so
+ * someone who turns encryption on just after another read is still found: a job deferred without its
+ * owner is never woken by their unlock, only by the hourly sweep.
+ */
 let keyOwners = new Map<string, string>();
-let keyOwnersReadAt = 0;
+const missingAt = new Map<string, number>();
 const KEY_OWNERS_REFRESH_MS = 60_000;
 
 const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
   const hex = keyIds.map((id) => id.toString('hex'));
-  if (hex.some((id) => !keyOwners.has(id)) && Date.now() - keyOwnersReadAt > KEY_OWNERS_REFRESH_MS) {
-    keyOwnersReadAt = Date.now();
+  const now = Date.now();
+  const unknown = hex.filter((id) => !keyOwners.has(id));
+  if (unknown.some((id) => now - (missingAt.get(id) ?? 0) > KEY_OWNERS_REFRESH_MS)) {
+    for (const id of unknown) {
+      missingAt.set(id, now);
+    }
     try {
       const next = new Map<string, string>();
       // imported when first needed: file.ts (and so every controller) imports this module, and the
@@ -259,6 +268,9 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
         next.set(toKeyId(Buffer.from(file.publicKey, 'base64')).toString('hex'), file.userId);
       }
       keyOwners = next;
+      for (const id of next.keys()) {
+        missingAt.delete(id);
+      }
     } catch {
       // the owners only make the error more useful; the error stands without them
     }
@@ -269,7 +281,7 @@ const ownersOf = async (keyIds: Buffer[]): Promise<string[]> => {
 /** For tests. */
 export const clearLockedKeyOwners = () => {
   keyOwners = new Map();
-  keyOwnersReadAt = 0;
+  missingAt.clear();
 };
 
 const unavailable = async (keyIds: Buffer[], viewerId: string | null = null) => {

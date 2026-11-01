@@ -960,12 +960,21 @@
    * the server could resolve.
    */
   const selectAllLoaded = async () => {
-    for (const month of manager.months) {
+    const months = manager.months;
+    const revision = session.revision;
+    const ids: string[] = [];
+    for (const month of months) {
       if (!month.isLoaded) {
         await manager.loadTimelineMonth(month.yearMonth);
       }
+      if (manager.months !== months || session.revision !== revision || !month.isLoaded) {
+        return;
+      }
+      for (const asset of month.assetsIterator()) {
+        ids.push(asset.id);
+      }
     }
-    session.dispatch({ type: 'selection', ids: loadedIds() });
+    session.dispatch({ type: 'selection', ids });
   };
 
   const selectAllMatching = async () => {

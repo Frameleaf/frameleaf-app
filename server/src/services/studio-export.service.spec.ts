@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { StudioExportCreateDto } from 'src/dtos/studio-export.dto.js';
+import { StudioExportBatchCreateDto, StudioExportCreateDto } from 'src/dtos/studio-export.dto.js';
 import {
   AssetLockReason,
   AssetType,
@@ -301,6 +301,7 @@ describe(StudioExportService.name, () => {
   afterEach(() => expectLocalisedSystemNotices(events.emit));
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
+  let logError: ReturnType<typeof vi.fn>;
 
   // Model the two production reads separately: official sessions and their fork-owned proof.
   const mockRenderSessions = (fixtures: ReturnType<typeof liveSession>[]) => {
@@ -455,8 +456,9 @@ describe(StudioExportService.name, () => {
         ),
     };
 
+    logError = vi.fn();
     sut = new StudioExportService(
-      { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: logError, debug: vi.fn() } as never,
       repository as never,
       operations as never,
       projects as never,
@@ -552,6 +554,165 @@ describe(StudioExportService.name, () => {
       color: 'preserve',
       resolution: '720p',
     } as StudioExportCreateDto;
+
+    it('validates batch destinations, required revision and unique delivery shapes', () => {
+      const batch = {
+        expectedRevision: 3,
+        requestKey: 'batch',
+        destination: 'local',
+        variants: [{ ...dto, destination: undefined, shape: 'landscape' }],
+      };
+      delete (batch.variants[0] as { destination?: unknown }).destination;
+      expect(StudioExportBatchCreateDto.schema.safeParse(batch).success).toBe(true);
+      expect(StudioExportBatchCreateDto.schema.safeParse({ ...batch, destination: 'frameleaf-cloud' }).success).toBe(
+        false,
+      );
+      expect(StudioExportBatchCreateDto.schema.safeParse({ ...batch, expectedRevision: undefined }).success).toBe(
+        false,
+      );
+      expect(
+        StudioExportBatchCreateDto.schema.safeParse({ ...batch, variants: [...batch.variants, ...batch.variants] })
+          .success,
+      ).toBe(false);
+    });
+
+    it('pins every child to the reviewed revision and repeats stable child keys after partial admission', async () => {
+      const create = vi
+        .spyOn(sut, 'create')
+        .mockResolvedValueOnce({ version: { id: VERSION }, operation: { id: RENDER } } as never)
+        .mockRejectedValueOnce(new ConflictException({ code: 'studio_export_unsupported', message: '/private/path' }))
+        .mockResolvedValue({ version: { id: VERSION }, operation: { id: RENDER } } as never);
+      const batch = StudioExportBatchCreateDto.schema.parse({
+        expectedRevision: 3,
+        requestKey: 'batch',
+        destination: 'lan',
+        variants: ['landscape', 'vertical'].map((shape) => ({
+          format: 'mp4-h264',
+          color: 'preserve',
+          resolution: '720p',
+          shape,
+        })),
+      });
+      const first = await sut.createBatch(auth(), PROJECT, batch);
+      expect(first.items.map((item) => !!item.result)).toEqual([true, false]);
+      expect(first.items[1]).toMatchObject({ errorCode: 'studio_export_unsupported' });
+      expect(first.items[1]!.error).not.toContain('/private/path');
+      await sut.createBatch(auth(), PROJECT, batch);
+      expect(create.mock.calls[0]![2]).toEqual(create.mock.calls[2]![2]);
+      expect(create.mock.calls[1]![2]).toEqual(create.mock.calls[3]![2]);
+      expect(create.mock.calls[0]![2].requestKey).not.toEqual(create.mock.calls[1]![2].requestKey);
+      for (const call of create.mock.calls) expect(call[3]?.batch).toMatchObject({ requestKey: 'batch', revision: 3 });
+      create.mockRestore();
+    });
+
+    it('logs unexpected batch admission failures safely and still admits independent deliveries', async () => {
+      const create = vi
+        .spyOn(sut, 'create')
+        .mockRejectedValueOnce(new Error('database unavailable /private/storage?token=secret-value'))
+        .mockRejectedValueOnce(new ConflictException({ code: 'studio_export_unsupported' }))
+        .mockResolvedValue({ version: { id: VERSION }, operation: { id: RENDER } } as never);
+      const batch = StudioExportBatchCreateDto.schema.parse({
+        expectedRevision: 3,
+        requestKey: 'private-retry-key',
+        destination: 'lan',
+        variants: ['landscape', 'vertical', 'square'].map((shape) => ({
+          format: 'mp4-h264',
+          color: 'preserve',
+          resolution: '720p',
+          shape,
+        })),
+      });
+      const result = await sut.createBatch(auth(), PROJECT, batch);
+      expect(result.items.map((item) => !!item.result)).toEqual([false, false, true]);
+      expect(result.items[0]).toMatchObject({ errorCode: 'studio_export_delivery_refused' });
+      expect(logError).toHaveBeenCalledExactlyOnceWith(
+        `Unexpected Studio export admission failure for project ${PROJECT}, delivery landscape`,
+      );
+      const publicAndOperatorOutput = JSON.stringify([result, logError.mock.calls]);
+      expect(publicAndOperatorOutput).not.toContain('secret-value');
+      expect(publicAndOperatorOutput).not.toContain('/private/storage');
+      expect(publicAndOperatorOutput).not.toContain('private-retry-key');
+      create.mockRestore();
+    });
+
+    it('authorizes the pinned stored revision even after a newer head exists, and checks current source access', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      repository.createWithRender.mockResolvedValue({ operation: operation(), version: versionRow() });
+      await sut.create(
+        auth(),
+        PROJECT,
+        { ...dto, expectedRevision: 3 },
+        { batch: { requestKey: 'batch', digest: 'binding', revision: 3 } },
+      );
+      expect(studio.authorizeRevision).toHaveBeenCalledWith(auth(), expect.objectContaining({ revision: 3 }));
+      expect(repository.createWithRender.mock.calls[0]![0].snapshot).toMatchObject({
+        revision: 3,
+        batchDigest: 'binding',
+        batchKey: 'batch',
+      });
+      studio.authorizeRevision.mockResolvedValue(authorized({ manifest: { complete: false, refusedCount: 1 } }));
+      await expect(
+        sut.create(auth(), PROJECT, dto, { batch: { requestKey: 'batch', digest: 'binding', revision: 3 } }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.createWithRender).toHaveBeenCalledTimes(1);
+    });
+
+    it('admits independent shapes through existing worker and source checks, while refusing an unsupported sibling', async () => {
+      const graph = clipGraph();
+      studio.authorizeRevision.mockResolvedValue(
+        authorized({ envelope: { graph: { ...graph, metadata: { ...graph.metadata, width: 1920, height: 1080 } } } }),
+      );
+      mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1', 'reframe-landscape-v1'] })]);
+      repository.createWithRender.mockResolvedValue({ operation: operation(), version: versionRow() });
+      const result = await sut.createBatch(
+        auth(),
+        PROJECT,
+        StudioExportBatchCreateDto.schema.parse({
+          expectedRevision: 3,
+          requestKey: 'real-batch',
+          destination: 'lan',
+          variants: [
+            {
+              format: 'mp4-h264',
+              color: 'preserve',
+              resolution: '720p',
+              shape: 'landscape',
+              framing: [{ clipId: 'clip-v', path: [{ t: 0.5, x: 0.6 }] }],
+            },
+            { format: 'mp4-hevc-main10', color: 'preserve', resolution: '720p', shape: 'vertical' },
+            {
+              format: 'mp4-h264',
+              color: 'preserve',
+              resolution: '720p',
+              shape: 'square',
+              framing: [{ clipId: 'clip-v', path: [{ t: 0.5, x: 0.4 }] }],
+            },
+          ],
+        }),
+      );
+      expect(result.items.map((item) => !!item.result)).toEqual([true, false, true]);
+      expect(repository.createWithRender).toHaveBeenCalledTimes(2);
+      const jobs = repository.createWithRender.mock.calls.map(([job]) => job);
+      expect(jobs.map((job) => job.settings.shape)).toEqual(['landscape', 'square']);
+      expect(jobs.map((job) => job.snapshot.revision)).toEqual([3, 3]);
+      expect(jobs[0]!.label).toContain('landscape');
+      expect(jobs[1]!.settings.reframe).toMatchObject({ shots: { 'clip-v': [{ t: 0.5, x: 0.4 }] } });
+    });
+
+    it('refuses a reused child key whose reviewed batch payload changed', async () => {
+      operations.getByRequestKey.mockResolvedValue(
+        operation({ projectId: PROJECT, snapshot: { batchDigest: 'original' } }),
+      );
+      await expect(
+        sut.create(
+          auth(),
+          PROJECT,
+          { ...dto, requestKey: 'child' },
+          { batch: { requestKey: 'batch', digest: 'changed', revision: 3 } },
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
 
     it.each([{ subtitleMode: 'burn' }, { subtitleMode: 'off' }, { audio: 'stereo' }])(
       'refuses photo-only incompatible settings %j before creating work',
@@ -1215,6 +1376,19 @@ describe(StudioExportService.name, () => {
         const { version } = await sut.create(auth(), PROJECT, shapedDto);
         expect(version.settings).toMatchObject({ shape: 'vertical' });
         expect(version.settings).not.toHaveProperty('reframe');
+      });
+
+      it('keeps landscape out of the legacy response enum without changing its render settings', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1', 'reframe-landscape-v1'] })]);
+        repository.createWithRender.mockImplementation((job, version) => ({
+          operation: operation(),
+          version: versionRow({ ...version, state: StudioExportVersionState.Rendering }),
+        }));
+        const { version } = await sut.create(auth(), PROJECT, { ...shapedDto, shape: 'landscape' });
+        expect(version.settings.deliveryShape).toBe('landscape');
+        expect(version.settings).not.toHaveProperty('shape');
+        expect(version.settings).not.toHaveProperty('reframe');
+        expect(repository.createWithRender.mock.calls[0][0].settings.shape).toBe('landscape');
       });
 
       it('is offered only to a render worker that reframes', async () => {

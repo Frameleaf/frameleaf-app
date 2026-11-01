@@ -1,13 +1,17 @@
-import { Kysely, sql } from 'kysely';
+import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { queueAdmission } from 'src/queue/admission.js';
-import { freezeSelection, shareSelectionPage } from 'src/queue/manifest.js';
+import { attachLibraryParticipants } from 'src/queue/library-admission.js';
+import { attachProducerRun, freezeSelection, shareSelectionPage, shareSelections } from 'src/queue/manifest.js';
+import { mirrorSelectionLineage } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
 import * as selectionHeaders from 'src/schema/migrations/1791101300000-SelectionOutcomeHeaders.js';
 import * as selectionLineage from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
 import * as librarySources from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('selection capture isolation', () => {
@@ -132,6 +136,292 @@ describe('selection capture isolation', () => {
     expect(await store.complete(claim, [])).toBe(true);
     expect(await store.feedManifest(queue)).toBe(6);
   });
+
+  it.each([false, true])(
+    'renews other leases without waiting for a producer publication fence (expired: %s)',
+    async (expired) => {
+      await store.enqueue([producer(), intent({ queue: otherQueue, name: 'other' })]);
+      const [claim] = await store.claim(queue, worker);
+      const [other] = await store.claim(otherQueue, worker);
+      const { rows: before } = await sql<{ id: string; lease: Date }>`update job
+      set "leaseExpiresAt" = now() + interval '20 seconds'
+      where id in (${claim.id}::uuid, ${other.id}::uuid)
+      returning id, "leaseExpiresAt" as lease`.execute(db);
+      const leases = new Map(before.map((row) => [row.id, row.lease]));
+      const locked = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const fence = db.transaction().execute(async (tx) => {
+        await sql`select id from job where id = ${claim.id}::uuid for no key update`.execute(tx);
+        if (expired) {
+          await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
+          where id = ${claim.id}::uuid`.execute(tx);
+        }
+        locked.resolve();
+        await release.promise;
+      });
+      await locked.promise;
+      const heartbeat = store.heartbeat(worker, [claim, other]);
+      try {
+        await within(heartbeat);
+        const { rows } = await sql<{ id: string; lease: Date }>`select id, "leaseExpiresAt" as lease
+        from job where id in (${claim.id}::uuid, ${other.id}::uuid)`.execute(db);
+        expect(rows.find(({ id }) => id === claim.id)?.lease).toEqual(leases.get(claim.id));
+        expect(rows.find(({ id }) => id === other.id)!.lease.getTime()).toBeGreaterThan(
+          leases.get(other.id)!.getTime(),
+        );
+      } finally {
+        release.resolve();
+        await fence;
+        await heartbeat;
+      }
+      await store.heartbeat(worker, [claim]);
+      const {
+        rows: [renewed],
+      } = await sql<{ lease: Date }>`select "leaseExpiresAt" as lease
+      from job where id = ${claim.id}::uuid`.execute(db);
+      if (expired) {
+        expect(renewed.lease.getTime()).toBeLessThan(leases.get(claim.id)!.getTime());
+        expect(await store.complete(claim, [])).toBe(false);
+      } else {
+        expect(renewed.lease.getTime()).toBeGreaterThan(leases.get(claim.id)!.getTime());
+      }
+    },
+  );
+
+  it('does not scan an uncommitted manifest for an unrelated job with no lineage', async () => {
+    const runId = randomUUID();
+    await sql`insert into job_run(id, kind, selection) values (${runId}::uuid, 'fixture', '{}')`.execute(db);
+    await sql`analyze job_run_item`.execute(db);
+    const inserted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const growing = db.transaction().execute(async (tx) => {
+      await sql`insert into job_run_item("runId", "itemKey", stage, queue, selection)
+        select ${runId}::uuid, n::text, 'fixture', ${queue}, '{}'::jsonb
+        from generate_series(1,25000) n`.execute(tx);
+      inserted.resolve();
+      await release.promise;
+    });
+    await inserted.promise;
+    const {
+      rows: [database],
+    } = await sql<{ name: string }>`select current_database() name`.execute(db);
+    let captured: CompiledQuery | undefined;
+    const observed = new Kysely<any>({
+      ...getKyselyConfig({
+        connectionType: 'url',
+        url: canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, database.name),
+      }),
+      log: (event) => {
+        if (event.level === 'query' && event.query.sql.includes('update job_run_item shadow')) captured = event.query;
+      },
+    });
+    try {
+      expect(await mirrorSelectionLineage(observed, { jobIds: [randomUUID()] })).toEqual([]);
+      expect(captured).toBeDefined();
+      type Plan = { Alias?: string; 'Actual Loops': number; Plans?: Plan[] };
+      const { rows } = await observed.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
+        CompiledQuery.raw(`explain (analyze, buffers, format json) ${captured!.sql}`, [...captured!.parameters]),
+      );
+      const nodes = (node: Plan): Plan[] => [node, ...(node.Plans ?? []).flatMap((child) => nodes(child))];
+      const scans = nodes(rows[0]['QUERY PLAN'][0].Plan)
+        .slice(1)
+        .filter((node) => node.Alias === 'shadow');
+      expect(scans.length).toBeGreaterThan(0);
+      expect(scans.every((node) => node['Actual Loops'] === 0)).toBe(true);
+    } finally {
+      release.resolve();
+      await growing;
+      await observed.destroy();
+    }
+  });
+
+  it('captures and shares through durable headers without rewriting legacy version counters', async () => {
+    await sql`create function reject_legacy_selection_version() returns trigger language plpgsql as $$
+      begin raise exception 'legacy selection counter write'; end $$`.execute(db);
+    await sql`create trigger reject_legacy_selection_version before update of "selectionVersion" on job_run_item
+      for each statement execute function reject_legacy_selection_version()`.execute(db);
+    try {
+      const ownRun = await store.createRun('capture-owner', {});
+      await store.enqueue([producer(ownRun)]);
+      const [claim] = await store.claim(queue, worker);
+      await freeze(claim);
+      const lateRun = await store.createRun('capture-late', {});
+      await store.enqueue([producer(lateRun)]);
+      await shareSelections(db, claim.id);
+      const { rows } = await sql<{ runId: string; complete: boolean }>`select "runId", "copyComplete" as complete
+        from job_selection_run where "runId" in (${ownRun}::uuid, ${lateRun}::uuid)`.execute(db);
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          { runId: ownRun, complete: true },
+          { runId: lateRun, complete: true },
+        ]),
+      );
+      expect(await capturedKeys(ownRun)).toHaveLength(6);
+      expect(await capturedKeys(lateRun)).toEqual(await capturedKeys(ownRun));
+      expect(await store.complete(claim, [])).toBe(true);
+    } finally {
+      await sql`drop trigger reject_legacy_selection_version on job_run_item`.execute(db);
+      await sql`drop function reject_legacy_selection_version()`.execute(db);
+    }
+  });
+
+  it.each([false, true])('refreshes large-capture estimates before publication, cancelled: %s', async (cancel) => {
+    const controller = new AbortController();
+    let armed = false;
+    let analyses = 0;
+    const observed = await getKyselyDB(undefined, (event) => {
+      if (armed && event.level === 'query' && event.query.sql === 'analyze job_run_item') {
+        analyses++;
+        if (cancel) controller.abort(new Error('cancel after analyze'));
+      }
+    });
+    try {
+      const localStore = new SqlQueueStore(observed);
+      await localStore.initialize([queue], worker);
+      await localStore.enqueue([producer()]);
+      const [claim] = await localStore.claim(queue, worker);
+      await observed.transaction().execute(async (tx) => {
+        await sql`select name from job_queue order by name for no key update`.execute(tx);
+        await attachProducerRun(tx, claim);
+      });
+      await sql`analyze job_run_item`.execute(observed);
+      armed = true;
+      const captureContext = { ...context(claim), signal: controller.signal };
+      const capture = freezeSelection(
+        observed,
+        intent(),
+        observed
+          .selectFrom(sql<{ id: string }>`(select n::text id from generate_series(1,10000)n)`.as('selected'))
+          .select('id'),
+        captureContext,
+      );
+      if (cancel) {
+        await expect(capture).rejects.toThrow('cancel after analyze');
+        const {
+          rows: [snapshot],
+        } = await sql<{ capturedAt: Date | null; count: number }>`select "capturedAt",
+          (select count(*)::int from job_run_item where "selectionId" = s.id) count
+          from job_selection s where s."producerId" = ${claim.id}::uuid`.execute(observed);
+        expect(snapshot).toEqual({ capturedAt: null, count: 0 });
+        return;
+      }
+      const runId = await capture;
+      await freezeSelection(
+        observed,
+        intent(),
+        observed.selectFrom(sql<{ id: string }>`(select 'new'::text id)`.as('selected')).select('id'),
+        captureContext,
+      );
+      expect(analyses).toBe(1);
+      const {
+        rows: [statistics],
+      } = await sql<{ estimate: number }>`select reltuples::int estimate
+        from pg_class where oid = 'job_run_item'::regclass`.execute(observed);
+      expect(statistics.estimate).toBeGreaterThanOrEqual(10_000);
+      expect(await localStore.complete(claim, [])).toBe(true);
+      expect(await localStore.feedManifest(queue)).toBe(250);
+      const {
+        rows: [counts],
+      } = await sql<{ selected: number; admitted: number }>`select count(*)::int selected,
+        count("jobId")::int admitted from job_run_item where "runId" = ${runId}::uuid and "selectionId" is not null`.execute(
+        observed,
+      );
+      expect(counts).toEqual({ selected: 10_000, admitted: 250 });
+    } finally {
+      await observed.destroy();
+    }
+  });
+
+  it.each([
+    ['producer', 'none'],
+    ['queue', 'none'],
+    ['producer', 'headers'],
+    ['queue', 'headers'],
+    ['producer', 'lineage'],
+    ['queue', 'lineage'],
+  ] as const)(
+    'skips frozen items during %s attachment with unrelated library state: %s',
+    async (mode, unrelatedState) => {
+      let attachment: CompiledQuery | undefined;
+      const observed = await getKyselyDB(undefined, (event) => {
+        if (event.level === 'query' && event.query.sql.startsWith('with candidates as materialized'))
+          attachment = event.query;
+      });
+      try {
+        const localStore = new SqlQueueStore(observed);
+        await localStore.initialize([queue], worker);
+        await localStore.enqueue([producer()]);
+        const [claim] = await localStore.claim(queue, worker);
+        const runId = await freezeSelection(
+          observed,
+          intent(),
+          observed.selectFrom(sql<{ id: string }>`(select 'unused'::text id where false)`.as('selected')).select('id'),
+          context(claim),
+        );
+        const {
+          rows: [selection],
+        } = await sql<{ id: string }>`select id from job_selection where "runId" = ${runId}::uuid`.execute(observed);
+        expect(
+          await attachLibraryParticipants(observed, mode === 'producer' ? { producerId: claim.id } : { queue }),
+        ).toBe(false);
+        expect(attachment).toBeDefined();
+        if (unrelatedState !== 'none') {
+          const unrelatedRun = await localStore.createRun('unrelated-library', {});
+          const childId = randomUUID();
+          await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"sourceKind","libraryOperationId","capturedAt","sourceClosedAt")
+            values (${childId}::uuid,${unrelatedRun}::uuid,'unrelated-child',${queue},true,false,60000,'ready','library-child',${unrelatedRun}::uuid,now(),now())`.execute(
+            observed,
+          );
+          if (unrelatedState === 'lineage') {
+            const frozenId = randomUUID();
+            await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state)
+              values (${frozenId}::uuid,${unrelatedRun}::uuid,'unrelated-frozen',${queue},true,false,60000,'ready')`.execute(
+              observed,
+            );
+            await sql`insert into job_run_item("runId","itemKey",stage,queue,selection,"selectionId","libraryOriginComplete")
+              values (${unrelatedRun}::uuid,'unrelated-child','fixture',${queue},'{}'::jsonb,${childId}::uuid,true)`.execute(
+              observed,
+            );
+            await sql`insert into job_selection_run("runId","selectionId","copyComplete")
+              values (${unrelatedRun}::uuid,${frozenId}::uuid,true)`.execute(observed);
+            await sql`insert into job_selection_lineage("selectionId","runId","itemKey",stage)
+              values (${frozenId}::uuid,${unrelatedRun}::uuid,'unrelated-child','fixture')`.execute(observed);
+          }
+        }
+        await sql`analyze job_run_item`.execute(observed);
+        await observed.transaction().execute(async (tx) => {
+          // During capture, new frozen rows are visible while statistics still describe producer requests.
+          await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
+          select ${runId}::uuid, n::text, n::text, 'fixture', ${queue}, '{}'::jsonb, ${selection.id}::uuid
+          from generate_series(1,25000)n`.execute(tx);
+          type Plan = {
+            Alias?: string;
+            'Actual Rows': number;
+            'Actual Loops': number;
+            'Rows Removed by Filter'?: number;
+            Plans?: Plan[];
+          };
+          const { rows } = await tx.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
+            CompiledQuery.raw(`explain (analyze, buffers, format json) ${attachment!.sql}`, [
+              ...attachment!.parameters,
+            ]),
+          );
+          const nodes = (node: Plan): Plan[] => [node, ...(node.Plans ?? []).flatMap((child) => nodes(child))];
+          const items = nodes(rows[0]['QUERY PLAN'][0].Plan).filter((node) => node.Alias === 'item');
+          expect(items.length).toBeGreaterThan(0);
+          expect(
+            items.reduce(
+              (total, node) =>
+                total + (node['Actual Rows'] + (node['Rows Removed by Filter'] ?? 0)) * node['Actual Loops'],
+              0,
+            ),
+          ).toBeLessThanOrEqual(mode === 'queue' && unrelatedState === 'lineage' ? 1 : 0);
+        });
+      } finally {
+        await observed.destroy();
+      }
+    },
+  );
 
   it('rolls back partial materialization on cancellation and never publishes it', async () => {
     await store.enqueue([producer()]);

@@ -3075,6 +3075,13 @@ export type MediaOperationDto = {
     /** Percent complete, from counted work */
     progress: number;
     projectId: string | null;
+    /** Studio export measurements from the current worker attempt; ETA covers rendering only */
+    renderProgress?: {
+        framesPerSecond: number | null;
+        lastProgressAt: string | null;
+        remainingRenderSeconds: number | null;
+        stage: StudioRenderStage;
+    } | null;
     /** The asset a completed job published */
     resultAssetId: string | null;
     /** When a job waiting for its automatic retry may run again */
@@ -9950,6 +9957,13 @@ export type MediaOperationDetailDto = {
     /** Percent complete, from counted work */
     progress: number;
     projectId: string | null;
+    /** Studio export measurements from the current worker attempt; ETA covers rendering only */
+    renderProgress?: {
+        framesPerSecond: number | null;
+        lastProgressAt: string | null;
+        remainingRenderSeconds: number | null;
+        stage: StudioRenderStage;
+    } | null;
     /** The asset a completed job published */
     resultAssetId: string | null;
     /** When a job waiting for its automatic retry may run again */
@@ -10196,6 +10210,8 @@ export type StudioRenderCandidateDto = {
     embeddedOutputFormats?: StudioExportFormat[];
     gpuMemoryBytes: number | null;
     hdr10: boolean;
+    /** This session renders true 16:9 landscape delivery crops */
+    landscapeReframe?: boolean;
     maxBitDepth: number;
     /** Output formats whose exact writer and container this session verified */
     outputFormats: StudioExportFormat[];
@@ -14072,8 +14088,12 @@ export type RenderWorkerProgressDto = {
     claimToken: string;
     outputBytes?: string;
     processedUnits: number;
+    /** Actual Studio export phase; never advances the publication state */
+    stage?: StudioRenderStage;
     status: Status11;
     totalUnits: number | null;
+    /** Present only when counted units are actual rendered frames */
+    unit?: Unit2;
 };
 export type RenderWorkerStreamSignalRequestDto = {
     /** The claim token this operation was handed out with */
@@ -15833,6 +15853,8 @@ export type StudioExportSettingsDto = {
     /** Absent on exports made before audio was a choice */
     audio?: StudioExportAudio;
     color: StudioExportColor;
+    /** Actual delivery shape, including future values; fall back to shape when absent */
+    deliveryShape?: string;
     format: StudioExportFormat;
     /** Declared PQ mastering display, fixed when this export was submitted */
     mastering?: StudioExportMastering;
@@ -15841,7 +15863,7 @@ export type StudioExportSettingsDto = {
     /** Absent renders the whole main timeline */
     range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
-    /** Absent on exports in the project’s own shape */
+    /** Legacy shape values; newer shapes are reported in deliveryShape */
     shape?: StudioExportShape;
     /** Absent uses the native `burn` default */
     subtitleMode?: StudioExportSubtitleMode;
@@ -16374,11 +16396,6 @@ export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
 };
-export type StudioExportListResponseDto = {
-    items: StudioExportVersionDto[];
-    /** Matching versions, before paging */
-    total: number;
-};
 export type StudioReframePointDto = {
     /** Progress through the shot, 0 to 1 */
     t: number;
@@ -16391,6 +16408,52 @@ export type StudioExportFramingDto = {
     /** Where the crop centre is through the shot, in order of progress */
     path: StudioReframePointDto[];
 };
+export type StudioExportBatchVariantDto = {
+    /** Defaults to `preserve`; a stereo downmix happens only when asked for */
+    audio?: StudioExportAudio;
+    color: StudioExportColor;
+    format: StudioExportFormat;
+    /** For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    framing?: StudioExportFramingDto[];
+    /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
+    mastering?: StudioExportMastering;
+    /** Defaults to `high` */
+    quality?: StudioExportQuality;
+    /** Absent renders the whole main timeline */
+    range?: StudioExportRangeDto;
+    resolution: StudioExportResolution;
+    shape: StudioDeliveryShape;
+    /** Defaults to `burn` */
+    subtitleMode?: StudioExportSubtitleMode;
+};
+export type StudioExportBatchCreateDto = {
+    destination: StudioDeliveryDestination;
+    expectedRevision: number;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey: string;
+    variants: StudioExportBatchVariantDto[];
+};
+export type StudioExportCreateResponseDto = {
+    /** The render job; follow it in Activity */
+    operation: MediaOperationDto;
+    version: StudioExportVersionDto;
+};
+export type StudioExportBatchItemDto = {
+    error: string | null;
+    errorCode: string | null;
+    result: (StudioExportCreateResponseDto) | null;
+    shape: StudioDeliveryShape;
+};
+export type StudioExportBatchCreateResponseDto = {
+    items: StudioExportBatchItemDto[];
+    revision: number;
+};
+export type StudioExportListResponseDto = {
+    items: StudioExportVersionDto[];
+    /** Matching versions, before paging */
+    total: number;
+};
+export type StudioExportRequestShape = StudioExportShape | "landscape";
 export type StudioExportSmoothMotionDto = {
     /** Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately */
     destinationId: string;
@@ -16408,7 +16471,7 @@ export type StudioExportCreateDto = {
     /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
     expectedRevision?: number;
     format: StudioExportFormat;
-    /** For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    /** For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
     framing?: StudioExportFramingDto[];
     /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
     mastering?: StudioExportMastering;
@@ -16419,16 +16482,11 @@ export type StudioExportCreateDto = {
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;
-    /** Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
-    shape?: StudioExportShape;
+    /** Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
+    shape?: StudioExportRequestShape;
     smoothMotion?: StudioExportSmoothMotionDto;
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
-};
-export type StudioExportCreateResponseDto = {
-    /** The render job; follow it in Activity */
-    operation: MediaOperationDto;
-    version: StudioExportVersionDto;
 };
 export type StudioReframeShotDto = {
     /** The library asset it shows, when this session may read it */
@@ -17421,7 +17479,7 @@ export type TimeBucketAssetResponseDto = {
     createdAt: string[];
     /** Array of video/gif durations in milliseconds (null for static images) */
     duration: (number | null)[];
-    /** Last ordered item cursor; absent for time buckets */
+    /** Last page cursor; a calendar asset ID or an ordered cursor */
     endCursor?: string | null;
     /** Array of file creation timestamps in UTC */
     fileCreatedAt: string[];
@@ -17431,6 +17489,8 @@ export type TimeBucketAssetResponseDto = {
     height?: (number | null)[];
     /** Array of asset IDs in the time bucket */
     id: string[];
+    /** Membership in the requested readable album, aligned with id */
+    inAlbum?: boolean[];
     /** Array indicating whether each asset is favorited */
     isFavorite: boolean[];
     /** Array indicating whether each asset is an image (false for videos) */
@@ -17461,7 +17521,7 @@ export type TimeBucketAssetResponseDto = {
     ratio: number[];
     /** Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets) */
     stack?: (string[] | null)[];
-    /** First ordered item cursor; absent for time buckets */
+    /** First page cursor; a calendar asset ID or an ordered cursor */
     startCursor?: string | null;
     /** Array of BlurHash strings for generating asset previews (base64 encoded) */
     thumbhash: (string | null)[];
@@ -17471,9 +17531,22 @@ export type TimeBucketAssetResponseDto = {
     width?: (number | null)[];
 };
 export type TimeBucketsResponseDto = {
-    /** Number of assets in this time bucket */
+    /** Opaque anchor immediately before this page */
+    after?: string | null;
+    /** Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the located page’s asset count */
     count: number;
-    /** Time bucket identifier in YYYY-MM-DD format representing the start of the time period */
+    /** Whole-day counts for the calendar days represented in this page */
+    days?: {
+        count: number;
+        day: number;
+    }[];
+    /** First asset in the page snapshot */
+    firstAssetId?: string;
+    /** Last asset in the page snapshot */
+    lastAssetId?: string;
+    /** Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize and take = pageSize, with the same sort and filters */
+    page?: number;
+    /** Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01 */
     timeBucket: string;
 };
 export type TimelineHighlightResponseDto = {
@@ -19984,27 +20057,37 @@ export type TagSearchDto = {
     take?: number;
 };
 export type TimeBucketAssetDto = {
+    /** Read after this calendar-page asset ID; requires take and cannot be combined with before */
+    after?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
     bbox?: string;
+    /** Read before this calendar-page asset ID; requires take and cannot be combined with after */
+    before?: string;
     /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
+    /** Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected */
+    firstAssetId?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
+    /** Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected */
+    lastAssetId?: string;
     libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
+    /** Include membership in this readable album for each page asset; requires take */
+    membershipAlbumId?: string;
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
     order?: AssetOrder;
     /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
@@ -20018,6 +20101,8 @@ export type TimeBucketAssetDto = {
     suppressedOnly?: boolean;
     /** Filter assets with a specific tag */
     tagId?: string;
+    /** Maximum assets in a calendar page; omit for the legacy complete bucket */
+    take?: number;
     /** Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format */
     timeBucket: string;
     /** Filter assets by specific user ID */
@@ -20051,17 +20136,23 @@ export type TimeBucketDto = {
     isTrashed?: boolean;
     key?: string;
     libraryScope?: LibraryViewScope;
+    /** Return only the page containing this accessible asset; requires pageSize */
+    locateAssetId?: string;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
     order?: AssetOrder;
     /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
     orderBy?: AssetOrderBy;
+    /** Return bounded calendar-page summaries instead of whole-month counts */
+    pageSize?: number;
     /** Filter assets containing a specific person (face recognition) */
     personId?: string;
     /** Filter assets in which the caller confirmed one of their own pets */
     petId?: string;
     slug?: string;
+    /** Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters */
+    sort?: Sort;
     /** Return only suppressed content. Requires an elevated session. */
     suppressedOnly?: boolean;
     /** Filter assets with a specific tag */
@@ -33092,6 +33183,22 @@ export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
     })));
 }
 /**
+ * Queue reviewed delivery shapes from one saved revision
+ */
+export function createStudioExportBatch({ id, studioExportBatchCreateDto }: {
+    id: string;
+    studioExportBatchCreateDto: StudioExportBatchCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioExportBatchCreateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/export-batches`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioExportBatchCreateDto
+    })));
+}
+/**
  * List a Studio project’s exports
  */
 export function getStudioExports({ id, skip, take }: {
@@ -34331,19 +34438,24 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+    after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
+    before?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
     filter?: string;
+    firstAssetId?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    lastAssetId?: string;
     libraryScope?: LibraryViewScope;
     lockReason?: AssetLockReason | "immich-locked-folder";
+    membershipAlbumId?: string;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -34351,6 +34463,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
     slug?: string;
     suppressedOnly?: boolean;
     tagId?: string;
+    take?: number;
     timeBucket: string;
     userId?: string;
     visibility?: AssetVisibility;
@@ -34362,18 +34475,23 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         status: 200;
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/bucket${QS.query(QS.explode({
+        after,
         albumId,
         assetType,
         bbox,
+        before,
         bestPhotos,
         dateType,
         filter,
+        firstAssetId,
         imageEnrichment,
         isFavorite,
         isTrashed,
         key,
+        lastAssetId,
         libraryScope,
         lockReason,
+        membershipAlbumId,
         order,
         orderBy,
         personId,
@@ -34381,6 +34499,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         slug,
         suppressedOnly,
         tagId,
+        take,
         timeBucket,
         userId,
         visibility,
@@ -34394,7 +34513,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -34406,12 +34525,15 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     isTrashed?: boolean;
     key?: string;
     libraryScope?: LibraryViewScope;
+    locateAssetId?: string;
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
+    pageSize?: number;
     personId?: string;
     petId?: string;
     slug?: string;
+    sort?: "filename" | "rating" | "quality";
     suppressedOnly?: boolean;
     tagId?: string;
     userId?: string;
@@ -34435,12 +34557,15 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         isTrashed,
         key,
         libraryScope,
+        locateAssetId,
         lockReason,
         order,
         orderBy,
+        pageSize,
         personId,
         petId,
         slug,
+        sort,
         suppressedOnly,
         tagId,
         userId,
@@ -36638,6 +36763,11 @@ export enum RenderWorkerRefusalReason {
     DestinationUnavailable = "destination_unavailable",
     ManifestIncomplete = "manifest_incomplete",
     CodecUnsupported = "codec_unsupported"
+}
+export enum StudioRenderStage {
+    Preparing = "preparing",
+    Rendering = "rendering",
+    Finalising = "finalising"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -39243,6 +39373,9 @@ export enum Status11 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
+export enum Unit2 {
+    Frames = "frames"
+}
 export enum StudioPreviewStreamCloseReason {
     Closed = "closed",
     Superseded = "superseded",
@@ -39528,6 +39661,15 @@ export enum StudioCutoutStatus {
 export enum StudioCutoutSubjectKind {
     Person = "person",
     Subject = "subject"
+}
+export enum StudioDeliveryDestination {
+    Local = "local",
+    Lan = "lan"
+}
+export enum StudioDeliveryShape {
+    Landscape = "landscape",
+    Vertical = "vertical",
+    Square = "square"
 }
 export enum StudioReframeSubject {
     Face = "face",
@@ -40218,4 +40360,9 @@ export enum UserMetadataKey {
     Onboarding = "onboarding",
     FrameleafCloudTour = "frameleaf-cloud-tour",
     PartnerLockedNotice = "partner-locked-notice"
+}
+export enum Sort {
+    Filename = "filename",
+    Rating = "rating",
+    Quality = "quality"
 }

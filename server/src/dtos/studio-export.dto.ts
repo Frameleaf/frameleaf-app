@@ -64,9 +64,14 @@ const StudioExportRangeSchema = z
   .meta({ id: 'StudioExportRangeDto' });
 
 const StudioExportShapeSchema = z
-  .enum(STUDIO_EXPORT_SHAPES)
-  .describe('Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)')
+  .enum(['original', 'vertical', 'square'])
+  .describe('Shape of the picture: the project’s own, vertical 9:16 or square 1:1')
   .meta({ id: 'StudioExportShape' });
+
+const StudioExportRequestShapeSchema = z
+  .enum(STUDIO_EXPORT_SHAPES)
+  .describe('Delivery shape, including landscape 16:9')
+  .meta({ id: 'StudioExportRequestShape' });
 
 export const StudioReframePointSchema = z
   .object({
@@ -123,15 +128,15 @@ const StudioExportCreateSchema = z
       'Idempotency key; a repeated submit answers with the first export',
     ),
     // FL-563
-    shape: StudioExportShapeSchema.optional().describe(
-      'Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed',
+    shape: StudioExportRequestShapeSchema.optional().describe(
+      'Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed',
     ),
     framing: z
       .array(StudioExportFramingSchema)
       .max(2000)
       .optional()
       .describe(
-        'For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored',
+        'For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored',
       ),
     // FL-162
     smoothMotion: z
@@ -154,6 +159,35 @@ const StudioExportCreateSchema = z
   .strict()
   .meta({ id: 'StudioExportCreateDto' });
 
+const StudioDeliveryShapeSchema = z.enum(['landscape', 'vertical', 'square']).meta({ id: 'StudioDeliveryShape' });
+
+const StudioExportBatchVariantSchema = StudioExportCreateSchema.omit({
+  expectedRevision: true,
+  destination: true,
+  cloudConsent: true,
+  requestKey: true,
+  smoothMotion: true,
+})
+  .extend({ shape: StudioDeliveryShapeSchema })
+  .meta({ id: 'StudioExportBatchVariantDto' });
+
+const StudioExportBatchCreateSchema = z
+  .object({
+    expectedRevision: z.int().min(1),
+    requestKey: IdentifierSchema,
+    destination: z.enum(['local', 'lan']).meta({ id: 'StudioDeliveryDestination' }),
+    variants: z
+      .array(StudioExportBatchVariantSchema)
+      .min(1)
+      .max(3)
+      .refine(
+        (variants) => new Set(variants.map((variant) => variant.shape)).size === variants.length,
+        'Each delivery shape may be queued only once',
+      ),
+  })
+  .strict()
+  .meta({ id: 'StudioExportBatchCreateDto' });
+
 const StudioExportSettingsSchema = z
   .object({
     format: StudioExportFormatSchema,
@@ -166,7 +200,13 @@ const StudioExportSettingsSchema = z
     mastering: StudioExportMasteringSchema.optional().describe(
       'Declared PQ mastering display, fixed when this export was submitted',
     ),
-    shape: StudioExportShapeSchema.optional().describe('Absent on exports in the project’s own shape'),
+    shape: StudioExportShapeSchema.optional().describe(
+      'Legacy shape values; newer shapes are reported in deliveryShape',
+    ),
+    deliveryShape: z
+      .string()
+      .optional()
+      .describe('Actual delivery shape, including future values; fall back to shape when absent'),
   })
   .meta({ id: 'StudioExportSettingsDto' });
 
@@ -216,6 +256,22 @@ const StudioExportCreateResponseSchema = z
   })
   .meta({ id: 'StudioExportCreateResponseDto' });
 
+const StudioExportBatchCreateResponseSchema = z
+  .object({
+    revision: z.int().min(1),
+    items: z.array(
+      z
+        .object({
+          shape: StudioDeliveryShapeSchema,
+          result: StudioExportCreateResponseSchema.nullable(),
+          errorCode: z.string().nullable(),
+          error: z.string().nullable(),
+        })
+        .meta({ id: 'StudioExportBatchItemDto' }),
+    ),
+  })
+  .meta({ id: 'StudioExportBatchCreateResponseDto' });
+
 const StudioExportListResponseSchema = z
   .object({
     items: z.array(StudioExportVersionSchema),
@@ -236,3 +292,6 @@ export class StudioExportVersionDto extends createZodDto(StudioExportVersionSche
 export class StudioExportCreateResponseDto extends createZodDto(StudioExportCreateResponseSchema) {}
 export class StudioExportListResponseDto extends createZodDto(StudioExportListResponseSchema) {}
 export class StudioExportSearchDto extends createZodDto(StudioExportSearchSchema) {}
+
+export class StudioExportBatchCreateDto extends createZodDto(StudioExportBatchCreateSchema) {}
+export class StudioExportBatchCreateResponseDto extends createZodDto(StudioExportBatchCreateResponseSchema) {}

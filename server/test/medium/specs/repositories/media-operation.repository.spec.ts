@@ -1723,6 +1723,72 @@ describe(MediaOperationRepository.name, () => {
       });
     });
 
+    it('serializes Studio measurements, rejects stale reports and preserves other result evidence', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, { result: { receipt: 'retained' } });
+      const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+      const report = (processedUnits: number) => ({
+        status: MediaOperationStatus.Rendering,
+        processedUnits,
+        totalUnits: 100,
+        progress: processedUnits,
+        studioRender: { stage: 'rendering', unit: 'frames' } as const,
+      });
+      await expect(sut.reportProgress(operation.id, claim!.claimToken, report(50))).resolves.toBe(true);
+      await expect(sut.reportProgress(operation.id, claim!.claimToken, report(20))).resolves.toBe(false);
+      await expect(sut.reportProgress(operation.id, randomUUID(), report(70))).resolves.toBe(false);
+      const stored = await sut.getForOwner(operation.id, user.id);
+      expect(stored).toMatchObject({
+        processedUnits: expect.anything(),
+        result: {
+          receipt: 'retained',
+          studioRenderProgress: { processed: 50, attempt: 1 },
+        },
+      });
+      await sut.requestCancel(operation.id, user.id);
+      await expect(sut.reportProgress(operation.id, claim!.claimToken, report(70))).resolves.toBe(false);
+    });
+
+    it('switches preparation units to frames and serializes overlapping Studio progress writes', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+      await expect(
+        sut.reportProgress(operation.id, claim!.claimToken, {
+          status: MediaOperationStatus.Preparing,
+          processedUnits: 100,
+          totalUnits: 100,
+          progress: 100,
+          studioRender: { stage: 'preparing' },
+        }),
+      ).resolves.toBe(true);
+      const frames = (processedUnits: number) => ({
+        status: MediaOperationStatus.Rendering,
+        processedUnits,
+        totalUnits: 9000,
+        progress: processedUnits / 90,
+        studioRender: { stage: 'rendering', unit: 'frames' } as const,
+      });
+      await expect(sut.reportProgress(operation.id, claim!.claimToken, frames(0))).resolves.toBe(true);
+      await Promise.all([20, 50].map((count) => sut.reportProgress(operation.id, claim!.claimToken, frames(count))));
+      const stored = await sut.getForOwner(operation.id, user.id);
+      expect(String(stored?.processedUnits)).toBe('50');
+      expect(stored?.result).toMatchObject({
+        studioRenderProgress: { stage: 'rendering', processed: 50, total: 9000 },
+      });
+      await expect(
+        sut.reportProgress(operation.id, claim!.claimToken, {
+          status: MediaOperationStatus.Preparing,
+          processedUnits: 100,
+          totalUnits: 100,
+          progress: 100,
+          studioRender: { stage: 'preparing' },
+        }),
+      ).resolves.toBe(false);
+    });
+
     it('never moves a job back from checking its output to rendering', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

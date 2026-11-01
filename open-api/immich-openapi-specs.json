@@ -52389,6 +52389,72 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/export-batches": {
+      "post": {
+        "description": "Owner only. One local or LAN destination, independently admitted child jobs with stable retry keys. Every child keeps its own source checks, cancellation and publication.",
+        "operationId": "createStudioExportBatch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioExportBatchCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportBatchCreateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Queue reviewed delivery shapes from one saved revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/exports": {
       "get": {
         "description": "Every export of the project, newest first: published versions and exports still on their way.",
@@ -57715,6 +57781,17 @@
         "operationId": "getTimeBucket",
         "parameters": [
           {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "Read after this calendar-page asset ID; requires take and cannot be combined with before",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "albumId",
             "required": false,
             "in": "query",
@@ -57745,6 +57822,17 @@
             }
           },
           {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Read before this calendar-page asset ID; requires take and cannot be combined with after",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "bestPhotos",
             "required": false,
             "in": "query",
@@ -57770,6 +57858,17 @@
             "schema": {
               "maxLength": 16384,
               "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
+            "name": "firstAssetId",
+            "required": false,
+            "in": "query",
+            "description": "Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
               "type": "string"
             }
           },
@@ -57808,6 +57907,17 @@
             }
           },
           {
+            "name": "lastAssetId",
+            "required": false,
+            "in": "query",
+            "description": "Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "libraryScope",
             "required": false,
             "in": "query",
@@ -57832,6 +57942,17 @@
                   ]
                 }
               ]
+            }
+          },
+          {
+            "name": "membershipAlbumId",
+            "required": false,
+            "in": "query",
+            "description": "Include membership in this readable album for each page asset; requires take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
             }
           },
           {
@@ -57900,6 +58021,17 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Maximum assets in a calendar page; omit for the legacy complete bucket",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
             }
           },
           {
@@ -58108,6 +58240,17 @@
             }
           },
           {
+            "name": "locateAssetId",
+            "required": false,
+            "in": "query",
+            "description": "Return only the page containing this accessible asset; requires pageSize",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "lockReason",
             "required": false,
             "in": "query",
@@ -58145,6 +58288,17 @@
             }
           },
           {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Return bounded calendar-page summaries instead of whole-month counts",
+            "schema": {
+              "minimum": 100,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          },
+          {
             "name": "personId",
             "required": false,
             "in": "query",
@@ -58172,6 +58326,20 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "filename",
+                "rating",
+                "quality"
+              ]
             }
           },
           {
@@ -102780,6 +102948,40 @@
             "nullable": true,
             "type": "string"
           },
+          "renderProgress": {
+            "description": "Studio export measurements from the current worker attempt; ETA covers rendering only",
+            "nullable": true,
+            "properties": {
+              "framesPerSecond": {
+                "format": "double",
+                "minimum": 0,
+                "nullable": true,
+                "type": "number"
+              },
+              "lastProgressAt": {
+                "format": "date-time",
+                "nullable": true,
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "remainingRenderSeconds": {
+                "format": "double",
+                "minimum": 0,
+                "nullable": true,
+                "type": "number"
+              },
+              "stage": {
+                "$ref": "#/components/schemas/StudioRenderStage"
+              }
+            },
+            "required": [
+              "stage",
+              "lastProgressAt",
+              "framesPerSecond",
+              "remainingRenderSeconds"
+            ],
+            "type": "object"
+          },
           "resultAssetId": {
             "description": "The asset a completed job published",
             "format": "uuid",
@@ -103021,6 +103223,40 @@
           "projectId": {
             "nullable": true,
             "type": "string"
+          },
+          "renderProgress": {
+            "description": "Studio export measurements from the current worker attempt; ETA covers rendering only",
+            "nullable": true,
+            "properties": {
+              "framesPerSecond": {
+                "format": "double",
+                "minimum": 0,
+                "nullable": true,
+                "type": "number"
+              },
+              "lastProgressAt": {
+                "format": "date-time",
+                "nullable": true,
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "remainingRenderSeconds": {
+                "format": "double",
+                "minimum": 0,
+                "nullable": true,
+                "type": "number"
+              },
+              "stage": {
+                "$ref": "#/components/schemas/StudioRenderStage"
+              }
+            },
+            "required": [
+              "stage",
+              "lastProgressAt",
+              "framesPerSecond",
+              "remainingRenderSeconds"
+            ],
+            "type": "object"
           },
           "resultAssetId": {
             "description": "The asset a completed job published",
@@ -130982,6 +131218,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "stage": {
+            "$ref": "#/components/schemas/StudioRenderStage",
+            "description": "Actual Studio export phase; never advances the publication state"
+          },
           "status": {
             "enum": [
               "preparing",
@@ -130994,6 +131234,13 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
+          },
+          "unit": {
+            "description": "Present only when counted units are actual rendered frames",
+            "enum": [
+              "frames"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -139861,6 +140108,21 @@
         ],
         "type": "object"
       },
+      "StudioDeliveryDestination": {
+        "enum": [
+          "local",
+          "lan"
+        ],
+        "type": "string"
+      },
+      "StudioDeliveryShape": {
+        "enum": [
+          "landscape",
+          "vertical",
+          "square"
+        ],
+        "type": "string"
+      },
       "StudioExportAudio": {
         "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
         "enum": [
@@ -139868,6 +140130,141 @@
           "stereo"
         ],
         "type": "string"
+      },
+      "StudioExportBatchCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "destination": {
+            "$ref": "#/components/schemas/StudioDeliveryDestination"
+          },
+          "expectedRevision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/StudioExportBatchVariantDto"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "destination",
+          "expectedRevision",
+          "requestKey",
+          "variants"
+        ],
+        "type": "object"
+      },
+      "StudioExportBatchCreateResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudioExportBatchItemDto"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "StudioExportBatchItemDto": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioExportCreateResponseDto"
+              }
+            ],
+            "nullable": true
+          },
+          "shape": {
+            "$ref": "#/components/schemas/StudioDeliveryShape"
+          }
+        },
+        "required": [
+          "error",
+          "errorCode",
+          "result",
+          "shape"
+        ],
+        "type": "object"
+      },
+      "StudioExportBatchVariantDto": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/StudioExportAudio",
+            "description": "Defaults to `preserve`; a stereo downmix happens only when asked for"
+          },
+          "color": {
+            "$ref": "#/components/schemas/StudioExportColor"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "framing": {
+            "description": "For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFramingDto"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
+          "mastering": {
+            "$ref": "#/components/schemas/StudioExportMastering",
+            "description": "Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/StudioExportQuality",
+            "description": "Defaults to `high`"
+          },
+          "range": {
+            "$ref": "#/components/schemas/StudioExportRangeDto",
+            "description": "Absent renders the whole main timeline"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/StudioDeliveryShape"
+          },
+          "subtitleMode": {
+            "$ref": "#/components/schemas/StudioExportSubtitleMode",
+            "description": "Defaults to `burn`"
+          }
+        },
+        "required": [
+          "color",
+          "format",
+          "resolution",
+          "shape"
+        ],
+        "type": "object"
       },
       "StudioExportColor": {
         "description": "Colour handling; Dolby Vision needs a qualified worker",
@@ -139906,7 +140303,7 @@
             "$ref": "#/components/schemas/StudioExportFormat"
           },
           "framing": {
-            "description": "For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
+            "description": "For a landscape, vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
             "items": {
               "$ref": "#/components/schemas/StudioExportFramingDto"
             },
@@ -139934,8 +140331,8 @@
             "$ref": "#/components/schemas/StudioExportResolution"
           },
           "shape": {
-            "$ref": "#/components/schemas/StudioExportShape",
-            "description": "Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
+            "$ref": "#/components/schemas/StudioExportRequestShape",
+            "description": "Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
           },
           "smoothMotion": {
             "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
@@ -140117,6 +140514,16 @@
         ],
         "type": "string"
       },
+      "StudioExportRequestShape": {
+        "description": "Delivery shape, including landscape 16:9",
+        "enum": [
+          "original",
+          "landscape",
+          "vertical",
+          "square"
+        ],
+        "type": "string"
+      },
       "StudioExportResolution": {
         "description": "Output resolution",
         "enum": [
@@ -140162,6 +140569,10 @@
           "color": {
             "$ref": "#/components/schemas/StudioExportColor"
           },
+          "deliveryShape": {
+            "description": "Actual delivery shape, including future values; fall back to shape when absent",
+            "type": "string"
+          },
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
           },
@@ -140182,7 +140593,7 @@
           },
           "shape": {
             "$ref": "#/components/schemas/StudioExportShape",
-            "description": "Absent on exports in the project’s own shape"
+            "description": "Legacy shape values; newer shapes are reported in deliveryShape"
           },
           "subtitleMode": {
             "$ref": "#/components/schemas/StudioExportSubtitleMode",
@@ -140197,7 +140608,7 @@
         "type": "object"
       },
       "StudioExportShape": {
-        "description": "Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)",
+        "description": "Shape of the picture: the project’s own, vertical 9:16 or square 1:1",
         "enum": [
           "original",
           "vertical",
@@ -143022,6 +143433,10 @@
           "hdr10": {
             "type": "boolean"
           },
+          "landscapeReframe": {
+            "description": "This session renders true 16:9 landscape delivery crops",
+            "type": "boolean"
+          },
           "maxBitDepth": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -143115,6 +143530,14 @@
           "sessions"
         ],
         "type": "object"
+      },
+      "StudioRenderStage": {
+        "enum": [
+          "preparing",
+          "rendering",
+          "finalising"
+        ],
+        "type": "string"
       },
       "StudioResourceApprovalDto": {
         "description": "The owner approval the allowed rows come from",
@@ -148891,6 +149314,12 @@
       },
       "TimeBucketAssetDto": {
         "properties": {
+          "after": {
+            "description": "Read after this calendar-page asset ID; requires take and cannot be combined with before",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "albumId": {
             "description": "Filter assets belonging to a specific album",
             "format": "uuid",
@@ -148904,6 +149333,12 @@
           "bbox": {
             "description": "Bounding box coordinates as west,south,east,north (WGS84)",
             "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "before": {
+            "description": "Read before this calendar-page asset ID; requires take and cannot be combined with after",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "bestPhotos": {
@@ -148920,6 +149355,12 @@
             "maxLength": 16384,
             "type": "string"
           },
+          "firstAssetId": {
+            "description": "Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "imageEnrichment": {
             "$ref": "#/components/schemas/ImageEnrichmentFilter"
           },
@@ -148932,6 +149373,12 @@
             "type": "boolean"
           },
           "key": {
+            "type": "string"
+          },
+          "lastAssetId": {
+            "description": "Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "libraryScope": {
@@ -148950,6 +149397,12 @@
               }
             ],
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "membershipAlbumId": {
+            "description": "Include membership in this readable album for each page asset; requires take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           },
           "order": {
             "$ref": "#/components/schemas/AssetOrder",
@@ -148983,6 +149436,12 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "take": {
+            "description": "Maximum assets in a calendar page; omit for the legacy complete bucket",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
           },
           "timeBucket": {
             "description": "Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format",
@@ -149053,7 +149512,7 @@
             "type": "array"
           },
           "endCursor": {
-            "description": "Last ordered item cursor; absent for time buckets",
+            "description": "Last page cursor; a calendar asset ID or an ordered cursor",
             "nullable": true,
             "type": "string"
           },
@@ -149088,6 +149547,13 @@
             "description": "Array of asset IDs in the time bucket",
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "inAlbum": {
+            "description": "Membership in the requested readable album, aligned with id",
+            "items": {
+              "type": "boolean"
             },
             "type": "array"
           },
@@ -149219,7 +149685,7 @@
             "type": "array"
           },
           "startCursor": {
-            "description": "First ordered item cursor; absent for time buckets",
+            "description": "First page cursor; a calendar asset ID or an ordered cursor",
             "nullable": true,
             "type": "string"
           },
@@ -149323,6 +149789,12 @@
           "libraryScope": {
             "$ref": "#/components/schemas/LibraryViewScope"
           },
+          "locateAssetId": {
+            "description": "Return only the page containing this accessible asset; requires pageSize",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -149345,6 +149817,12 @@
             "$ref": "#/components/schemas/AssetOrderBy",
             "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
           },
+          "pageSize": {
+            "description": "Return bounded calendar-page summaries instead of whole-month counts",
+            "maximum": 1000,
+            "minimum": 100,
+            "type": "integer"
+          },
           "personId": {
             "description": "Filter assets containing a specific person (face recognition)",
             "format": "uuid",
@@ -149358,6 +149836,15 @@
             "type": "string"
           },
           "slug": {
+            "type": "string"
+          },
+          "sort": {
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters",
+            "enum": [
+              "filename",
+              "rating",
+              "quality"
+            ],
             "type": "string"
           },
           "suppressedOnly": {
@@ -149397,15 +149884,63 @@
       },
       "TimeBucketsResponseDto": {
         "properties": {
+          "after": {
+            "description": "Opaque anchor immediately before this page",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "count": {
-            "description": "Number of assets in this time bucket",
+            "description": "Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the located page’s asset count",
             "example": 42,
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "days": {
+            "description": "Whole-day counts for the calendar days represented in this page",
+            "items": {
+              "properties": {
+                "count": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "day": {
+                  "maximum": 31,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "day",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "firstAssetId": {
+            "description": "First asset in the page snapshot",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lastAssetId": {
+            "description": "Last asset in the page snapshot",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "page": {
+            "description": "Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize and take = pageSize, with the same sort and filters",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "timeBucket": {
-            "description": "Time bucket identifier in YYYY-MM-DD format representing the start of the time period",
+            "description": "Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01",
             "example": "2024-01-01",
             "type": "string"
           }

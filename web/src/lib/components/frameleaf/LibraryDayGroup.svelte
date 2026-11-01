@@ -22,6 +22,8 @@
   type Props = {
     timelineDay: TimelineDay;
     selection: string[];
+    groupCount?: number;
+    groupState?: ReturnType<typeof groupSelectionState>;
     selecting: boolean;
     /** Browse hides the day header; Timeline and Work keep it sticky above the rows. */
     showHeader?: boolean;
@@ -54,7 +56,7 @@
     sensitiveFor?: (asset: TimelineAsset) => boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
-    onSelectGroup?: (ids: string[], checked: boolean) => void;
+    onSelectGroup?: (ids: string[], checked: boolean) => void | Promise<boolean>;
     onFocusAsset?: (asset: TimelineAsset) => void;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
@@ -77,6 +79,8 @@
   let {
     timelineDay,
     selection,
+    groupCount,
+    groupState,
     selecting,
     showHeader = true,
     headerHeight = 48,
@@ -104,11 +108,9 @@
   const tiles = $derived(hosted ?? timelineDay.activeViewerAssets.filter((viewerAsset) => !viewerAsset.flowHost));
 
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
-  const state = $derived(groupSelectionState(dayIds, selection));
+  const state = $derived(groupState ?? groupSelectionState(dayIds, selection));
   const selected = $derived(new Set(selection));
-  const headingId = $derived(
-    `fl-day-${timelineDay.timelineMonth.yearMonth.year}-${timelineDay.timelineMonth.yearMonth.month}-${timelineDay.day}`,
-  );
+  const headingId = $derived(`fl-day-${timelineDay.timelineMonth.viewId}-${timelineDay.day}`);
   /**
    * The day's title as the prototype writes it (`explore-timeline.mjs` `timelineGroups`): the full
    * date, e.g. "Wednesday, December 11, 2024". Only this header uses it; the manager's shorter
@@ -142,7 +144,7 @@
     <LibraryGroupHeader
       id={headingId}
       title={dayTitle}
-      count={dayIds.length}
+      count={groupCount ?? dayIds.length}
       {state}
       {selecting}
       width={Math.max(timelineDay.width, headerWidth ?? 0)}

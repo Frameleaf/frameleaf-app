@@ -15,7 +15,12 @@ import {
 const ASSET = '11111111-1111-4111-8111-111111111111';
 
 const project = (items, extra = {}) => ({
-  metadata: { width: 1920, height: 1080, fps: 30, frameRate: { num: 30, den: 1 } },
+  metadata: {
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    frameRate: { num: 30, den: 1 },
+  },
   timeline: {
     tracks: [
       { id: 'v2', order: 0 },
@@ -40,14 +45,50 @@ const shot = (id, overrides = {}) => ({
 });
 
 const plan = (shots, shape = 'vertical', resolution = '1080p') =>
-  reframeOf({ shape, resolution, reframe: { version: 1, shape, output: shapedOutputSize(shape, resolution), shots } });
+  reframeOf({
+    shape,
+    resolution,
+    reframe: {
+      version: 1,
+      shape,
+      output: shapedOutputSize(shape, resolution),
+      shots,
+    },
+  });
 
 describe('reframe sizes', () => {
+  it('derives a true landscape graph from a portrait canvas without changing the source', () => {
+    const source = project([shot('v')]);
+    source.metadata = { ...source.metadata, width: 1080, height: 1920 };
+    const before = structuredClone(source);
+    const landscape = plan({ v: [{ t: 0.5, x: 0.5 }] }, 'landscape');
+    assert.deepEqual(landscape.output, { width: 1920, height: 1080 });
+    assert.deepEqual(cropRegion(source.metadata, 'landscape'), {
+      width: 1080,
+      height: 607.5,
+      horizontal: false,
+    });
+    const result = reframeGraph(source, landscape);
+    assert.ok(Math.abs(result.canvas.width / result.canvas.height - 16 / 9) < 0.01);
+    assert.deepEqual(source, before);
+  });
   it('writes the shaped file size for each resolution', () => {
-    assert.deepEqual(shapedOutputSize('vertical', '1080p'), { width: 1080, height: 1920 });
-    assert.deepEqual(shapedOutputSize('vertical', '2160p'), { width: 2160, height: 3840 });
-    assert.deepEqual(shapedOutputSize('vertical', '720p'), { width: 720, height: 1280 });
-    assert.deepEqual(shapedOutputSize('square', '1440p'), { width: 1440, height: 1440 });
+    assert.deepEqual(shapedOutputSize('vertical', '1080p'), {
+      width: 1080,
+      height: 1920,
+    });
+    assert.deepEqual(shapedOutputSize('vertical', '2160p'), {
+      width: 2160,
+      height: 3840,
+    });
+    assert.deepEqual(shapedOutputSize('vertical', '720p'), {
+      width: 720,
+      height: 1280,
+    });
+    assert.deepEqual(shapedOutputSize('square', '1440p'), {
+      width: 1440,
+      height: 1440,
+    });
     assert.equal(shapedOutputSize('vertical', 'original'), null);
     assert.equal(shapedOutputSize('round', '1080p'), null);
   });
@@ -58,7 +99,11 @@ describe('reframe sizes', () => {
       height: 1080,
       horizontal: true,
     });
-    assert.deepEqual(cropRegion({ width: 1920, height: 1080 }, 'square'), { width: 1080, height: 1080, horizontal: true });
+    assert.deepEqual(cropRegion({ width: 1920, height: 1080 }, 'square'), {
+      width: 1080,
+      height: 1080,
+      horizontal: true,
+    });
     assert.deepEqual(cropRegion({ width: 1080, height: 1920 }, 'square'), {
       width: 1080,
       height: 1080,
@@ -97,7 +142,12 @@ describe('sealed framing', () => {
       {
         shape: 'vertical',
         resolution: '1080p',
-        reframe: { version: 1, shape: 'vertical', output: { width: 720, height: 1280 }, shots: {} },
+        reframe: {
+          version: 1,
+          shape: 'vertical',
+          output: { width: 720, height: 1280 },
+          shots: {},
+        },
       },
     ],
     [
@@ -105,7 +155,12 @@ describe('sealed framing', () => {
       {
         shape: 'vertical',
         resolution: '1080p',
-        reframe: { version: 1, shape: 'square', output: { width: 1080, height: 1920 }, shots: {} },
+        reframe: {
+          version: 1,
+          shape: 'square',
+          output: { width: 1080, height: 1920 },
+          shots: {},
+        },
       },
     ],
     [
@@ -131,26 +186,48 @@ describe('sealed framing', () => {
       {
         shape: 'vertical',
         resolution: '1080p',
-        reframe: { version: 1, shape: 'vertical', output: { width: 1080, height: 1920 }, shots: { v: [{ t: 0, x: 1.4 }] } },
+        reframe: {
+          version: 1,
+          shape: 'vertical',
+          output: { width: 1080, height: 1920 },
+          shots: { v: [{ t: 0, x: 1.4 }] },
+        },
       },
     ],
     ['the original resolution', { shape: 'square', resolution: 'original' }],
   ];
   for (const [name, settings] of refusals) {
     it(`refuses ${name}`, () => {
-      assert.throws(() => reframeOf(settings), (error) => error instanceof ReframeRefusal && error.code === 'reframe_invalid');
+      assert.throws(
+        () => reframeOf(settings),
+        (error) => error instanceof ReframeRefusal && error.code === 'reframe_invalid',
+      );
     });
   }
 });
 
 describe('derived graph', () => {
   it('makes the canvas the crop and centres each shot on its framing, leaving the project alone', () => {
-    const graph = project([shot('v'), { id: 'a', trackId: 'a1', type: 'audio', mediaId: ASSET, from: 0, durationInFrames: 121 }]);
+    const graph = project([
+      shot('v'),
+      {
+        id: 'a',
+        trackId: 'a1',
+        type: 'audio',
+        mediaId: ASSET,
+        from: 0,
+        durationInFrames: 121,
+      },
+    ]);
     const before = structuredClone(graph);
     const { graph: derived, canvas } = reframeGraph(graph, plan({ v: [{ t: 0.5, x: 0.7 }] }));
     assert.deepEqual(graph, before);
     assert.deepEqual(canvas, { width: 608, height: 1080 });
-    assert.deepEqual(derived.metadata, { ...graph.metadata, width: 608, height: 1080 });
+    assert.deepEqual(derived.metadata, {
+      ...graph.metadata,
+      width: 608,
+      height: 1080,
+    });
     const [video, audio] = derived.timeline.items;
     // The 4K source contained in 1920 × 1080 keeps that box; its centre 70 % across lands mid-frame.
     assert.equal(video.transform.width, 1920);
@@ -187,7 +264,19 @@ describe('derived graph', () => {
     );
     assert.equal(derived.timeline.items[0].transform.x, group.keyframes[0].value);
     // ids are deterministic, so the same claim renders the same graph
-    assert.deepEqual(reframeGraph(graph, plan({ v: [{ t: 0, x: 0.4 }, { t: 0.5, x: 0.5 }, { t: 1, x: 0.6 }] })).graph, derived);
+    assert.deepEqual(
+      reframeGraph(
+        graph,
+        plan({
+          v: [
+            { t: 0, x: 0.4 },
+            { t: 0.5, x: 0.5 },
+            { t: 1, x: 0.6 },
+          ],
+        }),
+      ).graph,
+      derived,
+    );
   });
 
   it('moves a clip that is already animated sideways by its average framing', () => {
@@ -195,13 +284,30 @@ describe('derived graph', () => {
       {
         itemId: 'v',
         animationVersion: 2,
-        properties: [{ property: 'x', keyframes: [{ id: 'k1', frame: 0, value: 100, easing: 'linear' }] }],
+        properties: [
+          {
+            property: 'x',
+            keyframes: [{ id: 'k1', frame: 0, value: 100, easing: 'linear' }],
+          },
+        ],
         vectorProperties: [
-          { property: 'position', keyframes: [{ id: 'k2', frame: 10, value: { x: -50, y: 20 }, easing: 'linear' }] },
+          {
+            property: 'position',
+            keyframes: [
+              {
+                id: 'k2',
+                frame: 10,
+                value: { x: -50, y: 20 },
+                easing: 'linear',
+              },
+            ],
+          },
         ],
       },
     ];
-    const graph = project([shot('v', { transform: { x: 100 } })], { keyframes });
+    const graph = project([shot('v', { transform: { x: 100 } })], {
+      keyframes,
+    });
     const { graph: derived } = reframeGraph(
       graph,
       plan({
@@ -224,11 +330,35 @@ describe('derived graph', () => {
     const graph = project([
       shot('v'),
       // a caption across most of the 16:9 frame, near the bottom
-      { id: 'c', trackId: 'v2', type: 'text', textRole: 'caption', text: 'Hello', from: 0, durationInFrames: 30, transform: { x: 0, y: 420, width: 1500, height: 120 } },
+      {
+        id: 'c',
+        trackId: 'v2',
+        type: 'text',
+        textRole: 'caption',
+        text: 'Hello',
+        from: 0,
+        durationInFrames: 30,
+        transform: { x: 0, y: 420, width: 1500, height: 120 },
+      },
       // a title with no box takes the whole frame
-      { id: 't', trackId: 'v2', type: 'text', text: 'Summer', from: 30, durationInFrames: 30 },
+      {
+        id: 't',
+        trackId: 'v2',
+        type: 'text',
+        text: 'Summer',
+        from: 30,
+        durationInFrames: 30,
+      },
       // a title off to the right
-      { id: 'r', trackId: 'v2', type: 'text', text: 'Right', from: 60, durationInFrames: 30, transform: { x: 700, y: -400, width: 300, height: 80 } },
+      {
+        id: 'r',
+        trackId: 'v2',
+        type: 'text',
+        text: 'Right',
+        from: 60,
+        durationInFrames: 30,
+        transform: { x: 700, y: -400, width: 300, height: 80 },
+      },
     ]);
     const { graph: derived, canvas } = reframeGraph(graph, plan({ v: [{ t: 0.5, x: 0.5 }] }));
     const safe = SAFE_AREA.vertical;
@@ -240,7 +370,10 @@ describe('derived graph', () => {
       assert.ok(x + width / 2 <= canvas.width / 2 - canvas.width * safe.right + 1e-9, `${item.id} clears the right`);
       if (height < canvas.height * (1 - safe.top - safe.bottom)) {
         assert.ok(y - height / 2 >= -canvas.height / 2 + canvas.height * safe.top - 1e-9, `${item.id} clears the top`);
-        assert.ok(y + height / 2 <= canvas.height / 2 - canvas.height * safe.bottom + 1e-9, `${item.id} clears the bottom`);
+        assert.ok(
+          y + height / 2 <= canvas.height / 2 - canvas.height * safe.bottom + 1e-9,
+          `${item.id} clears the bottom`,
+        );
       }
     };
     const [, caption, title, right] = derived.timeline.items;
@@ -256,7 +389,16 @@ describe('derived graph', () => {
   it('places a drawn shape by the shot under it', () => {
     const graph = project([
       shot('v'),
-      { id: 's', trackId: 'v2', type: 'shape', shapeType: 'rectangle', fillColor: '#fff', from: 10, durationInFrames: 20, transform: { x: 0, y: 0, width: 100, height: 100 } },
+      {
+        id: 's',
+        trackId: 'v2',
+        type: 'shape',
+        shapeType: 'rectangle',
+        fillColor: '#fff',
+        from: 10,
+        durationInFrames: 20,
+        transform: { x: 0, y: 0, width: 100, height: 100 },
+      },
     ]);
     const { graph: derived } = reframeGraph(graph, plan({ v: [{ t: 0.5, x: 0.25 }] }));
     assert.equal(derived.timeline.items[1].transform.x, 480);
@@ -265,7 +407,12 @@ describe('derived graph', () => {
   it('keeps horizontal positions when a tall frame is cropped to a square', () => {
     const graph = {
       ...project([shot('v', { sourceWidth: 1080, sourceHeight: 1920 })]),
-      metadata: { width: 1080, height: 1920, fps: 30, frameRate: { num: 30, den: 1 } },
+      metadata: {
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        frameRate: { num: 30, den: 1 },
+      },
     };
     const { graph: derived, canvas } = reframeGraph(graph, plan({ v: [{ t: 0.5, x: 0.5 }] }, 'square'));
     assert.deepEqual(canvas, { width: 1080, height: 1080 });
@@ -275,17 +422,37 @@ describe('derived graph', () => {
 
   const unsupported = [
     ['a shot the framing does not name', project([shot('v'), shot('w', { from: 121 })]), 'reframe_invalid'],
-    ['a clip that follows another', project([shot('v', { transformParent: { parentItemId: 'p' } })]), 'reframe_unsupported'],
+    [
+      'a clip that follows another',
+      project([shot('v', { transformParent: { parentItemId: 'p' } })]),
+      'reframe_unsupported',
+    ],
     [
       'a position driven by an expression',
       project([shot('v')], {
         keyframes: [
-          { itemId: 'v', animationVersion: 2, properties: [], expressions: [{ type: 'expression', targetProperty: 'x', source: 'time', enabled: true }] },
+          {
+            itemId: 'v',
+            animationVersion: 2,
+            properties: [],
+            expressions: [
+              {
+                type: 'expression',
+                targetProperty: 'x',
+                source: 'time',
+                enabled: true,
+              },
+            ],
+          },
         ],
       }),
       'reframe_unsupported',
     ],
-    ['a picture with no size', project([shot('v', { sourceWidth: undefined, sourceHeight: undefined })]), 'reframe_unsupported'],
+    [
+      'a picture with no size',
+      project([shot('v', { sourceWidth: undefined, sourceHeight: undefined })]),
+      'reframe_unsupported',
+    ],
   ];
   for (const [name, graph, code] of unsupported) {
     it(`refuses ${name}`, () => {

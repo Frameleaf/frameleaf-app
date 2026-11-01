@@ -394,11 +394,16 @@ export class SqlQueueStore {
   async heartbeat(workerId: string, claims: Array<{ id: string; token: string }>) {
     await this.db.transaction().execute(async (tx) => {
       await sql`update job_worker set "heartbeatAt" = now() where id = ${workerId}::uuid`.execute(tx);
-      // One bounded statement irrespective of active media concurrency.
-      await sql`update job j set "leaseExpiresAt" = now() + interval '60 seconds'
-        from jsonb_to_recordset(${JSON.stringify(claims)}::text::jsonb) as owned(id uuid, token uuid)
-        where j.id = owned.id and j.token = owned.token and j.state = 'active'
-        and j."workerId" = ${workerId}::uuid and j."leaseExpiresAt" > clock_timestamp()`.execute(tx);
+      // A publication fence must not delay other leases; retry its locked claim on the next heartbeat.
+      await sql`with renewable as materialized (
+        select j.id from job j
+        join jsonb_to_recordset(${JSON.stringify(claims)}::text::jsonb) as owned(id uuid, token uuid)
+          on j.id = owned.id and j.token = owned.token
+        where j.state = 'active' and j."workerId" = ${workerId}::uuid
+          and j."leaseExpiresAt" > clock_timestamp()
+        for no key update of j skip locked
+      ) update job j set "leaseExpiresAt" = now() + interval '60 seconds'
+        from renewable where j.id = renewable.id and j."leaseExpiresAt" > clock_timestamp()`.execute(tx);
     });
   }
 

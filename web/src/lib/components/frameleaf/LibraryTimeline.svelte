@@ -296,12 +296,60 @@
   });
 
   $effect(() => {
-    timelineManager.scrollableElement = scrollable;
-    // A scroll area mounted anew (back from the Years or Months cards) starts at the top: the
-    // manager's window must follow it, or it keeps the old offset and mounts no month at all.
-    if (scrollable) {
-      timelineManager.updateSlidingWindow();
+    const element = scrollable;
+    untrack(() => {
+      timelineManager.scrollableElement = element;
+      if (element) {
+        timelineManager.updateSlidingWindow();
+      }
+    });
+  });
+
+  $effect(() => {
+    void timelineManager.totalViewerHeight;
+    void timelineManager.viewportHeight;
+    untrack(() => timelineManager.updateSlidingWindow());
+  });
+
+  $effect(() => {
+    const element = scrollable;
+    if (!element) {
+      return;
     }
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey || timelineManager.totalViewerHeight <= timelineManager.physicalViewerHeight) {
+        return;
+      }
+      // Keep wheel motion in photo pixels while the scrollbar spans the entire library.
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? timelineManager.viewportHeight : 1;
+      timelineManager.scrollBy(event.deltaY * unit);
+    };
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        timelineManager.totalViewerHeight <= timelineManager.physicalViewerHeight ||
+        (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]'))
+      ) {
+        return;
+      }
+      const space = event.key === ' ' && event.target === element;
+      if (event.key !== 'PageDown' && event.key !== 'PageUp' && !space) {
+        return;
+      }
+      event.preventDefault();
+      const forward = event.key === 'PageDown' || (space && !event.shiftKey);
+      timelineManager.scrollBy(timelineManager.viewportHeight * 0.9 * (forward ? 1 : -1));
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    element.addEventListener('keydown', keydown);
+    return () => {
+      element.removeEventListener('wheel', wheel);
+      element.removeEventListener('keydown', keydown);
+    };
   });
 
   /**
@@ -380,10 +428,10 @@
    * clicks and taps meant for the toolbar's last control. While the track is dragged it keeps its
    * place, so the header scrolling away does not move the track under the pointer.
    */
-  let headOnScreen = $derived(Math.max(0, measuredTop - untrack(() => scrollable?.scrollTop ?? 0)));
+  let headOnScreen = $derived(Math.max(0, measuredTop - untrack(() => timelineManager.scrollTop)));
   $effect(() => {
     if (!scrubbing && scrollable) {
-      headOnScreen = Math.max(0, measuredTop - untrack(() => scrollable?.scrollTop ?? 0));
+      headOnScreen = Math.max(0, measuredTop - untrack(() => timelineManager.scrollTop));
     }
   });
 
@@ -505,7 +553,7 @@
       untrack(() => {
         flowAnchor =
           captureLibraryAnchor(timelineManager, session.session.scrollAnchor) ?? captureLibraryAnchor(timelineManager);
-        flowScrollTop = scrollable?.scrollTop ?? 0;
+        flowScrollTop = timelineManager.scrollTop;
       });
     }
   });
@@ -682,7 +730,25 @@
    * manager lays the group out as one flow that runs on across its months (FL-143) and reserves the
    * header's space above the group's first month (`TimelineMonth.startsGroup`).
    */
-  type DisplayGroup = { key: string; title: string; months: TimelineMonth[] };
+  type DisplayGroup = { key: string; title: string; months: TimelineMonth[]; day?: number };
+  const dayGroup = (day: TimelineDay): DisplayGroup => {
+    const { year, month } = day.timelineMonth.yearMonth;
+    return {
+      key: `day-${year}-${month}-${day.day}`,
+      title: day.groupTitle,
+      day: day.day,
+      months: timelineManager.months.filter(
+        (page) =>
+          page.yearMonth.year === year &&
+          page.yearMonth.month === month &&
+          (!page.calendarPage?.days || page.calendarPage.days.some((entry) => entry.day === day.day)),
+      ),
+    };
+  };
+  const idsForGroupPage = (group: DisplayGroup, month: TimelineMonth) =>
+    group.day === undefined
+      ? monthIds(month)
+      : (month.timelineDays.find((day) => day.day === group.day)?.viewerAssets.map(({ id }) => id) ?? []);
 
   /** Prototype `monthTitle`: the full month name and the year, e.g. "December 2024". */
   const monthTitle = (month: TimelineMonth) =>
@@ -757,12 +823,20 @@
     return hosts;
   });
 
-  const groupIds = (group: DisplayGroup) => group.months.flatMap((month) => monthIds(month));
+  const selectedGroupIds = new SvelteMap<string, string[]>();
+  $effect(() => {
+    void timelineManager.months;
+    untrack(() => selectedGroupIds.clear());
+  });
+  const groupIds = (group: DisplayGroup) =>
+    selectedGroupIds.get(group.key) ?? group.months.flatMap((month) => idsForGroupPage(group, month));
 
   /** Months not loaded yet hold ids the timeline has not seen, so such a group is never "all" selected. */
   const displayGroupState = (group: DisplayGroup) => {
     const state = groupSelectionState(groupIds(group), selection);
-    return state === 'all' && group.months.some((month) => !month.isLoaded) ? 'some' : state;
+    return state === 'all' && !selectedGroupIds.has(group.key) && group.months.some((month) => !month.isLoaded)
+      ? 'some'
+      : state;
   };
 
   /**
@@ -788,7 +862,13 @@
    */
   const selectDisplayGroup = async (group: DisplayGroup, checked: boolean): Promise<boolean> => {
     const request = ++nextGroupRequest;
-    const loading = checked && group.months.some((month) => !month.isLoaded);
+    if (!checked && (selectedGroupIds.has(group.key) || selection.length === 0)) {
+      groupRequests.delete(group.key);
+      session.selectGroup(selectedGroupIds.get(group.key) ?? [], false);
+      selectedGroupIds.delete(group.key);
+      return true;
+    }
+    const loading = group.months.some((month) => !month.isLoaded);
     if (loading) {
       groupRequests.set(group.key, request);
     } else {
@@ -797,14 +877,30 @@
     }
     let outcome: GroupLoadOutcome;
     try {
-      outcome = await selectGroupAfterLoading(session, {
-        months: group.months,
-        checked,
-        isLoaded: (month) => month.isLoaded,
-        load: (month) => timelineManager.loadTimelineMonth(month.yearMonth),
-        idsOf: () => groupIds(group),
-        isLatest: () => !loading || groupRequests.get(group.key) === request,
-      });
+      const months = timelineManager.months;
+      outcome = await selectGroupAfterLoading(
+        {
+          get revision() {
+            return session.revision;
+          },
+          selectGroup: (ids, selected) => {
+            session.selectGroup(ids, selected);
+            if (selected) {
+              selectedGroupIds.set(group.key, ids);
+            } else {
+              selectedGroupIds.delete(group.key);
+            }
+          },
+        },
+        {
+          months: group.months,
+          checked,
+          isLoaded: (month) => month.isLoaded,
+          load: (month) => timelineManager.loadTimelineMonth(month.yearMonth),
+          idsOf: (month) => idsForGroupPage(group, month),
+          isLatest: () => timelineManager.months === months && (!loading || groupRequests.get(group.key) === request),
+        },
+      );
     } catch {
       outcome = 'incomplete';
     }
@@ -918,7 +1014,7 @@
       alignedEdge = null;
       return;
     }
-    const currentTop = scrollable?.scrollTop ?? 0;
+    const currentTop = timelineManager.scrollTop;
     // Whichever alignment moves the least.
     alignedEdge = Math.abs(alignTop - currentTop) < Math.abs(alignBottom - currentTop) ? 'top' : 'bottom';
     timelineManager.scrollTo(alignedEdge === 'top' ? alignTop : alignBottom);
@@ -996,7 +1092,7 @@
     }
     // Coming back from the viewer the grid was hidden and lost its offset: put it back first, so the
     // asset below is only scrolled to when it is no longer where the grid was left.
-    if (lastVisibleScrollTop > 0 && (scrollable?.scrollTop ?? 0) === 0) {
+    if (lastVisibleScrollTop > 0 && timelineManager.scrollTop === 0) {
       timelineManager.scrollTo(lastVisibleScrollTop);
     }
     // The URL's asset wins; otherwise the session's own scroll anchor decides where we land.
@@ -1021,7 +1117,7 @@
     timelineManager.suspendTransitions = true;
     if (isAssetViewerRoute(to) && !isAssetViewerRoute(from) && scrollable?.clientHeight) {
       // Going into or out of the viewer: remember where the grid was so we can come back to it.
-      lastVisibleScrollTop = scrollable?.scrollTop ?? lastVisibleScrollTop;
+      lastVisibleScrollTop = scrollable ? timelineManager.scrollTop : lastVisibleScrollTop;
     }
   });
 
@@ -1059,7 +1155,7 @@
     }
     untrack(() => {
       layoutAnchor = captureLibraryAnchor(timelineManager, session.session.scrollAnchor);
-      const top = scrollable?.scrollTop ?? 0;
+      const top = timelineManager.scrollTop;
       layoutAtHead = top <= 0 || top < timelineManager.topSectionHeight - stickyOffset();
     });
   });
@@ -1129,11 +1225,15 @@
       );
       return;
     }
-    const month = timelineManager.months.find(
+    const pages = timelineManager.months.filter(
       ({ yearMonth }) => yearMonth.year === scrubberMonth.year && yearMonth.month === scrubberMonth.month,
     );
-    if (month) {
-      scrollToSegmentPercentage(month.top, month.height, scrubberMonthScrollPercent);
+    if (pages[0]) {
+      scrollToSegmentPercentage(
+        pages[0].top,
+        pages.reduce((height, page) => height + page.height, 0),
+        scrubberMonthScrollPercent,
+      );
     }
   };
 
@@ -1162,25 +1262,24 @@
     timelineManager.scrolling = true;
     noteScroll();
     if (!scrubbing) {
-      headOnScreen = Math.max(0, measuredTop - scrollable.scrollTop);
+      headOnScreen = Math.max(0, measuredTop - timelineManager.scrollTop);
     }
     if (!assetViewerManager.isViewing) {
-      lastVisibleScrollTop = scrollable.scrollTop;
+      lastVisibleScrollTop = timelineManager.scrollTop;
     }
 
     if (timelineManager.limitedScroll) {
-      timelineScrollPercent = Math.min(1, scrollable.scrollTop / Math.max(1, timelineManager.maxScroll));
+      timelineScrollPercent = Math.min(1, timelineManager.scrollTop / Math.max(1, timelineManager.maxScroll));
       viewportTopMonth = undefined;
       viewportTopMonthScrollPercent = 0;
       return;
     }
     timelineScrollPercent = 0;
-    let top = scrollable.scrollTop;
+    let top = timelineManager.scrollTop;
     const maxScrollPercent = timelineManager.maxScrollPercent;
-    const months = timelineManager.months;
+    const months = timelineManager.scrubberMonths;
     for (let index = -1; index <= months.length; index++) {
-      const segment: ViewportTopMonth =
-        index === -1 ? 'lead-in' : index === months.length ? 'lead-out' : months[index].yearMonth;
+      const segment: ViewportTopMonth = index === -1 ? 'lead-in' : index === months.length ? 'lead-out' : months[index];
       const segmentHeight =
         index === -1
           ? timelineManager.topSectionHeight
@@ -1198,22 +1297,6 @@
     }
   };
 
-  const anchorAsset = () => {
-    const anchorId = session.session.anchorId;
-    if (!anchorId) {
-      return null;
-    }
-    for (const month of timelineManager.months) {
-      for (const day of month.timelineDays) {
-        const match = day.viewerAssets.find((viewerAsset) => viewerAsset.id === anchorId);
-        if (match?.asset) {
-          return match.asset;
-        }
-      }
-    }
-    return null;
-  };
-
   /**
    * Shift-click selects a range. The range may reach across months that are not loaded, so the
    * manager retrieves it — the component never walks the library itself. As in the prototype
@@ -1221,7 +1304,7 @@
    * all range from the same original anchor.
    */
   const selectRange = async (asset: TimelineAsset) => {
-    const start = anchorAsset();
+    const start = session.session.anchorId ? { id: session.session.anchorId } : undefined;
     if (!start) {
       // No anchor: a plain toggle, which sets one. An anchor that is no longer in the timeline adds
       // just the clicked item and stays the anchor (prototype `selectRange` outside visible order).
@@ -1367,13 +1450,18 @@
       onscroll={handleScroll}
       aria-busy={rangePending || groupPending}
     >
-      <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
+      <div class="fl-timeline-body" style:height="{timelineManager.physicalViewerHeight}px">
         <!--
           The header block spans the whole scroll height so a host's toolbar inside it can stick for
           the length of the library (apple-style.css "#3 materials"); the rows paint over it. Its
           measured height is where its content ends, marked by the last element.
         -->
-        <div class="fl-timeline-top" bind:this={topElement} onfocusin={dismissScrubber}>
+        <div
+          class="fl-timeline-top"
+          style:top="{-Math.min(timelineManager.topSectionHeight, timelineManager.scrollOffset)}px"
+          bind:this={topElement}
+          onfocusin={dismissScrubber}
+        >
           {@render top()}
           {#if isEmpty}
             {@render empty?.()}
@@ -1402,8 +1490,12 @@
                   focusedGroupKey = null;
                 }
               }}
-              style:top="{first.top}px"
-              style:height="{last.top + last.height - first.top}px"
+              style:top="{Math.max(0, first.top - timelineManager.scrollOffset)}px"
+              style:height="{Math.max(
+                0,
+                Math.min(timelineManager.physicalViewerHeight, last.top + last.height - timelineManager.scrollOffset) -
+                  Math.max(0, first.top - timelineManager.scrollOffset),
+              )}px"
             >
               <LibraryGroupHeader
                 id={groupHeadingId(group)}
@@ -1418,8 +1510,12 @@
               />
             </div>
           {/if}
-          {#if !month.isLoaded}
-            <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
+          {#if !month.isLoaded && month.isInOrNearViewport}
+            <div
+              class="fl-month"
+              style:height="{month.height}px"
+              style:transform={`translate3d(0,${month.top - timelineManager.scrollOffset}px,0)`}
+            >
               <Skeleton height={month.height} title={month.heading} headerHeight={month.groupHeaderHeight} />
             </div>
           {:else if month.isInOrNearViewport}
@@ -1428,8 +1524,8 @@
               role={group && regionHosts.get(group.key) === month.viewId ? 'region' : undefined}
               aria-labelledby={group && regionHosts.get(group.key) === month.viewId ? groupHeadingId(group) : undefined}
               style:height="{month.height}px"
-              style:transform={`translate3d(0,${month.top}px,0)`}
-              style:--fl-month-top="{month.top}px"
+              style:transform={`translate3d(0,${month.top - timelineManager.scrollOffset}px,0)`}
+              style:--fl-month-top="{month.top - timelineManager.scrollOffset}px"
               onpointerenter={() => (hoveredMonth = month.viewId)}
               onpointerleave={() => {
                 if (hoveredMonth === month.viewId) {
@@ -1484,7 +1580,9 @@
                   headerWidth={timelineManager.dayRows ? timelineManager.viewportWidth : undefined}
                   onOpen={handleOpen}
                   {onToggleSelect}
-                  onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
+                  groupCount={month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
+                  groupState={displayGroupState(dayGroup(timelineDay))}
+                  onSelectGroup={(_ids, checked) => selectDisplayGroup(dayGroup(timelineDay), checked)}
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
                   {tileOverlay}
                   {quickActions}
@@ -1498,7 +1596,7 @@
         <div
           class="fl-timeline-bottom"
           style:height="{timelineManager.bottomSectionHeight}px"
-          style:transform={`translate3d(0,${timelineManager.topSectionHeight + timelineManager.bodySectionHeight}px,0)`}
+          style:transform={`translate3d(0,${timelineManager.physicalViewerHeight - timelineManager.bottomSectionHeight}px,0)`}
         ></div>
       </div>
     </section>
@@ -1559,6 +1657,7 @@
   }
   .fl-timeline-body {
     position: relative;
+    overflow: clip;
   }
   .fl-timeline-cards {
     flex: 1 1 auto;

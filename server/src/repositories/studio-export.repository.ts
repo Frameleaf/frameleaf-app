@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
@@ -309,6 +309,42 @@ export class StudioExportRepository {
     version: StudioExportVersion;
   }> {
     return this.db.transaction().execute(async (tx) => {
+      const batchKey = operation.snapshot?.batchKey;
+      if (typeof batchKey === 'string') {
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`studio-export-batch:${operation.ownerId}:${batchKey}`}, 0))`.execute(
+          tx,
+        );
+        const prior = await tx
+          .selectFrom('media_operation')
+          .selectAll()
+          .where('ownerId', '=', operation.ownerId)
+          .where('kind', '=', operation.kind)
+          .where(sql<string>`snapshot->>'batchKey'`, '=', batchKey)
+          .execute();
+        if (
+          prior.some(
+            (row) =>
+              row.projectId !== operation.projectId || row.snapshot?.batchDigest !== operation.snapshot?.batchDigest,
+          )
+        ) {
+          throw new ConflictException({
+            code: 'studio_export_batch_key_conflict',
+            message: 'This batch key was already used for different deliveries',
+          });
+        }
+        const existing = prior.find((row) => row.snapshot?.requestKey === operation.snapshot?.requestKey);
+        if (existing) {
+          const existingVersion = await tx
+            .selectFrom('studio_export_version')
+            .selectAll()
+            .where('renderOperationId', '=', existing.id)
+            .executeTakeFirstOrThrow();
+          return {
+            operation: existing as unknown as MediaOperation,
+            version: existingVersion as unknown as StudioExportVersion,
+          };
+        }
+      }
       await holdSourceAdmission(tx, operation.snapshot);
       const created = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       const row = await tx
