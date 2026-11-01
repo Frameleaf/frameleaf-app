@@ -172,6 +172,7 @@
         >
           <AssetTile
             {asset}
+            dateType={timelineDay.dateType}
             width={position.width}
             height={tileHeight}
             selected={selected.has(asset.id)}

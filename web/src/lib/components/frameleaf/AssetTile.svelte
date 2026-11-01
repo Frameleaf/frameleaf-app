@@ -40,7 +40,7 @@
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
-  import { AssetMediaSize, AssetVisibility } from '@frameleaf/sdk';
+  import { AssetMediaSize, AssetVisibility, TimeBucketDateType } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCheck,
@@ -78,6 +78,8 @@
     offline?: boolean;
     /** Timeline and Work: space under the photo for the caption; `height` includes it. */
     captionHeight?: number;
+    /** Added dates are UTC instants; taken dates are the photo’s wall clock. */
+    dateType?: TimeBucketDateType;
     /** Work: show the file name in the caption (a per-device toggle, off by default). */
     showFileName?: boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
@@ -110,6 +112,7 @@
     sensitive = false,
     offline,
     captionHeight = 0,
+    dateType = TimeBucketDateType.Taken,
     showFileName = false,
     onOpen,
     onToggleSelect,
@@ -206,16 +209,18 @@
     event.stopPropagation();
     action?.();
   };
-  /** Template `localCaptureTime`: the capture time on the photo's own clock. */
-  const captureTime = $derived.by(() => {
+  const displayDateTime = $derived.by(() => {
     try {
-      return fromTimelinePlainDateTime(asset.localDateTime).toLocaleString(DateTime.TIME_SIMPLE, {
-        locale: $locale ?? undefined,
-      });
+      return dateType === TimeBucketDateType.Added
+        ? DateTime.fromObject(asset.createdAt, { zone: 'UTC' }).toLocal()
+        : fromTimelinePlainDateTime(asset.localDateTime);
     } catch {
       return null;
     }
   });
+  const captureTime = $derived(
+    displayDateTime?.toLocaleString(DateTime.TIME_SIMPLE, { locale: $locale ?? undefined }) ?? null,
+  );
   /** The List view (S-15, template asset-tile.css `[data-layout="list"]`): a 96px 3:2 thumbnail and columns. */
   const listed = $derived(layout === 'list');
   const LIST_THUMB_WIDTH = 96;
@@ -226,7 +231,7 @@
   const listName = $derived(isLocked ? $t('frameleaf_library_list_locked_item') : (fileName ?? title));
   const listDate = $derived.by(() => {
     try {
-      return fromTimelinePlainDateTime(asset.localDateTime).toLocaleString(DateTime.DATE_MED, {
+      return displayDateTime?.toLocaleString(DateTime.DATE_MED, {
         locale: $locale ?? undefined,
       });
     } catch {
@@ -661,7 +666,7 @@
         <span title={captionName}>{captionName}</span>
       {/if}
       {#if captureTime}
-        <time datetime={fromTimelinePlainDateTime(asset.localDateTime).toISO({ includeOffset: false }) ?? undefined}
+        <time datetime={displayDateTime?.toISO({ includeOffset: dateType === TimeBucketDateType.Added }) ?? undefined}
           >{captureTime}</time
         >
       {/if}

@@ -9,11 +9,15 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import DuplicateReview from '$lib/components/frameleaf/DuplicateReview.svelte';
 import type { ReviewGroup } from '$lib/frameleaf/duplicate-review';
 import type { DuplicateReviewGateway } from '$lib/frameleaf/duplicate-review-session.svelte';
+import { locale } from '$lib/stores/preferences.store';
 import en from '../../../../../i18n/en.json';
+import DuplicateCompare from './DuplicateCompare.svelte';
+import DuplicateContactSheet from './DuplicateContactSheet.svelte';
 
 const group = (id: string, members: string[]): ReviewGroup => ({
   duplicateId: id,
@@ -352,5 +356,41 @@ it('keeps focus through the virtual window and decides the previously offscreen 
     expect(screen.getByRole('heading', { level: 2, name: 'first-26' })).toHaveFocus();
   } finally {
     height.mockRestore();
+  }
+});
+
+it.each([false, true])('shows local capture time in duplicate review (contact sheet: %s)', (lookAlike) => {
+  const previousLocale = get(locale);
+  locale.set('en-US');
+  try {
+    const assets = group('dated', ['a', 'b']).assets.map((asset) => ({
+      ...asset,
+      localDateTime: '2026-01-15T16:20:00.000Z',
+      exifInfo: { dateTimeOriginal: '2026-01-15T21:20:00.000Z', timeZone: 'America/Toronto' },
+    }));
+    const common = {
+      group: { ...group('dated', ['a', 'b']), assets, lookAlike },
+      actionable: true,
+      keeperIds: ['a'],
+      onOpen: vi.fn(),
+    };
+    if (lookAlike) {
+      render(DuplicateContactSheet, {
+        ...common,
+        focused: assets[0],
+        framePage: 0,
+        onToggle: vi.fn(),
+        onFocus: vi.fn(),
+        onSelectAll: vi.fn(),
+        onClear: vi.fn(),
+        onPage: vi.fn(),
+      });
+    } else {
+      render(DuplicateCompare, { ...common, suggestedId: 'a', trashEnabled: true, onChoose: vi.fn() });
+    }
+    expect(screen.getAllByText(/4:20(?::00)? PM/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/9:20(?::00)? PM/)).toHaveLength(0);
+  } finally {
+    locale.set(previousLocale);
   }
 });
