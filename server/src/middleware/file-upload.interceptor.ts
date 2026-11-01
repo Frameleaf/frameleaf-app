@@ -121,7 +121,9 @@ export class FileUploadInterceptor implements NestInterceptor {
       // - Deduplication keys on `(checksum, fileSizeInByte)`. Mixed-algorithm
       //   rows never collide (different byte content), so a re-upload of an
       //   existing SHA-1 asset by the same user simply becomes a separate
-      //   master rather than linking — the conservative outcome.
+      //   master rather than linking — the conservative outcome — until the
+      //   nightly checksum check verifies that asset's file and moves it to
+      //   SHA-256 (IntegrityService), after which the re-upload links.
       // - The corresponding `checksumAlgorithm` column is set to
       //   `ChecksumAlgorithm.sha256File` by the upload service so consumers
       //   can disambiguate by length AND by algorithm tag.
@@ -130,11 +132,12 @@ export class FileUploadInterceptor implements NestInterceptor {
       //   OR SHA-256 (new path); `fromChecksum` (utils/request.ts) decodes
       //   based on the encoded string length.
       const hash = file.fieldname === UploadFieldName.ASSET_DATA ? createHash('sha256') : null;
-      // Clients pre-check for duplicates with SHA-1 (`bulk-upload-check`), but
-      // this fork persists SHA-256, so that check never matches and every file
-      // is re-uploaded only to be rejected at the unique constraint. Hash both
-      // while the bytes are already streaming; the SHA-1 is recorded alongside
-      // the asset so the pre-check can translate.
+      // Frameleaf's apps send SHA-256, but upstream Immich clients pre-check
+      // for duplicates with SHA-1 (`bulk-upload-check`), which never matches
+      // the SHA-256 this fork persists, so every file would be re-uploaded only
+      // to be rejected at the unique constraint. Hash both while the bytes are
+      // already streaming; the SHA-1 is recorded alongside the asset so the
+      // pre-check can translate.
       const legacyHash = hash ? createHash('sha1') : null;
 
       let size = 0;
