@@ -1,6 +1,9 @@
 import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
@@ -20,6 +23,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { ImageEnrichmentService, descriptionConfidence } from 'src/services/image-enrichment.service.js';
 import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { resetLockedTmpCheck } from 'src/utils/locked-read.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newUuid } from 'test/small.factory.js';
@@ -2265,6 +2269,35 @@ describe(ImageEnrichmentService.name, () => {
 
       // Grid file is cleaned up after the run.
       expect(mocks.storage.unlink).toHaveBeenCalledWith(gridPath);
+    });
+
+    it("keeps an encrypted video's grid in the RAM-backed Locked folder and removes it after the run (FL-721)", async () => {
+      const root = await fs.mkdtemp(join(tmpdir(), 'describe-locked-'));
+      const lockedTmp = join(root, 'shm');
+      const sealedPreview = join(root, 'preview.jpeg');
+      await fs.writeFile(sealedPreview, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64)]));
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP', lockedTmp);
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'true');
+      resetLockedTmpCheck();
+      try {
+        mocks.assetJob.getForImageEnrichment.mockResolvedValue({ ...baseVideoAsset, previewFile: sealedPreview });
+        let gridPath = '';
+        mocks.machineLearning.describeImage.mockImplementation((_selection, path) => {
+          gridPath = path;
+          return Promise.resolve(describedAs);
+        });
+
+        await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Success);
+
+        expect(gridPath.startsWith(lockedTmp + '/')).toBe(true);
+        expect(gridPath).not.toContain('_description_grid.jpeg');
+        // the folder is gone once the description has been read
+        expect(await fs.readdir(lockedTmp)).toEqual([]);
+      } finally {
+        vi.unstubAllEnvs();
+        resetLockedTmpCheck();
+        await fs.rm(root, { recursive: true, force: true });
+      }
     });
 
     it('pins the source fingerprint and the confirmed names on the stored description', async () => {
