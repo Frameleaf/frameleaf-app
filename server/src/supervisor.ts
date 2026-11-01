@@ -282,14 +282,17 @@ export class Workers {
       anyWorker = worker;
     } else {
       const worker = new Worker(workerFile);
+      let terminate = () => worker.terminate();
       if (name === FrameleafWorker.Microservices) {
-        stopped = superviseQueueWorker(worker, undefined, undefined, {
+        const queue = superviseQueueWorker(worker, undefined, undefined, {
           recordStopped: (proof) => this.workerStopProofs.record(proof),
           diagnostic: (message) => console.error(message),
-        }).stopped;
+        });
+        stopped = queue.stopped;
+        terminate = queue.terminate;
       }
 
-      kill = async () => void (await worker.terminate());
+      kill = async () => void (await terminate());
       stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
       send = (message) => worker.postMessage(message);
       anyWorker = worker;
