@@ -1,4 +1,12 @@
-import { AssetEditAction, getConfig, LoginResponseDto, QueueCommand, QueueName, updateConfig } from '@frameleaf/sdk';
+import {
+  AssetEditAction,
+  AssetJobName,
+  getConfig,
+  LoginResponseDto,
+  QueueCommand,
+  QueueName,
+  updateConfig,
+} from '@frameleaf/sdk';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -345,7 +353,6 @@ type LockedCrypto = {
 const lockedCrypto = (): Promise<LockedCrypto> =>
   import(join(repoRoot, 'packages/locked-crypto/dist/index.js')) as Promise<LockedCrypto>;
 
-/** The base64 private key (opened from the key file with the recovery key), for the secret grep. */
 /** How many people the encrypted file at `path` is encrypted to (its recipient entries). */
 const recipientCount = async (path: string) => {
   const copy = join(await mkdtemp(join(tempDir, 'fl721-header-')), 'file');
@@ -359,6 +366,7 @@ const recipientCount = async (path: string) => {
   }
 };
 
+/** The private key (opened from the key file with the recovery key) in three encodings, for the secret grep. */
 const rememberPrivateKey = async (userId: string, recoveryKey: string) => {
   const path = join(nativeMedia ?? CONTAINER_MEDIA, 'locked-keys', `${userId}.json`);
   const bytes = await readServerFile(path);
@@ -691,25 +699,26 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
     }, 300_000);
 
     it('refuses an administrator clearing the PIN, and a PIN reset with the password', async () => {
-      for (const method of ['put', 'patch'] as const) {
-        const url = `/admin/users/${pinOwner.userId}`;
-        const call = method === 'put' ? request(app).put(url) : request(app).patch(url);
-        const { status: code, body } = await call.set(bearer(admin.accessToken)).send({ pinCode: null });
-        expect(code === 409 || (method === 'patch' && code === 404), `${method} ${code} ${JSON.stringify(body)}`).toBe(
-          true,
-        );
-      }
+      const url = `/admin/users/${pinOwner.userId}`;
+      const { status: code, body } = await request(app).put(url).set(bearer(admin.accessToken)).send({ pinCode: null });
+      expect(code, JSON.stringify(body)).toBe(409);
+      // PATCH carries the same guard
+      const { status: patched, body: patchBody } = await request(app)
+        .patch(url)
+        .set(bearer(admin.accessToken))
+        .send({ pinCode: null });
+      expect(patched, JSON.stringify(patchBody)).toBe(409);
       const { body: user } = await request(app)
         .get(`/admin/users/${pinOwner.userId}`)
         .set(bearer(admin.accessToken))
         .expect(200);
       expect(user.lockedEncryption).toBe(true);
 
-      const { status: code } = await request(app)
+      const { status: reset } = await request(app)
         .delete('/auth/pin-code')
         .set(bearer(pinOwner.accessToken))
         .send({ password: createUserDto.create('fl721-pin').password });
-      expect(code).toBe(409);
+      expect(reset).toBe(409);
     });
 
     it('turns off: every file matches its original checksum again', async () => {
@@ -806,12 +815,31 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
       expect(opened.keyLoaded).toBe(true);
       expect(opened.askAgainHours).toBe(8);
       const left = Date.parse(opened.expiresAt!) - Date.now();
+      if (left > 60_000) {
+        throw new Error(
+          `The key expires in ${Math.round(left / 60_000)} minutes: the server is not running with FRAMELEAF_LOCKED_TEST_HOUR_MS=${HOUR_MS} (and FRAMELEAF_ENV=testing)`,
+        );
+      }
       expect(left).toBeGreaterThan(0);
       expect(left).toBeLessThanOrEqual(8 * HOUR_MS + 1000);
 
       await waitFor('the key to expire', async () => !(await keyLoaded(advOwner.accessToken)), 8 * HOUR_MS + 30_000);
       expectKeyUnavailable(await original(advOwner.accessToken, advItems[0].id), 'advanced');
-      // and in the job workers too: a job needing the key waits
+      // and in the job workers too: a job needing the key waits for it
+      const db = await utils.connectDatabase();
+      await request(app)
+        .post('/assets/jobs')
+        .set(bearer(advOwner.accessToken))
+        .send({ assetIds: [advItems[0].id], name: AssetJobName.RegenerateThumbnail })
+        .expect(204);
+      await waitFor('the thumbnail job to wait for the key', async () => {
+        const { rows } = await db.query(
+          `SELECT id FROM job WHERE state = 'pending' AND "dependencyReason" = 'locked-key-unavailable'
+             AND data->>'id' = $1`,
+          [advItems[0].id],
+        );
+        return rows.length > 0;
+      });
       await request(app)
         .put('/users/me/locked-encryption')
         .set(bearer(advOwner.accessToken))
@@ -857,7 +885,8 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
           .expect(204);
         await lockSession(advOwner.accessToken);
         const hidden = await request(app).get(`/assets/${item.id}`).set(bearer(advOwner.accessToken));
-        expect(hidden.status === 200 ? hidden.body.visibility : 'hidden').not.toBe('timeline');
+        // a locked session doesn't see a Locked item at all, so it never shows as a timeline item
+        expect([400, 403, 404], JSON.stringify(hidden.body)).toContain(hidden.status);
         expect(await allSealed([item.id])).toBe(true);
       } finally {
         await utils.queueCommand(admin.accessToken, QueueName.BackgroundTask, { command: QueueCommand.Resume });
