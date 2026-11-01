@@ -1618,10 +1618,14 @@ export class MediaHealthService {
     if (active) {
       const snapshot = parseMediaHealthSnapshot(active.snapshot);
       // FL-737: the scan under way answers only for photos it covers: a full scan covers any, a scan of
-      // chosen photos only those.
+      // chosen photos only those, and an incremental one only changed photos, so none chosen here.
       const covered =
         snapshot.mode === 'scan' &&
-        (!snapshot.assetIds || (options.assetIds?.every((id) => snapshot.assetIds!.includes(id)) ?? false));
+        (options.assetIds
+          ? snapshot.assetIds
+            ? options.assetIds.every((id) => snapshot.assetIds!.includes(id))
+            : !snapshot.changedSince
+          : !snapshot.assetIds);
       if (snapshot.mode === 'scan' && covered) {
         return { missingRunId: snapshot.missingRunId, corruptRunId: snapshot.corruptRunId, operationId: active.id };
       }
