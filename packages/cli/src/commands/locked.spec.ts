@@ -6,11 +6,12 @@ import {
   generateRecoveryKey,
   wrapKey,
 } from '@frameleaf/locked-crypto';
+import { Command } from 'commander';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LockedCliError, lockedDecrypt, runLockedDecrypt } from 'src/commands/locked';
+import { LockedCliError, buildLockedDecryptCommand, lockedDecrypt, runLockedDecrypt } from 'src/commands/locked';
 
 const walk = async (dir: string): Promise<string[]> => {
   const out: string[] = Array.from(await readdir(dir, { withFileTypes: true, recursive: true }), (entry) =>
@@ -34,6 +35,22 @@ const keyFile = (
   createdAt: '2026-10-31T00:00:00.000Z',
   updatedAt: '2026-10-31T00:00:00.000Z',
 });
+
+const run = async (args: string[]) => {
+  const command = new Command().exitOverride();
+  command.addCommand(
+    buildLockedDecryptCommand((code) => {
+      throw Object.assign(new Error('exit'), { code });
+    }).configureOutput({ writeOut: () => {}, writeErr: () => {} }),
+  );
+  try {
+    await command.parseAsync(['node', 'x', 'decrypt', ...args]);
+  } catch (error) {
+    return (error as { code: number }).code;
+  }
+};
+
+const THUMB_ID = '7d1c0f9e-5a3b-4c2d-8e6f-0a1b2c3d4e5f';
 
 describe('locked decrypt', { timeout: 120_000 }, () => {
   let root: string;
@@ -96,7 +113,7 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
     await seal('upload/a/3.bin', plain.photo2, aliceOnly, { originalFileName: 'IMG_0001.jpg' });
     await seal('thumbs/a/t.jpg', randomBytes(50), aliceOnly, {
       kind: 'thumbnail',
-      assetId: 'asset-thumb',
+      assetId: THUMB_ID,
       originalFileName: 'IMG_0001.jpg',
     });
     await seal('upload/b/1.bin', plain.beaPhoto, [{ publicKey: bea.publicKey }], { originalFileName: 'bea.png' });
@@ -149,7 +166,7 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
 
   it('--all also writes derivatives under derived/<assetId>/', async () => {
     await lockedDecrypt({ library, to, user: 'Alice', secret: '482915', all: true });
-    const derived = await readdir(join(to, 'derived', 'asset-thumb'));
+    const derived = await readdir(join(to, 'derived', THUMB_ID));
     expect(derived).toHaveLength(1);
     await lockedDecrypt({ library, to: join(root, 'no-all'), user: 'Alice', secret: '482915' });
     await expect(readdir(join(root, 'no-all', 'derived'))).rejects.toThrow();
@@ -196,5 +213,56 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
     await mkdir(empty, { recursive: true });
     await expect(lockedDecrypt({ library: empty, to, secret: 'x' })).rejects.toBeInstanceOf(LockedCliError);
     await expect(lockedDecrypt({ library, to, user: 'Nobody', secret: 'x' })).rejects.toMatchObject({ exitCode: 2 });
+  });
+
+  it('rejects a planted assetId or file name that tries to leave --to', async () => {
+    const lib = join(root, `planted-${randomUUID()}`);
+    await mkdir(join(lib, 'locked-keys'), { recursive: true });
+    await copyFile(join(library, 'locked-keys', `${aliceId}.json`), join(lib, 'locked-keys', `${aliceId}.json`));
+    const mine = library;
+    library = lib;
+    const aliceOnly = [{ publicKey: alice.publicKey }];
+    try {
+      await seal('p/1.bin', randomBytes(20), aliceOnly, { kind: 'thumbnail', assetId: '../../x' });
+      await seal('p/2.bin', randomBytes(20), aliceOnly, { originalFileName: '../escape.jpg' });
+      await seal('p/3.bin', randomBytes(20), aliceOnly, { originalFileName: '..' });
+    } finally {
+      library = mine;
+    }
+    const dest = join(root, `dest-${randomUUID()}`, 'inner');
+    const result = await lockedDecrypt({ library: lib, to: dest, user: 'Alice', secret: '482915', all: true });
+    expect(result.written).toBe(1);
+    expect(result.failed).toHaveLength(2);
+    expect(await readdir(dest)).toEqual(['escape.jpg']);
+    expect(await readdir(join(dest, '..'))).toEqual(['inner']);
+    expect(await readdir(root)).not.toContain('x');
+  });
+
+  it('exits 2 for bad arguments and 0 for --help', async () => {
+    expect(await run(['--to', 'x'])).toBe(2);
+    expect(await run(['--library', 'a', '--to', 'b', '--bogus'])).toBe(2);
+    expect(await run(['--help'])).toBe(0);
+  });
+
+  it('counts symlinks it skips and carries on past an unreadable folder', async () => {
+    const lib = join(root, `links-${randomUUID()}`);
+    await mkdir(join(lib, 'locked-keys'), { recursive: true });
+    await copyFile(join(library, 'locked-keys', `${aliceId}.json`), join(lib, 'locked-keys', `${aliceId}.json`));
+    await symlink(library, join(lib, 'link'));
+    await mkdir(join(lib, 'sealed'));
+    await chmod(join(lib, 'sealed'), 0);
+    try {
+      const result = await lockedDecrypt({
+        library: lib,
+        to: join(root, `l-${randomUUID()}`),
+        user: 'Alice',
+        secret: '482915',
+      });
+      expect(result.skippedLinks).toBe(1);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0]).toContain('sealed');
+    } finally {
+      await chmod(join(lib, 'sealed'), 0o700);
+    }
   });
 });
