@@ -174,7 +174,8 @@ describe('WorkflowDesigner', () => {
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
-    expect(await screen.findByText(/^0 eligible matches/)).toBeInTheDocument();
+    // the Faces step was not checked, so 0 is an upper bound
+    expect(await screen.findByText(/^Up to 0 eligible matches/)).toBeInTheDocument();
     const steps = [...document.querySelectorAll('ol.wd-preview li')].map((item) =>
       item.textContent?.replaceAll(/\s+/g, ' ').trim(),
     );

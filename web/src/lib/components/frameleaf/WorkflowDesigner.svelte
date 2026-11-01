@@ -148,16 +148,18 @@
     }
   };
   /**
-   * FL-729: a partial count is a lower bound only when every step was checked. A step the preview could not
-   * check may drop some of those matches, so the count is then only of what the checked filters keep.
+   * FL-729: a step the preview could not check may drop matches. With every match read, the count is then an
+   * upper bound; with only the first matches read (partial), it is neither bound, only what the checked
+   * filters keep. A partial count with every step checked is a lower bound.
    */
   const matchCountKey = ({ partial, steps }: WorkflowPreviewResponseDto): Translations => {
-    if (!partial) {
-      return 'frameleaf_workflows.match_count';
+    const unchecked = steps.some(({ result }) => result === WorkflowPreviewStepResult.Unchecked);
+    if (partial) {
+      return unchecked
+        ? 'frameleaf_workflows.match_count_partial_unchecked'
+        : 'frameleaf_workflows.match_count_partial';
     }
-    return steps.some(({ result }) => result === WorkflowPreviewStepResult.Unchecked)
-      ? 'frameleaf_workflows.match_count_partial_unchecked'
-      : 'frameleaf_workflows.match_count_partial';
+    return unchecked ? 'frameleaf_workflows.match_count_unchecked' : 'frameleaf_workflows.match_count';
   };
   /** FL-729: what the dry run did at a step; the server's result once it has checked the matches. */
   const stepOutcome = (result: 'validated' | 'disabled', checked?: WorkflowPreviewResponseDto['steps'][number]) => {

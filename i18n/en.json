@@ -16464,6 +16464,7 @@
     "match_count": "{count, number} eligible matches. No actions or plugins were invoked.",
     "match_count_partial": "At least {count, number} eligible matches. Filters were checked on the first 10,000 photos and videos. No actions or plugins were invoked.",
     "match_count_partial_unchecked": "At least {count, number} matches pass the checked filters, from the first 10,000 photos and videos. The final count is unknown because some steps cannot be checked without running them. No actions or plugins were invoked.",
+    "match_count_unchecked": "Up to {count, number} eligible matches. Some steps cannot be checked without running them, and they may leave out more. No actions or plugins were invoked.",
     "matches_label": "Eligible matches",
     "method_json": "Method and parameter JSON",
     "method_json_help": "Editing visible controls preserves other parameter fields. Change the JSON only when you intend to replace those values.",
