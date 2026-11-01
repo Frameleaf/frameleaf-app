@@ -202,7 +202,7 @@ export const libraryAssetIdsIn = (graph: unknown): string[] => {
 export const STUDIO_ASSET_READ_BATCH = 200;
 /** Pages read at once, so one Studio visit asks the server for at most this many pages together. */
 const STUDIO_ASSET_READ_PARALLEL = 2;
-/** What the server accepts as an asset id; anything else would fail the whole page it travels in. */
+/** What the server accepts as an asset id (UUID v4, as asset ids are); anything else would fail the whole page it travels in. */
 const readableAssetId = /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/;
 
 /**

@@ -9,6 +9,7 @@
  * they travel as `secrets` and only reach the sign-up and login calls.
  */
 import type { FrameleafSetupProgressDto, AdminConfigDto } from '@frameleaf/sdk';
+import { CloudAccountLinkRefusal } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { passwordStrength } from '$lib/frameleaf/auth-password';
 
@@ -24,8 +25,8 @@ export type SetupFlow = 'new' | 'existing';
 export type SetupChapterId = 'welcome' | 'account' | 'library' | 'protection' | 'ready';
 export type SetupStepId =
   | 'welcome'
-  | 'sign-in-choice'
   | 'account'
+  | 'frameleaf-account'
   | 'admin-sign-in'
   | 'library'
   | 'library-check'
@@ -52,8 +53,11 @@ const step = (id: SetupStepId, chapter: SetupChapterId, title: Translations, req
 export const setupFlows: Record<SetupFlow, readonly SetupStep[]> = {
   new: [
     step('welcome', 'welcome', 'frameleaf_setup_welcome_title'),
-    step('sign-in-choice', 'account', 'frameleaf_setup_sign_in_choice_title'),
-    step('account', 'account', 'frameleaf_setup_account_title', true),
+    // FL-708 (UI review item 20): the administrator is always a local account, so the owner can sign in
+    // to their own server even when Frameleaf Cloud can't be reached. A Frameleaf account comes next
+    // and can be skipped.
+    step('account', 'account', 'frameleaf_setup_admin_account_title', true),
+    step('frameleaf-account', 'account', 'frameleaf_setup_frameleaf_account_title'),
     step('library', 'library', 'frameleaf_setup_library_title', true),
     step('processing', 'library', 'frameleaf_setup_processing_title'),
     step('protection', 'protection', 'frameleaf_setup_protection_title'),
@@ -82,9 +86,30 @@ export const chapterIndex = (chapterId: SetupChapterId) =>
     setupChapters.findIndex((chapter) => chapter.id === chapterId),
   );
 
+/**
+ * FL-708 (item 2): the step counter counts the chapters the rail shows ("Account · 2 of 5"), not the
+ * steps inside them.
+ */
+export const chapterCount = (chapterId: SetupChapterId) => ({
+  chapter: setupChapters[chapterIndex(chapterId)].label,
+  position: chapterIndex(chapterId) + 1,
+  count: setupChapters.length,
+});
+
+/**
+ * FL-708 (item 4): the "Required" badge shows only where there is something to fill in: the new
+ * server's administrator form. The library location is required to be writable, but it can't be
+ * edited in setup, so it carries no badge.
+ */
+export const showsRequired = (state: SetupState, stepId: SetupStepId) =>
+  stepId === 'account' && state.flow === 'new' && !state.choices.accountCreated;
+
 // --------------------------------------------------------------- choices
 
 export type ModelTier = 'light' | 'balanced' | 'best';
+/** An existing library's search model outside the tiers, left as it is (owner decision, FL-722). */
+export const KEEP_MODEL = 'keep' as const;
+export type ModelChoice = ModelTier | typeof KEEP_MODEL;
 export type ProcessingChoice = 'local' | 'cloud' | 'later';
 
 /**
@@ -157,50 +182,177 @@ export const recommendedTier = (check: TierHardware | null | undefined): ModelTi
   return ml.vramGb >= 6 ? 'balanced' : 'light';
 };
 
+/** Whether an existing library's search model is one outside the tiers, offered as "keep current model". */
+export const keepsUnlistedModel = (flow: SetupFlow, currentModel: string | null | undefined) =>
+  flow === 'existing' && !!currentModel && tierForModel(currentModel) === null;
+
 /**
  * The tier setup starts from once the server has answered: on a new server the hardware's recommended
- * tier; on an existing library the tier of the model it already uses (an unlisted model reads as the
- * default), so finishing never switches its models and re-embeds it unless the administrator chose to.
+ * tier; on an existing library the tier of the model it already uses, or "keep current model" for a
+ * model outside the tiers, so finishing never switches its models and re-embeds it unless the
+ * administrator chose to.
  */
 export const defaultTier = (
   flow: SetupFlow,
   { hardware, currentModel }: { hardware?: TierHardware | null; currentModel?: string | null },
-): ModelTier =>
-  flow === 'existing' ? (tierForModel(currentModel ?? undefined) ?? DEFAULT_TIER) : recommendedTier(hardware);
+): ModelChoice => {
+  if (flow !== 'existing') {
+    return recommendedTier(hardware);
+  }
+  if (keepsUnlistedModel(flow, currentModel)) {
+    return KEEP_MODEL;
+  }
+  return tierForModel(currentModel ?? undefined) ?? DEFAULT_TIER;
+};
 
 /**
  * Applies the default tier to a setup the administrator has not taken a tier decision in yet: the
- * tier step (`processing`) is not reached. A tier chosen there, or saved progress past it, stays.
+ * tier step (`processing`) is not reached. A tier chosen there (`modelChosen`), or saved progress
+ * past it, stays; except that progress which never recorded a choice (older saves held the default
+ * tier) offers "keep current model" again for a library on a model outside the tiers.
  */
 export const withDefaultTier = (
   state: SetupState,
   context: { hardware?: TierHardware | null; currentModel?: string | null },
 ): SetupState => {
+  if (state.choices.modelChosen) {
+    return state;
+  }
   const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
-  if (tierStep === -1 || state.reached >= tierStep) {
+  const pastTier = tierStep === -1 || state.reached >= tierStep;
+  if (pastTier && !keepsUnlistedModel(state.flow, context.currentModel)) {
     return state;
   }
   const model = defaultTier(state.flow, context);
-  return model === state.choices.model ? state : { ...state, choices: { ...state.choices, model } };
+  const keptModel = model === KEEP_MODEL ? (context.currentModel ?? '') : '';
+  return model === state.choices.model && keptModel === state.choices.keptModel
+    ? state
+    : { ...state, choices: { ...state.choices, model, keptModel } };
+};
+
+/**
+ * "Keep current model" keeps the model the administrator saw. When the library's model changed while
+ * setup was closed, the choice is taken again: the tier this model defaults to, with setup back on the
+ * tier step so the administrator confirms it. Saves made before the model was recorded keep their choice.
+ */
+export const reconcileKeptModel = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+): SetupState => {
+  const { model, keptModel } = state.choices;
+  if (model !== KEEP_MODEL || !keptModel || keptModel === (context.currentModel ?? '')) {
+    return state;
+  }
+  const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
+  const next = defaultTier(state.flow, context);
+  return {
+    ...state,
+    step: tierStep === -1 ? state.step : Math.min(state.step, tierStep),
+    completed: false,
+    choices: {
+      ...state.choices,
+      model: next,
+      modelChosen: false,
+      keptModel: next === KEEP_MODEL ? (context.currentModel ?? '') : '',
+    },
+  };
+};
+
+const tierStepOf = (flow: SetupFlow) => flowSteps(flow).findIndex((entry) => entry.id === 'processing');
+
+const onTierStep = (state: SetupState): SetupState => {
+  const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
+  return tierStep === -1 ? state : { ...state, step: Math.min(state.step, tierStep), completed: false };
+};
+
+/**
+ * The tier once the server data has loaded: the default for a setup that has not taken the decision,
+ * and a "keep" checked against the library's model only when that model is known (a failed config read
+ * keeps the saved choice). An unchosen default that becomes "keep" changes nothing in the library, so
+ * it needs no confirmation; one that becomes a tier after the administrator moved past the tier step
+ * sends setup back there.
+ */
+export const settleLoadedTier = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+): SetupState => {
+  const defaulted = withDefaultTier(state, context);
+  const next = context.currentModel ? reconcileKeptModel(defaulted, context) : defaulted;
+  return next.choices.model !== state.choices.model && next.choices.model !== KEEP_MODEL ? onTierStep(next) : next;
+};
+
+/**
+ * Checked at finish against the model the server has now. Finishing changes the library's model (and
+ * re-indexes) only for a tier the administrator chose; "keep" changes nothing. Answers the setup to show
+ * on the tier step when the choice must be confirmed again: an unchosen tier that is no longer this
+ * model's default, or a "keep" of a model other than the one it named (`seenModel`: the model this page
+ * loaded, for saves that did not record it). Answers null when setup may finish.
+ */
+export const settleFinishTier = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+  seenModel?: string | null,
+): SetupState | null => {
+  const { model, modelChosen, keptModel } = state.choices;
+  if (model === KEEP_MODEL) {
+    const named = keptModel || seenModel;
+    if (!named || !context.currentModel || named === context.currentModel) {
+      return null;
+    }
+    return onTierStep(reconcileKeptModel({ ...state, choices: { ...state.choices, keptModel: named } }, context));
+  }
+  if (modelChosen) {
+    return null;
+  }
+  const next = defaultTier(state.flow, context);
+  if (next === model) {
+    return null;
+  }
+  const kept = next === KEEP_MODEL ? (context.currentModel ?? '') : '';
+  return onTierStep({ ...state, choices: { ...state.choices, model: next, keptModel: kept } });
 };
 
 export const KEEP_LAYOUT = 'keep';
-export const layoutPresets: readonly { id: string; label: Translations; pattern: string; recommended?: boolean }[] = [
+/** `short` names the layout in Ready's summary (item 5): "Year / Month", not a sample file path. */
+export const layoutPresets: readonly {
+  id: string;
+  label: Translations;
+  short: Translations;
+  pattern: string;
+  recommended?: boolean;
+}[] = [
   {
     id: 'year-month',
     label: 'frameleaf_setup_layout_year_month',
+    short: 'frameleaf_setup_layout_year_month_short',
     pattern: '{{y}}/{{MM}}/{{filename}}',
     recommended: true,
   },
-  { id: 'date', label: 'frameleaf_setup_layout_date', pattern: '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}' },
-  { id: 'album', label: 'frameleaf_setup_layout_album', pattern: '{{album}}/{{y}}/{{filename}}' },
-  { id: 'camera', label: 'frameleaf_setup_layout_camera', pattern: '{{make}} {{model}}/{{y}}/{{filename}}' },
+  {
+    id: 'date',
+    label: 'frameleaf_setup_layout_date',
+    short: 'frameleaf_setup_layout_date_short',
+    pattern: '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}',
+  },
+  {
+    id: 'album',
+    label: 'frameleaf_setup_layout_album',
+    short: 'frameleaf_setup_layout_album_short',
+    pattern: '{{album}}/{{y}}/{{filename}}',
+  },
+  {
+    id: 'camera',
+    label: 'frameleaf_setup_layout_camera',
+    short: 'frameleaf_setup_layout_camera_short',
+    pattern: '{{make}} {{model}}/{{y}}/{{filename}}',
+  },
 ];
 export const layoutPattern = (layout: string, current: string) =>
   layout === KEEP_LAYOUT ? current : (layoutPresets.find((entry) => entry.id === layout) ?? layoutPresets[0]).pattern;
 
 export type SetupChoices = {
   language: string;
+  /** FL-708: always `local` on a new server; an existing library's choice to link a Frameleaf account. */
   signIn: 'frameleaf' | 'local';
   linked: boolean;
   /** Set once the local administrator exists; never the password. */
@@ -211,7 +363,11 @@ export type SetupChoices = {
   adminName: string;
   adminEmail: string;
   layout: string;
-  model: ModelTier;
+  model: ModelChoice;
+  /** Set once the administrator picks a model on the tier step; a default never sets it. */
+  modelChosen: boolean;
+  /** The library model "keep current model" named; empty for a tier. */
+  keptModel: string;
   processing: ProcessingChoice;
   nightlyBackup: boolean;
   updates: boolean;
@@ -233,8 +389,6 @@ export type SetupState = {
 export type SetupContext = {
   secrets?: { password?: string; confirm?: string };
   storageWritable?: boolean | null;
-  /** FL-168: the server is already linked with Sign in with Frameleaf, so the Frameleaf path signs in. */
-  frameleafSignIn?: boolean;
 };
 
 export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
@@ -247,8 +401,8 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
     completed: false,
     choices: {
       language: 'en',
-      // New servers recommend a Frameleaf account; existing ones keep the local admin.
-      signIn: existing ? 'local' : 'frameleaf',
+      // FL-708: every administrator is local first; a Frameleaf account is linked on top, or skipped.
+      signIn: 'local',
       linked: false,
       accountCreated: false,
       signedIn: false,
@@ -257,6 +411,8 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
       adminEmail: '',
       layout: existing ? KEEP_LAYOUT : 'year-month',
       model: DEFAULT_TIER,
+      modelChosen: false,
+      keptModel: '',
       processing: 'local',
       nightlyBackup: true,
       updates: true,
@@ -281,28 +437,22 @@ export const validEmail = (value: string) => EMAIL.test(value.trim());
  * are required; every other step has a recommended choice.
  */
 export const validateStep = (state: SetupState, stepId: SetupStepId, context: SetupContext = {}) => {
-  const errors: Partial<Record<'link' | 'name' | 'email' | 'password' | 'confirm' | 'storage', Translations>> = {};
+  const errors: Partial<Record<'name' | 'email' | 'password' | 'confirm' | 'storage', Translations>> = {};
   const { choices } = state;
   const secrets = context.secrets ?? {};
-  if (stepId === 'account' && state.flow === 'new') {
-    // FL-168: the Frameleaf path signs in with Frameleaf on an already linked server; anywhere else it
-    // creates the administrator first and then needs the link
-    if (choices.signIn === 'frameleaf' && (context.frameleafSignIn || choices.accountCreated)) {
-      if (!choices.linked) {
-        errors.link = 'frameleaf_setup_error_link';
-      }
-    } else if (!choices.accountCreated) {
-      if (!choices.adminName.trim()) {
-        errors.name = 'frameleaf_setup_error_name';
-      }
-      if (!validEmail(choices.adminEmail)) {
-        errors.email = 'frameleaf_setup_error_email';
-      }
-      if (!passwordStrength(secrets.password ?? '').recommended) {
-        errors.password = 'frameleaf_setup_error_password';
-      } else if (secrets.password !== secrets.confirm) {
-        errors.confirm = 'frameleaf_setup_error_confirm';
-      }
+  // FL-708: a new server always gets its local administrator here (name, email and a password of at
+  // least 8 characters); nothing else stands in for it.
+  if (stepId === 'account' && state.flow === 'new' && !choices.accountCreated) {
+    if (!choices.adminName.trim()) {
+      errors.name = 'frameleaf_setup_error_name';
+    }
+    if (!validEmail(choices.adminEmail)) {
+      errors.email = 'frameleaf_setup_error_email';
+    }
+    if (!passwordStrength(secrets.password ?? '').acceptable) {
+      errors.password = 'frameleaf_setup_error_password';
+    } else if (secrets.password !== secrets.confirm) {
+      errors.confirm = 'frameleaf_setup_error_confirm';
     }
   }
   if (stepId === 'library' && context.storageWritable === false) {
@@ -336,7 +486,7 @@ export const goToStep = (state: SetupState, target: number, context: SetupContex
   }
   const passed = new Set(steps.slice(0, next).map((entry) => entry.id));
   const choices = { ...state.choices };
-  if (passed.has('account') && state.flow === 'new' && choices.signIn === 'local') {
+  if (passed.has('account') && state.flow === 'new') {
     choices.accountCreated = true;
   }
   if (passed.has('admin-sign-in')) {
@@ -370,12 +520,17 @@ export const processingOptions = (state: SetupState): ProcessingChoice[] => [
 
 /** The server's password-free progress payload for this state. */
 export const toProgress = (state: SetupState): FrameleafSetupProgressDto => {
-  const { restore, ...choices } = state.choices;
+  const { restore, model, keptModel, ...choices } = state.choices;
   return {
     version: 1,
     step: flowSteps(state.flow)[state.step].id,
     reached: state.reached,
-    choices: { ...choices, ...(restore && { restore }) } as FrameleafSetupProgressDto['choices'],
+    // "keep current model" is saved as a choice with no tier
+    choices: {
+      ...choices,
+      ...(model === KEEP_MODEL ? keptModel && { keptModel } : { model }),
+      ...(restore && { restore }),
+    } as FrameleafSetupProgressDto['choices'],
   };
 };
 
@@ -424,11 +579,17 @@ export const parseSetup = (raw: unknown, flow: SetupFlow, context: SetupContext 
       adminName: text(choices.adminName),
       adminEmail: text(choices.adminEmail),
       layout: oneOf(choices.layout, [KEEP_LAYOUT, ...layoutPresets.map((entry) => entry.id)], defaults.layout),
-      model: oneOf(
-        choices.model,
-        modelTiers.map((entry) => entry.id),
-        defaults.model,
-      ),
+      model:
+        // "keep" is saved with no tier: chosen, or with the model it named
+        choices.model === undefined && (choices.modelChosen === true || !!text(choices.keptModel, 200))
+          ? KEEP_MODEL
+          : oneOf<ModelChoice>(choices.model, [KEEP_MODEL, ...modelTiers.map((entry) => entry.id)], defaults.model),
+      // Saves from before `modelChosen` held the default tier unless the administrator chose another.
+      modelChosen:
+        choices.modelChosen === undefined
+          ? typeof choices.model === 'string' && choices.model !== DEFAULT_TIER && reached >= tierStepOf(flow)
+          : bool(choices.modelChosen, false),
+      keptModel: text(choices.keptModel, 200),
       processing: oneOf(choices.processing, ['local', 'cloud', 'later'] as const, defaults.processing),
       nightlyBackup: bool(choices.nightlyBackup, true),
       updates: bool(choices.updates, true),
@@ -463,10 +624,10 @@ export const resumeSetup = (
   if (!signedIn) {
     return state;
   }
-  // FL-168: a signed-in administrator on the Frameleaf path who has not linked yet carries on linking
-  const choices = { ...state.choices };
-  const step = flow === 'existing' ? Math.max(1, state.step) : state.step;
-  return { ...state, choices, step, reached: Math.max(state.reached, step) };
+  // A signed-in administrator is past the sign-in gate (existing) or the administrator form (new).
+  const past = flowSteps(flow).findIndex((entry) => entry.id === (flow === 'existing' ? 'admin-sign-in' : 'account'));
+  const step = Math.max(past + 1, state.step);
+  return { ...state, step, reached: Math.max(state.reached, step) };
 };
 
 type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -498,6 +659,83 @@ export const clearLocalSetup = (storage = browserStorage()) => {
   }
 };
 
+// ------------------------------------------------------ Frameleaf account
+
+export type FrameleafAccountMode = 'create' | 'sign-in';
+export type FrameleafAccountForm = { mode: FrameleafAccountMode; name: string; email: string; password: string };
+
+/** Where "Create account and link" sends people to read the Terms of Use (owner decision 2026-10-06). */
+export const FRAMELEAF_TERMS_URL = 'https://frameleaf.app/legal';
+
+/**
+ * FL-708 (item 20): the optional Frameleaf account step, after the local administrator exists.
+ * `create` makes a new account (name, email, a password of at least 8 characters, as on Frameleaf Cloud); `sign-in` uses one
+ * the administrator already has (email and password). The password never enters saved state.
+ */
+export const validateFrameleafAccount = ({ mode, name, email, password }: FrameleafAccountForm) => {
+  const errors: Partial<Record<'name' | 'email' | 'password', Translations>> = {};
+  if (mode === 'create' && !name.trim()) {
+    errors.name = 'frameleaf_setup_error_name';
+  }
+  if (!validEmail(email)) {
+    errors.email = 'frameleaf_setup_error_email';
+  }
+  if (mode === 'create' && !passwordStrength(password).acceptable) {
+    errors.password = 'frameleaf_setup_error_password';
+  } else if (mode === 'sign-in' && !password) {
+    errors.password = 'frameleaf_setup_error_frameleaf_password';
+  }
+  return { ok: Object.keys(errors).length === 0, errors };
+};
+
+/**
+ * FL-708 (FC-222): the words for each reason Frameleaf Cloud did not link with the account. Never
+ * says whether an email has an account, except `email-taken`, which the cloud only sends after the
+ * emailed code proved the address is the person's own.
+ */
+const ACCOUNT_LINK_REFUSAL_MESSAGES: Record<CloudAccountLinkRefusal, Translations> = {
+  [CloudAccountLinkRefusal.InvalidCredentials]: 'frameleaf_setup_frameleaf_error_invalid_credentials',
+  [CloudAccountLinkRefusal.EmailTaken]: 'frameleaf_setup_frameleaf_error_email_taken',
+  [CloudAccountLinkRefusal.PasswordTooShort]: 'frameleaf_setup_error_password',
+  [CloudAccountLinkRefusal.PasswordBreached]: 'frameleaf_setup_frameleaf_error_password_breached',
+  [CloudAccountLinkRefusal.ConsentOutdated]: 'frameleaf_setup_frameleaf_error_consent_outdated',
+  [CloudAccountLinkRefusal.CodeInvalid]: 'frameleaf_setup_frameleaf_error_code_invalid',
+  [CloudAccountLinkRefusal.CodeExpired]: 'frameleaf_setup_frameleaf_error_code_expired',
+  [CloudAccountLinkRefusal.AccountRefused]: 'frameleaf_setup_frameleaf_error_account_refused',
+  [CloudAccountLinkRefusal.InstanceLimit]: 'frameleaf_setup_frameleaf_error_instance_limit',
+  [CloudAccountLinkRefusal.InstanceIdTaken]: 'frameleaf_setup_frameleaf_error_server_registered',
+  [CloudAccountLinkRefusal.KeyAlreadyLinked]: 'frameleaf_setup_frameleaf_error_server_registered',
+  [CloudAccountLinkRefusal.RegionMismatch]: 'frameleaf_setup_frameleaf_error_region_mismatch',
+  [CloudAccountLinkRefusal.RateLimited]: 'frameleaf_setup_frameleaf_error_rate_limited',
+  [CloudAccountLinkRefusal.Paused]: 'frameleaf_setup_frameleaf_error_paused',
+  [CloudAccountLinkRefusal.Unavailable]: 'frameleaf_setup_cloud_unreachable_body',
+};
+
+export const accountLinkRefusalMessage = (
+  refusal: CloudAccountLinkRefusal,
+  retryAfterSeconds: number | null = null,
+  attemptsLeft: number | null = null,
+): Translations => {
+  if (refusal === CloudAccountLinkRefusal.CodeInvalid && attemptsLeft !== null) {
+    return 'frameleaf_setup_frameleaf_error_code_invalid_left';
+  }
+  if (refusal === CloudAccountLinkRefusal.RateLimited && retryAfterSeconds) {
+    return 'frameleaf_setup_frameleaf_error_rate_limited_for';
+  }
+  return ACCOUNT_LINK_REFUSAL_MESSAGES[refusal];
+};
+
+/** The account form starts from the administrator's own name and email. */
+export const frameleafAccountForm = (
+  state: SetupState,
+  mode: FrameleafAccountMode = 'create',
+): FrameleafAccountForm => ({
+  mode,
+  name: state.choices.adminName,
+  email: state.choices.adminEmail,
+  password: '',
+});
+
 // ----------------------------------------------------------- estimates
 
 /** Items an hour this hardware indexes at the recommended tier. */
@@ -505,7 +743,7 @@ export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
   embeddingMs && embeddingMs > 0 ? Math.max(300, Math.round(3_600_000 / (embeddingMs * 4))) : gpu ? 5400 : 1200;
 
 /** Hours to re-index a library locally at the chosen model tier. */
-export const reindexHours = (items: number, tierId: ModelTier, perHour: number) => {
+export const reindexHours = (items: number, tierId: ModelChoice, perHour: number) => {
   const tier =
     modelTiers.find((entry) => entry.id === tierId) ?? modelTiers.find((entry) => entry.id === DEFAULT_TIER)!;
   const rate = Math.max(1, perHour * tier.speed);
@@ -519,7 +757,7 @@ export const tierForModel = (modelName: string | undefined): ModelTier | null =>
 
 /**
  * The settings the finished setup writes. Nothing changes for a choice the administrator left at
- * "keep" or "decide later": the existing layout and the current models stay as they are. An existing
+ * "keep" or "decide later": the existing layout and the current models (`KEEP_MODEL`) stay as they are. An existing
  * library keeps its face model unless the administrator moved it from one tier to another
  * (`defaultTier`); a library on a search model outside the tiers keeps it too. Switching the search
  * or face model re-embeds the whole library, so it only ever follows a choice.

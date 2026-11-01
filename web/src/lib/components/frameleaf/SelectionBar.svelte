@@ -135,7 +135,7 @@
     total = null,
     /** The selected assets, when the view has them loaded. */
     assets = [],
-    selectedIds = assets.map((asset) => asset.id),
+    selectedIds: selectedIdsProp,
     context = {},
     tagOptions = [],
     operations = [],
@@ -175,6 +175,8 @@
     /** The selection's real capture times, for Change date (FL-32). */
     resolveCaptureTimes?: (ids: string[]) => Promise<Record<string, CaptureTime> | null>;
   } = $props();
+
+  const selectedIds = $derived(selectedIdsProp ?? assets.map((asset) => asset.id));
 
   let menuOpen = $state(false);
   let batchOpen = $state(false);

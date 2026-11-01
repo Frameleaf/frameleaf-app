@@ -47,8 +47,14 @@
         handleError(error, $t('errors.something_went_wrong'));
       }
     } finally {
-      if (isCurrent()) {
+      // a session change drops the result, not the flag, or reload and retry stay disabled
+      if (alive) {
         loading = false;
+        // a check dropped by a session change: drop the earlier session's result too, and offer the retry
+        if (!isCurrentSession()) {
+          detectedInstall = undefined;
+          failed = true;
+        }
       }
     }
   };

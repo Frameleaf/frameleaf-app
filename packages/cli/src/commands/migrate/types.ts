@@ -9,6 +9,7 @@ export interface MigrateRawOptions {
   dryRun: boolean;
   includeTrashed: boolean;
   retryFailed: boolean;
+  rescan?: boolean;
   faces: boolean; // --no-faces sets this to false
   serve: boolean;
   port: string | number;
@@ -25,6 +26,8 @@ export interface MigrateOptions {
   dryRun: boolean;
   includeTrashed: boolean;
   retryFailed: boolean;
+  /** Re-enumerate the source on a reused ledger to pick up assets added since the last run. */
+  rescan?: boolean;
   faces: boolean;
   serve: boolean;
   port: number;

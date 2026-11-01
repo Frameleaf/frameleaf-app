@@ -54,7 +54,9 @@ export function resizeHdrImage(image: LinearHdrImage | PairedHdrImage, size: num
             !Number.isFinite(a) ||
             a < 0 ||
             a > 1 ||
-            [input[i], input[i + 1], input[i + 2]].some((value) => !Number.isFinite(value))
+            !Number.isFinite(input[i]) ||
+            !Number.isFinite(input[i + 1]) ||
+            !Number.isFinite(input[i + 2])
           ) {
             throw new Error('INVALID_LINEAR_PIXELS');
           }
@@ -71,19 +73,19 @@ export function resizeHdrImage(image: LinearHdrImage | PairedHdrImage, size: num
           }
         }
       const i = (y * w + x) * 4;
-      output.set(alpha ? [r / alpha, g / alpha, b / alpha, alpha / area] : [0, 0, 0, 0], i);
-      if (sdr)
-        sdr.set(
-          sa
-            ? [
-                Math.round(srgb(sr / sa) * 255),
-                Math.round(srgb(sg / sa) * 255),
-                Math.round(srgb(sb / sa) * 255),
-                Math.round((sa / area) * 255),
-              ]
-            : [0, 0, 0, 0],
-          i,
-        );
+      // both buffers start zeroed, so a pixel with no coverage keeps its transparent black
+      if (alpha) {
+        output[i] = r / alpha;
+        output[i + 1] = g / alpha;
+        output[i + 2] = b / alpha;
+        output[i + 3] = alpha / area;
+      }
+      if (sdr && sa) {
+        sdr[i] = Math.round(srgb(sr / sa) * 255);
+        sdr[i + 1] = Math.round(srgb(sg / sa) * 255);
+        sdr[i + 2] = Math.round(srgb(sb / sa) * 255);
+        sdr[i + 3] = Math.round((sa / area) * 255);
+      }
     }
   const resized = {
     ...image,

@@ -20,8 +20,9 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = join(dirname(new URL(import.meta.url).pathname), "..");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sharp = createRequire(join(root, "server/package.json"))("sharp");
 const kit = "design/frameleaf/brand-kit";
 const src = {

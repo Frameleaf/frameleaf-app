@@ -14,6 +14,19 @@ export type CookieResponse = {
 
 export const pinCodeRegex = /^\d{6}$/;
 
+/**
+ * FL-708: the one password rule, length (owner 2026-10-31: 8, the same as Frameleaf Cloud). A changed
+ * password, one chosen from an emailed link and the administrator made in setup from the apps need at
+ * least this many characters and nothing else; the web's meter (`web/src/lib/frameleaf/auth-password.ts`)
+ * agrees and also holds the web's first administrator to it.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+const chosenPassword = (description: string) =>
+  z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters`)
+    .describe(`${description} (min ${MIN_PASSWORD_LENGTH} characters)`);
+
 export type AuthDto = {
   user: AuthUser;
   /** Internal durable worker authority; never populated from a request. */
@@ -83,7 +96,7 @@ const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
 const ChangePasswordSchema = z
   .object({
     password: z.string().describe('Current password').meta({ example: 'password' }),
-    newPassword: z.string().min(8).describe('New password (min 8 characters)').meta({ example: 'password' }),
+    newPassword: chosenPassword('New password').meta({ example: 'password' }),
     invalidateSessions: z.boolean().default(false).optional().describe('Invalidate all other sessions'),
   })
   .meta({ id: 'ChangePasswordDto' });
@@ -103,7 +116,7 @@ const PasswordLinkCheckResponseSchema = z
   .meta({ id: 'PasswordLinkCheckResponseDto' });
 
 const PasswordLinkRedeemSchema = PasswordLinkCheckSchema.extend({
-  newPassword: z.string().min(8).describe('The password they chose (min 8 characters)').meta({ example: 'password' }),
+  newPassword: chosenPassword('The password they chose').meta({ example: 'password' }),
 }).meta({ id: 'PasswordLinkRedeemDto' });
 
 export class PasswordLinkCheckDto extends createZodDto(PasswordLinkCheckSchema) {}
@@ -112,12 +125,17 @@ export class PasswordLinkRedeemDto extends createZodDto(PasswordLinkRedeemSchema
 
 const PinCodeSetupSchema = z
   .object({
-    pinCode: z.string().regex(pinCodeRegex).describe('PIN code (4-6 digits)').meta({ example: '123456' }),
+    pinCode: z.string().regex(pinCodeRegex).describe('PIN code (6 digits)').meta({ example: '123456' }),
   })
   .meta({ id: 'PinCodeSetupDto' });
 
 const PinCodeResetSchema = z.object({
-  pinCode: z.string().regex(pinCodeRegex).optional().describe('New PIN code (4-6 digits)').meta({ example: '123456' }),
+  pinCode: z
+    .string()
+    .regex(pinCodeRegex)
+    .optional()
+    .describe('Current PIN code (6 digits)')
+    .meta({ example: '123456' }),
   password: z
     .string()
     .optional()
@@ -128,7 +146,7 @@ const PinCodeResetSchema = z.object({
 const SessionUnlockSchema = PinCodeResetSchema.meta({ id: 'SessionUnlockDto' });
 
 const PinCodeChangeSchema = PinCodeResetSchema.extend({
-  newPinCode: z.string().regex(pinCodeRegex).describe('New PIN code (4-6 digits)'),
+  newPinCode: z.string().regex(pinCodeRegex).describe('New PIN code (6 digits)'),
 }).meta({ id: 'PinCodeChangeDto' });
 
 const ValidateAccessTokenResponseSchema = z

@@ -1233,7 +1233,7 @@
             "state": "Alpha"
           }
         ],
-        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-permission": "adminCloudBackup.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -2982,6 +2982,167 @@
           }
         ],
         "summary": "Start linking this server to a Frameleaf account",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/link/account": {
+      "post": {
+        "description": "First-run setup only (FL-708): creates a Frameleaf account, or signs in to one, and links this server to it with no approval code. A new account, or one with an authenticator app, first answers code-needed; send that code to link/account/verify. The password goes to Frameleaf Cloud once and is never kept. After setup, linking uses the approval code.",
+        "operationId": "linkCloudWithAccount",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudAccountLinkDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudAccountLinkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Link this server with a Frameleaf account’s email and password",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/link/account/consents": {
+      "get": {
+        "description": "First-run setup only (FL-708): the current Terms of Use and privacy statements, with their versions, to show before creating a Frameleaf account. Asks Frameleaf Cloud; nothing is saved.",
+        "operationId": "getCloudAccountLinkConsents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudAccountConsentsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the statements a new Frameleaf account agrees to",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.link",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/link/account/verify": {
+      "post": {
+        "description": "First-run setup only (FL-708): the emailed code, the authenticator app code or a recovery code; links this server when it is right.",
+        "operationId": "verifyCloudAccountLink",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudAccountLinkVerifyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudAccountLinkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Send the code a Frameleaf account link asked for",
         "tags": [
           "Frameleaf Cloud (admin)"
         ],
@@ -59326,7 +59487,7 @@
         "x-immich-permission": "asset.read"
       },
       "post": {
-        "description": "Requires a current elevated session and no active hidden-content filter.256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.",
+        "description": "Requires a current elevated session and no active hidden-content filter. 256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum 2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.",
         "operationId": "startBackupReconciliation",
         "parameters": [
           {
@@ -59388,7 +59549,7 @@
     },
     "/users/me/backup-devices/{id}/reconciliations/{runId}/buckets": {
       "post": {
-        "description": "Up to2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns409 and may be retried. No completed audit until every differing bucket is validated.",
+        "description": "Up to 2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns 409 and may be retried. No completed audit until every differing bucket is validated.",
         "operationId": "reconcileBackupBucket",
         "parameters": [
           {
@@ -62836,7 +62997,7 @@
     },
     {
       "name": "Libraries",
-      "description": "An external library is made up of input file paths or expressions that are scanned for asset files. Discovered files are automatically imported. Assets much be unique within a library, but can be duplicated across libraries. Each user has a default upload library, and can have one or more external libraries."
+      "description": "An external library is made up of input file paths or expressions that are scanned for asset files. Discovered files are automatically imported. Assets must be unique within a library, but can be duplicated across libraries. Each user has a default upload library, and can have one or more external libraries."
     },
     {
       "name": "Live Photo",
@@ -79171,6 +79332,291 @@
         },
         "type": "object"
       },
+      "CloudAccountConsentDto": {
+        "properties": {
+          "text": {
+            "description": "The statement to show; Frameleaf Cloud records that it was shown",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CloudAccountConsentsResponseDto": {
+        "properties": {
+          "privacy": {
+            "$ref": "#/components/schemas/CloudAccountConsentDto"
+          },
+          "tos": {
+            "$ref": "#/components/schemas/CloudAccountConsentDto"
+          }
+        },
+        "required": [
+          "privacy",
+          "tos"
+        ],
+        "type": "object"
+      },
+      "CloudAccountLinkChallengeKind": {
+        "description": "email-code: the code emailed to the address; second-factor: the authenticator app or a recovery code",
+        "enum": [
+          "email-code",
+          "second-factor"
+        ],
+        "type": "string"
+      },
+      "CloudAccountLinkCreateDto": {
+        "properties": {
+          "consent": {
+            "description": "The statement versions shown (from the consents endpoint)",
+            "properties": {
+              "privacy": {
+                "description": "The privacy statement version shown",
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tos": {
+                "description": "The Terms of Use version shown",
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "tos",
+              "privacy"
+            ],
+            "type": "object"
+          },
+          "dataRegion": {
+            "description": "Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch",
+            "enum": [
+              "eu",
+              "na"
+            ],
+            "type": "string"
+          },
+          "email": {
+            "description": "The Frameleaf account’s email",
+            "format": "email",
+            "maxLength": 320,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CloudAccountLinkCreateMode"
+          },
+          "name": {
+            "description": "The person’s name",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "description": "The Frameleaf account’s password; sent to Frameleaf Cloud, never kept",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "consent",
+          "email",
+          "mode",
+          "name",
+          "password"
+        ],
+        "type": "object"
+      },
+      "CloudAccountLinkCreateMode": {
+        "description": "A new Frameleaf account",
+        "enum": [
+          "create"
+        ],
+        "type": "string"
+      },
+      "CloudAccountLinkDto": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/CloudAccountLinkCreateDto"
+          },
+          {
+            "$ref": "#/components/schemas/CloudAccountLinkSignInDto"
+          }
+        ]
+      },
+      "CloudAccountLinkOutcome": {
+        "description": "linked: this server is linked; code-needed: enter the code in `challenge`; refused: see `refusal`",
+        "enum": [
+          "linked",
+          "code-needed",
+          "refused"
+        ],
+        "type": "string"
+      },
+      "CloudAccountLinkRefusal": {
+        "description": "Why Frameleaf Cloud did not link with the account",
+        "enum": [
+          "invalid-credentials",
+          "email-taken",
+          "password-too-short",
+          "password-breached",
+          "consent-outdated",
+          "code-invalid",
+          "code-expired",
+          "account-refused",
+          "instance-limit",
+          "instance-id-taken",
+          "key-already-linked",
+          "region-mismatch",
+          "rate-limited",
+          "paused",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "CloudAccountLinkResponseDto": {
+        "properties": {
+          "accountRegion": {
+            "description": "For region-mismatch: the region the account keeps its data in, to offer linking there",
+            "nullable": true,
+            "type": "string"
+          },
+          "attemptsLeft": {
+            "description": "Codes left to try after a wrong one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "challenge": {
+            "nullable": true,
+            "properties": {
+              "challengeId": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/CloudAccountLinkChallengeKind"
+              }
+            },
+            "required": [
+              "challengeId",
+              "kind",
+              "expiresAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "description": "Frameleaf Cloud’s own words for a refusal, when it sent any",
+            "nullable": true,
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CloudAccountLinkOutcome"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudAccountLinkRefusal"
+              }
+            ],
+            "nullable": true
+          },
+          "retryAfterSeconds": {
+            "description": "When to try again after too many attempts",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CloudStatusResponseDto"
+          }
+        },
+        "required": [
+          "accountRegion",
+          "attemptsLeft",
+          "challenge",
+          "message",
+          "outcome",
+          "refusal",
+          "retryAfterSeconds",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CloudAccountLinkSignInDto": {
+        "properties": {
+          "dataRegion": {
+            "description": "Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch",
+            "enum": [
+              "eu",
+              "na"
+            ],
+            "type": "string"
+          },
+          "email": {
+            "description": "The Frameleaf account’s email",
+            "format": "email",
+            "maxLength": 320,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CloudAccountLinkSignInMode"
+          },
+          "password": {
+            "description": "The Frameleaf account’s password; sent to Frameleaf Cloud, never kept",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "mode",
+          "password"
+        ],
+        "type": "object"
+      },
+      "CloudAccountLinkSignInMode": {
+        "description": "An account the administrator already has",
+        "enum": [
+          "sign-in"
+        ],
+        "type": "string"
+      },
+      "CloudAccountLinkVerifyDto": {
+        "properties": {
+          "challengeId": {
+            "description": "The challenge the link answered with",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "code": {
+            "description": "The emailed code, the authenticator app’s code or a recovery code",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "challengeId",
+          "code"
+        ],
+        "type": "object"
+      },
       "CloudBackupAccountExclusionsDto": {
         "properties": {
           "licence": {
@@ -89144,6 +89590,11 @@
             "maxLength": 120,
             "type": "string"
           },
+          "keptModel": {
+            "description": "The search model \"keep current model\" named, saved with that choice (no tier)",
+            "maxLength": 200,
+            "type": "string"
+          },
           "language": {
             "description": "Language chosen on the welcome step",
             "maxLength": 12,
@@ -89165,6 +89616,10 @@
           "model": {
             "$ref": "#/components/schemas/FrameleafSetupModelTier",
             "description": "Model tier"
+          },
+          "modelChosen": {
+            "description": "Whether the administrator chose the model on the tier step",
+            "type": "boolean"
           },
           "nightlyBackup": {
             "description": "Nightly database backups",
@@ -123186,7 +123641,7 @@
       "PinCodeChangeDto": {
         "properties": {
           "newPinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "New PIN code (6 digits)",
             "pattern": "^\\d{6}$",
             "type": "string"
           },
@@ -123196,7 +123651,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "Current PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -123215,7 +123670,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "Current PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -123226,7 +123681,7 @@
       "PinCodeSetupDto": {
         "properties": {
           "pinCode": {
-            "description": "PIN code (4-6 digits)",
+            "description": "PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"
@@ -127367,7 +127822,7 @@
       "ReconciliationStartDto": {
         "properties": {
           "buckets": {
-            "description": "First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused.",
+            "description": "First byte buckets in index order. Digest SHA256 of sorted distinct raw 32-byte hashes; empty digest SHA256(empty). Maximum 2000 hashes per bucket; larger sets refused.",
             "items": {
               "properties": {
                 "count": {
@@ -133892,7 +134347,7 @@
             "type": "string"
           },
           "pinCode": {
-            "description": "New PIN code (4-6 digits)",
+            "description": "Current PIN code (6 digits)",
             "example": "123456",
             "pattern": "^\\d{6}$",
             "type": "string"

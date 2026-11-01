@@ -66,7 +66,11 @@ ENV PATH="/opt/venv/bin:$PATH" \
     FRAMELEAF_RESTORATION_WORKDIR=/restoration/work \
     FRAMELEAF_RESTORATION_PORT=3004
 
-RUN mkdir -p /restoration/config /restoration/weights /restoration/work
+# Run unprivileged: config and weights are read-only mounts, only the work directory is written.
+RUN useradd --uid 10001 --user-group --create-home --home-dir /home/restoration --shell /usr/sbin/nologin restoration && \
+    mkdir -p /restoration/config /restoration/weights /restoration/work && \
+    chown restoration:restoration /restoration/work
+USER 10001:10001
 
 EXPOSE 3004
 ENTRYPOINT ["tini", "--"]

@@ -114,7 +114,8 @@
   const takeSnapshot = async () => {
     failed = false;
     const before = new Set((backups ?? []).map(({ filename }) => filename));
-    const failedBefore = (await readQueue())?.statistics.failed ?? 0;
+    // Unknown when the queue cannot be read, so older failed jobs are never taken for this one.
+    const failedBefore = (await readQueue())?.statistics.failed;
     if (!(await handleCreateJob({ name: ManualJobName.BackupDatabase }))) {
       return;
     }
@@ -146,7 +147,7 @@
         const { failed: failedNow, active, waiting, delayed } = queue.statistics;
         const idle = active + waiting + delayed === 0;
         // The first poll may run before the queue picks the job up, so idle only counts after it.
-        if (failedNow > failedBefore || (idle && polls > 1)) {
+        if ((failedBefore !== undefined && failedNow > failedBefore) || (idle && polls > 1)) {
           stop(true);
           return;
         }

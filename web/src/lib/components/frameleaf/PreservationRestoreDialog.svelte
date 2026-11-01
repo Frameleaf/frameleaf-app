@@ -95,6 +95,7 @@
   let total = $state(0);
   let requestKey = $state(newRequestKey());
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let destroyed = false;
 
   const step = $derived(restoreStep(restore));
   const restorable = $derived(packages.filter((item) => item.restorable));
@@ -137,6 +138,9 @@
     }
     try {
       const next = await getPreservationRestore({ id: restore.id });
+      if (destroyed) {
+        return;
+      }
       const changedStep = restoreStep(next) !== restoreStep(restore);
       restore = next;
       if (changedStep) {
@@ -146,9 +150,15 @@
             ? PreservationRestoreItemFilter.Conflicts
             : PreservationRestoreItemFilter.Findings;
         await loadItems();
+        if (destroyed) {
+          return;
+        }
         onChanged?.();
       }
     } catch (error) {
+      if (destroyed) {
+        return;
+      }
       handleError(error, $t('frameleaf_preservation_restore_error'));
     }
     schedule();
@@ -156,7 +166,7 @@
 
   const schedule = () => {
     clearTimeout(pollTimer);
-    const delay = open ? pollDelay([restore?.operation]) : null;
+    const delay = open && !destroyed ? pollDelay([restore?.operation]) : null;
     if (delay) {
       pollTimer = setTimeout(() => void refresh(), delay);
     }
@@ -170,9 +180,15 @@
     }
     try {
       const page = await getPreservationRestoreItems({ id: restore.id, filter, skip, take: PAGE });
+      if (destroyed) {
+        return;
+      }
       items = page.items;
       total = page.total;
     } catch (error) {
+      if (destroyed) {
+        return;
+      }
       handleError(error, $t('frameleaf_preservation_restore_error'));
     }
   };
@@ -316,7 +332,10 @@
     }
   });
 
-  onDestroy(() => clearTimeout(pollTimer));
+  onDestroy(() => {
+    destroyed = true;
+    clearTimeout(pollTimer);
+  });
 </script>
 
 <Dialog bind:open title={$t('frameleaf_preservation_restore_title')} closeLabel={$t('close')} wide>

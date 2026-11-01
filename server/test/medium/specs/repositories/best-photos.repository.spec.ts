@@ -47,6 +47,10 @@ describe(BestPhotosRepository.name, () => {
     defaultDatabase = await getKyselyDB();
   });
 
+  afterEach(async () => {
+    await defaultDatabase?.destroy();
+  });
+
   it('should upsert score rows by asset id', async () => {
     const { assetRepository, sut, userRepository } = setup();
     const user = await createUser(userRepository);

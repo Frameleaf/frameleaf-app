@@ -122,12 +122,21 @@
   /** FL-521: the space previews take and how many photos have none yet. */
   let copies = $state<MediaCopiesResponseDto>();
 
+  // reads can overlap (on arrival and after a rebuild); only the latest may show
+  let waitingReads = 0;
   const readWaiting = async () => {
+    const current = ++waitingReads;
     try {
       const queue = await getQueue({ name: QueueName.ThumbnailGeneration });
+      if (current !== waitingReads) {
+        return;
+      }
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
     } catch {
       // The status then says what previews are, without a count.
+      if (current === waitingReads) {
+        waiting = 0;
+      }
     }
   };
 
@@ -195,6 +204,7 @@
         queueCommandDto: { command: QueueCommand.Start, force: true },
       });
       said = $t('frameleaf_play_img_rebuild_started');
+      await readWaiting();
     } catch (error) {
       handleError(error, $t('frameleaf_play_img_rebuild_failed'));
     } finally {

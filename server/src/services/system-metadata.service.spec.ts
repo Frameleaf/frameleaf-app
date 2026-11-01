@@ -96,6 +96,12 @@ describe(SystemMetadataService.name, () => {
       await expect(sut.updateFrameleafSetup({ flow: 'new', progress })).resolves.toMatchObject({ flow: 'existing' });
     });
 
+    it('resumes the model a saved "keep current model" named', async () => {
+      const kept = { ...progress, choices: { ...progress.choices, modelChosen: true, keptModel: 'custom-model' } };
+      mocks.systemMetadata.get.mockResolvedValue({ flow: 'existing', progress: kept });
+      await expect(sut.getFrameleafSetup()).resolves.toMatchObject({ progress: kept });
+    });
+
     it('drops a stored payload that no longer validates', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         flow: 'new',

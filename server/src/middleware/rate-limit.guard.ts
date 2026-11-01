@@ -141,6 +141,8 @@ export const RATE_LIMITS = Object.freeze({
   studioInquiry: { bucket: 'studio-inquiry', limit: 5, windowSeconds: HOUR },
   /** Starting a link to Frameleaf Cloud: `POST admin/cloud/link`. */
   linkStart: { bucket: 'link-start', limit: 10, windowSeconds: HOUR, principal: 'credential', principalLimit: 10 },
+  /** FL-708: linking with a Frameleaf email and password, or its code, during first-run setup. */
+  accountLink: { bucket: 'account-link', limit: 20, windowSeconds: HOUR, principal: 'credential', principalLimit: 20 },
 } satisfies Record<string, RateLimitRule>);
 
 /** Every request arriving through the relay or a direct connection from outside, per client address. */

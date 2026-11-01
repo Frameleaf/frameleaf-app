@@ -55,21 +55,21 @@ export const mintExchangeToken = async ({
   jti = randomUUID(),
   subject = 'fl-sub',
 }: ExchangeTokenOptions) => {
-  const payload: Record<string, unknown> = { ...exchangeClaims(), ...claims };
+  // Registered claims are defaults in the payload, so `claims` can replace or remove any of them.
+  const payload: Record<string, unknown> = {
+    iss: issuer,
+    aud: audience,
+    sub: subject,
+    iat: issuedAt,
+    exp: issuedAt + lifetimeSeconds,
+    ...(jti && { jti }),
+    ...exchangeClaims(),
+    ...claims,
+  };
   for (const [name, value] of Object.entries(payload)) {
     if (value === undefined) {
       delete payload[name];
     }
   }
-  const jwt = new SignJWT(payload)
-    .setProtectedHeader({ alg, kid, ...(typ && { typ }) })
-    .setIssuer(issuer)
-    .setAudience(audience)
-    .setSubject(subject)
-    .setIssuedAt(issuedAt)
-    .setExpirationTime(issuedAt + lifetimeSeconds);
-  if (jti) {
-    jwt.setJti(jti);
-  }
-  return jwt.sign(key);
+  return new SignJWT(payload).setProtectedHeader({ alg, kid, ...(typ && { typ }) }).sign(key);
 };

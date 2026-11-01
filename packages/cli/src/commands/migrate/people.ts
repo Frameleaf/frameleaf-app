@@ -1,10 +1,24 @@
 import { chunk } from 'lodash-es';
-import type { ServerClient } from 'src/commands/migrate/client';
+import { MigrateHttpError, type ServerClient } from 'src/commands/migrate/client';
 import type { Controller } from 'src/commands/migrate/controller';
 import type { Ledger } from 'src/commands/migrate/ledger';
 import { collectAssetIds } from 'src/commands/migrate/search';
 import type { MigrateOptions } from 'src/commands/migrate/types';
 import { Queue } from 'src/queue';
+
+/** The destination person's id if it still exists; undefined once it was deleted or merged away. */
+const findPerson = async (to: ServerClient, id: string): Promise<string | undefined> => {
+  try {
+    const person = await to.getPerson(id);
+    return person.id;
+  } catch (error) {
+    // The server answers 400 for an id the user can no longer access, 404 for one it doesn't know.
+    if (error instanceof MigrateHttpError && (error.status === 400 || error.status === 404)) {
+      return undefined;
+    }
+    throw error;
+  }
+};
 
 /**
  * Phase 8 (best-effort): recreate named people on B and attach their faces.
@@ -37,9 +51,13 @@ export async function migratePeople(
       return;
     }
     try {
-      // Reuse an existing same-named person on B so a resumed run never duplicates.
-      const existing = await to.searchPerson(person.name);
-      let bPersonId = existing.find((e) => e.name === person.name)?.id;
+      // Reuse the person an earlier run attached (even if renamed on B since), else an existing
+      // same-named person, so a resumed or rescanned run never duplicates.
+      let bPersonId = person.bId ? await findPerson(to, person.bId) : undefined;
+      if (!bPersonId) {
+        const existing = await to.searchPerson(person.name);
+        bPersonId = existing.find((e) => e.name === person.name)?.id;
+      }
       if (!bPersonId) {
         const created = await to.createPerson({
           name: person.name,
@@ -60,14 +78,15 @@ export async function migratePeople(
       let undetected = 0;
       const resolve = new Queue<string, void>(
         async (bAssetId: string) => {
-          const allFaces = await to.getFaces(bAssetId);
-          const faces = allFaces.filter((f) => f.person);
-          if (faces.length === 0) {
-            undetected++; // B hasn't detected a face here (yet)
-          } else if (faces.length > 1) {
+          // Count every detected face, clustered or not: with two faces on the photo the one
+          // clustered face may not be this person.
+          const faces = await to.getFaces(bAssetId);
+          if (faces.length > 1) {
             ambiguous++; // can't tell which face is this person — skip rather than mislabel
-          } else if (faces[0].person!.id !== bPersonId) {
-            items.push({ assetId: bAssetId, personId: faces[0].person!.id });
+          } else if (!faces[0]?.person) {
+            undetected++; // B hasn't detected (or clustered) a face here (yet)
+          } else if (faces[0].person.id !== bPersonId) {
+            items.push({ assetId: bAssetId, personId: faces[0].person.id });
           }
         },
         { concurrency: options.concurrency, retry: 2 },

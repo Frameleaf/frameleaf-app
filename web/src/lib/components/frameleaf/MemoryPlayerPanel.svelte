@@ -464,6 +464,15 @@
     handlePromiseError(handleAction('resetAndPlay', 'play'));
   };
 
+  /** A photo's preview settled (loaded or broken): start its slide, but leave a paused player paused. */
+  const onPhotoSettled = () => {
+    if (paused) {
+      handlePromiseError(progressBarController?.set(0) ?? Promise.resolve());
+      return;
+    }
+    resetAndPlay();
+  };
+
   function runTitleCardTimer() {
     if (titleCardTimer || !titleCardFor) {
       return;
@@ -801,13 +810,14 @@
   };
 
   const saveExport = async () => {
-    if (!exportRun?.isDownloadable || exportBusy) {
+    const run = exportRun;
+    if (!run?.isDownloadable || exportBusy) {
       return;
     }
     exportBusy = true;
     try {
-      const blob = await downloadMemoryExport({ id: exportRun.id });
-      downloadBlob(blob, `${exportRun.title}.zip`);
+      const blob = await downloadMemoryExport({ id: run.id });
+      downloadBlob(blob, `${run.title}.zip`);
     } catch (error) {
       handleError(error, $t('frameleaf_memories_export_failed'));
     } finally {
@@ -1200,7 +1210,7 @@
                 ></div>
                 <MemoryPhotoViewer
                   asset={current.asset}
-                  onImageLoad={resetAndPlay}
+                  onImageLoad={onPhotoSettled}
                   motionClass={slideClass}
                   motionStyle={slideStyle}
                 />

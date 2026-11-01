@@ -49,14 +49,21 @@ export class AssetRestorationRepository {
    * transaction to write in, when the row must land together with the job that renders it (FL-162).
    */
   async create(input: AssetRestorationCreate, executor: Kysely<DB> = this.db): Promise<AssetRestoration> {
-    const row = await executor
-      .insertInto('asset_restoration')
-      .values({
-        ...input,
-        revision: sql<number>`(SELECT coalesce(max("revision"), 0) + 1 FROM "asset_restoration" WHERE "assetId" = ${input.assetId})`,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    // Concurrent requests for one asset take turns, so two never read the same max(revision).
+    const insert = async (tx: Kysely<DB>) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_restoration_revision:${input.assetId}`}, 0))`.execute(
+        tx,
+      );
+      return tx
+        .insertInto('asset_restoration')
+        .values({
+          ...input,
+          revision: sql<number>`(SELECT coalesce(max("revision"), 0) + 1 FROM "asset_restoration" WHERE "assetId" = ${input.assetId})`,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    };
+    const row = executor.isTransaction ? await insert(executor) : await executor.transaction().execute(insert);
     return row as unknown as AssetRestoration;
   }
 

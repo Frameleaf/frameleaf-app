@@ -34,6 +34,7 @@
     overviewLevel,
     roomLeft,
     sentence,
+    statusPhrases,
     type NeedLevel,
   } from '$lib/components/frameleaf/settings/overview/overview';
   import { nightOutcome } from '$lib/components/frameleaf/settings/overnight/overnight';
@@ -163,7 +164,6 @@
     body: string;
     actions: { label: string; href: string }[];
     dismiss?: boolean;
-    again?: boolean;
   };
 
   const needs = $derived.by((): Need[] => {
@@ -216,7 +216,6 @@
         title: $t('frameleaf_overview_need_ai'),
         body: $t('frameleaf_overview_need_ai_body'),
         actions: [{ label: $t('frameleaf_overview_see_computers'), href: commandCenterUrl('processing', 'computers') }],
-        again: true,
       });
     }
     if (cloud?.configured && (cloud.plan === 'grace' || cloud.plan === 'expired')) {
@@ -263,7 +262,7 @@
         : $t('frameleaf_overview_hero_ok'),
   );
 
-  /** The five checks the sentence is built from: what is wrong first, then what is fine. */
+  /** The five checks the sentence is built from; while any is wrong, it says only those (#17). */
   const heroBody = $derived.by(() => {
     if (!attention) {
       return '';
@@ -315,10 +314,18 @@
         ? { wrong: true, text: $t('frameleaf_overview_says_update') }
         : { wrong: false, text: $t('frameleaf_overview_says_up_to_date') },
     );
-    return [phrases.filter((phrase) => phrase.wrong), phrases.filter((phrase) => !phrase.wrong)]
-      .filter((group) => group.length > 0)
-      .map((group) => sentence(say.list(group.map((phrase) => phrase.text))))
-      .join(' ');
+    // The other needs above the cards are said too, so the sentence never says all is well under a need.
+    const behind = needs.filter((need) => need.id.startsWith('phone-')).length;
+    if (behind > 0) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_phone_behind', { values: { count: behind } }) });
+    }
+    if (needs.some((need) => need.id === 'plan')) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_plan') });
+    }
+    if (needs.some((need) => need.id === 'restore-test')) {
+      phrases.push({ wrong: true, text: $t('frameleaf_overview_says_restore_untried') });
+    }
+    return sentence(say.list(statusPhrases(phrases)));
   });
 
   // ---- what was checked ----
@@ -590,9 +597,7 @@
                     >{action.label}</a
                   >
                 {/each}
-                {#if need.again}
-                  <Button onclick={checkAgain}>{$t('frameleaf_overview_check_again')}</Button>
-                {/if}
+                <!-- UI review 2026-10-30 #17: one "Check again", on the status above, not one per row too. -->
                 {#if need.dismiss}
                   <Button onclick={() => dismiss(need.id)}>{$t('frameleaf_overview_dismiss')}</Button>
                 {/if}

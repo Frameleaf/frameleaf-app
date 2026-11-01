@@ -293,7 +293,7 @@
     {/if}
 
     {#if stage === 'link'}
-      <div class="gc-link">
+      <div class="gc-link-step">
         {#if status?.state === 'pending' && status.pending}
           <CloudPendingCode
             pending={status.pending}
@@ -357,7 +357,9 @@
               {done
                 ? $t(who === 'me' ? 'frameleaf_gc_step_cloud_done_me' : 'frameleaf_gc_step_cloud_done_everyone')
                 : $t('frameleaf_gc_step_cloud_detail', {
-                    values: { licence: who === 'me' ? 'Individual licence' : 'Server licence' },
+                    values: {
+                      licence: who === 'me' ? $t('frameleaf_license_individual') : $t('frameleaf_license_server'),
+                    },
                   })}
             </small>
             {#if !done && stage === 'needs'}
@@ -553,7 +555,7 @@
     color: var(--fl-text);
     font-weight: 600;
   }
-  .gc-link {
+  .gc-link-step {
     display: grid;
     gap: 12px;
     margin-bottom: 14px;

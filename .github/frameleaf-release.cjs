@@ -1309,6 +1309,27 @@ async function releaseFlags(
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag || ""),
     "Invalid release tag",
   );
+  const restoreTag = env.RESTORE_TAG;
+  if (env.ACTION === "withdraw") {
+    // Check the inputs before any lookup: a missing restore tag would otherwise fall back to `latest`.
+    assert(
+      /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(restoreTag || ""),
+      "Give the release tag to restore",
+    );
+    assert(
+      typeof env.REASON === "string" && env.REASON.trim(),
+      "A withdrawal needs a reason",
+    );
+    assert(
+      env.REASON.replace(/\s+/g, " ").trim().length <= 300,
+      "A withdrawal needs a reason of at most 300 characters",
+    );
+    assert.notEqual(
+      restoreTag,
+      tag,
+      "Restore another release than the one withdrawn",
+    );
+  }
   const record = await github(`releases/tags/${encodeURIComponent(tag)}`);
   assert(!record.draft, "The release is still a draft");
   const dryRun = env.DRY_RUN === "true";
@@ -1332,13 +1353,12 @@ async function releaseFlags(
     return;
   }
   assert.equal(env.ACTION, "withdraw", "Expected rollout or withdraw");
-  const restoreTag = env.RESTORE_TAG;
+  const evidence = await releaseEvidence(restoreTag);
   assert.notEqual(
-    restoreTag,
+    evidence.tag,
     tag,
     "Restore another release than the one withdrawn",
   );
-  const evidence = await releaseEvidence(restoreTag);
   const restore = [];
   for (const spec of VARIANTS) {
     const records = evidence.images.filter(

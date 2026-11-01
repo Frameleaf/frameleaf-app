@@ -106,7 +106,7 @@ export async function command(
   } catch (error) {
     child.kill('SIGKILL');
     await Promise.allSettled([exited, ...transfers]);
-    logFailure(binary, args, exit, stderr, error);
+    logFailure(binary, args, exit, stderr, error, options.env);
     if (options.outputFile) await rm(`${options.outputFile}.partial`, { force: true });
     throw error;
   } finally {
@@ -120,8 +120,19 @@ const STDERR_TAIL = 2048;
 export const SERVER_ADMIN = '/usr/src/app/server/bin/frameleaf-admin';
 const SECRET_ARGUMENT = /^([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[A-Z0-9_]*)=(.*)$/is;
 /** One redacted line for the container log: what ran, how it ended and the end of stderr. */
-function logFailure(binary: string, args: string[], exit: string, stderr: string, error: unknown): void {
-  const secrets = args.map((arg) => SECRET_ARGUMENT.exec(arg)?.[2] ?? '').filter(Boolean);
+function logFailure(
+  binary: string,
+  args: string[],
+  exit: string,
+  stderr: string,
+  error: unknown,
+  env: Record<string, string> = {},
+): void {
+  // Secrets passed through the environment (PGPASSWORD) are masked like secret arguments.
+  const secrets = [
+    ...args.map((arg) => SECRET_ARGUMENT.exec(arg)?.[2] ?? ''),
+    ...Object.entries(env).map(([name, value]) => SECRET_ARGUMENT.exec(`${name}=${value}`)?.[2] ?? ''),
+  ].filter(Boolean);
   const shown = args
     .map((arg) => arg.replace(SECRET_ARGUMENT, '$1=[redacted]'))
     .map((arg) => (arg.length > 120 ? `${arg.slice(0, 117)}...` : arg))
@@ -226,7 +237,7 @@ export class Docker {
         'exec',
         '-i',
         '--env',
-        `PGPASSWORD=${db.password}`,
+        'PGPASSWORD',
         db.container,
         'psql',
         '-X',
@@ -241,7 +252,8 @@ export class Docker {
         'ON_ERROR_STOP=1',
         '-At',
       ],
-      { input: sql },
+      // The password reaches docker through its environment, never its argv.
+      { input: sql, env: { PGPASSWORD: db.password } },
     );
   }
   async dump(db: Database, destination: string): Promise<void> {
@@ -251,7 +263,7 @@ export class Docker {
       [
         'exec',
         '--env',
-        `PGPASSWORD=${db.password}`,
+        'PGPASSWORD',
         db.container,
         'pg_dump',
         '--no-password',
@@ -265,7 +277,7 @@ export class Docker {
         '--no-owner',
         '--no-acl',
       ],
-      { outputFile: destination, timeout: 7_200_000 },
+      { outputFile: destination, timeout: 7_200_000, env: { PGPASSWORD: db.password } },
     );
   }
   async restore(db: Database, file: string): Promise<void> {
@@ -277,7 +289,7 @@ export class Docker {
         'exec',
         '-i',
         '--env',
-        `PGPASSWORD=${db.password}`,
+        'PGPASSWORD',
         db.container,
         'pg_restore',
         '--no-password',
@@ -292,7 +304,7 @@ export class Docker {
         '--no-owner',
         '--no-acl',
       ],
-      { inputFile: file, timeout: 7_200_000 },
+      { inputFile: file, timeout: 7_200_000, env: { PGPASSWORD: db.password } },
     );
   }
   async verifyDump(db: Database, file: string): Promise<void> {

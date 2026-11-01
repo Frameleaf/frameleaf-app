@@ -98,6 +98,20 @@ describe('migrate ledger + phases', () => {
     expect(ledger.peopleToDo().map((p) => p.name)).toEqual(['Alice']);
   });
 
+  it('--rescan restarts only a finished scan; an interrupted one resumes from its cursors', () => {
+    const visibilities = ['timeline', 'hidden'];
+    ledger.setCursor('enum:timeline:done', '1');
+    ledger.setCursor('enum:hidden', '3');
+    expect(ledger.reopenForRescan(visibilities)).toBe(false);
+    expect(ledger.getCursor('enum:hidden')).toBe('3');
+    expect(ledger.getCursor('enum:timeline:done')).toBe('1');
+
+    ledger.setCursor('enum:hidden:done', '1');
+    expect(ledger.reopenForRescan(visibilities)).toBe(true);
+    expect(ledger.getCursor('enum:hidden')).toBeUndefined();
+    expect(ledger.getCursor('enum:timeline:done')).toBeUndefined();
+  });
+
   it('idempotent replay: re-upserting and re-marking never duplicates rows', () => {
     ledger.upsertAssets([asset('a1', 'c1')]);
     ledger.upsertAssets([asset('a1', 'c1')]); // re-enumerate

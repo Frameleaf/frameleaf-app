@@ -1499,6 +1499,7 @@ export class MediaOperationRepository {
       ownerId: string;
       kind: string;
       projectId: string | null;
+      assetId: string | null;
     }>
   > {
     if (projectIds.length === 0 || kinds.length === 0) {
@@ -1506,7 +1507,7 @@ export class MediaOperationRepository {
     }
     return this.db
       .selectFrom('media_operation')
-      .select(['id', 'ownerId', 'kind', 'projectId'])
+      .select(['id', 'ownerId', 'kind', 'projectId', 'assetId'])
       .where('projectId', 'in', [...projectIds])
       .where('kind', 'in', [...kinds])
       .$if(ownerId !== undefined, (qb) => qb.where('ownerId', '=', ownerId!))

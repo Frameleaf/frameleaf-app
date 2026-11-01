@@ -424,6 +424,9 @@ export const utils = {
                             context,
                             `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
                           );
+                          // The coordinator delivers cancellation only from its tick. Without this wake the
+                          // request waits for the next five-second scan, most of the quiesce budget.
+                          await query(context, `SELECT pg_notify('frameleaf_jobs', '')`);
                           return true;
                         } catch (error) {
                           const failure = error as { code?: string; message?: string; where?: string };
@@ -598,7 +601,13 @@ export const utils = {
                   await query(context, 'COMMIT');
                   return rows as QueuePauseSnapshot;
                 } catch (error) {
-                  await db.query('ROLLBACK');
+                  try {
+                    await db.query('ROLLBACK');
+                  } catch (error_) {
+                    throw new AggregateError([error, error_], 'Pausing queues and its rollback failed', {
+                      cause: error_,
+                    });
+                  }
                   throw error;
                 }
               },
@@ -638,7 +647,13 @@ export const utils = {
                     );
                     await query(cleanup, 'COMMIT');
                   } catch (error) {
-                    await db.query('ROLLBACK');
+                    try {
+                      await db.query('ROLLBACK');
+                    } catch (error_) {
+                      throw new AggregateError([error, error_], 'Restoring queue settings and its rollback failed', {
+                        cause: error_,
+                      });
+                    }
                     throw error;
                   }
                 }),

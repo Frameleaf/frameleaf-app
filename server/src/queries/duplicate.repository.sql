@@ -324,8 +324,9 @@ commit
 -- DuplicateRepository.merge
 update "asset"
 set
+  "duplicateId" = $1
 where
   (
-    "duplicateId" = any ($1::uuid[])
-    or "id" = any ($2::uuid[])
+    "duplicateId" = any ($2::uuid[])
+    or "id" = any ($3::uuid[])
   )

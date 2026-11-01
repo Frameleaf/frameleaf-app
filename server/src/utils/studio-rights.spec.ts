@@ -88,6 +88,9 @@ describe('studio rights (FL-86)', () => {
       if (id === 'model:onnx-community/whisper-tiny_timestamped') {
         // The owner approved this exact seven-file model inventory again on October 3.
         expect(rights.approvedOn, id).toBe('2026-10-03');
+      } else if (id === 'model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx') {
+        // The owner approved the five-file inventory served from the Frameleaf model mirror on October 31 (FL-685).
+        expect(rights.approvedOn, id).toBe('2026-10-31');
       } else {
         expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) || isPinned(id) ? '2026-09-29' : '2026-09-25');
       }

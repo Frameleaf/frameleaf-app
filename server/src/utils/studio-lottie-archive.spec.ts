@@ -257,6 +257,16 @@ describe('owned strict dotLottie archives', () => {
     await expect(readLottieArchive(understated)).rejects.toThrow('Lottie archive refused');
   });
 
+  it('accepts deflate level hints in the general-purpose flags', async () => {
+    const archive = Buffer.from(ownedLottieArchive('2'));
+    for (let offset = 0; offset + 4 <= archive.length; offset++) {
+      const signature = archive.readUInt32LE(offset);
+      if (signature === 0x04_03_4b_50) archive.writeUInt16LE(0x06, offset + 6);
+      else if (signature === 0x02_01_4b_50) archive.writeUInt16LE(0x06, offset + 8);
+    }
+    await expect(readLottieArchive(archive)).resolves.toBeDefined();
+  });
+
   it('refuses encrypted/unsupported/expanded entries and unproved active theme/resource branches', async () => {
     for (const declare of [{ flags: 1 }, { method: 12 }, { uncompressedSize: 17 * 1024 * 1024 }])
       await expect(

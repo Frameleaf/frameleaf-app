@@ -106,7 +106,8 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
     });
     const aliases = new Set<string>();
     for (const entry of directory.entries) {
-      if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x8_00) return fail();
+      // UTF-8 names (bit 11), data descriptors (bit 3) and deflate level hints (bits 1-2) are safe.
+      if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x8_0e) return fail();
       aliases.add(entry.name.toLowerCase());
       files[entry.name] = await readZipEntry(source, entry, MAX_BYTES);
     }

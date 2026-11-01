@@ -144,6 +144,12 @@ program
   )
   .addOption(new Option('--include-trashed', 'Also migrate trashed assets').default(false))
   .addOption(new Option('--retry-failed', 'Requeue assets that errored on a previous run').default(false))
+  .addOption(
+    new Option(
+      '--rescan',
+      'Scan the source again on a reused ledger to copy photos added since the last run (no duplicates)',
+    ).default(false),
+  )
   .addOption(new Option('--no-faces', "Skip person/face migration (faces are best-effort and depend on B's ML)"))
   .addOption(new Option('--serve', 'Serve a local browser dashboard to monitor/control the run').default(false))
   .addOption(

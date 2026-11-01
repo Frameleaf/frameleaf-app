@@ -26,10 +26,13 @@ const toRecord = (a: AssetResponseDto): AssetRecord => ({
  * Phase 1: walk SERVER A and snapshot every asset (+ albums/tags/stacks/people) into the
  * ledger. Each page is persisted before its cursor advances, so a huge scan resumes
  * mid-way. Runs once per visibility because the server filters to a single visibility.
+ * A finished scan is not repeated on resume; `--rescan` walks the source again to pick up
+ * assets added since, and the ledger's upsert keeps every known asset's progress.
  */
 export async function enumerate(from: ServerClient, ledger: Ledger, options: MigrateOptions, controller: Controller) {
   controller.setPhase('enumerate');
-  let count = ledger.counts().assetsTotal;
+  const restarted = options.rescan && ledger.reopenForRescan(VISIBILITIES);
+  let count = restarted ? 0 : ledger.counts().assetsTotal;
 
   for (const visibility of VISIBILITIES) {
     if (ledger.getCursor(`enum:${visibility}:done`)) {

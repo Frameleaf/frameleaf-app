@@ -297,6 +297,8 @@ export function createLibraryMediaSeeder(options: {
   const seeded = new Set<string>()
   /** Assets already recorded as HDR originals (FL-97). */
   const hdrMarked = new Set<string>()
+  /** Seeds run one at a time, each over what is still unseeded once the previous one settles. */
+  let seeding: Promise<void> = Promise.resolve()
   /** Removed from the bin by the person; never carried to another mount. */
   const removed = new Set<string>()
   /** What was linked to each recent mount's project here (the last few mounts only). */
@@ -353,27 +355,19 @@ export function createLibraryMediaSeeder(options: {
     onChange()
   }
 
-  return {
-    async seed(assets) {
-      if (controller.signal.aborted) return
-      const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
-      const now = Date.now()
-      // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
-      for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
-      // FL-97: the server names HDR originals once they are placed; record it on media the bin
-      // already holds, so the project becomes HDR without a remount.
-      let marked = false
-      for (const asset of assets) {
-        if (!asset.hdr || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
-        hdrMarked.add(asset.id)
-        if (await getMedia(asset.id)) {
-          await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
-          marked = true
-        }
-      }
-      if (marked) onChange()
+  /** One seed pass; `seed` queues these so overlapping calls never share an asset (FL-722). */
+  const seedNow = async (assets: readonly StudioAssetRef[]) => {
+    if (controller.signal.aborted) return
+    const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
+    const freshIds = new Set(fresh.map((asset) => asset.id))
+    for (const id of freshIds) seeded.add(id)
+    const now = Date.now()
+    // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
+    for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
+    let started = 0
+    try {
       for (const asset of fresh) {
-        seeded.add(asset.id)
+        started++
         if (asset.hdr) hdrMarked.add(asset.id)
         if (controller.signal.aborted) return
         const record = initialMediaRecord(asset, now)
@@ -390,11 +384,35 @@ export function createLibraryMediaSeeder(options: {
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
         await link(projectId(), asset.id)
       }
-      if (fresh.length > 0) onChange()
-      // Probe one at a time in the background, handoff order first: it is the starting cut.
-      probing = probing.then(async () => {
-        for (const asset of fresh) await enrich(asset)
-      })
+    } finally {
+      // Assets this seed never started stay free for the next seed; started ones keep their reservation.
+      for (const asset of fresh.slice(started)) seeded.delete(asset.id)
+    }
+    if (fresh.length > 0) onChange()
+    // FL-97: the server names HDR originals once they are placed; record it on media the bin
+    // already holds, so the project becomes HDR without a remount.
+    let marked = false
+    for (const asset of assets) {
+      if (!asset.hdr || freshIds.has(asset.id) || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
+      if (await getMedia(asset.id)) {
+        await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
+        hdrMarked.add(asset.id)
+        marked = true
+      }
+    }
+    if (marked) onChange()
+    // Probe one at a time in the background, handoff order first: it is the starting cut.
+    probing = probing.then(async () => {
+      for (const asset of fresh) await enrich(asset)
+    })
+  }
+
+  return {
+    async seed(assets) {
+      const run = seeding.then(() => seedNow(assets))
+      seeding = run.catch(() => {})
+      await run
+      // Probing runs in the background, outside the queue, so it never holds up the next seed.
       await probing
     },
     async associate(target, from) {

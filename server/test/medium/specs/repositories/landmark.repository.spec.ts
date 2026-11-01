@@ -102,6 +102,10 @@ describe('landmark matching', () => {
     await setup(writePack([park, resort, tower])).importPack();
   });
 
+  afterEach(async () => {
+    await db?.destroy();
+  });
+
   it('imports places and their boundaries', async () => {
     const places = await db.selectFrom('landmark').select(['id', 'names']).orderBy('id').execute();
     expect(places).toEqual([

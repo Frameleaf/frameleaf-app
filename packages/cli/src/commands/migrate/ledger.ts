@@ -26,6 +26,8 @@ export interface PersonSnapshot {
   isHidden: boolean;
   isFavorite: boolean;
   color: string | null;
+  /** The destination person an earlier run attached this name to, if any. */
+  bId?: string | null;
 }
 
 interface AssetRow {
@@ -210,6 +212,35 @@ export class Ledger {
       .run(name, value);
   }
 
+  /**
+   * `--rescan`: walk the source library again on this ledger to pick up assets added since
+   * the last run. Only the enumeration cursors are cleared; every enumerated asset keeps its
+   * destination id and upload state, and albums keep the destination album they map to, so
+   * nothing is uploaded or created twice. Album links, tag assignments, people and stacks with
+   * unseen members are reopened because adding members to them is idempotent and new assets
+   * may belong to them.
+   * Returns whether the scan starts over (false when an interrupted scan is resumed instead).
+   */
+  reopenForRescan(visibilities: readonly string[]): boolean {
+    return this.db.transaction(() => {
+      // An interrupted scan (first or rescan) resumes from its cursors; only a finished one restarts.
+      const shouldRestart = visibilities.every((visibility) => this.getCursor(`enum:${visibility}:done`));
+      if (shouldRestart) {
+        this.stmt("DELETE FROM cursor WHERE name LIKE 'enum:%'").run();
+      }
+      this.stmt('UPDATE album SET linked = 0').run();
+      this.stmt('UPDATE tag SET assigned = 0').run();
+      this.stmt('UPDATE person SET done = 0').run();
+      // A stack finished without a member the ledger never saw (added to the source after the
+      // last scan) waits for it again. Re-creating merges into the existing destination stack.
+      this.stmt(
+        `UPDATE stack SET done = 0 WHERE EXISTS (SELECT 1 FROM json_each(stack.member_a_ids) m
+           WHERE NOT EXISTS (SELECT 1 FROM asset WHERE asset.a_id = m.value))`,
+      ).run();
+      return shouldRestart;
+    })();
+  }
+
   // --- assets ---
   upsertAsset(r: AssetRecord) {
     this.stmt(
@@ -224,7 +255,9 @@ export class Ledger {
       is_favorite = excluded.is_favorite, visibility = excluded.visibility,
       live_video_a_id = excluded.live_video_a_id, description = excluded.description,
       date_time_original = excluded.date_time_original, latitude = excluded.latitude,
-      longitude = excluded.longitude, rating = excluded.rating
+      longitude = excluded.longitude, rating = excluded.rating,
+      -- A changed Live Photo pairing (seen on --rescan) must be linked again on the destination.
+      meta_applied = CASE WHEN asset.live_video_a_id IS excluded.live_video_a_id THEN asset.meta_applied ELSE 0 END
     `,
     ).run({
       a_id: r.aId,
@@ -461,7 +494,10 @@ export class Ledger {
     this.db
       .prepare(
         `INSERT INTO stack (primary_a_id, member_a_ids) VALUES (?, ?)
-         ON CONFLICT(primary_a_id) DO UPDATE SET member_a_ids = excluded.member_a_ids`,
+         ON CONFLICT(primary_a_id) DO UPDATE SET member_a_ids = excluded.member_a_ids,
+           -- New members (seen on --rescan) reopen the stack. Creating it again on the
+           -- destination merges into the stack its primary already heads, so none is duplicated.
+           done = CASE WHEN stack.member_a_ids = excluded.member_a_ids THEN stack.done ELSE 0 END`,
       )
       .run(s.primaryAId, JSON.stringify(s.memberAIds));
   }
@@ -513,6 +549,7 @@ export class Ledger {
       is_hidden: number;
       is_favorite: number;
       color: string | null;
+      b_id: string | null;
     }>;
     return rows.map((r) => ({
       aId: r.a_id,
@@ -521,6 +558,7 @@ export class Ledger {
       isHidden: !!r.is_hidden,
       isFavorite: !!r.is_favorite,
       color: r.color,
+      bId: r.b_id,
     }));
   }
 

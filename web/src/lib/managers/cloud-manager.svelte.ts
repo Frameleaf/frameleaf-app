@@ -8,6 +8,7 @@ import {
   getLicenseProducts,
   getLicenseStatus,
   installLicenseCertificate,
+  linkCloudWithAccount,
   refreshLicense,
   removeLicenseKey,
   removeLicensePlan,
@@ -16,6 +17,9 @@ import {
   updateCloudPermissions,
   updateCloudRemoteAccess,
   updateCloudSignIn,
+  verifyCloudAccountLink,
+  type CloudAccountLinkDto,
+  type CloudAccountLinkResponseDto,
   type CloudPermissionsUpdateDto,
   type CloudRemoteAccessUpdateDto,
   type CloudStatusResponseDto,
@@ -133,6 +137,12 @@ export class CloudManager {
   /** FC-18: link again in the account's region with the approval the cloud kept after `region-mismatch`. */
   continueLink = () => this.#run(() => continueCloudLink());
   unlink = () => this.#run(() => unlinkCloud());
+  /** FL-708: first-run setup links with a Frameleaf account's email and password; no approval code. */
+  linkWithAccount = (dto: CloudAccountLinkDto) =>
+    this.#runAccountLink(() => linkCloudWithAccount({ cloudAccountLinkDto: dto }));
+  /** FL-708: the emailed or authenticator code a link with an account asked for. */
+  verifyAccountLink = (challengeId: string, code: string) =>
+    this.#runAccountLink(() => verifyCloudAccountLink({ cloudAccountLinkVerifyDto: { challengeId, code } }));
   checkIn = () => this.#run(() => checkInCloud());
   setPermissions = (dto: CloudPermissionsUpdateDto) =>
     this.#run(() => updateCloudPermissions({ cloudPermissionsUpdateDto: dto }));
@@ -158,6 +168,15 @@ export class CloudManager {
     const license = await call();
     this.#license = license;
     return license;
+  }
+
+  async #runAccountLink(call: () => Promise<CloudAccountLinkResponseDto>) {
+    let answer: CloudAccountLinkResponseDto | undefined;
+    await this.#run(async () => {
+      answer = await call();
+      return answer.status;
+    });
+    return answer!;
   }
 
   async #run(call: () => Promise<CloudStatusResponseDto>) {

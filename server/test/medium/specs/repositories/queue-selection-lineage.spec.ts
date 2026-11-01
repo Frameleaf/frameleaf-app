@@ -1207,7 +1207,7 @@ describe('durable selected-job descendant lineage', () => {
         ),
       ).toBe(500_002);
       const { rows: plans } = await sql<{ 'QUERY PLAN': [{ Plan: Plan }] }>`explain (analyze, buffers, format json)
-        ${selectionLineageSource(selection.id, '499750')}`.execute(controlDb);
+        ${selectionLineageSource(selection.id, String(SCALE_ITEMS - 250))}`.execute(controlDb);
       const { descendantRows: tailRows, selectionRows: tailSelectionRows } = assertBoundedPlan(
         plans[0]['QUERY PLAN'][0].Plan,
       );

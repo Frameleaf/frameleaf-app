@@ -21,8 +21,15 @@
 </div>
 
 <style>
+  /* Visually hidden while empty, but still in the accessibility tree so the live region is
+     registered before a message arrives. Absolute, so it takes no grid track or gap. */
   .kit-said-region:empty {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .kit-said {
     display: grid;

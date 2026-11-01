@@ -1443,6 +1443,18 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(4);
     });
 
+    it('should keep the original error when the rollback also fails', async () => {
+      mocks.database.runMigrations.mockRejectedValue(new Error('Migrations Error'));
+      mocks.process.spawnDuplexStream
+        .mockReturnValueOnce(mockDuplex()('pg_dump', 0, 'data', ''))
+        .mockReturnValueOnce(mockDuplex()('gzip', 0, 'data', ''))
+        .mockReturnValueOnce(mockDuplex()('psql', 0, 'data', ''))
+        .mockReturnValueOnce(mockDuplex()('psql', 1, '', 'rollback error'));
+
+      await expect(sut.restoreDatabaseBackup('development-filename.sql')).rejects.toThrow('Migrations Error');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('restore it by hand'));
+    });
+
     it('should rollback if there is no admin user', async () => {
       mocks.user.hasAdmin.mockResolvedValue(false);
 

@@ -321,6 +321,19 @@ describe('durable capture delivery', () => {
       ),
     ).toBe(true);
   });
+  it('schedules a retry for a delivery stopped without a fatal failure', async () => {
+    await enqueue();
+    const stop = new AbortController();
+    transport.getUpload.mockImplementationOnce(async () => {
+      stop.abort();
+      throw new DeliveryFailure('cancelled');
+    });
+    const before = Date.now();
+    await runner.resumeQueue(binding, 'private-key', stop.signal);
+    const [task] = await queue.listCaptures(binding);
+    expect(task.state).not.toBe('needs-attention');
+    expect(task.retryAt).toBeGreaterThanOrEqual(before + 5000);
+  });
   it('preserves bytes on permanent failures and on destination/actor ambiguity without a fallback', async () => {
     const task = await enqueue();
     transport.createUpload.mockRejectedValue(

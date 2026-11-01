@@ -57,6 +57,9 @@ describe('/asset', () => {
   let ratingAsset: AssetMediaResponseDto;
 
   const setupTests = async () => {
+    if (websocket) {
+      utils.disconnectWebsocket(websocket);
+    }
     await utils.resetDatabase();
     admin = await utils.adminSetup({ onboarding: false });
 

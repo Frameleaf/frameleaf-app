@@ -1,5 +1,6 @@
 import { getUtilitiesSummary } from '@frameleaf/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /** What Unused files holds: the files and their size. */
 export type UnusedFilesTotals = { files: number; bytes: number };
@@ -18,6 +19,13 @@ class UnusedFilesAccess {
   loaded = $state(false);
   #reading: Promise<void> | undefined;
   #userId: string | undefined;
+  /** Bumped when the account changes or someone signs out; a read only applies within its own session. */
+  #session = 0;
+
+  constructor() {
+    // Signing out forgets the reader, so an answer still in flight is dropped and the next sign-in reads again.
+    eventManager.on({ AuthLogout: () => this.reset() });
+  }
 
   get isOwner() {
     return this.totals !== null;
@@ -27,6 +35,7 @@ class UnusedFilesAccess {
   load(userId: string, isAdmin: boolean): Promise<void> {
     if (this.#userId !== userId) {
       this.#userId = userId;
+      this.#session++;
       this.#reading = undefined;
       this.totals = null;
       this.loaded = false;
@@ -49,19 +58,29 @@ class UnusedFilesAccess {
 
   /** Reads the totals again, after something changed them (a restore, emptying it). */
   async refresh(): Promise<void> {
+    // An answer that arrives after the account changed or someone signed out (even back in as the same
+    // account) belongs to an earlier session: dropped.
+    const session = this.#session;
     try {
       const summary = await getUtilitiesSummary();
-      this.totals =
-        summary.unusedFiles === null ? null : { files: summary.unusedFiles, bytes: summary.unusedBytes ?? 0 };
+      if (this.#session === session) {
+        this.totals =
+          summary.unusedFiles === null ? null : { files: summary.unusedFiles, bytes: summary.unusedBytes ?? 0 };
+      }
     } catch {
-      this.totals = null;
+      if (this.#session === session) {
+        this.totals = null;
+      }
     } finally {
-      this.loaded = true;
+      if (this.#session === session) {
+        this.loaded = true;
+      }
     }
   }
 
-  /** For tests. */
+  /** Forgets the reader: on sign-out, and in tests. */
   reset() {
+    this.#session++;
     this.#reading = undefined;
     this.#userId = undefined;
     this.totals = null;

@@ -191,9 +191,16 @@ const cutAndPublish = async (
     return { status: 'cut', frames: prepared };
   }
 
-  const published = await deps.moments.replaceFrames(assetId, fingerprint, frames, {
-    extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION,
-  });
+  let published: Awaited<ReturnType<typeof deps.moments.replaceFrames>>;
+  try {
+    published = await deps.moments.replaceFrames(assetId, fingerprint, frames, {
+      extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION,
+    });
+  } catch (error) {
+    // Nothing was published: the cut files belong to no row, so remove them before failing.
+    await Promise.all(frames.map(({ path }) => deps.storage.unlink(path).catch(() => {})));
+    throw error;
+  }
   if (published.status === 'source-changed') {
     await Promise.all(frames.map(({ path }) => deps.storage.unlink(path).catch(() => {})));
     return { status: 'source-changed' };

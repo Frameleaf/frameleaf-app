@@ -60,16 +60,12 @@
     failed = false;
     const current = ++load;
     // Both reads are independent: the account list does not wait for the disk check, and is shown as
-    // soon as it arrives, so a list read again meanwhile (after an edit) is never replaced by this one.
+    // soon as it arrives. A disk check that fails leaves the list as it is.
     // A load that failed, or that a retry replaced, shows nothing it receives afterwards.
-    const accounts = searchUsersAdmin({ withDeleted: true }).then((result) => {
-      if (current === load) {
-        users = result;
-      }
-    });
-    void Promise.all([requestServerInfo(), accounts])
-      .then(() => {
+    void searchUsersAdmin({ withDeleted: true })
+      .then((result) => {
         if (current === load) {
+          users = result;
           loaded = true;
         }
       })
@@ -79,6 +75,7 @@
           load++;
         }
       });
+    void requestServerInfo().catch(() => {});
   };
   onMount(() => {
     loadUsers();

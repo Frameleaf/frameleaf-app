@@ -1,1 +1,1 @@
-export const MODULE: string;
+export const MODULE: Uint8Array;

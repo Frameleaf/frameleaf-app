@@ -23,7 +23,7 @@
     gap: 0 var(--fl-space-2);
     margin: 0 0 8px;
     color: var(--fl-muted);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: 1.3px;
     line-height: 1.4;

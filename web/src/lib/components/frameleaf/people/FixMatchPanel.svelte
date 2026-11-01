@@ -72,12 +72,16 @@
   let { person, onOpenAsset, onChanged, close }: Props = $props();
 
   const PAGE_SIZE = 25;
+  // at most this many photos' faces are read at once, as in FeaturedPhotoDialog
+  const FACE_READS = 6;
 
   type Row = { asset: AssetResponseDto; face: AssetFaceResponseDto };
   let rows: Row[] = $state([]);
   let others: PeopleListItemDto[] = $state([]);
   let hasMore = $state(false);
   let loading = $state(false);
+  // the last read failed; with nothing listed yet the panel offers a retry instead of the empty note
+  let loadFailed = $state(false);
   const resolved = new SvelteMap<string, string>();
   const selected = new SvelteSet<string>();
   let naming: string | null = $state(null);
@@ -98,6 +102,31 @@
   const seen = new Set<string>();
 
   /**
+   * Each photo's faces, in order, reading at most FACE_READS at a time. After a failed read no
+   * worker starts another, and every read in flight settles before the failure is thrown, so a
+   * retry never overlaps the reads of the attempt that failed.
+   */
+  const readFaces = async (photos: AssetResponseDto[]) => {
+    const faces: AssetFaceResponseDto[][] = Array.from({ length: photos.length });
+    let next = 0;
+    let failure: { error: unknown } | undefined;
+    const worker = async () => {
+      for (let index = next++; index < photos.length && !failure; index = next++) {
+        try {
+          faces[index] = await getFaces({ id: photos[index].id });
+        } catch (error) {
+          failure ??= { error };
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: FACE_READS }, worker));
+    if (failure) {
+      throw failure.error;
+    }
+    return faces;
+  };
+
+  /**
    * Reads the next photos of this person. Moving a face away can drop a photo out of the
    * person's results and shift every later page, so paging by number alone would skip photos.
    * Each "Show more" instead starts at a page that cannot be past the first unseen photo (the
@@ -106,19 +135,22 @@
    */
   const loadPage = async () => {
     loading = true;
+    loadFailed = false;
     try {
       let page = Math.floor(Math.max(0, seen.size - resolved.size) / PAGE_SIZE) + 1;
       const photos: AssetResponseDto[] = [];
+      // Marked seen only once their faces load, so a failed read lists them again on the next try.
+      const pageSeen = new Set<string>();
       let more = true;
       while (photos.length < PAGE_SIZE && more) {
         const { assets } = await searchAssets({
           metadataSearchDto: { personIds: [person.id], visibility: AssetVisibility.Timeline, size: PAGE_SIZE, page },
         });
         for (const asset of assets.items) {
-          if (seen.has(asset.id)) {
+          if (seen.has(asset.id) || pageSeen.has(asset.id)) {
             continue;
           }
-          seen.add(asset.id);
+          pageSeen.add(asset.id);
           if (asset.visibility !== AssetVisibility.Locked) {
             photos.push(asset);
           }
@@ -126,13 +158,17 @@
         more = !!assets.nextPage;
         page++;
       }
-      const faces = await Promise.all(photos.map((asset) => getFaces({ id: asset.id })));
+      const faces = await readFaces(photos);
+      for (const id of pageSeen) {
+        seen.add(id);
+      }
       const next = photos.flatMap((asset, index) =>
         faces[index].filter((face) => face.person?.id === person.id).map((face) => ({ asset, face })),
       );
       rows = [...rows, ...next];
       hasMore = more;
     } catch (error) {
+      loadFailed = true;
       handleError(error, $t('errors.cant_get_faces'));
     } finally {
       loading = false;
@@ -445,6 +481,10 @@
   </ul>
   {#if loading}
     <p class="note"><Spinner /></p>
+  {:else if rows.length === 0 && loadFailed}
+    <div class="more">
+      <Button onclick={() => void loadPage()}>{$t('retry')}</Button>
+    </div>
   {:else if rows.length === 0}
     <p class="note">{$t('frameleaf_people_fix_empty')}</p>
   {:else if hasMore}

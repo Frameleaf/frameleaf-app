@@ -1,9 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
+import { locale } from '$lib/stores/preferences.store';
 import en from '../../../../../../../i18n/en.json';
 import Overview from './Overview.svelte';
-import { byUrgency, growthPerDay, overviewLevel, roomLeft, sentence } from './overview';
+import { byUrgency, growthPerDay, overviewLevel, roomLeft, sentence, statusPhrases } from './overview';
 
 const sdk = vi.hoisted(() => ({
   getAttention: vi.fn(),
@@ -40,8 +42,12 @@ const healthy = {
 };
 
 describe('Overview (FL-363)', () => {
+  // The status sentence is joined with Intl.ListFormat in the saved locale, so pin it to English.
+  const originalLocale = get(locale);
   beforeAll(() => addMessages('dev', en));
+  afterEach(() => locale.set(originalLocale));
   beforeEach(() => {
+    locale.set('en');
     sdk.getAttention.mockReset().mockResolvedValue(healthy);
     sdk.setAttentionDismissed.mockReset();
     sdk.getAnalyticsReport.mockReset().mockResolvedValue(analyticsReportFixture());
@@ -83,6 +89,9 @@ describe('Overview (FL-363)', () => {
     expect(await screen.findByText('Emma’s phone hasn’t sent photos for 9 days')).toBeInTheDocument();
     expect(screen.getByText('1 phone behind')).toBeInTheDocument();
     expect(screen.getByText('Emma’s phone, 9 days')).toBeInTheDocument();
+    // The five checks are healthy, so the status sentence names the phone, not "all is well".
+    expect(screen.getByText('A phone hasn’t sent photos lately.')).toBeInTheDocument();
+    expect(screen.queryByText(/Your library is backed up/)).not.toBeInTheDocument();
   });
 
   it('says there are no phones yet (FL-518)', async () => {
@@ -131,11 +140,20 @@ describe('Overview (FL-363)', () => {
         check.kind === 'storage' || check.kind === 'version' ? { ...check, state: 'attention' } : check,
       ),
     });
+    // AI unreachable too, so a per-row "Check again" on any of the three needs would show here.
+    sdk.listMlDestinations.mockResolvedValue([{ id: 'lan', kind: 'lan', health: { status: 'unhealthy' } }]);
+    sdk.getMlWorkloadRoutes.mockResolvedValue({ routes: [{ workload: 'clip', destinationId: 'lan' }] });
     render(Overview);
     expect(await screen.findByRole('heading', { name: 'Something needs you now' })).toBeInTheDocument();
+    expect(await screen.findByText('AI features are not answering')).toBeInTheDocument();
     expect(screen.getAllByText(/almost out of space/i).length).toBeGreaterThan(0);
     const list = screen.getByRole('list', { name: 'Needs your attention' });
     expect(list.querySelector('li')).toHaveClass('is-now');
+    // UI review 2026-10-30 #17: the status names only the problems, and "Check again" is there once.
+    expect(
+      screen.getByText('This drive is almost out of space, AI features are not answering, and an update is ready.'),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Check again/ })).toHaveLength(1);
   });
 
   it('lists Studio as optional, never raising the headline, and lets it be dismissed on the server', async () => {
@@ -152,6 +170,14 @@ describe('Overview (FL-363)', () => {
 });
 
 describe('overview rules', () => {
+  it('says only what is wrong while something is (UI review 2026-10-30 #17)', () => {
+    const fine = { wrong: false, text: 'Frameleaf is up to date' };
+    const full = { wrong: true, text: 'this drive is almost full' };
+    expect(statusPhrases([fine, full])).toEqual(['this drive is almost full']);
+    expect(statusPhrases([fine])).toEqual(['Frameleaf is up to date']);
+    expect(statusPhrases([])).toEqual([]);
+  });
+
   it('answers with three levels', () => {
     expect(overviewLevel([])).toBe('ok');
     expect(overviewLevel(['look'])).toBe('attention');

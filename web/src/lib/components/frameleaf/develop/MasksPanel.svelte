@@ -26,6 +26,11 @@
   let finding = $state<'subject' | 'sky' | null>(null);
   let abort: AbortController | undefined;
   onDestroy(() => abort?.abort());
+  // The panel stays mounted when another photo opens; a pending suggestion is for the previous one.
+  $effect(() => {
+    void id;
+    return () => abort?.abort();
+  });
 
   const NAMES: Record<MaskKind, string> = {
     brush: 'frameleaf_develop_mask_name_brush',
@@ -62,14 +67,19 @@
     if (masks.length >= MAX_MASKS || finding) {
       return;
     }
+    const forId = id;
     finding = target;
     abort?.abort();
     abort = new AbortController();
+    const signal = abort.signal;
     try {
-      const artifact = await proposeNativeMask(id, target, abort.signal);
+      const artifact = await proposeNativeMask(forId, target, signal);
+      if (signal.aborted || forId !== id) {
+        return;
+      }
       add(target, artifact.id);
     } catch {
-      if (!abort.signal.aborted) {
+      if (!signal.aborted) {
         say($t('frameleaf_develop_suggest_unavailable'));
       }
     } finally {

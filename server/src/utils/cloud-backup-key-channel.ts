@@ -139,8 +139,9 @@ export const loadBackupWorkerIdentity = async (path: string): Promise<KeyObject>
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   const bytes = Buffer.alloc(8193);
   try {
-    const before = await file.stat();
-    if (!before.isFile() || before.size === 0 || before.size > 8192) {
+    // bigint stats: dev/ino can exceed Number.MAX_SAFE_INTEGER on some filesystems.
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size === 0n || before.size > 8192n) {
       throw new Error('Backup worker identity must be a bounded regular private key file');
     }
     let length = 0;
@@ -149,13 +150,13 @@ export const loadBackupWorkerIdentity = async (path: string): Promise<KeyObject>
       if (!read.bytesRead) break;
       length += read.bytesRead;
     }
-    const after = await file.stat();
-    const current = await lstat(path);
+    const after = await file.stat({ bigint: true });
+    const current = await lstat(path, { bigint: true });
     if (
-      length !== before.size ||
+      BigInt(length) !== before.size ||
       before.size !== after.size ||
-      before.mtimeMs !== after.mtimeMs ||
-      before.ctimeMs !== after.ctimeMs ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
       current.dev !== after.dev ||
       current.ino !== after.ino ||
       !current.isFile()

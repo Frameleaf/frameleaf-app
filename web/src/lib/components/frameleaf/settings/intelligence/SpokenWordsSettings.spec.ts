@@ -212,3 +212,14 @@ it('names its independent save and never submits an enclosing preferences form',
     form.remove();
   }
 });
+
+it('keeps the unsaved draft when the connection comes back', async () => {
+  render(SpokenWordsSettings);
+  const toggle = await screen.findByRole('switch', { name: 'Index spoken words' });
+  await fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-checked', 'true');
+  eventManager.emit('WebsocketConnect');
+  await waitFor(() => expect(sdkMock.getSpeechStatus).toHaveBeenCalledTimes(2));
+  expect(sdkMock.getSpeechCapabilities).toHaveBeenCalledOnce();
+  expect(screen.getByRole('switch', { name: 'Index spoken words' })).toHaveAttribute('aria-checked', 'true');
+});

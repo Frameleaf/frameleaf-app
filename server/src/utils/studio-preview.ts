@@ -111,7 +111,7 @@ export type PreviewBinding = {
 export const previewCacheKey = (binding: PreviewBinding): string =>
   createHash('sha256')
     .update(
-      [
+      JSON.stringify([
         'fl96',
         binding.ownerId,
         binding.projectId,
@@ -120,7 +120,7 @@ export const previewCacheKey = (binding: PreviewBinding): string =>
         binding.quality,
         String(binding.viewportWidth),
         String(binding.viewportHeight),
-      ].join('\u{0}'),
+      ]),
     )
     .digest('hex');
 

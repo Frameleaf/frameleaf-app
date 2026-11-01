@@ -863,9 +863,9 @@ export class AssetJobRepository {
   }
 
   /**
-   * FL-521: the photos and videos behind Editing & playback's status: photos and how many have no
-   * preview yet, videos and how many have a playback copy. FL-537: and how long those videos are, for
-   * "about N MB a minute". FL-630: and the space the copies take, from their recorded sizes (each
+   * FL-521: the photos and videos behind Editing & playback's status: photos, how many photos and
+   * videos have no preview yet (the thumbnail job makes both), videos and how many have a playback
+   * copy. FL-537: and how long those videos are, for "about N MB a minute". FL-630: and the space the copies take, from their recorded sizes (each
    * shared file once); copies made before files were recorded are counted in `unsizedCopies`.
    */
   async countMediaCopies(): Promise<{

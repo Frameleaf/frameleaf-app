@@ -109,14 +109,19 @@ export async function recordSelectionLineage(tx: Executor, parentId: string, chi
   }
 }
 
-/** The sequence is assigned under publication's guard, so a cursor cannot pass an uncommitted descendant. */
+/** The sequence is assigned under publication's guard, so a cursor cannot pass an uncommitted descendant.
+ * Each lineage row looks up its unique source item through a lateral `limit 1`, which the planner
+ * cannot flatten into a hash join over every `job_run_item` row, so a page reads only its own rows.
+ */
 export const selectionLineageSource = (selectionId: string, after: string, limit = QUEUE_BATCH) => sql`
   select l.id "lineageId", i."runId", i."itemKey", i."rootItemKey", i.stage, i.queue, i."selectionId",
     case when l.superseded then '{}'::jsonb else i.selection end selection,
     case when l.superseded then null::uuid else i."jobId" end "jobId",
     case when l.superseded then 'cancelled' else i.state end state
-  from job_selection_lineage l join job_run_item i
-    on (i."runId", i."itemKey", i.stage) = (l."runId", l."itemKey", l.stage)
+  from job_selection_lineage l cross join lateral (
+    select * from job_run_item i
+    where (i."runId", i."itemKey", i.stage) = (l."runId", l."itemKey", l.stage) limit 1
+  ) i
   where l."selectionId" = ${selectionId}::uuid and l.id > ${after}::bigint and not l."libraryChildOrigin"
     and not exists (select 1 from job_selection s where s.id = i."selectionId" and s."sourceKind" = 'library-child')
   order by l.id limit ${limit}`;

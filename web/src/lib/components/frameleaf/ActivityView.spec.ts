@@ -379,6 +379,12 @@ describe('Frameleaf Activity page', () => {
       );
       expect(cards[1]).toHaveAccessibleName('Face detection: Paused · 52 waiting · This server. Open Background work.');
       expect(screen.getByText('2 background tasks busy')).toBeInTheDocument();
+      // UI review 2026-10-30 #18: one link to where background work is managed, no "read-only" hint.
+      expect(within(group).getByRole('link', { name: 'Manage background work' })).toHaveAttribute(
+        'href',
+        expect.stringContaining('area=processing'),
+      );
+      expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Nothing in progress' })).not.toBeInTheDocument();
       expect(screen.queryByText(/stage|prerequisite/i)).not.toBeInTheDocument();
     } finally {

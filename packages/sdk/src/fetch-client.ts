@@ -824,6 +824,67 @@ export type CloudStatusResponseDto = {
     signInShowOnLocalLogin: boolean;
     state: CloudLinkState;
 };
+export type CloudAccountLinkCreateDto = {
+    /** The statement versions shown (from the consents endpoint) */
+    consent: {
+        /** The privacy statement version shown */
+        privacy: string;
+        /** The Terms of Use version shown */
+        tos: string;
+    };
+    /** Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch */
+    dataRegion?: DataRegion;
+    /** The Frameleaf account’s email */
+    email: string;
+    mode: CloudAccountLinkCreateMode;
+    /** The person’s name */
+    name: string;
+    /** The Frameleaf account’s password; sent to Frameleaf Cloud, never kept */
+    password: string;
+};
+export type CloudAccountLinkSignInDto = {
+    /** Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch */
+    dataRegion?: DataRegion;
+    /** The Frameleaf account’s email */
+    email: string;
+    mode: CloudAccountLinkSignInMode;
+    /** The Frameleaf account’s password; sent to Frameleaf Cloud, never kept */
+    password: string;
+};
+export type CloudAccountLinkDto = CloudAccountLinkCreateDto | CloudAccountLinkSignInDto;
+export type CloudAccountLinkResponseDto = {
+    /** For region-mismatch: the region the account keeps its data in, to offer linking there */
+    accountRegion: string | null;
+    /** Codes left to try after a wrong one */
+    attemptsLeft: number | null;
+    challenge: {
+        challengeId: string;
+        expiresAt: string;
+        kind: CloudAccountLinkChallengeKind;
+    } | null;
+    /** Frameleaf Cloud’s own words for a refusal, when it sent any */
+    message: string | null;
+    outcome: CloudAccountLinkOutcome;
+    refusal: (CloudAccountLinkRefusal) | null;
+    /** When to try again after too many attempts */
+    retryAfterSeconds: number | null;
+    status: CloudStatusResponseDto;
+};
+export type CloudAccountConsentDto = {
+    /** The statement to show; Frameleaf Cloud records that it was shown */
+    text: string;
+    version: string;
+};
+export type CloudAccountConsentsResponseDto = {
+    privacy: CloudAccountConsentDto;
+    tos: CloudAccountConsentDto;
+};
+export type CloudAccountLinkVerifyDto = {
+    /** The challenge the link answered with */
+    challengeId: string;
+    /** The emailed code, the authenticator app’s code or a recovery code */
+    code: string;
+};
 export type CloudMlConsentFeaturesDto = {
     /** Face detection and recognition may run on Frameleaf Cloud */
     faceRecognition: boolean;
@@ -6200,25 +6261,25 @@ export type PasswordLinkCheckResponseDto = {
 export type PinCodeResetDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (4-6 digits) */
+    /** Current PIN code (6 digits) */
     pinCode?: string;
 };
 export type PinCodeSetupDto = {
-    /** PIN code (4-6 digits) */
+    /** PIN code (6 digits) */
     pinCode: string;
 };
 export type PinCodeChangeDto = {
-    /** New PIN code (4-6 digits) */
+    /** New PIN code (6 digits) */
     newPinCode: string;
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (4-6 digits) */
+    /** Current PIN code (6 digits) */
     pinCode?: string;
 };
 export type SessionUnlockDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
-    /** New PIN code (4-6 digits) */
+    /** Current PIN code (6 digits) */
     pinCode?: string;
 };
 export type AuthStatusResponseDto = {
@@ -16920,6 +16981,8 @@ export type FrameleafSetupChoicesDto = {
     adminEmail?: string;
     /** Administrator name */
     adminName?: string;
+    /** The search model "keep current model" named, saved with that choice (no tier) */
+    keptModel?: string;
     /** Language chosen on the welcome step */
     language?: string;
     /** Folder layout preset, or "keep" */
@@ -16930,6 +16993,8 @@ export type FrameleafSetupChoicesDto = {
     map?: boolean;
     /** Model tier */
     model?: FrameleafSetupModelTier;
+    /** Whether the administrator chose the model on the tier step */
+    modelChosen?: boolean;
     /** Nightly database backups */
     nightlyBackup?: boolean;
     /** Where processing runs */
@@ -17512,7 +17577,7 @@ export type ReconciliationHistoryDto = {
     }[];
 };
 export type ReconciliationStartDto = {
-    /** First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused. */
+    /** First byte buckets in index order. Digest SHA256 of sorted distinct raw 32-byte hashes; empty digest SHA256(empty). Maximum 2000 hashes per bucket; larger sets refused. */
     buckets: {
         count: number;
         digest: string;
@@ -20770,6 +20835,47 @@ export function startCloudLink(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Link this server with a Frameleaf account’s email and password
+ */
+export function linkCloudWithAccount({ cloudAccountLinkDto }: {
+    cloudAccountLinkDto: CloudAccountLinkDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudAccountLinkResponseDto;
+    }>("/admin/cloud/link/account", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudAccountLinkDto
+    })));
+}
+/**
+ * Get the statements a new Frameleaf account agrees to
+ */
+export function getCloudAccountLinkConsents(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudAccountConsentsResponseDto;
+    }>("/admin/cloud/link/account/consents", {
+        ...opts
+    }));
+}
+/**
+ * Send the code a Frameleaf account link asked for
+ */
+export function verifyCloudAccountLink({ cloudAccountLinkVerifyDto }: {
+    cloudAccountLinkVerifyDto: CloudAccountLinkVerifyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudAccountLinkResponseDto;
+    }>("/admin/cloud/link/account/verify", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudAccountLinkVerifyDto
+    })));
 }
 /**
  * Link in the Frameleaf account’s data region
@@ -35615,6 +35721,42 @@ export enum CloudLinkState {
     Pending = "pending",
     Linked = "linked",
     Revoked = "revoked"
+}
+export enum DataRegion {
+    Eu = "eu",
+    Na = "na"
+}
+export enum CloudAccountLinkCreateMode {
+    Create = "create"
+}
+export enum CloudAccountLinkSignInMode {
+    SignIn = "sign-in"
+}
+export enum CloudAccountLinkChallengeKind {
+    EmailCode = "email-code",
+    SecondFactor = "second-factor"
+}
+export enum CloudAccountLinkOutcome {
+    Linked = "linked",
+    CodeNeeded = "code-needed",
+    Refused = "refused"
+}
+export enum CloudAccountLinkRefusal {
+    InvalidCredentials = "invalid-credentials",
+    EmailTaken = "email-taken",
+    PasswordTooShort = "password-too-short",
+    PasswordBreached = "password-breached",
+    ConsentOutdated = "consent-outdated",
+    CodeInvalid = "code-invalid",
+    CodeExpired = "code-expired",
+    AccountRefused = "account-refused",
+    InstanceLimit = "instance-limit",
+    InstanceIdTaken = "instance-id-taken",
+    KeyAlreadyLinked = "key-already-linked",
+    RegionMismatch = "region-mismatch",
+    RateLimited = "rate-limited",
+    Paused = "paused",
+    Unavailable = "unavailable"
 }
 export enum CloudMlConnection {
     NotConfigured = "not-configured",

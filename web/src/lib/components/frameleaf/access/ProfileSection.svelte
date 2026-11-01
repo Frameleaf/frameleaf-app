@@ -29,6 +29,16 @@
 
   let name = $state(authManager.user.name);
   let email = $state(authManager.user.email);
+  // Another account signing in while this stays open starts the form from that account's values.
+  let seededFor = authManager.user.id;
+  $effect(() => {
+    if (user.id !== seededFor) {
+      seededFor = user.id;
+      name = user.name;
+      email = user.email;
+      photoError = '';
+    }
+  });
   let saving = $state(false);
   let photoWorking = $state(false);
   let photoError = $state('');

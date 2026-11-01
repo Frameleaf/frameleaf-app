@@ -71,6 +71,12 @@ describe('preview identity', () => {
     expect(previewCacheKey(binding({ projectId: 'project-1\u{0}rev-a' }))).not.toBe(previewCacheKey(binding()));
   });
 
+  it('cannot be forged by moving a separator between adjacent fields', () => {
+    expect(previewCacheKey(binding({ ownerId: 'a\u{0}b', projectId: 'c' }))).not.toBe(
+      previewCacheKey(binding({ ownerId: 'a', projectId: 'b\u{0}c' })),
+    );
+  });
+
   it('puts the revision digest in the entity tag', () => {
     expect(previewETag(binding())).toContain('rev-a');
     expect(previewETag(binding({ revisionDigest: 'rev-b' }))).not.toBe(previewETag(binding()));

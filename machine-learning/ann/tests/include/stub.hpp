@@ -12,6 +12,7 @@ inline int parsers = 0;
 inline int runtimes = 0;
 inline bool failLoad = false;
 inline bool failExecute = false;
+inline bool failExecuteStatus = false;
 inline bool failUnload = false;
 }
 namespace armnn {
@@ -96,6 +97,7 @@ struct IRuntime {
     }
     Status EnqueueWorkload(NetworkId, const InputTensors& input, const OutputTensors& output) {
         if (fixture::failExecute) { fixture::failExecute = false; throw std::runtime_error("enqueue fault"); }
+        if (fixture::failExecuteStatus) { fixture::failExecuteStatus = false; return Status::Failure; }
         auto src = static_cast<const float*>(input[0].second.data);
         auto dst = static_cast<float*>(output[0].second.data);
         dst[0] = src[0]; dst[1] = src[1];

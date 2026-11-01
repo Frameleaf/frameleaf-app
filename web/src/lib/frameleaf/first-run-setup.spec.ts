@@ -1,14 +1,21 @@
-import type { AdminConfigDto } from '@frameleaf/sdk';
+import { CloudAccountLinkRefusal, type AdminConfigDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
+import en from '$i18n/en.json';
 import {
+  accountLinkRefusalMessage,
   accountToolProgress,
   applySetupChoices,
+  chapterCount,
   createSetup,
   defaultTier,
   firstInvalidStep,
   flowSteps,
+  frameleafAccountForm,
+  FRAMELEAF_TERMS_URL,
   goToStep,
   KEEP_LAYOUT,
+  KEEP_MODEL,
+  keepsUnlistedModel,
   loadAccountTool,
   loadLocalSetup,
   markSection,
@@ -16,17 +23,23 @@ import {
   parseSetup,
   processingOptions,
   recommendedTier,
+  reconcileKeptModel,
+  settleFinishTier,
+  settleLoadedTier,
   resumeSetup,
   saveAccountTool,
   saveLocalSetup,
   setLinked,
   setupRedirect,
   setupStageTheme,
+  showsRequired,
   themeAfterSetup,
   toProgress,
+  validateFrameleafAccount,
   validateStep,
   withDefaultTier,
   type TierHardware,
+  type SetupState,
 } from '$lib/frameleaf/first-run-setup';
 
 const memory = () => {
@@ -39,15 +52,15 @@ const memory = () => {
   };
 };
 
-const strong = { password: 'Correct-Horse-9', confirm: 'Correct-Horse-9' };
+const strong = { password: 'correct horse battery', confirm: 'correct horse battery' };
 const indexOf = (flow: 'new' | 'existing', id: string) => flowSteps(flow).findIndex((entry) => entry.id === id);
 
 describe('first-run setup state (FL-176)', () => {
   it('has the prototype step order for both flows', () => {
     expect(flowSteps('new').map((entry) => entry.id)).toEqual([
       'welcome',
-      'sign-in-choice',
       'account',
+      'frameleaf-account',
       'library',
       'processing',
       'protection',
@@ -69,15 +82,28 @@ describe('first-run setup state (FL-176)', () => {
     ]);
   });
 
-  it('recommends a Frameleaf account on a new server and keeps the layout on an existing library', () => {
-    expect(createSetup('new').choices).toMatchObject({ signIn: 'frameleaf', layout: 'year-month' });
+  it('makes every administrator local first and keeps the layout on an existing library (FL-708)', () => {
+    expect(createSetup('new').choices).toMatchObject({ signIn: 'local', linked: false, layout: 'year-month' });
     expect(createSetup('existing').choices).toMatchObject({ signIn: 'local', layout: KEEP_LAYOUT });
+  });
+
+  it('counts the chapters the rail shows, not the inner steps (item 2)', () => {
+    expect(chapterCount('account')).toEqual({ chapter: 'frameleaf_setup_chapter_account', position: 2, count: 5 });
+    expect(chapterCount('ready')).toMatchObject({ position: 5, count: 5 });
+  });
+
+  it('shows "Required" only on the administrator form (item 4)', () => {
+    const state = createSetup('new');
+    expect(showsRequired(state, 'account')).toBe(true);
+    expect(showsRequired(state, 'library')).toBe(false);
+    expect(showsRequired(state, 'frameleaf-account')).toBe(false);
+    expect(showsRequired({ ...state, choices: { ...state.choices, accountCreated: true } }, 'account')).toBe(false);
+    expect(showsRequired(createSetup('existing'), 'account')).toBe(false);
   });
 
   describe('required steps', () => {
     it('requires a complete local admin before leaving the account step', () => {
       let state = createSetup('new');
-      state = { ...state, choices: { ...state.choices, signIn: 'local' } };
       expect(validateStep(state, 'account').errors).toMatchObject({
         name: 'frameleaf_setup_error_name',
         email: 'frameleaf_setup_error_email',
@@ -85,31 +111,28 @@ describe('first-run setup state (FL-176)', () => {
       });
       state = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
       expect(validateStep(state, 'account', { secrets: { password: 'weak', confirm: 'weak' } }).ok).toBe(false);
+      // FL-708 item 19: eight characters is the only rule; no character classes
+      const seven = { password: 'sevench', confirm: 'sevench' };
+      expect(validateStep(state, 'account', { secrets: seven }).errors).toEqual({
+        password: 'frameleaf_setup_error_password',
+      });
+      const plain = { password: 'aaaaaaaa', confirm: 'aaaaaaaa' };
+      expect(validateStep(state, 'account', { secrets: plain }).ok).toBe(true);
       expect(validateStep(state, 'account', { secrets: { ...strong, confirm: 'other' } }).errors).toEqual({
         confirm: 'frameleaf_setup_error_confirm',
       });
       expect(validateStep(state, 'account', { secrets: strong }).ok).toBe(true);
     });
 
-    it('on a server not linked yet, the Frameleaf path creates the admin first and then needs the link (FL-168)', () => {
-      const state = createSetup('new');
-      expect(state.choices.signIn).toBe('frameleaf');
-      // the administrator's own details first
+    it('never lets a Frameleaf link stand in for the local administrator (FL-708 item 20)', () => {
+      // linked (say, by a headless link token) but no administrator yet: the form is still required
+      const state = setLinked(createSetup('new'), true);
       expect(validateStep(state, 'account').errors).toMatchObject({ name: 'frameleaf_setup_error_name' });
-      const filled = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
-      expect(validateStep(filled, 'account', { secrets: strong }).ok).toBe(true);
-      // then the link
-      const created = { ...filled, choices: { ...filled.choices, accountCreated: true } };
-      expect(validateStep(created, 'account').errors).toEqual({ link: 'frameleaf_setup_error_link' });
-      expect(validateStep(setLinked(created, true), 'account').ok).toBe(true);
-    });
-
-    it('on a server already linked, the Frameleaf path is Sign in with Frameleaf', () => {
-      const state = createSetup('new');
-      expect(validateStep(state, 'account', { frameleafSignIn: true }).errors).toEqual({
-        link: 'frameleaf_setup_error_link',
-      });
-      expect(validateStep(setLinked(state, true), 'account', { frameleafSignIn: true }).ok).toBe(true);
+      // the administrator exists: the account step is done whether or not the server is linked
+      const created = { ...createSetup('new'), choices: { ...createSetup('new').choices, accountCreated: true } };
+      expect(validateStep(created, 'account').ok).toBe(true);
+      // and the Frameleaf account step never blocks: it can be skipped
+      expect(validateStep(created, 'frameleaf-account').ok).toBe(true);
     });
 
     it('requires a writable library location', () => {
@@ -126,11 +149,10 @@ describe('first-run setup state (FL-176)', () => {
 
     it('does not move forward past an invalid step, and marks the account created once passed', () => {
       let state = { ...createSetup('new'), step: indexOf('new', 'account') };
-      state = { ...state, choices: { ...state.choices, signIn: 'local' } };
       expect(goToStep(state, state.step + 1)).toBe(state);
       state = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
       const next = goToStep(state, state.step + 1, { secrets: strong });
-      expect(next.step).toBe(indexOf('new', 'library'));
+      expect(next.step).toBe(indexOf('new', 'frameleaf-account'));
       expect(next.choices.accountCreated).toBe(true);
       expect(next.reached).toBe(next.step);
       // back is always allowed
@@ -177,17 +199,14 @@ describe('first-run setup state (FL-176)', () => {
       expect(resumeSetup('existing', { server }, true)).toMatchObject({ step: 3, choices: { signedIn: true } });
       expect(resumeSetup('existing', {}, true).step).toBe(1);
       expect(resumeSetup('existing', {}, false).step).toBe(0);
-      // FL-168: an administrator created on the Frameleaf path carries on to link
+      // FL-708: a signed-in administrator on a new server resumes at the optional Frameleaf account
       const created = resumeSetup('new', {}, true);
-      expect(created.choices).toMatchObject({ accountCreated: true, signIn: 'frameleaf', linked: false });
-      expect(firstInvalidStep(created)).toBe(indexOf('new', 'account'));
-      const local = resumeSetup(
-        'new',
-        { local: { ...createSetup('new'), choices: { ...createSetup('new').choices, signIn: 'local' } } },
-        true,
-      );
-      expect(local.choices).toMatchObject({ accountCreated: true, signIn: 'local' });
-      expect(firstInvalidStep(local)).toBe(-1);
+      expect(created.choices).toMatchObject({ accountCreated: true, signIn: 'local', linked: false });
+      expect(created.step).toBe(indexOf('new', 'frameleaf-account'));
+      expect(firstInvalidStep(created)).toBe(-1);
+      // progress saved by an older build on the removed "How you'll sign in" step starts again
+      const old = parseSetup({ version: 1, flow: 'new', step: 'sign-in-choice', reached: 1, choices: {} }, 'new');
+      expect(old?.step).toBe(0);
     });
   });
 
@@ -296,7 +315,7 @@ describe('first-run setup state (FL-176)', () => {
       expect(defaultTier('new', { hardware: null })).toBe('balanced');
       expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-B-32__openai' })).toBe('light');
       expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-SO400M-16-SigLIP2-384__webli' })).toBe('best');
-      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe('balanced');
+      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe(KEEP_MODEL);
       expect(defaultTier('existing', { hardware: gpu })).toBe('balanced');
 
       const fresh = withDefaultTier(createSetup('new'), { hardware: gpu });
@@ -309,6 +328,186 @@ describe('first-run setup state (FL-176)', () => {
       // no change, no new state
       const same = createSetup('new');
       expect(withDefaultTier(same, { hardware: ml({ vramGb: 8 }) })).toBe(same);
+    });
+
+    it('pre-selects keeping an unlisted search model and leaves it unchanged unless a tier is chosen', () => {
+      const config = {
+        storageTemplate: { enabled: false, template: '{{y}}/{{filename}}', hashVerificationEnabled: true },
+        machineLearning: {
+          clip: { enabled: true, modelName: 'custom-model' },
+          facialRecognition: { enabled: true, modelName: 'antelopev2' },
+        },
+        backup: { database: { enabled: false, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
+        newVersionCheck: { enabled: false },
+        map: { enabled: true, lightStyle: '', darkStyle: '' },
+      } as unknown as AdminConfigDto;
+      expect(keepsUnlistedModel('existing', 'custom-model')).toBe(true);
+      expect(keepsUnlistedModel('existing', 'ViT-B-32__openai')).toBe(false);
+      expect(keepsUnlistedModel('existing', undefined)).toBe(false);
+      expect(keepsUnlistedModel('new', 'custom-model')).toBe(false);
+      // a new server still starts at the hardware's tier
+      expect(defaultTier('new', { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' })).toBe('best');
+
+      const kept = withDefaultTier(createSetup('existing'), {
+        hardware: ml({ vramGb: 24 }),
+        currentModel: 'custom-model',
+      });
+      expect(kept.choices.model).toBe(KEEP_MODEL);
+      expect(applySetupChoices(config, kept).machineLearning).toEqual(config.machineLearning);
+      expect(needsReindex(config, kept)).toBe(false);
+      // the choice survives a resume
+      expect(parseSetup(JSON.stringify(kept), 'existing')?.choices.model).toBe(KEEP_MODEL);
+
+      // choosing a tier still switches the search model and re-indexes, as before
+      const best = { ...kept, choices: { ...kept.choices, model: 'best' as const } };
+      expect(applySetupChoices(config, best).machineLearning.clip.modelName).toBe('ViT-SO400M-16-SigLIP2-384__webli');
+      expect(needsReindex(config, best)).toBe(true);
+    });
+
+    describe('saved progress past the tier step, on a library with an unlisted search model', () => {
+      const tierStep = flowSteps('existing').findIndex((entry) => entry.id === 'processing');
+      const context = { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' };
+      const saved = (choices: Record<string, unknown>) => ({
+        version: 1,
+        step: flowSteps('existing')[tierStep + 1].id,
+        reached: tierStep + 1,
+        choices: { signedIn: true, ...choices },
+      });
+      const resume = (progress: ReturnType<typeof saved>) =>
+        withDefaultTier(resumeSetup('existing', { server: progress as never }, true), context);
+
+      it('offers keeping the current model when an older save holds only the default tier', () => {
+        expect(resume(saved({ model: 'balanced' })).choices.model).toBe(KEEP_MODEL);
+        expect(resume(saved({})).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('honours a tier the administrator chose', () => {
+        const state = resume(saved({ model: 'balanced', modelChosen: true }));
+        expect(state.choices.model).toBe('balanced');
+        expect(withDefaultTier(state, context)).toBe(state);
+      });
+
+      it('saves and resumes an explicit keep without sending an unknown tier', () => {
+        const kept = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, modelChosen: true },
+        };
+        const progress = toProgress(kept);
+        expect(progress.choices).not.toHaveProperty('model');
+        expect(progress.choices.modelChosen).toBe(true);
+        expect(resume(progress as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+        // a default keep is not saved as a choice and is offered again
+        const pending = toProgress({ ...kept, choices: { ...kept.choices, modelChosen: false } });
+        expect(resume(pending as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('resumes a default keep saved with its model, and asks again when that model changed', () => {
+        const kept = withDefaultTier(createSetup('existing'), context);
+        const past = { ...kept, step: tierStep + 1, reached: tierStep + 1 };
+        const resumed = resumeSetup('existing', { server: toProgress(past) }, true);
+        expect(resumed.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'custom-model' });
+        const listed = settleLoadedTier(resumed, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(listed.choices.model).toBe('light');
+        expect(listed.step).toBe(tierStep);
+      });
+
+      it('keeps a saved keep when the library model could not be read', () => {
+        const chosen = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, modelChosen: true, keptModel: 'custom' },
+        };
+        expect(settleLoadedTier(chosen, { hardware: null, currentModel: undefined })).toBe(chosen);
+      });
+
+      it('turns a default accepted before the data loaded into "keep" without asking, since keep changes nothing', () => {
+        const accepted = { ...createSetup('existing'), step: tierStep + 1, reached: tierStep + 1 };
+        const settled = settleLoadedTier(accepted, context);
+        expect(settled.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'custom-model' });
+        expect(settled.step).toBe(tierStep + 1);
+      });
+
+      it('returns to the tier step when the loaded default replaces a tier with another tier', () => {
+        const accepted = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, keptModel: 'custom-model' },
+        };
+        const settled = settleLoadedTier(accepted, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(settled.choices.model).toBe('light');
+        expect(settled.step).toBe(tierStep);
+      });
+
+      describe('at finish', () => {
+        const past = (choices: Partial<SetupState['choices']>) => ({
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, ...choices },
+        });
+        const listed = { ...context, currentModel: 'ViT-B-32__openai' };
+
+        it('finishes a tier the administrator chose, and a keep of the model it named', () => {
+          expect(settleFinishTier(past({ model: 'best', modelChosen: true }), listed)).toBeNull();
+          expect(settleFinishTier(past({ model: KEEP_MODEL, keptModel: 'custom-model' }), context)).toBeNull();
+          // a save that did not record the model compares with the one this page loaded
+          expect(settleFinishTier(past({ model: KEEP_MODEL }), context, 'custom-model')).toBeNull();
+        });
+
+        it('never applies an unchosen tier that is not the default for the model the server has now', () => {
+          const confirm = settleFinishTier(past({ model: 'balanced', modelChosen: false }), listed);
+          expect(confirm?.choices.model).toBe('light');
+          expect(confirm?.step).toBe(tierStep);
+          expect(settleFinishTier(past({ model: 'light', modelChosen: false }), listed)).toBeNull();
+        });
+
+        it('asks again when "keep" would keep a model other than the one it named', () => {
+          const confirm = settleFinishTier(past({ model: KEEP_MODEL, keptModel: 'custom-model' }), {
+            ...context,
+            currentModel: 'other-model',
+          });
+          expect(confirm?.choices).toMatchObject({ model: KEEP_MODEL, keptModel: 'other-model' });
+          expect(confirm?.step).toBe(tierStep);
+          const legacy = settleFinishTier(
+            past({ model: KEEP_MODEL }),
+            { ...context, currentModel: 'x' },
+            'custom-model',
+          );
+          expect(legacy?.step).toBe(tierStep);
+        });
+      });
+
+      it('keeps an older save past the tier step that holds a tier other than the default', () => {
+        expect(resume(saved({ model: 'best' })).choices.model).toBe('best');
+      });
+
+      it('saves the kept model with the choice and asks again when it changed while setup was closed', () => {
+        const kept = withDefaultTier(createSetup('existing'), context);
+        expect(kept.choices.keptModel).toBe('custom-model');
+        const chosen = {
+          ...kept,
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...kept.choices, modelChosen: true },
+        };
+        const progress = toProgress(chosen);
+        expect(progress.choices).toMatchObject({ keptModel: 'custom-model', modelChosen: true });
+        const resumed = resumeSetup('existing', { server: progress }, true);
+        expect(reconcileKeptModel(resumed, context)).toBe(resumed);
+
+        // another unlisted model now: "keep" is offered for it, and setup returns to the tier step
+        const other = reconcileKeptModel(resumed, { ...context, currentModel: 'other-model' });
+        expect(other.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'other-model' });
+        expect(other.step).toBe(tierStep);
+        // a listed model now: its tier, back on the tier step
+        const listed = reconcileKeptModel(resumed, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(listed.choices).toMatchObject({ model: 'light', modelChosen: false, keptModel: '' });
+        expect(listed.step).toBe(tierStep);
+      });
     });
 
     it("keeps the administrator's tier once the tier step was reached", () => {
@@ -366,5 +565,55 @@ describe('first-run setup state (FL-176)', () => {
     saveAccountTool('u1', state, store);
     expect(loadAccountTool('u1', store).done).toEqual(['profile']);
     expect(loadAccountTool('u2', store).done).toEqual([]);
+  });
+});
+
+describe('Frameleaf account step (FL-708 item 20)', () => {
+  const admin = (() => {
+    const state = createSetup('new');
+    return { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
+  })();
+
+  it("starts from the administrator's name and email, never a password", () => {
+    expect(frameleafAccountForm(admin)).toEqual({
+      mode: 'create',
+      name: 'Ada',
+      email: 'ada@example.com',
+      password: '',
+    });
+    expect(frameleafAccountForm(admin, 'sign-in').mode).toBe('sign-in');
+  });
+
+  it('creates an account with a name, an email and a password of at least 8 characters', () => {
+    const form = frameleafAccountForm(admin);
+    expect(validateFrameleafAccount(form).errors).toEqual({ password: 'frameleaf_setup_error_password' });
+    expect(validateFrameleafAccount({ ...form, password: 'sevench' }).ok).toBe(false);
+    expect(validateFrameleafAccount({ ...form, password: 'aaaaaaaaaaaa' }).ok).toBe(true);
+    expect(validateFrameleafAccount({ ...form, name: ' ', email: 'nope', password: 'aaaaaaaaaaaa' }).errors).toEqual({
+      name: 'frameleaf_setup_error_name',
+      email: 'frameleaf_setup_error_email',
+    });
+  });
+
+  it('has words for every reason Frameleaf Cloud does not link (FC-222)', () => {
+    for (const refusal of Object.values(CloudAccountLinkRefusal)) {
+      expect(en, refusal).toHaveProperty(accountLinkRefusalMessage(refusal));
+    }
+    expect(accountLinkRefusalMessage(CloudAccountLinkRefusal.CodeInvalid, null, 2)).toBe(
+      'frameleaf_setup_frameleaf_error_code_invalid_left',
+    );
+    expect(accountLinkRefusalMessage(CloudAccountLinkRefusal.RateLimited, 90)).toBe(
+      'frameleaf_setup_frameleaf_error_rate_limited_for',
+    );
+  });
+
+  it('signs in to an existing account with an email and any password', () => {
+    const form = { ...frameleafAccountForm(admin, 'sign-in'), name: '' };
+    expect(validateFrameleafAccount(form).errors).toEqual({ password: 'frameleaf_setup_error_frameleaf_password' });
+    expect(validateFrameleafAccount({ ...form, password: 'short' }).ok).toBe(true);
+  });
+
+  it('links to the Terms of Use on frameleaf.app', () => {
+    expect(FRAMELEAF_TERMS_URL).toBe('https://frameleaf.app/legal');
   });
 });

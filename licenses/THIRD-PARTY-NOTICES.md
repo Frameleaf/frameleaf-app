@@ -35,8 +35,8 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
   Licence texts: licenses/texts/apache-2.0.txt.
 - **RIFE frame interpolation (fp32, timestep)** — hzwer (Practical-RIFE); ONNX export by walterlow. Licence: MIT. https://huggingface.co/walterlow/RIFE_fp32_timestep
   Licence texts: licenses/texts/practical-rife-mit.txt.
-- **Parakeet TDT 0.6B v3 speech recognition (quantized ONNX)** — NVIDIA; smoothquant ONNX conversion by Olicorne. Licence: CC-BY-4.0. https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
-  Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX and quantized (smoothquant) by Olicorne.
+- **Parakeet TDT 0.6B v3 speech recognition (quantized ONNX)** — NVIDIA; ONNX conversion by Olicorne. Licence: CC-BY-4.0. https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+  Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX (fp16) and quantized (int8) by Olicorne.
   Licence texts: licenses/texts/cc-by-4.0.txt.
 - **Whisper speech recognition (tiny, base, small, large-v3-turbo; timestamped ONNX)** — OpenAI; ONNX conversions by onnx-community. Licence: MIT (code), Apache-2.0 (tiny, base, small weights), MIT (large-v3-turbo weights). https://github.com/openai/whisper
   Licence texts: licenses/texts/openai-whisper-mit.txt, licenses/texts/apache-2.0.txt.
@@ -1379,6 +1379,8 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 ```
 
 ## licenses/texts/fairseq-m2m100-mit.txt
+
+Source: https://raw.githubusercontent.com/facebookresearch/fairseq/main/LICENSE (retrieved 2026-10-29, SHA-256 52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85).
 
 ```text
 MIT License

@@ -230,6 +230,25 @@ describe(OvernightService.name, () => {
     expect(stored.state?.run).toBeNull();
   });
 
+  it('after the overnight job ended, waits for a tidy-up job that is still running', async () => {
+    const { sut, mocks, stored } = setup();
+    // inside the overnight job: that job plus one tidy-up job queued behind it
+    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts(1, 1)));
+    await sut.handleStart();
+    expect(stored.state?.run).toMatchObject({ step: 'cleanup', begunAt: expect.any(String) });
+
+    // the overnight job has ended; the one active BackgroundTask job is the tidy-up
+    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts(1)));
+    await sut.move();
+    expect(stored.state?.run?.step).toBe('cleanup');
+    expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+
+    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts()));
+    await sut.move();
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+    expect(stored.state?.nights[0].results.cleanup).toBe('done');
+  });
+
   it('leaves out a step that is not set up', async () => {
     const { sut, mocks, stored } = setup();
     mocks.icloud.hasConnections.mockResolvedValue(false);
@@ -401,6 +420,9 @@ describe('overnight rules', () => {
     const edmonton = { startTime: '00:00', stopTime: '06:00', days: [0, 1, 2, 3, 4, 5, 6] };
     expect(isHeavyWorkWindow(at('2026-10-20T07:00:00Z'), edmonton, 'America/Edmonton')).toBe(true);
     expect(isHeavyWorkWindow(at('2026-10-20T13:00:00Z'), edmonton, 'America/Edmonton')).toBe(false);
+    // no chosen day means every day, as the schedule runs
+    const everyDay = { startTime: '23:00', stopTime: '06:00', days: [] };
+    expect(isHeavyWorkWindow(at('2026-10-20T23:30:00Z'), everyDay, 'UTC')).toBe(true);
   });
 
   it('keeps the most recent nights', () => {

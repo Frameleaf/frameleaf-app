@@ -5,6 +5,45 @@
   "description": "The `graph` of a Studio project envelope in normal form: what the Studio engine writes and what a native client must write. Specified in docs/docs/developer/studio-graph-protocol-v1.md. Objects allow fields this schema does not list (unknown fields are preserved where the protocol says so). Keywords used: type, const, enum, required, properties, additionalProperties, items, minItems, maxItems, minimum, maximum, exclusiveMinimum, minLength, pattern, $ref, allOf, anyOf, oneOf, if/then.",
   "$ref": "#/$defs/project",
   "$defs": {
+    "crop": {
+      "description": "Crop of a video or image (17.6): each side a fraction of the source, softness a signed fraction.",
+      "type": "object",
+      "properties": {
+        "left": { "type": "number", "minimum": 0, "maximum": 1 },
+        "right": { "type": "number", "minimum": 0, "maximum": 1 },
+        "top": { "type": "number", "minimum": 0, "maximum": 1 },
+        "bottom": { "type": "number", "minimum": 0, "maximum": 1 },
+        "softness": { "type": "number", "minimum": -1, "maximum": 1 },
+        "refit": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "cornerPin": {
+      "description": "Corner pin (17.6): pixel offsets of the four corners, measured on a box of the reference size.",
+      "type": "object",
+      "required": ["topLeft", "topRight", "bottomRight", "bottomLeft"],
+      "properties": {
+        "topLeft": { "$ref": "#/$defs/point" },
+        "topRight": { "$ref": "#/$defs/point" },
+        "bottomRight": { "$ref": "#/$defs/point" },
+        "bottomLeft": { "$ref": "#/$defs/point" },
+        "referenceWidth": { "type": "number", "exclusiveMinimum": 0 },
+        "referenceHeight": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "audioDucking": {
+      "description": "Sidechain ducking carried by a duck-source clip (13.9).",
+      "type": "object",
+      "required": ["duckOthersDb"],
+      "properties": {
+        "duckOthersDb": { "type": "number", "minimum": -60, "maximum": 0 },
+        "attackSec": { "type": "number", "minimum": 0, "maximum": 5 },
+        "releaseSec": { "type": "number", "minimum": 0, "maximum": 5 },
+        "targetTrackIds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" } }
+      },
+      "additionalProperties": true
+    },
     "id": { "type": "string", "minLength": 1 },
     "frame": { "type": "integer", "minimum": 0 },
     "length": { "type": "integer", "minimum": 1 },
@@ -162,46 +201,7 @@
         "spanLayout": { "enum": ["stack", "inline"] },
         "fontSize": { "type": "number" },
         "fontFamily": { "type": "string", "minLength": 1 },
-        "crop": {
-      "description": "Crop of a video or image (17.6): each side a fraction of the source, softness a signed fraction.",
-      "type": "object",
-      "properties": {
-        "left": { "type": "number", "minimum": 0, "maximum": 1 },
-        "right": { "type": "number", "minimum": 0, "maximum": 1 },
-        "top": { "type": "number", "minimum": 0, "maximum": 1 },
-        "bottom": { "type": "number", "minimum": 0, "maximum": 1 },
-        "softness": { "type": "number", "minimum": -1, "maximum": 1 },
-        "refit": { "type": "boolean" }
-      },
-      "additionalProperties": true
-    },
-    "cornerPin": {
-      "description": "Corner pin (17.6): pixel offsets of the four corners, measured on a box of the reference size.",
-      "type": "object",
-      "required": ["topLeft", "topRight", "bottomRight", "bottomLeft"],
-      "properties": {
-        "topLeft": { "$ref": "#/$defs/point" },
-        "topRight": { "$ref": "#/$defs/point" },
-        "bottomRight": { "$ref": "#/$defs/point" },
-        "bottomLeft": { "$ref": "#/$defs/point" },
-        "referenceWidth": { "type": "number", "exclusiveMinimum": 0 },
-        "referenceHeight": { "type": "number", "exclusiveMinimum": 0 }
-      },
-      "additionalProperties": true
-    },
-    "audioDucking": {
-      "description": "Sidechain ducking carried by a duck-source clip (13.9).",
-      "type": "object",
-      "required": ["duckOthersDb"],
-      "properties": {
-        "duckOthersDb": { "type": "number", "minimum": -60, "maximum": 0 },
-        "attackSec": { "type": "number", "minimum": 0, "maximum": 5 },
-        "releaseSec": { "type": "number", "minimum": 0, "maximum": 5 },
-        "targetTrackIds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" } }
-      },
-      "additionalProperties": true
-    },
-    "fontWeight": { "$ref": "#/$defs/fontWeight" },
+        "fontWeight": { "$ref": "#/$defs/fontWeight" },
         "fontStyle": { "enum": ["normal", "italic"] },
         "underline": { "type": "boolean" },
         "textAlign": { "enum": ["left", "center", "right"] },
