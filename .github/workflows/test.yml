@@ -1321,7 +1321,14 @@ jobs:
         run: |
           pnpm --filter @frameleaf/locked-crypto test
           pnpm --filter @frameleaf/locked-crypto build
-          git diff --exit-code -- packages/locked-crypto/dist
+          # untracked files count too: a new dist/*.js that was never committed
+          changed="$(git status --porcelain -- packages/locked-crypto/dist)"
+          if [ -n "$changed" ]; then
+            echo "::error::packages/locked-crypto/dist is not the committed build:"
+            echo "$changed"
+            git diff -- packages/locked-crypto/dist
+            exit 1
+          fi
       - name: Run existing migrations
         run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation
