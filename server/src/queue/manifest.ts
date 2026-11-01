@@ -139,10 +139,16 @@ export async function freezeSelection(
       where id = ${result.selectionId}::uuid`.execute(tx);
     if (!snapshot.capturedAt) {
       context?.signal.throwIfAborted();
-      await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
+      const { numAffectedRows } =
+        await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
         select ${result.runId}::uuid, selected.id::text, coalesce(to_jsonb(selected)->>'rootItemKey', selected.id::text), ${intent.name}, ${intent.queue},
           ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(selected)->'data', '{}'::jsonb) || jsonb_build_object('id', selected.id), ${result.selectionId}::uuid
         from (${selection}) selected on conflict do nothing`.execute(tx);
+      if ((numAffectedRows ?? 0n) >= 10_000n) {
+        context?.signal.throwIfAborted();
+        // Large captures outpace autoanalyze; refresh before publication without holding its job fence.
+        await sql`analyze job_run_item`.execute(tx);
+      }
     }
     context?.signal.throwIfAborted();
     if (claim) {

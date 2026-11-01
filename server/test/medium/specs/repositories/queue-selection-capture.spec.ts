@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { queueAdmission } from 'src/queue/admission.js';
 import { attachLibraryParticipants } from 'src/queue/library-admission.js';
-import { freezeSelection, shareSelectionPage, shareSelections } from 'src/queue/manifest.js';
+import { attachProducerRun, freezeSelection, shareSelectionPage, shareSelections } from 'src/queue/manifest.js';
 import { mirrorSelectionLineage } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
@@ -262,6 +262,73 @@ describe('selection capture isolation', () => {
     } finally {
       await sql`drop trigger reject_legacy_selection_version on job_run_item`.execute(db);
       await sql`drop function reject_legacy_selection_version()`.execute(db);
+    }
+  });
+
+  it.each([false, true])('refreshes large-capture estimates before publication, cancelled: %s', async (cancel) => {
+    const controller = new AbortController();
+    let armed = false;
+    let analyses = 0;
+    const observed = await getKyselyDB(undefined, (event) => {
+      if (armed && event.level === 'query' && event.query.sql === 'analyze job_run_item') {
+        analyses++;
+        if (cancel) controller.abort(new Error('cancel after analyze'));
+      }
+    });
+    try {
+      const localStore = new SqlQueueStore(observed);
+      await localStore.initialize([queue], worker);
+      await localStore.enqueue([producer()]);
+      const [claim] = await localStore.claim(queue, worker);
+      await observed.transaction().execute(async (tx) => {
+        await sql`select name from job_queue order by name for no key update`.execute(tx);
+        await attachProducerRun(tx, claim);
+      });
+      await sql`analyze job_run_item`.execute(observed);
+      armed = true;
+      const captureContext = { ...context(claim), signal: controller.signal };
+      const capture = freezeSelection(
+        observed,
+        intent(),
+        observed
+          .selectFrom(sql<{ id: string }>`(select n::text id from generate_series(1,10000)n)`.as('selected'))
+          .select('id'),
+        captureContext,
+      );
+      if (cancel) {
+        await expect(capture).rejects.toThrow('cancel after analyze');
+        const {
+          rows: [snapshot],
+        } = await sql<{ capturedAt: Date | null; count: number }>`select "capturedAt",
+          (select count(*)::int from job_run_item where "selectionId" = s.id) count
+          from job_selection s where s."producerId" = ${claim.id}::uuid`.execute(observed);
+        expect(snapshot).toEqual({ capturedAt: null, count: 0 });
+        return;
+      }
+      const runId = await capture;
+      await freezeSelection(
+        observed,
+        intent(),
+        observed.selectFrom(sql<{ id: string }>`(select 'new'::text id)`.as('selected')).select('id'),
+        captureContext,
+      );
+      expect(analyses).toBe(1);
+      const {
+        rows: [statistics],
+      } = await sql<{ estimate: number }>`select reltuples::int estimate
+        from pg_class where oid = 'job_run_item'::regclass`.execute(observed);
+      expect(statistics.estimate).toBeGreaterThanOrEqual(10_000);
+      expect(await localStore.complete(claim, [])).toBe(true);
+      expect(await localStore.feedManifest(queue)).toBe(250);
+      const {
+        rows: [counts],
+      } = await sql<{ selected: number; admitted: number }>`select count(*)::int selected,
+        count("jobId")::int admitted from job_run_item where "runId" = ${runId}::uuid and "selectionId" is not null`.execute(
+        observed,
+      );
+      expect(counts).toEqual({ selected: 10_000, admitted: 250 });
+    } finally {
+      await observed.destroy();
     }
   });
 
