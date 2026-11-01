@@ -155,6 +155,39 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
     }
   });
 
+  it('reads the chooser answer and then the secret from one piped standard input', async () => {
+    const stdin = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    // the chooser lists the key files in name order; find Bea's number
+    const keyFiles = await readdir(join(library, 'locked-keys'));
+    const names = keyFiles.toSorted();
+    const bea = names.indexOf(`${beaId}.json`) + 1;
+    Object.defineProperty(process, 'stdin', {
+      configurable: true,
+      value: Readable.from([`${bea}\ncorrect horse battery\n`]),
+    });
+    try {
+      const result = await lockedDecrypt({ library, to });
+      expect(result).toMatchObject({ written: 2, failed: [] });
+      expect(await readFile(join(to, 'bea.png'))).toEqual(plain.beaPhoto);
+    } finally {
+      Object.defineProperty(process, 'stdin', stdin);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('refuses piped input that names no one, without --user', async () => {
+    const stdin = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    Object.defineProperty(process, 'stdin', { configurable: true, value: Readable.from([]) });
+    try {
+      await expect(lockedDecrypt({ library, to })).rejects.toMatchObject({ exitCode: 2 });
+    } finally {
+      Object.defineProperty(process, 'stdin', stdin);
+      vi.restoreAllMocks();
+    }
+  });
+
   it("decrypts the chosen user's originals to <to>/<originalFileName>", async () => {
     const result = await lockedDecrypt({ library, to, user: 'Bea', secret: 'correct horse battery' });
     expect(result).toEqual({ written: 2, failed: [] });

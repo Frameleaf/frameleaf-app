@@ -50,17 +50,58 @@ export interface LockedDecryptResult {
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const readLine = (question: string): Promise<string> =>
-  new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
-    process.stderr.write(question);
-    rl.once('line', (line) => {
-      // resolve before closing: close() emits 'close' at once, which would answer '' first
+/**
+ * One line reader over standard input for the whole command. A reader per prompt would lose what it
+ * had buffered when it closes: piped "2\n<secret>\n" (the chooser, then the secret) must give both.
+ */
+const stdinReader: { lines?: { next: () => Promise<string>; close: () => void } } = {};
+
+const openStdinLines = () => {
+  const rl = createInterface({ input: process.stdin, terminal: false });
+  const buffered: string[] = [];
+  const waiting: Array<(line: string) => void> = [];
+  let hasEnded = false;
+  rl.on('line', (line) => {
+    const resolve = waiting.shift();
+    if (resolve) {
       resolve(line);
-      rl.close();
-    });
-    rl.once('close', () => resolve(''));
+    } else {
+      buffered.push(line);
+    }
   });
+  rl.on('close', () => {
+    hasEnded = true;
+    for (const resolve of waiting.splice(0)) {
+      resolve('');
+    }
+  });
+  return {
+    next: () =>
+      buffered.length > 0
+        ? Promise.resolve(buffered.shift()!)
+        : hasEnded
+          ? Promise.resolve('')
+          : new Promise<string>((resolve) => {
+              waiting.push(resolve);
+            }),
+    close: () => {
+      buffered.length = 0;
+      rl.close();
+    },
+  };
+};
+
+/** Stops reading standard input (before a hidden prompt takes it over, and when the command ends). */
+const closeStdinLines = () => {
+  stdinReader.lines?.close();
+  delete stdinReader.lines;
+};
+
+const readLine = (question: string): Promise<string> => {
+  process.stderr.write(question);
+  stdinReader.lines ??= openStdinLines();
+  return stdinReader.lines.next();
+};
 
 /** Reads a line without echoing it. Piped input is read as a plain line. */
 const readHidden = (question: string): Promise<string> => {
@@ -68,6 +109,8 @@ const readHidden = (question: string): Promise<string> => {
   if (!stdin.isTTY) {
     return readLine(question);
   }
+  // the hidden prompt reads the keys itself; a line reader left open would see the secret too
+  closeStdinLines();
   return new Promise((resolve, reject) => {
     stderr.write(question);
     let value = '';
@@ -153,9 +196,7 @@ const chooseKeyFile = async (files: LockedKeyFile[], user?: string): Promise<Loc
   if (files.length === 1) {
     return files[0];
   }
-  if (!process.stdin.isTTY) {
-    throw new LockedCliError('Several people have key files here; choose one with --user <name or ID>');
-  }
+  // asked on a terminal or read from piped input ("<number>\n<secret>\n"); no answer is refused below
   process.stderr.write('Whose files do you want to decrypt?\n');
   for (const [index, file] of files.entries()) {
     process.stderr.write(`  ${index + 1}. ${file.label}\n`);
@@ -280,8 +321,14 @@ export async function lockedDecrypt(options: LockedDecryptOptions): Promise<Lock
     throw new LockedCliError('--to must be a folder outside --library; nothing is ever written into the library');
   }
 
-  const keyFile = await chooseKeyFile(await loadKeyFiles(library), options.user);
-  const secret = options.secret ?? (await readHidden(`PIN, passphrase or recovery key for ${keyFile.label}: `));
+  let keyFile: LockedKeyFile;
+  let secret: string;
+  try {
+    keyFile = await chooseKeyFile(await loadKeyFiles(library), options.user);
+    secret = options.secret ?? (await readHidden(`PIN, passphrase or recovery key for ${keyFile.label}: `));
+  } finally {
+    closeStdinLines();
+  }
   const privateKey = await openKey(keyFile, secret);
   const myKeyId = keyId(Buffer.from(keyFile.publicKey, 'base64'));
 
