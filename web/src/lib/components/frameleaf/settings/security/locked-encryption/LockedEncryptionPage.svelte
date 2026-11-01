@@ -24,7 +24,6 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
-  import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import ChangeProtectionModal from '$lib/components/frameleaf/settings/security/locked-encryption/ChangeProtectionModal.svelte';
   import NewRecoveryKeyModal from '$lib/components/frameleaf/settings/security/locked-encryption/NewRecoveryKeyModal.svelte';
@@ -46,9 +45,10 @@
     updateLockedEncryption,
     type LockedEncryptionStatusResponseDto,
   } from '@frameleaf/sdk';
-  import { modalManager } from '@frameleaf/ui';
+  import { Icon, modalManager } from '@frameleaf/ui';
   import {
     mdiCloudLockOutline,
+    mdiContentCopy,
     mdiLockOutline,
     mdiShieldKeyOutline,
     mdiShieldLockOutline,
@@ -391,16 +391,18 @@
               ? $t('frameleaf_le_again_help_restart')
               : $t('frameleaf_le_again_help_hours', { values: { time: againWords(again) } })}
           >
-            <SegmentedControl
-              label={$t('frameleaf_le_again_label')}
-              value={again === null ? 'restart' : String(again)}
-              disabled={savingAgain}
-              options={AGAIN_OPTIONS.map((value) => ({
-                value,
-                label: againWords(value === 'restart' ? null : (Number(value) as AskAgain)),
-              }))}
-              onChange={(value) => void saveAgain(value)}
-            />
+            <div class="le-again">
+              <SegmentedControl
+                label={$t('frameleaf_le_again_label')}
+                value={again === null ? 'restart' : String(again)}
+                disabled={savingAgain}
+                options={AGAIN_OPTIONS.map((value) => ({
+                  value,
+                  label: againWords(value === 'restart' ? null : (Number(value) as AskAgain)),
+                }))}
+                onChange={(value) => void saveAgain(value)}
+              />
+            </div>
           </Row>
           <Row label={$t('frameleaf_le_passphrase')} help={$t('frameleaf_le_passphrase_help')}>
             <div class="le-inline">
@@ -430,35 +432,46 @@
       </Section>
 
       <Section title={$t('frameleaf_le_server_title')} description={$t('frameleaf_le_server_description')}>
-        <div class="le-steps">
-          <Steps
-            stacked
-            label={$t('frameleaf_le_server_title')}
-            steps={[
-              { title: $t('frameleaf_le_server_step_copy'), detail: $t('frameleaf_le_server_step_copy_detail') },
-              { title: $t('frameleaf_le_server_step_run') },
-              {
-                title: $t(advanced ? 'frameleaf_le_server_step_type_passphrase' : 'frameleaf_le_server_step_type_pin'),
-                detail: $t('frameleaf_le_server_step_type_detail'),
-              },
-            ]}
-          />
-          <div class="le-command">
-            <code>{COMMAND}</code>
-            <Button
-              onclick={async () => {
-                try {
-                  await navigator.clipboard.writeText(COMMAND);
-                  said = $t('frameleaf_le_said_command_copied');
-                } catch {
-                  said = $t('frameleaf_le_key_copy_failed');
-                }
-              }}
-            >
-              {$t('frameleaf_le_copy_command')}
-            </Button>
-          </div>
-        </div>
+        <ol class="le-steps" aria-label={$t('frameleaf_le_server_title')}>
+          <li>
+            <span class="le-step-number" aria-hidden="true">1</span>
+            <div>
+              <strong>{$t('frameleaf_le_server_step_copy')}</strong>
+              <p>{$t('frameleaf_le_server_step_copy_detail')}</p>
+            </div>
+          </li>
+          <li>
+            <span class="le-step-number" aria-hidden="true">2</span>
+            <div>
+              <strong>{$t('frameleaf_le_server_step_run')}</strong>
+              <span class="le-command">
+                <code>{COMMAND}</code>
+                <Button
+                  onclick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(COMMAND);
+                      said = $t('frameleaf_le_said_command_copied');
+                    } catch {
+                      said = $t('frameleaf_le_key_copy_failed');
+                    }
+                  }}
+                >
+                  <Icon icon={mdiContentCopy} size="16" aria-hidden />
+                  {$t('frameleaf_le_copy_command')}
+                </Button>
+              </span>
+            </div>
+          </li>
+          <li>
+            <span class="le-step-number" aria-hidden="true">3</span>
+            <div>
+              <strong>
+                {$t(advanced ? 'frameleaf_le_server_step_type_passphrase' : 'frameleaf_le_server_step_type_pin')}
+              </strong>
+              <p>{$t('frameleaf_le_server_step_type_detail')}</p>
+            </div>
+          </li>
+        </ol>
         <p class="le-hint">
           <TextLink href={RECOVERY_TOOL_HELP} external>{$t('frameleaf_le_server_help')}</TextLink>
         </p>
