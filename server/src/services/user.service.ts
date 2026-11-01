@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Updateable } from 'kysely';
 import { cloneDeep, get, isEqual, omit } from 'lodash-es';
 import { DateTime } from 'luxon';
@@ -43,6 +43,7 @@ import {
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
@@ -97,6 +98,10 @@ export const describePreferenceChanges = (before: FrameleafUserPreferences, afte
 
 @Injectable()
 export class UserService extends BaseService {
+  /** FL-721: your own response says whether you have Locked encryption on. */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
   async search(auth: AuthDto): Promise<UserResponseDto[]> {
     const config = await this.getConfig({ withCache: false });
 
@@ -124,7 +129,12 @@ export class UserService extends BaseService {
       systemMetadataRepository: this.systemMetadataRepository,
     });
     const serverRole = getServerRole(user.isAdmin, link, linked ? cloudLink?.accountId : undefined);
-    return { ...mapUserAdmin(user), serverRole, canUpload: canUploadWith(auth.apiKey?.permissions) };
+    const lockedEncryption = await this.lockedEncryption.isOn(user.id);
+    return {
+      ...mapUserAdmin({ ...user, lockedEncryption }),
+      serverRole,
+      canUpload: canUploadWith(auth.apiKey?.permissions),
+    };
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
@@ -155,7 +165,7 @@ export class UserService extends BaseService {
 
     const updatedUser = await this.userRepository.update(user.id, update);
 
-    return mapUserAdmin(updatedUser);
+    return mapUserAdmin({ ...updatedUser, lockedEncryption: await this.lockedEncryption.isOn(updatedUser.id) });
   }
 
   async getMyPreferences(auth: AuthDto): Promise<UserPreferencesResponseDto> {

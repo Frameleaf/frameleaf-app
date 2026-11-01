@@ -65,6 +65,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getHiddenContentAssetIds: vitest.fn().mockResolvedValue(new Set()),
     getLockedAssetIds: vitest.fn().mockResolvedValue(new Set()),
     getLockReasons: vitest.fn().mockResolvedValue([]),
+    getLockedEncryptionItems: vitest.fn().mockResolvedValue([]),
     getUnlockedDetectionIds: vitest.fn().mockResolvedValue([]),
     isCastable: vitest.fn().mockResolvedValue(true),
     getStackSiblingIds: vitest.fn().mockResolvedValue([]),

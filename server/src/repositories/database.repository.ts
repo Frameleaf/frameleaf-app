@@ -690,6 +690,22 @@ export class DatabaseRepository {
     });
   }
 
+  /**
+   * FL-721: one change of a person's Locked key file at a time across every process (the API's
+   * settings and PIN hooks, and the job worker that finishes turning encryption off). A
+   * transaction-scoped advisory lock in its own class (-721), keyed from the user id, held until
+   * `callback` settles. `callback` runs its queries on other connections; the transaction holds only
+   * the lock. The wait is not bounded by the pool's 5 s lock_timeout: a scrypt unwrap inside another
+   * holder takes about half a second per attempt.
+   */
+  async withLockedKeyFileLock<R>(userId: string, callback: () => Promise<R>): Promise<R> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SET LOCAL lock_timeout = '120s'`.execute(trx);
+      await sql`SELECT pg_advisory_xact_lock(-721, hashtext(${userId})::int)`.execute(trx);
+      return callback();
+    });
+  }
+
   private async acquireLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
     if (!UNBOUNDED_WAIT_LOCKS.has(lock)) {
       await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);

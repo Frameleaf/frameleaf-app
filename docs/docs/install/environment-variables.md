@@ -129,6 +129,14 @@ Information on the current workers can be found [here](/administration/jobs-work
 
 Both must be positive numbers, and the grace period must end before the deadline; otherwise the server refuses to start. Docker kills the container when its stop timeout ends, so the server's `stop_grace_period` must be longer than the deadline. The provided Compose files and NAS packages use 10 seconds, which fits the defaults; raise it with the deadline. See [Stopping the server](/administration/jobs-workers#stopping-the-server).
 
+## Locked encryption
+
+| Variable               | Description                                                                                                                                                 |           Default           | Containers |
+| :--------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------: | :--------- |
+| `FRAMELEAF_LOCKED_TMP` | Where the server briefly decrypts an encrypted Locked photo or video so it can make thumbnails, play video or run machine learning. Must be in RAM (tmpfs). | `/dev/shm/frameleaf-locked` | server     |
+
+The folder must hold the largest Locked file at once. Docker gives a container only 64 MB of `/dev/shm`, so the provided Compose files and NAS packages set `shm_size: 2gb` for the server. On a NAS with little memory you can lower it; a file that doesn't fit then fails with a message naming `FRAMELEAF_LOCKED_TMP`, and is never written to an ordinary disk instead.
+
 ## Ports
 
 | Variable         | Description    |                  Default                   | Containers               |

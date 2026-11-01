@@ -3,6 +3,8 @@ import {
   StudioExportShape,
   type StudioExportSettingsDto,
   type StudioExportCreateDto,
+  Provider,
+  type DesktopModelInventoryDto,
   ProcessingProvenanceEvidence,
   ProcessingProvenanceVersion,
   StudioImportPublicationCancelStatus,
@@ -14,6 +16,9 @@ import {
   type ReconciliationResultDto,
   type SyncAssetTrashStateV1,
 } from '../build/index.js';
+
+const desktopProvider: DesktopModelInventoryDto['provider'] =
+  Provider.CpuExecutionProvider;
 
 const resultEvidence: ReconciliationResultDto['evidence'] =
   Evidence.RegisteredCurrentOriginals;

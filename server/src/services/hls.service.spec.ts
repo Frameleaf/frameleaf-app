@@ -1,4 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { HlsVideoResolution, VideoCodec } from 'src/enum.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { eiffelTower, train, waterfall } from 'test/fixtures/media.stub.js';
@@ -182,6 +185,42 @@ describe(HlsService.name, () => {
   describe('getMainPlaylist', () => {
     const auth = factory.auth();
     const assetId = 'asset-1';
+
+    it('refuses an encrypted Locked video: HLS would write plaintext segments (FL-721)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { realtime: { enabled: true } } });
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: assetId, ownerId: auth.user.id, pending: false, mode: 'pin' as const },
+      ]);
+
+      await expect(sut.getMainPlaylist(auth, assetId)).rejects.toThrow(BadRequestException);
+      expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([assetId]);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('HlsSessionRequest', expect.anything());
+    });
+
+    it("refuses a partner's copy of an encrypted Locked video too: its original is the sealed file (FL-721)", async () => {
+      const dir = await fs.mkdtemp(join(tmpdir(), 'hls-locked-'));
+      const sealed = join(dir, 'video.mp4');
+      await fs.writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64)]));
+      try {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { realtime: { enabled: true } } });
+        // a partner's copy is outside the encryption set: its owner's asset is the one sealed
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([]);
+        mocks.asset.getForVideo.mockResolvedValue({
+          originalPath: sealed,
+          ownerId: auth.user.id,
+          encodedVideoPath: null,
+          editedVideoPath: null,
+        });
+        mocks.videoStream.getForMainPlaylist.mockResolvedValue(eiffelTower);
+
+        await expect(sut.getMainPlaylist(auth, assetId)).rejects.toThrow(BadRequestException);
+        expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('HlsSessionRequest', expect.anything());
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
 
     const allCodecs = [VideoCodec.Av1, VideoCodec.Hevc, VideoCodec.H264];
     const allResolutions = [

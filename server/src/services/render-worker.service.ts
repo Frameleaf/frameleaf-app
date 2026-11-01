@@ -1651,6 +1651,9 @@ export class RenderWorkerService {
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithoutCache,
+      // FL-721 (spec §8.1): an encrypted input is decrypted as it is sent, with the operation owner's
+      // key; without it the worker is answered 423 and the operation waits
+      viewerId: operation.ownerId,
     });
   }
 

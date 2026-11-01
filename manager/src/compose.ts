@@ -389,6 +389,8 @@ export async function renderCompose(
       ],
       depends_on: { database: { condition: 'service_healthy' } },
       stop_grace_period: '60s',
+      // FL-721: encrypted Locked files are decrypted into /dev/shm (RAM); Docker's 64 MB default is too small
+      shm_size: '2gb',
       healthcheck: template.services['frameleaf-server'].healthcheck,
     },
   };

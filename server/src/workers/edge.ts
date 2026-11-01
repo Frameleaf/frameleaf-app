@@ -11,6 +11,7 @@ import { onStopRequest } from 'src/utils/shutdown.js';
  */
 async function bootstrap() {
   process.title = 'frameleaf-edge';
+  // FL-721: this internet-facing process never holds Locked keys; the supervisor relays them to the job worker only
   const nativeOwner = process.env.FRAMELEAF_NATIVE_OWNER === '1';
   // The owner may stop a native fork while Nest is still starting.
   let stop = (): void => process.exit(0);

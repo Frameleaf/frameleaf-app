@@ -28,6 +28,7 @@ import {
   partner_delete_audit,
   person_delete_audit,
   person_group_delete_audit,
+  photo_location_invalidate,
   stack_delete_audit,
   updated_at,
   user_delete_audit,
@@ -128,6 +129,7 @@ import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-chang
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
@@ -156,6 +158,12 @@ import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
+import {
+  AssetLocationInsightTable,
+  PhotoLocationEstimateTable,
+  PhotoLocationScanItemTable,
+  PhotoLocationScanTable,
+} from 'src/schema/tables/photo-locations.table.js';
 import {
   PhotoSourceResourceTable,
   PhotoSourceRunTable,
@@ -269,6 +277,10 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    PhotoLocationEstimateTable,
+    PhotoLocationScanTable,
+    PhotoLocationScanItemTable,
+    AssetLocationInsightTable,
     DesktopClipIndexTable,
     DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
@@ -333,6 +345,7 @@ export class ImmichDatabase {
     AssetJobStatusTable,
     AssetKeyframeTable,
     AssetLockTable,
+    LockedEncryptionTable,
     AssetDocumentEditTable,
     AssetOcrTable,
     AssetOcrAuditTable,
@@ -483,6 +496,7 @@ export class ImmichDatabase {
   ];
 
   functions = [
+    photo_location_invalidate,
     desktop_clip_producer_guard,
     immich_uuid_v7,
     updated_at,
@@ -570,6 +584,10 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  photo_location_scan: PhotoLocationScanTable;
+  photo_location_estimate: PhotoLocationEstimateTable;
+  photo_location_scan_item: PhotoLocationScanItemTable;
+  asset_location_insight: AssetLocationInsightTable;
   asset_palette: AssetPaletteTable;
   asset_palette_swatch: AssetPaletteSwatchTable;
   asset_annotation: AssetAnnotationTable;
@@ -581,6 +599,7 @@ export interface DB extends QueueDatabase {
   bookmark_tag: BookmarkTagTable;
   asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;
+  locked_encryption: LockedEncryptionTable;
   asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;

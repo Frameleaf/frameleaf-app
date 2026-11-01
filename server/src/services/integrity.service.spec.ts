@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
@@ -150,6 +153,41 @@ describe(IntegrityService.name, () => {
       expect(mocks.integrityReport.create).not.toHaveBeenCalled();
     });
 
+    it('counts an encrypted Locked original as encrypted and never reads or reports it (FL-721)', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'integrity-locked-'));
+      const sealed = join(directory, 'sealed.jpg');
+      await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+      try {
+        streamAsset(sha256, ChecksumAlgorithm.sha256File);
+        mocks.integrityReport.streamAssetChecksums.mockReturnValue(
+          (function* () {
+            yield {
+              assetId: 'asset-1',
+              originalPath: sealed,
+              checksum: sha256,
+              checksumAlgorithm: ChecksumAlgorithm.sha256File,
+              createdAt: new Date(),
+              reportId: 'report-1',
+            };
+          })() as never,
+        );
+        mocks.systemMetadata.completeIntegrityRun.mockResolvedValue(true);
+        mocks.integrityReport.getIntegrityReportSummary.mockResolvedValue({} as never);
+
+        await sut.handleChecksumFiles({});
+
+        expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.recordVerification).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+        expect(mocks.integrityReport.deleteById).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckHistory, {
+          entries: [expect.objectContaining({ type: IntegrityReport.ChecksumFail, checked: 0, encrypted: 1 })],
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
     it('propagates proof persistence failures without misreporting a file failure', async () => {
       streamAsset(sha256, ChecksumAlgorithm.sha256File);
       mocks.integrityReport.recordVerification.mockRejectedValue(new Error('database unavailable'));
@@ -233,6 +271,94 @@ describe(IntegrityService.name, () => {
 
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
       expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+    });
+  });
+
+  describe('encrypted Locked files (FL-721, spec §8.3)', () => {
+    let directory: string;
+    let sealed: string;
+
+    beforeEach(async () => {
+      directory = await mkdtemp(join(tmpdir(), 'integrity-locked-delete-'));
+      sealed = join(directory, 'sealed.jpg');
+      await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+    });
+
+    afterEach(async () => {
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('Delete never trashes an item whose original is sealed, and drops the stale report', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({ id: 'report-id', path: sealed, assetId: 'asset-id' } as never);
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-id', originalPath: sealed }] as never);
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetTrashAll', expect.anything());
+      expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+    });
+
+    it('Delete checks the original the item has now, not only the reported path', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({
+        id: 'report-id',
+        path: '/data/library/moved-away.jpg',
+        assetId: 'asset-id',
+      } as never);
+      mocks.asset.getByIds.mockResolvedValue([{ id: 'asset-id', originalPath: sealed }] as never);
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('Delete all trashes only the items whose originals are not sealed', async () => {
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: 'sealed-asset', originalPath: sealed },
+        { id: 'plain-asset', originalPath: '/data/library/plain.jpg' },
+      ] as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+
+      await sut.handleDeleteIntegrityReports({
+        reports: [
+          { id: 'sealed-report', assetId: 'sealed-asset', fileAssetId: null, path: sealed },
+          { id: 'plain-report', assetId: 'plain-asset', fileAssetId: null, path: '/data/library/plain.jpg' },
+          { id: 'orphan-report', assetId: null, fileAssetId: null, path: sealed },
+        ],
+      });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledExactlyOnceWith(['plain-asset'], expect.anything());
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetTrashAll', { assetIds: ['plain-asset'], userId: '' });
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['sealed-report']);
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['plain-report']);
+      // an untracked sealed file is never unlinked or moved
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+    });
+
+    it('Delete never removes an untracked sealed file', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({ id: 'report-id', path: sealed } as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('the report refresh drops a checksum report on a sealed file without reading it', async () => {
+      await sut.handleChecksumRefresh({
+        items: [
+          {
+            reportId: 'report-1',
+            path: sealed,
+            checksum: Buffer.alloc(32).toString('hex'),
+            checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          },
+        ],
+      });
+
+      expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['report-1']);
     });
   });
 

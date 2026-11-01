@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
@@ -24,6 +23,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isLockedKeyUnavailable, makeWorkDirFor, withPlainCopy } from 'src/utils/locked-read.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 
 type BestPhotoScoringAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForBestPhotoScoring']>>>;
@@ -127,6 +127,10 @@ export class BestPhotosService {
       await this.bestPhotosRepository.upsertScore(upsert);
       return JobStatus.Success;
     } catch (error: any) {
+      if (isLockedKeyUnavailable(error)) {
+        // FL-721: an encrypted Locked file waits for its owner's key; the job is deferred, not failed
+        throw error;
+      }
       this.logger.warn(`Failed to score Best Photos asset ${id}: ${error.message || error}`);
       return JobStatus.Failed;
     }
@@ -142,7 +146,10 @@ export class BestPhotosService {
   }
 
   private async scoreImageAsset(asset: BestPhotoScoringAsset): Promise<BestPhotoScoreUpsert> {
-    const thumbnailScore = await this.mediaRepository.scoreThumbnailCandidate(asset.previewFile!);
+    // FL-721: an encrypted Locked preview is read through a plain copy
+    const thumbnailScore = await withPlainCopy(asset.previewFile!, (path) =>
+      this.mediaRepository.scoreThumbnailCandidate(path),
+    );
     return this.buildScoreUpsert(asset, thumbnailScore, asset.width, asset.height);
   }
 
@@ -182,9 +189,22 @@ export class BestPhotosService {
     );
     const thumbnailConfig = { ...config.ffmpeg, targetResolution: config.image.preview.size.toString() };
 
+    // FL-721: an encrypted Locked video is read through a plain copy
+    return withPlainCopy(video.originalPath, (originalPath) =>
+      this.scoreVideoFrames(asset, { ...video, originalPath }, timestamps, thumbnailConfig),
+    );
+  }
+
+  private async scoreVideoFrames(
+    asset: BestPhotoScoringAsset,
+    video: NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoDuplicateFrameJob']>>>,
+    timestamps: number[],
+    thumbnailConfig: Parameters<typeof ThumbnailConfig.create>[0],
+  ): Promise<BestPhotoScoreUpsert | null> {
     let best: { timestamp: number; thumbnailScore: number } | null = null;
     const sampledFrames: Array<{ timestampMs: number; thumbnailScore: number }> = [];
-    const tempDir = await mkdtemp(path.join(tmpdir(), 'immich-best-photos-'));
+    // FL-721 M6: frames of an encrypted video (a plain copy) stay in the RAM-backed Locked folder
+    const tempDir = await makeWorkDirFor(video.originalPath, 'best-photos');
     try {
       for (const [index, timestamp] of timestamps.entries()) {
         const framePath = path.join(tempDir, `frame_${index}.jpeg`);

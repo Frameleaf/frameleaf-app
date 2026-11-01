@@ -6,6 +6,8 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { finished } from 'node:stream/promises';
@@ -649,6 +651,24 @@ describe(StudioBundleService.name, () => {
       expect(operations.fail).not.toHaveBeenCalled();
       // the other two sources of the stored graph are not named by this snapshot, so they stay references
       expect(lastResult()).toMatchObject({ embedded: 1, referenced: 2 });
+    });
+
+    it('carries a sealed item as a reference, never its ciphertext or plaintext (FL-721)', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'bundle-locked-'));
+      const sealed = join(directory, 'b.jpg');
+      await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+      try {
+        const job = lockedExport();
+        fs.files.set(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+        allowed = new Map([[assetB, { path: sealed, ownerId: owner.user.id }]]);
+
+        await sut.run({ operation: job, claimToken: 'token' });
+
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(lastResult()).toMatchObject({ embedded: 0, referenced: 3 });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     });
 
     it('hides that bundle from a session that may not see the item, and shows it to one that may', async () => {

@@ -27,6 +27,13 @@ export const ExifResponseSchema = z
     exposureTime: z.string().nullish().default(null).describe('Exposure time'),
     latitude: z.number().meta({ format: 'double' }).nullish().default(null).describe('GPS latitude'),
     longitude: z.number().meta({ format: 'double' }).nullish().default(null).describe('GPS longitude'),
+    gpsAccuracyM: z
+      .number()
+      .meta({ format: 'double' })
+      .nonnegative()
+      .nullable()
+      .optional()
+      .describe('Reported horizontal GPS accuracy in metres'),
     city: z.string().nullish().default(null).describe('City name'),
     state: z.string().nullish().default(null).describe('State/province name'),
     country: z.string().nullish().default(null).describe('Country name'),
@@ -63,6 +70,7 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     exposureTime: entity.exposureTime,
     latitude: entity.latitude,
     longitude: entity.longitude,
+    gpsAccuracyM: entity.gpsAccuracyM ?? undefined,
     city: entity.city,
     state: entity.state,
     country: entity.country,

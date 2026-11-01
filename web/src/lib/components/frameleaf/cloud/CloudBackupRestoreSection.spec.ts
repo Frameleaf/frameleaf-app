@@ -225,6 +225,7 @@ describe('CloudBackupRestoreSection (FL-164)', () => {
         databaseFile: null,
         recreated: 2,
         detailsRestored: 1,
+        encryptedWithOlderKey: 0,
         error: null,
       },
     });

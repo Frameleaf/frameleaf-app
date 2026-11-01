@@ -16,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 
 const handleError = (label: string, error: Error | any) => {
@@ -91,7 +92,7 @@ export class SqlGenerator {
         }),
         ClsModule.forRoot(cls.config),
       ],
-      providers: [...repositories, AuthService, SchedulerRegistry],
+      providers: [...repositories, AuthService, LockedEncryptionService, SchedulerRegistry],
     }).compile();
 
     this.app = moduleFixture.createNestApplication();

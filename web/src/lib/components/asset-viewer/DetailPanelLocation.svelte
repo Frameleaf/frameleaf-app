@@ -12,16 +12,19 @@
    * instead of rewritten, and a rejected or forbidden point is stated without a retry.
    */
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { coordinateLabel, coordinatesOf, locationLabel, osmLink } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
+  import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
   import ViewerLocationDialog from '$lib/components/frameleaf/ViewerLocationDialog.svelte';
   import { locationPatch } from '$lib/frameleaf/viewer-location';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { dismissAssetLocationInsight, getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
   import { mdiMapMarkerOutline, mdiOpenInNew, mdiPencil } from '@mdi/js';
   import { onDestroy } from 'svelte';
@@ -40,6 +43,8 @@
 
   let failure = $state<InlineEditFailure | null>(null);
   let isSaving = $state(false);
+  let isDismissing = $state(false);
+  let dismissFailed = $state(false);
   /** The last change the person saved, so a retryable failure can replay exactly that change. */
   let pending = $state<LocationChange | null>(null);
 
@@ -49,6 +54,9 @@
   const mapLink = $derived(osmLink(point));
   // FL-354: the landmark the item was taken at; the server lists the best label first.
   const landmark = $derived(asset.landmarks?.[0]);
+  const insight = $derived(point ? asset.locationInsight : undefined);
+  const insightMapLink = $derived(libraryReferenceUrl(insight?.mapsUrl));
+  const insightHeadingId = $props.id();
 
   let alive = true;
   let generation = 0;
@@ -65,6 +73,8 @@
     failure = null;
     isSaving = false;
     pending = null;
+    isDismissing = false;
+    dismissFailed = false;
   });
   const captureView = () => {
     const owner = generation;
@@ -75,6 +85,30 @@
   const fail = (error: unknown, change: LocationChange | null) => {
     failure = classifyInlineEditError(error);
     pending = change;
+  };
+
+  const dismissInsight = async () => {
+    if (!isOwner || !insight || isDismissing) {
+      return;
+    }
+    const isCurrent = captureView();
+    isDismissing = true;
+    try {
+      await dismissAssetLocationInsight({ id: asset.id });
+      if (isCurrent()) {
+        asset = { ...asset, locationInsight: undefined };
+        dismissFailed = false;
+        onAssetRefresh?.(asset);
+      }
+    } catch {
+      if (isCurrent()) {
+        dismissFailed = true;
+      }
+    } finally {
+      if (isCurrent()) {
+        isDismissing = false;
+      }
+    }
   };
 
   const save = async (change: LocationChange) => {
@@ -221,4 +255,74 @@
       onReload={inlineEditRecovery(failure) === 'reload' ? () => handlePromiseError(reload()) : undefined}
     />
   {/if}
+
+  {#if insight}
+    <section class="suggestion" aria-labelledby={insightHeadingId}>
+      <h4 id={insightHeadingId}>{$t('frameleaf_location_insight_title')}</h4>
+      <span class="inferred" title={$t('frameleaf_location_insight_inference')}>
+        {$t('frameleaf_location_insight_inferred')}
+        <span class="sr-only">{$t('frameleaf_location_insight_inference')}</span>
+      </span>
+      <p>
+        {$t(insight.relation === 'at' ? 'frameleaf_location_insight_at' : 'frameleaf_location_insight_near', {
+          values: { name: insight.name },
+        })}
+      </p>
+      {#if insight.address}<p class="muted">{insight.address}</p>{/if}
+      {#if insightMapLink}
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->
+        <a href={insightMapLink} target="_blank" rel="noopener noreferrer" class="hover:text-primary">
+          {$t('frameleaf_location_insight_open_maps')}
+        </a>
+      {/if}
+      <p class="muted">Google Maps</p>
+      {#each insight.attributions as attribution (attribution)}
+        {@const href = libraryReferenceUrl(attribution.uri)}
+        {#if href}
+          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->
+          <a {href} target="_blank" rel="noopener noreferrer" class="muted hover:text-primary">
+            {attribution.displayName}
+          </a>
+        {:else}<p class="muted">{attribution.displayName}</p>{/if}
+      {/each}
+      {#if isOwner}
+        <div>
+          <Button disabled={isDismissing} onclick={dismissInsight}>{$t('frameleaf_location_insight_dismiss')}</Button>
+        </div>
+        {#if dismissFailed}
+          <InlineError
+            message={$t('frameleaf_location_insight_dismiss_failed')}
+            onRetry={dismissInsight}
+            retrying={isDismissing}
+            compact
+          />
+        {/if}
+      {/if}
+    </section>
+  {/if}
 </div>
+
+<style>
+  .suggestion {
+    display: grid;
+    justify-items: start;
+    gap: var(--fl-space-2);
+    margin-top: var(--fl-space-4);
+    padding: var(--fl-space-4) 0;
+    border-top: 1px solid var(--fl-border);
+    font-size: var(--fl-font-callout);
+    overflow-wrap: anywhere;
+  }
+  .suggestion h4 {
+    font-weight: 600;
+  }
+  .muted,
+  .inferred {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .inferred {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+</style>

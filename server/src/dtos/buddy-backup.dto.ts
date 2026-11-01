@@ -131,6 +131,13 @@ export const BuddyRestoreStatusSchema = z.object({
   progress: z.number().meta({ format: 'double' }).nullable(),
   phase: z.string(),
   recoveryId: z.string().nullable(),
+  encryptedWithOlderKey: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe(
+      "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+    ),
   error: z.string().nullable(),
 });
 export class BuddySettingsDto extends createZodDto(BuddySettingsSchema) {}

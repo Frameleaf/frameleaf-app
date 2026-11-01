@@ -202,6 +202,7 @@ export const buddyBackupCommand = async (args: string[]) => {
     const files = [
       ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
       ...Object.values(manifest.library.profiles),
+      ...Object.values(manifest.library.lockedKeys ?? {}),
       ...manifest.dependencies,
       ...manifest.configurationFiles,
     ];

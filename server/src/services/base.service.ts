@@ -11,7 +11,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock, LibraryScope, MlWorkload } from 'src/enum.js';
+import { DatabaseLock, JobName, LibraryScope, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -95,6 +95,7 @@ import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
+import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -581,8 +582,39 @@ export class BaseService {
   protected async afterAssetsLocked(assetIds: string[], sequenced = false): Promise<void> {
     await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
     await this.replaceLockedProfileImages();
+    // FL-721 (spec §7.2): an item that joined an encrypted set is sealed (public key only)
+    const sealed = (await this.assetRepository.getLockedEncryptionItems(assetIds)).filter(({ pending }) => !pending);
+    if (sealed.length > 0) {
+      await this.jobRepository.queueAll(sealed.map(({ id }) => ({ name: JobName.LockedSeal, data: { id } })));
+    }
     // FL-90: Studio previews of the newly Locked sources stop now rather than at their next read.
     if (!sequenced) await this.eventRepository.emit('AssetLocked', { assetIds });
+  }
+
+  /**
+   * FL-721 (spec §7.2): a job wrote new or derived files (thumbnails, encodes, edits, sidecars, develop
+   * or Studio results, restorations, moment frames) for `assetIds`; those in an encrypted set (the same
+   * test as `LockedFileRepository.encryptedSetOwner`: Locked, not pending, encryptable) are sealed
+   * again. A failure to queue never fails the job that wrote the files: the hourly sweep seals them.
+   */
+  protected async queueLockedSeal(assetIds: string[]): Promise<void> {
+    await queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, assetIds);
+  }
+
+  /**
+   * FL-721 (spec §7.3): once an unlock of `assetIds` committed. Items whose files are encrypted were
+   * only marked `pendingUnlockAt` (as were Studio results they kept locked); a sweep of each owner
+   * queues their unseals, which remove the locks once the files are plain.
+   */
+  protected async afterAssetsUnlocked(assetIds: string[]): Promise<void> {
+    const owners = new Set(
+      (await this.assetRepository.getLockedEncryptionItems(assetIds))
+        .filter(({ pending }) => pending)
+        .map(({ ownerId }) => ownerId),
+    );
+    for (const userId of owners) {
+      await this.jobRepository.queue({ name: JobName.LockedSweep, data: { userId } });
+    }
   }
 
   /**

@@ -10,7 +10,7 @@
   <Category>MediaApp:Photos</Category>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <WebUI>http://[IP]:[PORT:2283]</WebUI>
-  <ExtraParams>--stop-timeout=10</ExtraParams>
+  <ExtraParams>--stop-timeout=10 --shm-size=2g</ExtraParams>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-server.xml</TemplateURL>
   <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
   <Config Name="Web port" Target="2283" Default="2283" Mode="tcp" Description="Frameleaf web interface" Type="Port" Display="always" Required="true" Mask="false">2283</Config>

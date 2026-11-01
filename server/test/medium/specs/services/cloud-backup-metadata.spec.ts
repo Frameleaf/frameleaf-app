@@ -61,6 +61,7 @@ describe('Cloud backup metadata across workers', () => {
       unused,
       unused,
       unused,
+      unused,
     );
     return service as unknown as {
       updateMetadata: (change: (current: FrameleafCloudBackup) => FrameleafCloudBackup) => Promise<void>;

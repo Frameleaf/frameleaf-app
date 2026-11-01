@@ -275,6 +275,18 @@ const STUDIO_WORK_BY_SNAPSHOT_KIND: Readonly<Record<string, string>> = {
   'studio-voice-cleanup': 'voice-cleanup',
 };
 
+/**
+ * FL-721 (spec §9): how many items a Cloud or Buddy restore put back that this server's key file for their
+ * owner does not open, so the person who restored them hears it in Activity; null for every other kind.
+ */
+export const encryptedWithOlderKeyOf = (operation: MediaOperation): number | null => {
+  if (operation.kind !== MediaOperationKind.CloudRestore && operation.kind !== MediaOperationKind.BuddyRestore) {
+    return null;
+  }
+  const count = (operation.result as { encryptedWithOlderKey?: unknown } | null)?.encryptedWithOlderKey;
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null;
+};
+
 export const studioWorkOf = (operation: MediaOperation): string | null => {
   if (operation.kind !== MediaOperationKind.StudioTranscription) {
     return null;
@@ -311,6 +323,7 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
     studioWork: studioWorkOf(operation),
     renderProgress: privateWeekly ? null : studioRenderProgressOf(operation),
+    encryptedWithOlderKey: privateWeekly ? null : encryptedWithOlderKeyOf(operation),
     progress: privateWeekly ? 0 : operation.progress,
     processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
     totalUnits:

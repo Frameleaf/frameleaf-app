@@ -76,6 +76,9 @@ import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
+import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
@@ -94,6 +97,7 @@ import { PartnerOriginRepository } from 'src/repositories/partner-origin.reposit
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
@@ -144,6 +148,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  PhotoLocationsRepository,
   SpeechRepository,
   AssetAnnotationRepository,
   AssetPaletteRepository,
@@ -207,6 +212,9 @@ export const repositories = [
   IntegrityRepository,
   JobRepository,
   LibraryRepository,
+  LockedEncryptionRepository,
+  LockedFileRepository,
+  LockedKeyRepository,
   LoggingRepository,
   LivePhotoRepository,
   MachineLearningRepository,

@@ -8,6 +8,7 @@ import { countPathReferences, lockChecksum, lockFilePath } from 'src/repositorie
 import { DB } from 'src/schema/index.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
+import { holdsEncryptedOriginal, isEncryptedOriginalPath } from 'src/utils/locked-encryption-set.js';
 
 /** A managed original the scan reads: active, online, not trashed, never an external library's. */
 export type IdenticalFilesOriginal = {
@@ -128,7 +129,8 @@ export class IdenticalFilesRepository {
 
   /**
    * FL-520: extra copies on the drive, from what the scan already recorded: for each content held in
-   * more than one file, every file but one, and the space they take. Reads no file.
+   * more than one file, every file but one, and the space they take. Reads no file. A file an encrypted
+   * Locked item reads is left out, as `getMembers` leaves it out: it is never merged, so frees nothing.
    */
   async countExtraCopies(): Promise<{ files: number; contents: number; bytes: number }> {
     const { rows } = await sql<{ files: number; contents: number; bytes: string }>`
@@ -137,20 +139,25 @@ export class IdenticalFilesRepository {
       FROM (
         SELECT c."sizeInBytes" AS size, count(DISTINCT a."originalPath") AS copies
         FROM public.asset_checksum c JOIN public.asset a ON a.id = c."assetId"
-        WHERE ${managed}
+        WHERE ${managed} AND NOT ${holdsEncryptedOriginal('a')}
         GROUP BY c.sha256, c."sizeInBytes"
         HAVING count(DISTINCT a."originalPath") > 1
       ) g`.execute(this.db);
     return { files: rows[0].files, contents: rows[0].contents, bytes: Number(rows[0].bytes) };
   }
 
-  /** Every active managed photo holding this content, oldest first (the photo added first, then id). */
+  /**
+   * Every active managed photo holding this content, oldest first (the photo added first, then id).
+   * FL-721 (spec §6.1): a photo whose file an encrypted Locked item reads is never a member, so it is
+   * never kept for others, linked to another file or merged.
+   */
   async getMembers(content: IdenticalFilesContent, ownerId?: string): Promise<IdenticalFilesMember[]> {
     const { rows } = await sql<IdenticalFilesMember>`
       SELECT a.id, a."ownerId", a."originalPath", a."originalFileName", a."physicalOriginalFileId", a."createdAt",
         a.checksum, c.sha1
       FROM public.asset_checksum c JOIN public.asset a ON a.id = c."assetId"
       WHERE ${managed} AND c.sha256 = ${content.sha256} AND c."sizeInBytes" = ${content.sizeInBytes}::bigint
+        AND NOT ${holdsEncryptedOriginal('a')}
         ${ownerId ? sql`AND a."ownerId" = ${ownerId}::uuid` : sql``}
       ORDER BY a."createdAt", a.id`.execute(this.db);
     return rows;
@@ -188,10 +195,13 @@ export class IdenticalFilesRepository {
         SELECT a.id FROM public.asset a JOIN public.asset_checksum c ON c."assetId" = a.id
         WHERE a.id = ${input.assetId}::uuid AND ${managed} AND a."originalPath" = ${input.ownPath}
           AND c.sha256 = ${input.content.sha256} AND c."sizeInBytes" = ${input.content.sizeInBytes}::bigint
+          AND NOT ${holdsEncryptedOriginal('a')}
         FOR UPDATE OF a`.execute(trx);
+      // FL-721: checked again under the locks, as the kept file may have been Locked meanwhile
       const { rows: kept } = await sql`
         SELECT 1 FROM public.physical_file
-        WHERE id = ${input.kept.id}::uuid AND path = ${input.kept.path} AND type = 'original'`.execute(trx);
+        WHERE id = ${input.kept.id}::uuid AND path = ${input.kept.path} AND type = 'original'
+          AND NOT ${isEncryptedOriginalPath(input.kept.path)}`.execute(trx);
       if (current.length === 0 || kept.length === 0 || !(await input.unchanged())) {
         return null;
       }

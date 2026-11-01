@@ -2357,6 +2357,12 @@ export enum JobName {
   FileDelete = 'FileDelete',
   FileMigrationQueueAll = 'FileMigrationQueueAll',
 
+  // Locked encryption
+  LockedSeal = 'LockedSeal',
+  LockedUnseal = 'LockedUnseal',
+  LockedRewrap = 'LockedRewrap',
+  LockedSweep = 'LockedSweep',
+
   LibraryDeleteCheck = 'LibraryDeleteCheck',
   LibraryDelete = 'LibraryDelete',
   LibraryRemoveAsset = 'LibraryRemoveAsset',
@@ -2491,7 +2497,8 @@ export enum JobName {
 // Internal jobs stay out of the public enum, which strict native decoders reject new values of:
 // photography jobs are observed through the scoped workflow API, FL-650's seek-bar preview
 // warm-up is a background cache fill nobody watches, FL-651's video fingerprints run on the video
-// duplicate queue, observed as that queue, and FL-667's filler-tag clean-up runs once.
+// duplicate queue, observed as that queue, FL-667's filler-tag clean-up runs once, and FL-721's
+// Locked encryption jobs are observed through the Locked encryption status.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2500,6 +2507,10 @@ export const JobNameSchema = z
     JobName.AssetVideoFingerprintQueueAll,
     JobName.AssetVideoFingerprint,
     JobName.DescriptionFillerTagCleanup,
+    JobName.LockedSeal,
+    JobName.LockedUnseal,
+    JobName.LockedRewrap,
+    JobName.LockedSweep,
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });
@@ -3312,6 +3323,7 @@ export enum ApiTag {
   Jobs = 'Jobs',
   Libraries = 'Libraries',
   LivePhoto = 'Live Photo',
+  LockedEncryption = 'Locked encryption',
   Maintenance = 'Maintenance (admin)',
   Map = 'Map',
   MediaHealth = 'Media Health',

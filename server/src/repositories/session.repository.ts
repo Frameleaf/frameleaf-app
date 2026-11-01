@@ -130,6 +130,23 @@ export class SessionRepository {
   }
 
   /**
+   * FL-721: when the last PIN unlock of this account ends: the latest `pinExpiresAt` of its
+   * unexpired sessions that are elevated now, or null when none is. A PIN-mode Locked key stays
+   * loaded until then (spec §4.3).
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getPinUnlockedUntil(userId: string): Promise<Date | null> {
+    const result = await this.db
+      .selectFrom('session')
+      .select((eb) => eb.fn.max('pinExpiresAt').as('until'))
+      .where('userId', '=', asUuid(userId))
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+      .executeTakeFirst();
+    return result?.until ? new Date(result.until) : null;
+  }
+
+  /**
    * Elevates a session after its PIN was checked (FL-34), only while the account's PIN and password
    * are still the ones that check read. A PIN change or reset, or a password change, that commits
    * (with its `lockAll`) between the check and this write is never undone by it: PostgreSQL

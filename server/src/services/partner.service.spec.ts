@@ -187,6 +187,43 @@ describe(PartnerService.name, () => {
     });
   });
 
+  describe('Locked encryption (FL-721 Task 8)', () => {
+    const hooks = () =>
+      (sut as unknown as { lockedEncryption: Record<'onPartnershipStarted' | 'onPartnershipEnded', unknown> })
+        .lockedEncryption as unknown as {
+        onPartnershipStarted: (ownerId: string, partnerId: string) => Promise<void>;
+        onPartnershipEnded: (ownerId: string, partnerId: string) => Promise<void>;
+      };
+
+    it("starting a partnership queues the re-wrap of the owner's encrypted Locked items", async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      mocks.partner.get.mockResolvedValue(void 0);
+      mocks.user.get.mockResolvedValue(user2);
+      mocks.partner.create.mockResolvedValue(getForPartner(partner));
+      const started = vi.spyOn(hooks(), 'onPartnershipStarted').mockResolvedValue();
+
+      await sut.create(AuthFactory.create({ id: user1.id }), { sharedWithId: user2.id });
+
+      expect(started).toHaveBeenCalledWith(user1.id, user2.id);
+    });
+
+    it("ending a partnership removes the partner's entries and grants", async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      mocks.partner.get.mockResolvedValue(getForPartner(partner));
+      const ended = vi.spyOn(hooks(), 'onPartnershipEnded').mockResolvedValue();
+
+      await sut.remove(AuthFactory.create({ id: user1.id }), user2.id);
+
+      // after the row is gone, so the re-wrap no longer counts the partner as a recipient
+      expect(mocks.partner.remove.mock.invocationCallOrder[0]).toBeLessThan(ended.mock.invocationCallOrder[0]);
+      expect(ended).toHaveBeenCalledWith(user1.id, user2.id);
+    });
+  });
+
   describe('remove', () => {
     it('should remove a partner', async () => {
       const user1 = UserFactory.create();

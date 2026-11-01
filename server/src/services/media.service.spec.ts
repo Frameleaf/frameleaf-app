@@ -45,11 +45,13 @@ import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
 import { personThumbnailStub } from 'test/fixtures/person.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
@@ -551,6 +553,67 @@ describe(MediaService.name, () => {
           files: expect.arrayContaining([asset.files[0].path]),
         },
       });
+    });
+
+    it('regenerating thumbnails of a sealed asset reads the original through withPlainCopy and queues LockedSeal afterwards', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_0001.jpg', 'jpeg bytes', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        });
+        mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
+        ]);
+        const seen: string[] = [];
+        mocks.media.decodeImage.mockImplementation(async (input) => {
+          if (typeof input === 'string') {
+            seen.push(input);
+            expect(await readFile(input, 'utf8')).toBe('jpeg bytes');
+          }
+          return { data: rawBuffer, info: rawInfo as OutputInfo };
+        });
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen.every((path) => path.startsWith(locked.tmp) && path.endsWith('/IMG_0001.jpg'))).toBe(true);
+        expect(await locked.copiesLeft()).toBe(0);
+        expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('defers (no error) when a sealed original has no loaded key', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        const originalPath = await locked.seal('IMG_0001.jpg', 'jpeg bytes', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        });
+        const context = {
+          claim: { id: 'job-locked', token: 'attempt', attempt: 1, name: JobName.AssetGenerateThumbnails, data: {} },
+          signal: new AbortController().signal,
+          adoptions: [],
+          followups: [],
+        } as unknown as QueueExecution;
+        await expect(queueExecution.run(context, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toThrow(
+          LockedKeyUnavailableError,
+        );
+        expect(context.dependencyReason).toBe('locked-key-unavailable');
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
     });
 
     it('should generate P3 thumbnails for a wide gamut image', async () => {
@@ -3661,6 +3724,38 @@ describe(MediaService.name, () => {
         mocks.assetEdit.getAll.mockResolvedValue([
           { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
         ]);
+      });
+
+      it('renders a sealed video edit from a plain copy and queues LockedSeal (FL-721)', async () => {
+        const base = editedAsset();
+        const locked = await lockedFixture(base.ownerId);
+        try {
+          locked.loadKey();
+          const originalPath = await locked.seal('clip.mp4', 'plain video', 'video/mp4');
+          mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...base, originalPath });
+          mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+            { id: 'video-id', ownerId: base.ownerId, pending: false, mode: 'pin' as const },
+          ]);
+          mocks.systemMetadata.get.mockResolvedValue({
+            ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+          } as never as SystemConfig);
+          const inputs: string[] = [];
+          mocks.media.transcode.mockImplementation(async (input) => {
+            if (typeof input === 'string' && input.endsWith('/clip.mp4')) {
+              inputs.push(input);
+              expect(await readFile(input, 'utf8')).toBe('plain video');
+            }
+          });
+
+          await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+          expect(inputs.length).toBeGreaterThan(0);
+          expect(inputs.every((input) => input.startsWith(locked.tmp))).toBe(true);
+          expect(await locked.copiesLeft()).toBe(0);
+          expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: 'video-id' } }]);
+        } finally {
+          await locked.cleanup();
+        }
       });
 
       it('does not let the playback resolution, CRF or bitrate ceiling cap the edited master', async () => {

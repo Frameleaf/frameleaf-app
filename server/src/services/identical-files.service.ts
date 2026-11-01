@@ -54,6 +54,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { fileIdentity, moveFileWithin, verifyStoredCopy } from 'src/utils/file-trash.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /** The album every recovered photo goes into, exactly as the owner named it (not translated). */
@@ -398,6 +399,12 @@ export class IdenticalFilesService {
     // a shared file is read once per batch, however many photos use it
     const read = new Map<string, Awaited<ReturnType<IdenticalFilesService['readFile']>>>();
     for (const original of originals) {
+      if (await isLockedPath(original.originalPath)) {
+        // FL-721 (spec §8.3): a sealed Locked file holds ciphertext: not read, not called changed
+        state.counts.scanned++;
+        state.cursor = original.id;
+        continue;
+      }
       let digests = read.get(original.originalPath);
       if (!digests) {
         digests = await this.readFile(original.originalPath);
@@ -507,7 +514,8 @@ export class IdenticalFilesService {
     let kept: { member: IdenticalFilesMember; file: { id: string; path: string }; identity: string } | undefined;
     for (const member of members) {
       const file = await this.physicalFileRepository.ensureOriginalPhysicalFile(member.id);
-      if (!file) {
+      if (!file || (await isLockedPath(file.path))) {
+        // FL-721: a sealed file is never kept for others (the repository leaves encrypted items out)
         continue;
       }
       const identity = await verifyStoredCopy(this.storageRepository, this.cryptoRepository, file.path, {
@@ -548,6 +556,10 @@ export class IdenticalFilesService {
     member: IdenticalFilesMember,
   ) {
     const ownPath = member.originalPath;
+    if (await isLockedPath(ownPath)) {
+      // FL-721: a sealed file is never linked away from its photo
+      return;
+    }
     // the photo's own file must hold the same bytes too; a missing one is simply relinked
     const own = await verifyStoredCopy(this.storageRepository, this.cryptoRepository, ownPath, {
       checksum: content.sha256,
@@ -823,6 +835,11 @@ export class IdenticalFilesService {
     const originalFileName = parse(path).base;
     const type = mimeTypes.assetType(path);
     const checked = await this.integrityService.validate({ path, originalFileName, type, deep: true });
+    if (checked.status === 'encrypted') {
+      // FL-721: a sealed Locked file nothing references is never imported (or moved): a person looks
+      this.addProblem(state, 'needs-a-look', { path: this.shown(path), detail: 'encrypted Locked file' });
+      return;
+    }
     if (checked.status !== 'healthy') {
       if (checked.status === 'corrupt' || checked.status === 'unsupported') {
         // damaged files (often a failed upload) are never imported: they wait in Unused files

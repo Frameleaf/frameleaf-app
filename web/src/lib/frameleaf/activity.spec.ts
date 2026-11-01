@@ -101,6 +101,12 @@ describe('fromMediaOperation', () => {
     );
   });
 
+  it('counts restored Locked items encrypted with an older key, only when there are some (FL-721)', () => {
+    expect(fromMediaOperation(operation({ encryptedWithOlderKey: 3 })).encryptedWithOlderKey).toBe(3);
+    expect(fromMediaOperation(operation({ encryptedWithOlderKey: 0 }))).not.toHaveProperty('encryptedWithOlderKey');
+    expect(fromMediaOperation(operation({ encryptedWithOlderKey: null }))).not.toHaveProperty('encryptedWithOlderKey');
+  });
+
   describe('Studio clip jobs that share a kind (FL-637)', () => {
     it('names a voice clean-up by its work, not by the shared captions kind', () => {
       const voice = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'voice-cleanup' });

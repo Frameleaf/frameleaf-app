@@ -71,6 +71,19 @@ order by
   "session"."updatedAt" desc,
   "session"."createdAt" desc
 
+-- SessionRepository.getPinUnlockedUntil
+select
+  max("pinExpiresAt") as "until"
+from
+  "session"
+where
+  "userId" = $1::uuid
+  and "pinExpiresAt" > clock_timestamp()
+  and (
+    "expiresAt" is null
+    or "expiresAt" > clock_timestamp()
+  )
+
 -- SessionRepository.delete
 delete from "session"
 where

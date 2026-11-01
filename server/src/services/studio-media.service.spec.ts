@@ -1,5 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Stats } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { AssetVisibility, CacheControl, JobStatus } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
@@ -267,6 +270,31 @@ describe(StudioMediaService.name, () => {
         const { files } = (mocks.job.queue.mock.calls[0][0] as { data: { files: string[] } }).data;
         expect(files).toHaveLength(7);
         expect(files[0]).toMatch(new RegExp(String.raw`${assetId}_video_duplicate_0\.jpeg$`));
+      });
+
+      it('video fingerprint skips encrypted files', async () => {
+        // FL-721 (spec §8.3): a sealed video (FLLK) is never decoded for a fingerprint
+        const directory = await mkdtemp(join(tmpdir(), 'fingerprint-locked-'));
+        const sealed = join(directory, 'video.mp4');
+        await writeFile(sealed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+        try {
+          mocks.asset.getForVideo.mockResolvedValue({
+            ownerId,
+            originalPath: sealed,
+            encodedVideoPath: null,
+            editedVideoPath: null,
+          });
+          mocks.media.filmstripFrameGrids.mockResolvedValue([]);
+
+          await expect(sut.handleVideoFingerprint({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+
+          expect(mocks.media.probe).not.toHaveBeenCalled();
+          expect(mocks.media.transcode).not.toHaveBeenCalled();
+          expect(mocks.media.filmstripFrameGrids).not.toHaveBeenCalled();
+          expect(mocks.duplicateRepository.upsertVideoFingerprint).not.toHaveBeenCalled();
+        } finally {
+          await rm(directory, { recursive: true, force: true });
+        }
       });
 
       it('skips locked videos', async () => {

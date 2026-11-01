@@ -2,6 +2,7 @@ import { Selectable, ShallowDehydrateObject } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { MaybeDehydrated } from 'src/types.js';
+import type { PhotoLocationInsight } from 'src/utils/photo-locations.js';
 import { AssetFace, AssetFile, Exif, Stack, Tag, User } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -9,8 +10,9 @@ import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
 import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
 import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
-import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
+import { PartnerLockedEncryptionSchema, PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
+import { LocationInsightSchema } from 'src/dtos/photo-locations.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
@@ -99,6 +101,10 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own asset when partner sharing copied it from another library (GET /assets/{id})',
     ),
+    // FL-721
+    lockedEncryption: PartnerLockedEncryptionSchema.optional().describe(
+      "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})",
+    ),
     libraryId: z
       .uuidv4()
       .nullish()
@@ -132,6 +138,7 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     visibility: AssetVisibilitySchema,
     libraryScope: LibraryScopeSchema.optional(),
     exifInfo: ExifResponseSchema.optional(),
+    locationInsight: LocationInsightSchema.optional(),
     tags: z.array(TagResponseSchema).optional(),
     people: z.array(PersonResponseSchema).optional(),
     checksum: z
@@ -168,6 +175,7 @@ export type MapAsset = {
   duration: number | null;
   edits?: ShallowDehydrateObject<AssetEditActionItem>[];
   exifInfo?: ShallowDehydrateObject<Selectable<Exif>> | null;
+  locationInsight?: PhotoLocationInsight | null;
   faces?: ShallowDehydrateObject<AssetFace>[];
   fileCreatedAt: Date;
   fileModifiedAt: Date;
@@ -313,6 +321,13 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     libraryScope: entity.libraryScope,
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
+    locationInsight:
+      entity.exifInfo?.latitude !== null &&
+      entity.exifInfo?.latitude !== undefined &&
+      entity.exifInfo?.longitude !== null &&
+      entity.exifInfo?.longitude !== undefined
+        ? (entity.locationInsight ?? undefined)
+        : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,
     tags: entity.tags?.map((tag) => mapTag(tag)),
     people: peopleFromFaces(entity.faces),

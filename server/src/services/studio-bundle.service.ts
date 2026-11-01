@@ -43,6 +43,7 @@ import {
 } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -850,10 +851,14 @@ export class StudioBundleService {
       const known = entry && asset && (!isLockedRow(asset) || revealed) ? { entry, asset } : null;
       const fileName = known ? known.asset.originalFileName : null;
       const contentType = fileName ? mimeTypes.lookup(fileName) || null : null;
-      const embedPath =
+      const candidatePath =
         known && known.entry.path && allowedEmbeds.has(key.key) && known.asset.ownerId === operation.ownerId
           ? known.entry.path
           : null;
+      // FL-721 (spec §8): a sealed Locked file is never copied into a bundle: decrypted, the bundle
+      // would put its plaintext on disk; as it is, the copy would be unreadable. It travels as a
+      // reference, by its plaintext checksum, like any media left out of the bundle.
+      const embedPath = candidatePath && !(await isLockedPath(candidatePath)) ? candidatePath : null;
 
       if (embedPath) {
         const { size } = await this.storage.stat(embedPath);

@@ -516,3 +516,22 @@ export const album_library_scope_refresh = registerFunction({
   RETURN NEW;
 END`,
 });
+
+/** Coordinate changes invalidate both saved suggestions and in-flight adoption identities. */
+export const photo_location_invalidate = registerFunction({
+  name: 'photo_location_invalidate',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF OLD.latitude IS DISTINCT FROM NEW.latitude OR OLD.longitude IS DISTINCT FROM NEW.longitude THEN
+        DELETE FROM public.asset_location_insight WHERE "assetId" = NEW."assetId";
+      ELSIF OLD."gpsAccuracyM" IS DISTINCT FROM NEW."gpsAccuracyM"
+        OR COALESCE('latitude' = ANY(OLD."lockedProperties"), false) IS DISTINCT FROM COALESCE('latitude' = ANY(NEW."lockedProperties"), false) THEN
+        DELETE FROM public.asset_location_insight WHERE "assetId" = NEW."assetId" AND NOT dismissed;
+      ELSE RETURN NULL;
+      END IF;
+      DELETE FROM public.photo_location_scan_item WHERE "assetId" = NEW."assetId";
+      RETURN NULL;
+    END;`,
+});

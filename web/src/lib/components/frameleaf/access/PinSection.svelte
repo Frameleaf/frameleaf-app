@@ -1,17 +1,32 @@
 <script lang="ts">
   /**
    * Your Locked PIN, from the `pin` section of the design template's `PersonalAccess`: whether a
-   * PIN is set, Create or Change PIN, Clear PIN, and "Forgot your PIN?" to clear it with the
+   * PIN is set, Create or Change PIN, Clear PIN, and "Forgot it?" to clear it with the
    * account password. The state comes from the server (`getAuthStatus`) and follows PIN changes
    * made anywhere on this page.
+   *
+   * FL-721 (prototype PR 20 `Personal.jsx` LockedPin): while Locked encryption is on, the PIN can't be
+   * cleared, "Forgot it?" asks for the recovery key instead of the password, and a row opens the
+   * Locked encryption page.
    */
+  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import RecoverModal from '$lib/components/frameleaf/settings/security/locked-encryption/RecoverModal.svelte';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import type { PinDialogMode } from '$lib/frameleaf/personal-access';
-  import { getAuthStatus, getMyPreferences, updateMyPreferences } from '@frameleaf/sdk';
-  import { modalManager, toastManager } from '@frameleaf/ui';
+  import {
+    getAuthStatus,
+    getLockedEncryption,
+    getMyPreferences,
+    LockedEncryptionMode,
+    updateMyPreferences,
+    type LockedEncryptionStatusResponseDto,
+  } from '@frameleaf/sdk';
+  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { mdiChevronRight } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';
@@ -63,9 +78,33 @@
     }
   };
 
+  let encryption = $state<LockedEncryptionStatusResponseDto | undefined>();
+  const encrypted = $derived(encryption?.enabled === true);
+  /** Unknown until read, and when it can't be read: Clear PIN stays disabled, as the server may refuse it. */
+  const encryptionKnown = $derived(encryption !== undefined);
+  const loadEncryption = async () => {
+    try {
+      encryption = await getLockedEncryption();
+    } catch {
+      encryption = undefined;
+    }
+  };
+  /** FL-721: with encryption on, only the recovery key resets a forgotten PIN. */
+  const forgot = async () => {
+    if (!encrypted) {
+      await open('reset');
+      return;
+    }
+    if (await modalManager.show(RecoverModal, { mode: LockedEncryptionMode.Pin })) {
+      toastManager.primary($t('frameleaf_le_said_recovered_pin'));
+      await refresh();
+    }
+  };
+
   onMount(() => {
     void refresh();
     void loadRelock();
+    void loadEncryption();
   });
 </script>
 
@@ -81,7 +120,11 @@
         {:else if pinEnabled === undefined}
           <Skeleton variant="text" width="9rem" />
         {:else}
-          {pinEnabled ? $t('frameleaf_access_pin_enabled') : $t('frameleaf_access_pin_disabled')}
+          {pinEnabled
+            ? encrypted
+              ? $t('frameleaf_le_pin_encrypted_help')
+              : $t('frameleaf_access_pin_enabled')
+            : $t('frameleaf_access_pin_disabled')}
         {/if}
       </p>
     </div>
@@ -91,7 +134,10 @@
           {pinEnabled ? $t('frameleaf_access_pin_change') : $t('frameleaf_access_pin_create')}
         </Button>
         {#if pinEnabled}
-          <Button onclick={() => open('clear')}>{$t('frameleaf_access_pin_clear')}</Button>
+          <Button onclick={() => void forgot()}>{$t('frameleaf_le_forgot')}</Button>
+        {/if}
+        {#if pinEnabled && !encrypted}
+          <Button disabled={!encryptionKnown} onclick={() => open('clear')}>{$t('frameleaf_access_pin_clear')}</Button>
         {/if}
       </div>
     {:else if failed}
@@ -99,6 +145,25 @@
     {/if}
   </div>
   {#if pinEnabled}
+    <!-- FL-721 (prototype LockedPin): Locked encryption sits straight under the PIN itself -->
+    <div class="fl-access-head fl-access-encryption">
+      <div>
+        <h3>{$t('frameleaf_le_title')}</h3>
+        {#if encryptionKnown}
+          <p>
+            {encrypted
+              ? encryption?.mode === LockedEncryptionMode.Advanced
+                ? $t('frameleaf_le_pin_row_on_advanced')
+                : $t('frameleaf_le_pin_row_on')
+              : $t('frameleaf_le_pin_row_off')}
+          </p>
+        {/if}
+      </div>
+      <Button onclick={() => goto(commandCenterUrl('privacy', 'locked-encryption'))}>
+        {$t('frameleaf_le_open')}
+        <Icon icon={mdiChevronRight} size="18" aria-hidden />
+      </Button>
+    </div>
     {#if relock !== undefined}
       <label class="fl-access-relock">
         <span>
@@ -116,9 +181,6 @@
         </select>
       </label>
     {/if}
-    <div>
-      <Button variant="quiet" onclick={() => open('reset')}>{$t('frameleaf_access_pin_forgot')}</Button>
-    </div>
   {/if}
 </section>
 
@@ -137,5 +199,9 @@
   }
   .fl-access-relock small {
     color: var(--fl-muted);
+  }
+  .fl-access-encryption {
+    padding-top: var(--fl-space-3);
+    border-top: 1px solid var(--fl-border);
   }
 </style>

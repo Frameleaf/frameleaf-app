@@ -171,3 +171,38 @@ export const getLockedOwnerId = (auth: AuthDto): string | undefined => {
 
   return auth.session?.hasElevatedPermission ? auth.user.id : undefined;
 };
+
+/** FL-721 (spec §6.2): why a partner's copy of an encrypted Locked item doesn't open for them now. */
+export type PartnerLockedReason = 'not-ready' | 'owner-passphrase';
+
+export interface PartnerLockedEncryptionView {
+  openable: boolean;
+  reason?: PartnerLockedReason;
+  ownerName: string;
+}
+
+/**
+ * FL-721 (spec §6.2): what a partner's copy of an owner's encrypted Locked item shows. It opens when a
+ * loaded key the partner may use opens it, or when it carries the partner's own entry (their own PIN
+ * opens it). Otherwise an Advanced Security owner's item needs the owner's passphrase, and a PIN-mode
+ * owner's item is "not ready" until the owner next opens Locked (the re-wrap adds the partner).
+ *
+ * Display only: the header's entries never decide access, which is the copy's ownership and the key
+ * holder's `canRead` on every read.
+ */
+export const partnerLockedEncryptionView = ({
+  ownerName,
+  ownerMode,
+  usable,
+  hasOwnEntry,
+}: {
+  ownerName: string;
+  ownerMode: 'pin' | 'advanced' | null;
+  usable: boolean;
+  hasOwnEntry: boolean;
+}): PartnerLockedEncryptionView => {
+  if (usable || hasOwnEntry) {
+    return { openable: true, ownerName };
+  }
+  return { openable: false, reason: ownerMode === 'advanced' ? 'owner-passphrase' : 'not-ready', ownerName };
+};

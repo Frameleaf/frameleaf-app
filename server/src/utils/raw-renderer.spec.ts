@@ -9,6 +9,12 @@ import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }));
+// FL-721: the integrity check's FLLK test reads the real disk, which fake timers never let finish;
+// these originals are never sealed
+vi.mock('src/utils/locked-read.js', async (original) => ({
+  ...(await original<typeof import('src/utils/locked-read.js')>()),
+  isLockedPath: vi.fn().mockResolvedValue(false),
+}));
 
 const tiff = Buffer.from('49492a0008000000', 'hex');
 type Decoder = EventEmitter & { kill: ReturnType<typeof vi.fn> };

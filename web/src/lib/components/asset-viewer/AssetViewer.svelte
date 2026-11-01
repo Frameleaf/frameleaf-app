@@ -92,6 +92,7 @@
   import DetailPanel from './DetailPanel.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
   import OcrButton from './OcrButton.svelte';
+  import PartnerLockedItemState from '$lib/components/frameleaf/settings/security/locked-encryption/PartnerLockedItemState.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
   import SlideshowBar from './SlideshowBar.svelte';
   import SlideshowSettingsPanel from '$lib/components/frameleaf/SlideshowSettingsPanel.svelte';
@@ -385,6 +386,15 @@
       await activityManager.toggleLike();
     } catch (error) {
       handleError(error, $t('errors.unable_to_change_favorite'));
+    }
+  };
+
+  /** FL-721: once the partner's passphrase is typed, the item is read again and opens. */
+  const reloadPartnerItem = async () => {
+    try {
+      onAssetUpdate(await getAssetInfo({ id: asset.id }));
+    } catch (error) {
+      handleError(error, $t('frameleaf_le_unlock_failed'));
     }
   };
 
@@ -1735,7 +1745,14 @@
     )}
   >
     <div class="fl-viewer-stage" bind:this={stageElement}>
-      {#if viewerKind === 'StackVideoViewer'}
+      {#if asset.lockedEncryption && !asset.lockedEncryption.openable && !previewStackedAsset}
+        <!-- FL-721: a partner's encrypted Locked item that doesn't open for you yet -->
+        <PartnerLockedItemState
+          lockedEncryption={asset.lockedEncryption}
+          ownerId={asset.origin?.rootOwnerId}
+          onOpened={() => void reloadPartnerItem()}
+        />
+      {:else if viewerKind === 'StackVideoViewer'}
         <VideoViewer
           asset={previewStackedAsset!}
           cacheKey={previewStackedAsset!.thumbhash}

@@ -1,6 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { AssetFileType, AssetType, PhysicalFileType } from 'src/enum.js';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { AssetFileType, AssetLockReason, AssetType, PhysicalFileType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -364,6 +367,79 @@ describe(PhysicalFileRepository.name, () => {
       await expect(originalOf(existing.id)).resolves.toEqual({
         originalPath: existing.originalPath,
         physicalOriginalFileId: result!.physicalFile.id,
+      });
+    });
+
+    describe('encrypted Locked files (FL-721, spec §6.1)', () => {
+      const encrypt = async (assetId: string, ownerId: string) => {
+        await defaultDatabase
+          .insertInto('locked_encryption')
+          .values({ userId: ownerId, mode: 'pin', status: 'on', recoveryKeyCreatedAt: new Date() })
+          .onConflict((oc) => oc.doNothing())
+          .execute();
+        await defaultDatabase
+          .insertInto('asset_lock')
+          .values({ assetId, reason: AssetLockReason.Marked, lockedBy: ownerId })
+          .execute();
+      };
+
+      it('upload with a checksum matching an encrypted physical_file stores a new file instead of linking', async () => {
+        const { ctx, sut } = setup();
+        const checksum = randomBytes(32);
+        const existing = await newUpload(ctx, checksum);
+        await sut.ensureOriginalPhysicalFile(existing.id);
+        await encrypt(existing.id, existing.ownerId);
+        // a partner's copy reads the owner's (encrypted) file too, and never stands in for it
+        const copy = await newUpload(ctx, checksum, { originalPath: existing.originalPath });
+        await sql`INSERT INTO public.asset_origin ("assetId", "ownerId", "partnerSharedById", "rootOwnerId", "sourceAssetId")
+          VALUES (${copy.id}::uuid, ${copy.ownerId}::uuid, ${existing.ownerId}::uuid, ${existing.ownerId}::uuid,
+            ${existing.id}::uuid)`.execute(defaultDatabase);
+        const upload = await newUpload(ctx, checksum);
+
+        const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, checks);
+
+        expect(result).toMatchObject({
+          linked: false,
+          physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath },
+        });
+        await expect(originalOf(existing.id)).resolves.toMatchObject({ originalPath: existing.originalPath });
+      });
+
+      it('an upload into an encrypted Locked keeps its own file', async () => {
+        const { ctx, sut } = setup();
+        const checksum = randomBytes(32);
+        await newUpload(ctx, checksum);
+        const upload = await newUpload(ctx, checksum);
+        await encrypt(upload.id, upload.ownerId);
+
+        const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, checks);
+
+        expect(result).toMatchObject({ linked: false, physicalFile: { canonicalAssetId: upload.id } });
+      });
+
+      it('never takes a sealed file back out of the file trash for an upload', async () => {
+        const { ctx, sut } = setup();
+        const checksum = randomBytes(32);
+        const directory = await mkdtemp(join(tmpdir(), 'trash-locked-'));
+        const trashed = join(directory, 'photo.jpg');
+        await writeFile(trashed, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+        try {
+          await sql`INSERT INTO public.physical_file_trash (id, path, checksum, "sizeInBytes", "originalFileName")
+            VALUES (${randomUUID()}::uuid, ${trashed}, ${checksum}, 1000, 'photo.jpg')`.execute(defaultDatabase);
+          const upload = await newUpload(ctx, checksum);
+          const untrash = vi.fn();
+
+          const result = await sut.linkUploadedOriginal(
+            upload.id,
+            { checksum, sizeInBytes: 1000 },
+            { ...checks, untrash },
+          );
+
+          expect(untrash).not.toHaveBeenCalled();
+          expect(result).toMatchObject({ linked: false, physicalFile: { canonicalAssetId: upload.id } });
+        } finally {
+          await rm(directory, { recursive: true, force: true });
+        }
       });
     });
 

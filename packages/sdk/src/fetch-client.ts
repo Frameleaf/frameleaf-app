@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.1.18
+ * 1.1.19
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -339,6 +339,8 @@ export type BuddyApplyResponseDto = {
 };
 export type BuddyRestoreCheckpointDto = {
     operation: {
+        /** FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open */
+        encryptedWithOlderKey: number;
         error: string | null;
         id: string;
         phase: string;
@@ -348,6 +350,8 @@ export type BuddyRestoreCheckpointDto = {
     } | null;
 };
 export type BuddyRestoreStatusDto = {
+    /** FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open */
+    encryptedWithOlderKey: number;
     error: string | null;
     id: string;
     phase: string;
@@ -453,8 +457,12 @@ export type CloudBackupLastRestoreDto = {
     destination: string | null;
     /** Items still in the library whose details came back */
     detailsRestored: number;
+    /** Restored Locked items encrypted with an older key, which this server's key file for their owner does not open */
+    encryptedWithOlderKey: number;
     error: string | null;
     files: number;
+    /** Backed-up Locked key files kept in the restore folder because a live key file was already there; the live one is never replaced */
+    lockedKeysKept?: number;
     manifestKey: string;
     operationId: string;
     /** Deleted items made again */
@@ -2491,6 +2499,8 @@ export type IntegrityFindingAssetsResponseDto = {
 export type IntegrityCheckHistoryEntryDto = {
     /** Files it looked at, when counted */
     checked: number | null;
+    /** Encrypted Locked files the damage check passed over: encrypted, not checked (not counted in checked) */
+    encrypted?: number;
     finishedAt: string;
     /** Findings in its list when it ended */
     found: number;
@@ -3037,6 +3047,8 @@ export type MediaOperationDto = {
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
     destinationDetail: string | null;
+    /** A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind */
+    encryptedWithOlderKey?: number | null;
     /** Operator detail about a failure; on a queued job, the failure it is being retried after */
     error: string | null;
     /** Stable code the client turns into a message */
@@ -3571,6 +3583,8 @@ export type UserAdminResponseDto = {
     /** Is admin user */
     isAdmin: boolean;
     license: (UserLicense) | null;
+    /** Whether this person has Locked encryption on; their PIN can’t be cleared or changed then */
+    lockedEncryption: boolean;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -4414,6 +4428,8 @@ export type ExifResponseDto = {
     focalLength?: number | null;
     /** Video frame rate (frames per second) */
     fps?: number | null;
+    /** Reported horizontal GPS accuracy in metres */
+    gpsAccuracyM?: number | null;
     /** Whether the stored rating is rejected */
     isRejected?: boolean | null;
     /** ISO sensitivity */
@@ -4478,6 +4494,28 @@ export type LandmarkSummaryDto = {
     kind: string;
     /** Landmark name */
     name: string;
+};
+export type LocationInsightDto = {
+    address?: string | null;
+    attributions: {
+        displayName: string;
+        uri?: string;
+    }[];
+    confidence: LocationInsightConfidence;
+    distanceM: number;
+    mapsUrl: string;
+    matchedAt: string;
+    name: string;
+    placeId: string;
+    provider: LocationInsightProvider;
+    relation: LocationInsightRelation;
+};
+export type PartnerLockedEncryptionDto = {
+    /** Whether the item opens for you (with your own PIN, or a passphrase you typed) */
+    openable: boolean;
+    /** The partner's name */
+    ownerName: string;
+    reason?: PartnerLockedEncryptionReason;
 };
 export type PersonResponseDto = {
     /** Person date of birth */
@@ -4571,6 +4609,9 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    locationInsight?: LocationInsightDto;
+    /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
+    lockedEncryption?: PartnerLockedEncryptionDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -6348,6 +6389,9 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    locationInsight?: LocationInsightDto;
+    /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
+    lockedEncryption?: PartnerLockedEncryptionDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -9821,6 +9865,8 @@ export type MediaOperationDetailDto = {
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
     destinationDetail: string | null;
+    /** A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind */
+    encryptedWithOlderKey?: number | null;
     /** Operator detail about a failure; on a queued job, the failure it is being retried after */
     error: string | null;
     /** Stable code the client turns into a message */
@@ -10450,6 +10496,8 @@ export type FrameleafLinkResponseDto = {
     license: (UserLicense) | null;
     /** Whether the Frameleaf account is now linked (false for a preview) */
     linked: boolean;
+    /** Whether this person has Locked encryption on; their PIN can’t be cleared or changed then */
+    lockedEncryption: boolean;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -17542,6 +17590,8 @@ export type UserMeResponseDto = {
     /** Is admin user */
     isAdmin: boolean;
     license: (UserLicense) | null;
+    /** Whether this person has Locked encryption on; their PIN can’t be cleared or changed then */
+    lockedEncryption: boolean;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -17727,6 +17777,147 @@ export type CloudBackupOwnerSetupResponseDto = {
     /** The next scheduled backup, when cloud backup is set up and on */
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
+};
+export type LocationScanBillingDto = {
+    chargedMicros: number | null;
+    checkedPhotos: number;
+    currency: LocationBillingCurrency;
+    heldMicros: number;
+    releasedMicros: number | null;
+    state: LocationBillingState;
+    unitPriceMicros: LocationBillingUnitPriceMicros;
+};
+export type LocationScanSummaryDto = {
+    billing: (LocationScanBillingDto) | null;
+    eligiblePhotos: number;
+    error?: string | null;
+    estimatedMicros: number;
+    failed: number;
+    id: string;
+    matched: number;
+    processed: number;
+    reason?: string | null;
+    remainingPhotos: number;
+    selectedPhotos: number;
+    skipped: number;
+    status: LocationScanState;
+    total: number;
+    unmatched: number;
+};
+export type LocationScanStatusResponseDto = {
+    available: boolean;
+    enabled: boolean;
+    scan: (LocationScanSummaryDto) | null;
+};
+export type LocationScanConsent = true;
+export type StartLocationScanDto = {
+    /** Explicit permission for this paid GPS scan */
+    consent: LocationScanConsent;
+    estimateId: string;
+};
+export type LocationScanEstimateRequestDto = {
+    maxPhotos?: number;
+    maxSpendMicros?: number;
+    refresh?: boolean;
+};
+export type LocationScanEstimateResponseDto = {
+    availableMicros: number | null;
+    canStart: boolean;
+    currency: LocationBillingCurrency;
+    eligiblePhotos: number;
+    estimateId: string | null;
+    estimatedMicros: number;
+    expiresAt: string | null;
+    holdMicros: number;
+    refusal: string | null;
+    remainingPhotos: number;
+    selectedPhotos: number;
+    topUpUrl: string | null;
+    unitPriceMicros: LocationBillingUnitPriceMicros;
+};
+export type LockedEncryptionDisableDto = {
+    /** Advanced Security: your passphrase */
+    passphrase?: string;
+    /** PIN mode: your Locked PIN */
+    pinCode?: string;
+};
+export type LockedEncryptionCountsDto = {
+    /** Locked items whose files are encrypted */
+    encrypted: number;
+    /** Locked items that turning off, or taking an item out of Locked, is waiting on because their file is missing */
+    missing?: number;
+    /** Locked items in a folder Frameleaf can’t change, which stay unencrypted */
+    notEncryptable: number;
+    /** Locked items shared with you by a partner whose files stay unencrypted: your setting doesn’t encrypt them */
+    sharedNotEncrypted?: number;
+};
+export type LockedEncryptionProgressDto = {
+    /** Items whose files are done */
+    done: number;
+    /** Items to do */
+    total: number;
+};
+export type LockedEncryptionStatusResponseDto = {
+    /** Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart */
+    askAgainHours: number | null;
+    counts: LockedEncryptionCountsDto;
+    /** Whether Locked encryption is on (or turning on or off) for you */
+    enabled: boolean;
+    /** When the open key is asked for again; null while it stays open */
+    expiresAt: string | null;
+    /** Whether your key is open on this server now */
+    keyLoaded: boolean;
+    mode: (LockedEncryptionMode) | null;
+    /** Progress while encrypting or decrypting */
+    progress: (LockedEncryptionProgressDto) | null;
+    /** When the current recovery key was made */
+    recoveryKeyCreatedAt: string | null;
+    status: (LockedEncryptionState) | null;
+};
+export type LockedEncryptionEnableDto = {
+    mode: LockedEncryptionMode;
+    /** Advanced Security only: at least 12 characters */
+    passphrase?: string;
+    /** Your Locked PIN */
+    pinCode: string;
+};
+export type LockedEncryptionRecoveryKeyResponseDto = {
+    /** Shown this once: FLRK- and 8 groups of 4 characters. It is never shown again. */
+    recoveryKey: string;
+};
+export type LockedEncryptionUpdateDto = {
+    /** Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart */
+    askAgainHours?: number | null;
+    /** Your PIN (PIN mode) or passphrase (Advanced Security); required to switch mode or passphrase */
+    currentSecret?: string;
+    /** Switch between PIN and Advanced Security */
+    mode?: LockedEncryptionMode;
+    /** The new passphrase, when switching to or within Advanced Security */
+    newPassphrase?: string;
+    /** Your Locked PIN, when switching to PIN mode */
+    pinCode?: string;
+};
+export type LockedEncryptionPartnerUnlockDto = {
+    /** The partner who shares their library with you and uses Advanced Security */
+    ownerId: string;
+    /** That partner's passphrase */
+    passphrase: string;
+};
+export type LockedEncryptionRecoverDto = {
+    /** Advanced Security: a new passphrase */
+    newPassphrase?: string;
+    /** A new Locked PIN */
+    newPinCode?: string;
+    /** Your recovery key, FLRK- and 8 groups of 4 characters */
+    recoveryKey: string;
+};
+export type LockedEncryptionRecoveryKeyDto = {
+    /** Your PIN (PIN mode) or passphrase (Advanced Security) */
+    secret: string;
+};
+export type LockedEncryptionUnlockDto = {
+    /** Your passphrase */
+    passphrase: string;
 };
 export type OnboardingResponseDto = {
     /** Is user onboarded */
@@ -18018,6 +18209,12 @@ export type WorkflowPreviewResponseDto = {
     evaluatedAt: string;
     exampleAssetIds: string[];
     issues: WorkflowIssueDto[];
+    partial: boolean;
+    steps: {
+        method: string;
+        remaining: number | null;
+        result: WorkflowPreviewStepResult;
+    }[];
 };
 export type LegacyWorkflowTriggerResponseDto = {
     trigger: Trigger;
@@ -24205,6 +24402,17 @@ export function updateAssetImageEnrichment({ id, assetImageEnrichmentActionReque
         method: "PUT",
         body: assetImageEnrichmentActionRequestDto
     })));
+}
+/**
+ * Dismiss own inferred venue without changing GPS or EXIF
+ */
+export function dismissAssetLocationInsight({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/location-insight`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Get asset metadata
@@ -34824,6 +35032,168 @@ export function setUserLicense({ licenseActivateDto }: {
     })));
 }
 /**
+ * Read own photo location scan and Cloud availability
+ */
+export function getLocationScanStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationScanStatusResponseDto;
+    }>("/users/me/location-scans", {
+        ...opts
+    }));
+}
+/**
+ * Explicitly identify own photo locations using Frameleaf Cloud
+ */
+export function startLocationScan({ startLocationScanDto }: {
+    startLocationScanDto: StartLocationScanDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LocationScanStatusResponseDto;
+    }>("/users/me/location-scans", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: startLocationScanDto
+    })));
+}
+/**
+ * Estimate an optional paid GPS location scan without uploading coordinates
+ */
+export function estimateLocationScan({ locationScanEstimateRequestDto }: {
+    locationScanEstimateRequestDto: LocationScanEstimateRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationScanEstimateResponseDto;
+    }>("/users/me/location-scans/estimate", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationScanEstimateRequestDto
+    })));
+}
+/**
+ * Cancel own location scan and settle checked photos
+ */
+export function cancelLocationScan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/users/me/location-scans/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Turn off Locked encryption
+ */
+export function disableLockedEncryption({ lockedEncryptionDisableDto }: {
+    lockedEncryptionDisableDto: LockedEncryptionDisableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: lockedEncryptionDisableDto
+    })));
+}
+/**
+ * Get your Locked encryption status
+ */
+export function getLockedEncryption(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LockedEncryptionStatusResponseDto;
+    }>("/users/me/locked-encryption", {
+        ...opts
+    }));
+}
+/**
+ * Turn on Locked encryption
+ */
+export function enableLockedEncryption({ lockedEncryptionEnableDto }: {
+    lockedEncryptionEnableDto: LockedEncryptionEnableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LockedEncryptionRecoveryKeyResponseDto;
+    }>("/users/me/locked-encryption", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionEnableDto
+    })));
+}
+/**
+ * Change your Locked encryption
+ */
+export function updateLockedEncryption({ lockedEncryptionUpdateDto }: {
+    lockedEncryptionUpdateDto: LockedEncryptionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: lockedEncryptionUpdateDto
+    })));
+}
+/**
+ * Lock now
+ */
+export function lockLockedEncryption(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/lock", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Open a partner’s encrypted Locked items
+ */
+export function unlockPartnerLockedEncryption({ lockedEncryptionPartnerUnlockDto }: {
+    lockedEncryptionPartnerUnlockDto: LockedEncryptionPartnerUnlockDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/partner-unlock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionPartnerUnlockDto
+    })));
+}
+/**
+ * Reset a forgotten Locked PIN or passphrase
+ */
+export function recoverLockedEncryption({ lockedEncryptionRecoverDto }: {
+    lockedEncryptionRecoverDto: LockedEncryptionRecoverDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/recover", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionRecoverDto
+    })));
+}
+/**
+ * Make a new Locked encryption recovery key
+ */
+export function createLockedEncryptionRecoveryKey({ lockedEncryptionRecoveryKeyDto }: {
+    lockedEncryptionRecoveryKeyDto: LockedEncryptionRecoveryKeyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LockedEncryptionRecoveryKeyResponseDto;
+    }>("/users/me/locked-encryption/recovery-key", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionRecoveryKeyDto
+    })));
+}
+/**
+ * Open your Locked encryption key
+ */
+export function unlockLockedEncryption({ lockedEncryptionUnlockDto }: {
+    lockedEncryptionUnlockDto: LockedEncryptionUnlockDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/unlock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionUnlockDto
+    })));
+}
+/**
  * Delete user onboarding
  */
 export function deleteUserOnboarding(opts?: Oazapfts.RequestOpts) {
@@ -36413,6 +36783,21 @@ export enum DynamicRange {
 export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
+}
+export enum LocationInsightConfidence {
+    High = "high",
+    Medium = "medium"
+}
+export enum LocationInsightProvider {
+    Google = "google"
+}
+export enum LocationInsightRelation {
+    At = "at",
+    Near = "near"
+}
+export enum PartnerLockedEncryptionReason {
+    NotReady = "not-ready",
+    OwnerPassphrase = "owner-passphrase"
 }
 export enum LibraryBookmarkItemKind {
     Bookmark = "bookmark"
@@ -39583,6 +39968,39 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
+export enum LocationBillingCurrency {
+    Usd = "USD"
+}
+export enum LocationBillingState {
+    PendingHold = "pending_hold",
+    Held = "held",
+    Settling = "settling",
+    Settled = "settled",
+    Released = "released",
+    NoCharge = "no_charge"
+}
+export enum LocationBillingUnitPriceMicros {
+    $5000 = 5000
+}
+export enum LocationScanState {
+    Queued = "queued",
+    Preparing = "preparing",
+    Uploading = "uploading",
+    Running = "running",
+    Paused = "paused",
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum LockedEncryptionMode {
+    Pin = "pin",
+    Advanced = "advanced"
+}
+export enum LockedEncryptionState {
+    Encrypting = "encrypting",
+    On = "on",
+    Decrypting = "decrypting"
+}
 export enum Kind11 {
     Album = "album",
     SmartAlbum = "smart-album",
@@ -39603,6 +40021,12 @@ export enum Field {
     LocalDateTime = "localDateTime",
     CreatedAt = "createdAt",
     UpdatedAt = "updatedAt"
+}
+export enum WorkflowPreviewStepResult {
+    Filtered = "filtered",
+    Skipped = "skipped",
+    Unchecked = "unchecked",
+    Disabled = "disabled"
 }
 export enum WorkflowBatchReason {
     Manual = "manual",
