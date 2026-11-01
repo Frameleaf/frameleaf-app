@@ -8,7 +8,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
 import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
 import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
+import { bucketTimelineAssets } from '$lib/managers/timeline-manager/timeline-month.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
 
@@ -258,10 +260,11 @@ describe('AssetTile date labels', () => {
     void locale.set('en-US');
     try {
       const [year, month, day] = date.split('-').map(Number);
-      const photo = asset({
-        localDateTime: { year, month, day, hour: 10, minute: 0, second: 0, millisecond: 0 },
-        createdAt: { year, month, day, hour, minute: 20, second: 0, millisecond: 0 },
-      });
+      const response = toResponseDto(timelineAssetFactory.build());
+      response.createdAt = [`${date}T${String(hour).padStart(2, '0')}:20:00.000Z`];
+      response.fileCreatedAt = ['2019-06-01T12:00:00.000Z'];
+      response.localOffsetHours = [-5];
+      const [photo] = bucketTimelineAssets(response);
       const tile = { id: photo.id, asset: photo, position: { top: 0, left: 0, width: 200, height: 160 } };
       const { container } = render(LibraryDayGroup, {
         timelineDay: {
