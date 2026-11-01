@@ -4467,7 +4467,7 @@ export type LandmarkSummaryDto = {
     icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
-    /** Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
+    /** Present for an estimated match: temporal borrows nearby GPS from a camera with the same make and model; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
     inference?: Inference;
     /** Kind of place, for example theme_park, museum or national_park */
     kind: string;
@@ -14357,7 +14357,7 @@ export type SearchLandmarkResponseDto = {
     icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
-    /** Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
+    /** Present for an estimated match: temporal borrows nearby GPS from a camera with the same make and model; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
     inference?: Inference;
     /** Kind of place, for example theme_park, museum or national_park */
     kind: string;
@@ -38647,7 +38647,6 @@ export enum JobName {
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",
     LandmarkMatchAll = "LandmarkMatchAll",
-    LandmarkInfer = "LandmarkInfer",
     MemoryExport = "MemoryExport",
     NotificationsCleanup = "NotificationsCleanup",
     NotifyUserSignup = "NotifyUserSignup",

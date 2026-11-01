@@ -95031,7 +95031,6 @@
           "MemoryCleanup",
           "MemoryGenerate",
           "LandmarkMatchAll",
-          "LandmarkInfer",
           "MemoryExport",
           "NotificationsCleanup",
           "NotifyUserSignup",
@@ -95842,7 +95841,7 @@
             "type": "string"
           },
           "inference": {
-            "description": "Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.",
+            "description": "Present for an estimated match: temporal borrows nearby GPS from a camera with the same make and model; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.",
             "enum": [
               "temporal",
               "visual"
@@ -132318,7 +132317,7 @@
             "type": "string"
           },
           "inference": {
-            "description": "Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.",
+            "description": "Present for an estimated match: temporal borrows nearby GPS from a camera with the same make and model; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.",
             "enum": [
               "temporal",
               "visual"
