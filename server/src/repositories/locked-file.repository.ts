@@ -295,7 +295,7 @@ export class LockedFileRepository {
    * owner's file, spec §6.1) and the same person's other Locked items that their encryption covers.
    */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
-  async plainReaders(assetId: string, path: string): Promise<string[]> {
+  async plainReaders(assetId: string, path: string, kysely: Kysely<DB> = this.db): Promise<string[]> {
     const { rows } = await sql<{ id: string }>`
       with self as (select id, "ownerId" from public.asset where id = ${asUuid(assetId)}),
       readers as (
@@ -318,7 +318,7 @@ export class LockedFileRepository {
           )
         )
       order by reader.id
-    `.execute(this.db);
+    `.execute(kysely);
     return rows.map(({ id }) => id);
   }
 

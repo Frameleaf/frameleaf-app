@@ -108,6 +108,7 @@ describe(LockedSealService.name, () => {
     mocks.lockedFile.unshareOriginal.mockResolvedValue(false);
     mocks.lockedFile.unshareFile.mockResolvedValue(false);
     mocks.lockedFile.sealedReaders.mockResolvedValue([]);
+    mocks.lockedFile.plainReaders.mockResolvedValue([]);
     mocks.lockedFile.finishPendingUnlock.mockResolvedValue(true);
     // the path lock, as Postgres gives it: taken without waiting, busy while another job holds it
     held = new Set();
@@ -387,6 +388,22 @@ describe(LockedSealService.name, () => {
       await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
 
       expect((await fs.readFile(path)).equals(plain.get(path)!)).toBe(true);
+      expect(await temporaries()).toEqual([]);
+    });
+
+    it('seal stops before the rename when another user linked to the file meanwhile (M1)', async () => {
+      const original = await write('original.jpg', 'original', 'asset');
+      const thumbnail = await write('thumbnail.webp');
+      // an upload deduplicated onto the original after the un-share looked, before the path lock
+      mocks.lockedFile.plainReaders.mockImplementation((_id, path) =>
+        Promise.resolve(path === original ? ['their-asset'] : []),
+      );
+
+      await expect(sut.handleSeal({ id: ASSET })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.lockedFile.plainReaders).toHaveBeenCalledWith(ASSET, original, LOCK_TRX);
+      expect((await fs.readFile(original)).equals(plain.get(original)!)).toBe(true);
+      expect((await fs.readFile(thumbnail)).equals(plain.get(thumbnail)!)).toBe(true);
       expect(await temporaries()).toEqual([]);
     });
 

@@ -18,6 +18,8 @@ import { type Stats, createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import type { Kysely } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
@@ -416,19 +418,31 @@ export class LockedSealService {
       originalFileName: ref.table === 'asset' ? state.originalFileName : basename(path),
       mime: mimeTypes.lookup(ref.table === 'asset' ? state.originalFileName : path),
     };
-    return this.replaceFile(state, ref, meantToBeSealed, async (temporary) => {
-      if (await isLockedFile(path)) {
-        // another job (an item sharing this file) sealed it meanwhile
-        return false;
-      }
-      const source = await sha256Of(path);
-      const { sha256 } = await encryptFile(path, temporary, recipients, info, { verify: true });
-      // what the temporary file decrypts to is the source, byte for byte
-      if (!sha256?.equals(source)) {
-        throw new Error('The file changed while it was being encrypted');
-      }
-      return true;
-    });
+    // M1: an upload or dedupe may have linked another asset to this file after the un-share looked; checked
+    // again on the lock's own connection right before the rename. The next sweep un-shares it first.
+    const othersRead =
+      ref.table === 'asset' || ref.table === 'asset_file'
+        ? async (trx: Kysely<DB>) => (await this.lockedFileRepository.plainReaders(state.id, path, trx)).length > 0
+        : undefined;
+    return this.replaceFile(
+      state,
+      ref,
+      meantToBeSealed,
+      async (temporary) => {
+        if (await isLockedFile(path)) {
+          // another job (an item sharing this file) sealed it meanwhile
+          return false;
+        }
+        const source = await sha256Of(path);
+        const { sha256 } = await encryptFile(path, temporary, recipients, info, { verify: true });
+        // what the temporary file decrypts to is the source, byte for byte
+        if (!sha256?.equals(source)) {
+          throw new Error('The file changed while it was being encrypted');
+        }
+        return true;
+      },
+      othersRead,
+    );
   }
 
   /**
@@ -450,6 +464,7 @@ export class LockedSealService {
     ref: LockedFileRef,
     stillMeant: (state: LockedSealState | undefined) => boolean,
     write: (temporary: string) => Promise<boolean>,
+    othersRead?: (trx: Kysely<DB>) => Promise<boolean>,
   ): Promise<Pass> {
     const { path } = ref;
     const outcome = await this.lockedFileRepository.withFileLock(path, state.ownerId, async (commit) => {
@@ -471,8 +486,12 @@ export class LockedSealService {
         await syncFile(temporary);
         return await commit(async (trx) => {
           // on the lock's own connection: a job never holds a second one while it holds the path (N1)
-          if (!stillMeant(await this.lockedFileRepository.getSealState(state.id, trx))) {
-            // turned off, unlocked or locked again meanwhile: the file stays as it was
+          if (
+            !stillMeant(await this.lockedFileRepository.getSealState(state.id, trx)) ||
+            (othersRead && (await othersRead(trx)))
+          ) {
+            // turned off, unlocked or locked again, or another asset reads the file in plain form now:
+            // the file stays as it was
             await fs.rm(temporary, { force: true });
             return 'stopped' as const;
           }
