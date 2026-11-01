@@ -398,4 +398,46 @@ describe(LockedFileRepository.name, () => {
       expect(paths).not.toContain(theirs.originalPath);
     });
   });
+
+  describe('LockedEncryptionRepository.countPlainPartnerCopies (FL-721 I3)', () => {
+    it('counts the person’s Locked copies of partner items whose owner doesn’t encrypt them', async () => {
+      const { ctx, assets } = setup();
+      const { user: sam } = await ctx.newUser();
+      const { user: taylor } = await ctx.newUser();
+      const { user: alex } = await ctx.newUser();
+      await turnOn(sam.id);
+      await turnOn(alex.id);
+      const copyOf = async (source: { id: string; originalPath: string }, sharedBy: string) => {
+        const { asset: copy } = await ctx.newAsset({ ownerId: sam.id, originalPath: source.originalPath });
+        await sql`INSERT INTO public.asset_origin ("assetId", "ownerId", "partnerSharedById", "rootOwnerId", "sourceAssetId")
+          VALUES (${copy.id}::uuid, ${sam.id}::uuid, ${sharedBy}::uuid, ${sharedBy}::uuid, ${source.id}::uuid)`.execute(
+          db,
+        );
+        await assets.lock([copy.id], AssetLockReason.Marked, sam.id);
+        return copy;
+      };
+      // Taylor doesn't encrypt: the copy of Taylor's Locked item stays plain
+      const { asset: taylors } = await ctx.newAsset({ ownerId: taylor.id, originalPath: `/media/${randomUUID()}.jpg` });
+      await assets.lock([taylors.id], AssetLockReason.Marked, taylor.id);
+      await copyOf(taylors, taylor.id);
+      // Alex encrypts, but this item is Locked only in Sam's library: plain too
+      const { asset: alexOpen } = await ctx.newAsset({ ownerId: alex.id, originalPath: `/media/${randomUUID()}.jpg` });
+      await copyOf(alexOpen, alex.id);
+      // Alex encrypts this Locked item: the copy reads the encrypted file
+      const { asset: alexLocked } = await ctx.newAsset({
+        ownerId: alex.id,
+        originalPath: `/media/${randomUUID()}.jpg`,
+      });
+      await assets.lock([alexLocked.id], AssetLockReason.Marked, alex.id);
+      await copyOf(alexLocked, alex.id);
+      // Sam's own Locked item is never a partner copy
+      const { asset: own } = await ctx.newAsset({ ownerId: sam.id });
+      await assets.lock([own.id], AssetLockReason.Marked, sam.id);
+
+      const repository = new LockedEncryptionRepository(db);
+
+      await expect(repository.countPlainPartnerCopies(sam.id)).resolves.toBe(2);
+      await expect(repository.countPlainPartnerCopies(taylor.id)).resolves.toBe(0);
+    });
+  });
 });

@@ -58,6 +58,13 @@ const LockedEncryptionStatusSchema = z
           .describe(
             'Locked items that turning off, or taking an item out of Locked, is waiting on because their file is missing',
           ),
+        sharedNotEncrypted: z
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'Locked items shared with you by a partner whose files stay unencrypted: your setting doesn’t encrypt them',
+          ),
       })
       .meta({ id: 'LockedEncryptionCountsDto' }),
   })

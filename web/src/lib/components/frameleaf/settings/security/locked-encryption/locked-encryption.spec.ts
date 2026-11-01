@@ -129,6 +129,25 @@ describe('Locked encryption (FL-721)', () => {
 
       expect(await screen.findByText('2 Locked items are missing their files')).toBeInTheDocument();
     });
+
+    it('says how many Locked items a partner shared stay unencrypted (I3)', async () => {
+      sdkMock.getLockedEncryption.mockResolvedValue(
+        on({ counts: { encrypted: 223, notEncryptable: 0, missing: 0, sharedNotEncrypted: 40 } }),
+      );
+      render(LockedEncryptionPage);
+
+      expect(
+        await screen.findByText('40 items shared with you by a partner aren’t encrypted by your setting.'),
+      ).toBeInTheDocument();
+    });
+
+    it('says nothing about partner items when there are none', async () => {
+      sdkMock.getLockedEncryption.mockResolvedValue(on());
+      render(LockedEncryptionPage);
+
+      expect(await screen.findByRole('button', { name: /Turn off/ })).toBeInTheDocument();
+      expect(screen.queryByText(/shared with you by a partner/)).not.toBeInTheDocument();
+    });
   });
 
   describe('turning on', () => {

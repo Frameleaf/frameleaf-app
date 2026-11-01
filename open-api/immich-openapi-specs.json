@@ -98458,6 +98458,12 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "sharedNotEncrypted": {
+            "description": "Locked items shared with you by a partner whose files stay unencrypted: your setting doesn’t encrypt them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [

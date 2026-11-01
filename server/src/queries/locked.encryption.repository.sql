@@ -112,3 +112,51 @@ where
 order by
   "asset_lock"."lockedAt" asc,
   "asset"."id" asc
+
+-- LockedEncryptionRepository.countPlainPartnerCopies
+select
+  count(*) as "count"
+from
+  "asset"
+  inner join "asset_lock" on "asset_lock"."assetId" = "asset"."id"
+where
+  "asset"."ownerId" = $1::uuid
+  and exists (
+    select
+      1
+    from
+      public.asset_origin o
+    where
+      o."assetId" = "asset"."id"
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset sealed
+      join public.asset_lock sealed_lock on sealed_lock."assetId" = sealed.id
+    where
+      (
+        sealed."originalPath" = "asset"."originalPath"
+        or sealed."physicalOriginalFileId" = "asset"."physicalOriginalFileId"
+      )
+      and (
+        "sealed"."libraryId" is null
+        and exists (
+          select
+            1
+          from
+            public.locked_encryption e
+          where
+            e."userId" = "sealed"."ownerId"
+        )
+        and not exists (
+          select
+            1
+          from
+            public.asset_origin o
+          where
+            o."assetId" = "sealed".id
+        )
+      )
+  )

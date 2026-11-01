@@ -171,6 +171,8 @@ export class LockedEncryptionService {
               encryptable.filter((asset) => row.status === 'decrypting' || !!asset.pendingUnlockAt),
             )
           : 0,
+        // I3: a partner's items in this person's Locked folder are the partner's files, plain unless the partner encrypts
+        ...(row && { sharedNotEncrypted: await this.lockedEncryptionRepository.countPlainPartnerCopies(userId) }),
       },
     };
   }

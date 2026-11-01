@@ -577,6 +577,24 @@ describe(LockedEncryptionService.name, () => {
       }
     });
 
+    it('counts Locked items shared by a partner whose files stay unencrypted (I3)', async () => {
+      await enablePin();
+      rows.set(userId, { ...rows.get(userId)!, status: 'on' });
+      mocks.lockedEncryption.countPlainPartnerCopies.mockResolvedValue(40);
+
+      await expect(sut.getStatus(auth)).resolves.toMatchObject({
+        status: 'on',
+        counts: { encrypted: 0, notEncryptable: 0, sharedNotEncrypted: 40 },
+      });
+      expect(mocks.lockedEncryption.countPlainPartnerCopies).toHaveBeenCalledWith(userId);
+    });
+
+    it('never counts partner copies while encryption is off', async () => {
+      const status = await sut.getStatus(auth);
+      expect(status.counts.sharedNotEncrypted).toBeUndefined();
+      expect(mocks.lockedEncryption.countPlainPartnerCopies).not.toHaveBeenCalled();
+    });
+
     it('reports off with the default ask-again time', async () => {
       await expect(sut.getStatus(auth)).resolves.toMatchObject({
         enabled: false,

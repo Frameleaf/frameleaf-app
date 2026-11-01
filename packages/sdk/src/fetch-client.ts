@@ -17649,6 +17649,8 @@ export type LockedEncryptionCountsDto = {
     missing?: number;
     /** Locked items in a folder Frameleaf can’t change, which stay unencrypted */
     notEncryptable: number;
+    /** Locked items shared with you by a partner whose files stay unencrypted: your setting doesn’t encrypt them */
+    sharedNotEncrypted?: number;
 };
 export type LockedEncryptionProgressDto = {
     /** Items whose files are done */

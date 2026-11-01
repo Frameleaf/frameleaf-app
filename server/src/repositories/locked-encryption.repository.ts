@@ -6,6 +6,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import { asUuid } from 'src/utils/database.js';
+import { holdsEncryptedOriginal } from 'src/utils/locked-encryption-set.js';
 
 /** One of the person's own Locked items, as the settings API counts and queues them. */
 export interface LockedEncryptionAsset {
@@ -128,5 +129,24 @@ export class LockedEncryptionRepository {
       .orderBy('asset_lock.lockedAt', 'asc')
       .orderBy('asset.id', 'asc')
       .execute() as Promise<LockedEncryptionAsset[]>;
+  }
+
+  /**
+   * FL-721 (I3): the person's Locked copies of a partner's items whose file stays plain. A copy reads its
+   * owner's file (spec §6.1), which is encrypted only while a Locked item whose owner's encryption covers
+   * it reads that file. The partner may not encrypt, or the item is Locked only here; either way this
+   * person's setting doesn't encrypt it, and the settings page says so.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countPlainPartnerCopies(ownerId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .innerJoin('asset_lock', 'asset_lock.assetId', 'asset.id')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where(sql<boolean>`exists (select 1 from public.asset_origin o where o."assetId" = "asset"."id")`)
+      .where(sql<boolean>`not ${holdsEncryptedOriginal('asset')}`)
+      .executeTakeFirstOrThrow();
+    return Number(count);
   }
 }

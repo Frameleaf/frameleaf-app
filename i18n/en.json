@@ -9205,6 +9205,7 @@
   "frameleaf_le_server_step_type_pin": "Type your PIN or recovery key",
   "frameleaf_le_server_title": "If this server stops working",
   "frameleaf_le_set_pin_first": "Set a Locked PIN first",
+  "frameleaf_le_shared_not_encrypted": "{count, plural, one {# item shared with you by a partner isn’t encrypted by your setting.} other {# items shared with you by a partner aren’t encrypted by your setting.}}",
   "frameleaf_le_strength_good": "Strong enough. Longer is stronger.",
   "frameleaf_le_strength_great": "Very strong.",
   "frameleaf_le_strength_none": "At least 12 characters.",

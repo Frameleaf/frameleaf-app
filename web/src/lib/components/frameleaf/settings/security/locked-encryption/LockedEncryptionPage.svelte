@@ -355,6 +355,11 @@
         {$t('frameleaf_le_not_encryptable', { values: { count: status.counts.notEncryptable } })}
       </Notice>
     {/if}
+    {#if status.enabled && (status.counts.sharedNotEncrypted ?? 0) > 0}
+      <Notice tone="info">
+        {$t('frameleaf_le_shared_not_encrypted', { values: { count: status.counts.sharedNotEncrypted } })}
+      </Notice>
+    {/if}
 
     {#if view === 'off'}
       <Section title={$t('frameleaf_le_what_title')} description={$t('frameleaf_le_what_description')}>
