@@ -12,6 +12,7 @@ import { CacheControl, FrameleafWorker, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PendingEvents } from 'src/utils/event.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { getCodecString, getOutputSize } from 'src/utils/media.js';
 
 type AssetWithStreamInfo = { videoStream: VideoStreamInfo & { timeBase: number }; packets: VideoPacketInfo };
@@ -51,8 +52,12 @@ export class HlsService extends BaseService {
       throw new BadRequestException('Real-time transcoding is not enabled');
     }
     // FL-721 (spec §8.1): HLS writes segments to disk, so an encrypted Locked video is played from
-    // its encoded MP4 by range instead, decrypted as it is sent (`playbackVideo`)
-    if ((await this.assetRepository.getLockedEncryptionItems([assetId])).length > 0) {
+    // its encoded MP4 by range instead, decrypted as it is sent (`playbackVideo`). A partner's copy is
+    // outside the encryption set but reads its owner's sealed original, so the file itself is checked too
+    if (
+      (await this.assetRepository.getLockedEncryptionItems([assetId])).length > 0 ||
+      (await this.isSealedOriginal(assetId))
+    ) {
       throw new BadRequestException('Real-time transcoding is off for encrypted Locked videos; play the video file');
     }
 
@@ -71,6 +76,11 @@ export class HlsService extends BaseService {
     this.trackSession(sessionId);
 
     return playlist;
+  }
+
+  private async isSealedOriginal(assetId: string) {
+    const video = await this.assetRepository.getForVideo(assetId);
+    return !!video && (await isLockedPath(video.originalPath));
   }
 
   async getMediaPlaylist(auth: AuthDto, assetId: string, sessionId: string, variantIndex: number, position?: number) {
