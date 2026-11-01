@@ -108,3 +108,65 @@ describe('Locked-folder filters', () => {
     );
   });
 });
+
+describe('bounded calendar pages', () => {
+  const timeBucket = '2024-01-01';
+  const anchor = '00000000-0000-4000-8000-000000000001';
+
+  it('requires a bounded asset lookup when specifying a flat sort', () => {
+    for (const sort of ['filename', 'rating', 'quality']) {
+      expect(TimeBucketDto.schema.parse({ pageSize: 500, locateAssetId: anchor, sort })).toHaveProperty('sort', sort);
+      expect(TimeBucketDto.schema.safeParse({ pageSize: 500, sort }).success).toBe(false);
+    }
+  });
+
+  it('validates page summaries and direct asset lookup', () => {
+    expect(TimeBucketDto.schema.parse({ pageSize: '500', locateAssetId: anchor })).toEqual({
+      pageSize: 500,
+      locateAssetId: anchor,
+    });
+    for (const query of [
+      { pageSize: 0 },
+      { pageSize: 1001 },
+      { pageSize: 2.5 },
+      { locateAssetId: anchor },
+      { pageSize: 500, locateAssetId: 'invalid' },
+    ]) {
+      expect(TimeBucketDto.schema.safeParse(query).success).toBe(false);
+    }
+  });
+
+  it('retains the legacy request and accepts a bounded page with an opaque asset anchor', () => {
+    expect(TimeBucketAssetDto.schema.parse({ timeBucket })).toEqual({ timeBucket });
+    expect(TimeBucketAssetDto.schema.parse({ timeBucket, take: '500', after: anchor })).toEqual({
+      timeBucket,
+      take: 500,
+      after: anchor,
+    });
+    expect(TimeBucketAssetDto.schema.parse({ timeBucket, take: '1000', before: anchor })).toEqual({
+      timeBucket,
+      take: 1000,
+      before: anchor,
+    });
+  });
+
+  it.each([0, -1, 1001, 1.5, 'NaN', 'Infinity'])('rejects unbounded or invalid page size %s', (take) => {
+    expect(TimeBucketAssetDto.schema.safeParse({ timeBucket, take }).success).toBe(false);
+  });
+
+  it('rejects malformed anchors, ambiguous directions and anchors without a bounded page', () => {
+    for (const page of [
+      { take: 500, after: 'not-an-id' },
+      { take: 500, before: 'not-an-id' },
+      { take: 500, after: anchor, before: anchor },
+      { after: anchor },
+      { before: anchor },
+      { membershipAlbumId: anchor },
+      { take: 500, membershipAlbumId: 'invalid' },
+      { firstAssetId: anchor, lastAssetId: anchor },
+      { take: 500, firstAssetId: 'invalid' },
+    ]) {
+      expect(TimeBucketAssetDto.schema.safeParse({ timeBucket, ...page }).success).toBe(false);
+    }
+  });
+});

@@ -70,6 +70,23 @@ describe('LibraryTimeline "all" grouping', () => {
     expect(manager.months.map((month) => month.isLoaded)).toEqual([true, false]);
   });
 
+  it('bounds the physical scroll surface for a timeline beyond the browser height limit', async () => {
+    const { container } = renderYears();
+    await tick();
+    manager.months[0].height = 59_000_000;
+    await tick();
+    const body = container.querySelector<HTMLElement>('.fl-timeline-body')!;
+    // eslint-disable-next-line unicorn/prefer-number-coercion -- CSS lengths include px.
+    expect(Number.parseFloat(body.style.height)).toBeLessThanOrEqual(8_000_000);
+    const scrollBy = vi.spyOn(manager, 'scrollBy');
+    await fireEvent.keyDown(scroller(container), { key: 'PageDown' });
+    expect(scrollBy).toHaveBeenCalledWith(manager.viewportHeight * 0.9);
+    for (const band of container.querySelectorAll<HTMLElement>('.fl-group-band')) {
+      // eslint-disable-next-line unicorn/prefer-number-coercion -- CSS lengths include px.
+      expect(Number.parseFloat(band.style.height)).toBeLessThanOrEqual(8_000_000);
+    }
+  });
+
   it('is busy only while the newest group request loads: check, then uncheck mid-load', async () => {
     const { container } = renderYears();
     await tick();
@@ -483,4 +500,42 @@ describe('LibraryTimeline badges in the Locked view', () => {
     await waitFor(() => expect(screen.getAllByText('frameleaf_library_badge_locked')).toHaveLength(1));
     expect(screen.getAllByText('frameleaf_library_badge_sensitive')).toHaveLength(1);
   });
+});
+
+it('selects a complete dense calendar day across bounded pages', async () => {
+  vi.resetAllMocks();
+  const assets = inMonth('2024-03', 1200);
+  const pages = Array.from({ length: 3 }, (_, page) => {
+    const slice = assets.slice(page * 500, (page + 1) * 500);
+    return {
+      timeBucket: '2024-03-01',
+      count: slice.length,
+      page,
+      after: page ? assets[page * 500 - 1].id : null,
+      firstAssetId: slice[0].id,
+      lastAssetId: slice.at(-1)!.id,
+      days: [{ day: 10, count: 1200 }],
+    };
+  });
+  sdkMock.getTimeBuckets.mockResolvedValue(pages);
+  sdkMock.getTimeBucket.mockImplementation(async ({ firstAssetId }) => {
+    const start = assets.findIndex(({ id }) => id === firstAssetId);
+    return toResponseDto(...assets.slice(start, start + 500));
+  });
+  const manager = new TimelineManager();
+  const session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+  try {
+    await manager.updateViewport({ width: 1000, height: 200 });
+    await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
+    render(LibraryTimeline, { timelineManager: manager, session, grouping: 'days', onGroupingChange: vi.fn() });
+    await tick();
+    const checkbox = (await screen.findAllByRole('checkbox', { name: 'frameleaf_library_select_all_in_group' }))[0];
+    await fireEvent.click(checkbox);
+    await waitFor(() => expect(session.selection).toHaveLength(1200));
+    expect(new Set(session.selection)).toEqual(new Set(assets.map(({ id }) => id)));
+    await fireEvent.click(checkbox);
+    await waitFor(() => expect(session.selection).toHaveLength(0));
+  } finally {
+    manager.destroy();
+  }
 });

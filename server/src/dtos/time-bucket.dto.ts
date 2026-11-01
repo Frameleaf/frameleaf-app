@@ -125,8 +125,34 @@ const TimeBucketQueryBaseSchema = z
   })
   .meta({ id: 'TimeBucketDto' });
 
-const TimeBucketSchema = TimeBucketQueryBaseSchema;
+export const TIMELINE_CALENDAR_MAX_TAKE = 1000;
+const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
+  pageSize: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(TIMELINE_CALENDAR_MAX_TAKE)
+    .optional()
+    .describe('Return bounded calendar-page summaries instead of whole-month counts'),
+  locateAssetId: z.uuid().optional().describe('Return only the page containing this accessible asset'),
+  sort: z.enum(['filename', 'rating', 'quality']).optional().describe('Locate an asset in this flat timeline order'),
+})
+  .refine((value) => value.pageSize !== undefined || !value.locateAssetId, 'Asset lookup requires pageSize')
+  .refine((value) => !value.sort || !!value.locateAssetId, 'Sorted lookup requires locateAssetId')
+  .meta({ id: 'TimeBucketDto' });
 const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
+  take: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(TIMELINE_CALENDAR_MAX_TAKE)
+    .optional()
+    .describe('Maximum assets in a calendar page; omit for the legacy complete bucket'),
+  after: z.uuid().optional().describe('Read after this calendar-page asset ID'),
+  before: z.uuid().optional().describe('Read before this calendar-page asset ID'),
+  firstAssetId: z.uuid().optional().describe('Expected first asset from the page summary; changed pages return 409'),
+  lastAssetId: z.uuid().optional().describe('Expected last asset from the page summary; changed pages return 409'),
+  membershipAlbumId: z.uuid().optional().describe('Include membership in this readable album for each page asset'),
   timeBucket: z
     .string()
     .refine(
@@ -139,7 +165,15 @@ const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
     )
     .describe('Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format')
     .meta({ example: '2024-01-01T00:00:00.000Z' }),
-}).meta({ id: 'TimeBucketAssetDto' });
+})
+  .refine((value) => !(value.after && value.before), 'Use either after or before, not both')
+  .refine(
+    (value) =>
+      value.take !== undefined ||
+      (!value.after && !value.before && !value.firstAssetId && !value.lastAssetId && !value.membershipAlbumId),
+    'Calendar page options require take',
+  )
+  .meta({ id: 'TimeBucketAssetDto' });
 
 /** FL-30 (S-15): one page of the timeline in a flat order the time buckets cannot give. */
 export const TIMELINE_ORDERED_MAX_TAKE = 1000;
@@ -167,8 +201,13 @@ const stackTupleSchema = z.array(z.string()).length(2).nullable();
 const TimeBucketAssetResponseSchema = z
   .object({
     id: z.array(z.string()).describe('Array of asset IDs in the time bucket'),
-    startCursor: z.string().nullable().optional().describe('First ordered item cursor; absent for time buckets'),
-    endCursor: z.string().nullable().optional().describe('Last ordered item cursor; absent for time buckets'),
+    inAlbum: z.array(z.boolean()).optional().describe('Membership in the requested readable album, aligned with id'),
+    startCursor: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('First page cursor; a calendar asset ID or an ordered cursor'),
+    endCursor: z.string().nullable().optional().describe('Last page cursor; a calendar asset ID or an ordered cursor'),
     ownerId: z.array(z.string()).describe('Array of owner IDs for each asset'),
     ratio: z
       .array(z.number().meta({ format: 'double' }))
@@ -256,6 +295,14 @@ const TimeBucketsResponseSchema = z
       .describe('Time bucket identifier in YYYY-MM-DD format representing the start of the time period')
       .meta({ example: '2024-01-01' }),
     count: z.int().describe('Number of assets in this time bucket').meta({ example: 42 }),
+    page: z.int().min(0).optional().describe('Zero-based page within this calendar month'),
+    after: z.uuid().nullable().optional().describe('Opaque anchor immediately before this page'),
+    firstAssetId: z.uuid().optional().describe('First asset in the page snapshot'),
+    lastAssetId: z.uuid().optional().describe('Last asset in the page snapshot'),
+    days: z
+      .array(z.object({ day: z.int().min(1).max(31), count: z.int().min(1) }))
+      .optional()
+      .describe('Whole-day counts for the calendar days represented in this page'),
   })
   .meta({ id: 'TimeBucketsResponseDto' });
 

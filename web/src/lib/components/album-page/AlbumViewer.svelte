@@ -117,22 +117,26 @@
     const isCurrentView = captureView();
     const isCurrent = () => manager === timelineManager && isCurrentView();
     try {
-      for (const month of manager.months) {
+      const months = manager.months;
+      const ids: string[] = [];
+      for (const month of months) {
         if (!isCurrent()) {
           return;
         }
         if (!month.isLoaded) {
           await manager.loadTimelineMonth(month.yearMonth);
         }
+        if (!isCurrent() || manager.months !== months || !month.isLoaded) {
+          return;
+        }
+        for (const asset of month.assetsIterator()) {
+          ids.push(asset.id);
+        }
       }
       if (!isCurrent()) {
         return;
       }
-      librarySession.selectAll(
-        manager.months.flatMap((month) =>
-          month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
-        ),
-      );
+      librarySession.selectAll(ids);
     } catch (error) {
       if (isCurrent()) {
         throw error;

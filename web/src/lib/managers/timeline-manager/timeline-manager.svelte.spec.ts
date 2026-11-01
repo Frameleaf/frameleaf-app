@@ -162,14 +162,10 @@ describe('TimelineManager', () => {
       Promise.resolve([{ count: 1, timeBucket: isFavorite ? '2024-02-01' : '2024-01-01' }]),
     );
     const timelineManager = new TimelineManager();
-    const pendingReset = deferred<void>();
+    const pendingSummary = deferred<Array<{ count: number; timeBucket: string }>>();
     try {
       await timelineManager.updateOptions({ albumId: 'album-1' });
-      const reset = timelineManager.initTask.reset.bind(timelineManager.initTask);
-      vi.spyOn(timelineManager.initTask, 'reset').mockImplementationOnce(async () => {
-        await reset();
-        await pendingReset.promise;
-      });
+      sdkMock.getTimeBuckets.mockReturnValueOnce(pendingSummary.promise);
       const refresh = vi.spyOn(timelineManager, 'refresh');
 
       eventManager.emit('AlbumAddAssets', { albumIds: ['album-1'], assetIds: ['new-asset'] });
@@ -177,12 +173,12 @@ describe('TimelineManager', () => {
       await timelineManager.updateOptions({ albumId: 'album-1', isFavorite: true });
       expect(timelineManager.months.map(({ yearMonth }) => yearMonth.month)).toEqual([2]);
 
-      pendingReset.resolve();
+      pendingSummary.resolve([{ count: 999, timeBucket: '2024-01-01' }]);
       await refresh.mock.results[0].value;
       expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ isFavorite: true }));
       expect(timelineManager.months.map(({ yearMonth }) => yearMonth.month)).toEqual([2]);
     } finally {
-      pendingReset.resolve();
+      pendingSummary.resolve([{ count: 999, timeBucket: '2024-01-01' }]);
       timelineManager.destroy();
     }
   });
@@ -619,7 +615,7 @@ describe('TimelineManager', () => {
 
     it('finds an item on a page that is not loaded yet', async () => {
       const timelineManager = await setup();
-      sdkMock.getAssetInfo.mockResolvedValue(assetFactory.build({ id: c.id }));
+      sdkMock.getTimeBuckets.mockResolvedValueOnce([{ timeBucket: '1970-01-01', count: 3, page: 0 }]);
       const month = await timelineManager.findTimelineMonthForAsset({ id: c.id });
       expect(month).toBe(timelineManager.months[0]);
       timelineManager.destroy();

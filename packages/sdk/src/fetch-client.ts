@@ -17363,7 +17363,7 @@ export type TimeBucketAssetResponseDto = {
     createdAt: string[];
     /** Array of video/gif durations in milliseconds (null for static images) */
     duration: (number | null)[];
-    /** Last ordered item cursor; absent for time buckets */
+    /** Last page cursor; a calendar asset ID or an ordered cursor */
     endCursor?: string | null;
     /** Array of file creation timestamps in UTC */
     fileCreatedAt: string[];
@@ -17373,6 +17373,8 @@ export type TimeBucketAssetResponseDto = {
     height?: (number | null)[];
     /** Array of asset IDs in the time bucket */
     id: string[];
+    /** Membership in the requested readable album, aligned with id */
+    inAlbum?: boolean[];
     /** Array indicating whether each asset is favorited */
     isFavorite: boolean[];
     /** Array indicating whether each asset is an image (false for videos) */
@@ -17403,7 +17405,7 @@ export type TimeBucketAssetResponseDto = {
     ratio: number[];
     /** Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets) */
     stack?: (string[] | null)[];
-    /** First ordered item cursor; absent for time buckets */
+    /** First page cursor; a calendar asset ID or an ordered cursor */
     startCursor?: string | null;
     /** Array of BlurHash strings for generating asset previews (base64 encoded) */
     thumbhash: (string | null)[];
@@ -17413,8 +17415,21 @@ export type TimeBucketAssetResponseDto = {
     width?: (number | null)[];
 };
 export type TimeBucketsResponseDto = {
+    /** Opaque anchor immediately before this page */
+    after?: string | null;
     /** Number of assets in this time bucket */
     count: number;
+    /** Whole-day counts for the calendar days represented in this page */
+    days?: {
+        count: number;
+        day: number;
+    }[];
+    /** First asset in the page snapshot */
+    firstAssetId?: string;
+    /** Last asset in the page snapshot */
+    lastAssetId?: string;
+    /** Zero-based page within this calendar month */
+    page?: number;
     /** Time bucket identifier in YYYY-MM-DD format representing the start of the time period */
     timeBucket: string;
 };
@@ -19926,27 +19941,37 @@ export type TagSearchDto = {
     take?: number;
 };
 export type TimeBucketAssetDto = {
+    /** Read after this calendar-page asset ID */
+    after?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
     bbox?: string;
+    /** Read before this calendar-page asset ID */
+    before?: string;
     /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
+    /** Expected first asset from the page summary; changed pages return 409 */
+    firstAssetId?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
+    /** Expected last asset from the page summary; changed pages return 409 */
+    lastAssetId?: string;
     libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
+    /** Include membership in this readable album for each page asset */
+    membershipAlbumId?: string;
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
     order?: AssetOrder;
     /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
@@ -19960,6 +19985,8 @@ export type TimeBucketAssetDto = {
     suppressedOnly?: boolean;
     /** Filter assets with a specific tag */
     tagId?: string;
+    /** Maximum assets in a calendar page; omit for the legacy complete bucket */
+    take?: number;
     /** Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format */
     timeBucket: string;
     /** Filter assets by specific user ID */
@@ -19993,17 +20020,23 @@ export type TimeBucketDto = {
     isTrashed?: boolean;
     key?: string;
     libraryScope?: LibraryViewScope;
+    /** Return only the page containing this accessible asset */
+    locateAssetId?: string;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
     order?: AssetOrder;
     /** Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf) */
     orderBy?: AssetOrderBy;
+    /** Return bounded calendar-page summaries instead of whole-month counts */
+    pageSize?: number;
     /** Filter assets containing a specific person (face recognition) */
     personId?: string;
     /** Filter assets in which the caller confirmed one of their own pets */
     petId?: string;
     slug?: string;
+    /** Locate an asset in this flat timeline order */
+    sort?: Sort;
     /** Return only suppressed content. Requires an elevated session. */
     suppressedOnly?: boolean;
     /** Filter assets with a specific tag */
@@ -34234,19 +34267,24 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+    after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
+    before?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
     filter?: string;
+    firstAssetId?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    lastAssetId?: string;
     libraryScope?: LibraryViewScope;
     lockReason?: AssetLockReason | "immich-locked-folder";
+    membershipAlbumId?: string;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -34254,6 +34292,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
     slug?: string;
     suppressedOnly?: boolean;
     tagId?: string;
+    take?: number;
     timeBucket: string;
     userId?: string;
     visibility?: AssetVisibility;
@@ -34265,18 +34304,23 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         status: 200;
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/bucket${QS.query(QS.explode({
+        after,
         albumId,
         assetType,
         bbox,
+        before,
         bestPhotos,
         dateType,
         filter,
+        firstAssetId,
         imageEnrichment,
         isFavorite,
         isTrashed,
         key,
+        lastAssetId,
         libraryScope,
         lockReason,
+        membershipAlbumId,
         order,
         orderBy,
         personId,
@@ -34284,6 +34328,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         slug,
         suppressedOnly,
         tagId,
+        take,
         timeBucket,
         userId,
         visibility,
@@ -34297,7 +34342,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -34309,12 +34354,15 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     isTrashed?: boolean;
     key?: string;
     libraryScope?: LibraryViewScope;
+    locateAssetId?: string;
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
+    pageSize?: number;
     personId?: string;
     petId?: string;
     slug?: string;
+    sort?: "filename" | "rating" | "quality";
     suppressedOnly?: boolean;
     tagId?: string;
     userId?: string;
@@ -34338,12 +34386,15 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         isTrashed,
         key,
         libraryScope,
+        locateAssetId,
         lockReason,
         order,
         orderBy,
+        pageSize,
         personId,
         petId,
         slug,
+        sort,
         suppressedOnly,
         tagId,
         userId,
@@ -40121,4 +40172,9 @@ export enum UserMetadataKey {
     Onboarding = "onboarding",
     FrameleafCloudTour = "frameleaf-cloud-tour",
     PartnerLockedNotice = "partner-locked-notice"
+}
+export enum Sort {
+    Filename = "filename",
+    Rating = "rating",
+    Quality = "quality"
 }

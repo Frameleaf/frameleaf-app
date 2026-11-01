@@ -1,4 +1,4 @@
-import { AssetResponseDto, AssetVisibility } from '@frameleaf/sdk';
+import { AssetResponseDto, AssetVisibility, TimeBucketsResponseDto } from '@frameleaf/sdk';
 import { BrowserContext, Page, Request, Route } from '@playwright/test';
 import { basename, dirname } from 'node:path';
 import {
@@ -28,6 +28,20 @@ export const setupTimelineMockApiRoutes = async (
   changes: Changes,
   testContext: TimelineTestContext,
 ) => {
+  const orderedAssets = (sort: string | null) =>
+    timelineRestData.buckets
+      .values()
+      .toArray()
+      .flat()
+      .filter(
+        (asset) =>
+          !asset.isTrashed &&
+          asset.visibility === AssetVisibility.Timeline &&
+          !changes.assetDeletions.includes(asset.id) &&
+          !changes.assetArchivals.includes(asset.id),
+      )
+      .toSorted((a, b) => (sort === 'filename' ? a.id.localeCompare(b.id) : 0));
+
   await context.route('**/api/timeline**', async (route, request) => {
     const url = new URL(request.url());
     const pathname = url.pathname;
@@ -38,11 +52,66 @@ export const setupTimelineMockApiRoutes = async (
       const isArchived = url.searchParams.get('visibility')
         ? url.searchParams.get('visibility') === 'archive'
         : undefined;
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        json: getTimeBuckets(timelineRestData, isTrashed, isArchived, isFavorite, albumId, changes),
-      });
+      let summaries = getTimeBuckets(timelineRestData, isTrashed, isArchived, isFavorite, albumId, changes);
+      const pageSize = Number(url.searchParams.get('pageSize'));
+      const sort = url.searchParams.get('sort');
+      const locateAssetId = url.searchParams.get('locateAssetId');
+      if (sort && locateAssetId && pageSize) {
+        const assets = orderedAssets(sort);
+        const index = assets.findIndex(({ id }) => id === locateAssetId);
+        const page = Math.floor(index / pageSize);
+        return route.fulfill({
+          json:
+            index === -1
+              ? []
+              : [
+                  {
+                    timeBucket: '1970-01-01',
+                    page,
+                    count: Math.min(pageSize, assets.length - page * pageSize),
+                  },
+                ],
+        });
+      }
+      if (pageSize) {
+        summaries = summaries.flatMap(({ timeBucket }) => {
+          const bucket = getTimeBucket(
+            timelineRestData,
+            timeBucket,
+            isTrashed,
+            isArchived,
+            isFavorite,
+            albumId,
+            changes,
+          );
+          const { id } = bucket;
+          const dayNumbers = bucket.fileCreatedAt.map((date, index) =>
+            new Date(Date.parse(date) + bucket.localOffsetHours[index] * 3_600_000).getUTCDate(),
+          );
+          const dayCounts = new Map<number, number>();
+          for (const day of dayNumbers) {dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);}
+          const locator = url.searchParams.get('locateAssetId');
+          const pages: TimeBucketsResponseDto[] = [];
+          for (let start = 0; start < id.length; start += pageSize) {
+            const ids = id.slice(start, start + pageSize);
+            if (!locator || ids.includes(locator))
+              {pages.push({
+                timeBucket,
+                count: ids.length,
+                page: start / pageSize,
+                after: start ? id[start - 1] : null,
+                firstAssetId: ids[0],
+                lastAssetId: ids.at(-1),
+                days: [...new Set(dayNumbers.slice(start, start + pageSize))].map((day) => ({
+                  day,
+                  count: dayCounts.get(day)!,
+                })),
+              });}
+          }
+          return pages;
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', json: summaries });
     }
     if (pathname === '/api/timeline/highlights') {
       const param = (name: string) => url.searchParams.get(name);
@@ -66,19 +135,7 @@ export const setupTimelineMockApiRoutes = async (
       const skip = Number(url.searchParams.get('skip') ?? 0);
       const take = Number(url.searchParams.get('take') ?? 500);
       const sort = url.searchParams.get('sort');
-      const assets = timelineRestData.buckets
-        .values()
-        .toArray()
-        .flat()
-        .filter(
-          (asset) =>
-            !asset.isTrashed &&
-            asset.visibility === AssetVisibility.Timeline &&
-            !changes.assetDeletions.includes(asset.id) &&
-            !changes.assetArchivals.includes(asset.id),
-        )
-        .toSorted((a, b) => (sort === 'filename' ? a.id.localeCompare(b.id) : 0))
-        .slice(skip, skip + take);
+      const assets = orderedAssets(sort).slice(skip, skip + take);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -100,11 +157,33 @@ export const setupTimelineMockApiRoutes = async (
       if (testContext.slowBucket) {
         await sleep(5000);
       }
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        json: assets,
-      });
+      const take = Number(url.searchParams.get('take'));
+      if (take) {
+        const after = url.searchParams.get('after');
+        const start = after ? assets.id.indexOf(after) + 1 : 0;
+        if (after && start === 0) {return route.fulfill({ status: 409 });}
+        const page = Object.fromEntries(
+          Object.entries(assets).map(([key, value]) => [
+            key,
+            Array.isArray(value) ? value.slice(start, start + take) : value,
+          ]),
+        );
+        const ids = assets.id.slice(start, start + take);
+        const membershipAlbumId = url.searchParams.get('membershipAlbumId');
+        const albumIds = new Set([
+          ...(timelineRestData.album?.id === membershipAlbumId ? timelineRestData.album.assetIds : []),
+          ...changes.albumAdditions,
+        ]);
+        return route.fulfill({
+          json: {
+            ...page,
+            startCursor: ids[0] ?? null,
+            endCursor: ids.at(-1) ?? null,
+            ...(membershipAlbumId && { inAlbum: ids.map((id) => albumIds.has(id)) }),
+          },
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', json: assets });
     }
     return route.continue();
   });

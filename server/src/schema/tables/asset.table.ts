@@ -76,6 +76,16 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   name: 'asset_owner_filename_order_idx',
   expression: '"ownerId", "originalFileName" COLLATE "und-x-icu", "fileCreatedAt" DESC, id',
 })
+@Index({
+  name: 'asset_owner_taken_page_idx',
+  expression: `"ownerId", (date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),
+    (("localDateTime" AT TIME ZONE 'UTC')::date), "fileCreatedAt", "originalFileName", id`,
+})
+@Index({
+  name: 'asset_owner_added_page_idx',
+  expression: `"ownerId", (date_trunc('MONTH', "createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),
+    (("createdAt" AT TIME ZONE 'UTC')::date), "createdAt", "originalFileName", id`,
+})
 @Index({ name: 'asset_owner_scope_idx', columns: ['ownerId', 'libraryScope'] })
 @Index({ columns: ['originalPath', 'libraryId'] })
 @Index({ columns: ['id', 'stackId'] })

@@ -326,9 +326,26 @@ export interface TimelineOrderedPage {
   skip: number;
   take: number;
 }
+export interface TimelineCalendarPage {
+  take: number;
+  after?: string;
+  before?: string;
+  membershipAlbumId?: string;
+}
+interface TimelineCalendarCursor {
+  day: string;
+  timestamp: string;
+  name: string;
+  id: string;
+}
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
+  page?: number;
+  after?: string | null;
+  firstAssetId?: string;
+  lastAssetId?: string;
+  days?: { day: number; count: number }[];
 }
 /** FL-33: how many places a curated timeline card names */
 export const TIMELINE_HIGHLIGHT_PLACES = 3;
@@ -2499,7 +2516,11 @@ export class AssetRepository {
         .$if(!!options.userIds, (qb) =>
           qb.where((eb) => {
             // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
-            const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+            const isOwner = eb(
+              'asset.ownerId',
+              '=',
+              options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
+            );
             // the people's shared-album media widens the owner scope (`widensToSharedAlbums`)
             return auth && widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
           }),
@@ -2529,7 +2550,92 @@ export class AssetRepository {
       ],
     },
   )
-  async getTimeBuckets(options: TimeBucketOptions, auth?: AuthDto): Promise<TimeBucketItem[]> {
+  async getTimeBuckets(
+    options: TimeBucketOptions,
+    auth?: AuthDto,
+    pages?: { pageSize: number; locateAssetId?: string; sort?: TimelineOrderedSort },
+  ): Promise<TimeBucketItem[]> {
+    if (pages?.sort) {
+      if (!auth || !pages.locateAssetId) throw new Error('Sorted lookup requires an authenticated asset lookup');
+      const sortKeys = {
+        filename: sql`asset."originalFileName" collate "und-x-icu"`,
+        rating: sql`coalesce(asset_exif.rating, 0)`,
+        quality: sql`coalesce(best_photo_score.score, -1)`,
+      };
+      const selection = this.timelineAssets(options, auth, this.timelineBucketDate(options))
+        .$if(!options.bbox && !options.filter, (qb) => qb.innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId'))
+        .$if(pages.sort === 'quality', (qb) =>
+          qb.leftJoin('asset_best_photo_score as best_photo_score', (join) =>
+            join
+              .onRef('best_photo_score.assetId', '=', 'asset.id')
+              .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
+          ),
+        )
+        .select([
+          'asset.id',
+          sql<number>`row_number() over (order by ${sortKeys[pages.sort]} ${sql.raw(pages.sort === 'filename' ? 'asc' : 'desc')}, asset."fileCreatedAt" desc, asset.id asc)`.as(
+            'position',
+          ),
+          sql<number>`count(*) over ()`.as('total'),
+        ]);
+      const { rows } = await sql<TimeBucketItem>`
+        with ranked as (${selection}), located as (
+          select *, ((position - 1) / ${pages.pageSize})::integer as page
+          from ranked where id = ${pages.locateAssetId}::uuid
+        )
+        select '1970-01-01' as "timeBucket", page,
+          least(${pages.pageSize}, total - page * ${pages.pageSize})::integer as count from located
+      `.execute(this.db);
+      return rows;
+    }
+    if (pages) {
+      const bucketDate = this.timelineBucketDate(options);
+      const added = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
+      const day = added
+        ? sql`(asset."createdAt" AT TIME ZONE 'UTC')::date`
+        : sql`(asset."localDateTime" AT TIME ZONE 'UTC')::date`;
+      const timestamp = added ? sql`asset."createdAt"` : sql`asset."fileCreatedAt"`;
+      const direction = sql.raw(options.order === AssetOrder.Asc ? 'asc' : 'desc');
+      const window = sql`partition by ${bucketDate} order by ${day} ${direction}, ${timestamp} ${direction},
+        asset."originalFileName" ${direction}, asset.id ${direction}`;
+      const selection = this.timelineAssets(options, auth, bucketDate)
+        .where((eb) =>
+          eb.exists(
+            eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
+          ),
+        )
+        .select([
+          'asset.id',
+          sql<number>`row_number() over (${window})`.as('position'),
+          sql<string | null>`lag(asset.id) over (${window})`.as('previousId'),
+          sql<number>`extract(day from ${day})::integer`.as('dayNumber'),
+          sql<number>`count(*) over (partition by ${bucketDate}, ${day})`.as('dayCount'),
+        ]);
+      // Rank narrow IDs once; each summary lets the client jump directly to a bounded page.
+      const { rows } = await sql<TimeBucketItem>`
+        with ranked as (${selection}),
+        numbered as (
+          select *, ((position - 1) / ${pages.pageSize})::integer as page from ranked
+        )
+        select ("timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+          count(*)::integer as count, page,
+          (array_agg("previousId" order by position))[1] as after,
+          (array_agg(id order by position))[1] as "firstAssetId",
+          (array_agg(id order by position desc))[1] as "lastAssetId",
+          jsonb_agg(distinct jsonb_build_object('day', "dayNumber", 'count', "dayCount")) as days
+        from numbered
+        ${
+          pages.locateAssetId
+            ? sql`where ("timeBucket", page) = (
+          select "timeBucket", page from numbered where id = ${pages.locateAssetId}::uuid
+        )`
+            : sql``
+        }
+        group by "timeBucket", page
+        order by "timeBucket" ${direction}, page asc
+      `.execute(this.db);
+      return rows;
+    }
     return this.db
       .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))
       .selectFrom('asset')
@@ -2594,7 +2700,7 @@ export class AssetRepository {
         left join asset_exif e on e."assetId" = a.id
         left join ${scoreTable} s on s."assetId" = a.id
       ),
-      places as (
+      places as materialized (
         select
           a."timeBucket",
           ${place} as place,
@@ -2639,8 +2745,47 @@ export class AssetRepository {
       ],
     },
   )
-  getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
-    return this.timelineAssetColumns(options, auth, { timeBucket });
+  getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto, calendarPage?: TimelineCalendarPage) {
+    const anchorId = calendarPage?.after ?? calendarPage?.before;
+    if (!anchorId) {
+      return this.timelineAssetColumns(options, auth, { timeBucket, calendarPage });
+    }
+    // Resolve opaque IDs and read the page in one snapshot; no withheld EXIF enters a public cursor.
+    return this.db
+      .transaction()
+      .setIsolationLevel('repeatable read')
+      .execute(async (tx) => {
+        const repository = new AssetRepository(tx);
+        const added = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
+        const day = added
+          ? sql`(asset."createdAt" AT TIME ZONE 'UTC')::date`
+          : sql`(asset."localDateTime" AT TIME ZONE 'UTC')::date`;
+        const timestamp = added ? sql`asset."createdAt"` : sql`asset."fileCreatedAt"`;
+        const bucketDate = this.timelineBucketDate(options);
+        const cursor = await repository
+          .timelineAssets(options, auth, bucketDate)
+          .where('asset.id', '=', asUuid(anchorId))
+          .where(bucketDate, '=', sql<Date>`${timeBucket.replace(/^[+-]/, '')}::timestamptz`)
+          .where((eb) =>
+            eb.exists(
+              eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
+            ),
+          )
+          .select([
+            sql<string>`${day}::text`.as('day'),
+            sql<string>`${timestamp}::text`.as('timestamp'),
+            'asset.originalFileName as name',
+            'asset.id',
+          ])
+          .executeTakeFirst();
+        if (!cursor) {
+          throw new ConflictException('Calendar page changed; refresh the timeline');
+        }
+        return repository.timelineAssetColumns(options, auth, {
+          timeBucket,
+          calendarPage: { ...calendarPage!, cursor },
+        });
+      });
   }
   /**
    * FL-30 (S-15): one page of the timeline's assets in a flat order — by file name or by rating —
@@ -2661,14 +2806,16 @@ export class AssetRepository {
     target:
       | {
           timeBucket: string;
+          calendarPage?: TimelineCalendarPage & { cursor?: TimelineCalendarCursor };
           page?: undefined;
         }
       | {
           timeBucket?: undefined;
+          calendarPage?: undefined;
           page: TimelineOrderedPage;
         },
   ) {
-    const { timeBucket, page } = target;
+    const { timeBucket, page, calendarPage } = target;
     const sortKeys: Record<TimelineOrderedSort, RawBuilder<unknown>> = {
       filename: sql`asset."originalFileName" collate "und-x-icu"`,
       rating: sql`coalesce(asset_exif.rating, 0)`,
@@ -2679,6 +2826,7 @@ export class AssetRepository {
     const keyAscending = page?.sort === 'filename';
     const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
+    const calendarOrder = calendarPage?.before ? (order === 'asc' ? 'desc' : 'asc') : order;
     const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
     const useAddedDate = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
     const timeBucketDate = useAddedDate
@@ -2750,6 +2898,13 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
+          .$if(!!calendarPage, (qb) =>
+            qb.select([
+              orderDate.as('calendarDay'),
+              orderTimestamp.as('calendarTimestamp'),
+              'asset.originalFileName as calendarName',
+            ]),
+          )
           .$if(!!page, (qb) =>
             qb.select([
               sortKey.as('sortKey'),
@@ -2764,6 +2919,19 @@ export class AssetRepository {
           .$if(withPlaces, (qb) => qb.select(['asset_exif.rating', 'asset.originalFileName']))
           // S-15: the list view's dimensions and size column; hidden with the rest of the metadata
           .$if(withPlaces, (qb) => qb.select(['asset.width', 'asset.height', 'asset_exif.fileSizeInByte']))
+          .$if(!!calendarPage?.membershipAlbumId, (qb) =>
+            qb.select((eb) =>
+              eb
+                .exists(
+                  eb
+                    .selectFrom('album_asset')
+                    .select('album_asset.assetId')
+                    .whereRef('album_asset.assetId', '=', 'asset.id')
+                    .where('album_asset.albumId', '=', asUuid(calendarPage!.membershipAlbumId!)),
+                )
+                .as('inAlbum'),
+            ),
+          )
           .$if(withPlaces, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
@@ -2807,7 +2975,11 @@ export class AssetRepository {
           .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth.user.id))
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
-              const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+              const isOwner = eb(
+                'asset.ownerId',
+                '=',
+                options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
+              );
               // as getTimeBuckets: the people's shared-album media widens the owner scope, never a Locked request
               return widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
@@ -2850,8 +3022,18 @@ export class AssetRepository {
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
           .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
           .$if(!page, (qb) =>
-            qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
+            qb
+              .orderBy(orderDate, calendarOrder)
+              .orderBy(orderTimestamp, calendarOrder)
+              .orderBy('asset.originalFileName', calendarOrder),
           )
+          .$if(!!calendarPage?.cursor, (qb) => {
+            const cursor = calendarPage!.cursor!;
+            const operator = calendarOrder === 'asc' ? sql`>` : sql`<`;
+            return qb.where(sql<boolean>`(${orderDate}, ${orderTimestamp}, asset."originalFileName", asset.id)
+              ${operator} (${cursor.day}::date, ${cursor.timestamp}::timestamptz, ${cursor.name}, ${cursor.id}::uuid)`);
+          })
+          .$if(!!calendarPage, (qb) => qb.orderBy('asset.id', calendarOrder).limit(calendarPage!.take))
           // Seek on the same tuple as ORDER BY. Preserve the database timestamp's microseconds
           // in the cursor rather than round-tripping the display date through JavaScript Date.
           .$if(!!page?.cursor, (qb) => {
@@ -2883,6 +3065,13 @@ export class AssetRepository {
         qb
           .selectFrom('selection')
           .selectAll()
+          .$if(!!calendarPage?.before, (qb) =>
+            qb
+              .orderBy('calendarDay', order)
+              .orderBy('calendarTimestamp', order)
+              .orderBy('calendarName', order)
+              .orderBy('id', order),
+          )
           // A backward seek selects in reverse, but every response has the canonical display order.
           .$if(reverse, (qb) =>
             qb
@@ -2916,6 +3105,15 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(!!calendarPage, (qb) =>
+            qb.select([
+              sql<string | null>`(array_agg(id::text))[1]`.as('startCursor'),
+              sql<string | null>`(array_agg(id::text))[count(*)::int]`.as('endCursor'),
+            ]),
+          )
+          .$if(!!calendarPage?.membershipAlbumId, (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['inAlbum']), sql.lit('{}')).as('inAlbum')),
+          )
           .$if(!!page, (qb) =>
             qb.select([
               sql<string | null>`(array_agg(cursor))[1]`.as('startCursor'),
