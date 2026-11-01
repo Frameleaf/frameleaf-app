@@ -1,5 +1,6 @@
-import type { TimeBucketAssetResponseDto } from '@frameleaf/sdk';
+import { TimeBucketDateType, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
 import { SvelteSet } from 'svelte/reactivity';
+import { getOrderingDate } from '$lib/utils/timeline-util';
 import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import type { TimelineDay } from './timeline-day.svelte';
 import type { TimelineManager } from './timeline-manager.svelte';
@@ -79,4 +80,21 @@ it('does not move the current months when a month a refresh replaced changes hei
   const detached = new TimelineMonth(manager, { year: 2020, month: 1 }, 0, true);
   detached.height = 300;
   expect(current.map((month) => month.top)).toEqual([0, 100]);
+});
+
+it('keeps upload and capture dates distinct when loading a bucket', () => {
+  const response = toResponseDto(timelineAssetFactory.build());
+  response.createdAt = ['2026-01-15T21:20:00.000Z'];
+  response.fileCreatedAt = ['2019-06-01T12:00:00.000Z'];
+  response.localOffsetHours = [-5];
+  const [asset] = bucketTimelineAssets(response);
+  expect(getOrderingDate(asset, TimeBucketDateType.Added)).toMatchObject({
+    year: 2026,
+    month: 1,
+    day: 15,
+    hour: 21,
+    minute: 20,
+  });
+  expect(asset.fileCreatedAt).toMatchObject({ year: 2019, month: 6, day: 1, hour: 12 });
+  expect(getOrderingDate(asset, TimeBucketDateType.Taken)).toMatchObject({ year: 2019, month: 6, day: 1, hour: 7 });
 });
