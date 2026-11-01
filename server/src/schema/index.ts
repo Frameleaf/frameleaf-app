@@ -159,6 +159,7 @@ import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audi
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
 import {
   AssetLocationInsightTable,
+  PhotoLocationEstimateTable,
   PhotoLocationScanItemTable,
   PhotoLocationScanTable,
 } from 'src/schema/tables/photo-locations.table.js';
@@ -275,6 +276,7 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    PhotoLocationEstimateTable,
     PhotoLocationScanTable,
     PhotoLocationScanItemTable,
     AssetLocationInsightTable,
@@ -581,6 +583,7 @@ export interface DB extends QueueDatabase {
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
   photo_location_scan: PhotoLocationScanTable;
+  photo_location_estimate: PhotoLocationEstimateTable;
   photo_location_scan_item: PhotoLocationScanItemTable;
   asset_location_insight: AssetLocationInsightTable;
   asset_palette: AssetPaletteTable;

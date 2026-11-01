@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, PrimaryGeneratedColumn, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { LocationScanSummary } from 'src/dtos/photo-locations.dto.js';
-import type { PhotoLocationInsight } from 'src/utils/photo-locations.js';
+import type { CloudLocationEstimate, LocationBilling, PhotoLocationInsight } from 'src/utils/photo-locations.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -15,10 +15,13 @@ export type PhotoLocationScanState = {
   cloudStarted?: boolean;
   resultOffset?: number;
   cleanupPending?: boolean;
+  cloudEstimateId?: string;
+  quoteExpiresAt?: string;
 };
 
 @Table('photo_location_scan')
 @Index({ name: 'photo_location_scan_owner_created_idx', columns: ['ownerId', 'createdAt'] })
+@Index({ name: 'photo_location_scan_estimate_idx', columns: ['estimateId'], unique: true })
 @Index({
   name: 'photo_location_scan_one_active_idx',
   columns: ['ownerId'],
@@ -30,6 +33,11 @@ export class PhotoLocationScanTable {
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE' }) ownerId!: string;
   @Column({ type: 'text' }) status!: LocationScanSummary['status'];
   @Column({ type: 'boolean' }) refresh!: boolean;
+  @Column({ type: 'uuid', nullable: true }) estimateId!: string | null;
+  @Column({ type: 'integer', default: 0 }) eligiblePhotos!: Generated<number>;
+  @Column({ type: 'integer', default: 0 }) selectedPhotos!: Generated<number>;
+  @Column({ type: 'double precision', default: 0 }) estimatedMicros!: Generated<number>;
+  @Column({ type: 'jsonb', nullable: true }) billing!: LocationBilling | null;
   @Column({ type: 'integer', default: 0 }) total!: Generated<number>;
   @Column({ type: 'integer', default: 0 }) processed!: Generated<number>;
   @Column({ type: 'integer', default: 0 }) matched!: Generated<number>;
@@ -45,6 +53,26 @@ export class PhotoLocationScanTable {
   @Column({ type: 'uuid', nullable: true }) leaseToken!: string | null;
   @Column({ type: 'timestamp with time zone', nullable: true }) leaseUntil!: Timestamp | null;
   @Column({ type: 'timestamp with time zone', default: () => 'now()' }) nextAttemptAt!: Generated<Timestamp>;
+  @CreateDateColumn() createdAt!: Generated<Timestamp>;
+}
+
+export type PhotoLocationEstimateRecord = {
+  quote: CloudLocationEstimate;
+  refresh: boolean;
+  maxPhotos?: number;
+  maxSpendMicros?: number;
+  cloudUrl: string;
+  instanceId: string;
+  linkedAt: string;
+};
+
+@Table('photo_location_estimate')
+@Index({ name: 'photo_location_estimate_ownerId_idx', columns: ['ownerId'] })
+export class PhotoLocationEstimateTable {
+  @PrimaryGeneratedColumn() id!: Generated<string>;
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE' }) ownerId!: string;
+  @Column({ type: 'jsonb' }) record!: PhotoLocationEstimateRecord;
+  @Column({ type: 'timestamp with time zone' }) expiresAt!: Timestamp;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
 }
 
