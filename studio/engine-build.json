@@ -794,7 +794,12 @@
       "path": "patches/0172-coderabbit-review-fixes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "d1122ca704546d354a353230140629cb0752a57d4e7366c64b5f988a682983be"
+    },
+    {
+      "path": "patches/0173-remove-upstream-community-links.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e6cfda280f13ecf28de2c809692308d54a9655082f705c3b2934c44f87285ef9"
     }
   ],
-  "sourceSha256": "49c10b84ca0ea183e5b1d8056ba0be96a06fcb57a88a5c80a6a64f52b920e9ee"
+  "sourceSha256": "cdcfa3a502ad4529a9b726c4de4b1d40a3cf132bb4da84112f10d6dbeafa4700"
 }

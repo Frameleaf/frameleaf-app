@@ -124,7 +124,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-685 Parakeet loads from the Frameleaf model mirror; changes no composition or raster producer.
     sourceSha256 === '6616439af729e6175b697ee55a182e3c472418e058cd5d7a4bc3e5d21227286f' ||
     // FL-722 CodeRabbit fixes (file LUT uniforms, roll lock, a comment); changes no composition or raster producer.
-    sourceSha256 === '49c10b84ca0ea183e5b1d8056ba0be96a06fcb57a88a5c80a6a64f52b920e9ee'
+    sourceSha256 === '49c10b84ca0ea183e5b1d8056ba0be96a06fcb57a88a5c80a6a64f52b920e9ee' ||
+    // FL-686 removes the upstream GitHub/Discord toolbar links; changes no composition or raster producer.
+    sourceSha256 === 'cdcfa3a502ad4529a9b726c4de4b1d40a3cf132bb4da84112f10d6dbeafa4700'
   )
     return {
       ...COMPOSITION_SOURCES,
