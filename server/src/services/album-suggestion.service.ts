@@ -202,6 +202,9 @@ export class AlbumSuggestionService extends BaseService {
       });
       if (!estimate) continue;
       const anchor = near.sort((a, b) => a.distance - b.distance)[0];
+      const dateTimeOriginal = `${estimate.localDateTime}${utcOffset(anchor.takenAt, anchor.localDateTime)}`;
+      // The final instant, offset applied, must not be after it was saved or received.
+      if (doubt.savedAt && new Date(dateTimeOriginal) > doubt.savedAt) continue;
       results.push({
         assetId: candidate.id,
         fileName: candidate.originalFileName,
@@ -209,7 +212,7 @@ export class AlbumSuggestionService extends BaseService {
         fileDate: localDay(candidate.localDateTime),
         savedAt: doubt.savedAt?.toISOString() ?? null,
         precision: estimate.precision,
-        dateTimeOriginal: `${estimate.localDateTime}${utcOffset(anchor.takenAt, anchor.localDateTime)}`,
+        dateTimeOriginal,
         reasons: estimate.reasons.map((reason) => toDto(reason, fileNames)),
       });
     }

@@ -150,6 +150,44 @@ describe(AlbumSuggestionService.name, () => {
       ]);
     });
 
+    it('leaves out a date that would come after the photo was received', async () => {
+      // Looks like the trip and has the album's people, so it is dated "during the trip": noon on Aug 11,
+      // Mountain time (18:00 UTC). It was received at 15:00 UTC that day, inside the trip window.
+      suggestions.getUndatedNeighbours.mockResolvedValue([{ assetId: 'wa', referenceId: 'a1', distance: 0.2 }]);
+      suggestions.getCandidates.mockResolvedValue([
+        candidate('wa', '2026-09-01T12:00:00', {
+          originalFileName: 'IMG-20260811-WA0001.jpg',
+          hasCameraDetails: false,
+          latitude: null,
+          longitude: null,
+          place: null,
+        }),
+      ]);
+      suggestions.getPeople.mockResolvedValue(
+        new Map([
+          ['a1', [{ id: 'p', name: 'Emma' }]],
+          ['wa', [{ id: 'p', name: 'Emma' }]],
+        ]),
+      );
+      const { needDate } = await sut.getSuggestions(auth, albumId);
+      // WhatsApp names give only the day (read as its last second, UTC), so this one is kept...
+      expect(needDate.map(({ precision, dateTimeOriginal }) => [precision, dateTimeOriginal])).toEqual([
+        ['trip', '2026-08-11T12:00:00-06:00'],
+      ]);
+
+      // ...but a Facebook save at 15:00 UTC on Aug 11 is before that noon, so it is left out.
+      suggestions.getCandidates.mockResolvedValue([
+        candidate('wa', '2026-09-01T12:00:00', {
+          originalFileName: 'FB_IMG_1786460400000.jpg',
+          hasCameraDetails: false,
+          latitude: null,
+          longitude: null,
+          place: null,
+        }),
+      ]);
+      await expect(sut.getSuggestions(auth, albumId)).resolves.toMatchObject({ needDate: [] });
+    });
+
     it('leaves out a photo saved before the trip started', async () => {
       suggestions.getUndatedNeighbours.mockResolvedValue([
         { assetId: 'wa', referenceId: 'a3', distance: 0.02 },
