@@ -231,10 +231,13 @@ describe(StorageRepository.name, () => {
     it('starts a streamed entry only once the streamed entry before it is done (FL-721)', async () => {
       const zip = sut.createZipStream();
       const started: string[] = [];
+      let firstStarted!: () => void;
+      const first = new Promise<void>((resolve) => (firstStarted = resolve));
       const lazy = (name: string) =>
         Readable.from(
           (function* () {
             started.push(name);
+            firstStarted();
             // more than the stream buffers hold, like a real file, so it stays open until read
             for (let index = 0; index < 64; index++) {
               yield Buffer.alloc(65_536, name);
@@ -249,6 +252,8 @@ describe(StorageRepository.name, () => {
       zip.addFile(lazy('a'), 'a.jpg');
       zip.addFile(lazy('b'), 'b.jpg');
       const finalized = zip.finalize();
+      await first;
+      // give a wrongly started second stream time to show up
       await new Promise((resolve) => setTimeout(resolve, 20));
       // nothing reads the archive yet, so the second stream must not have been opened
       expect(started).toEqual(['a']);

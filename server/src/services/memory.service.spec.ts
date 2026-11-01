@@ -1361,6 +1361,32 @@ describe(MemoryService.name, () => {
         expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(dirname(plain), { recursive: true, force: true });
       });
 
+      it('fails rather than write decrypted bytes to disk when an item is sealed after the scan', async () => {
+        const path = join(dir, 'IMG_2.jpg');
+        await fs.writeFile(path, 'pixels');
+        const asset = AssetFactory.create({ ownerId, originalPath: path });
+        const run = exportRun({ ownerId, assetIds: [asset.id], assetCount: 1 });
+        mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+        mocks.asset.getByIds.mockResolvedValue([asset] as never);
+        // the seal job replaces the original between the scan and the read
+        mocks.storage.realpath.mockImplementation(async () => {
+          await fs.rm(path);
+          const sealed = await sealFile('IMG_2.jpg', Buffer.from('pixels'));
+          clearLockedPathCache();
+          return sealed;
+        });
+        const { addFile } = givenZip();
+
+        await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Failed);
+
+        expect(addFile).not.toHaveBeenCalled();
+        expect(mocks.memory.updateExport).toHaveBeenCalledWith(
+          run.id,
+          expect.objectContaining({ error: expect.stringContaining('encrypted while the export ran') }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.zip\.partial$/));
+      });
+
       it('serves an encrypted export only while the owner key is loaded', async () => {
         const path = await sealFile('export.zip', Buffer.from('zip bytes'));
         mocks.memory.getExport.mockResolvedValue(

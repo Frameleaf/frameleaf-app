@@ -1024,6 +1024,11 @@ export class MemoryService extends BaseService {
         const input = await lockedArchiveInput(realpath, claimed.ownerId);
         if (typeof input !== 'string') {
           lockedInputs.push(input);
+          if (!workDir) {
+            // sealed after the scan above chose an ordinary-disk archive: fail rather than write its
+            // decrypted bytes there (the run can be started again and then builds in the Locked folder)
+            throw new Error('An item was encrypted while the export ran; start the export again');
+          }
           // a decryption error fails the archive (and so this run) instead of going unheard
           input.once('error', (error) => zip?.stream.destroy(error));
         }
