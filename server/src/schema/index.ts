@@ -41,6 +41,10 @@ import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
+import {
+  AlbumSuggestionAutoAddTable,
+  AlbumSuggestionDismissalTable,
+} from 'src/schema/tables/album-suggestion.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -201,10 +205,6 @@ import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.ta
 import { SharedSpaceMentionTable } from 'src/schema/tables/shared-space-mention.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { SharedSpaceVisitTable } from 'src/schema/tables/shared-space-visit.table.js';
-import {
-  AlbumSuggestionAutoAddTable,
-  AlbumSuggestionDismissalTable,
-} from 'src/schema/tables/album-suggestion.table.js';
 import { SmartAlbumAssetTable } from 'src/schema/tables/smart-album-asset.table.js';
 import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusion.table.js';
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
