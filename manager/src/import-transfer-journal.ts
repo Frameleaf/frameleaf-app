@@ -58,8 +58,10 @@ export class ImportTransferJournal {
       PRIMARY KEY(operation_id,file_id), UNIQUE(operation_id,destination_root,destination_path));`);
   }
   private atomic<T>(operationId: string, body: () => T): T {
-    this.store.db.exec('BEGIN IMMEDIATE');
+    let began = false;
     try {
+      this.store.db.exec('BEGIN IMMEDIATE');
+      began = true;
       const row = this.store.db
         .prepare('SELECT value FROM operations WHERE id=? AND active=1')
         .get(operationId);
@@ -74,7 +76,13 @@ export class ImportTransferJournal {
       this.store.db.exec('COMMIT');
       return result;
     } catch (error) {
-      this.store.db.exec('ROLLBACK');
+      if (began) {
+        try {
+          this.store.db.exec('ROLLBACK');
+        } catch {
+          // SQLite may already have rolled back; retain the original safe failure.
+        }
+      }
       throw error instanceof Refusal
         ? error
         : new Refusal('import_journal_unavailable');

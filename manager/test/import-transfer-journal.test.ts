@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,60 @@ import { Store } from '../src/store.js';
 import { ImportTransferJournal } from '../src/import-transfer-journal.js';
 
 const binding = { manifestSha256: 'a'.repeat(64), planSha256: 'b'.repeat(64) };
+test('native SQLite automatic transaction rollback returns a stable error', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'import-journal-'));
+  const store = new Store(directory);
+  try {
+    const operation = store.start('import', 'request', {}).operation;
+    const journal = new ImportTransferJournal(store);
+    store.db.exec(
+      "CREATE TRIGGER fail_import BEFORE INSERT ON library_import_runs BEGIN SELECT RAISE(ROLLBACK,'private synthetic database detail'); END",
+    );
+    assert.throws(
+      () => journal.begin(operation.id, binding),
+      /import_journal_unavailable/,
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+test('automatic rollback failure preserves safe refusals and redacts database details', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'import-journal-'));
+  const store = new Store(directory);
+  try {
+    const operation = store.start('import', 'request', {}).operation;
+    const journal = new ImportTransferJournal(store);
+    journal.begin(operation.id, binding);
+    const exec = store.db.exec.bind(store.db);
+    const patched = mock.method(store.db, 'exec', (sql: string) => {
+      if (sql === 'ROLLBACK') {
+        exec(sql);
+        throw new Error('private rollback details');
+      }
+      return exec(sql);
+    });
+    assert.throws(
+      () =>
+        journal.begin(operation.id, { ...binding, planSha256: 'd'.repeat(64) }),
+      /import_plan_changed/,
+    );
+    patched.mock.restore();
+    const begin = mock.method(store.db, 'exec', (sql: string) => {
+      if (sql === 'BEGIN IMMEDIATE') throw new Error('private begin details');
+      return exec(sql);
+    });
+    assert.throws(
+      () => journal.begin(operation.id, binding),
+      /import_journal_unavailable/,
+    );
+    begin.mock.restore();
+  } finally {
+    mock.restoreAll();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 const file = {
   id: 'physical-file-1',
   mode: 'relocate' as const,
