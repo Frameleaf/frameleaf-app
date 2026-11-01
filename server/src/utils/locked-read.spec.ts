@@ -9,6 +9,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import {
   LockedKeyUnavailableError,
+  LockedTmpTooSmallError,
   LockedTmpUnavailableError,
   RangeNotSatisfiableError,
   assertLockedTmpIsTmpfs,
@@ -81,6 +82,7 @@ describe('locked-read', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     lockedKeys.clear();
     vi.unstubAllEnvs();
     resetLockedTmpCheck();
@@ -200,6 +202,42 @@ describe('locked-read', () => {
     it('without a key, throws LockedKeyUnavailableError and writes nothing', async () => {
       await expect(withPlainCopy(sealed, () => Promise.resolve())).rejects.toThrow(LockedKeyUnavailableError);
       await expect(fs.readdir(tmp)).rejects.toThrow();
+    });
+
+    it('fails with a clear, lasting error when the temporary folder cannot hold the file', async () => {
+      loadOwner();
+      await fs.mkdir(tmp, { recursive: true });
+      // 4 KiB free: far less than the three segments the file decrypts to
+      vi.spyOn(fs, 'statfs').mockResolvedValue({ bsize: 4096, bavail: 1 } as never);
+      const fn = vi.fn();
+      const execution = {
+        claim: { id: 'job-1', attempt: 1, data: {} },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+
+      const error = await queueExecution.run(execution, () =>
+        withPlainCopy(sealed, fn).catch((error: unknown) => error),
+      );
+
+      expect(error).toBeInstanceOf(LockedTmpTooSmallError);
+      // never mistaken for waiting for the key
+      expect(error).not.toBeInstanceOf(LockedKeyUnavailableError);
+      expect(execution.dependencyReason).toBeUndefined();
+      expect((error as Error).message).toContain('FRAMELEAF_LOCKED_TMP');
+      expect((error as Error).message).toContain('4.0 KiB free');
+      expect(fn).not.toHaveBeenCalled();
+      // nothing written, and never a fallback to another folder
+      expect(await fs.readdir(tmp)).toEqual([]);
+    });
+
+    it('turns a full temporary folder while decrypting into the same lasting error', async () => {
+      loadOwner();
+      vi.spyOn(fs, 'statfs').mockResolvedValue({ bsize: 4096, bavail: 1_000_000 } as never);
+      const full = Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+      vi.spyOn(fs, 'utimes').mockRejectedValueOnce(full);
+
+      await expect(withPlainCopy(sealed, () => Promise.resolve())).rejects.toThrow(LockedTmpTooSmallError);
+      expect(await fs.readdir(tmp)).toEqual([]);
     });
 
     it('refuses (defers) when the temporary folder is not RAM-backed and the override is not set', async () => {

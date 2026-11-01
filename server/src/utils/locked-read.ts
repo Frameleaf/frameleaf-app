@@ -106,6 +106,41 @@ export class LockedTmpUnavailableError extends LockedKeyUnavailableError {
   }
 }
 
+/**
+ * `FRAMELEAF_LOCKED_TMP` hasn't the room for this plain copy. A lasting failure, never a deferral: no key
+ * load makes room, and plaintext never goes to an ordinary disk instead (only
+ * `FRAMELEAF_LOCKED_TMP_ALLOW_DISK=true` puts the folder there at all).
+ */
+export class LockedTmpTooSmallError extends Error {
+  name = 'LockedTmpTooSmallError';
+  constructor(folder: string, free: number | null, needed: number) {
+    super(
+      `The Locked temporary folder ${folder} (FRAMELEAF_LOCKED_TMP) ${free === null ? 'ran out of space' : `has ${formatBytes(free)} free`}; this file needs ${formatBytes(needed)}. Give the server container more shared memory (shm_size, 2gb by default) or set FRAMELEAF_LOCKED_TMP to a larger tmpfs.`,
+    );
+  }
+}
+
+const formatBytes = (bytes: number) => {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
+};
+
+/** Free bytes in `folder` for an unprivileged writer; null when the filesystem can't say. */
+const freeBytes = async (folder: string): Promise<number | null> => {
+  try {
+    const { bavail, bsize } = await fs.statfs(folder);
+    return Number(bavail) * Number(bsize);
+  } catch {
+    return null;
+  }
+};
+
 /** The requested byte range lies outside the decrypted file. */
 export class RangeNotSatisfiableError extends Error {
   name = 'RangeNotSatisfiableError';
@@ -562,20 +597,33 @@ export async function withPlainCopy<T>(
     throw error;
   }
   const { path: root } = lockedTmpConfig();
+  // a sealed video or RAW can outgrow a small /dev/shm (Docker's default is 64 MB): say so plainly
+  const free = await freeBytes(root);
+  if (free !== null && header.plaintextLength > free) {
+    throw new LockedTmpTooSmallError(root, free, header.plaintextLength);
+  }
   const folder = await fs.mkdtemp(join(root, `${COPY_PREFIX}${process.pid}-`));
   try {
     await fs.chmod(folder, 0o700);
     const plainPath = join(folder, basename(path) || 'file');
-    const privateKey = Buffer.from(held.privateKey);
     try {
-      // created exclusively with mode 0600 (locked-crypto `writeOutput`)
-      await decryptFile(path, plainPath, privateKey);
-    } finally {
-      privateKey.fill(0);
+      const privateKey = Buffer.from(held.privateKey);
+      try {
+        // created exclusively with mode 0600 (locked-crypto `writeOutput`)
+        await decryptFile(path, plainPath, privateKey);
+      } finally {
+        privateKey.fill(0);
+      }
+      // tools that read the file's dates (exiftool's FileModifyDate) see the stored file's, not now
+      const { atime, mtime } = await fs.stat(path);
+      await fs.utimes(plainPath, atime, mtime);
+    } catch (error) {
+      // other copies took the room since the check above
+      if ((error as NodeJS.ErrnoException).code === 'ENOSPC') {
+        throw new LockedTmpTooSmallError(root, null, header.plaintextLength);
+      }
+      throw error;
     }
-    // tools that read the file's dates (exiftool's FileModifyDate) see the stored file's, not now
-    const { atime, mtime } = await fs.stat(path);
-    await fs.utimes(plainPath, atime, mtime);
     return await fn(plainPath);
   } finally {
     await fs.rm(folder, { recursive: true, force: true });
