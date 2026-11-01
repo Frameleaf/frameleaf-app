@@ -211,8 +211,9 @@ export const estimateDate = (
   const best = neighbours[0];
   const segment = best ? segmentAt(trip, best.takenAt) : trip.segments[0];
   if (!segment) return;
-  // It can't have been taken after it was saved or received.
-  if (candidate.savedAt && candidate.savedAt < segment.from) return;
+  // It can't have been taken after it was saved or received: before a dated match, before the trip otherwise.
+  const anchoredBy = best && best.distance <= SAME_SCENE_DISTANCE ? best.takenAt : segment.from;
+  if (candidate.savedAt && candidate.savedAt < anchoredBy) return;
 
   const reasons: SuggestionReason[] = [];
   let signals = 0;

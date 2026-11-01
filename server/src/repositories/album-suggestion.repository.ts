@@ -81,6 +81,22 @@ export class AlbumSuggestionRepository {
       .execute();
   }
 
+  /** When the album's photos (not Locked) were taken, for a cheap check before reading them all. */
+  async getTimeSpan(albumId: string): Promise<{ from: Date; to: Date } | undefined> {
+    const row = await this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
+      .where('album_asset.albumId', '=', albumId)
+      .where('photo.deletedAt', 'is', null)
+      .where(isNotLocked('photo'))
+      .select([
+        sql<Date | null>`min(photo."fileCreatedAt")`.as('from'),
+        sql<Date | null>`max(photo."fileCreatedAt")`.as('to'),
+      ])
+      .executeTakeFirst();
+    return row?.from && row.to ? { from: new Date(row.from), to: new Date(row.to) } : undefined;
+  }
+
   /** `ownerId`'s photos taken inside the windows that are not in the album and were not dismissed. */
   getTripCandidates(ownerId: string, albumId: string, windows: { from: Date; to: Date }[]): Promise<CandidateRow[]> {
     if (windows.length === 0) return Promise.resolve([]);

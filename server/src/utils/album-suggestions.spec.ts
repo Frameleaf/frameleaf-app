@@ -149,6 +149,18 @@ describe('estimateDate', () => {
     ).toMatchObject({ precision: 'day', localDateTime: '2026-08-13T12:00:00' });
   });
 
+  it('never dates a photo after the moment it was received', () => {
+    // Received on the 13th (late UTC), but it matches photos taken on the 14th.
+    expect(
+      estimateDate(trip, {
+        neighbours: [neighbour('a4', 0.03, '2026-08-14T17:00:00'), neighbour('a2', 0.04, '2026-08-14T17:00:00')],
+        people: [],
+        place: null,
+        savedAt: at('2026-08-13T23:59:59Z'),
+      }),
+    ).toBeUndefined();
+  });
+
   it('never dates a photo after it was saved', () => {
     expect(
       estimateDate(trip, {

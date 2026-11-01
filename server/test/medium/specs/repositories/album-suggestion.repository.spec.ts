@@ -85,6 +85,7 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
     await sut.dismiss(albumId, [dismissed]);
 
     const photos = await sut.getTripPhotos(albumId);
+    await expect(sut.getTimeSpan(albumId)).resolves.toEqual({ from: photos[0].takenAt, to: photos.at(-1)!.takenAt });
     expect(photos.map(({ id }) => id)).toEqual(tripIds);
     expect(photos[0]).toMatchObject({ ...LAKE, place: 'Lake Louise', make: 'Apple' });
 

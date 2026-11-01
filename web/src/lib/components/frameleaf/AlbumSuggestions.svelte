@@ -13,6 +13,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
+    BulkIdErrorReason,
     addAssetsToAlbum,
     dismissAlbumSuggestions,
     getAlbumSuggestions,
@@ -202,6 +203,7 @@
     saving = true;
     let added = 0;
     let fixed = 0;
+    let failed = 0;
     try {
       if (autoAdd !== suggestions?.autoAdd) {
         await setAlbumSuggestionAutoAdd({ id: albumId, albumSuggestionAutoAddDto: { enabled: autoAdd } });
@@ -216,6 +218,8 @@
           bulkIdsDto: { ids: adding.map(({ assetId }) => assetId) },
         });
         added = results.filter(({ success }) => success).length;
+        // Already in the album is fine; anything else stays suggested so it can be tried again.
+        failed = results.filter(({ success, error }) => !success && error !== BulkIdErrorReason.Duplicate).length;
       }
       toastManager.primary(
         [
@@ -226,10 +230,14 @@
           .filter(Boolean)
           .join(' '),
       );
-      open = false;
-      hidden = true;
+      if (failed > 0) {
+        toastManager.danger($t('frameleaf_album_suggestions_add_failed', { values: { count: failed } }));
+      } else {
+        open = false;
+        hidden = true;
+      }
       onChanged();
-      void load(albumId);
+      await load(albumId);
     } catch (error) {
       handleError(error, $t('frameleaf_album_suggestions_apply_failed'));
       if (added > 0 || fixed > 0) {
@@ -237,6 +245,18 @@
       }
     } finally {
       saving = false;
+    }
+  };
+
+  const turnOffAutoAdd = async () => {
+    try {
+      await setAlbumSuggestionAutoAdd({ id: albumId, albumSuggestionAutoAddDto: { enabled: false } });
+      autoAdd = false;
+      if (suggestions) {
+        suggestions = { ...suggestions, autoAdd: false };
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_album_suggestions_auto_add_off_failed'));
     }
   };
 
@@ -273,6 +293,13 @@
     </p>
     <Button variant="primary" onclick={openReview}>{$t('frameleaf_album_suggestions_review')}</Button>
     <Button onclick={() => (hidden = true)}>{$t('frameleaf_album_suggestions_not_now')}</Button>
+  </section>
+{:else if !hidden && suggestions?.autoAdd}
+  <!-- Nothing waiting, but new photos are still being added: keep the way to stop that in reach. -->
+  <section class="pl-notice ma-notice" role="status" aria-label={$t('frameleaf_album_suggestions_label')}>
+    <Icon icon={mdiAutoFix} size="18" aria-hidden />
+    <p><span>{$t('frameleaf_album_suggestions_auto_add_active')}</span></p>
+    <Button onclick={() => void turnOffAutoAdd()}>{$t('frameleaf_album_suggestions_auto_add_turn_off')}</Button>
   </section>
 {/if}
 

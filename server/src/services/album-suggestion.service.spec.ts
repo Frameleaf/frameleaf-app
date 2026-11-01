@@ -61,6 +61,7 @@ describe(AlbumSuggestionService.name, () => {
       isAutoAdd: vitest.fn().mockResolvedValue(false),
       setAutoAdd: vitest.fn(),
       getAutoAddAlbumIds: vitest.fn().mockResolvedValue([]),
+      getTimeSpan: vitest.fn().mockResolvedValue({ from: trip[0].takenAt, to: trip.at(-1)!.takenAt }),
     } as unknown as Mocked<AlbumSuggestionRepository>;
     Object.assign(mocks.album, { suggestions });
     mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
@@ -215,6 +216,27 @@ describe(AlbumSuggestionService.name, () => {
         }),
       ]);
       await sut.handleAutoAdd({ id: 'phone' });
+      expect(addAssets).not.toHaveBeenCalled();
+
+      // A saved or received photo waits for review even when it was saved during the trip, there.
+      suggestions.getCandidates.mockResolvedValue([
+        candidate('fb', '2026-08-13T18:00:00', {
+          originalFileName: 'FB_IMG_1786640000000.jpg',
+          hasCameraDetails: false,
+        }),
+      ]);
+      await sut.handleAutoAdd({ id: 'fb' });
+      expect(addAssets).not.toHaveBeenCalled();
+    });
+
+    it('does not read the album for photos taken far from the trip', async () => {
+      const addAssets = vitest.spyOn(AlbumService.prototype, 'addAssets').mockResolvedValue([]);
+      mocks.asset.getById.mockResolvedValue({ id: 'later', ownerId: auth.user.id } as never);
+      mocks.user.get.mockResolvedValue({ ...auth.user, quotaUsageInBytes: 0, quotaSizeInBytes: null } as never);
+      suggestions.getAutoAddAlbumIds.mockResolvedValue([albumId]);
+      suggestions.getCandidates.mockResolvedValue([candidate('later', '2026-12-25T18:00:00')]);
+      await sut.handleAutoAdd({ id: 'later' });
+      expect(suggestions.getTripPhotos).not.toHaveBeenCalled();
       expect(addAssets).not.toHaveBeenCalled();
     });
   });

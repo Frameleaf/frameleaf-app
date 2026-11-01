@@ -27,7 +27,7 @@ export class AlbumSuggestionController {
   }
 
   @Post(':id/suggestions/dismiss')
-  @Authenticated({ permission: Permission.AlbumRead })
+  @Authenticated({ permission: Permission.AlbumAssetCreate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Dismiss album suggestions',
@@ -43,7 +43,7 @@ export class AlbumSuggestionController {
   }
 
   @Put(':id/suggestions/auto-add')
-  @Authenticated({ permission: Permission.AlbumRead })
+  @Authenticated({ permission: Permission.AlbumAssetCreate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Keep adding photos from this trip',

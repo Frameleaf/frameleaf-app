@@ -12480,7 +12480,7 @@
             "state": "Added"
           }
         ],
-        "x-immich-permission": "album.read"
+        "x-immich-permission": "albumAsset.create"
       }
     },
     "/albums/{id}/suggestions/dismiss": {
@@ -12535,7 +12535,7 @@
             "state": "Added"
           }
         ],
-        "x-immich-permission": "album.read"
+        "x-immich-permission": "albumAsset.create"
       }
     },
     "/albums/{id}/user/{userId}": {

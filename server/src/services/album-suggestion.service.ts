@@ -18,6 +18,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   type SuggestionReason,
+  TRIP_PADDING_MS,
   type Trip,
   describeTrip,
   estimateDate,
@@ -105,7 +106,16 @@ export class AlbumSuggestionService extends BaseService {
     const suggestions = this.albumRepository.suggestions;
     for (const albumId of await suggestions.getAutoAddAlbumIds(owner.id)) {
       const [candidate] = await suggestions.getCandidates(owner.id, albumId, [id]);
-      if (!candidate) continue;
+      // A photo whose date can't be trusted is only ever suggested for review, never added.
+      if (!candidate || suspiciousDate(candidate.originalFileName, candidate.hasCameraDetails)) continue;
+      // Most new photos are nowhere near the trip: check its span before reading the album's photos.
+      const span = await suggestions.getTimeSpan(albumId);
+      if (
+        !span ||
+        candidate.takenAt.getTime() < span.from.getTime() - TRIP_PADDING_MS ||
+        candidate.takenAt.getTime() > span.to.getTime() + TRIP_PADDING_MS
+      )
+        continue;
       const trip = describeTrip(await suggestions.getTripPhotos(albumId));
       if (!trip || !matchTripCandidate(trip, candidate)?.likely) continue;
       try {

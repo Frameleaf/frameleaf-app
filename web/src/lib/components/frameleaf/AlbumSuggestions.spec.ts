@@ -106,6 +106,34 @@ describe('AlbumSuggestions', () => {
     );
   });
 
+  it('keeps photos that could not be added, to try again', async () => {
+    const { toastManager } = await import('@frameleaf/ui');
+    sdkMock.addAssetsToAlbum.mockResolvedValue([
+      { id: 'trip-1', success: true },
+      { id: 'fb-1', success: false, error: 'no_permission' as never },
+    ]);
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
+    await waitFor(() =>
+      expect(toastManager.danger).toHaveBeenCalledWith("1 photo couldn't be added. They're still here to try again."),
+    );
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('keeps the way to stop adding new photos when nothing is waiting', async () => {
+    sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, autoAdd: true, fromTrip: [], needDate: [] });
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Turn off' }));
+    await waitFor(() =>
+      expect(sdkMock.setAlbumSuggestionAutoAdd).toHaveBeenCalledWith({
+        id: 'album',
+        albumSuggestionAutoAddDto: { enabled: false },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
   it('remembers a photo that is not from the trip', async () => {
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
     await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
