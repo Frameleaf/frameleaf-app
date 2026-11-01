@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sourceKinds } from './manifest.js';
-import { qualificationTargets } from './qualification.js';
+import { sourceKinds } from 'src/library-import/manifest.js';
+import { qualificationTargets } from 'src/library-import/qualification.js';
 
 describe('combined library import release boundary', () => {
   it('tracks exactly the ten approved source families', () => {

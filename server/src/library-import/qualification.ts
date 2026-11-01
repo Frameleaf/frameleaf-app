@@ -1,4 +1,4 @@
-import { type SourceKind } from './manifest.js';
+import { type SourceKind } from 'src/library-import/manifest.js';
 
 /** Research targets are not source compatibility claims. Promotion requires hosted and DSM qualification. */
 export const qualificationTargets: Readonly<Record<SourceKind, string | null>> = Object.freeze({

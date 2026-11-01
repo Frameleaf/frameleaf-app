@@ -22,7 +22,8 @@ const path = z
   .max(4096)
   .refine(
     (value) =>
-      !/[\\\x00-\x1f]/u.test(value) &&
+      !value.includes('\\') &&
+      [...value].every((character) => character >= ' ') &&
       !value.startsWith('/') &&
       !/^[a-z]:/iu.test(value) &&
       value.split('/').every((part) => part !== '' && part !== '.' && part !== '..'),
@@ -120,7 +121,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
     if (!indexes.users.has(asset.ownerId)) fail('UNKNOWN_OWNER');
     if (new Set(asset.fileIds).size !== asset.fileIds.length) fail('DUPLICATE_FILE_REFERENCE');
     if (asset.fileIds.some((fileId) => !files.has(fileId))) fail('UNKNOWN_FILE');
-    if (!asset.fileIds.some((fileId) => files.get(fileId)?.role === 'original')) fail('MISSING_ORIGINAL');
+    if (asset.fileIds.every((fileId) => files.get(fileId)?.role !== 'original')) fail('MISSING_ORIGINAL');
   }
   for (const album of value.albums) {
     if (!indexes.users.has(album.ownerId)) fail('UNKNOWN_OWNER');
@@ -139,7 +140,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
 };
 
 const canonicalJson = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
   if (value !== null && typeof value === 'object') {
     return `{${Object.entries(value)
       .filter(([, item]) => item !== undefined)

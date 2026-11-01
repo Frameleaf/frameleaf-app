@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseImportManifest, manifestFingerprint } from './manifest.js';
+import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 
 const manifest = () => ({
   format: 'frameleaf-library-import',
@@ -45,14 +45,22 @@ describe('library import manifest trust boundary', () => {
     value.inventory.revisionAfter = 'rev-2';
     expect(() => parseImportManifest(value)).toThrow();
   });
-  it.each(['../outside.jpg', '/absolute.jpg', 'a/../b.jpg', 'a\\b.jpg', 'a//b.jpg', './photo.jpg', 'a/./b.jpg'])(
-    'refuses unsafe bundle path %s',
-    (path) => {
-      const value = manifest();
-      value.files[0].path = path;
-      expect(() => parseImportManifest(value)).toThrow();
-    },
-  );
+  it.each([
+    '../outside.jpg',
+    '/absolute.jpg',
+    'a/../b.jpg',
+    String.raw`a\b.jpg`,
+    'a//b.jpg',
+    './photo.jpg',
+    'a/./b.jpg',
+    'a/\0b.jpg',
+    'a/\nb.jpg',
+    'a/\tb.jpg',
+  ])('refuses unsafe bundle path %s', (path) => {
+    const value = manifest();
+    value.files[0].path = path;
+    expect(() => parseImportManifest(value)).toThrow();
+  });
   it('refuses unknown properties instead of discarding unsupported privacy fields', () => {
     const value = { ...manifest(), access: 'unknown' };
     expect(() => parseImportManifest(value)).toThrow();
@@ -108,10 +116,10 @@ describe('library import manifest trust boundary', () => {
     const value = manifest();
     value.users.push({ id: 'bob', name: 'Bob' });
     const parsed = parseImportManifest(value);
-    const reversed = Object.fromEntries(Object.entries(parsed).reverse());
+    const reversed = Object.fromEntries(Object.entries(parsed).toReversed());
     expect(manifestFingerprint(parsed)).toBe(manifestFingerprint(parseImportManifest(reversed)));
     const reordered = parseImportManifest(value);
-    reordered.users.reverse();
+    reordered.users = reordered.users.toReversed();
     expect(manifestFingerprint(parsed)).not.toBe(manifestFingerprint(reordered));
   });
   it('pins metadata and array ordering while ignoring object property order', () => {
