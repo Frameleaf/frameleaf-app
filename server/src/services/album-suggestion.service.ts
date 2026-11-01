@@ -28,6 +28,7 @@ import {
   suspiciousDate,
   utcOffset,
 } from 'src/utils/album-suggestions.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 const MAX_PLACES = 3;
 
@@ -48,7 +49,7 @@ export class AlbumSuggestionService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
     const suggestions = this.albumRepository.suggestions;
     const autoAdd = await suggestions.isAutoAdd(id, auth.user.id);
-    const photos = await suggestions.getTripPhotos(id, auth.user.id);
+    const photos = await suggestions.getTripPhotos(id, auth.user.id, getHiddenContentQueryOptions(auth));
     const trip = describeTrip(photos);
     if (!trip) return { autoAdd, tripStart: null, tripEnd: null, places: [], fromTrip: [], needDate: [] };
 

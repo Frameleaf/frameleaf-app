@@ -132,8 +132,19 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
       from: new Date(Date.UTC(2026, 7, 12, 18)),
       to: new Date(Date.UTC(2026, 7, 12, 18)),
     });
-    // Its owner still sees it in their own trip.
+    // Its owner still sees it in their own trip, unless their session isn't unlocked.
     expect((await sut.getTripPhotos(albumId, member.id)).map(({ id }) => id).sort()).toEqual([own, hidden].sort());
+    const locked = {
+      userId: member.id,
+      includeNsfw: false,
+      tagIds: [tag.id],
+      personIds: [],
+      petIds: [],
+      scope: 'owned',
+    };
+    expect(
+      (await sut.getTripPhotos(albumId, member.id, { hiddenContent: locked as never })).map(({ id }) => id),
+    ).toEqual([own]);
   });
 
   it('finds saved and undated photos that look like album photos', async () => {

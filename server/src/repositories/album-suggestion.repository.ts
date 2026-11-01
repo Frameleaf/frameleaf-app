@@ -1,8 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { LibraryScope } from 'src/enum.js';
 import { LOOKS_LIKE_DISTANCE } from 'src/utils/album-suggestions.js';
-import { hiddenByOwnerRules, hiddenFromOthers, validLandmarkMatch } from 'src/utils/database.js';
+import {
+  hiddenByOwnerRules,
+  hiddenFromOthers,
+  validLandmarkMatch,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
 
@@ -63,26 +69,30 @@ export class AlbumSuggestionRepository {
    * The album's photos that `viewerId` may see, to describe its trip: not Locked, and not another member's
    * photo that its owner's Locked rules hide (FL-446), since trip dates, places and matches reveal them.
    */
-  getTripPhotos(albumId: string, viewerId: string): Promise<TripPhotoRow[]> {
-    return this.db
-      .selectFrom('album_asset')
-      .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
-      .leftJoin('asset_exif as photo_exif', 'photo_exif.assetId', 'photo.id')
-      .where('album_asset.albumId', '=', albumId)
-      .where('photo.deletedAt', 'is', null)
-      .where(isNotLocked('photo'))
-      .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
-      .select([
-        'photo.id',
-        'photo.fileCreatedAt as takenAt',
-        'photo.localDateTime',
-        'photo_exif.make',
-        'photo_exif.model',
-        ...this.located('photo'),
-      ])
-      .orderBy('photo.fileCreatedAt')
-      .limit(MAX_TRIP_PHOTOS)
-      .execute();
+  getTripPhotos(albumId: string, viewerId: string, options?: HiddenContentQueryOptions): Promise<TripPhotoRow[]> {
+    return (
+      this.db
+        .selectFrom('album_asset')
+        .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
+        .leftJoin('asset_exif as photo_exif', 'photo_exif.assetId', 'photo.id')
+        .where('album_asset.albumId', '=', albumId)
+        .where('photo.deletedAt', 'is', null)
+        .where(isNotLocked('photo'))
+        .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
+        // The session's own filter too: a session that isn't unlocked doesn't see its own Locked-rule matches.
+        .$call((qb) => withHiddenContentFilter(qb, options, 'photo'))
+        .select([
+          'photo.id',
+          'photo.fileCreatedAt as takenAt',
+          'photo.localDateTime',
+          'photo_exif.make',
+          'photo_exif.model',
+          ...this.located('photo'),
+        ])
+        .orderBy('photo.fileCreatedAt')
+        .limit(MAX_TRIP_PHOTOS)
+        .execute()
+    );
   }
 
   /** When the album's photos (not Locked) were taken, for a cheap check before reading them all. */
