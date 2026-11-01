@@ -28,6 +28,7 @@ import {
   partner_delete_audit,
   person_delete_audit,
   person_group_delete_audit,
+  photo_location_invalidate,
   stack_delete_audit,
   updated_at,
   user_delete_audit,
@@ -157,6 +158,12 @@ import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
 import {
+  AssetLocationInsightTable,
+  PhotoLocationEstimateTable,
+  PhotoLocationScanItemTable,
+  PhotoLocationScanTable,
+} from 'src/schema/tables/photo-locations.table.js';
+import {
   PhotoSourceResourceTable,
   PhotoSourceRunTable,
   PhotoSourceTable,
@@ -269,6 +276,10 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    PhotoLocationEstimateTable,
+    PhotoLocationScanTable,
+    PhotoLocationScanItemTable,
+    AssetLocationInsightTable,
     DesktopClipIndexTable,
     DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
@@ -483,6 +494,7 @@ export class ImmichDatabase {
   ];
 
   functions = [
+    photo_location_invalidate,
     desktop_clip_producer_guard,
     immich_uuid_v7,
     updated_at,
@@ -570,6 +582,10 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  photo_location_scan: PhotoLocationScanTable;
+  photo_location_estimate: PhotoLocationEstimateTable;
+  photo_location_scan_item: PhotoLocationScanItemTable;
+  asset_location_insight: AssetLocationInsightTable;
   asset_palette: AssetPaletteTable;
   asset_palette_swatch: AssetPaletteSwatchTable;
   asset_annotation: AssetAnnotationTable;

@@ -33,6 +33,7 @@ export class AssetExifFactory {
       iso: 947,
       latitude: 30.267334570570195,
       longitude: -97.78983353428207,
+      gpsAccuracyM: null,
       lensModel: null,
       livePhotoCID: null,
       make: 'Google',
