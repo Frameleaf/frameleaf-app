@@ -1,6 +1,6 @@
 # Library import recovery records
 
-The shared migration workflow is under development. `ImportTransferJournal` is an internal Manager record store; it does not copy, move or adopt files and is not exposed by a command or UI. Existing Immich imports are unchanged. All ten source families still require combined qualification before release.
+The shared migration workflow is under development. `ImportTransferJournal` is an internal Manager record store; it does not copy, move or adopt files and is not exposed by a command or UI. The existing import command is unchanged. All ten source families still require combined qualification before release.
 
 The journal uses Manager's existing private SQLite database, synchronous durable writes and single active operation lock. A run is bound to immutable manifest and reviewed-plan SHA256 fingerprints. Mutation requires its active `import` operation; an interrupted operation retains that ownership. Each transfer records its source and destination root IDs and relative paths, original byte count/checksum, mode, source filesystem identity and destination device. Paths are validated without accessing them. Relocation across different recorded devices is refused; actual mount identity must still be independently verified by the worker.
 
