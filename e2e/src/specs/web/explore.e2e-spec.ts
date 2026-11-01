@@ -21,6 +21,14 @@ const scrollOffset = (inside: Locator) =>
   });
 
 test.describe('Explore', () => {
+  const uploadQueues = [
+    'sidecar',
+    'metadataExtraction',
+    'storageTemplateMigration',
+    'thumbnailGeneration',
+    'faceDetection',
+    'backgroundTask',
+  ] as const;
   let admin: LoginResponseDto;
   let first: AssetMediaResponseDto;
   let second: AssetMediaResponseDto;
@@ -44,7 +52,10 @@ test.describe('Explore', () => {
       assetData: { filename: 'archived.png' },
       fileCreatedAt: '2026-08-03T09:00:00.000Z',
     });
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    // Archiving changes the publication source; let upload-derived work finish first.
+    for (const queue of uploadQueues) {
+      await utils.waitForQueueFinish(admin.accessToken, queue);
+    }
     await utils.archiveAssets(admin.accessToken, [archived.id]);
 
     const [beach] = await utils.upsertTags(admin.accessToken, ['beach']);
@@ -146,13 +157,7 @@ test.describe('Explore', () => {
     // face detection), so this library already has scores. Give one item five stars, let every job
     // that could score it finish, then clear the scores: a rated library with nothing scored.
     await updateAsset({ id: first.id, updateAssetDto: { rating: 5 } }, { headers: asBearerAuth(admin.accessToken) });
-    for (const queue of [
-      'sidecar',
-      'metadataExtraction',
-      'thumbnailGeneration',
-      'faceDetection',
-      'backgroundTask',
-    ] as const) {
+    for (const queue of uploadQueues) {
       await utils.waitForQueueFinish(admin.accessToken, queue);
     }
     const client = await utils.connectDatabase();
