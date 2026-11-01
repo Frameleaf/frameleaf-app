@@ -593,7 +593,7 @@ export class LockedSealService {
         state.id,
         ref,
         this.lockedFileRepository.siblingPath(ref.path),
-        (to) => this.decryptTo(ref.path, to, privateKey),
+        (to) => this.decryptTo(ref.path, to, privateKey, false),
       );
       return moved ? 'done' : 'stopped';
     }

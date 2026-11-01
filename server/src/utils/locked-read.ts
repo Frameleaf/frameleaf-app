@@ -1,10 +1,10 @@
 import { decryptFile, isLockedFile, keyId as toKeyId, openDecrypt, readHeader } from '@frameleaf/locked-crypto';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { queueExecution } from 'src/queue/context.js';
 import { type HeldKey, lockedKeys } from 'src/utils/locked-key-holder.js';
@@ -684,7 +684,8 @@ export async function rewriteThroughPlainCopy(
   }
   await withPlainCopy(path, async (plainPath) => {
     await fn(plainPath);
-    const staging = join(dirname(path), `.${basename(path)}.${process.pid}-${Date.now()}.plain.tmp`);
+    // M5: a `.fllk.tmp` name beside a path the registry lists, so the start-up sweep removes one a crash leaves
+    const staging = `${path}.${randomUUID()}.fllk.tmp`;
     await fs.copyFile(plainPath, staging, constants.COPYFILE_EXCL);
     try {
       await fs.rename(staging, path);

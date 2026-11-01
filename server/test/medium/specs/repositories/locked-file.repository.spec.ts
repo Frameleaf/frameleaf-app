@@ -4,7 +4,7 @@ import { PostgresJSDialect } from 'kysely-postgres-js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType, AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -15,6 +15,7 @@ import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LOCKED_TEMP_NAME } from 'src/utils/locked-backup.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -205,6 +206,74 @@ describe(LockedFileRepository.name, () => {
       expect((await fs.readFile(path)).equals(bytes)).toBe(true);
       // nothing is shared any more
       await expect(sut.unshareOriginal(asset.id)).resolves.toBe(false);
+    });
+
+    it('writes the copy under a .fllk.tmp name beside the shared file until the repoint commits (M5)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      await turnOn(user.id);
+      const { path, bytes } = await storedFile();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: path,
+        visibility: AssetVisibility.Locked,
+      });
+      await ctx.newAsset({ ownerId: other.id, originalPath: path });
+      const target = join(media, 'upload', user.id, 'aa', 'bb', `${randomUUID()}.jpg`);
+      let staged = '';
+
+      const moved = await sut.copyAndRepoint(
+        asset.id,
+        { path, kind: 'original', table: 'asset' },
+        target,
+        async (to) => {
+          staged = to;
+          await fs.writeFile(to, bytes, { flag: 'wx' });
+          // a crash now leaves only a file the start-up sweep removes: named after a path the registry lists
+          expect(LOCKED_TEMP_NAME.exec(basename(to))?.[1]).toBe(basename(path));
+          expect(dirname(to)).toBe(dirname(path));
+          await expect(fs.stat(target)).rejects.toThrow();
+        },
+      );
+
+      expect(moved).toBe(true);
+      expect((await fs.readFile(target)).equals(bytes)).toBe(true);
+      await expect(fs.stat(staged)).rejects.toThrow();
+      const row = await db
+        .selectFrom('asset')
+        .select('originalPath')
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect(row.originalPath).toBe(target);
+    });
+
+    it('leaves neither the copy nor its staging file when the repoint does not happen (M5)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { path, bytes } = await storedFile();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: path,
+        visibility: AssetVisibility.Locked,
+      });
+      const target = join(media, 'upload', user.id, 'cc', 'dd', `${randomUUID()}.jpg`);
+      let staged = '';
+
+      // the asset no longer names that path: nothing moves
+      const moved = await sut.copyAndRepoint(
+        asset.id,
+        { path: `${path}.elsewhere`, kind: 'original', table: 'asset' },
+        target,
+        async (to) => {
+          staged = to;
+          await fs.writeFile(to, bytes, { flag: 'wx' });
+        },
+      );
+
+      expect(moved).toBe(false);
+      await expect(fs.stat(staged)).rejects.toThrow();
+      await expect(fs.stat(target)).rejects.toThrow();
     });
 
     it('does not un-share for a partner copy, which follows the owner’s file', async () => {

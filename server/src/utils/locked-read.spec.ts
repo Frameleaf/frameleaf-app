@@ -2,10 +2,11 @@ import { SEGMENT_SIZE, encryptFile, generateKeyPair } from '@frameleaf/locked-cr
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { queueExecution } from 'src/queue/context.js';
+import { LOCKED_TEMP_NAME } from 'src/utils/locked-backup.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import {
   LockedKeyUnavailableError,
@@ -267,6 +268,17 @@ describe('locked-read', () => {
     expect(changed).toBe(true);
     expect((await fs.readFile(sealed)).equals(Buffer.concat([plain, Buffer.from('more')]))).toBe(true);
     expect(await fs.readdir(tmp)).toEqual([]);
+  });
+
+  it('rewriteThroughPlainCopy stages the plain result under a .fllk.tmp name the start-up sweep removes (M5)', async () => {
+    loadOwner();
+    const rename = vi.spyOn(fs, 'rename');
+    await rewriteThroughPlainCopy(sealed, (plainPath) => fs.appendFile(plainPath, 'more'));
+
+    const [staging, to] = rename.mock.calls.at(-1)! as [string, string];
+    expect(to).toBe(sealed);
+    expect(join(staging, '..')).toBe(dir);
+    expect(LOCKED_TEMP_NAME.exec(basename(staging))?.[1]).toBe(basename(sealed));
   });
 
   describe(deferForLockedKey.name, () => {

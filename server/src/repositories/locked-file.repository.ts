@@ -86,6 +86,30 @@ export const syncDirectory = async (directory: string) => {
 };
 
 /**
+ * Renames a synced staging file to its new path and syncs the folder. Across filesystems (the shared
+ * file and the owner's upload folder may be on different volumes) it is copied to a temporary file
+ * beside `to` first.
+ */
+const publishStaged = async (staging: string, to: string) => {
+  try {
+    await fs.rename(staging, to);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
+      throw error;
+    }
+    const temporary = `${to}.${randomUUID()}.fllk.tmp`;
+    try {
+      await fs.copyFile(staging, temporary, constants.COPYFILE_EXCL);
+      await syncFile(temporary);
+      await fs.rename(temporary, to);
+    } finally {
+      await fs.rm(temporary, { force: true });
+    }
+  }
+  await syncDirectory(dirname(to));
+};
+
+/**
  * FL-721 (spec §6): the registry of an asset's stored files, and the database side of the seal and
  * unseal jobs. Every path an asset owns is listed by `filesOf` and only there, so adding a new kind
  * of derived file means adding it here.
@@ -394,10 +418,14 @@ export class LockedFileRepository {
   }
 
   /**
-   * Writes this asset's own copy of a shared file with `write` (which must leave a complete, synced
-   * file at the path it is given), then points this asset and its partner copies at it. The copy is
-   * removed again when the asset no longer names `ref.path`. Only `asset` (original) and `asset_file`
-   * paths can move.
+   * Writes this asset's own copy of a shared file with `write` (which must leave a complete file at the
+   * new path it is given), then points this asset and its partner copies at it. The copy is removed
+   * again when the asset no longer names `ref.path`. Only `asset` (original) and `asset_file` paths can
+   * move.
+   *
+   * M5: the copy is plaintext of a Locked file, so until the repoint commits it has a `.fllk.tmp` name
+   * beside `ref.path` (a path the registry lists, so the start-up sweep removes one a crash leaves), and
+   * is renamed to `target` inside the repoint's transaction. Nothing is left that nothing references.
    */
   async copyAndRepoint(
     assetId: string,
@@ -409,11 +437,30 @@ export class LockedFileRepository {
       return false;
     }
     await fs.mkdir(dirname(target), { recursive: true });
-    await write(target);
+    let staging = `${ref.path}.${randomUUID()}.fllk.tmp`;
     let moved = false;
     try {
-      moved = await this.db.transaction().execute((tx) => this.repoint(tx, assetId, ref, target));
+      try {
+        await write(staging);
+      } catch (error) {
+        if (!['EACCES', 'EPERM', 'EROFS'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+          throw error;
+        }
+        // the shared file's folder can't be written: stage beside the target instead
+        await fs.rm(staging, { force: true });
+        staging = `${target}.${randomUUID()}.fllk.tmp`;
+        await write(staging);
+      }
+      await syncFile(staging);
+      moved = await this.db.transaction().execute(async (tx) => {
+        if (!(await this.repoint(tx, assetId, ref, target, staging))) {
+          return false;
+        }
+        await publishStaged(staging, target);
+        return true;
+      });
     } finally {
+      await fs.rm(staging, { force: true });
       if (!moved) {
         await fs.rm(target, { force: true });
       }
@@ -421,7 +468,7 @@ export class LockedFileRepository {
     return moved;
   }
 
-  private async repoint(tx: Transaction<DB>, assetId: string, ref: LockedFileRef, target: string) {
+  private async repoint(tx: Transaction<DB>, assetId: string, ref: LockedFileRef, target: string, staged: string) {
     for (const path of [ref.path, target].toSorted()) {
       await lockFilePath(tx, path);
     }
@@ -443,7 +490,7 @@ export class LockedFileRepository {
       if (asset.originalPath !== ref.path) {
         return false;
       }
-      const { size } = await fs.stat(target);
+      const { size } = await fs.stat(staged);
       const physical = await tx
         .insertInto('physical_file')
         .values({
@@ -485,20 +532,16 @@ export class LockedFileRepository {
     return Number(numUpdatedRows) > 0;
   }
 
-  /** Copies `from` to `to` through a temporary file, checks the copy's SHA-256 and syncs it. */
+  /** Copies `from` to the new path `to` and checks the copy's SHA-256. */
   private async copyVerified(from: string, to: string) {
-    const temporary = `${to}.${randomUUID()}.fllk.tmp`;
     try {
-      await fs.copyFile(from, temporary, constants.COPYFILE_EXCL);
-      const [source, copy] = await Promise.all([sha256Of(from), sha256Of(temporary)]);
+      await fs.copyFile(from, to, constants.COPYFILE_EXCL);
+      const [source, copy] = await Promise.all([sha256Of(from), sha256Of(to)]);
       if (!source.equals(copy)) {
         throw new Error('The copy of a shared file does not match it');
       }
-      await syncFile(temporary);
-      await fs.rename(temporary, to);
-      await syncDirectory(dirname(to));
     } catch (error) {
-      await fs.rm(temporary, { force: true });
+      await fs.rm(to, { force: true });
       throw error;
     }
   }
