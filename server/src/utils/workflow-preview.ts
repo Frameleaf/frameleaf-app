@@ -153,7 +153,8 @@ const coreName = (method: string) => (method.startsWith(CORE_PLUGIN) ? method.sl
  */
 export const getPreviewFilter = (method: string, config?: Config | null) => {
   const name = coreName(method);
-  return name && config?.matchType !== 'regex' ? filters[name] : undefined;
+  const matchesText = name === 'assetFileFilter' || name === 'assetExifFilter';
+  return name && !(matchesText && config?.matchType === 'regex') ? filters[name] : undefined;
 };
 
 /** Whether a step is one of the built-in plugin's actions, which a preview never runs. */

@@ -205,6 +205,26 @@ describe('WorkflowDesigner', () => {
 
     expect(await screen.findByText(/^At least 10,000 eligible matches/)).toBeInTheDocument();
   });
+
+  it('does not call a partial count a lower bound when a step could not be checked (FL-729)', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ timezone: 'UTC', sourceFilters: true } as never);
+    sdkMock.previewWorkflow.mockResolvedValue({
+      count: 10_000,
+      exampleAssetIds: [assetId],
+      partial: true,
+      steps: [{ method: 'third-party#faces', result: WorkflowPreviewStepResult.Unchecked, remaining: 10_000 }],
+      issues: [],
+      actions: [],
+      evaluatedAt: '2026-10-28T00:00:00Z',
+    });
+    setup([], workflow({ enabled: false, steps: [] }));
+    await screen.findByText('Server timezone: UTC');
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+
+    expect(await screen.findByText(/^At least 10,000 matches pass the checked filters/)).toBeInTheDocument();
+    expect(screen.queryByText(/^At least 10,000 eligible matches/)).toBeNull();
+  });
   it('edits parameters from the installed method schema and follows a schema change', async () => {
     const { rerender } = setup([webhook({ url: { type: 'string', title: 'URL' } }, ['url'])]);
 

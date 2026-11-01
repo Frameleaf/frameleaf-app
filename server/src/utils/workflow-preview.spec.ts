@@ -100,6 +100,10 @@ describe('workflow preview filters (FL-729)', () => {
       expect(getPreviewFilter(`immich-plugin-core#${name}`, { pattern: '(a+)+$', matchType: 'regex' })).toBeUndefined();
       expect(getPreviewFilter(`immich-plugin-core#${name}`, { pattern: 'a', matchType: 'contains' })).toBeDefined();
     }
+    // a filter that has no pattern ignores a stray matchType and is still checked
+    expect(
+      getPreviewFilter('immich-plugin-core#assetTypeFilter', { allowedTypes: ['VIDEO'], matchType: 'regex' }),
+    ).toBeDefined();
   });
 
   it('covers every core filter and no action', () => {
