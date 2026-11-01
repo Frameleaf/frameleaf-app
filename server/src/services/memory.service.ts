@@ -39,6 +39,7 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
@@ -49,7 +50,7 @@ import {
   getHiddenContentQueryOptions,
   isSuppressedWhileLocked,
 } from 'src/utils/hidden-content.js';
-import { lockedArchiveInput } from 'src/utils/locked-read.js';
+import { isLockedKeyUnavailable, lockedArchiveInput } from 'src/utils/locked-read.js';
 import {
   EVENT_GAP_HOURS,
   MAX_LANDMARK_DAYS_PER_YEAR,
@@ -1021,6 +1022,13 @@ export class MemoryService extends BaseService {
 
       return JobStatus.Success;
     } catch (error) {
+      // FL-721: the queue defers the job until the owner's Locked key is loaded; the run goes back to
+      // pending so the deferred job can claim it again
+      if (isLockedKeyUnavailable(error) && queueExecution.getStore()?.dependencyReason === 'locked-key-unavailable') {
+        await this.storageRepository.unlink(partial);
+        await this.memoryRepository.updateExport(id, { status: MemoryExportStatus.Pending });
+        throw error;
+      }
       this.logger.error(`Memory export ${id} failed: ${error}`);
       await this.storageRepository.unlink(partial);
       await this.memoryRepository.updateExport(id, {

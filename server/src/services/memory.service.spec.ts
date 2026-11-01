@@ -12,8 +12,11 @@ import {
   PushEventType,
   SystemMetadataKey,
 } from 'src/enum.js';
+import type { QueueExecution } from 'src/queue/types.js';
+import { queueExecution } from 'src/queue/context.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { MemoryFactory } from 'test/factories/memory.factory.js';
 import { getForMemory } from 'test/mappers.js';
@@ -1231,6 +1234,37 @@ describe(MemoryService.name, () => {
 
       const [partial, target] = mocks.storage.rename.mock.calls[0];
       expect(partial).toBe(`${target}.partial`);
+    });
+
+    it('puts the run back to pending, not failed, while the job waits for the Locked key (FL-721)', async () => {
+      const ownerId = newUuid();
+      const run = exportRun({ ownerId, assetIds: [newUuid()], assetCount: 1 });
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.asset.getByIds.mockImplementation(() => {
+        const error = new LockedKeyUnavailableError([ownerId]);
+        deferForLockedKey(error);
+        return Promise.reject(error);
+      });
+      const execution = {
+        claim: { id: 'job-1', attempt: 1, data: {} },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+
+      try {
+        await expect(
+          queueExecution.run(execution, () => sut.handleMemoryExport({ id: run.id })),
+        ).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+      } finally {
+        clearLockedDeferrals();
+      }
+
+      expect(execution.dependencyReason).toBe('locked-key-unavailable');
+      expect(mocks.storage.unlink).toHaveBeenCalled();
+      expect(mocks.memory.updateExport).toHaveBeenCalledWith(run.id, { status: MemoryExportStatus.Pending });
+      expect(mocks.memory.updateExport).not.toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({ status: MemoryExportStatus.Failed }),
+      );
     });
 
     it('should fail the run and remove the partial file when writing throws', async () => {
