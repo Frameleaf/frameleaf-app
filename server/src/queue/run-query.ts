@@ -116,7 +116,9 @@ const initialCandidates = (filter: RawBuilder<boolean>, scope: RawBuilder<unknow
   ${initialCanonicalOutcomeContext}
   ${materializedInitialEntitlementContext}
   left join job_queue q on q.name=i.queue
-  where ${filter} offset 0`;
+  -- Exclude non-cold rows before sparse joins; stale statistics can otherwise repeat whole-source scans.
+  where ${filter} and snapshot."sourceKind"='library-initial'
+    and i."jobId" is null and i."libraryExecutionRunId" is null offset 0`;
 
 // A whole-run summary does not need one row for each cold initial row. They carry no job, time or
 // dependency, so rows of one run with the same state and pause are interchangeable to every
@@ -155,8 +157,8 @@ const stagesFor = (
     select "runId","rootItemKey" from (
       select shared_item."runId",shared_item."rootItemKey" from job_run_item shared_item
       where shared_item."runId" in (
-        select library_run.id from job_run library_run
-        where library_run.id in (${runScope}) and exists (
+        select library_run.id from (${runScope}) library_run
+        where exists (
           select 1 from job_selection library_source where library_source."sourceKind"='library-initial'
             and exists (select 1 from job_run_item library_item
               where library_item."selectionId"=library_source.id and library_item."runId"=library_run.id)))

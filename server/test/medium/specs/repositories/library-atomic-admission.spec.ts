@@ -1039,6 +1039,9 @@ describe('library atomic source admission', () => {
   // Fixture construction includes 1250 serial real parent publications and 500 completions.
   // Its outer lifetime does not alter pool2/5s SQL/3s lock or per-job budgets.
   it('publishes every declared downstream stage to capped paused manifests and refills only at low water', async () => {
+    // A fresh import must summarize before automatic statistics maintenance catches up.
+    await sql`alter table job_run_item set (autovacuum_enabled = false)`.execute(db);
+    await sql`analyze job_run_item`.execute(db);
     const destinations = [
       [JobName.AssetExtractMetadata, QueueName.MetadataExtraction],
       [JobName.AssetGenerateThumbnails, QueueName.ThumbnailGeneration],
