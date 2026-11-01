@@ -339,6 +339,8 @@ export type BuddyApplyResponseDto = {
 };
 export type BuddyRestoreCheckpointDto = {
     operation: {
+        /** FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open */
+        encryptedWithOlderKey: number;
         error: string | null;
         id: string;
         phase: string;
@@ -348,6 +350,8 @@ export type BuddyRestoreCheckpointDto = {
     } | null;
 };
 export type BuddyRestoreStatusDto = {
+    /** FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open */
+    encryptedWithOlderKey: number;
     error: string | null;
     id: string;
     phase: string;
@@ -453,6 +457,8 @@ export type CloudBackupLastRestoreDto = {
     destination: string | null;
     /** Items still in the library whose details came back */
     detailsRestored: number;
+    /** Restored Locked items encrypted with an older key, which this server's key file for their owner does not open */
+    encryptedWithOlderKey: number;
     error: string | null;
     files: number;
     manifestKey: string;

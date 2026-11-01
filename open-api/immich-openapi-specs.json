@@ -76839,6 +76839,12 @@
           "operation": {
             "nullable": true,
             "properties": {
+              "encryptedWithOlderKey": {
+                "description": "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
               "error": {
                 "nullable": true,
                 "type": "string"
@@ -76870,6 +76876,7 @@
               "progress",
               "phase",
               "recoveryId",
+              "encryptedWithOlderKey",
               "error"
             ],
             "type": "object"
@@ -76978,6 +76985,12 @@
       },
       "BuddyRestoreStatusDto": {
         "properties": {
+          "encryptedWithOlderKey": {
+            "description": "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -77004,6 +77017,7 @@
           }
         },
         "required": [
+          "encryptedWithOlderKey",
           "error",
           "id",
           "phase",
@@ -79757,6 +79771,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "encryptedWithOlderKey": {
+            "description": "Restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -79801,6 +79821,7 @@
           "databaseFile",
           "destination",
           "detailsRestored",
+          "encryptedWithOlderKey",
           "error",
           "files",
           "manifestKey",
