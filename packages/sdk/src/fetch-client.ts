@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.1.18
+ * 1.1.19
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -4480,14 +4480,14 @@ export type LocationInsightDto = {
         displayName: string;
         uri?: string;
     }[];
-    confidence: Confidence;
+    confidence: LocationInsightConfidence;
     distanceM: number;
     mapsUrl: string;
     matchedAt: string;
     name: string;
     placeId: string;
-    provider: Provider;
-    relation: Relation;
+    provider: LocationInsightProvider;
+    relation: LocationInsightRelation;
 };
 export type PersonResponseDto = {
     /** Person date of birth */
@@ -7372,7 +7372,7 @@ export type DesktopWorkerHeartbeatDto = {
 };
 export type DesktopModelInventoryDto = {
     protocolVersion: number;
-    provider: Provider2;
+    provider: Provider;
     runtimeSourceRevision: string;
     workloads: {
         modelKeys: string[];
@@ -17689,13 +17689,27 @@ export type CloudBackupOwnerSetupResponseDto = {
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
 };
+export type LocationScanBillingDto = {
+    chargedMicros: number | null;
+    checkedPhotos: number;
+    currency: LocationBillingCurrency;
+    heldMicros: number;
+    releasedMicros: number | null;
+    state: LocationBillingState;
+    unitPriceMicros: LocationBillingUnitPriceMicros;
+};
 export type LocationScanSummaryDto = {
+    billing: (LocationScanBillingDto) | null;
+    eligiblePhotos: number;
     error?: string | null;
+    estimatedMicros: number;
     failed: number;
     id: string;
     matched: number;
     processed: number;
     reason?: string | null;
+    remainingPhotos: number;
+    selectedPhotos: number;
     skipped: number;
     status: LocationScanState;
     total: number;
@@ -17706,10 +17720,31 @@ export type LocationScanStatusResponseDto = {
     enabled: boolean;
     scan: (LocationScanSummaryDto) | null;
 };
+export type LocationScanConsent = true;
 export type StartLocationScanDto = {
-    /** Explicit permission to send photo coordinates to Frameleaf Cloud and Google */
-    consent: true;
+    /** Explicit permission for this paid GPS scan */
+    consent: LocationScanConsent;
+    estimateId: string;
+};
+export type LocationScanEstimateRequestDto = {
+    maxPhotos?: number;
+    maxSpendMicros?: number;
     refresh?: boolean;
+};
+export type LocationScanEstimateResponseDto = {
+    availableMicros: number | null;
+    canStart: boolean;
+    currency: LocationBillingCurrency;
+    eligiblePhotos: number;
+    estimateId: string | null;
+    estimatedMicros: number;
+    expiresAt: string | null;
+    holdMicros: number;
+    refusal: string | null;
+    remainingPhotos: number;
+    selectedPhotos: number;
+    topUpUrl: string | null;
+    unitPriceMicros: LocationBillingUnitPriceMicros;
 };
 export type OnboardingResponseDto = {
     /** Is user onboarded */
@@ -34828,7 +34863,22 @@ export function startLocationScan({ startLocationScanDto }: {
     })));
 }
 /**
- * Cancel own photo location scan and purge its Cloud input
+ * Estimate an optional paid GPS location scan without uploading coordinates
+ */
+export function estimateLocationScan({ locationScanEstimateRequestDto }: {
+    locationScanEstimateRequestDto: LocationScanEstimateRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationScanEstimateResponseDto;
+    }>("/users/me/location-scans/estimate", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationScanEstimateRequestDto
+    })));
+}
+/**
+ * Cancel own location scan and settle checked photos
  */
 export function cancelLocationScan({ id }: {
     id: string;
@@ -36424,14 +36474,14 @@ export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
 }
-export enum Confidence {
+export enum LocationInsightConfidence {
     High = "high",
     Medium = "medium"
 }
-export enum Provider {
+export enum LocationInsightProvider {
     Google = "google"
 }
-export enum Relation {
+export enum LocationInsightRelation {
     At = "at",
     Near = "near"
 }
@@ -37306,7 +37356,7 @@ export enum DesktopInputKind {
     Text = "text",
     Image = "image"
 }
-export enum Provider2 {
+export enum Provider {
     CpuExecutionProvider = "CPUExecutionProvider",
     CudaExecutionProvider = "CUDAExecutionProvider",
     CoreMlExecutionProvider = "CoreMLExecutionProvider",
@@ -39591,6 +39641,20 @@ export enum CloudBackupOwnerSetupFirstRun {
     Running = "running",
     Done = "done",
     Failed = "failed"
+}
+export enum LocationBillingCurrency {
+    Usd = "USD"
+}
+export enum LocationBillingState {
+    PendingHold = "pending_hold",
+    Held = "held",
+    Settling = "settling",
+    Settled = "settled",
+    Released = "released",
+    NoCharge = "no_charge"
+}
+export enum LocationBillingUnitPriceMicros {
+    $5000 = 5000
 }
 export enum LocationScanState {
     Queued = "queued",

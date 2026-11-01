@@ -4,8 +4,12 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { LocationScanSummary } from 'src/dtos/photo-locations.dto.js';
 import type { DB } from 'src/schema/index.js';
-import type { PhotoLocationScanState, PhotoLocationScanTable } from 'src/schema/tables/photo-locations.table.js';
-import type { PhotoLocationInsight } from 'src/utils/photo-locations.js';
+import type {
+  PhotoLocationEstimateRecord,
+  PhotoLocationScanState,
+  PhotoLocationScanTable,
+} from 'src/schema/tables/photo-locations.table.js';
+import type { CloudLocationEstimate, PhotoLocationInsight } from 'src/utils/photo-locations.js';
 import { AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
 import { withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
@@ -37,7 +41,43 @@ export class PhotoLocationsRepository {
       .executeTakeFirst();
   }
 
-  create(ownerId: string, refresh: boolean, cloud: { cloudUrl: string; instanceId: string; linkedAt: string }) {
+  keepEstimate(ownerId: string, record: PhotoLocationEstimateRecord) {
+    return this.db
+      .insertInto('photo_location_estimate')
+      .values({
+        id: record.quote.estimateId,
+        ownerId,
+        record,
+        expiresAt: new Date(record.quote.expiresAt),
+      })
+      .execute();
+  }
+
+  getEstimate(id: string, ownerId: string) {
+    return this.db
+      .selectFrom('photo_location_estimate')
+      .selectAll()
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+  }
+
+  getByEstimate(id: string, ownerId: string) {
+    return this.db
+      .selectFrom('photo_location_scan')
+      .selectAll()
+      .where('estimateId', '=', id)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+  }
+
+  create(
+    ownerId: string,
+    refresh: boolean,
+    cloud: { cloudUrl: string; instanceId: string; linkedAt: string },
+    approval?: CloudLocationEstimate,
+    cloudQuote = approval,
+  ) {
     return this.db
       .insertInto('photo_location_scan')
       .values({
@@ -48,6 +88,11 @@ export class PhotoLocationsRepository {
         cloudUrl: cloud.cloudUrl,
         instanceId: cloud.instanceId,
         linkedAt: cloud.linkedAt,
+        estimateId: approval?.estimateId ?? null,
+        eligiblePhotos: approval?.eligiblePhotos ?? 0,
+        selectedPhotos: approval?.selectedPhotos ?? 0,
+        estimatedMicros: approval?.holdMicros ?? 0,
+        state: cloudQuote ? { cloudEstimateId: cloudQuote.estimateId, quoteExpiresAt: cloudQuote.expiresAt } : {},
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -88,6 +133,18 @@ export class PhotoLocationsRepository {
       .executeTakeFirst());
   }
 
+  async cleanupActive(id: string, token: string) {
+    return !!(await this.db
+      .selectFrom('photo_location_scan')
+      .select('id')
+      .where('id', '=', id)
+      .where('leaseToken', '=', token)
+      .where('leaseUntil', '>', sql<Date>`now()`)
+      .where('status', 'in', ['cancelled', 'failed', 'completed'])
+      .where(sql<boolean>`state @> '{"cleanupPending":true}'`)
+      .executeTakeFirst());
+  }
+
   async ownerActive(ownerId: string) {
     return !!(await this.db
       .selectFrom('user')
@@ -96,6 +153,10 @@ export class PhotoLocationsRepository {
       .where('deletedAt', 'is', null)
       .where('status', '=', UserStatus.Active)
       .executeTakeFirst());
+  }
+
+  owner(ownerId: string) {
+    return this.db.selectFrom('user').select(['id', 'isAdmin']).where('id', '=', ownerId).executeTakeFirstOrThrow();
   }
 
   async inputExists(id: string) {
@@ -154,10 +215,10 @@ export class PhotoLocationsRepository {
       .where(sql<boolean>`NOT (asset_exif.latitude = 0 AND asset_exif.longitude = 0)`);
   }
 
-  async freeze(scan: LocationScan) {
-    const selection = this.eligible(scan.ownerId)
+  private candidates(ownerId: string, refresh: boolean) {
+    return this.eligible(ownerId)
       .where((eb) =>
-        scan.refresh
+        refresh
           ? eb.val(true)
           : eb.not(
               eb.exists(
@@ -180,7 +241,20 @@ export class PhotoLocationsRepository {
               .where('dismissed', '=', true),
           ),
         ),
-      )
+      );
+  }
+
+  async countEligible(ownerId: string, refresh: boolean) {
+    const row = await this.candidates(ownerId, refresh)
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
+  async freeze(scan: LocationScan) {
+    const selection = this.candidates(scan.ownerId, scan.refresh)
+      .orderBy('asset.id')
+      .limit(scan.estimateId ? scan.selectedPhotos : 2_147_483_647)
       .select([
         sql<string>`${scan.id}::uuid`.as('scanId'),
         'asset.id as assetId',
@@ -215,7 +289,12 @@ export class PhotoLocationsRepository {
         .executeTakeFirstOrThrow();
       await tx
         .updateTable('photo_location_scan')
-        .set({ total: Number(count.count) })
+        .set({
+          total: Number(count.count),
+          ...(scan.estimateId
+            ? { selectedPhotos: Number(count.count), estimatedMicros: Number(count.count) * 5000 }
+            : {}),
+        })
         .where('id', '=', scan.id)
         .execute();
       return Number(count.count);
@@ -254,17 +333,35 @@ export class PhotoLocationsRepository {
     return Number(row.count) === scan.state.pointCount;
   }
 
-  async adopt(id: string, token: string, results: LocationResult[]) {
+  adopt(id: string, token: string, results: LocationResult[]) {
+    return this.adoptResults(id, token, results);
+  }
+
+  adoptCompleted(id: string, token: string, results: LocationResult[], checkedPhotos: number) {
+    return this.adoptResults(id, token, results, checkedPhotos);
+  }
+
+  private async adoptResults(id: string, token: string, results: LocationResult[], checkedPhotos?: number) {
     return this.db.transaction().execute(async (tx) => {
       const scan = await tx
         .selectFrom('photo_location_scan')
         .selectAll()
         .where('id', '=', id)
         .where('leaseToken', '=', token)
-        .where('status', 'in', LOCATION_ACTIVE_STATUSES)
+        .where('status', 'in', checkedPhotos === undefined ? LOCATION_ACTIVE_STATUSES : ['cancelled', 'failed'])
+        .$if(checkedPhotos !== undefined, (qb) =>
+          qb.where('leaseUntil', '>', sql<Date>`now()`).where(sql<boolean>`state @> '{"cleanupPending":true}'`),
+        )
         .forUpdate()
         .executeTakeFirst();
       if (!scan) return false;
+      if (
+        checkedPhotos !== undefined &&
+        (!scan.billing ||
+          scan.billing.checkedPhotos !== checkedPhotos ||
+          ['pending_hold', 'held'].includes(scan.billing.state))
+      )
+        return false;
       const itemKeys = results.map((r) => r.itemKey);
       // Lock coordinates before reading the snapshot: a concurrent GPS edit then clears any published result.
       await tx
@@ -376,16 +473,31 @@ export class PhotoLocationsRepository {
     });
   }
 
-  clearItems(id: string) {
-    return this.db.deleteFrom('photo_location_scan_item').where('scanId', '=', id).execute();
+  clearItems(id: string, token: string) {
+    return this.db
+      .deleteFrom('photo_location_scan_item')
+      .where('scanId', '=', id)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('photo_location_scan')
+            .select('id')
+            .where('id', '=', id)
+            .where('leaseToken', '=', token)
+            .where('leaseUntil', '>', sql<Date>`now()`)
+            .where(sql<boolean>`state @> '{"cleanupPending":true}'`),
+        ),
+      )
+      .execute();
   }
 
-  async finish(id: string, token: string) {
+  async finish(id: string, token: string, failed = 0) {
     await this.db
       .updateTable('photo_location_scan')
       .set({
         status: 'completed',
-        skipped: sql`GREATEST(0, total - processed)`,
+        skipped: sql`GREATEST(0, total - processed - ${failed})`,
+        failed,
         reason: null,
         error: null,
         state: sql`state || '{"cleanupPending":true}'::jsonb`,

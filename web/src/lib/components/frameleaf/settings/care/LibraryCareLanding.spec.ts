@@ -128,14 +128,14 @@ describe('Library care landing (FL-366)', () => {
     unusedFilesAccess.reset();
   });
 
-  it('offers an enabled manual photo location scan on the member’s Library care landing page', async () => {
+  it('offers the optional paid photo location estimate on the member’s Library care landing page', async () => {
     user.isAdmin = false;
     vi.mocked(getSummary).mockResolvedValue(summary());
     vi.mocked(getLocationScanStatus).mockResolvedValue({ enabled: true, available: true, scan: null });
     render(LibraryCareLanding);
 
     expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Identify photo locations' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Estimate library' })).toBeEnabled());
   });
 
   it('says the library is healthy, with how many files were checked', async () => {

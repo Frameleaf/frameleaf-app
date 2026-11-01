@@ -8,6 +8,50 @@ import z from 'zod';
 export const LOCATION_INPUT_MAX_COMPRESSED = 128 * 1024 * 1024;
 export const LOCATION_INPUT_MAX_EXPANDED = 1024 * 1024 * 1024;
 export const LOCATION_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
+export const LOCATION_UNIT_PRICE_MICROS = 5000;
+const locationCurrencySchema = z.literal('USD').meta({ id: 'LocationBillingCurrency' });
+const locationUnitPriceSchema = z.literal(5000).meta({ id: 'LocationBillingUnitPriceMicros' });
+const micros = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const locationBillingSchema = z
+  .object({
+    currency: locationCurrencySchema,
+    unitPriceMicros: locationUnitPriceSchema,
+    heldMicros: micros,
+    checkedPhotos: z.number().int().nonnegative(),
+    chargedMicros: micros.nullable(),
+    releasedMicros: micros.nullable(),
+    state: z
+      .enum(['pending_hold', 'held', 'settling', 'settled', 'released', 'no_charge'])
+      .meta({ id: 'LocationBillingState' }),
+  })
+  .meta({ id: 'LocationScanBillingDto' });
+export type LocationBilling = z.infer<typeof locationBillingSchema>;
+export const locationBillingFinal = (billing: LocationBilling | null | undefined) =>
+  !!billing &&
+  ['settled', 'released', 'no_charge'].includes(billing.state) &&
+  billing.chargedMicros !== null &&
+  billing.releasedMicros !== null;
+export const locationNoCharge = (): LocationBilling => ({
+  currency: 'USD',
+  unitPriceMicros: 5000,
+  heldMicros: 0,
+  checkedPhotos: 0,
+  chargedMicros: 0,
+  releasedMicros: 0,
+  state: 'no_charge',
+});
+export const cloudLocationEstimateSchema = z.object({
+  estimateId: z.uuid(),
+  expiresAt: z.iso.datetime({ offset: true }),
+  currency: locationCurrencySchema,
+  unitPriceMicros: locationUnitPriceSchema,
+  eligiblePhotos: z.number().int().nonnegative(),
+  selectedPhotos: z.number().int().positive(),
+  remainingPhotos: z.number().int().nonnegative(),
+  holdMicros: micros,
+  availableMicros: micros,
+});
+export type CloudLocationEstimate = z.infer<typeof cloudLocationEstimateSchema>;
 export const photoGpsAccuracy = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100_000 ? value : null;
 const LOCATION_INPUT_LIMITS = { compressed: LOCATION_INPUT_MAX_COMPRESSED, expanded: LOCATION_INPUT_MAX_EXPANDED };
@@ -25,13 +69,13 @@ const mapsUrl = z.url().refine((value) => {
 }, 'Expected a Google Maps link');
 
 export const locationInsightSchema = z.object({
-  provider: z.literal('google'),
+  provider: z.literal('google').meta({ id: 'LocationInsightProvider' }),
   placeId: z.string().min(1).max(512),
   name: z.string().min(1).max(1024),
   address: z.string().max(2048).nullable().default(null),
   mapsUrl,
-  relation: z.enum(['at', 'near']),
-  confidence: z.enum(['high', 'medium']),
+  relation: z.enum(['at', 'near']).meta({ id: 'LocationInsightRelation' }),
+  confidence: z.enum(['high', 'medium']).meta({ id: 'LocationInsightConfidence' }),
   distanceM: z.number().meta({ format: 'double' }).finite().nonnegative().max(100),
   matchedAt: z.iso.datetime({ offset: true }),
   attributions: z
@@ -126,6 +170,7 @@ export const cloudLocationStatusSchema = z.object({
   pauseReason: z.string().max(512).optional(),
   retryAfter: z.number().nonnegative().optional(),
   expiresAt: z.iso.datetime({ offset: true }),
+  billing: locationBillingSchema,
 });
 export const cloudLocationResultsSchema = z.object({
   scanId: z.uuid(),
@@ -139,4 +184,5 @@ export const cloudLocationResultsSchema = z.object({
     )
     .max(500),
   nextOffset: z.number().int().nonnegative().nullable(),
+  complete: z.boolean(),
 });

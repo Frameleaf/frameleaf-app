@@ -25,6 +25,7 @@ const setup = () => {
     { currentSigner: vi.fn() } as never,
     {} as never,
     { setContext: vi.fn() } as never,
+    {} as never,
   );
   return {
     cloud,
