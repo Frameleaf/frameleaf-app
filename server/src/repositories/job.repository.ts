@@ -48,7 +48,7 @@ import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
-import { lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
+import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
@@ -405,6 +405,8 @@ export class JobRepository {
           this.logger.error('Could not persist stopped job outcome; lease recovery is pending');
         }
       }
+      // FL-721 M2: the Locked wait this execution recorded ends with it
+      forgetLockedClaim(claim.id);
       releaseExecution?.();
       releaseObservers?.();
     }

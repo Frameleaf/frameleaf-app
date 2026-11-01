@@ -758,6 +758,15 @@ export function lockedKeyLoadedSinceDeferral(claimId: string): boolean {
   return !!owners && owners.some((ownerId) => lockedKeys.has(ownerId));
 }
 
+/**
+ * Forgets what a job execution recorded about the owners it waits for. The queue calls it once the
+ * execution ends, whatever the outcome (another dependency reason first, past the attempt cap, an
+ * error before the deferral was written), so the record never outlives its execution (M2).
+ */
+export function forgetLockedClaim(claimId: string): void {
+  claimOwners.delete(claimId);
+}
+
 /** For tests. */
 export const clearLockedDeferrals = () => {
   deferred.clear();

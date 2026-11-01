@@ -412,6 +412,26 @@ describe(JobRepository.name, () => {
         await sut['execute'](claim(23), new AbortController());
         expect(order).toEqual(['defer', 'defer']);
       });
+
+      it('forgets the wait of a job deferred for another reason first, so it never wakes a later run (M2)', async () => {
+        const OTHER = '00000000-0000-4000-8000-0000000000f2';
+        // another dependency was refused first: the queue writes that deferral, not the Locked one
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          queueExecution.getStore()!.dependencyReason = 'destination-unavailable';
+          deferForLockedKey(new LockedKeyUnavailableError([OWNER]));
+          return Promise.reject(new Error('Machine learning destination refused'));
+        });
+        await sut['execute'](claim(24), new AbortController());
+        // OWNER's key loads; the same job runs again and now waits only for OTHER's closed key
+        loadKey();
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          deferForLockedKey(new LockedKeyUnavailableError([OTHER]));
+          return Promise.reject(new LockedKeyUnavailableError([OTHER]));
+        });
+        await sut['execute'](claim(24), new AbortController());
+
+        expect(order).toEqual(['defer', 'defer']);
+      });
     });
 
     it('releases local admission and settles execution while committed observers are pending', async () => {
