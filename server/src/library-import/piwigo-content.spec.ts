@@ -21,3 +21,19 @@ describe('Piwigo native synthetic originals', () => {
       expect(serialized).not.toContain(`"${field}`);
   });
 });
+
+it('pins dangling relationships observed in the complete native snapshot', () => {
+  const images = new Set(content.rows.images.map((image) => image.id));
+  const membershipIds = [
+    ...new Set(content.rows.image_category.filter((link) => !images.has(link.image_id)).map((link) => link.image_id)),
+  ].sort((a, b) => a - b);
+  const representativeIds = [
+    ...new Set(
+      content.rows.categories
+        .map((category) => category.representative_picture_id)
+        .filter((id): id is number => id !== null && !images.has(id)),
+    ),
+  ].sort((a, b) => a - b);
+  expect(membershipIds).toEqual(content.expected.danglingMembershipImageIds);
+  expect(representativeIds).toEqual(content.expected.danglingRepresentativeImageIds);
+});

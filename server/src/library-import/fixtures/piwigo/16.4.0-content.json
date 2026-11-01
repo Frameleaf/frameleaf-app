@@ -364,6 +364,13 @@
       "bob",
       "mallory"
     ],
-    "pendingLoungeMemberships": 0
+    "pendingLoungeMemberships": 0,
+    "danglingMembershipImageIds": [
+      1,
+      2
+    ],
+    "danglingRepresentativeImageIds": [
+      2
+    ]
   }
 }
