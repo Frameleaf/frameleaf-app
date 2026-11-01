@@ -58,8 +58,8 @@
     themeAfterSetup,
     toProgress,
     validateStep,
-    reconcileKeptModel,
-    withDefaultTier,
+    settleFinishTier,
+    settleLoadedTier,
     type SetupChoices,
     type SetupState,
   } from '$lib/frameleaf/first-run-setup';
@@ -248,8 +248,7 @@
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
     // A2: the tier starts from what the hardware runs well (a new server) or from the models the
     // library already uses (an existing one), unless the administrator already took that decision.
-    const tierContext = { hardware, currentModel: config?.machineLearning.clip.modelName };
-    setup = reconcileKeptModel(withDefaultTier(setup, tierContext), tierContext);
+    setup = settleLoadedTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
     serverLoading = false;
   };
 
@@ -456,25 +455,18 @@
     finishPhase = 'saving';
     try {
       const current = await getConfig();
-      // The server data may have failed to load: settle a defaulted tier against the model the server
-      // has now. If that changes the choice shown on this screen, or "keep" would now keep a model other
-      // than the one it named, go back to the tier step to confirm it.
-      const serverModel = current.machineLearning.clip.modelName;
-      const tierContext = { hardware, currentModel: serverModel };
-      const settled = reconcileKeptModel(withDefaultTier(setup, tierContext), tierContext);
-      // "keep" names the model the administrator saw: the saved one, else the one this page loaded.
-      const kept = setup.choices.keptModel || config?.machineLearning.clip.modelName;
-      const keptOther = setup.choices.model === KEEP_MODEL && kept !== serverModel;
-      if (settled.choices.model !== setup.choices.model || keptOther) {
+      // Checked against the model the server has now: the library's model changes only for a tier the
+      // administrator chose. An unchosen tier that is no longer the default, or "keep" of a model other
+      // than the one it named, goes back to the tier step to confirm it.
+      const confirm = settleFinishTier(
+        setup,
+        { hardware, currentModel: current.machineLearning.clip.modelName },
+        config?.machineLearning.clip.modelName,
+      );
+      if (confirm) {
         direction = -1;
         config = current;
-        setup = {
-          ...settled,
-          step: Math.max(
-            0,
-            steps.findIndex((entry) => entry.id === 'processing'),
-          ),
-        };
+        setup = confirm;
         finishPhase = '';
         return;
       }

@@ -220,8 +220,7 @@ export const withDefaultTier = (
   }
   const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
   const pastTier = tierStep === -1 || state.reached >= tierStep;
-  // Older saves held the default tier when no choice was made; any other saved tier was chosen.
-  if (pastTier && (state.choices.model !== DEFAULT_TIER || !keepsUnlistedModel(state.flow, context.currentModel))) {
+  if (pastTier && !keepsUnlistedModel(state.flow, context.currentModel)) {
     return state;
   }
   const model = defaultTier(state.flow, context);
@@ -257,6 +256,60 @@ export const reconcileKeptModel = (
       keptModel: next === KEEP_MODEL ? (context.currentModel ?? '') : '',
     },
   };
+};
+
+const tierStepOf = (flow: SetupFlow) => flowSteps(flow).findIndex((entry) => entry.id === 'processing');
+
+const onTierStep = (state: SetupState): SetupState => {
+  const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
+  return tierStep === -1 ? state : { ...state, step: Math.min(state.step, tierStep), completed: false };
+};
+
+/**
+ * The tier once the server data has loaded: the default for a setup that has not taken the decision,
+ * and a "keep" checked against the library's model only when that model is known (a failed config read
+ * keeps the saved choice). An unchosen default that becomes "keep" changes nothing in the library, so
+ * it needs no confirmation; one that becomes a tier after the administrator moved past the tier step
+ * sends setup back there.
+ */
+export const settleLoadedTier = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+): SetupState => {
+  const defaulted = withDefaultTier(state, context);
+  const next = context.currentModel ? reconcileKeptModel(defaulted, context) : defaulted;
+  return next.choices.model !== state.choices.model && next.choices.model !== KEEP_MODEL ? onTierStep(next) : next;
+};
+
+/**
+ * Checked at finish against the model the server has now. Finishing changes the library's model (and
+ * re-indexes) only for a tier the administrator chose; "keep" changes nothing. Answers the setup to show
+ * on the tier step when the choice must be confirmed again: an unchosen tier that is no longer this
+ * model's default, or a "keep" of a model other than the one it named (`seenModel`: the model this page
+ * loaded, for saves that did not record it). Answers null when setup may finish.
+ */
+export const settleFinishTier = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+  seenModel?: string | null,
+): SetupState | null => {
+  const { model, modelChosen, keptModel } = state.choices;
+  if (model === KEEP_MODEL) {
+    const named = keptModel || seenModel;
+    if (!named || !context.currentModel || named === context.currentModel) {
+      return null;
+    }
+    return onTierStep(reconcileKeptModel({ ...state, choices: { ...state.choices, keptModel: named } }, context));
+  }
+  if (modelChosen) {
+    return null;
+  }
+  const next = defaultTier(state.flow, context);
+  if (next === model) {
+    return null;
+  }
+  const kept = next === KEEP_MODEL ? (context.currentModel ?? '') : '';
+  return onTierStep({ ...state, choices: { ...state.choices, model: next, keptModel: kept } });
 };
 
 export const KEEP_LAYOUT = 'keep';
@@ -527,10 +580,15 @@ export const parseSetup = (raw: unknown, flow: SetupFlow, context: SetupContext 
       adminEmail: text(choices.adminEmail),
       layout: oneOf(choices.layout, [KEEP_LAYOUT, ...layoutPresets.map((entry) => entry.id)], defaults.layout),
       model:
-        choices.model === undefined && choices.modelChosen === true
+        // "keep" is saved with no tier: chosen, or with the model it named
+        choices.model === undefined && (choices.modelChosen === true || !!text(choices.keptModel, 200))
           ? KEEP_MODEL
           : oneOf<ModelChoice>(choices.model, [KEEP_MODEL, ...modelTiers.map((entry) => entry.id)], defaults.model),
-      modelChosen: bool(choices.modelChosen, false),
+      // Saves from before `modelChosen` held the default tier unless the administrator chose another.
+      modelChosen:
+        choices.modelChosen === undefined
+          ? typeof choices.model === 'string' && choices.model !== DEFAULT_TIER && reached >= tierStepOf(flow)
+          : bool(choices.modelChosen, false),
       keptModel: text(choices.keptModel, 200),
       processing: oneOf(choices.processing, ['local', 'cloud', 'later'] as const, defaults.processing),
       nightlyBackup: bool(choices.nightlyBackup, true),

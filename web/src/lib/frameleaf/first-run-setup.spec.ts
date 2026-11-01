@@ -24,6 +24,8 @@ import {
   processingOptions,
   recommendedTier,
   reconcileKeptModel,
+  settleFinishTier,
+  settleLoadedTier,
   resumeSetup,
   saveAccountTool,
   saveLocalSetup,
@@ -37,6 +39,7 @@ import {
   validateStep,
   withDefaultTier,
   type TierHardware,
+  type SetupState,
 } from '$lib/frameleaf/first-run-setup';
 
 const memory = () => {
@@ -398,6 +401,84 @@ describe('first-run setup state (FL-176)', () => {
         // a default keep is not saved as a choice and is offered again
         const pending = toProgress({ ...kept, choices: { ...kept.choices, modelChosen: false } });
         expect(resume(pending as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('resumes a default keep saved with its model, and asks again when that model changed', () => {
+        const kept = withDefaultTier(createSetup('existing'), context);
+        const past = { ...kept, step: tierStep + 1, reached: tierStep + 1 };
+        const resumed = resumeSetup('existing', { server: toProgress(past) }, true);
+        expect(resumed.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'custom-model' });
+        const listed = settleLoadedTier(resumed, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(listed.choices.model).toBe('light');
+        expect(listed.step).toBe(tierStep);
+      });
+
+      it('keeps a saved keep when the library model could not be read', () => {
+        const chosen = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, modelChosen: true, keptModel: 'custom' },
+        };
+        expect(settleLoadedTier(chosen, { hardware: null, currentModel: undefined })).toBe(chosen);
+      });
+
+      it('turns a default accepted before the data loaded into "keep" without asking, since keep changes nothing', () => {
+        const accepted = { ...createSetup('existing'), step: tierStep + 1, reached: tierStep + 1 };
+        const settled = settleLoadedTier(accepted, context);
+        expect(settled.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'custom-model' });
+        expect(settled.step).toBe(tierStep + 1);
+      });
+
+      it('returns to the tier step when the loaded default replaces a tier with another tier', () => {
+        const accepted = {
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, model: KEEP_MODEL, keptModel: 'custom-model' },
+        };
+        const settled = settleLoadedTier(accepted, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(settled.choices.model).toBe('light');
+        expect(settled.step).toBe(tierStep);
+      });
+
+      describe('at finish', () => {
+        const past = (choices: Partial<SetupState['choices']>) => ({
+          ...createSetup('existing'),
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...createSetup('existing').choices, ...choices },
+        });
+        const listed = { ...context, currentModel: 'ViT-B-32__openai' };
+
+        it('finishes a tier the administrator chose, and a keep of the model it named', () => {
+          expect(settleFinishTier(past({ model: 'best', modelChosen: true }), listed)).toBeNull();
+          expect(settleFinishTier(past({ model: KEEP_MODEL, keptModel: 'custom-model' }), context)).toBeNull();
+          // a save that did not record the model compares with the one this page loaded
+          expect(settleFinishTier(past({ model: KEEP_MODEL }), context, 'custom-model')).toBeNull();
+        });
+
+        it('never applies an unchosen tier that is not the default for the model the server has now', () => {
+          const confirm = settleFinishTier(past({ model: 'balanced', modelChosen: false }), listed);
+          expect(confirm?.choices.model).toBe('light');
+          expect(confirm?.step).toBe(tierStep);
+          expect(settleFinishTier(past({ model: 'light', modelChosen: false }), listed)).toBeNull();
+        });
+
+        it('asks again when "keep" would keep a model other than the one it named', () => {
+          const confirm = settleFinishTier(past({ model: KEEP_MODEL, keptModel: 'custom-model' }), {
+            ...context,
+            currentModel: 'other-model',
+          });
+          expect(confirm?.choices).toMatchObject({ model: KEEP_MODEL, keptModel: 'other-model' });
+          expect(confirm?.step).toBe(tierStep);
+          const legacy = settleFinishTier(
+            past({ model: KEEP_MODEL }),
+            { ...context, currentModel: 'x' },
+            'custom-model',
+          );
+          expect(legacy?.step).toBe(tierStep);
+        });
       });
 
       it('keeps an older save past the tier step that holds a tier other than the default', () => {
