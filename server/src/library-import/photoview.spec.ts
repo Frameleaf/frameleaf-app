@@ -116,7 +116,9 @@ describe('Photoview pinned SQLite extraction', () => {
   });
   it('keeps all pages and integer identities exact for composite-key tables', () => {
     const insert = database.prepare('INSERT INTO user_media_data(user_id,media_id,favorite) VALUES(?,?,0)');
+    database.exec('BEGIN');
     for (let index = 0; index < 2001; index++) insert.run(9_007_199_254_740_993n + BigInt(index), 1);
+    database.exec('COMMIT');
     const source = openPhotoviewSnapshot(path, 'v2.4.0');
     try {
       const batches = [...source.rows('user_media_data')];
