@@ -56,6 +56,16 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
     expect(transport.reserve).not.toHaveBeenCalled();
   });
 
+  it('checks table write privileges reachable through non-inherited SET ROLE membership', async () => {
+    const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
+    const guardQuery = transport.unsafe.mock.calls.find(([sql]) => sql.includes('rolsuper'))![0];
+    expect(guardQuery).toContain("pg_catalog.pg_has_role(current_user,writer.oid,'SET')");
+    expect(guardQuery).toContain(
+      "pg_catalog.has_table_privilege(writer.oid,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')",
+    );
+    await source.close();
+  });
+
   it.each(['rolsuper', 'rolbypassrls', 'elevated', 'writable', 'other_clients'])(
     'refuses %s authority or another client before reading content',
     async (field) => {

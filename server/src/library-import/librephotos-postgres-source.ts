@@ -53,7 +53,10 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
       EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p') AND (
           pg_catalog.has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
-          OR pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER'))) AS writable,
+          OR pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER')
+          OR EXISTS (SELECT 1 FROM pg_catalog.pg_roles writer
+            WHERE pg_catalog.pg_has_role(current_user,writer.oid,'SET')
+            AND pg_catalog.has_table_privilege(writer.oid,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')))) AS writable,
       EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname=current_database()
         AND pid<>pg_backend_pid() AND (backend_type='client backend' OR backend_type IS NULL)) AS other_clients
       FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`);
