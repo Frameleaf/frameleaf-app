@@ -98675,6 +98675,19 @@
         ],
         "type": "object"
       },
+      "LocationScanState": {
+        "enum": [
+          "queued",
+          "preparing",
+          "uploading",
+          "running",
+          "paused",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "LocationScanStatusResponseDto": {
         "properties": {
           "available": {
@@ -98735,17 +98748,7 @@
             "type": "integer"
           },
           "status": {
-            "enum": [
-              "queued",
-              "preparing",
-              "uploading",
-              "running",
-              "paused",
-              "completed",
-              "failed",
-              "cancelled"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/LocationScanState"
           },
           "total": {
             "maximum": 9007199254740991,

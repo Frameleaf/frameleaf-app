@@ -5,10 +5,14 @@ import { locationInsightSchema } from 'src/utils/photo-locations.js';
 export const LocationInsightSchema = locationInsightSchema.meta({ id: 'LocationInsightDto' });
 export class LocationInsightDto extends createZodDto(LocationInsightSchema) {}
 
+const LocationScanStateSchema = z
+  .enum(['queued', 'preparing', 'uploading', 'running', 'paused', 'completed', 'failed', 'cancelled'])
+  .meta({ id: 'LocationScanState' });
+
 export const LocationScanSummarySchema = z
   .object({
     id: z.uuid(),
-    status: z.enum(['queued', 'preparing', 'uploading', 'running', 'paused', 'completed', 'failed', 'cancelled']),
+    status: LocationScanStateSchema,
     total: z.number().int().nonnegative(),
     processed: z.number().int().nonnegative(),
     matched: z.number().int().nonnegative(),

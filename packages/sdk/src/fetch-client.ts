@@ -17697,7 +17697,7 @@ export type LocationScanSummaryDto = {
     processed: number;
     reason?: string | null;
     skipped: number;
-    status: Status12;
+    status: LocationScanState;
     total: number;
     unmatched: number;
 };
@@ -19414,7 +19414,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status13;
+    status: Status12;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -39592,7 +39592,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Status12 {
+export enum LocationScanState {
     Queued = "queued",
     Preparing = "preparing",
     Uploading = "uploading",
@@ -39747,7 +39747,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status13 {
+export enum Status12 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"
