@@ -687,6 +687,7 @@ export class CloudMlJobService {
     auth: AuthDto,
     holdUsd: number,
     now: Date,
+    options?: { exactHold?: boolean; excludeLocationScanId?: string },
   ): Promise<CloudMlJobEstimateResponseDto['permission']> {
     if (auth.user.isAdmin) {
       return { canConfirm: true, reason: null, monthlyCapUsd: null, spentThisMonthUsd: null };
@@ -699,10 +700,17 @@ export class CloudMlJobService {
     if (spender.monthlyCapUsd === null) {
       return { canConfirm: true, reason: null, monthlyCapUsd: null, spentThisMonthUsd: null };
     }
-    const rows = await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
+    const rows = options?.excludeLocationScanId
+      ? await this.mediaOperationRepository.listCloudMlJobSpend(
+          auth.user.id,
+          cloudMlJobMonthStart(now),
+          options.excludeLocationScanId,
+        )
+      : await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
     const spent = cloudMlJobSpentUsd(rows);
     // a job the queue held past its estimate may be resealed up to 10 % higher: the limit keeps room for it
-    const within = spent + holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE <= spender.monthlyCapUsd + 1e-9;
+    const within =
+      spent + holdUsd * (options?.exactHold ? 1 : CLOUD_ML_JOB_PRICE_TOLERANCE) <= spender.monthlyCapUsd + 1e-9;
     return {
       canConfirm: within,
       reason: within ? null : 'monthly-cap',

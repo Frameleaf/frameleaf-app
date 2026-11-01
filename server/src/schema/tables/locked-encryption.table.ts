@@ -3,7 +3,7 @@ import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
- * Optional encryption of one person's Locked files. Mirrors migration 2100000003034-LockedEncryption.
+ * Optional encryption of one person's Locked files. Mirrors migration 2100000003036-LockedEncryption.
  *
  * A row means the person turned it on (no row means off). `status` is `encrypting` while the Locked
  * files are being sealed, `on` once they all are, and `decrypting` while turning it off unseals them.

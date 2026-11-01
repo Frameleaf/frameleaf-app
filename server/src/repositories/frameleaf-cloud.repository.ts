@@ -67,7 +67,7 @@ export type FrameleafCloudRequest = {
   body?: unknown;
   form?: Record<string, string>;
   /** FL-177: a body sent as it is, for example a compact JWS as `application/jose`. */
-  raw?: { contentType: string; body: string };
+  raw?: { contentType: string; body: string | Uint8Array<ArrayBuffer> };
   headers?: Record<string, string>;
   /**
    * FL-165: how long this call may take, for the few calls the cloud answers slowly on purpose (a DNS
@@ -442,7 +442,7 @@ export class FrameleafCloudRepository {
     const method = request.method ?? 'GET';
     const origin = new URL(request.url).origin;
     const headers: Record<string, string> = { Accept: 'application/json', ...request.headers };
-    let body: string | undefined;
+    let body: string | Uint8Array<ArrayBuffer> | undefined;
     if (request.raw) {
       headers['Content-Type'] = request.raw.contentType;
       body = request.raw.body;

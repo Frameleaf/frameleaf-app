@@ -38,9 +38,10 @@
     type WorkflowDraftStep,
   } from '$lib/frameleaf/workflows';
   import { Route } from '$lib/route';
-  import { downloadJson } from '$lib/utils';
+  import { downloadJson, getAssetMediaUrl } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    AssetMediaSize,
     getWorkflowCapabilities,
     previewWorkflow as previewWorkflowMatches,
     type WorkflowCapabilitiesDto,
@@ -50,6 +51,7 @@
     getWorkflowLogs,
     retryWorkflowRun,
     updateWorkflow,
+    WorkflowPreviewStepResult,
     WorkflowResult,
     WorkflowRunErrorCode,
     type PluginMethodResponseDto,
@@ -142,6 +144,46 @@
     } finally {
       if (generation === previewGeneration) {
         previewing = false;
+      }
+    }
+  };
+  /**
+   * FL-729: a step the preview could not check may drop matches, or change an asset before a later filter
+   * reads it, so with such a step the count is only what the checked filters keep today, with no bound
+   * claimed. A partial count with every step checked is a lower bound.
+   */
+  const matchCountKey = ({ partial, steps }: WorkflowPreviewResponseDto): Translations => {
+    const unchecked = steps.some(({ result }) => result === WorkflowPreviewStepResult.Unchecked);
+    if (partial) {
+      return unchecked
+        ? 'frameleaf_workflows.match_count_partial_unchecked'
+        : 'frameleaf_workflows.match_count_partial';
+    }
+    return unchecked ? 'frameleaf_workflows.match_count_unchecked' : 'frameleaf_workflows.match_count';
+  };
+  /** FL-729: what the dry run did at a step; the server's result once it has checked the matches. */
+  const stepOutcome = (result: 'validated' | 'disabled', checked?: WorkflowPreviewResponseDto['steps'][number]) => {
+    if (result === 'disabled' || checked?.result === WorkflowPreviewStepResult.Disabled) {
+      return $t('frameleaf_workflows.preview_step_disabled');
+    }
+    switch (checked?.result) {
+      case WorkflowPreviewStepResult.Filtered: {
+        // a partial preview checked only the first matches, so a step's count is a lower bound
+        return $t(
+          matches?.partial
+            ? 'frameleaf_workflows.preview_step_filtered_partial'
+            : 'frameleaf_workflows.preview_step_filtered',
+          { values: { count: checked.remaining ?? 0 } },
+        );
+      }
+      case WorkflowPreviewStepResult.Skipped: {
+        return $t('frameleaf_workflows.preview_step_skipped');
+      }
+      case WorkflowPreviewStepResult.Unchecked: {
+        return $t('frameleaf_workflows.preview_step_unchecked');
+      }
+      default: {
+        return $t('frameleaf_workflows.preview_step_validated');
       }
     }
   };
@@ -645,13 +687,31 @@
       </div>
       {#if matches}
         <div role="status">
-          <p>{$t('frameleaf_workflows.match_count', { values: { count: matches.count } })}</p>
+          <p>
+            {$t(matchCountKey(matches), { values: { count: matches.count } })}
+          </p>
           {#each matches.issues as issue, index (index)}<p>{issue.message}</p>{/each}
-          <ul>
-            {#each matches.exampleAssetIds as id (id)}<li>
-                <a href={Route.viewAsset({ id })}>{$t('frameleaf_workflows.open_photo')}</a>
-              </li>{/each}
-          </ul>
+          {#if matches.exampleAssetIds.length > 0}
+            <ul class="wd-matches" aria-label={$t('frameleaf_workflows.matches_label')}>
+              {#each matches.exampleAssetIds as id, index (id)}<li>
+                  <a
+                    href={Route.viewAsset({ id })}
+                    aria-label={$t('frameleaf_workflows.open_match', {
+                      values: { index: index + 1, count: matches.count },
+                    })}
+                  >
+                    <img src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+                  </a>
+                </li>{/each}
+            </ul>
+            {#if matches.count > matches.exampleAssetIds.length}
+              <p>
+                {$t(matches.partial ? 'frameleaf_workflows.more_matches_partial' : 'frameleaf_workflows.more_matches', {
+                  values: { count: matches.count - matches.exampleAssetIds.length },
+                })}
+              </p>
+            {/if}
+          {/if}
         </div>
       {/if}
       {#if validation}
@@ -667,11 +727,7 @@
               {#each validation.steps as step (step.index)}
                 <li>
                   <strong>{step.title ?? step.method}</strong>
-                  <span>
-                    {step.result === 'disabled'
-                      ? $t('frameleaf_workflows.preview_step_disabled')
-                      : $t('frameleaf_workflows.preview_step_validated')}
-                  </span>
+                  <span>{stepOutcome(step.result, matches?.steps[step.index])}</span>
                 </li>
               {/each}
             </ol>
@@ -719,7 +775,17 @@
                   </td>
                   <td>
                     {#if entry.triggerDataId}
-                      <a href={Route.viewAsset({ id: entry.triggerDataId })}>{$t('frameleaf_workflows.open_photo')}</a>
+                      <a
+                        class="wd-match"
+                        href={Route.viewAsset({ id: entry.triggerDataId })}
+                        aria-label={$t('frameleaf_workflows.open_photo')}
+                      >
+                        <img
+                          src={getAssetMediaUrl({ id: entry.triggerDataId, size: AssetMediaSize.Thumbnail })}
+                          alt=""
+                          loading="lazy"
+                        />
+                      </a>
                     {/if}
                     {#if entry.errorCode === WorkflowRunErrorCode.StepFailed && entry.triggerDataId && workflow.enabled}
                       <Button onclick={() => void retry(entry)}>{$t('frameleaf_workflows.retry')}</Button>

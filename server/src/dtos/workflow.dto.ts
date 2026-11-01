@@ -276,6 +276,18 @@ export class WorkflowPreviewResponseDto extends createZodDto(
     .object({
       count: z.int().nonnegative(),
       exampleAssetIds: z.array(z.uuid()),
+      /** FL-729: built-in filters were checked on the first matches only, so `count` is a lower bound. */
+      partial: z.boolean(),
+      /** FL-729: what the dry run did at each step, in definition order. */
+      steps: z.array(
+        z.object({
+          method: z.string(),
+          /** `filtered`: a built-in filter, checked; `skipped`: an action, not run; `unchecked`: another plugin's step, assumed to let everything through; `disabled`. */
+          result: z.enum(['filtered', 'skipped', 'unchecked', 'disabled']).meta({ id: 'WorkflowPreviewStepResult' }),
+          /** Matches still in the run after this step, when the preview checked filters. */
+          remaining: z.int().nonnegative().nullable(),
+        }),
+      ),
       actions: z.array(z.string()),
       evaluatedAt: z.string(),
       issues: z.array(WorkflowIssueSchema),

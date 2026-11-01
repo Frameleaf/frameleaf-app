@@ -6,6 +6,7 @@ import {
   getQueue,
   getIntegrityCheckRuns,
   getIntegrityOverview,
+  getLocationScanStatus,
   getServerStatistics,
   getSummary,
   getUtilitiesSummary,
@@ -40,9 +41,12 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   getQueue: vi.fn(),
   updateQueue: vi.fn(),
   getUtilitiesSummary: vi.fn(),
+  getLocationScanStatus: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user, authenticated: true } }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: { user, authenticated: true, captureSession: () => () => true },
+}));
 
 const summary = (queues: Partial<MediaHealthSummaryResponseDto['queues']> = {}, finishedAt: string | null = null) =>
   ({
@@ -120,7 +124,18 @@ describe('Library care landing (FL-366)', () => {
     vi.mocked(getQueue).mockResolvedValue({ isPaused: false } as never);
     vi.mocked(getAnalyticsReport).mockResolvedValue({ summary: { savedBytes: 3_200_000_000 } } as never);
     vi.mocked(getUtilitiesSummary).mockResolvedValue({ unusedFiles: null, unusedBytes: null } as never);
+    vi.mocked(getLocationScanStatus).mockResolvedValue({ enabled: false, available: false, scan: null });
     unusedFilesAccess.reset();
+  });
+
+  it('offers the optional paid photo location estimate on the member’s Library care landing page', async () => {
+    user.isAdmin = false;
+    vi.mocked(getSummary).mockResolvedValue(summary());
+    vi.mocked(getLocationScanStatus).mockResolvedValue({ enabled: true, available: true, scan: null });
+    render(LibraryCareLanding);
+
+    expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Estimate library' })).toBeEnabled());
   });
 
   it('says the library is healthy, with how many files were checked', async () => {

@@ -1831,6 +1831,7 @@ describe(MetadataService.name, () => {
             lensModel: tags.LensModel,
             livePhotoCID: tags.MediaGroupUUID,
             longitude: null,
+            gpsAccuracyM: null,
             make: tags.Make,
             model: tags.Model,
             modifyDate: expect.any(Date),

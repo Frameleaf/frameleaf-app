@@ -576,6 +576,12 @@ export class AssetRepository {
                   timeZone: ref('timeZone'),
                   latitude: ref('latitude'),
                   longitude: ref('longitude'),
+                  gpsAccuracyM:
+                    lockedPropertiesBehavior === 'skip'
+                      ? sql<
+                          number | null
+                        >`CASE WHEN 'latitude' = ANY(asset_exif."lockedProperties") THEN asset_exif."gpsAccuracyM" ELSE excluded."gpsAccuracyM" END`
+                      : eb.ref('excluded.gpsAccuracyM'),
                   projectionType: ref('projectionType'),
                   city: ref('city'),
                   livePhotoCID: ref('livePhotoCID'),
@@ -603,6 +609,9 @@ export class AssetRepository {
                 },
                 exif,
               ),
+              ...(exif.gpsAccuracyM === undefined && (exif.latitude !== undefined || exif.longitude !== undefined)
+                ? { gpsAccuracyM: null }
+                : {}),
             };
           });
           return expectedUpdateId === undefined
@@ -647,6 +656,7 @@ export class AssetRepository {
       .updateTable('asset_exif')
       .set((eb) => ({
         ...options,
+        ...(options.latitude !== undefined || options.longitude !== undefined ? { gpsAccuracyM: null } : {}),
         // `unlock` releases locks the change makes stale (a typed place name at new coordinates)
         lockedProperties:
           unlock.length === 0
@@ -674,6 +684,7 @@ export class AssetRepository {
       .set((eb) => ({
         latitude: null,
         longitude: null,
+        gpsAccuracyM: null,
         city: null,
         state: null,
         country: null,
@@ -1591,6 +1602,15 @@ export class AssetRepository {
       .select(isLocked('asset').as('isLocked'))
       .where('asset.id', '=', asUuid(id))
       .$if(!!exifInfo, withExif)
+      .$if(!!exifInfo, (qb) =>
+        qb.select(
+          sql<import('src/utils/photo-locations.js').PhotoLocationInsight | null>`(
+        SELECT i.insight FROM asset_location_insight i
+        WHERE i."assetId" = asset.id AND NOT i.dismissed
+          AND i.latitude = asset_exif.latitude AND i.longitude = asset_exif.longitude
+      )`.as('locationInsight'),
+        ),
+      )
       .$if(!!faces, (qb) =>
         qb.select(faces?.person ? withFacesAndPeople({ viewingUserId: faces.viewingUserId! }) : withFaces).$narrowType<{
           faces: NotNull;

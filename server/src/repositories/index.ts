@@ -97,6 +97,7 @@ import { PartnerOriginRepository } from 'src/repositories/partner-origin.reposit
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
@@ -147,6 +148,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  PhotoLocationsRepository,
   SpeechRepository,
   AssetAnnotationRepository,
   AssetPaletteRepository,

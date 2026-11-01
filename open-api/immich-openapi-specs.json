@@ -17291,6 +17291,50 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/location-insight": {
+      "delete": {
+        "operationId": "dismissAssetLocationInsight",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss own inferred venue without changing GPS or EXIF",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/metadata": {
       "get": {
         "description": "Retrieve all metadata key-value pairs associated with the specified asset.",
@@ -60642,6 +60686,188 @@
         "x-immich-state": "Stable"
       }
     },
+    "/users/me/location-scans": {
+      "get": {
+        "operationId": "getLocationScanStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read own photo location scan and Cloud availability",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      },
+      "post": {
+        "operationId": "startLocationScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartLocationScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Explicitly identify own photo locations using Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/location-scans/estimate": {
+      "post": {
+        "operationId": "estimateLocationScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationScanEstimateRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate an optional paid GPS location scan without uploading coordinates",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/location-scans/{id}": {
+      "delete": {
+        "operationId": "cancelLocationScan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel own location scan and settle checked photos",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/users/me/locked-encryption": {
       "delete": {
         "description": "FL-721: with your PIN (PIN mode) or passphrase (Advanced Security). Your Locked items are decrypted back to ordinary files in the background; then your key and recovery key are deleted.",
@@ -62863,7 +63089,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.1.18",
+    "version": "1.1.19",
     "contact": {}
   },
   "tags": [
@@ -73514,6 +73740,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "locationInsight": {
+            "$ref": "#/components/schemas/LocationInsightDto"
+          },
           "lockedEncryption": {
             "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
             "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
@@ -75660,6 +75889,9 @@
             "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
             "format": "date-time",
             "type": "string"
+          },
+          "locationInsight": {
+            "$ref": "#/components/schemas/LocationInsightDto"
           },
           "lockedEncryption": {
             "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
@@ -88766,6 +88998,13 @@
             "nullable": true,
             "type": "number"
           },
+          "gpsAccuracyM": {
+            "description": "Reported horizontal GPS accuracy in metres",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
           "isRejected": {
             "default": null,
             "description": "Whether the stored rating is rejected",
@@ -98887,6 +99126,410 @@
         "required": [
           "still",
           "video"
+        ],
+        "type": "object"
+      },
+      "LocationBillingCurrency": {
+        "enum": [
+          "USD"
+        ],
+        "type": "string"
+      },
+      "LocationBillingState": {
+        "enum": [
+          "pending_hold",
+          "held",
+          "settling",
+          "settled",
+          "released",
+          "no_charge"
+        ],
+        "type": "string"
+      },
+      "LocationBillingUnitPriceMicros": {
+        "enum": [
+          5000
+        ],
+        "type": "number"
+      },
+      "LocationInsightConfidence": {
+        "enum": [
+          "high",
+          "medium"
+        ],
+        "type": "string"
+      },
+      "LocationInsightDto": {
+        "properties": {
+          "address": {
+            "default": null,
+            "maxLength": 2048,
+            "nullable": true,
+            "type": "string"
+          },
+          "attributions": {
+            "items": {
+              "properties": {
+                "displayName": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "uri": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "displayName"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/LocationInsightConfidence"
+          },
+          "distanceM": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "mapsUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "matchedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "placeId": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/LocationInsightProvider"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/LocationInsightRelation"
+          }
+        },
+        "required": [
+          "attributions",
+          "confidence",
+          "distanceM",
+          "mapsUrl",
+          "matchedAt",
+          "name",
+          "placeId",
+          "provider",
+          "relation"
+        ],
+        "type": "object"
+      },
+      "LocationInsightProvider": {
+        "enum": [
+          "google"
+        ],
+        "type": "string"
+      },
+      "LocationInsightRelation": {
+        "enum": [
+          "at",
+          "near"
+        ],
+        "type": "string"
+      },
+      "LocationScanBillingDto": {
+        "properties": {
+          "chargedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "checkedPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/LocationBillingCurrency"
+          },
+          "heldMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "releasedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LocationBillingState"
+          },
+          "unitPriceMicros": {
+            "$ref": "#/components/schemas/LocationBillingUnitPriceMicros"
+          }
+        },
+        "required": [
+          "chargedMicros",
+          "checkedPhotos",
+          "currency",
+          "heldMicros",
+          "releasedMicros",
+          "state",
+          "unitPriceMicros"
+        ],
+        "type": "object"
+      },
+      "LocationScanConsent": {
+        "enum": [
+          true
+        ],
+        "type": "boolean"
+      },
+      "LocationScanEstimateRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "maxPhotos": {
+            "exclusiveMinimum": true,
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxSpendMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 5000,
+            "type": "integer"
+          },
+          "refresh": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "LocationScanEstimateResponseDto": {
+        "properties": {
+          "availableMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "canStart": {
+            "type": "boolean"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/LocationBillingCurrency"
+          },
+          "eligiblePhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimateId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "estimatedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "holdMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "refusal": {
+            "nullable": true,
+            "type": "string"
+          },
+          "remainingPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectedPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "topUpUrl": {
+            "format": "uri",
+            "nullable": true,
+            "type": "string"
+          },
+          "unitPriceMicros": {
+            "$ref": "#/components/schemas/LocationBillingUnitPriceMicros"
+          }
+        },
+        "required": [
+          "availableMicros",
+          "canStart",
+          "currency",
+          "eligiblePhotos",
+          "estimateId",
+          "estimatedMicros",
+          "expiresAt",
+          "holdMicros",
+          "refusal",
+          "remainingPhotos",
+          "selectedPhotos",
+          "topUpUrl",
+          "unitPriceMicros"
+        ],
+        "type": "object"
+      },
+      "LocationScanState": {
+        "enum": [
+          "queued",
+          "preparing",
+          "uploading",
+          "running",
+          "paused",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "LocationScanStatusResponseDto": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "scan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocationScanSummaryDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "enabled",
+          "scan"
+        ],
+        "type": "object"
+      },
+      "LocationScanSummaryDto": {
+        "properties": {
+          "billing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocationScanBillingDto"
+              }
+            ],
+            "nullable": true
+          },
+          "eligiblePhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "estimatedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "remainingPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectedPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LocationScanState"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmatched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "billing",
+          "eligiblePhotos",
+          "estimatedMicros",
+          "failed",
+          "id",
+          "matched",
+          "processed",
+          "remainingPhotos",
+          "selectedPhotos",
+          "skipped",
+          "status",
+          "total",
+          "unmatched"
         ],
         "type": "object"
       },
@@ -136852,6 +137495,25 @@
         },
         "type": "object"
       },
+      "StartLocationScanDto": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "$ref": "#/components/schemas/LocationScanConsent",
+            "description": "Explicit permission for this paid GPS scan"
+          },
+          "estimateId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consent",
+          "estimateId"
+        ],
+        "type": "object"
+      },
       "StatisticsSearchDto": {
         "properties": {
           "albumIds": {
@@ -152524,6 +153186,34 @@
               "$ref": "#/components/schemas/WorkflowIssueDto"
             },
             "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "remaining": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "result": {
+                  "$ref": "#/components/schemas/WorkflowPreviewStepResult"
+                }
+              },
+              "required": [
+                "method",
+                "result",
+                "remaining"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -152531,9 +153221,20 @@
           "count",
           "evaluatedAt",
           "exampleAssetIds",
-          "issues"
+          "issues",
+          "partial",
+          "steps"
         ],
         "type": "object"
+      },
+      "WorkflowPreviewStepResult": {
+        "enum": [
+          "filtered",
+          "skipped",
+          "unchecked",
+          "disabled"
+        ],
+        "type": "string"
       },
       "WorkflowResponseDto": {
         "properties": {

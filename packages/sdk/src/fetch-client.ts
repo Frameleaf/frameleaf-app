@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.1.18
+ * 1.1.19
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -4421,6 +4421,8 @@ export type ExifResponseDto = {
     focalLength?: number | null;
     /** Video frame rate (frames per second) */
     fps?: number | null;
+    /** Reported horizontal GPS accuracy in metres */
+    gpsAccuracyM?: number | null;
     /** Whether the stored rating is rejected */
     isRejected?: boolean | null;
     /** ISO sensitivity */
@@ -4485,6 +4487,21 @@ export type LandmarkSummaryDto = {
     kind: string;
     /** Landmark name */
     name: string;
+};
+export type LocationInsightDto = {
+    address?: string | null;
+    attributions: {
+        displayName: string;
+        uri?: string;
+    }[];
+    confidence: LocationInsightConfidence;
+    distanceM: number;
+    mapsUrl: string;
+    matchedAt: string;
+    name: string;
+    placeId: string;
+    provider: LocationInsightProvider;
+    relation: LocationInsightRelation;
 };
 export type PartnerLockedEncryptionDto = {
     /** Whether the item opens for you (with your own PIN, or a passphrase you typed) */
@@ -4585,6 +4602,7 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    locationInsight?: LocationInsightDto;
     /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
     lockedEncryption?: PartnerLockedEncryptionDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
@@ -6364,6 +6382,7 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    locationInsight?: LocationInsightDto;
     /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
     lockedEncryption?: PartnerLockedEncryptionDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
@@ -17701,6 +17720,63 @@ export type CloudBackupOwnerSetupResponseDto = {
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
 };
+export type LocationScanBillingDto = {
+    chargedMicros: number | null;
+    checkedPhotos: number;
+    currency: LocationBillingCurrency;
+    heldMicros: number;
+    releasedMicros: number | null;
+    state: LocationBillingState;
+    unitPriceMicros: LocationBillingUnitPriceMicros;
+};
+export type LocationScanSummaryDto = {
+    billing: (LocationScanBillingDto) | null;
+    eligiblePhotos: number;
+    error?: string | null;
+    estimatedMicros: number;
+    failed: number;
+    id: string;
+    matched: number;
+    processed: number;
+    reason?: string | null;
+    remainingPhotos: number;
+    selectedPhotos: number;
+    skipped: number;
+    status: LocationScanState;
+    total: number;
+    unmatched: number;
+};
+export type LocationScanStatusResponseDto = {
+    available: boolean;
+    enabled: boolean;
+    scan: (LocationScanSummaryDto) | null;
+};
+export type LocationScanConsent = true;
+export type StartLocationScanDto = {
+    /** Explicit permission for this paid GPS scan */
+    consent: LocationScanConsent;
+    estimateId: string;
+};
+export type LocationScanEstimateRequestDto = {
+    maxPhotos?: number;
+    maxSpendMicros?: number;
+    refresh?: boolean;
+};
+export type LocationScanEstimateResponseDto = {
+    availableMicros: number | null;
+    canStart: boolean;
+    currency: LocationBillingCurrency;
+    eligiblePhotos: number;
+    estimateId: string | null;
+    estimatedMicros: number;
+    expiresAt: string | null;
+    holdMicros: number;
+    refusal: string | null;
+    remainingPhotos: number;
+    selectedPhotos: number;
+    topUpUrl: string | null;
+    unitPriceMicros: LocationBillingUnitPriceMicros;
+};
 export type LockedEncryptionDisableDto = {
     /** Advanced Security: your passphrase */
     passphrase?: string;
@@ -18075,6 +18151,12 @@ export type WorkflowPreviewResponseDto = {
     evaluatedAt: string;
     exampleAssetIds: string[];
     issues: WorkflowIssueDto[];
+    partial: boolean;
+    steps: {
+        method: string;
+        remaining: number | null;
+        result: WorkflowPreviewStepResult;
+    }[];
 };
 export type LegacyWorkflowTriggerResponseDto = {
     trigger: Trigger;
@@ -24262,6 +24344,17 @@ export function updateAssetImageEnrichment({ id, assetImageEnrichmentActionReque
         method: "PUT",
         body: assetImageEnrichmentActionRequestDto
     })));
+}
+/**
+ * Dismiss own inferred venue without changing GPS or EXIF
+ */
+export function dismissAssetLocationInsight({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/location-insight`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Get asset metadata
@@ -34865,6 +34958,58 @@ export function setUserLicense({ licenseActivateDto }: {
     })));
 }
 /**
+ * Read own photo location scan and Cloud availability
+ */
+export function getLocationScanStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationScanStatusResponseDto;
+    }>("/users/me/location-scans", {
+        ...opts
+    }));
+}
+/**
+ * Explicitly identify own photo locations using Frameleaf Cloud
+ */
+export function startLocationScan({ startLocationScanDto }: {
+    startLocationScanDto: StartLocationScanDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LocationScanStatusResponseDto;
+    }>("/users/me/location-scans", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: startLocationScanDto
+    })));
+}
+/**
+ * Estimate an optional paid GPS location scan without uploading coordinates
+ */
+export function estimateLocationScan({ locationScanEstimateRequestDto }: {
+    locationScanEstimateRequestDto: LocationScanEstimateRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationScanEstimateResponseDto;
+    }>("/users/me/location-scans/estimate", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationScanEstimateRequestDto
+    })));
+}
+/**
+ * Cancel own location scan and settle checked photos
+ */
+export function cancelLocationScan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/users/me/location-scans/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Turn off Locked encryption
  */
 export function disableLockedEncryption({ lockedEncryptionDisableDto }: {
@@ -36559,6 +36704,17 @@ export enum DynamicRange {
 export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
+}
+export enum LocationInsightConfidence {
+    High = "high",
+    Medium = "medium"
+}
+export enum LocationInsightProvider {
+    Google = "google"
+}
+export enum LocationInsightRelation {
+    At = "at",
+    Near = "near"
 }
 export enum PartnerLockedEncryptionReason {
     NotReady = "not-ready",
@@ -39721,6 +39877,30 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
+export enum LocationBillingCurrency {
+    Usd = "USD"
+}
+export enum LocationBillingState {
+    PendingHold = "pending_hold",
+    Held = "held",
+    Settling = "settling",
+    Settled = "settled",
+    Released = "released",
+    NoCharge = "no_charge"
+}
+export enum LocationBillingUnitPriceMicros {
+    $5000 = 5000
+}
+export enum LocationScanState {
+    Queued = "queued",
+    Preparing = "preparing",
+    Uploading = "uploading",
+    Running = "running",
+    Paused = "paused",
+    Completed = "completed",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
 export enum LockedEncryptionMode {
     Pin = "pin",
     Advanced = "advanced"
@@ -39750,6 +39930,12 @@ export enum Field {
     LocalDateTime = "localDateTime",
     CreatedAt = "createdAt",
     UpdatedAt = "updatedAt"
+}
+export enum WorkflowPreviewStepResult {
+    Filtered = "filtered",
+    Skipped = "skipped",
+    Unchecked = "unchecked",
+    Disabled = "disabled"
 }
 export enum WorkflowBatchReason {
     Manual = "manual",
