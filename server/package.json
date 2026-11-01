@@ -94,6 +94,7 @@
     "luxon": "^3.7.2",
     "mnemonist": "^0.40.5",
     "multer": "^2.4.0",
+    "mysql2": "3.24.6",
     "nest-commander": "^3.21.0",
     "nestjs-cls": "^7.0.1",
     "nestjs-kysely": "3.1.4",

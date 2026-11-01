@@ -1,0 +1,376 @@
+{
+  "rows": {
+    "images": [
+      {
+        "id": 3,
+        "file": "frameleaf-generated.png",
+        "date_available": "2026-11-01 21:59:21",
+        "date_creation": null,
+        "name": "Fixture public",
+        "comment": "Manual caption public",
+        "author": null,
+        "hit": 0,
+        "filesize": 1,
+        "width": 640,
+        "height": 480,
+        "representative_ext": null,
+        "date_metadata_update": "2026-11-01",
+        "rating_score": null,
+        "path": "./upload/2026/11/01/20261101215921-efe58f4e.png",
+        "md5sum": "efe5df5f316d908a6e15452e1ca67b4e",
+        "level": 0,
+        "added_by": 1,
+        "rotation": 0,
+        "latitude": null,
+        "longitude": null
+      },
+      {
+        "id": 4,
+        "file": "frameleaf-generated.png",
+        "date_available": "2026-11-01 21:59:22",
+        "date_creation": "2019-03-17 14:15:16",
+        "name": "Manually edited title",
+        "comment": "Manually edited caption",
+        "author": "Displayed author, not ownership",
+        "hit": 0,
+        "filesize": 1,
+        "width": 640,
+        "height": 480,
+        "representative_ext": null,
+        "date_metadata_update": "2026-11-01",
+        "rating_score": null,
+        "path": "./upload/2026/11/01/20261101215922-213f35c9.png",
+        "md5sum": "213fe5e09079536e8e6003485d8051ea",
+        "level": 0,
+        "added_by": 1,
+        "rotation": 0,
+        "latitude": null,
+        "longitude": null
+      },
+      {
+        "id": 5,
+        "file": "frameleaf-generated.png",
+        "date_available": "2026-11-01 21:59:22",
+        "date_creation": null,
+        "name": "Fixture level",
+        "comment": "Manual caption level",
+        "author": null,
+        "hit": 0,
+        "filesize": 1,
+        "width": 640,
+        "height": 480,
+        "representative_ext": null,
+        "date_metadata_update": "2026-11-01",
+        "rating_score": null,
+        "path": "./upload/2026/11/01/20261101215922-74bf6683.png",
+        "md5sum": "74bf0657a1aeafdb20165e28b10d17c6",
+        "level": 4,
+        "added_by": 1,
+        "rotation": 0,
+        "latitude": null,
+        "longitude": null
+      },
+      {
+        "id": 6,
+        "file": "frameleaf-generated.png",
+        "date_available": "2026-11-01 21:59:22",
+        "date_creation": null,
+        "name": "Fixture shared",
+        "comment": "Manual caption shared",
+        "author": null,
+        "hit": 0,
+        "filesize": 1,
+        "width": 640,
+        "height": 480,
+        "representative_ext": null,
+        "date_metadata_update": "2026-11-01",
+        "rating_score": null,
+        "path": "./upload/2026/11/01/20261101215922-2bda431f.png",
+        "md5sum": "2bda81a7714daa96955f7d169078ad47",
+        "level": 0,
+        "added_by": 1,
+        "rotation": 0,
+        "latitude": null,
+        "longitude": null
+      }
+    ],
+    "categories": [
+      {
+        "id": 1,
+        "name": "Fixture public",
+        "id_uppercat": null,
+        "comment": null,
+        "dir": null,
+        "rank": 3,
+        "status": "public",
+        "site_id": null,
+        "visible": "true",
+        "representative_picture_id": 5,
+        "uppercats": "1",
+        "commentable": "true",
+        "global_rank": "3",
+        "image_order": null,
+        "permalink": null
+      },
+      {
+        "id": 2,
+        "name": "Fixture private",
+        "id_uppercat": null,
+        "comment": null,
+        "dir": null,
+        "rank": 2,
+        "status": "private",
+        "site_id": null,
+        "visible": "true",
+        "representative_picture_id": 2,
+        "uppercats": "2",
+        "commentable": "true",
+        "global_rank": "2",
+        "image_order": null,
+        "permalink": null
+      },
+      {
+        "id": 3,
+        "name": "Fixture shared",
+        "id_uppercat": null,
+        "comment": null,
+        "dir": null,
+        "rank": 1,
+        "status": "private",
+        "site_id": null,
+        "visible": "true",
+        "representative_picture_id": 2,
+        "uppercats": "3",
+        "commentable": "true",
+        "global_rank": "1",
+        "image_order": null,
+        "permalink": null
+      }
+    ],
+    "image_category": [
+      {
+        "image_id": 1,
+        "category_id": 1,
+        "rank": 1
+      },
+      {
+        "image_id": 2,
+        "category_id": 1,
+        "rank": 2
+      },
+      {
+        "image_id": 3,
+        "category_id": 1,
+        "rank": 3
+      },
+      {
+        "image_id": 5,
+        "category_id": 1,
+        "rank": 4
+      },
+      {
+        "image_id": 2,
+        "category_id": 2,
+        "rank": 1
+      },
+      {
+        "image_id": 4,
+        "category_id": 2,
+        "rank": 2
+      },
+      {
+        "image_id": 2,
+        "category_id": 3,
+        "rank": 1
+      },
+      {
+        "image_id": 6,
+        "category_id": 3,
+        "rank": 2
+      }
+    ],
+    "users": [
+      {
+        "id": 1,
+        "username": "fixture_admin",
+        "mail_address": "admin@example.invalid"
+      },
+      {
+        "id": 2,
+        "username": "guest",
+        "mail_address": null
+      },
+      {
+        "id": 3,
+        "username": "fixture_alice",
+        "mail_address": "alice@example.invalid"
+      },
+      {
+        "id": 4,
+        "username": "fixture_bob",
+        "mail_address": "bob@example.invalid"
+      },
+      {
+        "id": 5,
+        "username": "fixture_mallory",
+        "mail_address": "mallory@example.invalid"
+      }
+    ],
+    "user_infos": [
+      {
+        "user_id": 1,
+        "status": "webmaster",
+        "level": 8,
+        "enabled_high": "true"
+      },
+      {
+        "user_id": 2,
+        "status": "guest",
+        "level": 0,
+        "enabled_high": "true"
+      },
+      {
+        "user_id": 3,
+        "status": "normal",
+        "level": 8,
+        "enabled_high": "true"
+      },
+      {
+        "user_id": 4,
+        "status": "normal",
+        "level": 2,
+        "enabled_high": "true"
+      },
+      {
+        "user_id": 5,
+        "status": "normal",
+        "level": 0,
+        "enabled_high": "true"
+      }
+    ],
+    "groups": [
+      {
+        "id": 1,
+        "name": "Fixture family",
+        "is_default": "false"
+      }
+    ],
+    "user_group": [
+      {
+        "user_id": 3,
+        "group_id": 1
+      }
+    ],
+    "user_access": [
+      {
+        "user_id": 1,
+        "cat_id": 2
+      },
+      {
+        "user_id": 1,
+        "cat_id": 3
+      },
+      {
+        "user_id": 3,
+        "cat_id": 2
+      },
+      {
+        "user_id": 4,
+        "cat_id": 3
+      }
+    ],
+    "group_access": [
+      {
+        "group_id": 1,
+        "cat_id": 3
+      }
+    ],
+    "favorites": [
+      {
+        "user_id": 3,
+        "image_id": 6
+      }
+    ],
+    "tags": [],
+    "image_tag": [],
+    "image_format": [],
+    "sites": [
+      {
+        "id": 1,
+        "galleries_url": "./galleries/"
+      }
+    ],
+    "lounge": []
+  },
+  "originals": [
+    {
+      "id": 3,
+      "path": "./upload/2026/11/01/20261101215921-efe58f4e.png",
+      "bytes": "1970",
+      "sha256": "91b94ed3f40894c8e885a69d1927f62b80622a05349c55edd813f878e2583cdb",
+      "md5Matches": true,
+      "originalBase64": "iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAIAAAC6s0uzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAHZElEQVR4nO3VMQHAIADAMEAJUpGGtLmgxxIF/Tr3uQMAeGvVAQDwRwYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAh81VYFIOOyW1wAAAAASUVORK5CYII="
+    },
+    {
+      "id": 4,
+      "path": "./upload/2026/11/01/20261101215922-213f35c9.png",
+      "bytes": "1970",
+      "sha256": "f9b7886bf2036464a10daaed852f0a74f1935b2cb0e4cb04aba92dbca4e51a0b",
+      "md5Matches": true,
+      "originalBase64": "iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAIAAAC6s0uzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAHZElEQVR4nO3VMQHAIADAMEAZ0pCGtLmgxxIF/Tr3uQMAeGvVAQDwRwYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAh8K6MFQEAZ9sYAAAAASUVORK5CYII="
+    },
+    {
+      "id": 5,
+      "path": "./upload/2026/11/01/20261101215922-74bf6683.png",
+      "bytes": "1970",
+      "sha256": "c99acd4557cd3d935a8b51794fa86ec9834acab232acbf46a514e0e3d5bf1aad",
+      "md5Matches": true,
+      "originalBase64": "iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAIAAAC6s0uzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAHZElEQVR4nO3VMQHAIADAMEApUpCGtLmgxxIF/Tr3uQMAeGvVAQDwRwYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAh8geEFYCRuZPMAAAAASUVORK5CYII="
+    },
+    {
+      "id": 6,
+      "path": "./upload/2026/11/01/20261101215922-2bda431f.png",
+      "bytes": "1968",
+      "sha256": "0b1bf9db2b3a0b7857bbef589278aaabffeec5954d37f61fce64f526808dc0f1",
+      "md5Matches": true,
+      "originalBase64": "iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAIAAAC6s0uzAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAHYklEQVR4nO3VQQEAEADAQCQXTTQt7OEuwX6be58BALy16gAA+JEBA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACF9gfBYBjLtIqAAAAAElFTkSuQmCC"
+    }
+  ],
+  "expected": {
+    "visibleImageIds": {
+      "alice": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "bob": [
+        3,
+        6
+      ],
+      "mallory": [
+        3
+      ]
+    },
+    "privateImageId": 4,
+    "sharedImageId": 6,
+    "favorites": {
+      "alice": [
+        6
+      ],
+      "bob": []
+    },
+    "authenticatedPrivateImageDeniedFor": [
+      "bob",
+      "mallory"
+    ],
+    "pendingLoungeMemberships": 0,
+    "danglingMembershipImageIds": [
+      1,
+      2
+    ],
+    "danglingRepresentativeImageIds": [
+      2
+    ]
+  }
+}
