@@ -121,8 +121,7 @@ it('reports a failed shift-click range and clears its pending state', async () =
   const error = new Error('range failed');
   const handleError = vi.fn();
   const select = closure('LibraryTimeline', 'const selectRange =', '\n  };', 'selectRange', {
-    anchorAsset: () => ({ id: 'a' }),
-    session: { revision: 1 },
+    session: { revision: 1, session: { anchorId: 'a' } },
     rangePending: false,
     timelineManager: { retrieveRange: () => Promise.reject(error) },
     handleError,

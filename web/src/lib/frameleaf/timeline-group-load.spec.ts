@@ -67,6 +67,31 @@ describe('loadMonthsInOrder', () => {
 describe('selectGroupAfterLoading', () => {
   const store = () => new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
 
+  it.each([true, false])('collects ids before earlier pages are evicted (checked=%s)', async (checked) => {
+    const session = store();
+    const months = [month('first'), month('second'), month('third')];
+    if (!checked) {
+      session.selectGroup(
+        months.flatMap((m) => m.ids),
+        true,
+      );
+    }
+    await expect(
+      selectGroupAfterLoading(session, {
+        months,
+        checked,
+        isLoaded: (m) => m.loaded,
+        load: async (target) => {
+          for (const m of months) {
+            m.loaded = m === target;
+          }
+        },
+        idsOf: (target) => (target.loaded ? target.ids : []),
+      }),
+    ).resolves.toBe('done');
+    expect(session.selection).toEqual(checked ? months.flatMap((m) => m.ids) : []);
+  });
+
   it('selects the whole group once its months are loaded', async () => {
     const session = store();
     const months = [month('2024-12', true), month('2024-11')];
@@ -76,7 +101,7 @@ describe('selectGroupAfterLoading', () => {
       checked: true,
       isLoaded: (m) => m.loaded,
       load,
-      idsOf: () => months.filter((m) => m.loaded).flatMap((m) => m.ids),
+      idsOf: (m) => m.ids,
     });
     await flush();
     expect(session.selection).toEqual([]);
@@ -94,7 +119,7 @@ describe('selectGroupAfterLoading', () => {
       checked: true,
       isLoaded: (m) => m.loaded,
       load,
-      idsOf: () => months.flatMap((m) => m.ids),
+      idsOf: (m) => m.ids,
     });
     await flush();
     session.setScope({ kind: 'album', id: 'album-2' });
@@ -114,7 +139,7 @@ describe('selectGroupAfterLoading', () => {
       checked: true,
       isLoaded: (m) => m.loaded,
       load,
-      idsOf: () => months.flatMap((m) => m.ids),
+      idsOf: (m) => m.ids,
     });
     await flush();
     session.patchView({ sort: 'rating' });
@@ -133,7 +158,7 @@ describe('selectGroupAfterLoading', () => {
       checked: true,
       isLoaded: (m) => m.loaded,
       load,
-      idsOf: () => months.flatMap((m) => m.ids),
+      idsOf: (m) => m.ids,
       isLatest: () => latest,
     });
     await flush();
@@ -143,18 +168,18 @@ describe('selectGroupAfterLoading', () => {
     expect(session.selection).toEqual([]);
   });
 
-  it('clears a group without loading anything', async () => {
+  it('clears a fully loaded group without loading anything', async () => {
     const session = store();
     session.select('2024-12-a');
     session.select('other');
     const load = vi.fn();
     await expect(
       selectGroupAfterLoading(session, {
-        months: [month('2024-12', true), month('2024-11')],
+        months: [month('2024-12', true), month('2024-11', true)],
         checked: false,
         isLoaded: (m) => m.loaded,
         load,
-        idsOf: () => ['2024-12-a', '2024-12-b'],
+        idsOf: (m) => m.ids,
       }),
     ).resolves.toBe('done');
     expect(load).not.toHaveBeenCalled();

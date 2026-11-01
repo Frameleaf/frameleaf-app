@@ -21,6 +21,7 @@ export async function loadFromTimeBuckets(
   signal: AbortSignal,
 ): Promise<void> {
   const timeBucket = toISOYearMonthUTC(timelineMonth.yearMonth);
+  const page = timelineMonth.calendarPage;
   for (let attempt = 1; ; attempt++) {
     const projection = timelineManager.projectionGeneration;
     const bucketResponse = await getTimeBucket(
@@ -28,11 +29,28 @@ export async function loadFromTimeBuckets(
         ...authManager.params,
         ...options,
         timeBucket,
+        ...(page && {
+          take: page.count,
+          after: page.after ?? undefined,
+          firstAssetId: page.firstAssetId,
+          lastAssetId: page.lastAssetId,
+          membershipAlbumId: options.timelineAlbumId,
+        }),
       },
       { signal },
-    );
+    ).catch(async (error: unknown) => {
+      if (
+        page &&
+        (error as { status?: number } | null)?.status === 409 &&
+        timelineManager.months.includes(timelineMonth)
+      ) {
+        await timelineManager.refresh();
+        throw superseded();
+      }
+      throw error;
+    });
     const albumAssets =
-      options.timelineAlbumId && bucketResponse
+      !page && options.timelineAlbumId && bucketResponse
         ? await getTimeBucket(
             {
               ...authManager.params,
@@ -52,11 +70,16 @@ export async function loadFromTimeBuckets(
       }
       throw superseded();
     }
-    if (!bucketResponse || (options.timelineAlbumId && !albumAssets)) {
+    if (!bucketResponse || (!page && options.timelineAlbumId && !albumAssets)) {
       return;
     }
     for (const id of albumAssets?.id ?? []) {
       timelineManager.albumAssets.add(id);
+    }
+    for (const [index, id] of bucketResponse.id.entries()) {
+      if (bucketResponse.inAlbum?.[index] === true) {
+        timelineManager.albumAssets.add(id);
+      }
     }
     // A month that is not loaded may still hold assets a live event put there (even during this
     // request): read what it holds now and add only what it does not hold yet.

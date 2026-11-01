@@ -864,7 +864,7 @@ with
       left join asset_exif e on e."assetId" = a.id
       left join "public"."asset_best_photo_score" s on s."assetId" = a.id
   ),
-  places as (
+  places as materialized (
     select
       a."timeBucket",
       coalesce(

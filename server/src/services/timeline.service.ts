@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
@@ -31,18 +31,48 @@ import {
 @Injectable()
 export class TimelineService extends BaseService {
   async getTimeBuckets(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketsResponseDto[]> {
+    if (dto.sort && auth.sharedLink && !auth.sharedLink.showExif) {
+      throw new BadRequestException('This link does not allow sorting by file name or rating');
+    }
     await this.timeBucketChecks(auth, dto);
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, dto);
-    return await this.assetRepository.getTimeBuckets(timeBucketOptions, auth);
+    const { pageSize, locateAssetId, sort, ...bucketDto } = dto;
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    return pageSize === undefined
+      ? this.assetRepository.getTimeBuckets(timeBucketOptions, auth)
+      : this.assetRepository.getTimeBuckets(timeBucketOptions, auth, {
+          pageSize,
+          locateAssetId,
+          ...(sort && { sort }),
+        });
   }
 
   // pre-jsonified response
   async getTimeBucket(auth: AuthDto, dto: TimeBucketAssetDto): Promise<string> {
     await this.timeBucketChecks(auth, dto);
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, { ...dto });
-
-    // TODO: use id cursor for pagination
-    const bucket = await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth);
+    const { take, after, before, firstAssetId, lastAssetId, membershipAlbumId, ...bucketDto } = dto;
+    if (membershipAlbumId) {
+      await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [membershipAlbumId] });
+    }
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    const bucket =
+      take === undefined
+        ? await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth)
+        : await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth, {
+            take,
+            ...(after && { after }),
+            ...(before && { before }),
+            ...(membershipAlbumId && { membershipAlbumId }),
+          });
+    if (firstAssetId || lastAssetId) {
+      const { id, startCursor, endCursor } = JSON.parse(bucket.assets);
+      if (
+        (firstAssetId && startCursor !== firstAssetId) ||
+        (lastAssetId && endCursor !== lastAssetId) ||
+        id?.length !== take
+      ) {
+        throw new ConflictException('Calendar page changed; refresh the timeline');
+      }
+    }
     return bucket.assets;
   }
 

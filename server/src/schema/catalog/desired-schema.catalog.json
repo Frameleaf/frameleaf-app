@@ -42760,6 +42760,36 @@
           "using": "btree",
           "unique": false,
           "synchronize": true
+        },
+        {
+          "name": "asset_owner_added_page_idx",
+          "definition": "CREATE INDEX asset_owner_added_page_idx ON public.asset USING btree (\"ownerId\", (date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), (((\"createdAt\" AT TIME ZONE 'UTC'::text))::date), \"createdAt\", \"originalFileName\", id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "createdAt",
+            "originalFileName",
+            "id"
+          ],
+          "expression": "(date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"createdAt\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_owner_taken_page_idx",
+          "definition": "CREATE INDEX asset_owner_taken_page_idx ON public.asset USING btree (\"ownerId\", (date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), (((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date), \"fileCreatedAt\", \"originalFileName\", id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "fileCreatedAt",
+            "originalFileName",
+            "id"
+          ],
+          "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
         }
       ],
       "triggers": [

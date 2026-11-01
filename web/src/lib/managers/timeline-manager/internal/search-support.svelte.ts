@@ -1,8 +1,8 @@
 import { AssetOrder, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
-import { getOrderingDate, plainDateTimeCompare, type TimelineYearMonth } from '$lib/utils/timeline-util';
+import { getOrderingDate, plainDateTimeCompare } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
-import type { AssetDescriptor, Direction, TimelineAsset } from '../types';
+import type { AssetDescriptor, Direction, TimelineAsset, TimelinePageKey } from '../types';
 
 export async function getAssetWithOffset(
   timelineManager: TimelineManager,
@@ -46,10 +46,13 @@ export function findTimelineMonthForAsset(timelineManager: TimelineManager, id: 
 
 export function getTimelineMonthByDate(
   timelineManager: TimelineManager,
-  targetYearMonth: TimelineYearMonth,
+  targetYearMonth: TimelinePageKey,
 ): TimelineMonth | undefined {
   return timelineManager.months.find(
-    (month) => month.yearMonth.year === targetYearMonth.year && month.yearMonth.month === targetYearMonth.month,
+    (month) =>
+      month.yearMonth.year === targetYearMonth.year &&
+      month.yearMonth.month === targetYearMonth.month &&
+      (targetYearMonth.page === undefined || month.yearMonth.page === targetYearMonth.page),
   );
 }
 
@@ -101,10 +104,10 @@ async function getAssetByDayOffset(
 async function getAssetByMonthOffset(timelineManager: TimelineManager, month: TimelineMonth, direction: Direction) {
   for (const targetMonth of timelineManager.timelineMonthIterator({ startTimelineMonth: month, direction })) {
     if (targetMonth.yearMonth.year !== month.yearMonth.year || targetMonth.yearMonth.month !== month.yearMonth.month) {
-      const { value, done } = await timelineManager
-        .assetsIterator({ startTimelineMonth: targetMonth, direction })
-        .next();
-      return done ? undefined : value;
+      for await (const asset of timelineManager.assetsIterator({ startTimelineMonth: targetMonth, direction })) {
+        return asset;
+      }
+      return;
     }
   }
 }
@@ -112,10 +115,10 @@ async function getAssetByMonthOffset(timelineManager: TimelineManager, month: Ti
 async function getAssetByYearOffset(timelineManager: TimelineManager, month: TimelineMonth, direction: Direction) {
   for (const targetMonth of timelineManager.timelineMonthIterator({ startTimelineMonth: month, direction })) {
     if (targetMonth.yearMonth.year !== month.yearMonth.year) {
-      const { value, done } = await timelineManager
-        .assetsIterator({ startTimelineMonth: targetMonth, direction })
-        .next();
-      return done ? undefined : value;
+      for await (const asset of timelineManager.assetsIterator({ startTimelineMonth: targetMonth, direction })) {
+        return asset;
+      }
+      return;
     }
   }
 }
@@ -154,7 +157,9 @@ export async function retrieveRange(
   if (!startTimelineMonth || !startAsset) {
     return [];
   }
-  let { asset: endAsset, timelineMonth: endTimelineMonth } = findTimelineMonthForAsset(timelineManager, end.id) ?? {};
+  const endMatch = findTimelineMonthForAsset(timelineManager, end.id);
+  let endAsset = endMatch?.asset;
+  const endTimelineMonth = endMatch?.timelineMonth;
   if (!endTimelineMonth || !endAsset) {
     return [];
   }
@@ -170,8 +175,8 @@ export async function retrieveRange(
     : (a: TimelineAsset, b: TimelineAsset) => compareTimelineOrder(assetOrder, dateType, a, b);
   if (compare(startAsset, endAsset) > 0) {
     [startAsset, endAsset] = [endAsset, startAsset];
-    // eslint-disable-next-line no-useless-assignment
-    [startTimelineMonth, endTimelineMonth] = [endTimelineMonth, startTimelineMonth];
+
+    startTimelineMonth = endTimelineMonth;
   }
 
   const range: TimelineAsset[] = [];

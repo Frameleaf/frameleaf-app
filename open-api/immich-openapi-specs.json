@@ -57619,6 +57619,17 @@
         "operationId": "getTimeBucket",
         "parameters": [
           {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "Read after this calendar-page asset ID; requires take and cannot be combined with before",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "albumId",
             "required": false,
             "in": "query",
@@ -57649,6 +57660,17 @@
             }
           },
           {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Read before this calendar-page asset ID; requires take and cannot be combined with after",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "bestPhotos",
             "required": false,
             "in": "query",
@@ -57674,6 +57696,17 @@
             "schema": {
               "maxLength": 16384,
               "example": "{\"make\":{\"eq\":\"Canon\"},\"rating\":{\"gte\":4}}",
+              "type": "string"
+            }
+          },
+          {
+            "name": "firstAssetId",
+            "required": false,
+            "in": "query",
+            "description": "Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
               "type": "string"
             }
           },
@@ -57712,6 +57745,17 @@
             }
           },
           {
+            "name": "lastAssetId",
+            "required": false,
+            "in": "query",
+            "description": "Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "libraryScope",
             "required": false,
             "in": "query",
@@ -57736,6 +57780,17 @@
                   ]
                 }
               ]
+            }
+          },
+          {
+            "name": "membershipAlbumId",
+            "required": false,
+            "in": "query",
+            "description": "Include membership in this readable album for each page asset; requires take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
             }
           },
           {
@@ -57804,6 +57859,17 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Maximum assets in a calendar page; omit for the legacy complete bucket",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
             }
           },
           {
@@ -58012,6 +58078,17 @@
             }
           },
           {
+            "name": "locateAssetId",
+            "required": false,
+            "in": "query",
+            "description": "Return only the page containing this accessible asset; requires pageSize",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
             "name": "lockReason",
             "required": false,
             "in": "query",
@@ -58049,6 +58126,17 @@
             }
           },
           {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Return bounded calendar-page summaries instead of whole-month counts",
+            "schema": {
+              "minimum": 100,
+              "maximum": 1000,
+              "type": "integer"
+            }
+          },
+          {
             "name": "personId",
             "required": false,
             "in": "query",
@@ -58076,6 +58164,20 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "filename",
+                "rating",
+                "quality"
+              ]
             }
           },
           {
@@ -148870,6 +148972,12 @@
       },
       "TimeBucketAssetDto": {
         "properties": {
+          "after": {
+            "description": "Read after this calendar-page asset ID; requires take and cannot be combined with before",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "albumId": {
             "description": "Filter assets belonging to a specific album",
             "format": "uuid",
@@ -148883,6 +148991,12 @@
           "bbox": {
             "description": "Bounding box coordinates as west,south,east,north (WGS84)",
             "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "before": {
+            "description": "Read before this calendar-page asset ID; requires take and cannot be combined with after",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "bestPhotos": {
@@ -148899,6 +149013,12 @@
             "maxLength": 16384,
             "type": "string"
           },
+          "firstAssetId": {
+            "description": "Expected first asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "imageEnrichment": {
             "$ref": "#/components/schemas/ImageEnrichmentFilter"
           },
@@ -148911,6 +149031,12 @@
             "type": "boolean"
           },
           "key": {
+            "type": "string"
+          },
+          "lastAssetId": {
+            "description": "Expected last asset from the page summary; requires take = summary.count and the same filters. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "libraryScope": {
@@ -148929,6 +149055,12 @@
               }
             ],
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "membershipAlbumId": {
+            "description": "Include membership in this readable album for each page asset; requires take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           },
           "order": {
             "$ref": "#/components/schemas/AssetOrder",
@@ -148962,6 +149094,12 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "take": {
+            "description": "Maximum assets in a calendar page; omit for the legacy complete bucket",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
           },
           "timeBucket": {
             "description": "Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format",
@@ -149032,7 +149170,7 @@
             "type": "array"
           },
           "endCursor": {
-            "description": "Last ordered item cursor; absent for time buckets",
+            "description": "Last page cursor; a calendar asset ID or an ordered cursor",
             "nullable": true,
             "type": "string"
           },
@@ -149067,6 +149205,13 @@
             "description": "Array of asset IDs in the time bucket",
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "inAlbum": {
+            "description": "Membership in the requested readable album, aligned with id",
+            "items": {
+              "type": "boolean"
             },
             "type": "array"
           },
@@ -149198,7 +149343,7 @@
             "type": "array"
           },
           "startCursor": {
-            "description": "First ordered item cursor; absent for time buckets",
+            "description": "First page cursor; a calendar asset ID or an ordered cursor",
             "nullable": true,
             "type": "string"
           },
@@ -149302,6 +149447,12 @@
           "libraryScope": {
             "$ref": "#/components/schemas/LibraryViewScope"
           },
+          "locateAssetId": {
+            "description": "Return only the page containing this accessible asset; requires pageSize",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -149324,6 +149475,12 @@
             "$ref": "#/components/schemas/AssetOrderBy",
             "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
           },
+          "pageSize": {
+            "description": "Return bounded calendar-page summaries instead of whole-month counts",
+            "maximum": 1000,
+            "minimum": 100,
+            "type": "integer"
+          },
           "personId": {
             "description": "Filter assets containing a specific person (face recognition)",
             "format": "uuid",
@@ -149337,6 +149494,15 @@
             "type": "string"
           },
           "slug": {
+            "type": "string"
+          },
+          "sort": {
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters",
+            "enum": [
+              "filename",
+              "rating",
+              "quality"
+            ],
             "type": "string"
           },
           "suppressedOnly": {
@@ -149376,15 +149542,63 @@
       },
       "TimeBucketsResponseDto": {
         "properties": {
+          "after": {
+            "description": "Opaque anchor immediately before this page",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "count": {
-            "description": "Number of assets in this time bucket",
+            "description": "Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the located page’s asset count",
             "example": 42,
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "days": {
+            "description": "Whole-day counts for the calendar days represented in this page",
+            "items": {
+              "properties": {
+                "count": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "day": {
+                  "maximum": 31,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "day",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "firstAssetId": {
+            "description": "First asset in the page snapshot",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lastAssetId": {
+            "description": "Last asset in the page snapshot",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "page": {
+            "description": "Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize and take = pageSize, with the same sort and filters",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "timeBucket": {
-            "description": "Time bucket identifier in YYYY-MM-DD format representing the start of the time period",
+            "description": "Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01",
             "example": "2024-01-01",
             "type": "string"
           }

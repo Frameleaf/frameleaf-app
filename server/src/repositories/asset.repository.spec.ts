@@ -243,3 +243,20 @@ describe('Live Photo upload publication', () => {
     }
   });
 });
+
+describe('calendar page SQL bounds', () => {
+  it('limits the SQL selection before aggregating the calendar response', async () => {
+    const { db, queries } = scriptedKysely(() => ({ rows: [{ assets: '{"id":[]}' }] }));
+    try {
+      const auth = { user: { id: '00000000-0000-4000-8000-000000000001' } } as import('src/dtos/auth.dto.js').AuthDto;
+      await new AssetRepository(db).getTimeBucket('2024-01-01', { userIds: [auth.user.id] }, auth, { take: 2 });
+      const query = queries.at(-1)!;
+      const limit = /limit \$(\d+)/.exec(query.sql);
+      expect(limit, 'the database must bound the selection, not slice a full response').not.toBeNull();
+      expect(query.parameters[Number(limit![1]) - 1]).toBe(2);
+      expect(query.sql.indexOf('limit ')).toBeLessThan(query.sql.indexOf('"agg" as'));
+    } finally {
+      await db.destroy();
+    }
+  });
+});

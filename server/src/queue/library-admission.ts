@@ -106,7 +106,9 @@ export async function attachLibraryParticipants(tx: Kysely<DB>, filter: { produc
     union all
     select membership."runId", child.id, request."itemKey", request.stage,
       coalesce(original."libraryFrozenProducerId", original."producerId") from job_selection_lineage origin
-      join job_run_item item on (item."runId", item."itemKey", item.stage) = (origin."runId", origin."itemKey", origin.stage)
+      -- The unique lookup prevents stale statistics from scanning the entire frozen manifest first.
+      cross join lateral (select "selectionId", "libraryOriginComplete" from job_run_item item
+        where (item."runId", item."itemKey", item.stage) = (origin."runId", origin."itemKey", origin.stage) limit 1) item
       join job_selection child on child.id = item."selectionId" and child."sourceKind" = 'library-child'
       join job_selection original on original.id = origin."selectionId" and original."sourceKind" = 'frozen'
       join job_selection_run membership on membership."selectionId" = origin."selectionId"
