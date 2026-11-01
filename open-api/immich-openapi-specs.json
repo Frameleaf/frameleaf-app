@@ -151670,6 +151670,34 @@
               "$ref": "#/components/schemas/WorkflowIssueDto"
             },
             "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "remaining": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "result": {
+                  "$ref": "#/components/schemas/WorkflowPreviewStepResult"
+                }
+              },
+              "required": [
+                "method",
+                "result",
+                "remaining"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -151677,9 +151705,20 @@
           "count",
           "evaluatedAt",
           "exampleAssetIds",
-          "issues"
+          "issues",
+          "partial",
+          "steps"
         ],
         "type": "object"
+      },
+      "WorkflowPreviewStepResult": {
+        "enum": [
+          "filtered",
+          "skipped",
+          "unchecked",
+          "disabled"
+        ],
+        "type": "string"
       },
       "WorkflowResponseDto": {
         "properties": {
