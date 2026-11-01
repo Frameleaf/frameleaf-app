@@ -980,6 +980,10 @@ export class JobRepository {
     await this.store.finishEnumeration(runId);
     return runId;
   }
+  /**
+   * Set handler-specific delay and deduplication policies. Full landmark backfills share a key
+   * and retain the latest wake during an active run; per-asset inference jobs stay independent.
+   */
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
       case JobName.LandmarkInfer: {
