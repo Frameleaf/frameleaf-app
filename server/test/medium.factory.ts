@@ -1,3 +1,4 @@
+import { PROPERTY_DEPS_METADATA } from '@nestjs/common/constants.js';
 import { Insertable, Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { createHash, randomBytes } from 'node:crypto';
@@ -51,6 +52,8 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
+import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
@@ -103,6 +106,7 @@ import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
@@ -125,6 +129,7 @@ type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
 // Repositories that services inject directly (outside BaseService) but medium specs still exercise against a real database.
 type MediumRepositoryKey =
   | BaseServiceDeps[number]
+  | typeof LockedEncryptionRepository
   | typeof MediaOperationRepository
   | typeof StudioProjectRepository
   | typeof VideoMomentRepository;
@@ -151,7 +156,39 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     this.sutDeps = this.makeDeps(options);
     this.sut = new Service(...this.sutDeps) as InstanceType<S>;
     this.database = options.database;
+    this.injectProperties(Service);
     this.setMockDefaults();
+  }
+
+  /**
+   * FL-721: services that take LockedEncryptionService by property injection get a real one, on the
+   * spec's own repositories where it chose them (real or mock), a real Locked encryption table, and
+   * mocks for the rest. The key files stay mocked: medium specs don't write under the upload location.
+   */
+  private injectProperties(Service: S) {
+    // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+    const properties: { key: string; type: unknown }[] = Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
+    for (const { key, type } of properties) {
+      if (type === LockedEncryptionService) {
+        Object.assign(this.sut, { [key]: this.newLockedEncryptionService() });
+      }
+    }
+  }
+
+  private newLockedEncryptionService() {
+    const dep = <T extends BaseServiceDeps[number]>(key: T): InstanceType<T> =>
+      (this.sutDeps[BASE_SERVICE_DEPENDENCIES.indexOf(key)] ?? newMockRepository(key)) as InstanceType<T>;
+    return new LockedEncryptionService(
+      dep(LoggingRepository),
+      automock(LockedKeyRepository, { strict: false }),
+      this.get(LockedEncryptionRepository),
+      dep(UserRepository),
+      dep(SessionRepository),
+      dep(JobRepository),
+      dep(CryptoRepository),
+      dep(WebsocketRepository),
+      dep(DatabaseRepository),
+    );
   }
 
   /** The defaults the unit tests use too: library workloads go to a healthy local destination (FL-110). */
@@ -559,6 +596,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case ClusterGroupRepository:
     case DuplicateRepository:
     case IntegrityRepository:
+    case LockedEncryptionRepository:
     case MediaOperationRepository:
     case MemoryRepository:
     case DownloadRepository:

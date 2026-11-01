@@ -296,6 +296,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'An external library is made up of input file paths or expressions that are scanned for asset files. Discovered files are automatically imported. Assets must be unique within a library, but can be duplicated across libraries. Each user has a default upload library, and can have one or more external libraries.',
   [ApiTag.LivePhoto]:
     'Endpoints for finding and reassembling separated live photos (a still image and its paired motion video).',
+  [ApiTag.LockedEncryption]:
+    'Optional encryption of your Locked items’ files with your Locked PIN or a passphrase. Keys stay wrapped on this server’s disk and open only in its memory; the recovery key is shown once, when it is made.',
   [ApiTag.Maintenance]:
     'Maintenance mode allows you to put Frameleaf in a read-only state to perform various operations.',
   [ApiTag.Map]:

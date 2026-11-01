@@ -1952,7 +1952,11 @@ export class MediaOperationRepository {
    * FL-162: the Frameleaf Cloud jobs one person confirmed since `since`, with what each was settled at
    * (its accounting row), its hold, and enough of its state to count a job still running.
    */
-  async listCloudMlJobSpend(userId: string, since: Date): Promise<CloudMlJobSpendRow[]> {
+  async listCloudMlJobSpend(
+    userId: string,
+    since: Date,
+    excludeLocationScanId?: string,
+  ): Promise<Array<CloudMlJobSpendRow | { reservedUsd: number; settledUsd: number | null }>> {
     const rows = await this.db
       .selectFrom('media_operation')
       .leftJoin('ml_workload_accounting', (join) =>
@@ -1977,7 +1981,26 @@ export class MediaOperationRepository {
         ]),
       )
       .execute();
-    return rows as unknown as CloudMlJobSpendRow[];
+    const locations = await this.db
+      .selectFrom('photo_location_scan')
+      .select(['estimatedMicros', 'billing'])
+      .where('ownerId', '=', userId)
+      .where('estimateId', 'is not', null)
+      .$if(!!excludeLocationScanId, (qb) => qb.where('id', '!=', excludeLocationScanId!))
+      .where((eb) =>
+        eb.or([
+          eb('createdAt', '>=', since),
+          sql<boolean>`coalesce(billing->>'state', 'pending_hold') NOT IN ('settled', 'released', 'no_charge')`,
+        ]),
+      )
+      .execute();
+    return [
+      ...(rows as unknown as CloudMlJobSpendRow[]),
+      ...locations.map(({ estimatedMicros, billing }) => ({
+        reservedUsd: (billing?.heldMicros ?? estimatedMicros) / 1_000_000,
+        settledUsd: typeof billing?.chargedMicros === 'number' ? billing.chargedMicros / 1_000_000 : null,
+      })),
+    ];
   }
   /** FL-162: the snapshots of unfinished cloud ML jobs, for the prepared inputs they still need. */
   async listUnfinishedCloudMlJobSnapshots(): Promise<unknown[]> {

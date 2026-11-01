@@ -1,5 +1,7 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { JobStatus } from 'src/enum.js';
 import { SessionService } from 'src/services/session.service.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { SessionFactory } from 'test/factories/session.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -15,6 +17,56 @@ describe('SessionService', () => {
 
   it('should be defined', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('onBootstrap', () => {
+    it('on bootstrap, sessions of users with a key file are locked (FL-721, spec §4.3)', async () => {
+      mocks.lockedKey.userIds.mockResolvedValue(['user-1']);
+      mocks.lockedKey.list.mockResolvedValue([]);
+      mocks.lockedEncryption.getAllUserIds.mockResolvedValue(['user-2']);
+      mocks.session.lockAll.mockResolvedValue();
+
+      await sut.onBootstrap();
+
+      expect(mocks.session.lockAll).toHaveBeenCalledTimes(2);
+      expect(mocks.session.lockAll).toHaveBeenCalledWith('user-1');
+      expect(mocks.session.lockAll).toHaveBeenCalledWith('user-2');
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', 'user-1');
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', 'user-2');
+    });
+
+    it('locks nothing when nobody has a key file', async () => {
+      mocks.lockedKey.userIds.mockResolvedValue([]);
+      mocks.lockedKey.list.mockResolvedValue([]);
+      mocks.lockedEncryption.getAllUserIds.mockResolvedValue([]);
+      await sut.onBootstrap();
+      expect(mocks.session.lockAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onAuthChangePassword', () => {
+    it('revokes the other sessions before the Locked key hook, which never throws (FL-721)', async () => {
+      const auth = AuthFactory.from().session().build();
+      const { publicKey, privateKey } = generateKeyPair();
+      lockedKeys.load(auth.user.id, publicKey, privateKey, new Date(Date.now() + 60 * 60 * 1000));
+      mocks.lockedKey.read.mockRejectedValue(new SyntaxError('bad json'));
+      mocks.lockedKey.exists.mockResolvedValue(true);
+      mocks.session.lockAll.mockResolvedValue();
+      mocks.session.invalidateAll.mockResolvedValue(['other-session']);
+
+      await expect(
+        sut.onAuthChangePassword({
+          userId: auth.user.id,
+          currentSessionId: auth.session!.id,
+          invalidateSessions: true,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: auth.user.id, excludeId: auth.session!.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'other-session' });
+      expect(lockedKeys.has(auth.user.id)).toBe(false);
+      lockedKeys.clear();
+    });
   });
 
   describe('handleCleanup', () => {

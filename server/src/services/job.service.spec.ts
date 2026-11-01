@@ -7,6 +7,7 @@ import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, FrameleafWorker, JobName, JobStatus, LibraryScope, ManualJobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
@@ -360,6 +361,20 @@ describe(JobService.name, () => {
 
       await expect(queueExecution.run(execution, () => sut.onJobRun(QueueName.Ocr, item))).rejects.toBe(error);
 
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+    });
+
+    it('defers a job that waits for a Locked key: no job error, the queue defers it (FL-721)', async () => {
+      const error = new LockedKeyUnavailableError(['owner-1']);
+      mocks.job.run.mockRejectedValue(error);
+      const item = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
+      const execution = { claim: { id: 'job-1', attempt: 1, data: item.data } } as unknown as QueueExecution;
+
+      await expect(queueExecution.run(execution, () => sut.onJobRun(QueueName.ThumbnailGeneration, item))).rejects.toBe(
+        error,
+      );
+
+      expect(execution.dependencyReason).toBe('locked-key-unavailable');
       expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
     });
 

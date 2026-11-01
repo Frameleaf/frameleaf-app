@@ -17291,6 +17291,50 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/location-insight": {
+      "delete": {
+        "operationId": "dismissAssetLocationInsight",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss own inferred venue without changing GPS or EXIF",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/metadata": {
       "get": {
         "description": "Retrieve all metadata key-value pairs associated with the specified asset.",
@@ -60642,6 +60686,624 @@
         "x-immich-state": "Stable"
       }
     },
+    "/users/me/location-scans": {
+      "get": {
+        "operationId": "getLocationScanStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read own photo location scan and Cloud availability",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      },
+      "post": {
+        "operationId": "startLocationScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartLocationScanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Explicitly identify own photo locations using Frameleaf Cloud",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/location-scans/estimate": {
+      "post": {
+        "operationId": "estimateLocationScan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationScanEstimateRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationScanEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate an optional paid GPS location scan without uploading coordinates",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/location-scans/{id}": {
+      "delete": {
+        "operationId": "cancelLocationScan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel own location scan and settle checked photos",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
+    "/users/me/locked-encryption": {
+      "delete": {
+        "description": "FL-721: with your PIN (PIN mode) or passphrase (Advanced Security). Your Locked items are decrypted back to ordinary files in the background; then your key and recovery key are deleted.",
+        "operationId": "disableLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionDisableDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn off Locked encryption",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "FL-721: whether it is on and how, whether your key is open on this server now and until when, progress while encrypting or decrypting, and how many Locked items are encrypted or in a folder Frameleaf can’t change.",
+        "operationId": "getLockedEncryption",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedEncryptionStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your Locked encryption status",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "FL-721: with your Locked PIN, and a passphrase for Advanced Security. Creates your key and returns your recovery key, once; it is never shown again. Your Locked items are then encrypted in the background.",
+        "operationId": "enableLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionEnableDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedEncryptionRecoveryKeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn on Locked encryption",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "FL-721: switch between PIN and Advanced Security, change your passphrase, or when the passphrase is asked for again. Switching or a new passphrase needs your current PIN or passphrase.",
+        "operationId": "updateLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change your Locked encryption",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/lock": {
+      "post": {
+        "description": "FL-721: closes your key on this server, so Locked asks for your passphrase (or PIN) again. Not available while encryption is being turned off.",
+        "operationId": "lockLockedEncryption",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Lock now",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/partner-unlock": {
+      "post": {
+        "description": "FL-721: for a partner who shares their library with you and uses Advanced Security. Their passphrase, typed after your own PIN (or your own passphrase), opens their shared Locked items for you only, until their key is asked for again or they lock it. Tries are limited as for the Locked PIN.",
+        "operationId": "unlockPartnerLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionPartnerUnlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Open a partner’s encrypted Locked items",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/recover": {
+      "post": {
+        "description": "FL-721: your recovery key opens your key, and the new PIN or passphrase replaces the old one. Tries are limited as for the Locked PIN.",
+        "operationId": "recoverLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionRecoverDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reset a forgotten Locked PIN or passphrase",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/recovery-key": {
+      "post": {
+        "description": "FL-721: with your PIN or passphrase. The old recovery key stops working; the new one is returned once and never shown again.",
+        "operationId": "createLockedEncryptionRecoveryKey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionRecoveryKeyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedEncryptionRecoveryKeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Make a new Locked encryption recovery key",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/unlock": {
+      "post": {
+        "description": "FL-721, Advanced Security: your passphrase opens your key on this server until it is asked for again or the server restarts. Tries are limited as for the Locked PIN.",
+        "operationId": "unlockLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionUnlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Open your Locked encryption key",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/onboarding": {
       "delete": {
         "description": "Delete the onboarding status of the current user.",
@@ -62427,7 +63089,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.1.18",
+    "version": "1.1.19",
     "contact": {}
   },
   "tags": [
@@ -62566,6 +63228,10 @@
     {
       "name": "Live Photo",
       "description": "Endpoints for finding and reassembling separated live photos (a still image and its paired motion video)."
+    },
+    {
+      "name": "Locked encryption",
+      "description": "Optional encryption of your Locked items’ files with your Locked PIN or a passphrase. Keys stay wrapped on this server’s disk and open only in its memory; the recovery key is shown once, when it is made."
     },
     {
       "name": "Maintenance (admin)",
@@ -73074,6 +73740,13 @@
             "format": "date-time",
             "type": "string"
           },
+          "locationInsight": {
+            "$ref": "#/components/schemas/LocationInsightDto"
+          },
+          "lockedEncryption": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
+            "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
             "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
@@ -75217,6 +75890,13 @@
             "format": "date-time",
             "type": "string"
           },
+          "locationInsight": {
+            "$ref": "#/components/schemas/LocationInsightDto"
+          },
+          "lockedEncryption": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
+            "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
             "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
@@ -76552,6 +77232,12 @@
           "operation": {
             "nullable": true,
             "properties": {
+              "encryptedWithOlderKey": {
+                "description": "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
               "error": {
                 "nullable": true,
                 "type": "string"
@@ -76583,6 +77269,7 @@
               "progress",
               "phase",
               "recoveryId",
+              "encryptedWithOlderKey",
               "error"
             ],
             "type": "object"
@@ -76691,6 +77378,12 @@
       },
       "BuddyRestoreStatusDto": {
         "properties": {
+          "encryptedWithOlderKey": {
+            "description": "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -76717,6 +77410,7 @@
           }
         },
         "required": [
+          "encryptedWithOlderKey",
           "error",
           "id",
           "phase",
@@ -79755,6 +80449,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "encryptedWithOlderKey": {
+            "description": "Restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -79762,6 +80462,12 @@
           "files": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lockedKeysKept": {
+            "description": "Backed-up Locked key files kept in the restore folder because a live key file was already there; the live one is never replaced",
+            "maximum": 9007199254740991,
+            "minimum": 0,
             "type": "integer"
           },
           "manifestKey": {
@@ -79799,6 +80505,7 @@
           "databaseFile",
           "destination",
           "detailsRestored",
+          "encryptedWithOlderKey",
           "error",
           "files",
           "manifestKey",
@@ -88291,6 +88998,13 @@
             "nullable": true,
             "type": "number"
           },
+          "gpsAccuracyM": {
+            "description": "Reported horizontal GPS accuracy in metres",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
           "isRejected": {
             "default": null,
             "description": "Whether the stored rating is rejected",
@@ -88917,6 +89631,16 @@
             "description": "Whether the Frameleaf account is now linked (false for a preview)",
             "type": "boolean"
           },
+          "lockedEncryption": {
+            "description": "Whether this person has Locked encryption on; their PIN can’t be cleared or changed then",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -88987,6 +89711,7 @@
           "isAdmin",
           "license",
           "linked",
+          "lockedEncryption",
           "name",
           "oauthId",
           "profileChangedAt",
@@ -94449,6 +95174,12 @@
             "nullable": true,
             "type": "integer"
           },
+          "encrypted": {
+            "description": "Encrypted Locked files the damage check passed over: encrypted, not checked (not counted in checked)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "finishedAt": {
             "format": "date-time",
             "type": "string"
@@ -98406,6 +99137,708 @@
         ],
         "type": "object"
       },
+      "LocationBillingCurrency": {
+        "enum": [
+          "USD"
+        ],
+        "type": "string"
+      },
+      "LocationBillingState": {
+        "enum": [
+          "pending_hold",
+          "held",
+          "settling",
+          "settled",
+          "released",
+          "no_charge"
+        ],
+        "type": "string"
+      },
+      "LocationBillingUnitPriceMicros": {
+        "enum": [
+          5000
+        ],
+        "type": "number"
+      },
+      "LocationInsightConfidence": {
+        "enum": [
+          "high",
+          "medium"
+        ],
+        "type": "string"
+      },
+      "LocationInsightDto": {
+        "properties": {
+          "address": {
+            "default": null,
+            "maxLength": 2048,
+            "nullable": true,
+            "type": "string"
+          },
+          "attributions": {
+            "items": {
+              "properties": {
+                "displayName": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "uri": {
+                  "format": "uri",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "displayName"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/LocationInsightConfidence"
+          },
+          "distanceM": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "mapsUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "matchedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "placeId": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/LocationInsightProvider"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/LocationInsightRelation"
+          }
+        },
+        "required": [
+          "attributions",
+          "confidence",
+          "distanceM",
+          "mapsUrl",
+          "matchedAt",
+          "name",
+          "placeId",
+          "provider",
+          "relation"
+        ],
+        "type": "object"
+      },
+      "LocationInsightProvider": {
+        "enum": [
+          "google"
+        ],
+        "type": "string"
+      },
+      "LocationInsightRelation": {
+        "enum": [
+          "at",
+          "near"
+        ],
+        "type": "string"
+      },
+      "LocationScanBillingDto": {
+        "properties": {
+          "chargedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "checkedPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/LocationBillingCurrency"
+          },
+          "heldMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "releasedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LocationBillingState"
+          },
+          "unitPriceMicros": {
+            "$ref": "#/components/schemas/LocationBillingUnitPriceMicros"
+          }
+        },
+        "required": [
+          "chargedMicros",
+          "checkedPhotos",
+          "currency",
+          "heldMicros",
+          "releasedMicros",
+          "state",
+          "unitPriceMicros"
+        ],
+        "type": "object"
+      },
+      "LocationScanConsent": {
+        "enum": [
+          true
+        ],
+        "type": "boolean"
+      },
+      "LocationScanEstimateRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "maxPhotos": {
+            "exclusiveMinimum": true,
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxSpendMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 5000,
+            "type": "integer"
+          },
+          "refresh": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "LocationScanEstimateResponseDto": {
+        "properties": {
+          "availableMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "canStart": {
+            "type": "boolean"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/LocationBillingCurrency"
+          },
+          "eligiblePhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimateId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "estimatedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "holdMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "refusal": {
+            "nullable": true,
+            "type": "string"
+          },
+          "remainingPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectedPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "topUpUrl": {
+            "format": "uri",
+            "nullable": true,
+            "type": "string"
+          },
+          "unitPriceMicros": {
+            "$ref": "#/components/schemas/LocationBillingUnitPriceMicros"
+          }
+        },
+        "required": [
+          "availableMicros",
+          "canStart",
+          "currency",
+          "eligiblePhotos",
+          "estimateId",
+          "estimatedMicros",
+          "expiresAt",
+          "holdMicros",
+          "refusal",
+          "remainingPhotos",
+          "selectedPhotos",
+          "topUpUrl",
+          "unitPriceMicros"
+        ],
+        "type": "object"
+      },
+      "LocationScanState": {
+        "enum": [
+          "queued",
+          "preparing",
+          "uploading",
+          "running",
+          "paused",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "LocationScanStatusResponseDto": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "scan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocationScanSummaryDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "enabled",
+          "scan"
+        ],
+        "type": "object"
+      },
+      "LocationScanSummaryDto": {
+        "properties": {
+          "billing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LocationScanBillingDto"
+              }
+            ],
+            "nullable": true
+          },
+          "eligiblePhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "estimatedMicros": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "remainingPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectedPhotos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LocationScanState"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmatched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "billing",
+          "eligiblePhotos",
+          "estimatedMicros",
+          "failed",
+          "id",
+          "matched",
+          "processed",
+          "remainingPhotos",
+          "selectedPhotos",
+          "skipped",
+          "status",
+          "total",
+          "unmatched"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionCountsDto": {
+        "properties": {
+          "encrypted": {
+            "description": "Locked items whose files are encrypted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Locked items that turning off, or taking an item out of Locked, is waiting on because their file is missing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notEncryptable": {
+            "description": "Locked items in a folder Frameleaf can’t change, which stay unencrypted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sharedNotEncrypted": {
+            "description": "Locked items shared with you by a partner whose files stay unencrypted: your setting doesn’t encrypt them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "encrypted",
+          "notEncryptable"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionDisableDto": {
+        "properties": {
+          "passphrase": {
+            "description": "Advanced Security: your passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "PIN mode: your Locked PIN",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LockedEncryptionEnableDto": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/LockedEncryptionMode"
+          },
+          "passphrase": {
+            "description": "Advanced Security only: at least 12 characters",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "Your Locked PIN",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "pinCode"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionMode": {
+        "description": "`pin`: the Locked PIN opens the files. `advanced`: a passphrase typed after every restart opens them.",
+        "enum": [
+          "pin",
+          "advanced"
+        ],
+        "type": "string"
+      },
+      "LockedEncryptionPartnerUnlockDto": {
+        "properties": {
+          "ownerId": {
+            "description": "The partner who shares their library with you and uses Advanced Security",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "passphrase": {
+            "description": "That partner's passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Items whose files are done",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items to do",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionRecoverDto": {
+        "properties": {
+          "newPassphrase": {
+            "description": "Advanced Security: a new passphrase",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "newPinCode": {
+            "description": "A new Locked PIN",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "recoveryKey": {
+            "description": "Your recovery key, FLRK- and 8 groups of 4 characters",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "recoveryKey"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionRecoveryKeyDto": {
+        "properties": {
+          "secret": {
+            "description": "Your PIN (PIN mode) or passphrase (Advanced Security)",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionRecoveryKeyResponseDto": {
+        "properties": {
+          "recoveryKey": {
+            "description": "Shown this once: FLRK- and 8 groups of 4 characters. It is never shown again.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recoveryKey"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionState": {
+        "description": "`encrypting` while turning on, `on` once every file is encrypted, `decrypting` while turning off",
+        "enum": [
+          "encrypting",
+          "on",
+          "decrypting"
+        ],
+        "type": "string"
+      },
+      "LockedEncryptionStatusResponseDto": {
+        "properties": {
+          "askAgainHours": {
+            "description": "Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/LockedEncryptionCountsDto"
+          },
+          "enabled": {
+            "description": "Whether Locked encryption is on (or turning on or off) for you",
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "description": "When the open key is asked for again; null while it stays open",
+            "nullable": true,
+            "type": "string"
+          },
+          "keyLoaded": {
+            "description": "Whether your key is open on this server now",
+            "type": "boolean"
+          },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LockedEncryptionMode"
+              }
+            ],
+            "nullable": true
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LockedEncryptionProgressDto"
+              }
+            ],
+            "description": "Progress while encrypting or decrypting",
+            "nullable": true
+          },
+          "recoveryKeyCreatedAt": {
+            "description": "When the current recovery key was made",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LockedEncryptionState"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "askAgainHours",
+          "counts",
+          "enabled",
+          "expiresAt",
+          "keyLoaded",
+          "mode",
+          "progress",
+          "recoveryKeyCreatedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionUnlockDto": {
+        "properties": {
+          "passphrase": {
+            "description": "Your passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionUpdateDto": {
+        "properties": {
+          "askAgainHours": {
+            "description": "Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "currentSecret": {
+            "description": "Your PIN (PIN mode) or passphrase (Advanced Security); required to switch mode or passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LockedEncryptionMode",
+            "description": "Switch between PIN and Advanced Security"
+          },
+          "newPassphrase": {
+            "description": "The new passphrase, when switching to or within Advanced Security",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "Your Locked PIN, when switching to PIN mode",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LockedPinResponse": {
         "properties": {
           "relockMinutes": {
@@ -100785,6 +102218,13 @@
             "nullable": true,
             "type": "string"
           },
+          "encryptedWithOlderKey": {
+            "description": "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "error": {
             "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
             "nullable": true,
@@ -101019,6 +102459,13 @@
             "description": "Which worker or endpoint the destination resolved to",
             "nullable": true,
             "type": "string"
+          },
+          "encryptedWithOlderKey": {
+            "description": "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "error": {
             "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
@@ -105350,6 +106797,34 @@
         "enum": [
           "shared-by",
           "shared-with"
+        ],
+        "type": "string"
+      },
+      "PartnerLockedEncryptionDto": {
+        "properties": {
+          "openable": {
+            "description": "Whether the item opens for you (with your own PIN, or a passphrase you typed)",
+            "type": "boolean"
+          },
+          "ownerName": {
+            "description": "The partner's name",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionReason"
+          }
+        },
+        "required": [
+          "openable",
+          "ownerName"
+        ],
+        "type": "object"
+      },
+      "PartnerLockedEncryptionReason": {
+        "description": "Why it doesn't open: `not-ready` until the partner next opens Locked; `owner-passphrase` until you type the partner's passphrase",
+        "enum": [
+          "not-ready",
+          "owner-passphrase"
         ],
         "type": "string"
       },
@@ -136036,6 +137511,25 @@
         },
         "type": "object"
       },
+      "StartLocationScanDto": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "$ref": "#/components/schemas/LocationScanConsent",
+            "description": "Explicit permission for this paid GPS scan"
+          },
+          "estimateId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consent",
+          "estimateId"
+        ],
+        "type": "object"
+      },
       "StatisticsSearchDto": {
         "properties": {
           "albumIds": {
@@ -148763,6 +150257,16 @@
             ],
             "nullable": true
           },
+          "lockedEncryption": {
+            "description": "Whether this person has Locked encryption on; their PIN can’t be cleared or changed then",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -148827,6 +150331,7 @@
           "id",
           "isAdmin",
           "license",
+          "lockedEncryption",
           "name",
           "oauthId",
           "profileChangedAt",
@@ -149491,6 +150996,16 @@
             ],
             "nullable": true
           },
+          "lockedEncryption": {
+            "description": "Whether this person has Locked encryption on; their PIN can’t be cleared or changed then",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -149565,6 +151080,7 @@
           "id",
           "isAdmin",
           "license",
+          "lockedEncryption",
           "name",
           "oauthId",
           "profileChangedAt",
@@ -151686,6 +153202,34 @@
               "$ref": "#/components/schemas/WorkflowIssueDto"
             },
             "type": "array"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "remaining": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "result": {
+                  "$ref": "#/components/schemas/WorkflowPreviewStepResult"
+                }
+              },
+              "required": [
+                "method",
+                "result",
+                "remaining"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -151693,9 +153237,20 @@
           "count",
           "evaluatedAt",
           "exampleAssetIds",
-          "issues"
+          "issues",
+          "partial",
+          "steps"
         ],
         "type": "object"
+      },
+      "WorkflowPreviewStepResult": {
+        "enum": [
+          "filtered",
+          "skipped",
+          "unchecked",
+          "disabled"
+        ],
+        "type": "string"
       },
       "WorkflowResponseDto": {
         "properties": {

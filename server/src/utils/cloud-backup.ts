@@ -412,6 +412,11 @@ export type CloudBackupManifest = {
   database: { key: string; sha256: string; size: number } | null;
   assets: Record<string, CloudBackupManifestAsset>;
   profiles: Record<string, CloudBackupManifestFile>;
+  /**
+   * FL-721: each person's Locked key file (`<media>/locked-keys/<userId>.json`) by user id, copied as it
+   * is (it is wrapped). Absent when nobody has one, and on manifests from before it.
+   */
+  lockedKeys?: Record<string, CloudBackupManifestFile>;
   /** v2: every album an item in the manifest belongs to; empty for v1. */
   albums: Record<string, CloudBackupAlbum>;
   /** v2: every person a face in the manifest names; empty for v1. */
@@ -432,6 +437,15 @@ export type CloudBackupRunResult = {
   bytesUploaded: number;
   assets: number;
   total: number | null;
+  /**
+   * FL-721: the people whose Locked key file the run backed up when it started (before the dump and any
+   * media), and those key files' key ids (hex). `sealedKeyIds` are the owner key ids (each encrypted file's
+   * first recipient, spec §5) of the backed-up encrypted files: each must be in `lockedKeyIds`. A partner
+   * copy points at its owner's file, so it needs the owner's key file, never the partner's.
+   */
+  lockedKeyOwners: string[];
+  lockedKeyIds: string[];
+  sealedKeyIds: string[];
 };
 
 export const emptyRunResult = (): CloudBackupRunResult => ({
@@ -447,6 +461,9 @@ export const emptyRunResult = (): CloudBackupRunResult => ({
   bytesUploaded: 0,
   assets: 0,
   total: null,
+  lockedKeyOwners: [],
+  lockedKeyIds: [],
+  sealedKeyIds: [],
 });
 
 const PHASES: ReadonlySet<CloudBackupRunResult['phase']> = new Set([
@@ -462,6 +479,9 @@ const count = (value: unknown) => {
   const number = Number(value ?? 0);
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 };
+
+const ids = (value: unknown) =>
+  Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length > 0))] : [];
 
 const text = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : null);
 
@@ -493,6 +513,9 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     bytesUploaded: count(result.bytesUploaded),
     assets: count(result.assets),
     total: result.total === null || result.total === undefined ? null : count(result.total),
+    lockedKeyOwners: ids(result.lockedKeyOwners),
+    lockedKeyIds: ids(result.lockedKeyIds),
+    sealedKeyIds: ids(result.sealedKeyIds),
   };
 };
 

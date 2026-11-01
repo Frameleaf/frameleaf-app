@@ -1,5 +1,9 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
@@ -18,6 +22,8 @@ import {
 import { queueExecution } from 'src/queue/context.js';
 import { ImageEnrichmentService, descriptionConfidence } from 'src/services/image-enrichment.service.js';
 import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { resetLockedTmpCheck } from 'src/utils/locked-read.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newUuid } from 'test/small.factory.js';
@@ -1331,6 +1337,65 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.asset.unlock).not.toHaveBeenCalled();
     });
 
+    it("refuses an Advanced owner's unlock until the passphrase is typed, marking nothing pending (FL-721)", async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        {
+          id: assetId,
+          ownerId: authStub.adminWithElevatedPermission.user.id,
+          pending: false,
+          mode: 'advanced' as const,
+        },
+      ]);
+
+      const error = await sut
+        .unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] })
+        .catch((error_) => error_);
+
+      expect(error.getStatus()).toBe(423);
+      expect(error.getResponse()).toMatchObject({
+        code: 'locked_key_unavailable',
+        message: 'Type your passphrase first',
+      });
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.LockedSweep }));
+    });
+
+    it("unlocks an Advanced owner's item once their key is loaded, and a PIN owner's as before (FL-721)", async () => {
+      const owner = authStub.adminWithElevatedPermission.user.id;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: assetId, ownerId: owner, pending: false, mode: 'pin' as const },
+      ]);
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+      expect(mocks.asset.unlock).toHaveBeenCalledTimes(1);
+
+      const keys = generateKeyPair();
+      lockedKeys.load(owner, keys.publicKey, Buffer.from(keys.privateKey), null);
+      try {
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: assetId, ownerId: owner, pending: false, mode: 'advanced' as const },
+        ]);
+        await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+        expect(mocks.asset.unlock).toHaveBeenCalledTimes(2);
+      } finally {
+        lockedKeys.clear();
+      }
+    });
+
+    it('asks for a sweep of the owner when an encrypted item was only marked pending (FL-721)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: assetId, ownerId: 'owner-1', pending: true, mode: 'pin' as const },
+      ]);
+
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: { userId: 'owner-1' } });
+    });
+
     it('unlocks a large selection in bounded transactions', async () => {
       const ids = Array.from(
         { length: 450 },
@@ -2204,6 +2269,35 @@ describe(ImageEnrichmentService.name, () => {
 
       // Grid file is cleaned up after the run.
       expect(mocks.storage.unlink).toHaveBeenCalledWith(gridPath);
+    });
+
+    it("keeps an encrypted video's grid in the RAM-backed Locked folder and removes it after the run (FL-721)", async () => {
+      const root = await fs.mkdtemp(join(tmpdir(), 'describe-locked-'));
+      const lockedTmp = join(root, 'shm');
+      const sealedPreview = join(root, 'preview.jpeg');
+      await fs.writeFile(sealedPreview, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64)]));
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP', lockedTmp);
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'true');
+      resetLockedTmpCheck();
+      try {
+        mocks.assetJob.getForImageEnrichment.mockResolvedValue({ ...baseVideoAsset, previewFile: sealedPreview });
+        let gridPath = '';
+        mocks.machineLearning.describeImage.mockImplementation((_selection, path) => {
+          gridPath = path;
+          return Promise.resolve(describedAs);
+        });
+
+        await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Success);
+
+        expect(gridPath.startsWith(lockedTmp + '/')).toBe(true);
+        expect(gridPath).not.toContain('_description_grid.jpeg');
+        // the folder is gone once the description has been read
+        expect(await fs.readdir(lockedTmp)).toEqual([]);
+      } finally {
+        vi.unstubAllEnvs();
+        resetLockedTmpCheck();
+        await fs.rm(root, { recursive: true, force: true });
+      }
     });
 
     it('pins the source fingerprint and the confirmed names on the stored description', async () => {

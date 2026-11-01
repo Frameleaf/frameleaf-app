@@ -6,6 +6,9 @@ import { DateTime, Duration } from 'luxon';
 import { Stats } from 'node:fs';
 import { constants } from 'node:fs/promises';
 import { join, parse } from 'node:path';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { LANDMARK_ICON_PACK } from 'src/constants.js';
@@ -41,9 +44,11 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
+import { photoGpsAccuracy } from 'src/utils/photo-locations.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -314,9 +319,29 @@ export class MetadataService extends BaseService {
     if (!asset) {
       return;
     }
+    // FL-721 (spec §8.2): exiftool, ffprobe and sharp read a sealed original from one plain copy;
+    // what is compared and recorded (the publication check, the asset row) stays the real path
+    await withPlainCopy(asset.originalPath, (plainOriginal) =>
+      this.extractMetadataFrom(data, asset, plainOriginal, metadata, reverseGeocoding, previous),
+    );
+    // a Live Photo's extracted motion part is its own asset, sealed after its own extraction
+    await this.queueLockedSeal([asset.id]);
+  }
+
+  private async extractMetadataFrom(
+    data: JobOf<JobName.AssetExtractMetadata>,
+    asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForMetadataExtraction']>>>,
+    plainOriginal: string,
+    metadata: SystemConfig['metadata'],
+    reverseGeocoding: SystemConfig['reverseGeocoding'],
+    previous: Awaited<ReturnType<AssetRepository['getForMetadataExtractionTags']>>,
+  ) {
+    const source = plainOriginal === asset.originalPath ? asset : { ...asset, originalPath: plainOriginal };
     const [exifResult, stats] = await Promise.all([
-      this.getExifTags(asset),
-      this.storageRepository.stat(asset.originalPath),
+      this.getExifTags(source),
+      // FL-721: the plain copy's size is the file's real size (a sealed file is larger), and it
+      // carries the stored file's mtime; motion-photo offsets and fileSizeInByte depend on it
+      this.storageRepository.stat(plainOriginal),
     ]);
     const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
@@ -340,7 +365,7 @@ export class MetadataService extends BaseService {
       !cameraEvidence.recorded
     ) {
       try {
-        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(asset.originalPath);
+        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(plainOriginal);
       } catch (error) {
         this.logger.warn(`Unable to read optional JPEG encoding clue for ${asset.id}: ${error}`);
       }
@@ -362,7 +387,7 @@ export class MetadataService extends BaseService {
     if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
       try {
         imageEncoding = ImageEncodingSchema.parse({
-          ...(await this.mediaRepository.inspectImageEncoding(asset.originalPath)),
+          ...(await this.mediaRepository.inspectImageEncoding(plainOriginal)),
           inspectionStatus: 'identified',
         });
       } catch (error) {
@@ -391,6 +416,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
+      gpsAccuracyM: locationLocked ? null : photoGpsAccuracy(exifTags.GPSHPositioningError),
       ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
@@ -481,7 +507,7 @@ export class MetadataService extends BaseService {
     const assetHeight = validate(isSidewards ? width : height);
 
     if (this.isMotionPhoto(asset, exifTags)) {
-      await this.applyMotionPhotos(asset, exifTags, dates, stats);
+      await this.applyMotionPhotos(source, exifTags, dates, stats);
     }
     await publishJobResult(async () => {
       await assertPublicationSource(asset.id, asset.checksum);
@@ -625,7 +651,14 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.SidecarWrite, queue: QueueName.Sidecar })
   async handleSidecarWrite(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
-    return this.databaseRepository.withAssetSidecarLock(job.id, (kysely) => this.writeSidecar(job, kysely));
+    const status = await this.databaseRepository.withAssetSidecarLock(job.id, (kysely) =>
+      this.writeSidecar(job, kysely),
+    );
+    if (status === JobStatus.Success) {
+      // FL-721 (spec §7.2): a Locked item's rewritten sidecar is sealed again
+      await this.queueLockedSeal([job.id]);
+    }
+    return status;
   }
 
   /** Every query here runs on the sidecar lock's own connection; see `withAssetSidecarLock`. */
@@ -693,7 +726,8 @@ export class MetadataService extends BaseService {
       // Preserve unedited source-XMP fields while applying edits only to our independent copy.
       await this.storageRepository.copyFile(sidecarFile.path, sidecarPath);
     }
-    await this.metadataRepository.writeTags(sidecarPath, exif);
+    // FL-721: exiftool edits a sealed sidecar through a plain copy; the result is sealed again after
+    await rewriteThroughPlainCopy(sidecarPath, (path) => this.metadataRepository.writeTags(path, exif));
 
     if (!sidecarFile || sidecarFile.path !== sidecarPath) {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath }, kysely);
@@ -837,7 +871,8 @@ export class MetadataService extends BaseService {
 
     const [mediaTags, sidecarTags, videoResult] = await Promise.all([
       this.metadataRepository.readTags(asset.originalPath),
-      sidecarFile ? this.metadataRepository.readTags(sidecarFile.path) : null,
+      // FL-721: a sealed sidecar is read from a plain copy
+      sidecarFile ? withPlainCopy(sidecarFile.path, (path) => this.metadataRepository.readTags(path)) : null,
       shouldProbe ? this.getVideoTags(asset.originalPath) : null,
     ]);
 

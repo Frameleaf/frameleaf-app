@@ -1,3 +1,4 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { ModuleRef } from '@nestjs/core';
 import { Kysely } from 'kysely';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
@@ -9,6 +10,8 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import * as attemptEvidence from 'src/utils/attempt-evidence.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
 
 /** Facade behavior; actual locking, retries, accounting and rollback are tested with PostgreSQL. */
 describe(JobRepository.name, () => {
@@ -73,6 +76,24 @@ describe(JobRepository.name, () => {
       { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } },
       undefined,
       undefined,
+    ]);
+  });
+
+  it('keeps one waiting Locked encryption job per item and step, and one sweep per person (FL-721)', async () => {
+    await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedUnseal, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedRewrap, data: { id: 'asset' } });
+    await sut.queue({ name: JobName.LockedSweep, data: { userId: 'user' } });
+    await sut.queue({ name: JobName.LockedSweep, data: {} });
+    await sut.queue({ name: JobName.LockedSweep, data: { userId: 'user', delay: 120_000 } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: 'LockedSeal:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedUnseal:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedRewrap:asset', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedSweep:user', keepLastIfActive: true } },
+      { deduplication: { id: 'LockedSweep:all', keepLastIfActive: true } },
+      // the check after each seal or unseal: at most one waiting, apart from the immediate sweeps
+      { delay: 120_000, deduplication: { id: 'LockedSweep:user:later', keepLastIfActive: true } },
     ]);
   });
 
@@ -341,6 +362,89 @@ describe(JobRepository.name, () => {
       expect(sut['logger'].warn).toHaveBeenCalledExactlyOnceWith(
         expect.stringContaining(`${QueueName.BackgroundTask} queue are waiting (destination-unavailable)`),
       );
+    });
+
+    describe('a job waiting for a Locked key whose key loads while it runs (FL-721)', () => {
+      const OWNER = '00000000-0000-4000-8000-0000000000f1';
+      const pair = generateKeyPair();
+      const loadKey = () => lockedKeys.load(OWNER, pair.publicKey, Buffer.from(pair.privateKey), null);
+      const order: string[] = [];
+
+      beforeEach(() => {
+        lockedKeys.clear();
+        clearLockedDeferrals();
+        order.length = 0;
+        sut['store'].defer = vi.fn().mockImplementation(() => {
+          order.push('defer');
+          return Promise.resolve(true);
+        });
+        sut['store'].wakeDeferred = vi.fn().mockImplementation((ids: string[]) => {
+          order.push(`wake ${ids.join(',')}`);
+          return Promise.resolve(ids.length);
+        });
+      });
+
+      afterEach(() => {
+        lockedKeys.clear();
+        clearLockedDeferrals();
+      });
+
+      const run = (steps: Array<'defer' | 'load'>) => {
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          for (const step of steps) {
+            if (step === 'load') {
+              loadKey();
+            } else {
+              deferForLockedKey(new LockedKeyUnavailableError([OWNER]));
+            }
+          }
+          return Promise.reject(new LockedKeyUnavailableError([OWNER]));
+        });
+      };
+
+      it('wakes it once its deferral is written when the key loaded before the wait was recorded', async () => {
+        run(['load', 'defer']);
+        await sut['execute'](claim(21), new AbortController());
+        expect(order).toEqual(['defer', 'wake 21']);
+      });
+
+      it('wakes it once its deferral is written when the key loaded after the wait was recorded', async () => {
+        run(['defer', 'load']);
+        await sut['execute'](claim(22), new AbortController());
+        expect(order).toEqual(['defer', 'wake 22']);
+      });
+
+      it('leaves it waiting while the key stays closed', async () => {
+        run(['defer']);
+        await sut['execute'](claim(23), new AbortController());
+        expect(order).toEqual(['defer']);
+        // and a later run of the same id is not woken by the stale record
+        loadKey();
+        lockedKeys.clear();
+        run(['defer']);
+        await sut['execute'](claim(23), new AbortController());
+        expect(order).toEqual(['defer', 'defer']);
+      });
+
+      it('forgets the wait of a job deferred for another reason first, so it never wakes a later run (M2)', async () => {
+        const OTHER = '00000000-0000-4000-8000-0000000000f2';
+        // another dependency was refused first: the queue writes that deferral, not the Locked one
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          queueExecution.getStore()!.dependencyReason = 'destination-unavailable';
+          deferForLockedKey(new LockedKeyUnavailableError([OWNER]));
+          return Promise.reject(new Error('Machine learning destination refused'));
+        });
+        await sut['execute'](claim(24), new AbortController());
+        // OWNER's key loads; the same job runs again and now waits only for OTHER's closed key
+        loadKey();
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          deferForLockedKey(new LockedKeyUnavailableError([OTHER]));
+          return Promise.reject(new LockedKeyUnavailableError([OTHER]));
+        });
+        await sut['execute'](claim(24), new AbortController());
+
+        expect(order).toEqual(['defer', 'defer']);
+      });
     });
 
     it('releases local admission and settles execution while committed observers are pending', async () => {

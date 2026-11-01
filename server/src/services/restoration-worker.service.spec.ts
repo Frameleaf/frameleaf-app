@@ -1,4 +1,5 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import {
@@ -25,6 +26,7 @@ import {
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
 import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
+import { LOCKED_DEFERRAL_DELAY_MS } from 'src/utils/locked-read.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
   RESTORATION_ABANDONED_RESULT_DAYS,
@@ -37,6 +39,7 @@ import {
 } from 'src/utils/restoration.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
@@ -362,6 +365,24 @@ describe(RestorationWorkerService.name, () => {
   });
 
   describe('run: still preview', () => {
+    it('copies a work file from another filesystem beside its final path first, so a failed copy never leaves a partial result there', async () => {
+      const exdev = Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' });
+      const enospc = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      mocks.storage.rename.mockRejectedValueOnce(exdev);
+      mocks.storage.copyFile.mockRejectedValueOnce(enospc);
+
+      await sut.run(operation(), CLAIM).catch(() => {});
+
+      const [[from, final]] = mocks.storage.rename.mock.calls as [string, string][];
+      const [[copiedFrom, staged]] = mocks.storage.copyFile.mock.calls as [string, string][];
+      expect(copiedFrom).toBe(from);
+      expect(staged).not.toBe(final);
+      expect(path.dirname(staged)).toBe(path.dirname(final));
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged);
+      // nothing was renamed onto the final path
+      expect(mocks.storage.rename).not.toHaveBeenCalledWith(staged, final);
+    });
+
     it('crops, downsizes, restores on the admitted destination and publishes both preview files atomically', async () => {
       await sut.run(operation(), CLAIM);
 
@@ -521,6 +542,67 @@ describe(RestorationWorkerService.name, () => {
       );
       expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['waits an hour, without using an attempt, while the Locked key is not loaded', 1, true],
+      ['fails as usual once it has waited 72 hours for the Locked key', 73, false],
+    ])('%s (FL-721)', async (_, hoursAgo, waits) => {
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        const originalPath = await locked.seal('IMG_0001.jpg', 'plain jpeg', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        } as never);
+
+        await sut.run(operation({ createdAt: new Date(Date.now() - hoursAgo * 60 * 60 * 1000) }), CLAIM);
+
+        expect(restore).not.toHaveBeenCalled();
+        if (waits) {
+          expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, {
+            delayMs: LOCKED_DEFERRAL_DELAY_MS,
+            returnAttempt: true,
+          });
+          expect(operations.fail).not.toHaveBeenCalled();
+        } else {
+          expect(operations.requeue).not.toHaveBeenCalledWith(
+            OPERATION_ID,
+            CLAIM,
+            expect.objectContaining({ delayMs: LOCKED_DEFERRAL_DELAY_MS }),
+          );
+          expect(operations.fail).toHaveBeenCalled();
+        }
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('keeps the work files of an encrypted original in the RAM-backed Locked folder (M6)', async () => {
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_0001.jpg', 'plain jpeg', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        } as never);
+
+        await sut.run(operation(), CLAIM);
+
+        expect(operations.complete).toHaveBeenCalled();
+        const moved = mocks.storage.rename.mock.calls.map(([from]) => from);
+        expect(moved.length).toBeGreaterThan(0);
+        for (const from of moved) {
+          expect(from.startsWith(`${locked.tmp}/`)).toBe(true);
+        }
+        // never the work folder beside the thumbnails
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalledWith(expect.stringContaining('_work'));
+        // and nothing is left in the Locked folder
+        expect(await locked.copiesLeft()).toBe(0);
+      } finally {
+        await locked.cleanup();
+      }
     });
 
     it('processes a Locked asset the owner asked for like any other', async () => {

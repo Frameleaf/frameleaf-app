@@ -509,6 +509,21 @@ describe(MediaOperationService.name, () => {
       expect(detail.snapshot).toEqual({ version: 1, scope: 'asset', assetCount: 1 });
     });
 
+    it('tells the person who restored their items how many an older Locked key encrypted (FL-721)', () => {
+      const restore = (kind: MediaOperationKind, result: Record<string, unknown> | null) =>
+        mapOperation(operationStub({ kind, result } as never));
+
+      expect(restore(MediaOperationKind.CloudRestore, { task: 'restore', encryptedWithOlderKey: 2 })).toMatchObject({
+        encryptedWithOlderKey: 2,
+      });
+      expect(restore(MediaOperationKind.BuddyRestore, { phase: 'done', encryptedWithOlderKey: 0 })).toMatchObject({
+        encryptedWithOlderKey: 0,
+      });
+      // not counted yet, or not a restore at all
+      expect(restore(MediaOperationKind.CloudRestore, null).encryptedWithOlderKey).toBeNull();
+      expect(restore(MediaOperationKind.StudioExport, { encryptedWithOlderKey: 3 }).encryptedWithOlderKey).toBeNull();
+    });
+
     it('preserves the existing admin restore snapshot when owner mode is absent', async () => {
       const operation = operationStub({
         kind: MediaOperationKind.CloudRestore,

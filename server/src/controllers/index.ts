@@ -68,6 +68,7 @@ import { LibraryProgressController } from 'src/controllers/library-progress.cont
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { LockedEncryptionController } from 'src/controllers/locked-encryption.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
 import { MapController } from 'src/controllers/map.controller.js';
@@ -82,6 +83,10 @@ import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
+import {
+  AssetLocationInsightController,
+  PhotoLocationsController,
+} from 'src/controllers/photo-locations.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
@@ -137,7 +142,10 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  PhotoLocationsController,
+  AssetLocationInsightController,
   SpeechController,
+  LockedEncryptionController,
   LibraryItemController,
   AssetAnnotationController,
   AssetPaletteController,

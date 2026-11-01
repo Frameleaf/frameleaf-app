@@ -3,7 +3,9 @@ import { AssetFileType, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { rgbToOklab } from 'src/utils/asset-palette.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { getMocks } from 'test/utils.js';
 
 const source = {
@@ -79,6 +81,36 @@ describe('palette indexing lifecycle', () => {
     palettes.get.mockResolvedValue({ status: 'ready' } as never);
     expect(await service.get(authStub.user1, 'asset')).toEqual({ status: 'ready' });
   });
+  it('reads an encrypted Locked original through a plain copy, and waits for the key without a failed state', async () => {
+    const locked = await lockedFixture('owner');
+    try {
+      const plain = Buffer.from('a plain png');
+      const originalPath = await locked.seal('logo.png', plain, 'image/png');
+      const { service, media, palettes } = setup();
+      palettes.source.mockResolvedValue({ ...source, originalPath });
+
+      await expect(service.handleExtract({ id: 'asset', sourceRevision: 'rev' })).rejects.toBeInstanceOf(
+        LockedKeyUnavailableError,
+      );
+      expect(media.extractAssetPalette).not.toHaveBeenCalled();
+      expect(palettes.publish).not.toHaveBeenCalled();
+
+      locked.loadKey();
+      let read: Buffer | undefined;
+      media.extractAssetPalette.mockImplementation(async (path: string) => {
+        expect(path).not.toBe(originalPath);
+        read = await import('node:fs/promises').then((fs) => fs.readFile(path));
+        return ready;
+      });
+      expect(await service.handleExtract({ id: 'asset', sourceRevision: 'rev' })).toBe(JobStatus.Success);
+      expect(read).toEqual(plain);
+      expect(palettes.publish).toHaveBeenCalledWith('asset', 'rev', expect.objectContaining({ status: 'ready' }));
+      expect(await locked.copiesLeft()).toBe(0);
+    } finally {
+      await locked.cleanup();
+    }
+  });
+
   it('skips stale work before decoding', async () => {
     const { service, media, palettes } = setup();
     expect(await service.handleExtract({ id: 'asset', sourceRevision: 'old' })).toBe(JobStatus.Skipped);

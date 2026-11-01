@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -525,6 +528,25 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
       expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
       expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(true);
+    });
+
+    it('refuses an encrypted Locked original before preparing anything: its prepared copy would be on disk (FL-721)', async () => {
+      const dir = await fs.mkdtemp(join(tmpdir(), 'cloud-ml-locked-'));
+      const sealedOriginal = join(dir, 'Holiday.mp4');
+      await fs.writeFile(sealedOriginal, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64)]));
+      try {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...source,
+          originalPath: sealedOriginal,
+        } as never);
+
+        await expect(sut.estimate(owner, preview(), now)).rejects.toThrow(BadRequestException);
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+        expect(mocks.media.probe).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     });
 
     it('prepares and sends nothing when the consent is older than the version the cloud requires (FL-201)', async () => {

@@ -65,8 +65,18 @@
     cursor: default;
     opacity: 0.6;
   }
+  /*
+   * The radio keeps its own 18px size: the shared form-field look (padding, touch floor) would
+   * otherwise squash it to a sliver beside a long option.
+   */
   input {
-    margin-top: 0.2rem;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0.125rem 0 0;
+    padding: 0;
     accent-color: var(--fl-accent);
   }
   span {

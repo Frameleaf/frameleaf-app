@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { upload } from 'src/commands/asset.js';
 import { login, logout } from 'src/commands/auth.js';
+import { buildLockedDecryptCommand } from 'src/commands/locked.js';
 import { migrate } from 'src/commands/migrate/index.js';
 import { serverInfo } from 'src/commands/server-info.js';
 import { applyCliEnvAliases, preferExisting } from 'src/env-aliases.js';
@@ -157,5 +158,8 @@ program
       .default(2285),
   )
   .action((options) => migrate(options));
+
+const locked = program.command('locked').description('Work with encrypted Locked files');
+locked.addCommand(buildLockedDecryptCommand());
 
 program.parse(process.argv);

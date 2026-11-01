@@ -15,6 +15,7 @@
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ImportCheck from '$lib/components/frameleaf/settings/care/ImportCheck.svelte';
+  import PhotoLocationScan from '$lib/components/frameleaf/settings/care/PhotoLocationScan.svelte';
   import { showsImportCheck } from '$lib/components/frameleaf/settings/care/import-check';
   import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -516,6 +517,8 @@
       {/if}
     </ItemList>
   </Section>
+
+  <PhotoLocationScan />
 
   {#if tools.length > 0}
     <Section title={$t('frameleaf_carehome_tools')} description={$t('frameleaf_carehome_tools_description')}>

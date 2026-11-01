@@ -198,6 +198,23 @@ describe('cloud backup retention (FL-164)', () => {
       expect(references.database).toBe('db/cloud-backup-immich-db-backup-1.sql.gz');
     });
 
+    it('keeps every Locked key file a manifest names, and refuses one named by anything but a user id (FL-721)', () => {
+      const owner = '00000000-0000-4000-8000-000000000001';
+      const key = {
+        role: 'locked-key',
+        path: `/data/locked-keys/${owner}.json`,
+        sha256: hex('k'),
+        size: 3,
+        mtime: null,
+      };
+      const manifest = readManifest(manifestBody({ lockedKeys: { [owner]: key } }));
+
+      expect(manifest.lockedKeys).toEqual({ [owner]: key });
+      expect(manifestReferences(manifest).objects.get(hex('k'))).toBe(3);
+      expect(readManifest(manifestBody()).lockedKeys).toBeUndefined();
+      expect(() => readManifest(manifestBody({ lockedKeys: { '../escape': key } }))).toThrow('valid checksum');
+    });
+
     it('reads a version 2 manifest with each item’s details, the albums and the people (FL-164)', () => {
       const details = {
         isFavorite: true,

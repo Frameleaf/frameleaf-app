@@ -155,6 +155,21 @@ describe('AccountSecurityPanel (FL-76)', () => {
       expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeEnabled();
     });
 
+    it('the admin page disables Clear their PIN for a user with lockedEncryption (FL-721)', async () => {
+      const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
+      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true });
+      const encrypted = userAdminFactory.build({ id: 'morgan-id', name: 'Morgan', lockedEncryption: true });
+      render(AccountSecurityPanel, { user: encrypted, sessions: [] });
+
+      expect(
+        await screen.findByText(
+          'Morgan has encrypted their Locked files, so only they can reset their PIN, with their recovery key.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeDisabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeDisabled();
+    });
+
     it('keeps both actions when the state cannot be read', async () => {
       const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
       vi.mocked(getUserPinCodeStateAdmin).mockRejectedValue(new Error('offline'));

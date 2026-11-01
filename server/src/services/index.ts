@@ -94,6 +94,8 @@ import { LibraryProgressService } from 'src/services/library-progress.service.js
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
+import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { MailConnectionService } from 'src/services/mail-connection.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
@@ -121,6 +123,7 @@ import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
+import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
@@ -193,6 +196,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PhotoLocationsService,
   SpeechService,
   LibraryItemService,
   AssetAnnotationService,
@@ -271,6 +275,8 @@ export const services = [
   LibraryProgressService,
   OvernightService,
   AuthService,
+  LockedEncryptionService,
+  LockedSealService,
   AuthAdminService,
   AnalyticsService,
   BestPhotosService,

@@ -10,6 +10,7 @@
   import DevicesSection from '$lib/components/frameleaf/access/DevicesSection.svelte';
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
   import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
+  import LockedEncryptionPage from '$lib/components/frameleaf/settings/security/locked-encryption/LockedEncryptionPage.svelte';
   import PasswordSection from '$lib/components/frameleaf/access/PasswordSection.svelte';
   import PinSection from '$lib/components/frameleaf/access/PinSection.svelte';
   import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
@@ -94,6 +95,9 @@
   <PinSection />
 {:else if section === 'suppressed-content'}
   <LockedRulesPanel />
+{:else if section === 'locked-encryption'}
+  <!-- FL-721: optional encryption of this person's own Locked files -->
+  <LockedEncryptionPage />
 {:else if section === 'user-purchase-settings'}
   <div class="card fl-continuous-corners"><SupporterSection /></div>
 {:else if section === 'sharing'}

@@ -22,10 +22,14 @@ import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
 import { asUuid } from 'src/utils/database.js';
 import { libraryPathOnRelink } from 'src/utils/library-path.js';
+import { encryptsFilesOf, holdsEncryptedOriginal } from 'src/utils/locked-encryption-set.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
 /** `linkUploadedOriginal`: the candidate is not the file that was proven; prove it and try again. */
 const RETRY_LINK = Symbol('retry-link');
+/** Trashed copies of one content looked at for an upload; a sealed one is passed over (FL-721). */
+const UNTRASH_CANDIDATES = 5;
 export const BUDDY_CAPTURE_LOCK = -311;
 /**
  * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
@@ -35,9 +39,11 @@ export const BUDDY_CAPTURE_LOCK = -311;
  */
 export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
   await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
-  const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+  await sql`SELECT pg_advisory_xact_lock(${filePathLockKey(path)}::bigint)`.execute(db);
 };
+/** The advisory-lock key of one file path, shared by `lockFilePath` and the Locked file jobs (FL-721). */
+export const filePathLockKey = (path: string): string =>
+  createHash('sha1').update(path).digest().readBigInt64BE(0).toString();
 /**
  * Serializes universal-storage linking per content hash (see `linkUploadedOriginal`). Taken before any
  * path lock, never after one.
@@ -330,22 +336,26 @@ export class PhysicalFileRepository {
       kysely?: Kysely<DB>;
     } = {},
   ) {
-    return (options.kysely ?? this.db)
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
-      .where('asset.libraryId', 'is', null)
-      .where('asset.isExternal', '=', false)
-      .where('asset.isOffline', '=', false)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.status', '=', AssetStatus.Active)
-      .where('asset.checksum', '=', checksum)
-      .where('asset_exif.fileSizeInByte', '=', sizeInBytes)
-      .$if(!!options.excludeAssetId, (qb) => qb.where('asset.id', '!=', asUuid(options.excludeAssetId!)))
-      .orderBy('asset.createdAt', 'asc')
-      .orderBy('asset.id', 'asc')
-      .limit(1)
-      .executeTakeFirst();
+    return (
+      (options.kysely ?? this.db)
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
+        .where('asset.libraryId', 'is', null)
+        .where('asset.isExternal', '=', false)
+        .where('asset.isOffline', '=', false)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.status', '=', AssetStatus.Active)
+        .where('asset.checksum', '=', checksum)
+        .where('asset_exif.fileSizeInByte', '=', sizeInBytes)
+        // FL-721 (spec §6.1): a file an encrypted Locked item reads is never a dedupe target
+        .where(sql<boolean>`not ${holdsEncryptedOriginal('asset')}`)
+        .$if(!!options.excludeAssetId, (qb) => qb.where('asset.id', '!=', asUuid(options.excludeAssetId!)))
+        .orderBy('asset.createdAt', 'asc')
+        .orderBy('asset.id', 'asc')
+        .limit(1)
+        .executeTakeFirst()
+    );
   }
   /**
    * Universal storage upload linking (one file per content hash, server-wide). Under a per-checksum lock,
@@ -443,6 +453,12 @@ export class PhysicalFileRepository {
       const asset = await trx
         .selectFrom('asset')
         .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
+        // FL-721 (spec §6.1): an upload into an encrypted Locked keeps its own file, which is sealed next
+        .select(
+          sql<boolean>`exists (select 1 from public.asset_lock l where l."assetId" = asset.id) and ${encryptsFilesOf('asset')}`.as(
+            'encrypted',
+          ),
+        )
         .where('asset.id', '=', asUuid(assetId))
         .where('asset.checksum', '=', file.checksum)
         .where('asset.libraryId', 'is', null)
@@ -462,10 +478,12 @@ export class PhysicalFileRepository {
         }
         return physicalFile ? { physicalFile, linked: physicalFile.canonicalAssetId !== asset.id } : undefined;
       }
-      const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
-        excludeAssetId: asset.id,
-        kysely: trx,
-      });
+      const candidate = asset.encrypted
+        ? undefined
+        : await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
+            excludeAssetId: asset.id,
+            kysely: trx,
+          });
       if (candidate) {
         const target = candidate.physicalOriginalFileId
           ? await this.getPhysicalFile(candidate.physicalOriginalFileId, trx)
@@ -510,7 +528,7 @@ export class PhysicalFileRepository {
         }
       }
       // the content is in the file trash: take that file back out and link to it, never keep two copies
-      if (options.untrash) {
+      if (options.untrash && !asset.encrypted) {
         const trashed = await sql<{
           id: string;
           path: string;
@@ -518,9 +536,17 @@ export class PhysicalFileRepository {
           SELECT id, path FROM public.physical_file_trash
           WHERE checksum = ${file.checksum} AND "sizeInBytes" = ${file.sizeInBytes}::bigint
           ORDER BY "trashedAt" DESC, id
-          LIMIT 1
+          LIMIT ${UNTRASH_CANDIDATES}
           FOR UPDATE`.execute(trx);
-        const entry = trashed.rows[0];
+        // FL-721 (spec §6.1): a sealed Locked file in the trash holds ciphertext; it is never taken back
+        // for an upload of the plain content
+        let entry: { id: string; path: string } | undefined;
+        for (const row of trashed.rows) {
+          if (!(await isLockedPath(row.path))) {
+            entry = row;
+            break;
+          }
+        }
         if (entry) {
           const upload = parse(asset.originalPath);
           const target = join(upload.dir, `${upload.name}-restored${upload.ext}`);

@@ -44,6 +44,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
 
@@ -278,6 +279,7 @@ export class IntegrityService extends BaseService {
     startedAt: string,
     outcome: IntegrityCheckHistoryEntry['outcome'],
     checked: number | null,
+    encrypted?: number,
   ) {
     const summary = await this.integrityRepository.getIntegrityReportSummary();
     const entry: IntegrityCheckHistoryEntry = {
@@ -287,11 +289,37 @@ export class IntegrityService extends BaseService {
       outcome,
       found: summary[type] ?? 0,
       checked,
+      ...(encrypted !== undefined && { encrypted }),
     };
     const history = await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckHistory);
     await this.systemMetadataRepository.set(SystemMetadataKey.IntegrityCheckHistory, {
       entries: [entry, ...(history?.entries ?? [])].slice(0, INTEGRITY_HISTORY_KEPT),
     });
+  }
+
+  /**
+   * FL-721 (spec §8.3): the reported items whose original is a sealed Locked file now, read when the
+   * delete acts: the reported path, or the item's current original (moved since the report). A
+   * checksum failure on such a file speaks of ciphertext, so the item is never trashed from here.
+   */
+  private async encryptedAssetIds(reports: { assetId: string; path: string }[]): Promise<Set<string>> {
+    const encrypted = new Set<string>();
+    if (reports.length === 0) {
+      return encrypted;
+    }
+    const current = new Map(
+      (await this.assetRepository.getByIds(reports.map(({ assetId }) => assetId))).map((asset) => [
+        asset.id,
+        asset.originalPath,
+      ]),
+    );
+    for (const { assetId, path } of reports) {
+      const original = current.get(assetId);
+      if ((await isLockedPath(path)) || (original && original !== path && (await isLockedPath(original)))) {
+        encrypted.add(assetId);
+      }
+    }
+    return encrypted;
   }
 
   /** A full (not refresh-only) run of `type` begins; its batches carry the returned id. */
@@ -364,7 +392,10 @@ export class IntegrityService extends BaseService {
   async deleteIntegrityReport(userId: string, id: string): Promise<void> {
     const { path, assetId, fileAssetId } = await this.integrityRepository.getById(id);
 
-    if (assetId) {
+    if (assetId && (await this.encryptedAssetIds([{ assetId, path }])).has(assetId)) {
+      // FL-721 (spec §8.3): an encrypted Locked item is never trashed from here; the stale report goes
+      await this.integrityRepository.deleteById(id);
+    } else if (assetId) {
       await this.assetRepository.updateAll([assetId], {
         deletedAt: new Date(),
         status: AssetStatus.Trashed,
@@ -382,7 +413,9 @@ export class IntegrityService extends BaseService {
       // kept while tracked (fork-only paths such as video duplicate frames), and otherwise only through
       // the reference-counted guard: a path any row references (a shared original, the file trash) is kept
       const trackedPaths = await this.integrityRepository.getTrackedPaths([path]);
-      if (trackedPaths.length === 0) {
+      // FL-721 (spec §8.3): a sealed Locked file nothing tracks may be the only copy of an item's
+      // bytes; it is never deleted from here
+      if (trackedPaths.length === 0 && !(await isLockedPath(path))) {
         await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path), {
           trash: this.originalsToFileTrash(),
         });
@@ -729,6 +762,11 @@ export class IntegrityService extends BaseService {
     if (!this.hashForAlgorithm(checksumAlgorithm)) {
       return;
     }
+    // FL-721 (spec §8.3): a sealed Locked file holds ciphertext, so its plaintext checksum can't be
+    // compared: "encrypted, not checked", never a checksum failure (its GCM tags prove it intact)
+    if (await isLockedPath(originalPath)) {
+      return 'encrypted' as const;
+    }
 
     const sha1Hash = createHash('sha1');
     const sha256Hash = createHash('sha256');
@@ -844,8 +882,13 @@ export class IntegrityService extends BaseService {
 
     const assets = this.integrityRepository.streamAssetChecksums(startMarker);
 
+    let encrypted = 0;
     for await (const { originalPath, checksum, checksumAlgorithm, createdAt, assetId, reportId } of assets) {
-      await this.checkAssetChecksum(originalPath, checksum, checksumAlgorithm, assetId, reportId);
+      if (
+        (await this.checkAssetChecksum(originalPath, checksum, checksumAlgorithm, assetId, reportId)) === 'encrypted'
+      ) {
+        encrypted++;
+      }
 
       processed++;
 
@@ -880,13 +923,25 @@ export class IntegrityService extends BaseService {
       // FL-520: a pass stopped by its limits (or by Stop) is not a completed run: it carries on from the
       // checkpoint next night. Stop already wrote its own line in Recent checks.
       if (await this.systemMetadataRepository.clearIntegrityRun(IntegrityReport.ChecksumFail, runId)) {
-        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, stopped ? 'stopped' : 'paused', processed);
+        await this.recordHistory(
+          IntegrityReport.ChecksumFail,
+          runStartedAt,
+          stopped ? 'stopped' : 'paused',
+          processed - encrypted,
+          encrypted,
+        );
       }
     } else {
       this.logger.log(`Finished checksum job, covered all assets.`);
       // A pass that reached the last asset is a completed run (FL-81).
       if (await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date())) {
-        await this.recordHistory(IntegrityReport.ChecksumFail, runStartedAt, 'completed', processed);
+        await this.recordHistory(
+          IntegrityReport.ChecksumFail,
+          runStartedAt,
+          'completed',
+          processed - encrypted,
+          encrypted,
+        );
       }
     }
 
@@ -905,6 +960,11 @@ export class IntegrityService extends BaseService {
 
         const hash = this.hashForAlgorithm(checksumAlgorithm);
         if (!hash) {
+          return reportId;
+        }
+        // FL-721: a sealed Locked file's plaintext checksum can't be compared: its report is out of
+        // date ("encrypted, not checked"), never a failure anything may act on
+        if (await isLockedPath(path)) {
           return reportId;
         }
 
@@ -988,8 +1048,16 @@ export class IntegrityService extends BaseService {
     const byFileAsset = reports.filter((report) => report.fileAssetId);
     const byPath = reports.filter((report) => !report.assetId && !report.fileAssetId);
 
-    if (byAsset.length > 0) {
-      const ids = byAsset.map(({ assetId }) => assetId!);
+    // FL-721 (spec §8.3): an encrypted Locked item is never trashed from here; its stale report goes
+    const encrypted = await this.encryptedAssetIds(byAsset.map(({ assetId, path }) => ({ assetId: assetId!, path })));
+    const skipped = byAsset.filter(({ assetId }) => encrypted.has(assetId!));
+    if (skipped.length > 0) {
+      await this.integrityRepository.deleteByIds(skipped.map(({ id }) => id));
+    }
+    const trashed = byAsset.filter(({ assetId }) => !encrypted.has(assetId!));
+
+    if (trashed.length > 0) {
+      const ids = trashed.map(({ assetId }) => assetId!);
       await this.assetRepository.updateAll(ids, {
         deletedAt: new Date(),
         status: AssetStatus.Trashed,
@@ -1000,7 +1068,7 @@ export class IntegrityService extends BaseService {
         userId: '', // we don't notify any users currently
       });
 
-      await this.integrityRepository.deleteByIds(byAsset.map(({ id }) => id));
+      await this.integrityRepository.deleteByIds(trashed.map(({ id }) => id));
     }
 
     if (byFileAsset.length > 0) {
@@ -1011,7 +1079,8 @@ export class IntegrityService extends BaseService {
       const tracked = await this.integrityRepository.getTrackedPaths(byPath.map(({ path }) => path));
       const trackedPaths = new Set(tracked.map(({ path }) => path));
       for (const { path } of byPath) {
-        if (trackedPaths.has(path)) {
+        // FL-721 (spec §8.3): a sealed Locked file is never deleted from here
+        if (trackedPaths.has(path) || (await isLockedPath(path))) {
           continue;
         }
         await this.physicalFileRepository

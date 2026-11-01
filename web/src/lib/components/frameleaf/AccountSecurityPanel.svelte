@@ -156,11 +156,15 @@
       <small aria-live="polite">
         {hasPin === undefined ? '' : hasPin ? $t('frameleaf_users_pin_is_set') : $t('frameleaf_users_pin_not_set')}
       </small>
+      {#if user.lockedEncryption}
+        <!-- FL-721: their Locked files are encrypted with the PIN, so the server refuses to clear or change it -->
+        <small>{$t('frameleaf_users_pin_locked_encryption', { values: { name: user.name } })}</small>
+      {/if}
     </div>
-    <Button disabled={!live} onclick={() => changePin('set')}>
+    <Button disabled={!live || user.lockedEncryption} onclick={() => changePin('set')}>
       {hasPin ? $t('frameleaf_users_pin_change') : $t('frameleaf_users_pin_set')}
     </Button>
-    <Button disabled={!live || hasPin === false} onclick={() => changePin('clear')}>
+    <Button disabled={!live || hasPin === false || user.lockedEncryption} onclick={() => changePin('clear')}>
       {$t('frameleaf_users_pin_reset')}
     </Button>
   </div>

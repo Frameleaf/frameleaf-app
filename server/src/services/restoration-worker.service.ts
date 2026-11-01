@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -22,6 +24,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import {
@@ -34,6 +37,16 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getConfig } from 'src/utils/config.js';
+import {
+  LOCKED_DEFERRAL_DELAY_MS,
+  assertPlainCopyPossible,
+  isLockedKeyUnavailable,
+  isLockedPath,
+  lockedOperationMayWait,
+  makeWorkDir,
+  withPlainCopy,
+} from 'src/utils/locked-read.js';
+import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
 import { chunkClipOutputOptions, previewClipOutputOptions, strippedStillFormat } from 'src/utils/media-privacy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -173,6 +186,8 @@ export class RestorationWorkerService {
     private cryptoRepository: CryptoRepository,
     private jobRepository: JobRepository,
     private databaseRepository: DatabaseRepository,
+    /** FL-721: a restoration of a Locked item is sealed once published. */
+    private lockedFileRepository?: LockedFileRepository,
   ) {
     this.logger.setContext(RestorationWorkerService.name);
   }
@@ -434,6 +449,7 @@ export class RestorationWorkerService {
       scratch: [],
     };
 
+    let sealedWorkDir: string | undefined;
     try {
       const total =
         stage === 'full' && snapshot.sourceType === AssetRestorationSourceType.Video
@@ -480,19 +496,36 @@ export class RestorationWorkerService {
       }
       await this.progress(context, MediaOperationStatus.Preparing, 1, total);
 
-      this.storageRepository.mkdirSync(workDir);
-      const full: RunContext = { ...context, source, selection } as RunContext;
+      // FL-721: wait for the Locked key before any work starts
+      await assertPlainCopyPossible(source.originalPath);
+      if (await isLockedPath(source.originalPath)) {
+        // M6: the work files of an encrypted original stay in the RAM-backed Locked folder (removed
+        // below); only the published results reach the disk, and they are sealed after this job
+        context.workDir = await makeWorkDir('restoration', true);
+        sealedWorkDir = context.workDir;
+      } else {
+        this.storageRepository.mkdirSync(workDir);
+      }
 
-      const output =
-        snapshot.sourceType === AssetRestorationSourceType.Video
-          ? stage === 'preview'
-            ? await this.previewVideo(full, total)
-            : await this.fullVideo(full, total)
-          : stage === 'preview'
-            ? await this.previewImage(full, total)
-            : await this.fullImage(full, total);
+      // FL-721 (spec §8.2): the tools read a sealed original from a plain copy
+      await withPlainCopy(source.originalPath, async (originalPath) => {
+        const full: RunContext = { ...context, source: { ...source, originalPath }, selection } as RunContext;
 
-      await this.publish(full, output, statuses);
+        const output =
+          snapshot.sourceType === AssetRestorationSourceType.Video
+            ? stage === 'preview'
+              ? await this.previewVideo(full, total)
+              : await this.fullVideo(full, total)
+            : stage === 'preview'
+              ? await this.previewImage(full, total)
+              : await this.fullImage(full, total);
+
+        await this.publish(full, output, statuses);
+      });
+      // FL-721 (spec §7.2): a Locked item's restoration files are sealed
+      await queueLockedSealOf({ lockedFile: this.lockedFileRepository, job: this.jobRepository, logger: this.logger }, [
+        source.id,
+      ]);
     } catch (error) {
       clearInterval(watch);
       // Finish the in-flight heartbeat before handing the claim back to another attempt.
@@ -502,6 +535,9 @@ export class RestorationWorkerService {
     } finally {
       clearInterval(watch);
       await renewing;
+      if (sealedWorkDir) {
+        await rm(sealedWorkDir, { recursive: true, force: true });
+      }
       if (this.activeController === controller) {
         this.activeController = undefined;
       }
@@ -1018,7 +1054,7 @@ export class RestorationWorkerService {
         if (!updated) return false;
         for (const file of output.files) {
           this.storageRepository.mkdirSync(path.dirname(file.final));
-          await this.storageRepository.rename(file.tmp, file.final);
+          await this.moveInto(file.tmp, file.final);
           placed.push(file.final);
           const index = ctx.scratch.indexOf(file.tmp);
           if (index !== -1) ctx.scratch.splice(index, 1);
@@ -1060,6 +1096,28 @@ export class RestorationWorkerService {
     );
   }
 
+  /** A rename, or a copy when the work file is on another filesystem (the RAM-backed Locked folder). */
+  private async moveInto(from: string, to: string) {
+    try {
+      await this.storageRepository.rename(from, to);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
+        throw error;
+      }
+      // copied under a name beside `to` and renamed into place, so a copy that fails part-way never
+      // leaves a partial result at the final path (which `publish` doesn't know to discard)
+      const staged = `${to}.${randomUUID()}.tmp`;
+      try {
+        await this.storageRepository.copyFile(from, staged);
+        await this.storageRepository.rename(staged, to);
+      } catch (copyError) {
+        await this.storageRepository.unlink(staged).catch(() => {});
+        throw copyError;
+      }
+      await this.storageRepository.unlink(from);
+    }
+  }
+
   /**
    * Decide what a thrown error means for the job record.
    *
@@ -1075,6 +1133,20 @@ export class RestorationWorkerService {
   ): Promise<void> {
     const { operation, claimToken, restoration } = ctx;
     const stage = statuses.running === AssetRestorationStatus.PreviewRendering ? 'preview' : 'full';
+    // FL-721 (spec §8): waiting for the owner's Locked key is not a failure; it runs again in an hour
+    if (
+      isLockedKeyUnavailable(error) &&
+      !ctx.signal.aborted &&
+      // the same ceiling as jobs: 72 hourly waits, kept as 72 hours since the restoration was asked for
+      lockedOperationMayWait(operation.createdAt) &&
+      (await this.operationRepository.requeue(operation.id, claimToken, {
+        delayMs: LOCKED_DEFERRAL_DELAY_MS,
+        returnAttempt: true,
+      }))
+    ) {
+      this.logger.log(`Restoration ${restoration.id} waits for its owner's Locked key`);
+      return;
+    }
     if (error instanceof RestorationInterrupted || ctx.signal.aborted) {
       const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
       if (current?.status === MediaOperationStatus.Cancelling) {

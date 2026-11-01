@@ -1317,6 +1317,18 @@ jobs:
         run: mise run //server:build
       - name: Test SQL-tools comparison and migration loading
         run: node --test packages/sql-tools/test/*.test.mjs
+      - name: Test locked-crypto and check its committed build is current
+        run: |
+          pnpm --filter @frameleaf/locked-crypto test
+          pnpm --filter @frameleaf/locked-crypto build
+          # untracked files count too: a new dist/*.js that was never committed
+          changed="$(git status --porcelain -- packages/locked-crypto/dist)"
+          if [ -n "$changed" ]; then
+            echo "::error::packages/locked-crypto/dist is not the committed build:"
+            echo "$changed"
+            git diff -- packages/locked-crypto/dist
+            exit 1
+          fi
       - name: Run existing migrations
         run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation

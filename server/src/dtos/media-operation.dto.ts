@@ -210,6 +210,15 @@ export const MediaOperationSchema = z
       .describe(
         'Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise',
       ),
+    /** FL-721: optional like `cloudJob`, so clients built before it keep decoding. */
+    encryptedWithOlderKey: z
+      .int()
+      .nonnegative()
+      .nullable()
+      .optional()
+      .describe(
+        "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+      ),
     progress: z.number().meta({ format: 'double' }).describe('Percent complete, from counted work'),
     processedUnits: z.string(),
     totalUnits: z.string().nullable(),

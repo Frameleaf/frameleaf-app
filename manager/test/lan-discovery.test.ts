@@ -66,6 +66,8 @@ test('LAN discovery gets host networking and only the published port, never data
     assert.equal(compose.services.database.network_mode, undefined);
     assert.equal(compose.services.database.ports, undefined);
     assert.equal(compose.services['frameleaf-server'].network_mode, undefined);
+    // FL-721: decrypted copies of encrypted Locked files live in /dev/shm; Docker's 64 MB default is too small
+    assert.equal(compose.services['frameleaf-server'].shm_size, '2gb');
     assert.equal(JSON.stringify(lan).includes('private-password'), false);
     process.env.MANAGER_BIND_ADDRESS = '127.0.0.1';
     await renderCompose(release, installation, 'pw', stack, undefined, 'cpu');

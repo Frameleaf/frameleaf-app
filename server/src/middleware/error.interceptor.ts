@@ -8,6 +8,7 @@ import {
 import { Request, Response } from 'express';
 import { Observable, catchError, throwError } from 'rxjs';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LockedKeyUnavailableError, lockedKeyHttpException } from 'src/utils/locked-read.js';
 import { isHttpException, onRouteError } from 'src/utils/logger.js';
 import { routeToErrorMessage } from 'src/utils/misc.js';
 
@@ -26,6 +27,10 @@ export class ErrorInterceptor implements NestInterceptor {
         throwError(() => {
           if (isHttpException(error)) {
             return error;
+          }
+          // FL-721 (spec §8): a request that needs a Locked key that isn't loaded answers 423
+          if (error instanceof LockedKeyUnavailableError) {
+            return lockedKeyHttpException(error);
           }
 
           onRouteError(req, res, error, this.logger);

@@ -1,7 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
@@ -39,8 +40,10 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
+import { queueExecution } from 'src/queue/context.js';
+import { ReadStreamResponse, ZipDownloadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { nextArchiveName } from 'src/utils/file.js';
@@ -49,6 +52,15 @@ import {
   getHiddenContentQueryOptions,
   isSuppressedWhileLocked,
 } from 'src/utils/hidden-content.js';
+import {
+  LockedKeyUnavailableError,
+  isLockedKeyUnavailable,
+  isLockedPath,
+  lockedArchiveInput,
+  lockedKeyHttpException,
+  makeWorkDir,
+  openLockedRead,
+} from 'src/utils/locked-read.js';
 import {
   EVENT_GAP_HOURS,
   MAX_LANDMARK_DAYS_PER_YEAR,
@@ -159,6 +171,9 @@ export class MemoryService extends BaseService {
   /** FL-194: highlight videos, rendered through Studio's render pipeline. */
   @Inject(MemoryHighlightService)
   private highlights!: MemoryHighlightService;
+
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
 
   @OnJob({ name: JobName.MemoryGenerate, queue: QueueName.BackgroundTask })
   async onMemoriesCreate() {
@@ -889,11 +904,20 @@ export class MemoryService extends BaseService {
       throw new NotFoundException('Export has expired');
     }
 
+    const disposition = `attachment; filename*=UTF-8''${encodeURIComponent(run.title || 'memory')}.zip`;
+    // FL-721: an export holding encrypted Locked originals is stored encrypted to its owner, so it
+    // opens only while their key is loaded (after Lock now, the PIN or passphrase prompt again)
+    if (await isLockedPath(run.path)) {
+      try {
+        const { stream, plaintextLength } = await openLockedRead(run.path, auth.user.id);
+        return { stream: stream as Readable, type: 'application/zip', length: plaintextLength, disposition };
+      } catch (error) {
+        throw error instanceof LockedKeyUnavailableError ? lockedKeyHttpException(error) : error;
+      }
+    }
+
     const stream = await this.storageRepository.createReadStream(run.path, 'application/zip');
-    return {
-      ...stream,
-      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(run.title || 'memory')}.zip`,
-    };
+    return { ...stream, disposition };
   }
 
   @OnJob({ name: JobName.MemoryExport, queue: QueueName.BackgroundTask })
@@ -919,6 +943,13 @@ export class MemoryService extends BaseService {
     // written under a partial name and renamed only once the archive is complete, so an
     // interrupted worker can never leave a half-written file that looks downloadable
     const partial = `${target}.partial`;
+    // outside the `try` so a failed or deferred run can close the archive and its file
+    let zip: ZipDownloadStream | undefined;
+    // decrypting inputs of encrypted originals, each holding its file open while it is read
+    const lockedInputs: Readable[] = [];
+    // FL-721: with encrypted originals the archive is built in the RAM-backed Locked folder and
+    // stored encrypted, so their decrypted bytes never reach a disk
+    let workDir: string | undefined;
 
     try {
       this.storageCore.ensureFolders(partial);
@@ -931,8 +962,20 @@ export class MemoryService extends BaseService {
       const assets = await this.assetRepository.getByIds(assetIds);
       const byId = new Map(assets.map((asset) => [asset.id, asset]));
 
-      const zip = this.storageRepository.createZipStream();
-      const output = this.storageRepository.createWriteStream(partial);
+      let sealed = false;
+      for (const asset of assets) {
+        if (asset.ownerId === claimed.ownerId && (await isLockedPath(asset.originalPath))) {
+          sealed = true;
+          break;
+        }
+      }
+      // ponytail: the whole archive sits in the Locked folder while it is built, so its tmpfs size
+      // (Docker shm_size) caps such an export; a full folder fails the run with the write error
+      workDir = sealed ? await makeWorkDir('memory-export', true) : undefined;
+      const plain = workDir ? join(workDir, 'export.zip') : partial;
+
+      zip = this.storageRepository.createZipStream();
+      const output = this.storageRepository.createWriteStream(plain);
       const finished = pipeline(zip.stream, output);
       // A throw inside the loop below skips `await finished`, which would leave this
       // promise rejected and unobserved. Attaching a handler now prevents an unhandled
@@ -977,7 +1020,19 @@ export class MemoryService extends BaseService {
           this.logger.warn('Unable to resolve realpath', { originalPath: asset.originalPath });
         }
 
-        zip.addFile(realpath, nextArchiveName(names, asset.originalFileName));
+        // FL-721 (spec §8.1): an encrypted original goes in decrypted (the owner's key)
+        const input = await lockedArchiveInput(realpath, claimed.ownerId);
+        if (typeof input !== 'string') {
+          lockedInputs.push(input);
+          if (!workDir) {
+            // sealed after the scan above chose an ordinary-disk archive: fail rather than write its
+            // decrypted bytes there (the run can be started again and then builds in the Locked folder)
+            throw new Error('An item was encrypted while the export ran; start the export again');
+          }
+          // a decryption error fails the archive (and so this run) instead of going unheard
+          input.once('error', (error) => zip?.stream.destroy(error));
+        }
+        zip.addFile(input, nextArchiveName(names, asset.originalFileName));
       }
 
       await zip.finalize();
@@ -993,7 +1048,7 @@ export class MemoryService extends BaseService {
       }
 
       if (cancelled) {
-        await this.storageRepository.unlink(partial);
+        await this.storageRepository.unlink(plain);
         await this.memoryRepository.updateExport(id, {
           status: MemoryExportStatus.Cancelled,
           finishedAt: new Date(),
@@ -1002,6 +1057,13 @@ export class MemoryService extends BaseService {
         return JobStatus.Skipped;
       }
 
+      if (workDir) {
+        await this.lockedEncryption.encryptForOwner(plain, partial, claimed.ownerId, {
+          assetId: claimed.id,
+          originalFileName: `${claimed.title || 'memory'}.zip`,
+          mime: 'application/zip',
+        });
+      }
       await this.storageRepository.rename(partial, target);
       const { size } = await this.storageRepository.stat(target);
 
@@ -1016,6 +1078,18 @@ export class MemoryService extends BaseService {
 
       return JobStatus.Success;
     } catch (error) {
+      // `pipeline` then destroys the output file stream too; `finished.catch` above absorbs the rejection
+      zip?.stream.destroy();
+      for (const input of lockedInputs) {
+        input.destroy();
+      }
+      // FL-721: the queue defers the job until the owner's Locked key is loaded; the run goes back to
+      // pending so the deferred job can claim it again
+      if (isLockedKeyUnavailable(error) && queueExecution.getStore()?.dependencyReason === 'locked-key-unavailable') {
+        await this.storageRepository.unlink(partial);
+        await this.memoryRepository.updateExport(id, { status: MemoryExportStatus.Pending });
+        throw error;
+      }
       this.logger.error(`Memory export ${id} failed: ${error}`);
       await this.storageRepository.unlink(partial);
       await this.memoryRepository.updateExport(id, {
@@ -1024,6 +1098,10 @@ export class MemoryService extends BaseService {
         finishedAt: new Date(),
       });
       return JobStatus.Failed;
+    } finally {
+      if (workDir) {
+        await this.storageRepository.unlinkDir(workDir, { recursive: true, force: true });
+      }
     }
   }
 

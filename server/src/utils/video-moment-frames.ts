@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
@@ -23,6 +22,7 @@ import {
   sourceFingerprint,
   videoMomentFrameTimestamps,
 } from 'src/utils/enrichment-plan.js';
+import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 
 /**
@@ -66,7 +66,18 @@ const ffmpegFor = (config: Pick<SystemConfig, 'ffmpeg' | 'image'>) => ({
  * seek yields nothing (a sparse keyframe near the end) is left out rather than failing the video.
  * Returns the frames cut; removes nothing it did not write.
  */
-export const cutFrames = async (
+export const cutFrames = (
+  deps: Pick<VideoFrameDeps, 'media' | 'storage' | 'logger'>,
+  source: VideoMomentSourceRow,
+  config: Pick<SystemConfig, 'ffmpeg' | 'image'>,
+  pathFor: (frameIndex: number) => string,
+): Promise<CutFrame[]> =>
+  // FL-721 (spec §8.2): a sealed original is cut from one plain copy (a missing key defers the job)
+  withPlainCopy(source.originalPath, (originalPath) =>
+    cutFramesFrom(deps, originalPath === source.originalPath ? source : { ...source, originalPath }, config, pathFor),
+  );
+
+const cutFramesFrom = async (
   deps: Pick<VideoFrameDeps, 'media' | 'storage' | 'logger'>,
   source: VideoMomentSourceRow,
   config: Pick<SystemConfig, 'ffmpeg' | 'image'>,
@@ -238,7 +249,8 @@ export const withTemporaryFrames = async <T>(
     return undefined;
   }
 
-  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-moment-preview-'));
+  // FL-721 M6: frames of an encrypted video stay in the RAM-backed Locked folder
+  const folder = await makeWorkDir('moment-preview', await isLockedPath(source.originalPath));
   try {
     const frames = await cutFrames(deps, source, config, (frameIndex) => join(folder, `frame_${frameIndex}.jpeg`));
     return frames.length > 0 ? await use(frames) : undefined;

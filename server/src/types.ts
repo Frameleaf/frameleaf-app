@@ -647,6 +647,13 @@ export type JobItem =
   // Filesystem
   | { name: JobName.FileDelete; data: IDeleteFilesJob }
 
+  // Locked encryption
+  | { name: JobName.LockedSeal; data: { id: string } }
+  | { name: JobName.LockedUnseal; data: { id: string } }
+  | { name: JobName.LockedRewrap; data: { id: string } }
+  /** `delay`: a later check that turning on or off has finished, kept apart from the immediate sweeps */
+  | { name: JobName.LockedSweep; data: { userId?: string; delay?: number } }
+
   // Cleanup
   | { name: JobName.SessionCleanup; data?: IBaseJob }
   | { name: JobName.HlsSessionCleanup; data?: IBaseJob }
@@ -1137,6 +1144,10 @@ export type FrameleafCloudBackupRestore = {
   /** Deleted items made again, and items whose details came back (manifest v2). */
   recreated?: number;
   detailsRestored?: number;
+  /** FL-721: restored encrypted items that this server's Locked key file for their owner does not open. */
+  encryptedWithOlderKey?: number;
+  /** FL-721: backed-up key files kept in the replaced folder because a live key file was there. */
+  lockedKeysKept?: number;
   error?: string;
 };
 
@@ -1590,6 +1601,8 @@ export type IntegrityCheckHistoryEntry = {
   found: number;
   /** Files looked at in this run, when the check counts them. */
   checked: number | null;
+  /** FL-721: encrypted Locked files the damage check passed over ("encrypted, not checked"). */
+  encrypted?: number;
 };
 
 export type UserPreferences = {

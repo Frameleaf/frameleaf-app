@@ -48,6 +48,21 @@ describe(MediaIntegrityService.name, () => {
     vi.unstubAllEnvs();
     await rm(directory, { recursive: true, force: true });
   });
+  it("integrity check counts an encrypted file as encrypted and doesn't hash it", async () => {
+    // FL-721 (spec §8.3): a sealed Locked file is "encrypted, not checked", never corrupt
+    await writeFile(input.path, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+    const hash = vi.spyOn(CryptoRepository.prototype, 'hashFileDigests');
+    try {
+      await expect(
+        sut.validate({ ...input, deep: true, expected: { sha256: Buffer.alloc(32), sizeInBytes: bytes.length } }),
+      ).resolves.toEqual({ status: 'encrypted', reason: 'locked_encrypted' });
+
+      expect(hash).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    } finally {
+      hash.mockRestore();
+    }
+  });
   it('returns real dual hashes and identity', async () => {
     expect(await sut.validate(input)).toMatchObject({
       status: 'healthy',

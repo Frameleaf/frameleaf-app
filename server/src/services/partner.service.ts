@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Partner } from 'src/database.js';
 import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
@@ -6,10 +6,15 @@ import { mapUser } from 'src/dtos/user.dto.js';
 import { AssetVisibility, Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-copy.service.js';
 
 @Injectable()
 export class PartnerService extends BaseService {
+  /** FL-721 (spec §6.2): partner entries and grants on encrypted Locked items follow the partnership. */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
   async create(auth: AuthDto, { sharedWithId }: PartnerCreateDto): Promise<PartnerResponseDto> {
     // a library shared with its own owner would start copying every item back into that same library
     // UUIDs compare without case, as the database compares them
@@ -42,6 +47,7 @@ export class PartnerService extends BaseService {
       auth.user.id,
       sharedWithId,
     );
+    await this.lockedEncryption.onPartnershipStarted(auth.user.id, sharedWithId);
     // FL-228: the new partner gained access to this library
     await this.eventRepository.emit('PushNotify', {
       type: PushEventType.AccessChanged,
@@ -64,6 +70,7 @@ export class PartnerService extends BaseService {
     await this.partnerRepository.remove(partnerId);
     // FL-326: the former partner keeps every copy received; following and new copies stop
     await stopPartnerSharing({ partnerOrigin: this.partnerOriginRepository }, auth.user.id, sharedWithId);
+    await this.lockedEncryption.onPartnershipEnded(auth.user.id, sharedWithId);
 
     // FL-54: revocation takes effect on open pages too. Access is always checked live on the server,
     // so this only tells the clients to drop what they already loaded (timeline months, the partner

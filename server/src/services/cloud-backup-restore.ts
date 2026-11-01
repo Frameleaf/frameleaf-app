@@ -1,5 +1,6 @@
+import { isLockedFile } from '@frameleaf/locked-crypto';
 import { randomUUID } from 'node:crypto';
-import { link } from 'node:fs/promises';
+import { chmod, link, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -12,6 +13,12 @@ import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud
 import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
+import {
+  LOCKED_KEY_BACKUP_ROLE,
+  isEncryptedWithOlderKey,
+  liveLockedKeyIds,
+  lockedKeyFilePath,
+} from 'src/utils/locked-backup.js';
 
 /**
  * What a restore brings back (FL-164, CLD-302):
@@ -26,6 +33,10 @@ import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
  *   members added back (manifest v2).
  * - `database`: the manifest's database dump into `<media>/backups`, where the maintenance restore lists it.
  * - `library`: every file back in its place, as `asset` does for one, and the database dump as `database`.
+ *   FL-721: also each person's Locked key file, with mode 0600, and only in this scope. A live key file is
+ *   never replaced: the backed-up one is kept in `<media>/frameleaf/restore/replaced/<operation>/locked-keys`
+ *   for the recovery CLI, and items the live key does not open are counted (`encryptedWithOlderKey`). Only
+ *   with no live key file does the backed-up one go to `<media>/locked-keys/<userId>.json`.
  */
 export type CloudBackupRestoreScope = 'files' | 'asset' | 'album' | 'database' | 'library';
 
@@ -90,13 +101,17 @@ export type CloudBackupRestoreResult = {
   recreated: number;
   /** Items still in the library whose details came back. */
   detailsRestored: number;
+  /** FL-721: restored encrypted items that this server's Locked key file for their owner does not open. */
+  encryptedWithOlderKey: number;
+  /** FL-721: backed-up key files kept in the replaced folder because a live key file was there. */
+  lockedKeysKept: number;
 };
 
 /** One file a restore writes, verified against `sha256` before it lands at `target`. */
 export type CloudBackupRestoreFile = {
   fileKey: string;
   assetId: string | null;
-  /** The manifest's role for the file: `original`, `sidecar`, a thumbnail, or `profile`. */
+  /** The manifest's role for the file: `original`, `sidecar`, a thumbnail, `profile` or `locked-key`. */
   role: string;
   sha256: string;
   objectKey?: string;
@@ -130,6 +145,8 @@ export const emptyRestoreResult = (): CloudBackupRestoreResult => ({
   restoredAssetIds: [],
   recreated: 0,
   detailsRestored: 0,
+  encryptedWithOlderKey: 0,
+  lockedKeysKept: 0,
 });
 
 /** Whether `path` is inside `folder`, after resolving `..` and the like. */
@@ -232,6 +249,25 @@ export const restorePlan = (options: {
       });
     }
   }
+  if (!chosen && scope === 'library') {
+    for (const [userId, file] of Object.entries(manifest.lockedKeys ?? {})) {
+      // where this server keeps the key file, whatever path the backed-up server had
+      const target = lockedKeyFilePath(mediaLocation, userId);
+      if (!target) {
+        continue;
+      }
+      files.push({
+        fileKey: `~locked-key:${userId}`,
+        assetId: null,
+        role: LOCKED_KEY_BACKUP_ROLE,
+        sha256: file.sha256,
+        ...(file.objectKey && { objectKey: file.objectKey }),
+        size: file.size,
+        target,
+        inPlace: true,
+      });
+    }
+  }
   return {
     files: files.toSorted((a, b) => compareCodeUnits(a.fileKey, b.fileKey)),
     destination: inPlace ? null : restoreRoot,
@@ -290,11 +326,13 @@ export class CloudBackupRestorer {
       const { cursor } = result;
       const pending = cursor ? files.filter((file) => compareCodeUnits(file.fileKey, cursor) > 0) : files;
       for (let at = 0; at < pending.length; at += RESTORE_BATCH) {
-        for (const file of pending.slice(at, at + RESTORE_BATCH)) {
+        for (const planned of pending.slice(at, at + RESTORE_BATCH)) {
+          const file = await this.keyFileTarget(planned, options);
           const outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, options);
           await options.completedFile?.(file, outcome);
           result = {
             ...result,
+            lockedKeysKept: result.lockedKeysKept + (file === planned ? 0 : 1),
             cursor: file.fileKey,
             files: result.files + 1,
             bytes: result.bytes + file.size,
@@ -356,6 +394,35 @@ export class CloudBackupRestorer {
       };
     }
     return result;
+  }
+
+  /**
+   * FL-721: a backed-up key file never replaces a live one (it may hold newer secrets, or a new key pair
+   * that items sealed since need). It goes to the replaced folder instead, where the recovery CLI can
+   * still use it for the backed-up items. The same plan on a resumed restore decides the same way.
+   */
+  private async keyFileTarget(
+    file: CloudBackupRestoreFile,
+    options: { mediaLocation: string; operationId: string },
+  ): Promise<CloudBackupRestoreFile> {
+    if (file.role !== LOCKED_KEY_BACKUP_ROLE || !file.inPlace) {
+      return file;
+    }
+    const live = await this.sha256Of(file.target);
+    if (live === null || live === file.sha256) {
+      return file;
+    }
+    return {
+      ...file,
+      target: join(
+        options.mediaLocation,
+        RESTORE_REPLACED_FOLDER,
+        options.operationId,
+        'locked-keys',
+        basename(file.target),
+      ),
+      inPlace: false,
+    };
   }
 
   /**
@@ -433,16 +500,29 @@ export class CloudBackupRestorer {
         if (await this.storage.checkFileExists(staged)) await this.storage.unlink(staged);
       }
     }
+    const lockedKey = file.role === LOCKED_KEY_BACKUP_ROLE;
     const present = await this.sha256Of(file.target);
     if (present === file.sha256) {
+      if (lockedKey) {
+        await chmod(file.target, 0o600);
+      }
       return 'skipped';
     }
-    this.storage.mkdirSync(dirname(file.target));
+    if (lockedKey) {
+      // FL-721: the key folder is the server's alone before anything is staged in it
+      await mkdir(dirname(file.target), { recursive: true, mode: 0o700 });
+      await chmod(dirname(file.target), 0o700);
+    } else {
+      this.storage.mkdirSync(dirname(file.target));
+    }
     const staged = join(dirname(file.target), `.cloud-restore-${randomUUID()}.tmp`);
     try {
       const downloaded = await download(key, staged, file.sha256);
       if (downloaded.size !== file.size || downloaded.sha256 !== file.sha256) {
         throw new Error('Restore staging size or checksum mismatch');
+      }
+      if (lockedKey) {
+        await chmod(staged, 0o600);
       }
       if (present !== null) {
         await this.moveAside(file.target, options.mediaLocation, join(options.operationId, randomUUID()));
@@ -493,4 +573,30 @@ export class CloudBackupRestorer {
     if (besideTarget) await flushBuddyDirectory(dirname(path));
     this.logger.log(`Cloud backup restore ${operationId}: moved ${path} aside to ${target}`);
   }
+}
+
+/**
+ * FL-721: how many of the items a restore put back have an original encrypted with a key that this
+ * server's key file for their owner does not open (spec §9: they turned encryption off and on again
+ * since the backup). Counted once each, so the restore can say so rather than leave them unreadable.
+ */
+export async function countEncryptedWithOlderKey(
+  files: CloudBackupRestoreFile[],
+  mediaLocation: string,
+): Promise<number> {
+  let live: Set<string> | undefined;
+  const counted = new Set<string>();
+  for (const file of files) {
+    if (!file.assetId || file.role !== 'original' || !file.inPlace || counted.has(file.assetId)) {
+      continue;
+    }
+    if (!(await isLockedFile(file.target).catch(() => false))) {
+      continue;
+    }
+    live ??= await liveLockedKeyIds(mediaLocation);
+    if (await isEncryptedWithOlderKey(file.target, live)) {
+      counted.add(file.assetId);
+    }
+  }
+  return counted.size;
 }

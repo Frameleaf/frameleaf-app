@@ -114,12 +114,15 @@
   .pin-cells {
     position: relative;
     display: flex;
+    /* Never wider than its container: on a narrow sheet the cells shrink instead of overflowing. */
+    max-width: 100%;
     gap: 0.625rem;
     justify-content: center;
     padding: 0.25rem;
   }
   .pin-cell {
     display: grid;
+    min-width: 0;
     place-items: center;
     width: 2.75rem;
     height: 3.375rem;

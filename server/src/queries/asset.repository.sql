@@ -230,6 +230,38 @@ from
 where
   "assetId" = $1
 
+-- AssetRepository.getLockedEncryptionItems
+select
+  "asset"."id",
+  "asset"."ownerId",
+  "asset_lock"."pendingUnlockAt" is not null as "pending",
+  "locked_encryption"."mode"
+from
+  "asset"
+  inner join "asset_lock" on "asset_lock"."assetId" = "asset"."id"
+  inner join "locked_encryption" on "locked_encryption"."userId" = "asset"."ownerId"
+where
+  "asset"."id" = any ($1::uuid[])
+  and (
+    "asset"."libraryId" is null
+    and exists (
+      select
+        1
+      from
+        public.locked_encryption e
+      where
+        e."userId" = "asset"."ownerId"
+    )
+    and not exists (
+      select
+        1
+      from
+        public.asset_origin o
+      where
+        o."assetId" = "asset".id
+    )
+  )
+
 -- AssetRepository.getByIdsWithAllRelationsButStacks
 select
   "asset".*,

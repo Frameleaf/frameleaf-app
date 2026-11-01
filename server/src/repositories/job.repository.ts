@@ -48,6 +48,7 @@ import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
+import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
@@ -123,6 +124,11 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.PartnerBackfill,
   // FL-667: removing a filler tag that is already gone changes nothing, so a re-run is harmless
   JobName.DescriptionFillerTagCleanup,
+  // FL-721: every step reads the file's header first (`FLLK`) and replaces it through a temporary file
+  JobName.LockedSeal,
+  JobName.LockedUnseal,
+  JobName.LockedRewrap,
+  JobName.LockedSweep,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -305,6 +311,7 @@ export class JobRepository {
         settled = await admission.publication.run(abort.signal, () =>
           this.store.defer(claim, context.dependencyReason!),
         );
+        await this.wakeIfLockedKeyLoaded(claim, context.dependencyReason, settled);
         return;
       }
       if (context.outcome === 'failed') {
@@ -361,6 +368,7 @@ export class JobRepository {
           settled = await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
             this.store.defer(claim, context.dependencyReason ?? 'local-capacity'),
           );
+          await this.wakeIfLockedKeyLoaded(claim, context.dependencyReason, settled);
           return;
         }
         settled = await this.store.fail(
@@ -398,6 +406,8 @@ export class JobRepository {
           this.logger.error('Could not persist stopped job outcome; lease recovery is pending');
         }
       }
+      // FL-721 M2: the Locked wait this execution recorded ends with it
+      forgetLockedClaim(claim.id);
       releaseExecution?.();
       releaseObservers?.();
     }
@@ -424,6 +434,22 @@ export class JobRepository {
       });
     } catch {
       // A diagnostic failure must not replace the original durable job outcome.
+    }
+  }
+
+  /**
+   * FL-721 (spec §15, "jobs run on the next unlock"): a job deferred for a Locked key whose owner's key
+   * loaded while it ran (before or after it recorded the wait) missed that load's wake-up, so it is
+   * woken now that its deferral is written. A key that loads after this point wakes it itself.
+   */
+  private async wakeIfLockedKeyLoaded(claim: QueueClaim, reason: JobDependencyReason | undefined, settled: boolean) {
+    if (reason !== 'locked-key-unavailable' || !lockedKeyLoadedSinceDeferral(claim.id) || !settled) {
+      return;
+    }
+    try {
+      await this.store.wakeDeferred([claim.id], 'locked-key-unavailable');
+    } catch {
+      this.logger.warn('Could not wake a job whose Locked key loaded while it ran; it runs within the hour');
     }
   }
 
@@ -542,6 +568,10 @@ export class JobRepository {
   }
   retryFailed(name: QueueName) {
     return this.store.retryFailed(name);
+  }
+  /** FL-721: jobs deferred for a Locked key run now; their owner's key has just been loaded. */
+  wakeLockedDeferrals(ids: string[]) {
+    return this.store.wakeDeferred(ids, 'locked-key-unavailable');
   }
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.store.counts(name);
@@ -1107,6 +1137,19 @@ export class JobRepository {
       }
       case JobName.PartnerCopyAlbum: {
         return { deduplication: { id: `partner-album/${item.data.sourceAlbumId}/${item.data.targetOwnerId}` } };
+      }
+      // FL-721: one waiting job per item and step, and one sweep per person (or of everyone); a
+      // request while one runs (a new derived file, a key load) is picked up after it
+      case JobName.LockedSeal:
+      case JobName.LockedUnseal:
+      case JobName.LockedRewrap: {
+        return { deduplication: { id: `${item.name}:${item.data.id}`, keepLastIfActive: true } };
+      }
+      case JobName.LockedSweep: {
+        const id = `${item.name}:${item.data.userId ?? 'all'}`;
+        return item.data.delay
+          ? { delay: item.data.delay, deduplication: { id: `${id}:later`, keepLastIfActive: true } }
+          : { deduplication: { id, keepLastIfActive: true } };
       }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };

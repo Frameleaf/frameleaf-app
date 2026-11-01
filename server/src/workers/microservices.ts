@@ -8,6 +8,8 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { attachLockedKeyIpc } from 'src/utils/locked-key-ipc.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
@@ -58,6 +60,8 @@ export async function bootstrap() {
 }
 
 if (!isMainThread) {
+  // FL-721: jobs run in this thread; the supervisor hands it the Locked keys the API loads
+  attachLockedKeyIpc(lockedKeys);
   bootstrap().catch((error) => {
     if (!isStartUpError(error)) {
       console.error(error);
