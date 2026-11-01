@@ -875,6 +875,10 @@ function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefi
       ),
   });
 }
+/**
+ * Build landmark inclusion and exclusion filters against live, eligible matches. Both searches
+ * revalidate inferred evidence instead of trusting stored associations that may have gone stale.
+ */
 function landmarkIdsPredicates(eb: AssetExpressionBuilder, filter?: LandmarkIdsFilter) {
   if (filter === undefined) {
     return [];
