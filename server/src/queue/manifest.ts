@@ -162,12 +162,6 @@ export async function freezeSelection(
       state = case when state = 'cancelled' or (${!!readiness} and state = 'needs_attention') then state
         else ${claim ? sql.lit('enumerating') : (readiness ?? sql.lit('ready'))} end
       where id = ${result.selectionId}::uuid`.execute(tx);
-    if (claim) {
-      // This run owns the source rows, so sharing them with itself requires no scan or copy.
-      await sql`update job_run_item set "selectionVersion" = (select count(*) from job_selection
-        where "producerId" = ${claim.id}::uuid and "capturedAt" is not null)
-        where "jobId" = ${claim.id}::uuid and "rootItemKey" is null and "runId" = ${result.runId}::uuid`.execute(tx);
-    }
     if (!claim && !submittedRunId) {
       await sql`update job_run set "enumerationDone" = true where id = ${result.runId}::uuid`.execute(tx);
     }
@@ -353,12 +347,6 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
       "libraryVersion" = case when ${complete} then ${membership.appendSequence}::bigint else "libraryVersion" end
       where "selectionId" = ${membership.selectionId}::uuid and "runId" = ${membership.runId}::uuid`.execute(tx);
     if (complete) {
-      await sql`update job_run_item i set "selectionVersion" = (select count(*) from job_selection
-        where "producerId" = ${membership.producerId}::uuid and "capturedAt" is not null)
-        where i."runId" = ${membership.runId}::uuid and i."jobId" = ${membership.producerId}::uuid
-          and i."rootItemKey" is null and not exists (
-            select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-              where m."runId" = i."runId" and s."producerId" = i."jobId" and not m."copyComplete")`.execute(tx);
       await sql`update job_run r set "enumerationDone" = true where r.id = ${membership.runId}::uuid
         and not exists (select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
           and i.state in ('pending','waiting','active')

@@ -2,7 +2,7 @@ import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { queueAdmission } from 'src/queue/admission.js';
-import { freezeSelection, shareSelectionPage } from 'src/queue/manifest.js';
+import { freezeSelection, shareSelectionPage, shareSelections } from 'src/queue/manifest.js';
 import { mirrorSelectionLineage } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
@@ -231,6 +231,36 @@ describe('selection capture isolation', () => {
       release.resolve();
       await growing;
       await observed.destroy();
+    }
+  });
+
+  it('captures and shares through durable headers without rewriting legacy version counters', async () => {
+    await sql`create function reject_legacy_selection_version() returns trigger language plpgsql as $$
+      begin raise exception 'legacy selection counter write'; end $$`.execute(db);
+    await sql`create trigger reject_legacy_selection_version before update of "selectionVersion" on job_run_item
+      for each statement execute function reject_legacy_selection_version()`.execute(db);
+    try {
+      const ownRun = await store.createRun('capture-owner', {});
+      await store.enqueue([producer(ownRun)]);
+      const [claim] = await store.claim(queue, worker);
+      await freeze(claim);
+      const lateRun = await store.createRun('capture-late', {});
+      await store.enqueue([producer(lateRun)]);
+      await shareSelections(db, claim.id);
+      const { rows } = await sql<{ runId: string; complete: boolean }>`select "runId", "copyComplete" as complete
+        from job_selection_run where "runId" in (${ownRun}::uuid, ${lateRun}::uuid)`.execute(db);
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          { runId: ownRun, complete: true },
+          { runId: lateRun, complete: true },
+        ]),
+      );
+      expect(await capturedKeys(ownRun)).toHaveLength(6);
+      expect(await capturedKeys(lateRun)).toEqual(await capturedKeys(ownRun));
+      expect(await store.complete(claim, [])).toBe(true);
+    } finally {
+      await sql`drop trigger reject_legacy_selection_version on job_run_item`.execute(db);
+      await sql`drop function reject_legacy_selection_version()`.execute(db);
     }
   });
 
