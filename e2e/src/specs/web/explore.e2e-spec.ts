@@ -35,6 +35,8 @@ test.describe('Explore', () => {
   let archived: AssetMediaResponseDto;
 
   test.beforeAll(async () => {
+    // Six ordered queue waits (up to 60 s each in CI) plus reset and uploads outgrow the 30 s hook default.
+    test.setTimeout(uploadQueues.length * 60_000 + 60_000);
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
