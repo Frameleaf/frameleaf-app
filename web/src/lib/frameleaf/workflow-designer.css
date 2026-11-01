@@ -223,3 +223,30 @@
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
 }
+/* FL-729: the preview's matches and a run's photo, as small thumbnails that open the photo. */
+.wd-matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.wd-matches a,
+.wd-match {
+  display: block;
+  border-radius: 8px;
+}
+.wd-matches img,
+.wd-match img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  background: var(--fl-raised);
+  border-radius: 8px;
+}
+.wd-match img {
+  width: 40px;
+  height: 40px;
+}

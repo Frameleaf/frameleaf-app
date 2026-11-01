@@ -1,4 +1,5 @@
 import {
+  WorkflowPreviewStepResult,
   WorkflowResult,
   WorkflowRunErrorCode,
   WorkflowTrigger,
@@ -15,6 +16,10 @@ import WorkflowDesigner from './WorkflowDesigner.svelte';
 
 const confirmMock = vi.hoisted(() => ({ confirmFrameleaf: vi.fn() }));
 vi.mock('$lib/frameleaf/confirm', () => confirmMock);
+vi.mock('$lib/utils', async (original) => ({
+  ...(await original<typeof import('$lib/utils')>()),
+  getAssetMediaUrl: ({ id, size }: { id: string; size?: string }) => `/api/assets/${id}/thumbnail?size=${size}`,
+}));
 
 const t = en.frameleaf_workflows;
 const discardQuestion = {
@@ -98,6 +103,8 @@ describe('WorkflowDesigner', () => {
     sdkMock.previewWorkflow.mockResolvedValue({
       count: 25_001,
       exampleAssetIds: [assetId],
+      partial: false,
+      steps: [],
       issues: [],
       actions: [],
       evaluatedAt: '2026-10-28T00:00:00Z',
@@ -113,6 +120,90 @@ describe('WorkflowDesigner', () => {
       }),
     );
     expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
+    // FL-729: each match is a thumbnail that opens the photo, and the rest are counted
+    const link = screen.getByRole('link', { name: 'Open match 1 of 25,001' });
+    expect(link).toHaveAttribute('href', expect.stringContaining(assetId));
+    expect(link.querySelector('img')).toHaveAttribute('src', expect.stringContaining(`/assets/${assetId}/thumbnail`));
+    expect(screen.getByText('and 25,000 more')).toBeInTheDocument();
+  });
+
+  it("reports what each step did in the server's dry run (FL-729)", async () => {
+    const typeFilter: PluginMethodResponseDto = {
+      ...webhook({ allowedTypes: { type: 'array', items: { type: 'string' } } }),
+      key: 'immich-plugin-core#assetTypeFilter',
+      name: 'assetTypeFilter',
+      title: 'Filter by asset type',
+      uiHints: ['Filter'],
+      hostFunctions: false,
+      allowedHosts: [],
+    };
+    const faces: PluginMethodResponseDto = { ...webhook({}), key: 'third-party#faces', title: 'Faces' };
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ timezone: 'UTC', sourceFilters: true } as never);
+    sdkMock.previewWorkflow.mockResolvedValue({
+      count: 0,
+      exampleAssetIds: [],
+      partial: false,
+      steps: [
+        { method: typeFilter.key, result: WorkflowPreviewStepResult.Filtered, remaining: 0 },
+        { method: 'immich-plugin-core#webhook', result: WorkflowPreviewStepResult.Skipped, remaining: 0 },
+        { method: faces.key, result: WorkflowPreviewStepResult.Unchecked, remaining: 0 },
+      ],
+      issues: [],
+      actions: [],
+      evaluatedAt: '2026-10-28T00:00:00Z',
+    });
+    const base = workflow().steps[0];
+    setup(
+      [typeFilter, webhook({ url: { type: 'string', title: 'URL' } }), faces],
+      workflow({
+        enabled: false,
+        steps: [
+          {
+            ...base,
+            id: '00000000-0000-4000-8000-000000000014',
+            method: typeFilter.key,
+            config: { allowedTypes: ['VIDEO'] },
+            storedSecrets: [],
+          },
+          base,
+          { ...base, id: '00000000-0000-4000-8000-000000000015', method: faces.key, config: {}, storedSecrets: [] },
+        ],
+      }),
+    );
+    await screen.findByText('Server timezone: UTC');
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+
+    expect(await screen.findByText(/^0 eligible matches/)).toBeInTheDocument();
+    const steps = [...document.querySelectorAll('ol.wd-preview li')].map((item) =>
+      item.textContent?.replaceAll(/\s+/g, ' ').trim(),
+    );
+    expect(steps).toEqual([
+      'Filter by asset type Checked: 0 matches continue',
+      `Trigger Webhook ${t.preview_step_skipped}`,
+      `Faces ${t.preview_step_unchecked}`,
+    ]);
+    expect(screen.queryByRole('list', { name: t.matches_label })).toBeNull();
+    expect(sdkMock.updateWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('says the count is a lower bound when the server checked only the first matches (FL-729)', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ timezone: 'UTC', sourceFilters: true } as never);
+    sdkMock.previewWorkflow.mockResolvedValue({
+      count: 10_000,
+      exampleAssetIds: [assetId],
+      partial: true,
+      steps: [],
+      issues: [],
+      actions: [],
+      evaluatedAt: '2026-10-28T00:00:00Z',
+    });
+    setup([], workflow({ enabled: false, steps: [] }));
+    await screen.findByText('Server timezone: UTC');
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+
+    expect(await screen.findByText(/^At least 10,000 eligible matches/)).toBeInTheDocument();
   });
   it('edits parameters from the installed method schema and follows a schema change', async () => {
     const { rerender } = setup([webhook({ url: { type: 'string', title: 'URL' } }, ['url'])]);
@@ -222,6 +313,9 @@ describe('WorkflowDesigner', () => {
     expect(await screen.findByText('Webhook answered 500')).toBeInTheDocument();
     expect(screen.getByText(t.attempt_retry)).toBeInTheDocument();
     expect(screen.getByText(t.not_run)).toBeInTheDocument();
+    // FL-729: the run's photo is a thumbnail link, not text
+    const photo = screen.getByRole('link', { name: t.open_photo });
+    expect(photo.querySelector('img')).toHaveAttribute('src', expect.stringContaining(`/assets/${assetId}/thumbnail`));
     expect(sdkMock.getWorkflowLogs).toHaveBeenCalledWith({ id, limit: 50, before: undefined, result: undefined });
 
     const retries = screen.getAllByRole('button', { name: t.retry });

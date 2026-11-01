@@ -36,6 +36,7 @@ import {
   toDefinition,
   workflowIssues,
 } from 'src/utils/workflow-definition.js';
+import { type PreviewAsset, getPreviewFilter, isCoreMethod, passesPreviewFilter } from 'src/utils/workflow-preview.js';
 import {
   type WorkflowSource,
   nextWorkflowOccurrence,
@@ -43,6 +44,11 @@ import {
   workflowDefinitionHash,
 } from 'src/utils/workflow-source.js';
 import { getWorkflowTriggers, isMethodCompatible } from 'src/utils/workflow.js';
+
+/** FL-729: the preview checks built-in filters on at most this many matches. */
+const PREVIEW_FILTER_LIMIT = 10_000;
+/** How many matches the preview shows, as `previewSource` does. */
+const PREVIEW_EXAMPLES = 12;
 
 type StoredWorkflow = NonNullable<Awaited<ReturnType<WorkflowRepository['get']>>>;
 
@@ -129,13 +135,66 @@ export class WorkflowService extends BaseService {
       at,
       auth.user.id,
     );
-    const result = await this.workflowRepository.previewSource(auth.user.id, source, embedding, requireEnrichment);
+    const result = definition.steps.some((step) => step.enabled && getPreviewFilter(step.method))
+      ? this.previewFilters(
+          definition.steps,
+          await this.workflowRepository.previewAssets(
+            auth.user.id,
+            source,
+            embedding,
+            requireEnrichment,
+            PREVIEW_FILTER_LIMIT + 1,
+          ),
+        )
+      : {
+          ...(await this.workflowRepository.previewSource(auth.user.id, source, embedding, requireEnrichment)),
+          partial: false,
+          steps: definition.steps.map((step) => ({
+            method: step.method,
+            result: step.enabled
+              ? isCoreMethod(step.method)
+                ? ('skipped' as const)
+                : ('unchecked' as const)
+              : ('disabled' as const),
+            remaining: null,
+          })),
+        };
     await this.validateSource(source, auth.user.id, embeddingKey);
     return {
       ...result,
       evaluatedAt: at.toISOString(),
       issues,
       actions: definition.steps.filter((step) => step.enabled).map((step) => step.method),
+    };
+  }
+
+  /**
+   * FL-729: a dry run of the steps over the matches. Built-in filters are checked on the server; actions
+   * and other plugins' steps are not run, and another plugin's step is assumed to let every match through.
+   */
+  private previewFilters(
+    steps: WorkflowDefinitionInput['steps'],
+    assets: PreviewAsset[],
+  ): Omit<WorkflowPreviewResponseDto, 'evaluatedAt' | 'issues' | 'actions'> {
+    const partial = assets.length > PREVIEW_FILTER_LIMIT;
+    let remaining = assets.slice(0, PREVIEW_FILTER_LIMIT);
+    const results = steps.map((step) => {
+      if (!step.enabled) {
+        return { method: step.method, result: 'disabled' as const, remaining: null };
+      }
+      const filter = getPreviewFilter(step.method);
+      if (filter) {
+        remaining = remaining.filter((asset) => passesPreviewFilter(filter, step.config, asset));
+        return { method: step.method, result: 'filtered' as const, remaining: remaining.length };
+      }
+      const result = isCoreMethod(step.method) ? ('skipped' as const) : ('unchecked' as const);
+      return { method: step.method, result, remaining: remaining.length };
+    });
+    return {
+      count: remaining.length,
+      exampleAssetIds: remaining.slice(0, PREVIEW_EXAMPLES).map(({ id }) => id),
+      partial,
+      steps: results,
     };
   }
 

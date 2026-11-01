@@ -568,3 +568,97 @@ it('previews a saved credential-dependent workflow without requiring its secret 
   expect(JSON.stringify(result)).not.toContain('stored-secret');
   expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
 });
+
+describe('preview with filter steps (FL-729)', () => {
+  const coreMethod = (name: string) => ({
+    id: newUuid(),
+    pluginName: 'immich-plugin-core',
+    name,
+    types: [WorkflowType.AssetV1],
+    schema: null,
+  });
+  const previewAsset = (type: string) => ({
+    id: newUuid(),
+    type,
+    localDateTime: new Date('2026-10-01T00:00:00Z'),
+    originalPath: '/a.jpg',
+    originalFileName: 'a.jpg',
+    tags: [],
+    exifInfo: null,
+  });
+  const setup = () => {
+    const { sut, mocks } = newTestService(WorkflowService);
+    mocks.plugin.getForValidation.mockResolvedValue([
+      coreMethod('assetTypeFilter'),
+      coreMethod('assetAddTags'),
+      { ...coreMethod('faces'), pluginName: 'third-party' },
+    ]);
+    return { sut, mocks };
+  };
+
+  it('counts only what the built-in filters keep, and runs no step', async () => {
+    const { sut, mocks } = setup();
+    const video = previewAsset('VIDEO');
+    mocks.workflow.previewAssets.mockResolvedValue([previewAsset('IMAGE'), video, previewAsset('IMAGE')] as never);
+    const result = await sut.preview(factory.auth(), {
+      trigger: 'AssetCreate',
+      source: { filter: {} },
+      steps: [
+        { method: 'immich-plugin-core#assetTypeFilter', config: { allowedTypes: ['VIDEO'] } },
+        { method: 'immich-plugin-core#assetAddTags', config: { tags: [] } },
+        { method: 'third-party#faces', config: {} },
+        { method: 'immich-plugin-core#assetTypeFilter', config: { allowedTypes: ['IMAGE'] }, enabled: false },
+      ],
+    } as never);
+    expect(result).toMatchObject({
+      count: 1,
+      exampleAssetIds: [video.id],
+      partial: false,
+      steps: [
+        { method: 'immich-plugin-core#assetTypeFilter', result: 'filtered', remaining: 1 },
+        { method: 'immich-plugin-core#assetAddTags', result: 'skipped', remaining: 1 },
+        { method: 'third-party#faces', result: 'unchecked', remaining: 1 },
+        { method: 'immich-plugin-core#assetTypeFilter', result: 'disabled', remaining: null },
+      ],
+    });
+    expect(mocks.workflow.previewSource).not.toHaveBeenCalled();
+    expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+  });
+
+  it('says the count is a lower bound when there are more matches than it checks', async () => {
+    const { sut, mocks } = setup();
+    mocks.workflow.previewAssets.mockResolvedValue(
+      Array.from({ length: 10_001 }, () => previewAsset('VIDEO')) as never,
+    );
+    const result = await sut.preview(factory.auth(), {
+      trigger: 'AssetCreate',
+      source: { filter: {} },
+      steps: [{ method: 'immich-plugin-core#assetTypeFilter', config: { allowedTypes: ['VIDEO'] } }],
+    } as never);
+    expect(mocks.workflow.previewAssets).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      undefined,
+      expect.any(Boolean),
+      10_001,
+    );
+    expect(result).toMatchObject({ count: 10_000, partial: true });
+    expect(result.exampleAssetIds).toHaveLength(12);
+  });
+
+  it('keeps the plain count when no built-in filter is enabled', async () => {
+    const { sut, mocks } = setup();
+    mocks.workflow.previewSource.mockResolvedValue({ count: 80, exampleAssetIds: [] });
+    const result = await sut.preview(factory.auth(), {
+      trigger: 'AssetCreate',
+      source: { filter: {} },
+      steps: [{ method: 'immich-plugin-core#assetAddTags', config: { tags: [] } }],
+    } as never);
+    expect(result).toMatchObject({
+      count: 80,
+      partial: false,
+      steps: [{ method: 'immich-plugin-core#assetAddTags', result: 'skipped', remaining: null }],
+    });
+    expect(mocks.workflow.previewAssets).not.toHaveBeenCalled();
+  });
+});
