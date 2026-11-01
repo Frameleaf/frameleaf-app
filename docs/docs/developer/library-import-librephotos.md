@@ -30,6 +30,8 @@ A `Photo` has a UUID primary key. `File.hash` includes an owner-related salt, an
 
 Source capture dates are stored as wall-clock values tagged UTC, with a separately nullable offset; manual edits also set `timestamp`. Do not treat every database value as a known instant. Preserve source date rules and timezone evidence. `Photo.rating`, user `rating_mode` and `favorite_min_rating` are distinct from the file's embedded rating. The source metadata API's `keywords` readback still reports scanned file keywords after a manual tag edit; `edited_keywords` and tag relationships preserve the user's changes.
 
+`normalizeLibrephotosPhoto` maps photo metadata from rows and complete current tag relationships belonging to the same admitted snapshot. It checks owner and context identities, retains independent state flags and uses current tags instead of restoring removed embedded keywords. Manual capture dates take precedence over stale rule values. A known minute offset produces a capture instant while retaining microsecond precision; an unknown offset leaves the instant unset and requires review. It does not guess an IANA timezone from coordinates or account preferences. Public source flags are retained as evidence and do not grant destination access. Unsupported metadata remains available in the reader's raw records for the protected archive, whose persistence is still outstanding.
+
 Face boxes use big-thumbnail pixel coordinates and additional local orientation. A thumbnail aspect ratio alone is insufficient for reliable conversion. The current fixture exercises one measured, unrotated named face; rotated and video faces remain unqualified.
 
 ## Outstanding acceptance
