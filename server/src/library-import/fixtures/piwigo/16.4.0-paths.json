@@ -1,0 +1,32 @@
+{
+  "source": {
+    "version": "16.4.0",
+    "commit": "bef1a4ac424b4e986589e4cfc9f4d134f1b16f15",
+    "phpVersion": "8.4.16",
+    "runtimeImage": "sha256:f66ca9d5f966f5fc0eb57692332d0aabaa1e0d0106ea5cb9a2ea121b38ca1922",
+    "functions": [
+      "original_to_format",
+      "original_to_representative"
+    ]
+  },
+  "cases": [
+    {
+      "path": "./upload/2026/11/01/photo.name.png",
+      "ext": "cr2",
+      "format": "./upload/2026/11/01/pwg_format/photo.name.cr2",
+      "representative": "./upload/2026/11/01/pwg_representative/photo.name.jpg"
+    },
+    {
+      "path": "./galleries/旅行/100%20real.tif",
+      "ext": "DNG",
+      "format": "./galleries/旅行/pwg_format/100%20real.DNG",
+      "representative": "./galleries/旅行/pwg_representative/100%20real.jpg"
+    },
+    {
+      "path": "galleries/nested/movie.mp4",
+      "ext": "mov",
+      "format": "galleries/nested/pwg_format/movie.mov",
+      "representative": "galleries/nested/pwg_representative/movie.jpg"
+    }
+  ]
+}
