@@ -3,8 +3,7 @@ import { Kysely } from 'kysely';
 import { chunk } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Insertable } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
@@ -64,7 +63,7 @@ import { CloudDescriptionQueueWriter, cloudDescriptionDestination } from 'src/ut
 import { updateLockedColumns } from 'src/utils/database.js';
 import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
-import { withPlainCopies } from 'src/utils/locked-read.js';
+import { isLockedPath, makeWorkDir, withPlainCopies } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import {
   isImageDescriptionEnabled,
@@ -1610,7 +1609,11 @@ export class ImageEnrichmentService extends BaseService {
     if (!moments) {
       return { status: 'skipped', reasonKey: 'video-frames-unavailable' };
     }
-    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-description-preview-'));
+    // FL-721 M6: a grid of an encrypted video's frames stays in the RAM-backed Locked folder
+    const folder = await makeWorkDir(
+      'description-preview',
+      !!asset.previewFile && (await isLockedPath(asset.previewFile)),
+    );
     try {
       const gridPath = join(folder, 'grid.jpeg');
       const fingerprint = await this.getSourceFingerprint(id);

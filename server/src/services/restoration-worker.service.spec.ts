@@ -559,6 +559,33 @@ describe(RestorationWorkerService.name, () => {
       }
     });
 
+    it('keeps the work files of an encrypted original in the RAM-backed Locked folder (M6)', async () => {
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_0001.jpg', 'plain jpeg', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        } as never);
+
+        await sut.run(operation(), CLAIM);
+
+        expect(operations.complete).toHaveBeenCalled();
+        const moved = mocks.storage.rename.mock.calls.map(([from]) => from);
+        expect(moved.length).toBeGreaterThan(0);
+        for (const from of moved) {
+          expect(from.startsWith(`${locked.tmp}/`)).toBe(true);
+        }
+        // never the work folder beside the thumbnails
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalledWith(expect.stringContaining('_work'));
+        // and nothing is left in the Locked folder
+        expect(await locked.copiesLeft()).toBe(0);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
     it('processes a Locked asset the owner asked for like any other', async () => {
       const locked = { ...getForGenerateThumbnail(asset), visibility: 'locked' };
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(locked as never);

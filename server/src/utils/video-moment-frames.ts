@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
@@ -23,7 +22,7 @@ import {
   sourceFingerprint,
   videoMomentFrameTimestamps,
 } from 'src/utils/enrichment-plan.js';
-import { withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 
 /**
@@ -243,7 +242,8 @@ export const withTemporaryFrames = async <T>(
     return undefined;
   }
 
-  const folder = await mkdtemp(join(tmpdir(), 'frameleaf-moment-preview-'));
+  // FL-721 M6: frames of an encrypted video stay in the RAM-backed Locked folder
+  const folder = await makeWorkDir('moment-preview', await isLockedPath(source.originalPath));
   try {
     const frames = await cutFrames(deps, source, config, (frameIndex) => join(folder, `frame_${frameIndex}.jpeg`));
     return frames.length > 0 ? await use(frames) : undefined;

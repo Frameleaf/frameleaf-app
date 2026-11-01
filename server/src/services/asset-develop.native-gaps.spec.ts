@@ -202,6 +202,8 @@ describe('AssetDevelopService native API gaps', () => {
         still.id,
         AssetDevelopArtifactKind.Mask,
         expect.any(Buffer),
+        // FL-721 M6: a plain original's mask is staged in the OS temp folder
+        false,
         undefined,
       );
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();

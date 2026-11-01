@@ -7,8 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setInterval } from 'node:timers/promises';
 import sharp from 'sharp';
@@ -1108,7 +1107,8 @@ export class AssetDevelopService {
     if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
       throw new BadRequestException('Local worker returned an invalid sensor mask');
     await sharp(png).stats();
-    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-semantic-mask-'));
+    // FL-721 M6: a mask of an encrypted original stays in the RAM-backed Locked folder
+    const directory = await makeWorkDir('semantic-mask', await isLockedPath(source.originalPath));
     const file = path.join(directory, 'mask.png');
     try {
       await writeFile(file, png, { flag: 'wx' });
@@ -1159,7 +1159,14 @@ export class AssetDevelopService {
     const reference = await sharp(canvas).metadata();
     if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
       throw new BadRequestException('Local worker returned an invalid mask');
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Mask, png, signal);
+    return this.admitGeneratedArtifact(
+      auth,
+      assetId,
+      AssetDevelopArtifactKind.Mask,
+      png,
+      await isLockedPath(source.originalPath),
+      signal,
+    );
   }
 
   /**
@@ -1202,7 +1209,14 @@ export class AssetDevelopService {
     if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
       throw new BadRequestException('Local worker returned an invalid fill');
     const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Fill, png, signal);
+    return this.admitGeneratedArtifact(
+      auth,
+      assetId,
+      AssetDevelopArtifactKind.Fill,
+      png,
+      await isLockedPath(source.originalPath),
+      signal,
+    );
   }
 
   /** Clean Up Remove's inputs: the area's window of the oriented original, and its mask. */
@@ -1270,9 +1284,11 @@ export class AssetDevelopService {
     assetId: string,
     kind: AssetDevelopArtifactKind,
     png: Buffer,
+    sealed: boolean,
     signal?: AbortSignal,
   ) {
-    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-develop-artifact-'));
+    // FL-721 M6: a mask or Clean Up fill of an encrypted original stays in the RAM-backed Locked folder
+    const directory = await makeWorkDir('develop-artifact', sealed);
     const file = path.join(directory, 'artifact.png');
     try {
       await writeFile(file, png, { flag: 'wx' });
@@ -1596,7 +1612,8 @@ export class AssetDevelopService {
   ) {
     const motion = clip ?? (await this.requireMotionClip(source, timeMs));
     const { ffmpeg } = await this.getConfig();
-    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-key-frame-'));
+    // FL-721 M6: a frame of an encrypted motion part stays in the RAM-backed Locked folder
+    const folder = await makeWorkDir('key-frame', await isLockedPath(motion.originalPath));
     try {
       const output = path.join(folder, 'frame.png');
       // FL-721 (spec §8.2): a sealed motion part is read from a plain copy
@@ -1747,7 +1764,8 @@ export class AssetDevelopService {
     signal?: AbortSignal,
   ) {
     await this.requireHdrRenderer(recipe);
-    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-hdr-preview-'));
+    // FL-721 M6: a preview of an encrypted original stays in the RAM-backed Locked folder
+    const folder = await makeWorkDir('hdr-preview', await isLockedPath(source.originalPath));
     const output = path.join(folder, 'preview.jpg');
     try {
       const result = await this.hdrRender(

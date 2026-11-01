@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
+import { rm } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -39,7 +40,9 @@ import {
   LOCKED_DEFERRAL_DELAY_MS,
   assertPlainCopyPossible,
   isLockedKeyUnavailable,
+  isLockedPath,
   lockedOperationMayWait,
+  makeWorkDir,
   withPlainCopy,
 } from 'src/utils/locked-read.js';
 import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
@@ -445,6 +448,7 @@ export class RestorationWorkerService {
       scratch: [],
     };
 
+    let sealedWorkDir: string | undefined;
     try {
       const total =
         stage === 'full' && snapshot.sourceType === AssetRestorationSourceType.Video
@@ -493,7 +497,14 @@ export class RestorationWorkerService {
 
       // FL-721: wait for the Locked key before any work starts
       await assertPlainCopyPossible(source.originalPath);
-      this.storageRepository.mkdirSync(workDir);
+      if (await isLockedPath(source.originalPath)) {
+        // M6: the work files of an encrypted original stay in the RAM-backed Locked folder (removed
+        // below); only the published results reach the disk, and they are sealed after this job
+        context.workDir = await makeWorkDir('restoration', true);
+        sealedWorkDir = context.workDir;
+      } else {
+        this.storageRepository.mkdirSync(workDir);
+      }
 
       // FL-721 (spec §8.2): the tools read a sealed original from a plain copy
       await withPlainCopy(source.originalPath, async (originalPath) => {
@@ -523,6 +534,9 @@ export class RestorationWorkerService {
     } finally {
       clearInterval(watch);
       await renewing;
+      if (sealedWorkDir) {
+        await rm(sealedWorkDir, { recursive: true, force: true });
+      }
       if (this.activeController === controller) {
         this.activeController = undefined;
       }
@@ -1039,7 +1053,7 @@ export class RestorationWorkerService {
         if (!updated) return false;
         for (const file of output.files) {
           this.storageRepository.mkdirSync(path.dirname(file.final));
-          await this.storageRepository.rename(file.tmp, file.final);
+          await this.moveInto(file.tmp, file.final);
           placed.push(file.final);
           const index = ctx.scratch.indexOf(file.tmp);
           if (index !== -1) ctx.scratch.splice(index, 1);
@@ -1079,6 +1093,19 @@ export class RestorationWorkerService {
     this.logger.log(
       `Restoration ${restoration.id} ${stage} finished on ${snapshot.destinationKind} destination ${snapshot.destinationId}`,
     );
+  }
+
+  /** A rename, or a copy when the work file is on another filesystem (the RAM-backed Locked folder). */
+  private async moveInto(from: string, to: string) {
+    try {
+      await this.storageRepository.rename(from, to);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
+        throw error;
+      }
+      await this.storageRepository.copyFile(from, to);
+      await this.storageRepository.unlink(from);
+    }
   }
 
   /**
