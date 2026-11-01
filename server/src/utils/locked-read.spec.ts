@@ -380,7 +380,9 @@ describe('locked-read', () => {
         // skipped only where the OS temp folder really is tmpfs
         if (process.platform === 'linux') {
           const mounts = await fs.readFile('/proc/mounts', 'utf8');
-          if (mounts.split('\n').some((line) => line.split(' ', 2)[1] === '/tmp' && line.split(' ', 3)[2] === 'tmpfs')) {
+          if (
+            mounts.split('\n').some((line) => line.split(' ', 2)[1] === '/tmp' && line.split(' ', 3)[2] === 'tmpfs')
+          ) {
             return;
           }
         }
