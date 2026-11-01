@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
 import { basename } from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
@@ -923,6 +924,8 @@ export class MemoryService extends BaseService {
     const partial = `${target}.partial`;
     // outside the `try` so a failed or deferred run can close the archive and its file
     let zip: ZipDownloadStream | undefined;
+    // decrypting inputs of encrypted originals, each holding its file open while it is read
+    const lockedInputs: Readable[] = [];
 
     try {
       this.storageCore.ensureFolders(partial);
@@ -982,10 +985,13 @@ export class MemoryService extends BaseService {
         }
 
         // FL-721 (spec §8.1): an encrypted original goes in decrypted (the owner's key)
-        zip.addFile(
-          await lockedArchiveInput(realpath, claimed.ownerId),
-          nextArchiveName(names, asset.originalFileName),
-        );
+        const input = await lockedArchiveInput(realpath, claimed.ownerId);
+        if (typeof input !== 'string') {
+          lockedInputs.push(input);
+          // a decryption error fails the archive (and so this run) instead of going unheard
+          input.once('error', (error) => zip?.stream.destroy(error));
+        }
+        zip.addFile(input, nextArchiveName(names, asset.originalFileName));
       }
 
       await zip.finalize();
@@ -1026,6 +1032,9 @@ export class MemoryService extends BaseService {
     } catch (error) {
       // `pipeline` then destroys the output file stream too; `finished.catch` above absorbs the rejection
       zip?.stream.destroy();
+      for (const input of lockedInputs) {
+        input.destroy();
+      }
       // FL-721: the queue defers the job until the owner's Locked key is loaded; the run goes back to
       // pending so the deferred job can claim it again
       if (isLockedKeyUnavailable(error) && queueExecution.getStore()?.dependencyReason === 'locked-key-unavailable') {
