@@ -1,8 +1,6 @@
 import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-// eslint-disable-next-line no-restricted-imports -- Offline readers load through native ESM without application aliases.
-import fixture from './fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
-// eslint-disable-next-line no-restricted-imports -- Keep the offline reader's dependency graph independent of application aliases.
-import { sqliteSchemaFingerprint } from './sqlite.js';
+import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
+import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 // Wildcards cover content-only tables in the exact fingerprinted source schema.
 const projections = {
