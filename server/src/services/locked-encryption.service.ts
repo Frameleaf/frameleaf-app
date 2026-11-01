@@ -50,7 +50,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
-import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { lockedHourMs, lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
 import { hasUsableLockedKey, setLockedPartnerPolicy } from 'src/utils/locked-read.js';
 import { queueLockedPartnerChecks } from 'src/utils/locked-seal-queue.js';
@@ -60,7 +60,6 @@ import { checkSecret } from 'src/utils/secret-attempts.js';
 type Mode = LockedKeyFile['mode'];
 
 const FORMAT = 'frameleaf-locked-key/1';
-const HOUR_MS = 60 * 60 * 1000;
 /**
  * One key-file change at a time per person, from reading the file to writing the row (a double
  * submit must never write two key pairs or roll back the other request's file). Separate from the
@@ -1066,7 +1065,7 @@ export class LockedEncryptionService {
   }
 
   private askAgainExpiry(hours: number | null) {
-    return hours ? new Date(Date.now() + hours * HOUR_MS) : null;
+    return hours ? new Date(Date.now() + hours * lockedHourMs()) : null;
   }
 
   private held(userId: string) {

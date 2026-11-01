@@ -1,7 +1,7 @@
 import { generateKeyPair, keyId } from '@frameleaf/locked-crypto';
 import { inspect } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LockedKeyHolder } from 'src/utils/locked-key-holder.js';
+import { LockedKeyHolder, lockedHourMs } from 'src/utils/locked-key-holder.js';
 
 const owner = 'owner';
 const viewer = 'viewer';
@@ -179,5 +179,22 @@ describe(LockedKeyHolder.name, () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith(owner);
+  });
+});
+
+describe(lockedHourMs.name, () => {
+  it('is an hour on any server that is not under test', () => {
+    expect(lockedHourMs({})).toBe(3_600_000);
+    expect(lockedHourMs({ FRAMELEAF_LOCKED_TEST_HOUR_MS: '500' })).toBe(3_600_000);
+    expect(lockedHourMs({ FRAMELEAF_ENV: 'production', FRAMELEAF_LOCKED_TEST_HOUR_MS: '500' })).toBe(3_600_000);
+    expect(lockedHourMs({ FRAMELEAF_ENV: 'development', FRAMELEAF_LOCKED_TEST_HOUR_MS: '500' })).toBe(3_600_000);
+  });
+
+  it('follows the test hour only with FRAMELEAF_ENV=testing', () => {
+    expect(lockedHourMs({ FRAMELEAF_ENV: 'testing', FRAMELEAF_LOCKED_TEST_HOUR_MS: '500' })).toBe(500);
+    expect(lockedHourMs({ FRAMELEAF_ENV: 'testing' })).toBe(3_600_000);
+    for (const bad of ['0', '-5', '1.5', 'soon', '']) {
+      expect(lockedHourMs({ FRAMELEAF_ENV: 'testing', FRAMELEAF_LOCKED_TEST_HOUR_MS: bad })).toBe(3_600_000);
+    }
   });
 });

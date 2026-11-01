@@ -4,6 +4,23 @@ import { inspect } from 'node:util';
 
 /** FL-721 (spec §4.3): how often every process drops the keys whose ask-again time has passed. */
 const SWEEP_INTERVAL_MS = 60_000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * FL-721: how long an ask-again hour is. Always an hour, except for the end-to-end suites: with
+ * `FRAMELEAF_ENV=testing`, `FRAMELEAF_LOCKED_TEST_HOUR_MS` makes it that many milliseconds (and the
+ * expiry sweep runs at least that often), so a suite can watch an 8-hour key expire. Any other
+ * server ignores the variable.
+ */
+export const lockedHourMs = (env: NodeJS.ProcessEnv = process.env): number => {
+  if (env.FRAMELEAF_ENV === 'testing') {
+    const ms = Number(env.FRAMELEAF_LOCKED_TEST_HOUR_MS);
+    if (Number.isSafeInteger(ms) && ms > 0) {
+      return ms;
+    }
+  }
+  return HOUR_MS;
+};
 
 export interface HeldKey {
   userId: string;
@@ -226,7 +243,7 @@ export class LockedKeyHolder {
     if (this.timer) {
       return;
     }
-    this.timer = setInterval(() => this.sweepExpired(), SWEEP_INTERVAL_MS);
+    this.timer = setInterval(() => this.sweepExpired(), Math.min(SWEEP_INTERVAL_MS, lockedHourMs()));
     this.timer.unref();
   }
 
