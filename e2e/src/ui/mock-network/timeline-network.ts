@@ -89,13 +89,15 @@ export const setupTimelineMockApiRoutes = async (
             new Date(Date.parse(date) + bucket.localOffsetHours[index] * 3_600_000).getUTCDate(),
           );
           const dayCounts = new Map<number, number>();
-          for (const day of dayNumbers) {dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);}
+          for (const day of dayNumbers) {
+            dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+          }
           const locator = url.searchParams.get('locateAssetId');
           const pages: TimeBucketsResponseDto[] = [];
           for (let start = 0; start < id.length; start += pageSize) {
             const ids = id.slice(start, start + pageSize);
-            if (!locator || ids.includes(locator))
-              {pages.push({
+            if (!locator || ids.includes(locator)) {
+              pages.push({
                 timeBucket,
                 count: ids.length,
                 page: start / pageSize,
@@ -106,7 +108,8 @@ export const setupTimelineMockApiRoutes = async (
                   day,
                   count: dayCounts.get(day)!,
                 })),
-              });}
+              });
+            }
           }
           return pages;
         });
@@ -161,7 +164,9 @@ export const setupTimelineMockApiRoutes = async (
       if (take) {
         const after = url.searchParams.get('after');
         const start = after ? assets.id.indexOf(after) + 1 : 0;
-        if (after && start === 0) {return route.fulfill({ status: 409 });}
+        if (after && start === 0) {
+          return route.fulfill({ status: 409 });
+        }
         const page = Object.fromEntries(
           Object.entries(assets).map(([key, value]) => [
             key,
