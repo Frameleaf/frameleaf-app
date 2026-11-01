@@ -3,11 +3,12 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { LockedKeyHolder } from 'src/utils/locked-key-holder.js';
 
 /**
- * FL-721 (spec §4.3): unwrapped Locked keys travel from the API process to the job workers and the
- * edge worker over the supervisor's IPC only (`process.send` to the supervisor, then `process.send`
- * or `worker.postMessage` to each worker), never through Redis, the database or disk.
+ * FL-721 (spec §4.3): unwrapped Locked keys travel from the API process to the job worker over the
+ * supervisor's IPC only (`process.send` to the supervisor, then `worker.postMessage` to the worker),
+ * never through Redis, the database or disk. The supervisor holds them too (`LockedKeyRelay`). The
+ * internet-facing edge worker never receives them.
  *
- * API process ─ publishLockedKey ─▶ supervisor (LockedKeyRelay) ─▶ microservices thread, edge process
+ * API process ─ publishLockedKey ─▶ supervisor (LockedKeyRelay) ─▶ microservices thread
  *                                                                   (attachLockedKeyIpc)
  *
  * The API process updates its own `lockedKeys` itself; the supervisor does not echo messages back.
@@ -142,7 +143,7 @@ export function attachLockedKeyIpc(
 }
 
 /**
- * Supervisor side: remembers which keys are loaded, so a job worker or edge worker that (re)starts
+ * Supervisor side: remembers which keys are loaded, so a job worker that (re)starts
  * gets them again. It keeps them in a holder of its own, so they are zero-filled when dropped and
  * expire on the same clock as everywhere else.
  */

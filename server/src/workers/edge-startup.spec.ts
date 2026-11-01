@@ -70,14 +70,11 @@ describe('edge worker native shutdown', () => {
     expect(process.exit).toHaveBeenCalledExactlyOnceWith(failed ? 1 : 0);
   });
 
-  it('listens for Locked keys before the application starts', async () => {
-    const context = Promise.withResolvers<typeof app>();
-    fixture.create.mockReturnValue(context.promise);
+  it('never listens for Locked keys: the internet-facing process holds none (FL-721)', async () => {
     fixture.attach.mockClear();
     await import('src/workers/edge.js');
-    expect(fixture.attach).toHaveBeenCalledOnce();
-    context.resolve(app);
     await settled();
+    expect(fixture.attach).not.toHaveBeenCalled();
   });
 
   it('keeps container signal hooks and owner-disconnect cleanup', async () => {

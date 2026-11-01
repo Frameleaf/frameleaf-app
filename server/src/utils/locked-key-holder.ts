@@ -261,5 +261,5 @@ export class LockedKeyHolder {
   }
 }
 
-/** The keys of this process (API, a job worker or the edge worker). */
+/** The keys of this process (the API, the supervisor's relay or a job worker; never the edge worker). */
 export const lockedKeys = new LockedKeyHolder();

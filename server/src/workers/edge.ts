@@ -1,8 +1,6 @@
 /* eslint-disable unicorn/no-process-exit -- Worker executable owns its process lifetime. */
 import { NestFactory } from '@nestjs/core';
 import { EdgeModule } from 'src/edge/edge.module.js';
-import { lockedKeys } from 'src/utils/locked-key-holder.js';
-import { attachLockedKeyIpc } from 'src/utils/locked-key-ipc.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { onStopRequest } from 'src/utils/shutdown.js';
 
@@ -13,8 +11,7 @@ import { onStopRequest } from 'src/utils/shutdown.js';
  */
 async function bootstrap() {
   process.title = 'frameleaf-edge';
-  // FL-721: the supervisor hands this process the Locked keys the API loads
-  attachLockedKeyIpc(lockedKeys);
+  // FL-721: this internet-facing process never holds Locked keys; the supervisor relays them to the job worker only
   const nativeOwner = process.env.FRAMELEAF_NATIVE_OWNER === '1';
   // The owner may stop a native fork while Nest is still starting.
   let stop = (): void => process.exit(0);

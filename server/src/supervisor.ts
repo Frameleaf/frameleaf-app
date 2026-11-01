@@ -40,8 +40,11 @@ const setEdgeSecret = () => {
   process.env.FRAMELEAF_EDGE_SECRET = configuredEdgeSecret || randomBytes(32).toString('base64url');
 };
 
-/** FL-721 (spec §4.3): the workers that receive the Locked keys the API process loads. */
-const LOCKED_KEY_WORKERS: ReadonlySet<FrameleafWorker> = new Set([FrameleafWorker.Microservices, FrameleafWorker.Edge]);
+/**
+ * FL-721 (spec §4.3): the workers that receive the Locked keys the API process loads: the job worker only.
+ * The edge worker faces the internet and only proxies to the API over loopback, so it never holds a key.
+ */
+const LOCKED_KEY_WORKERS: ReadonlySet<FrameleafWorker> = new Set([FrameleafWorker.Microservices]);
 
 /**
  * Manages worker lifecycle

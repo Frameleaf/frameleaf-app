@@ -488,13 +488,20 @@ describe('supervisor worker-local restart lifecycle', () => {
     const posted = (worker: Thread) => worker.postMessage.mock.calls.map(([message]) => message);
     const sent = (worker: Fork) => worker.send.mock.calls.map(([message]) => message);
 
-    it('relays keys from the API to the job worker and the edge worker only', () => {
+    it('relays keys from the API to the job worker only, never to the internet-facing edge worker', () => {
       latest(FrameleafWorker.Api).emit('message', load);
       latest(FrameleafWorker.Api).emit('message', pin);
 
       expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([load, pin]);
-      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([load, pin]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
       expect(sent(latest(FrameleafWorker.Api) as unknown as Fork)).toEqual([]);
+    });
+
+    it('never replays keys to the edge worker, even when it asks', () => {
+      latest(FrameleafWorker.Api).emit('message', load);
+      latest(FrameleafWorker.Edge).emit('message', { type: 'locked-key-ready' });
+
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
     });
 
     it('replays the loaded keys to a worker that restarts, once it listens', async () => {
@@ -512,6 +519,7 @@ describe('supervisor worker-local restart lifecycle', () => {
 
     it('does not relay locked-key messages that come from a job worker', () => {
       latest(FrameleafWorker.Microservices).emit('message', load);
+      expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([]);
       expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
     });
 
@@ -526,7 +534,7 @@ describe('supervisor worker-local restart lifecycle', () => {
         { type: 'locked-key', action: 'drop', userId: 'owner' },
       ];
       expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toEqual([load, pin, ...drop]);
-      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([load, pin, ...drop]);
+      expect(sent(latest(FrameleafWorker.Edge) as unknown as Fork)).toEqual([]);
       latest(FrameleafWorker.Microservices).emit('message', { type: 'locked-key-ready' });
       expect(posted(latest(FrameleafWorker.Microservices) as unknown as Thread)).toHaveLength(4);
     });
