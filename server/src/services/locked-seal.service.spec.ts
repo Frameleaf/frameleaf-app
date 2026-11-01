@@ -126,9 +126,11 @@ describe(LockedSealService.name, () => {
     mocks.lockedKey.exists.mockResolvedValue(true);
     mocks.lockedKey.write.mockResolvedValue();
     mocks.lockedKey.delete.mockResolvedValue();
+    mocks.lockedKey.list.mockResolvedValue([]);
     mocks.cron.create.mockReturnValue();
     mocks.lockedEncryption.get.mockImplementation(() => Promise.resolve(row as never));
     mocks.lockedEncryption.getAllUserIds.mockImplementation(() => Promise.resolve(row ? [OWNER] : []));
+    mocks.lockedEncryption.getUnlockedFilePaths.mockResolvedValue([]);
     mocks.lockedEncryption.getLockedAssets.mockImplementation(() =>
       Promise.resolve([
         {
@@ -872,6 +874,40 @@ describe(LockedSealService.name, () => {
       expect(await isLockedFile(path)).toBe(true);
       expect(mocks.lockedFile.finishPendingUnlock).not.toHaveBeenCalled();
     });
+  });
+
+  it('removeStaleTemp also clears leftovers beside items that have since left Locked (FL-721 backups)', async () => {
+    const left = join(dir, 'IMG_left.jpg');
+    await fs.writeFile(left, 'plain again');
+    await fs.writeFile(`${left}.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.fllk.tmp`, 'half written');
+    // someone else's file in the same folder keeps its own temporary file
+    await fs.writeFile(join(dir, 'other.jpg.fllk.tmp'), 'not one of theirs');
+    mocks.lockedEncryption.getUnlockedFilePaths.mockResolvedValue([left]);
+
+    await sut.removeStaleTemp();
+
+    expect(mocks.lockedEncryption.getUnlockedFilePaths).toHaveBeenCalledWith(OWNER);
+    expect(await temporaries()).toEqual(['other.jpg.fllk.tmp']);
+    expect(await fs.readFile(left, 'utf8')).toBe('plain again');
+  });
+
+  it('matches each row to its live key file at start-up, and never turns encryption back on (FL-721 backups)', async () => {
+    const other = '00000000-0000-4000-8000-000000000009';
+    mocks.lockedKey.list.mockResolvedValue([
+      { ...keyFile, userId: OWNER, mode: 'advanced' },
+      // a PIN-only key pair kept for partner shares after turning off: no row, and none is made
+      { ...keyFile, userId: other, mode: 'pin', wraps: keyFile.wraps.filter(({ kind }) => kind === 'pin') },
+    ]);
+    mocks.lockedEncryption.get.mockImplementation((id: string) =>
+      Promise.resolve(id === OWNER ? ({ userId: OWNER, mode: 'pin', status: 'on' } as never) : undefined),
+    );
+    mocks.lockedEncryption.update.mockResolvedValue({} as never);
+
+    await sut.matchRowsToKeyFiles();
+
+    expect(mocks.lockedEncryption.update).toHaveBeenCalledWith(OWNER, { mode: 'advanced' });
+    expect(mocks.lockedEncryption.update).toHaveBeenCalledTimes(1);
+    expect(mocks.lockedEncryption.create).not.toHaveBeenCalled();
   });
 
   it('removeStaleTemp leaves read-only library folders alone (M4)', async () => {

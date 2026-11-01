@@ -1145,6 +1145,8 @@ export type FrameleafCloudBackupRestore = {
   detailsRestored?: number;
   /** FL-721: restored encrypted items that this server's Locked key file for their owner does not open. */
   encryptedWithOlderKey?: number;
+  /** FL-721: backed-up key files kept in the replaced folder because a live key file was there. */
+  lockedKeysKept?: number;
   error?: string;
 };
 

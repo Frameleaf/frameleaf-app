@@ -461,6 +461,8 @@ export type CloudBackupLastRestoreDto = {
     encryptedWithOlderKey: number;
     error: string | null;
     files: number;
+    /** Backed-up Locked key files kept in the restore folder because a live key file was already there; the live one is never replaced */
+    lockedKeysKept?: number;
     manifestKey: string;
     operationId: string;
     /** Deleted items made again */
@@ -2984,6 +2986,8 @@ export type MediaOperationDto = {
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
     destinationDetail: string | null;
+    /** A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind */
+    encryptedWithOlderKey?: number | null;
     /** Operator detail about a failure; on a queued job, the failure it is being retried after */
     error: string | null;
     /** Stable code the client turns into a message */
@@ -9774,6 +9778,8 @@ export type MediaOperationDetailDto = {
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
     destinationDetail: string | null;
+    /** A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind */
+    encryptedWithOlderKey?: number | null;
     /** Operator detail about a failure; on a queued job, the failure it is being retried after */
     error: string | null;
     /** Stable code the client turns into a message */

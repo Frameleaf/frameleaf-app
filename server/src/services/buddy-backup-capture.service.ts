@@ -1,3 +1,4 @@
+import { LOCKED_MAGIC } from '@frameleaf/locked-crypto';
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -56,6 +57,8 @@ import {
 } from 'src/utils/locked-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+
+const LOCKED_MAGIC_BYTES = Buffer.from(LOCKED_MAGIC, 'ascii');
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -259,6 +262,8 @@ export class BuddyBackupCaptureService {
       ),
     ];
 
+    /** FL-721: the captured paths that are encrypted Locked files (`FLLK`). */
+    const sealedPaths = new Set<string>();
     const captureFile = async (
       path: string,
       role: string,
@@ -279,7 +284,7 @@ export class BuddyBackupCaptureService {
         if (!before.isFile() || (!allowNew && Number(before.ctimeNs / 1_000_000n) > started))
           throw new Error('A required backup file changed after capture started');
         const hash = createHash('sha256');
-        const recorded =
+        let recorded =
           expected && expected.algorithm !== ChecksumAlgorithm.sha1Path ? createHash(expected.algorithm) : null;
         const blocks: string[] = [];
         let bytes = 0;
@@ -291,6 +296,12 @@ export class BuddyBackupCaptureService {
           advanceExecutionProgress(bytesRead);
           if (!bytesRead) break;
           const piece = buffer.subarray(0, bytesRead);
+          // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's,
+          // so it is never compared; the AEAD tags and the SHA-256 below vouch for the ciphertext.
+          if (bytes === 0 && piece.subarray(0, LOCKED_MAGIC_BYTES.length).equals(LOCKED_MAGIC_BYTES)) {
+            recorded = null;
+            sealedPaths.add(path);
+          }
           hash.update(piece);
           recorded?.update(piece);
           const receipt = await this.block(ring, piece, options.runId);
@@ -484,6 +495,17 @@ export class BuddyBackupCaptureService {
                 UserMetadataKey.Onboarding,
               ])
               .execute();
+            // FL-721: every Locked key file as it is (wrapped; no secret opens anything without it), first,
+            // before the dump and any media: turning encryption off deletes the key file once its files are
+            // plain, so a copy taken later could miss the key that this snapshot's ciphertext needs. A key
+            // file is replaced atomically, so it is read as it is now; one already removed is left out.
+            for (const { userId, path } of await lockedKeyBackupFiles(StorageCore.getMediaLocation())) {
+              try {
+                manifest.library.lockedKeys![userId] = await captureFile(path, LOCKED_KEY_BACKUP_ROLE, undefined, true);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+              }
+            }
             // pg_dump imports precisely this view. Internet transfer starts only after this transaction ends.
             const dump = await this.backups.createDatabaseBackup(`buddy-${options.runId}-`, {
               snapshot: rows[0].snapshot,
@@ -496,6 +518,8 @@ export class BuddyBackupCaptureService {
               const albums = new Set<string>();
               // FL-721 pre-flight: a file a seal, unseal or rewrap is replacing now is left for the next run
               const lockedOwners = await lockedKeyOwners(StorageCore.getMediaLocation());
+              // FL-721: the people whose captured files are encrypted; each must have a key file in this snapshot
+              const sealedOwners = new Set<string>();
               const people = new Map<string, { ownerId: string; personId: string }>();
               while (true) {
                 const assets = await index.listAssets({
@@ -554,6 +578,7 @@ export class BuddyBackupCaptureService {
                   for (const file of edited)
                     if (present(file.path) && !busy.has(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.type));
+                  if (files.some((file) => sealedPaths.has(file.path))) sealedOwners.add(asset.ownerId);
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
                     libraryId: original.libraryId,
@@ -590,25 +615,19 @@ export class BuddyBackupCaptureService {
                 }
                 afterId = assets.at(-1)!.id;
               }
+              // A key file that appeared or went during the capture (encryption turned on or off) would leave
+              // ciphertext no key in this snapshot opens. Never hidden: the snapshot fails, and the previous
+              // snapshots, with their key files, stay as they are. The next run captures a consistent pair.
+              const keyless = [...sealedOwners].filter((ownerId) => !manifest.library.lockedKeys![ownerId]);
+              if (keyless.length > 0)
+                throw new Error(
+                  `This backup found encrypted Locked files for ${keyless.length} person(s) whose key file was not there when it started. Their encryption changed during the backup; the next backup includes it.`,
+                );
               manifest.library.albums = Object.fromEntries(await index.getAlbumRecords([...albums]));
               manifest.library.people = Object.fromEntries(await index.getPersonRecords(people.values().toArray()));
               manifest.metadata = await new BuddyBackupMetadataRepository(trx).capture(people.values().toArray());
               for (const profile of await index.listProfileImages())
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
-              // FL-721: every Locked key file as it is (wrapped; no secret opens anything without it). Read as it is
-              // now, not pinned: a key file is replaced atomically, and one removed since it was listed is left out.
-              for (const { userId, path } of await lockedKeyBackupFiles(StorageCore.getMediaLocation())) {
-                try {
-                  manifest.library.lockedKeys![userId] = await captureFile(
-                    path,
-                    LOCKED_KEY_BACKUP_ROLE,
-                    undefined,
-                    true,
-                  );
-                } catch (error) {
-                  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-                }
-              }
               // Person groups can be shared across owners. Their thumbnails belong only to the
               // whole-server archive, never to an asset selected through that shared group.
               for (const entry of [

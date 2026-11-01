@@ -79774,7 +79774,7 @@
           "encryptedWithOlderKey": {
             "description": "Restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
             "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
+            "minimum": 0,
             "type": "integer"
           },
           "error": {
@@ -79784,6 +79784,12 @@
           "files": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lockedKeysKept": {
+            "description": "Backed-up Locked key files kept in the restore folder because a live key file was already there; the live one is never replaced",
+            "maximum": 9007199254740991,
+            "minimum": 0,
             "type": "integer"
           },
           "manifestKey": {
@@ -101098,6 +101104,13 @@
             "nullable": true,
             "type": "string"
           },
+          "encryptedWithOlderKey": {
+            "description": "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "error": {
             "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
             "nullable": true,
@@ -101332,6 +101345,13 @@
             "description": "Which worker or endpoint the destination resolved to",
             "nullable": true,
             "type": "string"
+          },
+          "encryptedWithOlderKey": {
+            "description": "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "error": {
             "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",

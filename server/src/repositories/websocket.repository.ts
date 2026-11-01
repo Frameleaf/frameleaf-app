@@ -40,6 +40,7 @@ export const serverEvents = [
   'CloudBackupKeyRequest',
   'CloudBackupKeyUpdate',
   'LockedEncryptionOff',
+  'LockedKeyChanged',
 ] as const;
 export type ServerEvents = (typeof serverEvents)[number];
 

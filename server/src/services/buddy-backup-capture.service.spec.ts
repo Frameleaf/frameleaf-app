@@ -1,4 +1,13 @@
 import {
+  type LockedKeyFile,
+  decryptFile,
+  encryptFile,
+  generateKeyPair,
+  generateRecoveryKey,
+  unwrapKey,
+  wrapKey,
+} from '@frameleaf/locked-crypto';
+import {
   type CompiledQuery,
   type DatabaseConnection,
   DummyDriver,
@@ -217,6 +226,7 @@ describe('Buddy effective configuration file capture', () => {
 
   describe('Locked key files (FL-721)', () => {
     const OWNER = '00000000-0000-4000-8000-000000000001';
+    const PASSPHRASE = 'correct horse battery staple';
     const keyText = Buffer.from('{"format":"frameleaf-locked-key/1","wraps":"wrapped-secret-material"}');
     let keyPath: string;
 
@@ -250,6 +260,126 @@ describe('Buddy effective configuration file capture', () => {
           sealed,
         ),
       ).toEqual(keyText);
+    });
+
+    /** An Advanced-mode key file for OWNER and an original sealed to it, with its plaintext SHA-1 on record. */
+    const sealedLibrary = async () => {
+      const recoveryKey = generateRecoveryKey();
+      const pair = generateKeyPair();
+      const now = new Date().toISOString();
+      let file: Omit<LockedKeyFile, 'wraps'> & { wraps?: LockedKeyFile['wraps'] } = {
+        format: 'frameleaf-locked-key/1',
+        userId: OWNER,
+        label: 'Taylor',
+        publicKey: pair.publicKey.toString('base64'),
+        mode: 'advanced',
+        encrypting: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      file = await wrapKey(file, pair.privateKey, 'passphrase', PASSPHRASE);
+      file = await wrapKey(file, pair.privateKey, 'recovery', recoveryKey);
+      await writeFile(keyPath, JSON.stringify(file), { mode: 0o600 });
+
+      const assetId = randomUUID();
+      const folder = join(directory, 'media', 'library', OWNER);
+      await mkdir(folder, { recursive: true });
+      const plain = Buffer.from('the photo, in plain, long enough to be a photo');
+      const plainPath = join(directory, 'plain.jpg');
+      await writeFile(plainPath, plain);
+      const original = join(folder, 'IMG_1.jpg');
+      await encryptFile(plainPath, original, [{ publicKey: pair.publicKey }], {
+        assetId,
+        kind: 'original',
+        originalFileName: 'IMG_1.jpg',
+        mime: 'image/jpeg',
+      });
+      // the checksum on record stays the plaintext's after a seal
+      const checksum = createHash('sha1').update(plain).digest();
+      rowsFor = (text) => {
+        if (text.includes('SELECT "originalPath" AS path FROM public.asset') && !text.includes('isOffline'))
+          return [{ path: original }];
+        if (text.includes('"livePhotoVideoId"'))
+          return [
+            {
+              id: assetId,
+              checksum,
+              checksumAlgorithm: 'sha1',
+              livePhotoVideoId: null,
+              libraryId: null,
+              isExternal: false,
+            },
+          ];
+        if (text.includes('"checksumAlgorithm", "type"'))
+          return [{ id: assetId, ownerId: OWNER, checksum, checksumAlgorithm: 'sha1', type: 'IMAGE' }];
+      };
+      vi.spyOn(CloudBackupIndexRepository.prototype, 'listAssets')
+        .mockResolvedValueOnce([
+          {
+            id: assetId,
+            ownerId: OWNER,
+            originalPath: original,
+            sha256: null,
+            checksumSize: null,
+            verifiedAt: null,
+            checksumPathVerified: false,
+            files: [],
+          },
+        ] as never)
+        .mockResolvedValue([]);
+      vi.spyOn(CloudBackupIndexRepository.prototype, 'getAssetDetails').mockResolvedValue(
+        new Map([[assetId, { record: {}, details: EMPTY_DETAILS }]]) as never,
+      );
+      return { assetId, original, plain, recoveryKey };
+    };
+
+    it('captures an encrypted original as it is, and the snapshot opens with the passphrase and with the recovery key', async () => {
+      const { assetId, original, plain, recoveryKey } = await sealedLibrary();
+      const runId = randomUUID();
+
+      const captured = await capture(runId);
+
+      const key = Buffer.from(ring.keys[ring.current], 'base64url');
+      const contentOf = async (sha256: string) =>
+        Buffer.concat(
+          await Promise.all(
+            captured.manifest.contents[sha256].blocks.map(async (id) =>
+              decryptBuddyBlock(
+                key,
+                { vaultId: ring.vaultId, id, keyVersion: ring.current },
+                await readFile(service.blockPath(id, runId)),
+              ),
+            ),
+          ),
+        );
+      const [file] = captured.manifest.library.assets[assetId].files;
+      expect(file).toMatchObject({ role: 'original', path: original });
+      // the ciphertext, byte for byte, never decrypted on the way
+      const backedUp = await contentOf(file.sha256);
+      expect(backedUp).toEqual(await readFile(original));
+      expect(backedUp.includes(plain)).toBe(false);
+
+      const keyFile = JSON.parse(
+        (await contentOf(captured.manifest.library.lockedKeys![OWNER].sha256)).toString(),
+      ) as LockedKeyFile;
+      const restored = join(directory, 'restored.jpg');
+      await writeFile(restored, backedUp);
+      for (const [kind, secret] of [
+        ['passphrase', PASSPHRASE],
+        ['recovery', recoveryKey],
+      ] as const) {
+        const out = join(directory, `opened-${kind}.jpg`);
+        await decryptFile(restored, out, await unwrapKey(keyFile, kind, secret));
+        expect(await readFile(out)).toEqual(plain);
+      }
+    });
+
+    it('refuses a snapshot whose encrypted files have no key file from its start', async () => {
+      await sealedLibrary();
+      // encryption changed during the run: no key file when the capture started
+      await rm(keyPath);
+
+      await expect(capture(randomUUID())).rejects.toThrow('whose key file was not there when it started');
     });
 
     it('a file with a .fllk.tmp sibling is left for the next run', async () => {

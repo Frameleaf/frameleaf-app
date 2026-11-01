@@ -437,6 +437,12 @@ export type CloudBackupRunResult = {
   bytesUploaded: number;
   assets: number;
   total: number | null;
+  /**
+   * FL-721: the people whose Locked key file the run backed up when it started (before the dump and any
+   * media), and the people whose backed-up files are encrypted. Each of the second must be in the first.
+   */
+  lockedKeyOwners: string[];
+  sealedOwners: string[];
 };
 
 export const emptyRunResult = (): CloudBackupRunResult => ({
@@ -452,6 +458,8 @@ export const emptyRunResult = (): CloudBackupRunResult => ({
   bytesUploaded: 0,
   assets: 0,
   total: null,
+  lockedKeyOwners: [],
+  sealedOwners: [],
 });
 
 const PHASES: ReadonlySet<CloudBackupRunResult['phase']> = new Set([
@@ -467,6 +475,9 @@ const count = (value: unknown) => {
   const number = Number(value ?? 0);
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 };
+
+const ids = (value: unknown) =>
+  Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length > 0))] : [];
 
 const text = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : null);
 
@@ -498,6 +509,8 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     bytesUploaded: count(result.bytesUploaded),
     assets: count(result.assets),
     total: result.total === null || result.total === undefined ? null : count(result.total),
+    lockedKeyOwners: ids(result.lockedKeyOwners),
+    sealedOwners: ids(result.sealedOwners),
   };
 };
 

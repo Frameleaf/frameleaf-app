@@ -8,7 +8,7 @@ import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
-import { copyFile as copyFileOf, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile as copyFileOf, link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -342,6 +342,7 @@ describe(CloudBackupService.name, () => {
       mocks.job as never,
       details as never,
       selection as never,
+      mocks.lockedEncryption as never,
     );
 
   const configWrites = () =>
@@ -3027,6 +3028,46 @@ describe(CloudBackupService.name, () => {
         expect(JSON.stringify(logged)).not.toContain('wrapped-secret-material');
       });
 
+      it('backs up the key files first, before the database and any media', async () => {
+        index.listAssets.mockResolvedValueOnce([asset('asset-1', SHA_A)]).mockResolvedValueOnce([]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        const keyObject = objectKeyOf(hex(keyPath));
+        expect(uploadedKeys().indexOf(keyObject)).toBe(0);
+        expect(uploadedKeys().indexOf(keyObject)).toBeLessThan(uploadedKeys().indexOf(clientDumpKey));
+        expect(uploadedKeys().indexOf(keyObject)).toBeLessThan(uploadedKeys().indexOf(objectKeyOf(SHA_A)));
+        expect(mocks.crypto.hashFile.mock.invocationCallOrder[0]).toBeLessThan(
+          databaseBackup.createDatabaseBackup.mock.invocationCallOrder[0],
+        );
+        expect(operations.complete).toHaveBeenCalled();
+      });
+
+      it('never completes a backup of encrypted files whose owner had no key file when it started', async () => {
+        const folder = join(media, 'library', OWNER);
+        await mkdir(folder, { recursive: true });
+        const plain = join(media, 'plain.jpg');
+        const sealed = join(folder, 'IMG_1.jpg');
+        await writeFile(plain, 'the photo');
+        await encryptLockedFile(plain, sealed, [{ publicKey: generateLockedKeyPair().publicKey }], {
+          assetId: 'asset-1',
+          kind: 'original',
+          originalFileName: 'IMG_1.jpg',
+          mime: 'image/jpeg',
+        });
+        // the key file came after the run started (encryption turned on during it)
+        await rm(keyPath);
+        index.listAssets
+          .mockResolvedValueOnce([{ ...asset('asset-1', null), ownerId: OWNER, originalPath: sealed }])
+          .mockResolvedValueOnce([]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(store.uploadStream).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('had no key file when the run started'));
+      });
+
       it('a file with a .fllk.tmp sibling is left for the next run', async () => {
         const folder = join(media, 'library', OWNER);
         await mkdir(folder, { recursive: true });
@@ -4505,6 +4546,116 @@ describe(CloudBackupService.name, () => {
         StorageCore.setMediaLocation(previous);
         await rm(media, { recursive: true, force: true });
       }
+    });
+
+    describe('Locked key files in a library restore (FL-721)', () => {
+      const OWNER = '00000000-0000-4000-8000-000000000001';
+      const backedUp =
+        '{"format":"frameleaf-locked-key/1","userId":"00000000-0000-4000-8000-000000000001","publicKey":"b2xk","mode":"advanced","encrypting":false,"wraps":[{"kind":"passphrase"},{"kind":"recovery"}],"createdAt":"2026-09-01T00:00:00.000Z","updatedAt":"2026-09-02T00:00:00.000Z"}';
+      let media: string;
+      let previous: string;
+      let livePath: string;
+
+      beforeEach(async () => {
+        previous = StorageCore.getMediaLocation();
+        media = await mkdtemp(join(tmpdir(), 'cloud-restore-keys-'));
+        StorageCore.setMediaLocation(media);
+        livePath = join(media, 'locked-keys', `${OWNER}.json`);
+        const keySha = hex(backedUp);
+        store.get = vi.fn().mockResolvedValue(
+          gzipSync(
+            JSON.stringify({
+              format: 'frameleaf-backup-manifest',
+              version: 1,
+              instanceId: INSTANCE_ID,
+              createdAt: '2026-09-26T03:00:00.000Z',
+              database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+              assets: {},
+              profiles: {},
+              lockedKeys: {
+                [OWNER]: {
+                  role: 'locked-key',
+                  path: '/old/locked-keys/k.json',
+                  sha256: keySha,
+                  size: backedUp.length,
+                  mtime: null,
+                },
+              },
+            }),
+          ),
+        );
+        const sizes = new Map([
+          [keySha, backedUp.length],
+          [SHA_DUMP, 50],
+        ]);
+        store.download = vi
+          .fn()
+          .mockImplementation(async (_connection, _key, _bucketKey, target: string, sha256: string) => {
+            if (sha256 === keySha) {
+              await writeFile(target, backedUp);
+            }
+            return { size: sizes.get(sha256) ?? 100, sha256 };
+          });
+        // the verified download is published at its target: the backed-up key file lands there
+        vi.mocked(link).mockImplementation((staged, to) =>
+          String(to).endsWith('.json') ? copyFileOf(String(staged), String(to)) : Promise.resolve(),
+        );
+        mocks.lockedEncryption.get.mockResolvedValue(undefined);
+        mocks.lockedEncryption.create.mockResolvedValue({} as never);
+        // what is on disk, and what it holds, for the key files only (the rest stays mocked)
+        mocks.storage.checkFileExists.mockImplementation((path: string) =>
+          stat(path)
+            .then(() => true)
+            .catch(() => false),
+        );
+        mocks.crypto.hashFile.mockImplementation(async (path: string | Buffer) =>
+          String(path).endsWith('.json') || String(path).includes('.cloud-restore-')
+            ? createHash('sha256')
+                .update(await readFile(String(path)))
+                .digest()
+            : Buffer.from(hex(String(path).includes('dump') ? 'dump' : String(path)), 'hex'),
+        );
+      });
+
+      afterEach(async () => {
+        StorageCore.setMediaLocation(previous);
+        await rm(media, { recursive: true, force: true });
+      });
+
+      it('with no live key file, makes the backed-up one live, matches its row and drops any loaded key', async () => {
+        await sut.run(restoreOperation('library'), 'claim-1');
+
+        expect(await readFile(livePath, 'utf8')).toBe(backedUp);
+        expect(mocks.lockedEncryption.create).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: OWNER, mode: 'advanced', status: 'on' }),
+        );
+        expect(mocks.websocket.serverSend).toHaveBeenCalledWith('LockedKeyChanged', { userId: OWNER });
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+          lastRestore: { scope: 'library', status: 'completed' },
+        });
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toMatchObject({
+          lastRestore: { lockedKeysKept: expect.anything() },
+        });
+      });
+
+      it('keeps a live key file, puts the backed-up one in the replaced folder and says so', async () => {
+        const live =
+          '{"format":"frameleaf-locked-key/1","userId":"00000000-0000-4000-8000-000000000001","publicKey":"bmV3"}';
+        await mkdir(join(media, 'locked-keys'), { mode: 0o700 });
+        await writeFile(livePath, live, { mode: 0o600 });
+
+        await sut.run(restoreOperation('library'), 'claim-1');
+
+        expect(await readFile(livePath, 'utf8')).toBe(live);
+        const kept = join(media, 'frameleaf', 'restore', 'replaced', 'restore-1', 'locked-keys', `${OWNER}.json`);
+        expect(await readFile(kept, 'utf8')).toBe(backedUp);
+        expect((await stat(kept)).mode & 0o777).toBe(0o600);
+        expect(mocks.lockedEncryption.create).not.toHaveBeenCalled();
+        expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('LockedKeyChanged', expect.anything());
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+          lastRestore: { scope: 'library', status: 'completed', lockedKeysKept: 1 },
+        });
+      });
     });
 
     it('records a restore cancelled at its end as cancelled, never as completed', async () => {

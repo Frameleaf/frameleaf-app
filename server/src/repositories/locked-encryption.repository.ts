@@ -92,6 +92,27 @@ export class LockedEncryptionRepository {
   }
 
   /**
+   * FL-721: the original and `asset_file` paths of the person's items that are no longer Locked, on
+   * storage Frameleaf owns. A seal or unseal that stopped before its rename may have left a `.fllk.tmp`
+   * beside one of them; the start-up sweep clears those so they never hold up a backup.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getUnlockedFilePaths(ownerId: string): Promise<string[]> {
+    const { rows } = await sql<{ path: string }>`
+      select a."originalPath" as path from public.asset a
+      where a."ownerId" = ${asUuid(ownerId)} and a."libraryId" is null
+        and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
+        and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
+      union
+      select f.path from public.asset_file f join public.asset a on a.id = f."assetId"
+      where a."ownerId" = ${asUuid(ownerId)} and a."libraryId" is null
+        and not exists (select 1 from public.asset_lock l where l."assetId" = a.id)
+        and not exists (select 1 from public.asset_origin o where o."assetId" = a.id)
+    `.execute(this.db);
+    return rows.map(({ path }) => path);
+  }
+
+  /**
    * The person's own Locked items, oldest lock first, trashed ones included (their files are still on
    * disk). A partner's copy is left out: its files are the partner's (spec §6.1).
    */

@@ -866,6 +866,18 @@ export class LockedEncryptionService {
     this.drop(userId);
   }
 
+  /**
+   * FL-721 (spec §9): a restore put a key file back for this person. A key loaded from the file it
+   * replaces would go on reading (and its grants on serving partners) with a key that is not on disk;
+   * it is dropped here and in the workers, pinned or not, so the next unlock reads the live file.
+   */
+  @OnEvent({ name: 'LockedKeyChanged', server: true, workers: [FrameleafWorker.Api] })
+  onLockedKeyChanged({ userId }: ArgOf<'LockedKeyChanged'>): void {
+    lockedKeys.pin(userId, false);
+    publishLockedKey({ type: 'locked-key', action: 'unpin', userId });
+    this.drop(userId);
+  }
+
   // ---- Helpers ----
 
   private async requireRow(userId: string) {

@@ -27,8 +27,10 @@ import { LOCKED_KEY_BACKUP_ROLE, isEncryptedWithOlderKey, lockedKeyFilePath } fr
  *   members added back (manifest v2).
  * - `database`: the manifest's database dump into `<media>/backups`, where the maintenance restore lists it.
  * - `library`: every file back in its place, as `asset` does for one, and the database dump as `database`.
- *   FL-721: also each person's Locked key file, to `<media>/locked-keys/<userId>.json` with mode 0600. Only
- *   this scope brings key files back: the dump it restores holds the `locked_encryption` rows they match.
+ *   FL-721: also each person's Locked key file, with mode 0600, and only in this scope. A live key file is
+ *   never replaced: the backed-up one is kept in `<media>/frameleaf/restore/replaced/<operation>/locked-keys`
+ *   for the recovery CLI, and items the live key does not open are counted (`encryptedWithOlderKey`). Only
+ *   with no live key file does the backed-up one go to `<media>/locked-keys/<userId>.json`.
  */
 export type CloudBackupRestoreScope = 'files' | 'asset' | 'album' | 'database' | 'library';
 
@@ -95,6 +97,8 @@ export type CloudBackupRestoreResult = {
   detailsRestored: number;
   /** FL-721: restored encrypted items that this server's Locked key file for their owner does not open. */
   encryptedWithOlderKey: number;
+  /** FL-721: backed-up key files kept in the replaced folder because a live key file was there. */
+  lockedKeysKept: number;
 };
 
 /** One file a restore writes, verified against `sha256` before it lands at `target`. */
@@ -136,6 +140,7 @@ export const emptyRestoreResult = (): CloudBackupRestoreResult => ({
   recreated: 0,
   detailsRestored: 0,
   encryptedWithOlderKey: 0,
+  lockedKeysKept: 0,
 });
 
 /** Whether `path` is inside `folder`, after resolving `..` and the like. */
@@ -315,11 +320,13 @@ export class CloudBackupRestorer {
       const { cursor } = result;
       const pending = cursor ? files.filter((file) => compareCodeUnits(file.fileKey, cursor) > 0) : files;
       for (let at = 0; at < pending.length; at += RESTORE_BATCH) {
-        for (const file of pending.slice(at, at + RESTORE_BATCH)) {
+        for (const planned of pending.slice(at, at + RESTORE_BATCH)) {
+          const file = await this.keyFileTarget(planned, options);
           const outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, options);
           await options.completedFile?.(file, outcome);
           result = {
             ...result,
+            lockedKeysKept: result.lockedKeysKept + (file === planned ? 0 : 1),
             cursor: file.fileKey,
             files: result.files + 1,
             bytes: result.bytes + file.size,
@@ -381,6 +388,35 @@ export class CloudBackupRestorer {
       };
     }
     return result;
+  }
+
+  /**
+   * FL-721: a backed-up key file never replaces a live one (it may hold newer secrets, or a new key pair
+   * that items sealed since need). It goes to the replaced folder instead, where the recovery CLI can
+   * still use it for the backed-up items. The same plan on a resumed restore decides the same way.
+   */
+  private async keyFileTarget(
+    file: CloudBackupRestoreFile,
+    options: { mediaLocation: string; operationId: string },
+  ): Promise<CloudBackupRestoreFile> {
+    if (file.role !== LOCKED_KEY_BACKUP_ROLE || !file.inPlace) {
+      return file;
+    }
+    const live = await this.sha256Of(file.target);
+    if (live === null || live === file.sha256) {
+      return file;
+    }
+    return {
+      ...file,
+      target: join(
+        options.mediaLocation,
+        RESTORE_REPLACED_FOLDER,
+        options.operationId,
+        'locked-keys',
+        basename(file.target),
+      ),
+      inPlace: false,
+    };
   }
 
   /**

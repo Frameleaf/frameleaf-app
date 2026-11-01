@@ -35,6 +35,7 @@ import {
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { LOCKED_TEMP_NAME, matchLockedEncryptionRow } from 'src/utils/locked-backup.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import {
   assertLockedTmpIsTmpfs,
@@ -50,7 +51,7 @@ import { handlePromiseError } from 'src/utils/misc.js';
 /** The ending of the temporary file (`<path>.<uuid>.fllk.tmp`) a seal, unseal or rewrap writes beside the file it replaces (spec §7.1). */
 export const LOCKED_TEMP_SUFFIX = '.fllk.tmp';
 /** `<name>.<uuid>.fllk.tmp` (and the older `<name>.fllk.tmp`): group 1 is the file it was replacing. */
-const STALE_TEMP = /^(.+?)(?:\.[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})?\.fllk\.tmp$/;
+const STALE_TEMP = LOCKED_TEMP_NAME;
 /** How long after a seal or unseal the sweep checks whether turning on or off has finished. */
 export const FINISH_CHECK_DELAY_MS = 2 * 60 * 1000;
 /** The least time between two sweeps a key load queues for one person. */
@@ -166,6 +167,7 @@ export class LockedSealService {
       start: true,
     });
     await this.removeStaleTemp();
+    await this.matchRowsToKeyFiles();
     // spec §8: plain copies are made only in a RAM-backed folder; without one, readers defer
     try {
       await assertLockedTmpIsTmpfs();
@@ -199,6 +201,11 @@ export class LockedSealService {
   async removeStaleTemp(): Promise<void> {
     let removed = 0;
     const folders = new Map<string, Set<string>>();
+    const add = (path: string) => {
+      const names = folders.get(dirname(path)) ?? new Set<string>();
+      names.add(basename(path));
+      folders.set(dirname(path), names);
+    };
     for (const userId of await this.lockedEncryptionRepository.getAllUserIds()) {
       for (const asset of await this.lockedEncryptionRepository.getLockedAssets(userId)) {
         // a read-only or external library's folders are not Frameleaf's to clean
@@ -206,10 +213,13 @@ export class LockedSealService {
           continue;
         }
         for (const { path } of await this.lockedFileRepository.filesOf(asset.id)) {
-          const names = folders.get(dirname(path)) ?? new Set<string>();
-          names.add(basename(path));
-          folders.set(dirname(path), names);
+          add(path);
         }
+      }
+      // FL-721: an item that left Locked after a job stopped mid-write is no longer listed above, and
+      // nothing writes beside it any more; a leftover there would hold up its backup for good
+      for (const path of await this.lockedEncryptionRepository.getUnlockedFilePaths(userId)) {
+        add(path);
       }
     }
     for (const [folder, names] of folders) {
@@ -239,6 +249,30 @@ export class LockedSealService {
     }
     if (removed > 0) {
       this.logger.log(`Removed ${removed} temporary Locked file(s) left by an interrupted job`);
+    }
+  }
+
+  /**
+   * FL-721 (spec §9): a database restored from a backup can name a mode that the live key file (kept by
+   * a library restore, or rewritten since) no longer has. The key file is the source of truth; the row
+   * follows it. No row is made here: a key file without one can be a kept PIN-only pair (encryption off).
+   */
+  async matchRowsToKeyFiles(): Promise<void> {
+    let files: LockedKeyFile[];
+    try {
+      files = await this.lockedKeyRepository.list();
+    } catch (error) {
+      this.logger.warn(`Could not read the Locked key files to match them to their rows: ${(error as Error).name}`);
+      return;
+    }
+    for (const file of files) {
+      try {
+        if ((await matchLockedEncryptionRow(this.lockedEncryptionRepository, file, { create: false })) === 'updated') {
+          this.logger.log(`Matched the Locked encryption mode of user ${file.userId} to their key file`);
+        }
+      } catch (error) {
+        this.logger.warn(`Could not match a Locked encryption row to its key file: ${(error as Error).name}`);
+      }
     }
   }
 

@@ -372,4 +372,30 @@ describe(LockedFileRepository.name, () => {
       expect(order).toEqual(['finish', 'rename']);
     });
   });
+
+  describe('LockedEncryptionRepository.getUnlockedFilePaths (FL-721 backups)', () => {
+    it('lists the files of the person’s own items that are not Locked, on storage Frameleaf owns', async () => {
+      const { ctx, assets } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const left = `/media/${randomUUID()}/left.jpg`;
+      const { asset: unlocked } = await ctx.newAsset({ ownerId: user.id, originalPath: left });
+      const thumbnail = `/media/${unlocked.id}_thumbnail.webp`;
+      await ctx.newAssetFile({ assetId: unlocked.id, type: AssetFileType.Thumbnail, path: thumbnail });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      await assets.lock([locked.id], AssetLockReason.Marked, user.id);
+      const libraryId = randomUUID();
+      await sql`INSERT INTO public.library (id, name, "ownerId", "importPaths", "exclusionPatterns")
+        VALUES (${libraryId}::uuid, 'Read-only', ${user.id}::uuid, '{}', '{}')`.execute(db);
+      const { asset: external } = await ctx.newAsset({ ownerId: user.id, libraryId });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: other.id });
+
+      const paths = await new LockedEncryptionRepository(db).getUnlockedFilePaths(user.id);
+
+      expect(paths.toSorted()).toEqual([left, thumbnail].toSorted());
+      expect(paths).not.toContain(locked.originalPath);
+      expect(paths).not.toContain(external.originalPath);
+      expect(paths).not.toContain(theirs.originalPath);
+    });
+  });
 });

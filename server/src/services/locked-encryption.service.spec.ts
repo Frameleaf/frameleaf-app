@@ -311,6 +311,24 @@ describe(LockedEncryptionService.name, () => {
     });
   });
 
+  describe('a restore changed a key file (FL-721 backups)', () => {
+    it('drops the loaded key, pinned or not, with its grants, here and in the workers', async () => {
+      await enablePin();
+      await sut.disable(auth, { pinCode: PIN });
+      lockedKeys.grant('partner-1', userId);
+      expect(lockedKeys.has(userId)).toBe(true);
+      vi.mocked(publishLockedKey).mockClear();
+
+      sut.onLockedKeyChanged({ userId });
+
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(lockedKeys.pinnedUsers()).not.toContain(userId);
+      expect(lockedKeys.canRead('partner-1', userId)).toBe(false);
+      expect(publishLockedKey).toHaveBeenCalledWith({ type: 'locked-key', action: 'unpin', userId });
+      expect(publishLockedKey).toHaveBeenCalledWith({ type: 'locked-key', action: 'drop', userId });
+    });
+  });
+
   describe('queue failures after the change is stored (fix round 1)', () => {
     it('enable returns the recovery key when queueing the sweep fails, and logs it', async () => {
       mocks.job.queue.mockRejectedValue(new Error('redis down'));

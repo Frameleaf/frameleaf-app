@@ -1,6 +1,7 @@
-import { isLockedFile, keyId, readHeader } from '@frameleaf/locked-crypto';
+import { type LockedKeyFile, isLockedFile, keyId, readHeader } from '@frameleaf/locked-crypto';
 import fs from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import type { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 
 /**
  * FL-721 (spec §9): what Cloud Backup and Buddy Backup do for Locked encryption. Both copy encrypted
@@ -14,8 +15,12 @@ export const LOCKED_KEY_BACKUP_ROLE = 'locked-key';
 
 const KEY_FOLDER = 'locked-keys';
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
-/** `<name>.<uuid>.fllk.tmp` (and the older `<name>.fllk.tmp`), as a seal, unseal or rewrap writes it (spec §7.1). */
-const REPLACEMENT = /^(.+?)(?:\.[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})?\.fllk\.tmp$/;
+/**
+ * `<name>.<uuid>.fllk.tmp` (and the older `<name>.fllk.tmp`), as a seal, unseal or rewrap writes it beside
+ * the file it replaces (spec §7.1); group 1 is that file's name. The one matcher for these temporary
+ * files: the backups' pre-flight and the start-up sweep (`LockedSealService.removeStaleTemp`) share it.
+ */
+export const LOCKED_TEMP_NAME = /^(.+?)(?:\.[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})?\.fllk\.tmp$/;
 
 const isMissing = (error: unknown) => ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? '');
 
@@ -73,7 +78,7 @@ export async function pathsBeingReplaced(paths: Iterable<string>): Promise<Set<s
       throw error;
     }
     for (const entry of entries) {
-      const path = names.get(REPLACEMENT.exec(entry)?.[1] ?? '');
+      const path = names.get(LOCKED_TEMP_NAME.exec(entry)?.[1] ?? '');
       if (path) {
         busy.add(path);
       }
@@ -97,19 +102,63 @@ export async function isEncryptedWithOlderKey(
   }
   const { keyIds } = await readHeader(path);
   const keyPath = ownerId ? lockedKeyFilePath(mediaLocation, ownerId) : null;
-  if (!keyPath) {
+  // missing or unreadable: it opens nothing
+  const file = keyPath && ownerId ? await readLockedKeyFile(keyPath, ownerId) : null;
+  if (!file) {
     return true;
   }
-  let publicKey: string | undefined;
-  try {
-    const file = JSON.parse(await fs.readFile(keyPath, 'utf8')) as { userId?: string; publicKey?: unknown } | null;
-    publicKey = file?.userId === ownerId && typeof file.publicKey === 'string' ? file.publicKey : undefined;
-  } catch {
-    // missing or unreadable: it opens nothing
-  }
-  if (!publicKey) {
-    return true;
-  }
-  const current = keyId(Buffer.from(publicKey, 'base64'));
+  const current = keyId(Buffer.from(file.publicKey, 'base64'));
   return keyIds.every((id) => !id.equals(current));
+}
+
+/** A version-1 key file for this person at `path`; null when it is missing, unreadable or someone else's. */
+export async function readLockedKeyFile(path: string, userId: string): Promise<LockedKeyFile | null> {
+  try {
+    const file = JSON.parse(await fs.readFile(path, 'utf8')) as Partial<LockedKeyFile> | null;
+    return file?.format === 'frameleaf-locked-key/1' && file.userId === userId && typeof file.publicKey === 'string'
+      ? (file as LockedKeyFile)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The `locked_encryption` calls `matchLockedEncryptionRow` makes. */
+type LockedEncryptionRows = Pick<LockedEncryptionRepository, 'get' | 'create' | 'update'>;
+
+/**
+ * FL-721: makes a person's `locked_encryption` row agree with their live key file, the source of truth
+ * (spec §4.2), after a restore put a key file back, or kept the live one while the database came back
+ * from a backup. A row in the other mode follows the key file; its status, ask-again choice and dates
+ * are kept.
+ *
+ * A missing row is made only with `create` (a restore just made this key file live) and only for a key
+ * file that has a recovery wrap. Turning encryption off can keep a PIN-only key pair for partner shares
+ * (spec §6.2), with no row: that is off, and stays off.
+ */
+export async function matchLockedEncryptionRow(
+  rows: LockedEncryptionRows,
+  file: Pick<LockedKeyFile, 'userId' | 'mode' | 'encrypting' | 'wraps' | 'createdAt' | 'updatedAt'>,
+  options: { create: boolean },
+): Promise<'created' | 'updated' | 'unchanged'> {
+  const row = await rows.get(file.userId);
+  if (!row) {
+    if (!options.create || file.wraps.every(({ kind }) => kind !== 'recovery')) {
+      return 'unchanged';
+    }
+    await rows.create({
+      userId: file.userId,
+      mode: file.mode,
+      status: file.encrypting ? 'encrypting' : 'on',
+      // the key file does not say when its recovery wrap was made; it is no older than the last change
+      recoveryKeyCreatedAt: new Date(file.updatedAt),
+      enabledAt: new Date(file.createdAt),
+    });
+    return 'created';
+  }
+  if (row.mode !== file.mode) {
+    await rows.update(file.userId, { mode: file.mode });
+    return 'updated';
+  }
+  return 'unchanged';
 }

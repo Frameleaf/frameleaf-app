@@ -172,6 +172,8 @@ type EventMap = {
 
   /** FL-721: a person's Locked encryption finished turning off; the API process releases their pinned key. */
   LockedEncryptionOff: [{ userId: string }];
+  /** FL-721: a restore changed a person's key file; every process drops the key it holds for them. */
+  LockedKeyChanged: [{ userId: string }];
 };
 
 export type AdminNotice = {

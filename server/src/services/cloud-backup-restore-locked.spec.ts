@@ -187,6 +187,94 @@ describe('Locked key files in a cloud backup restore (FL-721)', () => {
     expect(logged).not.toContain(file.wraps[0].ciphertext);
   });
 
+  it('a whole-library restore keeps a live key file, keeps the backed-up one aside, and counts what the live key does not open', async () => {
+    const recoveryKey = generateRecoveryKey();
+    const { pair, file } = await advancedKeyFile(recoveryKey);
+    const keyBytes = Buffer.from(JSON.stringify(file, null, 2));
+    // the person turned encryption off and on since the backup: the live key file is a new key pair
+    const live = (await advancedKeyFile(generateRecoveryKey())).file;
+    const liveBytes = Buffer.from(JSON.stringify(live));
+    const keyPath = join(media, 'locked-keys', `${OWNER}.json`);
+    await mkdir(join(media, 'locked-keys'), { mode: 0o700 });
+    await writeFile(keyPath, liveBytes, { mode: 0o600 });
+
+    const plainPath = join(directory, 'plain.jpg');
+    const sealedPath = join(directory, 'sealed.jpg');
+    const plain = randomBytes(5000);
+    await writeFile(plainPath, plain);
+    await encryptFile(plainPath, sealedPath, [{ publicKey: pair.publicKey }], {
+      assetId: ASSET,
+      kind: 'original',
+      originalFileName: 'IMG_1.jpg',
+      mime: 'image/jpeg',
+    });
+    const originalPath = join(media, 'library', OWNER, 'IMG_1.jpg');
+    const manifest: CloudBackupManifest = {
+      format: 'frameleaf-backup-manifest',
+      version: 2,
+      instanceId: 'instance-1',
+      createdAt: '2026-10-31T03:00:00.000Z',
+      database: {
+        key: 'db/cloud-backup-immich-db-backup-20261031T030000-v3.2.0-pg16.4.sql.gz',
+        ...put(Buffer.from('dump')),
+      },
+      assets: {
+        [ASSET]: {
+          owner: OWNER,
+          files: [{ role: 'original', path: originalPath, ...put(await readFile(sealedPath)), mtime: null }],
+        },
+      },
+      profiles: {},
+      lockedKeys: { [OWNER]: { role: LOCKED_KEY_BACKUP_ROLE, path: keyPath, ...put(keyBytes), mtime: null } },
+      albums: {},
+      people: {},
+    };
+    const plan = restorePlan({
+      manifest,
+      scope: 'library',
+      assetIds: null,
+      operationId: 'op-1',
+      mediaLocation: media,
+      currentOriginals: new Map(),
+    });
+    const completed = vi.fn();
+
+    const restored = await restorer().restore({
+      read,
+      manifest,
+      scope: 'library',
+      files: plan.files,
+      destination: plan.destination,
+      mediaLocation: media,
+      backupsFolder: join(media, 'backups'),
+      operationId: 'op-1',
+      start: emptyRestoreResult(),
+      checkpoint: () => Promise.resolve(true),
+      completedFile: completed,
+    });
+
+    // the live key file is untouched
+    expect(await readFile(keyPath)).toEqual(liveBytes);
+    // the backed-up one is kept aside, private, for the recovery CLI, and it still opens the backed-up item
+    const kept = join(media, 'frameleaf', 'restore', 'replaced', 'op-1', 'locked-keys', `${OWNER}.json`);
+    expect(await readFile(kept)).toEqual(keyBytes);
+    expect((await stat(kept)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(media, 'frameleaf', 'restore', 'replaced', 'op-1', 'locked-keys'))).mode & 0o777).toBe(
+      0o700,
+    );
+    expect(restored).toMatchObject({ lockedKeysKept: 1 });
+    expect(completed).toHaveBeenCalledWith(expect.objectContaining({ target: kept, inPlace: false }), 'written');
+    const out = join(directory, 'opened.jpg');
+    await decryptFile(
+      originalPath,
+      out,
+      await unwrapKey(JSON.parse(await readFile(kept, 'utf8')), 'recovery', recoveryKey),
+    );
+    expect(await readFile(out)).toEqual(plain);
+    // and the restore says the live key does not open the restored item
+    await expect(countEncryptedWithOlderKey(plan.files, () => OWNER, media)).resolves.toBe(1);
+  });
+
   it('never brings key files back into a restore folder, nor with a chosen item', () => {
     const manifest: CloudBackupManifest = {
       format: 'frameleaf-backup-manifest',

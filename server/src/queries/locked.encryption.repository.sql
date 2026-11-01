@@ -40,6 +40,56 @@ delete from "locked_encryption"
 where
   "userId" = $1::uuid
 
+-- LockedEncryptionRepository.getUnlockedFilePaths
+select
+  a."originalPath" as path
+from
+  public.asset a
+where
+  a."ownerId" = $1::uuid
+  and a."libraryId" is null
+  and not exists (
+    select
+      1
+    from
+      public.asset_lock l
+    where
+      l."assetId" = a.id
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_origin o
+    where
+      o."assetId" = a.id
+  )
+union
+select
+  f.path
+from
+  public.asset_file f
+  join public.asset a on a.id = f."assetId"
+where
+  a."ownerId" = $2::uuid
+  and a."libraryId" is null
+  and not exists (
+    select
+      1
+    from
+      public.asset_lock l
+    where
+      l."assetId" = a.id
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_origin o
+    where
+      o."assetId" = a.id
+  )
+
 -- LockedEncryptionRepository.getLockedAssets
 select
   "asset"."id",
