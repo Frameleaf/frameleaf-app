@@ -118,8 +118,11 @@ describe('Frameleaf Activity page', () => {
       ]);
       await screen.findByText(/Preparing export/);
       const warning = screen.queryByText(/No measured progress for at least a minute/);
-      if (status === MediaOperationStatus.Queued) expect(warning).not.toBeInTheDocument();
-      else expect(warning).toBeInTheDocument();
+      if (status === MediaOperationStatus.Queued) {
+        expect(warning).not.toBeInTheDocument();
+      } else {
+        expect(warning).toBeInTheDocument();
+      }
     },
   );
 
