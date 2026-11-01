@@ -1156,7 +1156,6 @@ export class LockedEncryptionService {
     }
   }
 
-  /** How many of these items' originals are encrypted now (they start with `FLLK`, spec §5). */
   /** How many of these items' originals are gone from disk (ENOENT); other errors don't count. */
   private async countMissing(assets: LockedEncryptionAsset[]): Promise<number> {
     let count = 0;
@@ -1174,6 +1173,7 @@ export class LockedEncryptionService {
     return count;
   }
 
+  /** How many of these items' originals are encrypted now (they start with `FLLK`, spec §5). */
   private async countEncrypted(assets: LockedEncryptionAsset[]): Promise<number> {
     let count = 0;
     for (let index = 0; index < assets.length; index += COUNT_CONCURRENCY) {

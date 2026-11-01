@@ -46,6 +46,13 @@ describe('Locked PIN (FL-517)', () => {
     expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
   });
 
+  it('keeps Clear PIN disabled while it can’t tell whether Locked encryption is on (FL-721)', async () => {
+    sdkMock.getLockedEncryption.mockRejectedValue(new Error('offline'));
+    render(PinSection);
+
+    expect(await screen.findByRole('button', { name: 'Clear PIN' })).toBeDisabled();
+  });
+
   it('does not offer the choice before a PIN is set', async () => {
     sdkMock.getAuthStatus.mockResolvedValue({ pinCode: false } as never);
     render(PinSection);

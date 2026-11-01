@@ -9221,6 +9221,7 @@
   "frameleaf_le_turn_on": "Turn on…",
   "frameleaf_le_unlock": "Unlock",
   "frameleaf_le_unlock_failed": "That didn’t open it. Check it and try again.",
+  "frameleaf_le_unlocked_try_again": "Unlocked. Try that again.",
   "frameleaf_le_until_day": "{day}, {time}",
   "frameleaf_le_until_restart": "the server restarts",
   "frameleaf_le_until_today": "{time} today",

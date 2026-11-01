@@ -526,6 +526,22 @@ describe('VideoNativeViewer component', () => {
     });
   });
 
+  it('keeps HLS after a non-fatal 400 on the manifest (FL-721)', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const props = videoProps();
+    const viewer = renderViewer(props);
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const errorHandler = hlsMocks.instances[0].on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
+    errorHandler(Hls.Events.ERROR, {
+      fatal: false,
+      details: Hls.ErrorDetails.MANIFEST_LOAD_ERROR,
+      response: { code: 400 },
+    });
+    expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.assetId));
+    errorLog.mockRestore();
+  });
+
   it('reports fatal HLS failure and retries HLS without selecting original playback', async () => {
     featureFlagsManager.value.realtimeTranscoding = true;
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});

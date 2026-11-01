@@ -1,5 +1,5 @@
 import { LockedEncryptionMode, LockedEncryptionState, type LockedEncryptionStatusResponseDto } from '@frameleaf/sdk';
-import { modalManager } from '@frameleaf/ui';
+import { modalManager, toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -200,11 +200,17 @@ describe('Locked encryption (FL-721)', () => {
     it('recovery step: Continue is disabled until "I’ve saved my recovery key…" is ticked, and Download creates frameleaf-recovery-key-<name>.txt containing the key', async () => {
       sdkMock.enableLockedEncryption.mockResolvedValue({ recoveryKey: RECOVERY_KEY });
       const blobs: Blob[] = [];
-      const createObjectURL = vi.fn((blob: Blob) => {
-        blobs.push(blob);
+      const createObjectURL = vi.fn((blob: Blob | MediaSource) => {
+        blobs.push(blob as Blob);
         return 'blob:recovery';
       });
-      vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }));
+      // jsdom has no object URLs: put stand-ins on the real `URL` for this test only, then take them away
+      const hadObjectUrls = 'createObjectURL' in URL;
+      if (!hadObjectUrls) {
+        Object.assign(URL, { createObjectURL: () => '', revokeObjectURL: () => {} });
+      }
+      const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(createObjectURL);
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
       const downloads: string[] = [];
       const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
         this: HTMLAnchorElement,
@@ -231,6 +237,12 @@ describe('Locked encryption (FL-721)', () => {
       await fireEvent.click(proceed);
       await waitFor(() => expect(onClose).toHaveBeenCalledWith({ mode: LockedEncryptionMode.Pin }));
       click.mockRestore();
+      create.mockRestore();
+      revoke.mockRestore();
+      if (!hadObjectUrls) {
+        Reflect.deleteProperty(URL, 'createObjectURL');
+        Reflect.deleteProperty(URL, 'revokeObjectURL');
+      }
     });
   });
 
@@ -275,23 +287,6 @@ describe('Locked encryption (FL-721)', () => {
       await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
     });
 
-    it('a 423 on the Locked page opens PassphraseModal', async () => {
-      const show = vi.spyOn(modalManager, 'show').mockResolvedValue(true as never);
-      sdkMock.getLockedEncryption.mockResolvedValue(on({ mode: LockedEncryptionMode.Advanced, keyLoaded: false }));
-
-      // an action on the Locked page (Unlock an item) refused because the key isn't open
-      handleError(locked({ mode: 'advanced', message: 'Type your passphrase first' }), 'Couldn’t unlock');
-      await waitFor(() => expect(show).toHaveBeenCalledWith(PassphraseModal, expect.objectContaining({ kind: 'own' })));
-
-      // and the Locked page itself, opened after a restart, asks at once
-      show.mockClear();
-      const onUnlocked = vi.fn();
-      render(LockedKeyCheck, { onUnlocked });
-      await waitFor(() => expect(show).toHaveBeenCalledWith(PassphraseModal, expect.objectContaining({ kind: 'own' })));
-      await waitFor(() => expect(onUnlocked).toHaveBeenCalled());
-      show.mockRestore();
-    });
-
     it('a partner’s item waiting on its owner says so, without a prompt', () => {
       render(PartnerLockedItemState, {
         lockedEncryption: { openable: false, reason: 'not-ready' as never, ownerName: 'Morgan' },
@@ -317,12 +312,80 @@ describe('Locked encryption (FL-721)', () => {
       show.mockRestore();
     });
 
-    it('a partner’s not-ready 423 is a notice, not a prompt', async () => {
-      const show = vi.spyOn(modalManager, 'show').mockResolvedValue(true as never);
-      handleError(locked({ reason: 'not-ready' }), 'Couldn’t open');
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(show).not.toHaveBeenCalled();
-      show.mockRestore();
+    describe('a 423 is never silent', () => {
+      let show: ReturnType<typeof vi.spyOn>;
+      let primary: ReturnType<typeof vi.spyOn>;
+      let danger: ReturnType<typeof vi.spyOn>;
+      let info: ReturnType<typeof vi.spyOn>;
+      beforeEach(() => {
+        // handleError logs every error it handles
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        show = vi.spyOn(modalManager, 'show').mockResolvedValue(true as never);
+        primary = vi.spyOn(toastManager, 'primary').mockImplementation(() => {});
+        danger = vi.spyOn(toastManager, 'danger').mockImplementation(() => {});
+        info = vi.spyOn(toastManager, 'info').mockImplementation(() => {});
+      });
+      afterEach(() => vi.restoreAllMocks());
+
+      const refuse = () =>
+        handleError(locked({ mode: 'advanced', message: 'Type your passphrase first' }), 'Couldn’t unlock');
+
+      it('a 423 on the Locked page opens PassphraseModal, and once it opens says to try again', async () => {
+        sdkMock.getLockedEncryption.mockResolvedValue(on({ mode: LockedEncryptionMode.Advanced, keyLoaded: false }));
+
+        // an action on the Locked page (Unlock an item) refused because the key isn't open
+        refuse();
+        await waitFor(() =>
+          expect(show).toHaveBeenCalledWith(PassphraseModal, expect.objectContaining({ kind: 'own' })),
+        );
+        await waitFor(() => expect(primary).toHaveBeenCalledWith('Unlocked. Try that again.'));
+        expect(danger).not.toHaveBeenCalled();
+
+        // and the Locked page itself, opened after a restart, asks at once
+        show.mockClear();
+        const onUnlocked = vi.fn();
+        render(LockedKeyCheck, { onUnlocked });
+        await waitFor(() =>
+          expect(show).toHaveBeenCalledWith(PassphraseModal, expect.objectContaining({ kind: 'own' })),
+        );
+        await waitFor(() => expect(onUnlocked).toHaveBeenCalled());
+      });
+
+      it('shows the action’s own error when the prompt is dismissed', async () => {
+        sdkMock.getLockedEncryption.mockResolvedValue(on({ mode: LockedEncryptionMode.Advanced, keyLoaded: false }));
+        show.mockResolvedValue(false as never);
+        refuse();
+        await waitFor(() => expect(danger).toHaveBeenCalledWith('Couldn’t unlock'));
+        expect(primary).not.toHaveBeenCalled();
+      });
+
+      it('shows the action’s own error when the status can’t be read', async () => {
+        sdkMock.getLockedEncryption.mockRejectedValue(new Error('offline'));
+        refuse();
+        await waitFor(() => expect(danger).toHaveBeenCalledWith('Couldn’t unlock'));
+        expect(show).not.toHaveBeenCalled();
+      });
+
+      it('shows the action’s own error when the key is already open or encryption is off', async () => {
+        sdkMock.getLockedEncryption.mockResolvedValue(on({ mode: LockedEncryptionMode.Advanced, keyLoaded: true }));
+        refuse();
+        await waitFor(() => expect(danger).toHaveBeenCalledTimes(1));
+
+        sdkMock.getLockedEncryption.mockResolvedValue(status());
+        refuse();
+        await waitFor(() => expect(danger).toHaveBeenCalledTimes(2));
+        expect(show).not.toHaveBeenCalled();
+      });
+
+      it('a partner’s not-ready 423 is a notice, not a prompt', async () => {
+        handleError(locked({ reason: 'not-ready' }), 'Couldn’t open');
+        await waitFor(() =>
+          expect(info).toHaveBeenCalledWith(
+            'Some of these Locked items aren’t ready yet. They open after their owner next opens Locked.',
+          ),
+        );
+        expect(show).not.toHaveBeenCalled();
+      });
     });
   });
 });

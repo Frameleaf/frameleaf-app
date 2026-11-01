@@ -375,7 +375,10 @@
         return;
       }
       // FL-721: the server plays this video only as a file (an encrypted Locked video); switch to it.
-      if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR && data.response?.code === 400) {
+      // ponytail: any fatal 400 on the manifest falls back to direct play, not only an encrypted video,
+      // and `hlsRefused` keeps it for the whole session (even if encryption is turned off later). That is
+      // deliberate: direct play always works, and asking HLS again per open would 400 every time.
+      if (data.fatal && data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR && data.response?.code === 400) {
         dispose();
         hlsRefused.add(assetId);
         return;

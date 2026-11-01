@@ -144,8 +144,9 @@ export function handleError(error: unknown, localizedMessage: string, options?: 
     return localizedMessage;
   }
 
-  // FL-721: a Locked read or action refused until the key is open asks for the passphrase or PIN
-  if (handledLockedKeyError(error)) {
+  // FL-721: a Locked read or action refused until the key is open asks for the passphrase or PIN;
+  // if the key doesn't open, the action's own message is shown as usual
+  if (handledLockedKeyError(error, () => notifyError(error, localizedMessage, notify))) {
     return localizedMessage;
   }
 

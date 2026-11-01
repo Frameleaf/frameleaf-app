@@ -886,13 +886,17 @@ export const runBulkAction = async (
       return finish(await runInChunks(runner, (batch) => gateway.lockAssets({ bulkIdsDto: { ids: batch } })));
     }
     case 'unmark-sensitive': {
+      // FL-721: Advanced Security without the passphrase typed asks for it once per run, whether the
+      // prompt is still open or was dismissed; later refusals are only reported with the run's failures
+      let asked = false;
       return finish(
         await runInChunks(runner, async (batch) => {
           try {
             return await gateway.unlockAssets({ bulkIdsDto: { ids: batch } });
           } catch (error) {
-            // FL-721: Advanced Security without the passphrase typed: ask for it (once), and report the items
-            handledLockedKeyError(error);
+            if (!asked) {
+              asked = handledLockedKeyError(error);
+            }
             throw error;
           }
         }),

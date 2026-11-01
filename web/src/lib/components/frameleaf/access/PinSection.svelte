@@ -80,6 +80,8 @@
 
   let encryption = $state<LockedEncryptionStatusResponseDto | undefined>();
   const encrypted = $derived(encryption?.enabled === true);
+  /** Unknown until read, and when it can't be read: Clear PIN stays disabled, as the server may refuse it. */
+  const encryptionKnown = $derived(encryption !== undefined);
   const loadEncryption = async () => {
     try {
       encryption = await getLockedEncryption();
@@ -132,7 +134,7 @@
           {pinEnabled ? $t('frameleaf_access_pin_change') : $t('frameleaf_access_pin_create')}
         </Button>
         {#if pinEnabled && !encrypted}
-          <Button onclick={() => open('clear')}>{$t('frameleaf_access_pin_clear')}</Button>
+          <Button disabled={!encryptionKnown} onclick={() => open('clear')}>{$t('frameleaf_access_pin_clear')}</Button>
         {/if}
       </div>
     {:else if failed}
@@ -163,13 +165,15 @@
     <div class="fl-access-head fl-access-encryption">
       <div>
         <h3>{$t('frameleaf_le_title')}</h3>
-        <p>
-          {encrypted
-            ? encryption?.mode === LockedEncryptionMode.Advanced
-              ? $t('frameleaf_le_pin_row_on_advanced')
-              : $t('frameleaf_le_pin_row_on')
-            : $t('frameleaf_le_pin_row_off')}
-        </p>
+        {#if encryptionKnown}
+          <p>
+            {encrypted
+              ? encryption?.mode === LockedEncryptionMode.Advanced
+                ? $t('frameleaf_le_pin_row_on_advanced')
+                : $t('frameleaf_le_pin_row_on')
+              : $t('frameleaf_le_pin_row_off')}
+          </p>
+        {/if}
       </div>
       <Button onclick={() => goto(commandCenterUrl('privacy', 'locked-encryption'))}>
         {$t('frameleaf_le_open')}
