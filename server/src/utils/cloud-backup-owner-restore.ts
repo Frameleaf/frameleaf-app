@@ -4,10 +4,15 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
 import type { CloudBackupAssetRecord, CloudBackupManifest } from 'src/utils/cloud-backup.js';
-import { AssetStatus } from 'src/enum.js';
+import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
 import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { canonicalJson } from 'src/utils/object.js';
+
+const RECORDED_CHECKSUM = new Map<unknown, RegExp>([
+  ['sha1', /^[0-9a-f]{40}$/],
+  ['sha256', /^[0-9a-f]{64}$/],
+]);
 
 export const readBackupAssetRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAssetRecord | null =>
   asset.type && asset.originalFileName && asset.fileCreatedAt && asset.fileModifiedAt && asset.localDateTime
@@ -18,8 +23,24 @@ export const readBackupAssetRecord = (asset: CloudBackupManifest['assets'][strin
         fileModifiedAt: asset.fileModifiedAt,
         localDateTime: asset.localDateTime,
         duration: asset.duration ?? null,
+        // FL-738: read from the raw manifest, so checked here: hex of the algorithm's length, else ignored
+        ...(typeof asset.checksum === 'string' && RECORDED_CHECKSUM.get(asset.checksumAlgorithm)?.test(asset.checksum)
+          ? { checksum: asset.checksum, checksumAlgorithm: asset.checksumAlgorithm }
+          : {}),
       }
     : null;
+
+/**
+ * FL-738: the checksum a restored original gives its item: the one the backup recorded for it, else (an
+ * older backup) the file's SHA-256, which for an encrypted Locked original is the ciphertext's.
+ */
+export const restoredChecksum = (record: CloudBackupAssetRecord | null, sha256: string) =>
+  record?.checksum && record.checksumAlgorithm
+    ? {
+        checksum: Buffer.from(record.checksum, 'hex'),
+        checksumAlgorithm: record.checksumAlgorithm as ChecksumAlgorithm,
+      }
+    : { checksum: Buffer.from(sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
 
 export const ownerRestoreHash = (
   asset: CloudBackupManifest['assets'][string],

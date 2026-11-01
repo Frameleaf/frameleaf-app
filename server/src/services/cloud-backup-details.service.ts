@@ -16,7 +16,6 @@ import {
   AssetOrder,
   AssetType,
   AssetVisibility,
-  ChecksumAlgorithm,
   JobName,
   SourceType,
 } from 'src/enum.js';
@@ -31,6 +30,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 
 import { BaseService } from 'src/services/base.service.js';
 import { DetailChanges, EMPTY_DETAILS, RestoreDetailsMode, detailChanges } from 'src/utils/cloud-backup-details.js';
+import { restoredChecksum } from 'src/utils/cloud-backup-owner-restore.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { upsertTags } from 'src/utils/tag.js';
 
@@ -127,7 +127,7 @@ export class CloudBackupDetailsService extends BaseService {
     if (!owner) {
       return { status: 'no-owner' };
     }
-    const checksum = Buffer.from(input.sha256, 'hex');
+    const { checksum, checksumAlgorithm } = restoredChecksum(input.record, input.sha256);
     // the owner's own Locked copy counts too: the item is already back, and a second row would break the checksum key
     const existing = await repositories.asset.getUploadAssetIdByChecksum(input.ownerId, checksum, {
       lockedOwnerId: input.ownerId,
@@ -144,7 +144,7 @@ export class CloudBackupDetailsService extends BaseService {
         ownerId: input.ownerId,
         libraryId: null,
         checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        checksumAlgorithm,
         originalPath: input.originalPath,
         originalFileName: input.record.originalFileName,
         type: input.record.type as AssetType,

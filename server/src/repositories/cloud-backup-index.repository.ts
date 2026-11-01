@@ -13,7 +13,14 @@ import type {
 } from 'src/utils/cloud-backup.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, AssetStatus, MediaOperationKind, MediaOperationStatus, SystemMetadataKey } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetStatus,
+  ChecksumAlgorithm,
+  MediaOperationKind,
+  MediaOperationStatus,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'src/schema/tables/safety-proof.table.js';
 import { bucketRef } from 'src/utils/cloud-backup.js';
@@ -1240,6 +1247,8 @@ export class CloudBackupIndexRepository {
           'asset.fileModifiedAt',
           'asset.localDateTime',
           'asset.duration',
+          'asset.checksum',
+          'asset.checksumAlgorithm',
           'asset.isFavorite',
           'asset.visibility',
           'asset.stackId',
@@ -1322,6 +1331,12 @@ export class CloudBackupIndexRepository {
             fileModifiedAt: iso(asset.fileModifiedAt)!,
             localDateTime: iso(asset.localDateTime)!,
             duration: asset.duration ?? null,
+            // a path checksum (external library) is not the file's, so it is never restored as one
+            ...((asset.checksumAlgorithm === ChecksumAlgorithm.sha1File ||
+              asset.checksumAlgorithm === ChecksumAlgorithm.sha256File) && {
+              checksum: asset.checksum.toString('hex'),
+              checksumAlgorithm: asset.checksumAlgorithm,
+            }),
           },
           details: {
             isFavorite: asset.isFavorite,

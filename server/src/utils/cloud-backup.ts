@@ -341,6 +341,14 @@ const cloudBackupAssetRecordSchema = z.object({
   fileModifiedAt: isoText,
   localDateTime: isoText,
   duration: z.number().int().min(0).nullable(),
+  // FL-738: the item's own checksum. An encrypted Locked original is backed up as ciphertext, so the
+  // file's SHA-256 is not the item's; a restore uses this one. Absent in older backups, ignored when malformed.
+  checksum: z
+    .string()
+    .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
+    .optional()
+    .catch(undefined),
+  checksumAlgorithm: z.enum(['sha1', 'sha256']).optional().catch(undefined),
 });
 export type CloudBackupAssetRecord = z.infer<typeof cloudBackupAssetRecordSchema>;
 

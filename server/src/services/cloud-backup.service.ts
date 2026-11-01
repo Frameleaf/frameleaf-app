@@ -67,7 +67,6 @@ import {
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   AssetStatus,
-  ChecksumAlgorithm,
   DatabaseLock,
   FrameleafWorker,
   JobName,
@@ -165,7 +164,12 @@ import {
   assertOwnerRestorePath,
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
-import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
+import {
+  checkOwnerRestoreItems,
+  ownerRestoreHash,
+  readBackupAssetRecord as readRecord,
+  restoredChecksum,
+} from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import {
   type BackupRecoveryHistory,
@@ -4219,8 +4223,7 @@ export class CloudBackupService {
                   id: assetId,
                   status: AssetStatus.Active,
                   deletedAt: null,
-                  checksum: Buffer.from(originalFile.sha256, 'hex'),
-                  checksumAlgorithm: ChecksumAlgorithm.sha256File,
+                  ...restoredChecksum(readRecord(asset), originalFile.sha256),
                 });
                 await assertOwnerRestoreFile(originalFile.target, evidence.identity);
                 return { recreated: 0, detailsRestored: changed ? 1 : 0 };
@@ -5393,19 +5396,6 @@ const albumMembersOf = (manifest: CloudBackupManifest) => {
   }
   return members;
 };
-
-/** An item's record as the manifest holds it (manifest v2), or null for a backup without one. */
-const readRecord = (asset: CloudBackupManifest['assets'][string]): CloudBackupAssetRecord | null =>
-  asset.type && asset.originalFileName && asset.fileCreatedAt && asset.fileModifiedAt && asset.localDateTime
-    ? {
-        type: asset.type,
-        originalFileName: asset.originalFileName,
-        fileCreatedAt: asset.fileCreatedAt,
-        fileModifiedAt: asset.fileModifiedAt,
-        localDateTime: asset.localDateTime,
-        duration: asset.duration ?? null,
-      }
-    : null;
 
 /**
  * FL-362: what a restore says about the items it brought back without an original, by reason and per

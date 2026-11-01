@@ -148,7 +148,11 @@ export const readBuddyAssetFidelity = (manifest: BuddyManifest, assetId: string)
     throw new Error('Buddy version source binding changed');
   if (
     state.source.checksum.length !== (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File ? 64 : 40) ||
-    (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File && state.source.checksum !== state.source.sha256)
+    (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File &&
+      state.source.checksum !== state.source.sha256 &&
+      // FL-738: an encrypted Locked original is backed up as ciphertext; its item's checksum is the
+      // plaintext's, which the snapshot's record holds too
+      state.source.checksum !== asset.checksum)
   )
     throw new Error('Buddy version checksum binding changed');
   for (const row of [
