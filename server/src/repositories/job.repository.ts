@@ -12,7 +12,7 @@ import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
-import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import { JobName, JobNameSchema, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
@@ -922,7 +922,7 @@ export class JobRepository {
     }
   }
 
-  async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000): Promise<QueueJobRow[]> {
+  async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000, publicOnly = false): Promise<QueueJobRow[]> {
     const statuses = dto.status ?? Object.values(QueueJobStatus);
     const { rows } = await sql<QueueJobRow>`select * from (
       select j.id, j.name, case when j.sensitive then '{}'::jsonb else j.data end data,
@@ -933,7 +933,9 @@ export class JobRepository {
         when j.state in ('pending','waiting') and q.paused then 'paused'
         when j.state = 'pending' then 'waiting' else j.state end status
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
-      ) jobs where status = any(${statuses}::text[]) order by timestamp desc, id limit ${limit}`.execute(this.store.db);
+      ) jobs where status = any(${statuses}::text[])
+      and (${!publicOnly} or name = any(${JobNameSchema.options}::text[]))
+      order by timestamp desc, id limit ${limit}`.execute(this.store.db);
     return rows;
   }
 

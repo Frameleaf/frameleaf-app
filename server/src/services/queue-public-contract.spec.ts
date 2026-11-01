@@ -31,6 +31,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.AssetVideoFingerprintQueueAll,
       JobName.AssetVideoFingerprint,
       JobName.DescriptionFillerTagCleanup,
+      JobName.LandmarkInfer,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));
     const schema = QueueJobResponseDto.schema.shape.name;
@@ -66,7 +67,7 @@ describe('public queue job compatibility (FL-283)', () => {
 
       const result = await service.searchJobs({} as AuthDto, QueueName.ThumbnailGeneration, query);
 
-      expect(searchJobs).toHaveBeenCalledWith(QueueName.ThumbnailGeneration, query);
+      expect(searchJobs).toHaveBeenCalledWith(QueueName.ThumbnailGeneration, query, undefined, true);
       expect(getJobSubjectOwners).toHaveBeenCalledWith([assetId]);
       expect(result).toEqual([
         {

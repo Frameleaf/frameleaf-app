@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { QueueName } from 'src/enum.js';
+import { JobName, QueueName } from 'src/enum.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueIntent } from 'src/queue/types.js';
@@ -12,6 +12,7 @@ import { getKyselyDB, newTestService } from 'test/utils.js';
 describe('durable queue observation', () => {
   let db: Kysely<any>;
   let store: SqlQueueStore;
+  let repository: JobRepository;
   let service: QueueService;
   let queue: QueueName;
   let worker: string;
@@ -28,7 +29,7 @@ describe('durable queue observation', () => {
   beforeAll(async () => {
     db = await getKyselyDB();
     store = new SqlQueueStore(db);
-    const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
     ({ sut: service } = newTestService(QueueService, { job: repository }));
   });
   beforeEach(async () => {
@@ -37,6 +38,17 @@ describe('durable queue observation', () => {
     await store.initialize([queue], worker);
   });
   afterAll(async () => db?.destroy());
+
+  it('keeps older public jobs discoverable when newer internal jobs fill the result limit', async () => {
+    await store.enqueue([intent({ name: JobName.LandmarkMatchAll })]);
+    await sql`update job set "createdAt" = now() - interval '1 minute' where queue = ${queue}`.execute(db);
+    await store.enqueue(Array.from({ length: 1000 }, () => intent({ name: JobName.LandmarkInfer })));
+
+    await expect(repository.searchJobs(queue, {}, 1000, true)).resolves.toEqual([
+      expect.objectContaining({ name: JobName.LandmarkMatchAll }),
+    ]);
+    expect(await repository.searchJobs(queue, {}, 1001)).toHaveLength(1001);
+  });
 
   it('does not turn delayed or paused execution into a completed queue', async () => {
     expect((await snapshot()).hasUnfinishedWork).toBe(false);

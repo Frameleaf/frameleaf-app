@@ -276,7 +276,7 @@ export class QueueService extends BaseService {
    */
   async searchJobs(auth: AuthDto, name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
     // Filter the actual response as well as its schema: older clients cannot decode internal job names.
-    const jobs = (await this.jobRepository.searchJobs(name, dto)).filter(
+    const jobs = (await this.jobRepository.searchJobs(name, dto, undefined, true)).filter(
       (job): job is QueueJobRow & Pick<QueueJobResponseDto, 'name'> => JobNameSchema.safeParse(job.name).success,
     );
     if (jobs.length === 0) {

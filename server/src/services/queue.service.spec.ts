@@ -532,6 +532,7 @@ describe(QueueService.name, () => {
       mocks.job.searchJobs.mockResolvedValue([job({ name: JobName.LandmarkInfer })]);
       mocks.user.getJobSubjectOwners.mockResolvedValue([]);
       await expect(sut.searchJobs(factory.auth(), QueueName.BackgroundTask, {})).resolves.toEqual([]);
+      expect(mocks.job.searchJobs).toHaveBeenCalledWith(QueueName.BackgroundTask, {}, undefined, true);
       expect(mocks.user.getJobSubjectOwners).not.toHaveBeenCalled();
     });
 
