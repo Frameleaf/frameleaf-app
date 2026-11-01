@@ -75,7 +75,7 @@ describe('Studio measured progress in Activity', () => {
       startedAt: new Date(now - 60_000).toISOString(),
       renderProgress: progress,
     } as MediaOperationDto;
-    const restored = fromMediaOperation(JSON.parse(JSON.stringify(job)));
+    const restored = fromMediaOperation(structuredClone(job));
     expect(activityEtaSeconds(restored, now)).toBe(40);
     expect(activityEtaSeconds(fromMediaOperation({ ...job, renderProgress: undefined }), now)).toBeNull();
     expect(

@@ -15,7 +15,7 @@
      */
     smoothMotion?: { factor: 2 | 4 | 8; destinationId: string };
     /** FL-563: a vertical or square picture; absent keeps the project's own shape. */
-    shape?: StudioExportShape;
+    shape?: StudioExportRequestShape;
     /** FL-563: the crop path of each shot as shown, for a vertical or square export. */
     framing?: StudioExportFramingDto[];
     /** Reviewed independent deliveries; absent retains the existing single export. */
@@ -26,7 +26,7 @@
     StudioExportChoice,
     'format' | 'color' | 'resolution' | 'quality' | 'mastering' | 'subtitleMode' | 'range' | 'framing'
   > & {
-    shape: StudioExportShape;
+    shape: StudioExportRequestShape;
   };
 </script>
 
@@ -56,6 +56,7 @@
     StudioExportResolution,
     StudioExportQuality,
     StudioExportShape,
+    type StudioExportRequestShape,
     StudioExportSubtitleMode,
     getMlCapabilities,
     getStudioFraming,
@@ -368,7 +369,7 @@
     advancedOpen = false;
     shape = StudioExportShape.Original;
     multiDelivery = false;
-    selectedShapes = [StudioExportShape.Landscape];
+    selectedShapes = ['landscape'];
     reviewed = {};
     shapeNudges = {};
     nudges = {};
@@ -390,20 +391,20 @@
   });
 
   /* Shape (FL-563): Original, Vertical 9:16 or Square 1:1, chosen per export; the project is not changed. */
-  const shapes: { value: StudioExportShape; label: Translations }[] = [
+  const shapes: { value: StudioExportRequestShape; label: Translations }[] = [
     { value: StudioExportShape.Original, label: 'frameleaf_studio_export_shape_original' },
     { value: StudioExportShape.Vertical, label: 'frameleaf_studio_export_shape_vertical' },
     { value: StudioExportShape.Square, label: 'frameleaf_studio_export_shape_square' },
   ];
   let multiDelivery = $state(false);
-  let selectedShapes = $state<StudioExportShape[]>([StudioExportShape.Landscape]);
-  let reviewed = $state<Partial<Record<StudioExportShape, string>>>({});
-  let shapeNudges = $state<Partial<Record<StudioExportShape, Record<string, number>>>>({});
+  let selectedShapes = $state<StudioExportRequestShape[]>(['landscape']);
+  let reviewed = $state<Partial<Record<StudioExportRequestShape, string>>>({});
+  let shapeNudges = $state<Partial<Record<StudioExportRequestShape, Record<string, number>>>>({});
   const deliveryShapes: typeof shapes = [
-    { value: StudioExportShape.Landscape, label: 'frameleaf_studio_export_shape_landscape' },
+    { value: 'landscape', label: 'frameleaf_studio_export_shape_landscape' },
     ...shapes.filter((entry) => entry.value !== StudioExportShape.Original),
   ];
-  let shape = $state(StudioExportShape.Original);
+  let shape = $state<StudioExportRequestShape>(StudioExportShape.Original);
   const reshaped = $derived(isReshaped(shape));
   /** The person's move of each shot, as a share of the frame width; applied to the whole shot. */
   let nudges = $state<Record<string, number>>({});
@@ -414,7 +415,7 @@
     !STUDIO_STILL_FORMATS.includes(value) &&
     !STUDIO_AUDIO_FORMATS.includes(value) &&
     ![StudioExportFormat.Mp4HevcMain10, StudioExportFormat.WebmAv1, StudioExportFormat.Prores422Hq].includes(value);
-  const chooseShape = (value: StudioExportShape) => {
+  const chooseShape = (value: StudioExportRequestShape) => {
     chosen = true;
     shapeNudges = { ...shapeNudges, [shape]: nudges };
     shape = value;
@@ -449,7 +450,7 @@
       }
     })();
   });
-  const variantFraming = (value: StudioExportShape) =>
+  const variantFraming = (value: StudioExportRequestShape) =>
     framing?.shots.map((item) => ({
       clipId: item.clipId,
       path: cropPath(
@@ -458,7 +459,7 @@
         cropShare(value, framing!),
       ),
     })) ?? [];
-  const reviewSignature = (value: StudioExportShape) =>
+  const reviewSignature = (value: StudioExportRequestShape) =>
     JSON.stringify({
       revision: framing?.revision,
       format,
@@ -470,7 +471,7 @@
       range: selectedRange,
       framing: variantFraming(value),
     });
-  const deliveryVerdict = (value: StudioExportShape) =>
+  const deliveryVerdict = (value: StudioExportRequestShape) =>
     evaluateStudioRender(renderEvidence, destination, {
       format,
       color,
@@ -710,7 +711,7 @@
               multiDelivery = event.currentTarget.checked;
               reviewed = {};
               smoothFactor = null;
-              chooseShape(multiDelivery ? StudioExportShape.Landscape : StudioExportShape.Original);
+              chooseShape(multiDelivery ? 'landscape' : StudioExportShape.Original);
             }}
           />
           {$t('frameleaf_studio_export_multiple')}

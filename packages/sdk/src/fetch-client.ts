@@ -15748,7 +15748,7 @@ export type StudioExportSettingsDto = {
     range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
     /** Legacy shape values; newer shapes are reported in deliveryShape */
-    shape?: StudioExportLegacyShape;
+    shape?: StudioExportShape;
     /** Absent uses the native `burn` default */
     subtitleMode?: StudioExportSubtitleMode;
 };
@@ -16337,6 +16337,7 @@ export type StudioExportListResponseDto = {
     /** Matching versions, before paging */
     total: number;
 };
+export type StudioExportRequestShape = StudioExportShape | "landscape";
 export type StudioExportSmoothMotionDto = {
     /** Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately */
     destinationId: string;
@@ -16366,7 +16367,7 @@ export type StudioExportCreateDto = {
     requestKey?: string;
     resolution: StudioExportResolution;
     /** Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
-    shape?: StudioExportShape;
+    shape?: StudioExportRequestShape;
     smoothMotion?: StudioExportSmoothMotionDto;
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
@@ -38971,7 +38972,7 @@ export enum StudioExportQuality {
     High = "high",
     Ultra = "ultra"
 }
-export enum StudioExportLegacyShape {
+export enum StudioExportShape {
     Original = "original",
     Vertical = "vertical",
     Square = "square"
@@ -39089,12 +39090,6 @@ export enum StudioDeliveryDestination {
     Lan = "lan"
 }
 export enum StudioDeliveryShape {
-    Landscape = "landscape",
-    Vertical = "vertical",
-    Square = "square"
-}
-export enum StudioExportShape {
-    Original = "original",
     Landscape = "landscape",
     Vertical = "vertical",
     Square = "square"

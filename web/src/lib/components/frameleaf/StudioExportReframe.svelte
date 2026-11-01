@@ -13,6 +13,7 @@
   import {
     AssetMediaSize,
     StudioExportShape,
+    type StudioExportRequestShape,
     StudioReframeSubject,
     type StudioReframeResponseDto,
   } from '@frameleaf/sdk';
@@ -38,7 +39,7 @@
     nudges = $bindable({}),
   }: {
     framing: StudioReframeResponseDto;
-    shape: StudioExportShape;
+    shape: StudioExportRequestShape;
     /** The exported file's size, shown on the preview. */
     size: { width: number; height: number } | null;
     /** The person's move of each shot, as a share of the frame width. */
@@ -54,9 +55,7 @@
   const index = $derived(shot ? shots.indexOf(shot) : -1);
   const frame = $derived({ width: framing.width, height: framing.height });
   const share = $derived(cropShare(shape, frame));
-  const aspect = $derived(
-    shape === StudioExportShape.Landscape ? 16 / 9 : shape === StudioExportShape.Square ? 1 : 9 / 16,
-  );
+  const aspect = $derived(shape === 'landscape' ? 16 / 9 : shape === StudioExportShape.Square ? 1 : 9 / 16);
   const heightShare = $derived(Math.min(1, frame.width / aspect / frame.height));
   const top = $derived((1 - heightShare) / 2);
   const nudge = $derived(shot ? (nudges[shot.clipId] ?? 0) : 0);
@@ -104,7 +103,7 @@
   };
 
   const shapeLabel = $derived(
-    shape === StudioExportShape.Landscape
+    shape === 'landscape'
       ? $t('frameleaf_studio_export_shape_landscape')
       : shape === StudioExportShape.Square
         ? $t('frameleaf_studio_export_shape_square')

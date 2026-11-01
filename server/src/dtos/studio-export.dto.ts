@@ -64,9 +64,14 @@ const StudioExportRangeSchema = z
   .meta({ id: 'StudioExportRangeDto' });
 
 const StudioExportShapeSchema = z
-  .enum(STUDIO_EXPORT_SHAPES)
-  .describe('Shape of the picture: the project’s own, landscape 16:9, vertical 9:16 or square 1:1')
+  .enum(['original', 'vertical', 'square'])
+  .describe('Shape of the picture: the project’s own, vertical 9:16 or square 1:1')
   .meta({ id: 'StudioExportShape' });
+
+const StudioExportRequestShapeSchema = z
+  .enum(STUDIO_EXPORT_SHAPES)
+  .describe('Delivery shape, including landscape 16:9')
+  .meta({ id: 'StudioExportRequestShape' });
 
 export const StudioReframePointSchema = z
   .object({
@@ -123,7 +128,7 @@ const StudioExportCreateSchema = z
       'Idempotency key; a repeated submit answers with the first export',
     ),
     // FL-563
-    shape: StudioExportShapeSchema.optional().describe(
+    shape: StudioExportRequestShapeSchema.optional().describe(
       'Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed',
     ),
     framing: z
@@ -183,10 +188,6 @@ const StudioExportBatchCreateSchema = z
   .strict()
   .meta({ id: 'StudioExportBatchCreateDto' });
 
-const StudioExportLegacyShapeSchema = z
-  .enum(['original', 'vertical', 'square'])
-  .meta({ id: 'StudioExportLegacyShape' });
-
 const StudioExportSettingsSchema = z
   .object({
     format: StudioExportFormatSchema,
@@ -199,7 +200,7 @@ const StudioExportSettingsSchema = z
     mastering: StudioExportMasteringSchema.optional().describe(
       'Declared PQ mastering display, fixed when this export was submitted',
     ),
-    shape: StudioExportLegacyShapeSchema.optional().describe(
+    shape: StudioExportShapeSchema.optional().describe(
       'Legacy shape values; newer shapes are reported in deliveryShape',
     ),
     deliveryShape: z

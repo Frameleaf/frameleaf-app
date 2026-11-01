@@ -14,6 +14,7 @@ import {
   StudioExportFormat,
   StudioExportResolution,
   StudioExportShape,
+  type StudioExportRequestShape,
   StudioExportSubtitleMode,
   StudioExportQuality,
   type StudioRenderCandidateDto,
@@ -31,7 +32,7 @@ export type StudioRenderSettings = {
   subtitleMode?: StudioExportSubtitleMode;
   quality?: StudioExportQuality;
   /** FL-563: vertical and square need SDR video and a session that reframes (`reframe-v1`). */
-  shape?: StudioExportShape;
+  shape?: StudioExportRequestShape;
   /**
    * FL-674: the project keeps an HDR picture. Without it the picture is SDR, and a 10-bit video
    * format needs a session that writes one for SDR (`sdrTenBit`), not only HDR masters.
@@ -162,7 +163,7 @@ export const evaluateStudioRender = (
     (candidate) =>
       candidate.outputFormats.includes(settings.format) &&
       (!reshaped || candidate.reframe === true) &&
-      (settings.shape !== StudioExportShape.Landscape || candidate.landscapeReframe === true) &&
+      (settings.shape !== 'landscape' || candidate.landscapeReframe === true) &&
       (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)) &&
       (!embedded || candidate.embeddedOutputFormats?.includes(settings.format)),
   );

@@ -84,7 +84,7 @@ describe('Studio measured render progress', () => {
     ['bundled_invalid_range', 'export range within the timeline'],
     ['bundled_captions_changed', 'Save the project, review the captions'],
     ['bundled_captions_unsupported', 'caption mode and format'],
-    ['bundled_subtitles_unsupported', 'burned-in captions'],
+    ['bundled_subtitles_unsupported', 'remove subtitle items for an HDR export without captions'],
     ['bundled_hdr_unsupported', 'HEVC Main10'],
     ['bundled_hdr_resolution', 'project size and original shape'],
     ['bundled_invalid_mastering', 'HDR mastering display settings'],

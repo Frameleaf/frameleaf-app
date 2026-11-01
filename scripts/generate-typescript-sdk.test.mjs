@@ -23,7 +23,7 @@ const enums = {
   StudioImportPublicationCancelStatus: ["cancelled", "already-published"],
 };
 
-for (const malformed of [false, true]) {
+for (const malformed of [false, true, "request-shape", "response-shape"]) {
   test(`private SDK projection preserves enum exports and canonical input (malformed=${malformed})`, () => {
     const directory = mkdtempSync(
       path.join(tmpdir(), "frameleaf-sdk-projection-"),
@@ -39,6 +39,15 @@ for (const malformed of [false, true]) {
           },
         ]),
       );
+      schemas.StudioExportShape = {
+        type: "string",
+        enum: ["original", "vertical", "square"],
+      };
+      schemas.StudioExportRequestShape = {
+        type: "string",
+        enum: ["original", "landscape", "vertical", "square"],
+        description: "Delivery shape",
+      };
       schemas.Evidence = {
         type: "string",
         enum: ["registered-current-originals"],
@@ -70,7 +79,11 @@ for (const malformed of [false, true]) {
         },
         components: { schemas },
       };
-      if (malformed) schemas.ProcessingProvenanceVersion.enum = [2];
+      if (malformed === true) schemas.ProcessingProvenanceVersion.enum = [2];
+      if (malformed === "request-shape")
+        schemas.StudioExportRequestShape.enum.push("unknown");
+      if (malformed === "response-shape")
+        schemas.StudioExportShape.enum.push("landscape");
       const input = path.join(directory, "input.json");
       const output = path.join(directory, "output.json");
       const source = JSON.stringify(spec);
@@ -96,7 +109,9 @@ fs.copyFileSync(process.argv.at(-2), process.argv.at(-1));
         assert.notEqual(result.status, 0);
         assert.match(
           result.stderr,
-          /Structural enum requires generator review/u,
+          malformed === true
+            ? /Structural enum requires generator review/u
+            : /Studio export request shape requires generator review/u,
         );
         return;
       }
@@ -116,6 +131,14 @@ fs.copyFileSync(process.argv.at(-2), process.argv.at(-1));
         if (name === "ProcessingProvenanceVersion")
           assert.equal(property.format, "int32");
       }
+      assert.deepEqual(projected.StudioExportShape, schemas.StudioExportShape);
+      assert.deepEqual(projected.StudioExportRequestShape, {
+        description: "Delivery shape",
+        anyOf: [
+          { $ref: "#/components/schemas/StudioExportShape" },
+          { type: "string", enum: ["landscape"] },
+        ],
+      });
       assert.deepEqual(projected.Evidence, schemas.Evidence);
       assert.deepEqual(
         projected.Envelope.properties.Evidence,

@@ -138242,7 +138242,7 @@
             "$ref": "#/components/schemas/StudioExportResolution"
           },
           "shape": {
-            "$ref": "#/components/schemas/StudioExportShape",
+            "$ref": "#/components/schemas/StudioExportRequestShape",
             "description": "Defaults to `original`. Landscape, vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
           },
           "smoothMotion": {
@@ -138330,14 +138330,6 @@
           "path"
         ],
         "type": "object"
-      },
-      "StudioExportLegacyShape": {
-        "enum": [
-          "original",
-          "vertical",
-          "square"
-        ],
-        "type": "string"
       },
       "StudioExportListResponseDto": {
         "properties": {
@@ -138433,6 +138425,16 @@
         ],
         "type": "string"
       },
+      "StudioExportRequestShape": {
+        "description": "Delivery shape, including landscape 16:9",
+        "enum": [
+          "original",
+          "landscape",
+          "vertical",
+          "square"
+        ],
+        "type": "string"
+      },
       "StudioExportResolution": {
         "description": "Output resolution",
         "enum": [
@@ -138501,7 +138503,7 @@
             "$ref": "#/components/schemas/StudioExportResolution"
           },
           "shape": {
-            "$ref": "#/components/schemas/StudioExportLegacyShape",
+            "$ref": "#/components/schemas/StudioExportShape",
             "description": "Legacy shape values; newer shapes are reported in deliveryShape"
           },
           "subtitleMode": {
@@ -138517,10 +138519,9 @@
         "type": "object"
       },
       "StudioExportShape": {
-        "description": "Shape of the picture: the project’s own, landscape 16:9, vertical 9:16 or square 1:1",
+        "description": "Shape of the picture: the project’s own, vertical 9:16 or square 1:1",
         "enum": [
           "original",
-          "landscape",
           "vertical",
           "square"
         ],

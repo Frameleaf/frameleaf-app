@@ -138,11 +138,11 @@ const BUNDLED_EXPORT_FAILURE_GUIDANCE = new Map([
   ],
   [
     'bundled_captions_unsupported',
-    'Review the caption mode and format. Use burned-in captions or a supported SDR video format, then export again from Studio.',
+    'Review the caption mode and format. Use burned-in captions or a supported SDR video format, or remove subtitle items for an HDR export without captions, then export again from Studio.',
   ],
   [
     'bundled_subtitles_unsupported',
-    'Review the caption mode and format. Use burned-in captions or a supported SDR video format, then export again from Studio.',
+    'Review the caption mode and format. Use burned-in captions or a supported SDR video format, or remove subtitle items for an HDR export without captions, then export again from Studio.',
   ],
   [
     'bundled_hdr_unsupported',

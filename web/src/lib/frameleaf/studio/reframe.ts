@@ -8,7 +8,7 @@
  * shot), so the crop still follows the subject after it is moved. The dialog sends the resulting path
  * of every shot with the export, and the server seals it (`server/src/utils/studio-reframe.ts`).
  */
-import { StudioExportResolution, StudioExportShape } from '@frameleaf/sdk';
+import { StudioExportResolution, StudioExportShape, type StudioExportRequestShape } from '@frameleaf/sdk';
 
 export type ReframePoint = { t: number; x: number };
 
@@ -18,8 +18,8 @@ export const REFRAME_STEP_LARGE = 0.05;
 /** A move smaller than this is no move: the shot counts as automatic. */
 const MOVED = 0.001;
 
-const SHAPE_ASPECT: Record<Exclude<StudioExportShape, StudioExportShape.Original>, number> = {
-  [StudioExportShape.Landscape]: 16 / 9,
+const SHAPE_ASPECT: Record<Exclude<StudioExportRequestShape, StudioExportShape.Original>, number> = {
+  landscape: 16 / 9,
   [StudioExportShape.Vertical]: 9 / 16,
   [StudioExportShape.Square]: 1,
 };
@@ -34,14 +34,14 @@ const SHORT_SIDE: Partial<Record<StudioExportResolution, number>> = {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const round4 = (value: number) => Math.round(value * 10_000) / 10_000;
 
-export const isReshaped = (shape: StudioExportShape) => shape !== StudioExportShape.Original;
+export const isReshaped = (shape: StudioExportRequestShape) => shape !== StudioExportShape.Original;
 
 /**
  * The size of the exported file: 1080p vertical is 1080 × 1920, 1080p square 1080 × 1080. The
  * original shape keeps the project's proportions with the resolution as its short side.
  */
 export const shapedSize = (
-  shape: StudioExportShape,
+  shape: StudioExportRequestShape,
   resolution: StudioExportResolution,
   frame?: { width: number; height: number },
 ) => {
@@ -49,7 +49,7 @@ export const shapedSize = (
   if (!short) {
     return null;
   }
-  if (shape === StudioExportShape.Landscape) {
+  if (shape === 'landscape') {
     return { width: Math.round((short * 16) / 9 / 2) * 2, height: short };
   }
   if (shape === StudioExportShape.Vertical) {
@@ -64,7 +64,7 @@ export const shapedSize = (
 };
 
 /** The crop width as a share of the project frame width; 1 when the frame is no wider than the shape. */
-export const cropShare = (shape: StudioExportShape, frame: { width: number; height: number }) =>
+export const cropShare = (shape: StudioExportRequestShape, frame: { width: number; height: number }) =>
   isReshaped(shape) ? Math.min(1, (frame.height * SHAPE_ASPECT[shape as keyof typeof SHAPE_ASPECT]) / frame.width) : 1;
 
 /** A crop centre the crop can reach: half a crop from either edge. */
