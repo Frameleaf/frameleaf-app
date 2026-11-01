@@ -20,6 +20,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { stat } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -162,7 +163,16 @@ export class LockedEncryptionService {
       askAgainHours: row ? row.askAgainHours : LOCKED_ASK_AGAIN_DEFAULT,
       recoveryKeyCreatedAt: row ? new Date(row.recoveryKeyCreatedAt).toISOString() : null,
       progress,
-      counts: { encrypted, notEncryptable: assets.length - encryptable.length },
+      counts: {
+        encrypted,
+        notEncryptable: assets.length - encryptable.length,
+        // N5: a file deleted outside Frameleaf keeps turning off (or an item's unlock) waiting
+        missing: row
+          ? await this.countMissing(
+              encryptable.filter((asset) => row.status === 'decrypting' || !!asset.pendingUnlockAt),
+            )
+          : 0,
+      },
     };
   }
 
@@ -1147,6 +1157,23 @@ export class LockedEncryptionService {
   }
 
   /** How many of these items' originals are encrypted now (they start with `FLLK`, spec §5). */
+  /** How many of these items' originals are gone from disk (ENOENT); other errors don't count. */
+  private async countMissing(assets: LockedEncryptionAsset[]): Promise<number> {
+    let count = 0;
+    for (let index = 0; index < assets.length; index += COUNT_CONCURRENCY) {
+      const batch = assets.slice(index, index + COUNT_CONCURRENCY);
+      const gone = await Promise.all(
+        batch.map(({ originalPath }) =>
+          stat(originalPath)
+            .then(() => false)
+            .catch((error: NodeJS.ErrnoException) => error?.code === 'ENOENT'),
+        ),
+      );
+      count += gone.filter(Boolean).length;
+    }
+    return count;
+  }
+
   private async countEncrypted(assets: LockedEncryptionAsset[]): Promise<number> {
     let count = 0;
     for (let index = 0; index < assets.length; index += COUNT_CONCURRENCY) {

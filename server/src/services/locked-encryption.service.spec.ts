@@ -554,6 +554,29 @@ describe(LockedEncryptionService.name, () => {
       }
     });
 
+    it('counts items whose original is missing while turning off or unlocking waits on them (N5)', async () => {
+      await enablePin();
+      const media = await fs.mkdtemp(join(tmpdir(), 'locked-status-'));
+      try {
+        await fs.writeFile(join(media, 'sealed'), 'FLLK....');
+        const lockedAssets = [
+          { id: 'a', originalPath: join(media, 'sealed'), encryptable: true, pendingUnlockAt: null },
+          { id: 'b', originalPath: join(media, 'gone-1'), encryptable: true, pendingUnlockAt: null },
+          { id: 'c', originalPath: join(media, 'gone-2'), encryptable: true, pendingUnlockAt: new Date() },
+          { id: 'd', originalPath: '/external/gone', encryptable: false, pendingUnlockAt: null },
+        ];
+        mocks.lockedEncryption.getLockedAssets.mockResolvedValue(lockedAssets);
+
+        // encrypting: only the pending unlock waits on its missing file
+        await expect(sut.getStatus(auth)).resolves.toMatchObject({ counts: { missing: 1 } });
+
+        rows.set(userId, { ...rows.get(userId)!, status: 'decrypting' });
+        await expect(sut.getStatus(auth)).resolves.toMatchObject({ counts: { missing: 2 } });
+      } finally {
+        await fs.rm(media, { recursive: true, force: true });
+      }
+    });
+
     it('reports off with the default ask-again time', async () => {
       await expect(sut.getStatus(auth)).resolves.toMatchObject({
         enabled: false,

@@ -17645,6 +17645,8 @@ export type LockedEncryptionDisableDto = {
 export type LockedEncryptionCountsDto = {
     /** Locked items whose files are encrypted */
     encrypted: number;
+    /** Locked items that turning off, or taking an item out of Locked, is waiting on because their file is missing */
+    missing?: number;
     /** Locked items in a folder Frameleaf can’t change, which stay unencrypted */
     notEncryptable: number;
 };

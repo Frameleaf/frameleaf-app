@@ -51,6 +51,13 @@ const LockedEncryptionStatusSchema = z
           .int()
           .nonnegative()
           .describe('Locked items in a folder Frameleaf can’t change, which stay unencrypted'),
+        missing: z
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'Locked items that turning off, or taking an item out of Locked, is waiting on because their file is missing',
+          ),
       })
       .meta({ id: 'LockedEncryptionCountsDto' }),
   })
