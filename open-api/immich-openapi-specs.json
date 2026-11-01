@@ -138331,6 +138331,14 @@
         ],
         "type": "object"
       },
+      "StudioExportLegacyShape": {
+        "enum": [
+          "original",
+          "vertical",
+          "square"
+        ],
+        "type": "string"
+      },
       "StudioExportListResponseDto": {
         "properties": {
           "items": {
@@ -138470,6 +138478,10 @@
           "color": {
             "$ref": "#/components/schemas/StudioExportColor"
           },
+          "deliveryShape": {
+            "description": "Actual delivery shape, including future values; fall back to shape when absent",
+            "type": "string"
+          },
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
           },
@@ -138489,8 +138501,8 @@
             "$ref": "#/components/schemas/StudioExportResolution"
           },
           "shape": {
-            "$ref": "#/components/schemas/StudioExportShape",
-            "description": "Absent on exports in the project’s own shape"
+            "$ref": "#/components/schemas/StudioExportLegacyShape",
+            "description": "Legacy shape values; newer shapes are reported in deliveryShape"
           },
           "subtitleMode": {
             "$ref": "#/components/schemas/StudioExportSubtitleMode",

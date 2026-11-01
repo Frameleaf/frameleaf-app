@@ -1015,7 +1015,8 @@ describe('Studio export dialog: vertical and square', () => {
     await fireEvent.click(shapeButton('frameleaf_studio_export_shape_landscape'));
     expect(exportButton()).toBeEnabled();
     expect(screen.getByTestId('studio-export-summary')).toHaveTextContent('frameleaf_studio_export_shape_vertical');
-    expect(screen.getByTestId('studio-export-summary')).not.toHaveTextContent('frameleaf_studio_export_shape_landscape');
+    expect(screen.getByTestId('studio-export-summary')).not.toHaveTextContent(
+      'frameleaf_studio_export_shape_landscape',
+    );
   });
-
 });

@@ -2398,7 +2398,13 @@ export class StudioExportService {
       reframe: _sealedReframe,
       ...publicSettings
     } = version.settings;
-    const settings = publicSettings as StudioExportVersionDto['settings'];
+    const { shape, ...otherSettings } = publicSettings;
+    // Keep the legacy response enum closed; new delivery shapes are additive metadata.
+    const settings = {
+      ...otherSettings,
+      ...(shape !== undefined && { deliveryShape: shape }),
+      ...(['original', 'vertical', 'square'].includes(String(shape)) && { shape }),
+    } as StudioExportVersionDto['settings'];
     const seal = sidecarSealOf(version.settings);
     return {
       id: version.id,

@@ -15737,6 +15737,8 @@ export type StudioExportSettingsDto = {
     /** Absent on exports made before audio was a choice */
     audio?: StudioExportAudio;
     color: StudioExportColor;
+    /** Actual delivery shape, including future values; fall back to shape when absent */
+    deliveryShape?: string;
     format: StudioExportFormat;
     /** Declared PQ mastering display, fixed when this export was submitted */
     mastering?: StudioExportMastering;
@@ -15745,8 +15747,8 @@ export type StudioExportSettingsDto = {
     /** Absent renders the whole main timeline */
     range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
-    /** Absent on exports in the project’s own shape */
-    shape?: StudioExportShape;
+    /** Legacy shape values; newer shapes are reported in deliveryShape */
+    shape?: StudioExportLegacyShape;
     /** Absent uses the native `burn` default */
     subtitleMode?: StudioExportSubtitleMode;
 };
@@ -38969,9 +38971,8 @@ export enum StudioExportQuality {
     High = "high",
     Ultra = "ultra"
 }
-export enum StudioExportShape {
+export enum StudioExportLegacyShape {
     Original = "original",
-    Landscape = "landscape",
     Vertical = "vertical",
     Square = "square"
 }
@@ -39088,6 +39089,12 @@ export enum StudioDeliveryDestination {
     Lan = "lan"
 }
 export enum StudioDeliveryShape {
+    Landscape = "landscape",
+    Vertical = "vertical",
+    Square = "square"
+}
+export enum StudioExportShape {
+    Original = "original",
     Landscape = "landscape",
     Vertical = "vertical",
     Square = "square"

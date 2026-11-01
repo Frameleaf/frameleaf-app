@@ -650,11 +650,15 @@
     }),
   );
 
-  const batchSummary = $derived(selectedShapes.map((value) => {
-    const output = shapedSize(value, resolution);
-    const label = $t(deliveryShapes.find((item) => item.value === value)?.label ?? 'unknown');
-    return `${label}${output ? ` ${sizeLabel(output)}` : ''}`;
-  }).join(' · ') + ` · ${$t(destinations.find((item) => item.value === destination)?.label ?? 'unknown')}`);
+  const batchSummary = $derived(
+    selectedShapes
+      .map((value) => {
+        const output = shapedSize(value, resolution);
+        const label = $t(deliveryShapes.find((item) => item.value === value)?.label ?? 'unknown');
+        return `${label}${output ? ` ${sizeLabel(output)}` : ''}`;
+      })
+      .join(' · ') + ` · ${$t(destinations.find((item) => item.value === destination)?.label ?? 'unknown')}`,
+  );
 
   const submit = () => {
     if (canExport) {

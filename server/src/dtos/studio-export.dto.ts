@@ -183,6 +183,10 @@ const StudioExportBatchCreateSchema = z
   .strict()
   .meta({ id: 'StudioExportBatchCreateDto' });
 
+const StudioExportLegacyShapeSchema = z
+  .enum(['original', 'vertical', 'square'])
+  .meta({ id: 'StudioExportLegacyShape' });
+
 const StudioExportSettingsSchema = z
   .object({
     format: StudioExportFormatSchema,
@@ -195,7 +199,13 @@ const StudioExportSettingsSchema = z
     mastering: StudioExportMasteringSchema.optional().describe(
       'Declared PQ mastering display, fixed when this export was submitted',
     ),
-    shape: StudioExportShapeSchema.optional().describe('Absent on exports in the project’s own shape'),
+    shape: StudioExportLegacyShapeSchema.optional().describe(
+      'Legacy shape values; newer shapes are reported in deliveryShape',
+    ),
+    deliveryShape: z
+      .string()
+      .optional()
+      .describe('Actual delivery shape, including future values; fall back to shape when absent'),
   })
   .meta({ id: 'StudioExportSettingsDto' });
 

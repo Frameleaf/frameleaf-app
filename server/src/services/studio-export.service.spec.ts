@@ -1346,6 +1346,19 @@ describe(StudioExportService.name, () => {
         expect(version.settings).not.toHaveProperty('reframe');
       });
 
+      it('keeps landscape out of the legacy response enum without changing its render settings', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1', 'reframe-landscape-v1'] })]);
+        repository.createWithRender.mockImplementation((job, version) => ({
+          operation: operation(),
+          version: versionRow({ ...version, state: StudioExportVersionState.Rendering }),
+        }));
+        const { version } = await sut.create(auth(), PROJECT, { ...shapedDto, shape: 'landscape' });
+        expect(version.settings.deliveryShape).toBe('landscape');
+        expect(version.settings).not.toHaveProperty('shape');
+        expect(version.settings).not.toHaveProperty('reframe');
+        expect(repository.createWithRender.mock.calls[0][0].settings.shape).toBe('landscape');
+      });
+
       it('is offered only to a render worker that reframes', async () => {
         mockRenderSessions([liveSession({ formats: ['mp4'] })]);
         await expect(sut.create(auth(), PROJECT, shapedDto)).rejects.toMatchObject({
