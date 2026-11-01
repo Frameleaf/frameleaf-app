@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type TripPhoto,
   describeTrip,
   estimateDate,
   matchTripCandidate,
   suspiciousDate,
-  type TripPhoto,
   utcOffset,
 } from 'src/utils/album-suggestions.js';
 
@@ -44,7 +44,7 @@ describe('describeTrip', () => {
     expect(trip.segments).toHaveLength(2);
     expect(trip.segments[0].from).toEqual(at('2026-08-11T06:00:00Z'));
     expect(trip.segments[0].to).toEqual(at('2026-08-16T22:00:00Z'));
-    expect(trip.cameras.has('Apple\u0000iPhone 16 Pro')).toBe(true);
+    expect(trip.cameras.has('Apple\0iPhone 16 Pro')).toBe(true);
   });
 
   it('ignores everyday albums and stray photos', () => {

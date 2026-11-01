@@ -1,12 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
-import type { AlbumSuggestionRepository, CandidateRow, TripPhotoRow } from 'src/repositories/album-suggestion.repository.js';
+import { Mocked, vitest } from 'vitest';
+import type {
+  AlbumSuggestionRepository,
+  CandidateRow,
+  TripPhotoRow,
+} from 'src/repositories/album-suggestion.repository.js';
 import { JobName, JobStatus } from 'src/enum.js';
 import { AlbumSuggestionService } from 'src/services/album-suggestion.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
-import { Mocked, vitest } from 'vitest';
 
 const LAKE = { latitude: 51.4254, longitude: -116.1773 };
 const hours = (iso: string, offset = -6) => ({
@@ -151,7 +155,10 @@ describe(AlbumSuggestionService.name, () => {
         { assetId: 'wa', referenceId: 'a4', distance: 0.03 },
       ]);
       suggestions.getCandidates.mockResolvedValue([
-        candidate('wa', '2026-08-01T12:00:00', { originalFileName: 'IMG-20260801-WA0001.jpg', hasCameraDetails: false }),
+        candidate('wa', '2026-08-01T12:00:00', {
+          originalFileName: 'IMG-20260801-WA0001.jpg',
+          hasCameraDetails: false,
+        }),
       ]);
       await expect(sut.getSuggestions(auth, albumId)).resolves.toMatchObject({ needDate: [] });
     });
@@ -199,7 +206,13 @@ describe(AlbumSuggestionService.name, () => {
 
       addAssets.mockClear();
       suggestions.getCandidates.mockResolvedValue([
-        candidate('phone', '2026-08-12T19:00:00', { latitude: null, longitude: null, place: null, make: 'Apple', model: 'iPhone 16 Pro' }),
+        candidate('phone', '2026-08-12T19:00:00', {
+          latitude: null,
+          longitude: null,
+          place: null,
+          make: 'Apple',
+          model: 'iPhone 16 Pro',
+        }),
       ]);
       await sut.handleAutoAdd({ id: 'phone' });
       expect(addAssets).not.toHaveBeenCalled();

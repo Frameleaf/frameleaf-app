@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AlbumSuggestionReason as ReasonDto } from 'src/dtos/album-suggestion.dto.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { TripPhotoRow } from 'src/repositories/album-suggestion.repository.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf } from 'src/types.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AlbumDateSuggestion,
   AlbumSuggestionAutoAddDto,
@@ -8,14 +13,9 @@ import {
   AlbumTripSuggestion,
 } from 'src/dtos/album-suggestion.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { OnEvent, OnJob } from 'src/decorators.js';
 import { FrameleafWorker, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
-import type { TripPhotoRow } from 'src/repositories/album-suggestion.repository.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
-import type { JobOf } from 'src/types.js';
 import {
   type SuggestionReason,
   type Trip,
@@ -152,7 +152,11 @@ export class AlbumSuggestionService extends BaseService {
     const candidates = await suggestions.getCandidates(ownerId, albumId, candidateIds);
     if (candidates.length === 0) return [];
     const albumPeople = new Set(
-      [...(await suggestions.getPeople(ownerId, trip.photoIds)).values()].flat().map(({ id }) => id),
+      (await suggestions.getPeople(ownerId, trip.photoIds))
+        .values()
+        .toArray()
+        .flat()
+        .map(({ id }) => id),
     );
     const people = await suggestions.getPeople(
       ownerId,
@@ -164,7 +168,8 @@ export class AlbumSuggestionService extends BaseService {
     for (const candidate of candidates) {
       const doubt = suspiciousDate(candidate.originalFileName, candidate.hasCameraDetails);
       // A photo already dated inside the trip is suggested by date instead.
-      if (!doubt || trip.segments.some(({ from, to }) => candidate.takenAt >= from && candidate.takenAt <= to)) continue;
+      if (!doubt || trip.segments.some(({ from, to }) => candidate.takenAt >= from && candidate.takenAt <= to))
+        continue;
       const near = neighbours
         .filter(({ assetId }) => assetId === candidate.id)
         .flatMap(({ referenceId, distance }) => {
@@ -178,7 +183,9 @@ export class AlbumSuggestionService extends BaseService {
         neighbours: near,
         people: (people.get(candidate.id) ?? []).filter(({ id }) => albumPeople.has(id)).map(({ name }) => name),
         place:
-          located && candidate.place && isAtTripPlaces(trip, { latitude: candidate.latitude!, longitude: candidate.longitude! })
+          located &&
+          candidate.place &&
+          isAtTripPlaces(trip, { latitude: candidate.latitude!, longitude: candidate.longitude! })
             ? candidate.place
             : null,
         savedAt: doubt.savedAt,

@@ -52,7 +52,7 @@ export type SuggestionReason =
   | { kind: 'people'; names: string[] };
 
 const cameraKey = (make: string | null, model: string | null) =>
-  make?.trim() && model?.trim() ? `${make.trim()}\u0000${model.trim()}` : undefined;
+  make?.trim() && model?.trim() ? `${make.trim()}\0${model.trim()}` : undefined;
 
 /** The local calendar day of a `localDateTime` (stored as local wall time in UTC fields). */
 export const localDay = (localDateTime: Date) => localDateTime.toISOString().slice(0, 10);
@@ -73,7 +73,10 @@ export const distanceM = (a: { latitude: number; longitude: number }, b: { latit
 const located = <T extends { latitude: number | null; longitude: number | null }>(
   item: T,
 ): item is T & { latitude: number; longitude: number } =>
-  item.latitude !== null && item.longitude !== null && Number.isFinite(item.latitude) && Number.isFinite(item.longitude);
+  item.latitude !== null &&
+  item.longitude !== null &&
+  Number.isFinite(item.latitude) &&
+  Number.isFinite(item.longitude);
 
 /** The album's trip: time segments split at long gaps, the places photographed, and the cameras used. */
 export const describeTrip = (photos: TripPhoto[]): Trip | undefined => {
@@ -86,7 +89,8 @@ export const describeTrip = (photos: TripPhoto[]): Trip | undefined => {
   }
   const trips = groups.filter(
     (group) =>
-      group.length >= TRIP_MIN_PHOTOS && group.at(-1)!.takenAt.getTime() - group[0].takenAt.getTime() <= TRIP_MAX_SPAN_MS,
+      group.length >= TRIP_MIN_PHOTOS &&
+      group.at(-1)!.takenAt.getTime() - group[0].takenAt.getTime() <= TRIP_MAX_SPAN_MS,
   );
   if (trips.length === 0) return;
   const kept = trips.flat();
@@ -104,9 +108,7 @@ export const describeTrip = (photos: TripPhoto[]): Trip | undefined => {
         localEnd: new Date(Math.max(...local)),
       };
     }),
-    points: points
-      .filter((_, index) => index % step === 0)
-      .map(({ latitude, longitude }) => ({ latitude, longitude })),
+    points: points.filter((_, index) => index % step === 0).map(({ latitude, longitude }) => ({ latitude, longitude })),
     cameras: new Set(kept.map(({ make, model }) => cameraKey(make, model)).filter((key): key is string => !!key)),
     photoIds: kept.map(({ id }) => id),
   };

@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
-import { LibraryScope } from 'src/enum.js';
 import type { DB } from 'src/schema/index.js';
+import { LibraryScope } from 'src/enum.js';
 import { LOOKS_LIKE_DISTANCE } from 'src/utils/album-suggestions.js';
 import { hiddenByOwnerRules, validLandmarkMatch } from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';

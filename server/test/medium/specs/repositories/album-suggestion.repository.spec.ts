@@ -67,8 +67,7 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
     await db?.destroy();
   });
 
-  const inAlbum = async (assetId: string) =>
-    db.insertInto('album_asset').values({ albumId, assetId }).execute();
+  const inAlbum = async (assetId: string) => db.insertInto('album_asset').values({ albumId, assetId }).execute();
 
   it('describes the trip and finds photos taken during it that are not in the album', async () => {
     const tripIds: string[] = [];
@@ -92,6 +91,9 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
     const window = [{ from: new Date(Date.UTC(2026, 7, 11)), to: new Date(Date.UTC(2026, 7, 14)) }];
     const candidates = await sut.getTripCandidates(ownerId, albumId, window);
     expect(candidates.map(({ id }) => id).sort()).toEqual([located, unlocated].sort());
+    // Locked, archived, someone else's and dismissed photos are never suggested.
+    for (const id of [locked, archived, someoneElses, dismissed])
+      expect(candidates.map((row) => row.id)).not.toContain(id);
     expect(candidates.find(({ id }) => id === unlocated)).toMatchObject({
       latitude: null,
       longitude: null,
@@ -132,10 +134,22 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
       .select('clusterGroupId')
       .where('id', '=', ownerId)
       .executeTakeFirstOrThrow();
-    const group = await db.insertInto('person_group').values({ clusterGroupId }).returning('id').executeTakeFirstOrThrow();
-    await db.insertInto('asset_face').values(mediumFactory.assetFaceInsert({ assetId: photo, personGroupId: group.id })).execute();
-    await db.insertInto('person').values(mediumFactory.personInsert({ ownerId, personGroupId: group.id, name: 'Emma' })).execute();
-    await expect(sut.getPeople(ownerId, [photo])).resolves.toEqual(new Map([[photo, [{ id: group.id, name: 'Emma' }]]]));
+    const group = await db
+      .insertInto('person_group')
+      .values({ clusterGroupId })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('asset_face')
+      .values(mediumFactory.assetFaceInsert({ assetId: photo, personGroupId: group.id }))
+      .execute();
+    await db
+      .insertInto('person')
+      .values(mediumFactory.personInsert({ ownerId, personGroupId: group.id, name: 'Emma' }))
+      .execute();
+    await expect(sut.getPeople(ownerId, [photo])).resolves.toEqual(
+      new Map([[photo, [{ id: group.id, name: 'Emma' }]]]),
+    );
 
     await expect(sut.isAutoAdd(albumId, ownerId)).resolves.toBe(false);
     await sut.setAutoAdd(albumId, ownerId, true);

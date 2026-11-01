@@ -41,7 +41,9 @@ const AlbumDateSuggestionSchema = z
     precision: z.string().describe('How precise the suggested date is: moment, day or trip'),
     dateTimeOriginal: z
       .string()
-      .describe('The suggested date, ready for an asset update (local time with offset, e.g. 2026-08-14T20:41:00-06:00)'),
+      .describe(
+        'The suggested date, ready for an asset update (local time with offset, e.g. 2026-08-14T20:41:00-06:00)',
+      ),
     reasons: z.array(AlbumSuggestionReasonSchema),
   })
   .meta({ id: 'AlbumDateSuggestionDto' });
@@ -49,7 +51,10 @@ const AlbumDateSuggestionSchema = z
 const AlbumSuggestionsResponseSchema = z
   .object({
     autoAdd: z.boolean().describe('Whether new photos from this trip are added for you automatically'),
-    tripStart: z.string().nullable().describe('First local day of the trip (YYYY-MM-DD); null when the album is not a trip'),
+    tripStart: z
+      .string()
+      .nullable()
+      .describe('First local day of the trip (YYYY-MM-DD); null when the album is not a trip'),
     tripEnd: z.string().nullable().describe('Last local day of the trip (YYYY-MM-DD)'),
     places: z.array(z.string()).describe('The places the album was photographed, most photographed first'),
     fromTrip: z.array(AlbumTripSuggestionSchema).describe('Photos taken during the trip that are not in the album'),
