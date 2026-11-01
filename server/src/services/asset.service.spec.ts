@@ -260,6 +260,35 @@ describe(AssetService.name, () => {
       expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('asset', [asset.id], asset.ownerId);
     });
 
+    it('tells a partner whether an encrypted Locked copy opens, and why not (FL-721 Task 8)', async () => {
+      const asset = AssetFactory.create();
+      const auth = AuthFactory.create({ id: asset.ownerId });
+      const rootOwnerId = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue({ ...getForAsset(asset), isLocked: true } as never);
+      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(
+        new Map([[asset.id, { rootOwnerId, rootOwnerName: 'Taylor' }]]),
+      );
+      const lockedEncryption = (sut as unknown as { lockedEncryption: { getPartnerItemView: () => unknown } })
+        .lockedEncryption;
+      const view = vi
+        .spyOn(lockedEncryption, 'getPartnerItemView')
+        .mockResolvedValue({ openable: false, reason: 'owner-passphrase', ownerName: 'Taylor' });
+
+      await expect(sut.get(auth, asset.id)).resolves.toMatchObject({
+        lockedEncryption: { openable: false, reason: 'owner-passphrase', ownerName: 'Taylor' },
+      });
+      expect(view).toHaveBeenCalledWith(auth.user.id, rootOwnerId, 'Taylor', asset.originalPath);
+
+      // a copy that isn't Locked, or whose file is plain, has no such field
+      view.mockResolvedValue(undefined);
+      await expect(sut.get(auth, asset.id)).resolves.not.toHaveProperty('lockedEncryption');
+      view.mockClear();
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      await expect(sut.get(auth, asset.id)).resolves.not.toHaveProperty('lockedEncryption');
+      expect(view).not.toHaveBeenCalled();
+    });
+
     it("never names an origin on an asset that is not the viewer's own (FL-326)", async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

@@ -143,6 +143,12 @@ const usableKey = (keyIds: Buffer[], viewerId: string | null): HeldKey | undefin
   }
 };
 
+/**
+ * Whether a loaded key that this viewer may use opens a file with these recipients, for what a
+ * screen shows only (`getPartnerItemView`); every read still goes through `openLockedRead`.
+ */
+export const hasUsableLockedKey = (keyIds: Buffer[], viewerId: string): boolean => !!usableKey(keyIds, viewerId);
+
 /** keyId (hex) → userId, from the key files; read again when an unknown key id turns up (at most once a minute). */
 let keyOwners = new Map<string, string>();
 let keyOwnersReadAt = 0;

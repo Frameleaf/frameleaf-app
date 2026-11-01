@@ -4415,6 +4415,13 @@ export type LandmarkSummaryDto = {
     /** Landmark name */
     name: string;
 };
+export type PartnerLockedEncryptionDto = {
+    /** Whether the item opens for you (with your own PIN, or a passphrase you typed) */
+    openable: boolean;
+    /** The partner's name */
+    ownerName: string;
+    reason?: PartnerLockedEncryptionReason;
+};
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
@@ -4507,6 +4514,8 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
+    lockedEncryption?: PartnerLockedEncryptionDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -6284,6 +6293,8 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
+    lockedEncryption?: PartnerLockedEncryptionDto;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -17670,6 +17681,12 @@ export type LockedEncryptionUpdateDto = {
     newPassphrase?: string;
     /** Your Locked PIN, when switching to PIN mode */
     pinCode?: string;
+};
+export type LockedEncryptionPartnerUnlockDto = {
+    /** The partner who shares their library with you and uses Advanced Security */
+    ownerId: string;
+    /** That partner's passphrase */
+    passphrase: string;
 };
 export type LockedEncryptionRecoverDto = {
     /** Advanced Security: a new passphrase */
@@ -34785,6 +34802,18 @@ export function lockLockedEncryption(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Open a partner’s encrypted Locked items
+ */
+export function unlockPartnerLockedEncryption({ lockedEncryptionPartnerUnlockDto }: {
+    lockedEncryptionPartnerUnlockDto: LockedEncryptionPartnerUnlockDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/partner-unlock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionPartnerUnlockDto
+    })));
+}
+/**
  * Reset a forgotten Locked PIN or passphrase
  */
 export function recoverLockedEncryption({ lockedEncryptionRecoverDto }: {
@@ -36372,6 +36401,10 @@ export enum DynamicRange {
 export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
+}
+export enum PartnerLockedEncryptionReason {
+    NotReady = "not-ready",
+    OwnerPassphrase = "owner-passphrase"
 }
 export enum LibraryBookmarkItemKind {
     Bookmark = "bookmark"

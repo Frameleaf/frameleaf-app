@@ -55,6 +55,24 @@ export class LockedEncryptionRepository {
     return rows.map(({ userId }) => userId);
   }
 
+  /**
+   * FL-721 (spec §6.2): the people with Locked encryption on (or turning on or off) who share their
+   * library with `partnerId`, so their encrypted Locked items may carry an entry for that partner's key.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getOwnersSharingWith(partnerId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('locked_encryption')
+      .innerJoin('partner', 'partner.sharedById', 'locked_encryption.userId')
+      .innerJoin('user', 'user.id', 'locked_encryption.userId')
+      .select('locked_encryption.userId')
+      .where('partner.sharedWithId', '=', asUuid(partnerId))
+      .where('user.deletedAt', 'is', null)
+      .orderBy('locked_encryption.userId')
+      .execute();
+    return rows.map(({ userId }) => userId);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async delete(userId: string): Promise<void> {
     await this.db.deleteFrom('locked_encryption').where('userId', '=', asUuid(userId)).execute();

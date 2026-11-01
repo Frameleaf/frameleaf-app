@@ -22,6 +22,19 @@ select
 from
   "locked_encryption"
 
+-- LockedEncryptionRepository.getOwnersSharingWith
+select
+  "locked_encryption"."userId"
+from
+  "locked_encryption"
+  inner join "partner" on "partner"."sharedById" = "locked_encryption"."userId"
+  inner join "user" on "user"."id" = "locked_encryption"."userId"
+where
+  "partner"."sharedWithId" = $1::uuid
+  and "user"."deletedAt" is null
+order by
+  "locked_encryption"."userId"
+
 -- LockedEncryptionRepository.delete
 delete from "locked_encryption"
 where

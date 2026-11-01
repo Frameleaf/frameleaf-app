@@ -277,6 +277,26 @@ describe(LockedFileRepository.name, () => {
     });
   });
 
+  describe('getOwnersSharingWith (Task 8)', () => {
+    it('lists the people with encryption on who share their library with the partner', async () => {
+      const { ctx } = setup();
+      const repository = new LockedEncryptionRepository(db);
+      const { user: partner } = await ctx.newUser();
+      const { user: encrypted } = await ctx.newUser();
+      const { user: plain } = await ctx.newUser();
+      const { user: sharedWith } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: encrypted.id, sharedWithId: partner.id });
+      await ctx.newPartner({ sharedById: plain.id, sharedWithId: partner.id });
+      // the other direction: the partner shares with someone who encrypts
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: sharedWith.id });
+      await turnOn(encrypted.id);
+      await turnOn(sharedWith.id, 'decrypting');
+
+      await expect(repository.getOwnersSharingWith(partner.id)).resolves.toEqual([encrypted.id]);
+      await expect(repository.getOwnersSharingWith(sharedWith.id)).resolves.toEqual([]);
+    });
+  });
+
   describe('withFileLock (fix round 1, C1 and I3)', () => {
     it('lets one job at a time replace a path; the second is told it is busy', async () => {
       const { sut } = setup();

@@ -60714,6 +60714,55 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/users/me/locked-encryption/partner-unlock": {
+      "post": {
+        "description": "FL-721: for a partner who shares their library with you and uses Advanced Security. Their passphrase, typed after your own PIN (or your own passphrase), opens their shared Locked items for you only, until their key is asked for again or they lock it. Tries are limited as for the Locked PIN.",
+        "operationId": "unlockPartnerLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionPartnerUnlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Open a partner’s encrypted Locked items",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/locked-encryption/recover": {
       "post": {
         "description": "FL-721: your recovery key opens your key, and the new PIN or passphrase replaces the old one. Tries are limited as for the Locked PIN.",
@@ -73304,6 +73353,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "lockedEncryption": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
+            "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
             "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
@@ -75446,6 +75499,10 @@
             "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
             "format": "date-time",
             "type": "string"
+          },
+          "lockedEncryption": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
+            "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
@@ -98423,6 +98480,27 @@
         ],
         "type": "string"
       },
+      "LockedEncryptionPartnerUnlockDto": {
+        "properties": {
+          "ownerId": {
+            "description": "The partner who shares their library with you and uses Advanced Security",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "passphrase": {
+            "description": "That partner's passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "passphrase"
+        ],
+        "type": "object"
+      },
       "LockedEncryptionProgressDto": {
         "properties": {
           "done": {
@@ -105564,6 +105642,34 @@
         "enum": [
           "shared-by",
           "shared-with"
+        ],
+        "type": "string"
+      },
+      "PartnerLockedEncryptionDto": {
+        "properties": {
+          "openable": {
+            "description": "Whether the item opens for you (with your own PIN, or a passphrase you typed)",
+            "type": "boolean"
+          },
+          "ownerName": {
+            "description": "The partner's name",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionReason"
+          }
+        },
+        "required": [
+          "openable",
+          "ownerName"
+        ],
+        "type": "object"
+      },
+      "PartnerLockedEncryptionReason": {
+        "description": "Why it doesn't open: `not-ready` until the partner next opens Locked; `owner-passphrase` until you type the partner's passphrase",
+        "enum": [
+          "not-ready",
+          "owner-passphrase"
         ],
         "type": "string"
       },

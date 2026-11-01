@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -54,6 +54,7 @@ import {
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
@@ -141,6 +142,10 @@ const withVideoVersionErrors = async <T>(call: () => Promise<T>): Promise<T> => 
 
 @Injectable()
 export class AssetService extends BaseService {
+  /** FL-721 (spec §6.2): whether a partner's encrypted Locked copy opens for the viewer. */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
@@ -240,6 +245,18 @@ export class AssetService extends BaseService {
       const origin = labels.get(asset.id);
       if (origin) {
         data.origin = origin;
+        // FL-721 (spec §6.2): a Locked copy whose file the partner encrypted says whether it opens
+        if (asset.isLocked) {
+          const lockedEncryption = await this.lockedEncryption.getPartnerItemView(
+            auth.user.id,
+            origin.rootOwnerId,
+            origin.rootOwnerName,
+            asset.originalPath,
+          );
+          if (lockedEncryption) {
+            data.lockedEncryption = lockedEncryption;
+          }
+        }
       }
     }
 

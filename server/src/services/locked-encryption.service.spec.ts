@@ -1,15 +1,24 @@
-import { type LockedKeyFile, unwrapKey } from '@frameleaf/locked-crypto';
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { type LockedKeyFile, encryptFile, keyId, readHeader, unwrapKey } from '@frameleaf/locked-crypto';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { JobName } from 'src/enum.js';
+import { JobName, JobStatus } from 'src/enum.js';
+import { type LockedSealState } from 'src/repositories/locked-file.repository.js';
 import { LockedEncryptionService, LockedKeyUnavailableException } from 'src/services/locked-encryption.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
+import { LockedKeyUnavailableError, openLockedRead } from 'src/utils/locked-read.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
-import { ServiceMocks, getMocks, newLockedEncryptionService } from 'test/utils.js';
+import { ServiceMocks, getMocks, newLockedEncryptionService, newLockedSealService } from 'test/utils.js';
 
 vi.mock('src/utils/locked-key-ipc.js', () => ({ publishLockedKey: vi.fn() }));
 
@@ -664,6 +673,286 @@ describe(LockedEncryptionService.name, () => {
       await enablePin();
       await expect(sut.assertPinResettable(userId)).rejects.toThrow(/recovery key/);
     });
+  });
+
+  describe('partners (Task 8)', () => {
+    const ASSET = '00000000-0000-4000-8000-0000000000a1';
+    let dir: string;
+    let partner: AuthDto;
+    let partnerId: string;
+    let path: string;
+    let plain: Buffer;
+    let sharing: boolean;
+
+    const publicKeyOf = (id: string) => Buffer.from(files.get(id)!.publicKey, 'base64');
+    /** The owner's file, sealed as LockedSeal seals it: the owner, then (PIN mode) partners with a key pair. */
+    const seal = async (withPartner: boolean) => {
+      const source = join(dir, 'plain.jpg');
+      await fs.writeFile(source, plain);
+      await encryptFile(
+        source,
+        path,
+        [{ publicKey: publicKeyOf(userId) }, ...(withPartner ? [{ publicKey: publicKeyOf(partnerId) }] : [])],
+        { assetId: ASSET, kind: 'original', originalFileName: 'IMG_0001.jpg', mime: 'image/jpeg' },
+      );
+      await fs.rm(source);
+    };
+    const readAs = async (viewerId: string) => {
+      const { stream } = await openLockedRead(path, viewerId);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream as AsyncIterable<Buffer>) {
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks);
+    };
+    const viewOf = (viewerId = partnerId) => sut.getPartnerItemView(viewerId, userId, 'Taylor', path);
+    /** The owner's LockedSeal jobs, on the same key files and rows. */
+    const sealService = () => {
+      const state: LockedSealState = {
+        id: ASSET,
+        ownerId: userId,
+        originalFileName: 'IMG_0001.jpg',
+        encryptable: true,
+        partnerCopy: false,
+        locked: true,
+        pendingUnlockAt: null,
+        status: 'on',
+        mode: rows.get(userId)!.mode,
+      };
+      mocks.lockedFile.getSealState.mockResolvedValue(state);
+      mocks.lockedFile.filesOf.mockImplementation(() =>
+        Promise.resolve([{ path, kind: 'original' as const, table: 'asset' }]),
+      );
+      mocks.lockedFile.withFileLock.mockImplementation(async (_path, _ownerId, work) =>
+        work((step) => step({} as never)),
+      );
+      return newLockedSealService(mocks);
+    };
+
+    beforeEach(async () => {
+      dir = await fs.mkdtemp(join(tmpdir(), 'locked-partner-'));
+      path = join(dir, 'original.jpg');
+      plain = randomBytes(70_000);
+      partner = AuthFactory.from({ name: 'Jamie' }).session({ hasElevatedPermission: true }).build();
+      partnerId = partner.user.id;
+      sharing = true;
+      // Taylor (the owner) shares their library with Jamie (the partner)
+      mocks.lockedEncryption.getOwnersSharingWith.mockImplementation((id) =>
+        Promise.resolve(sharing && id === partnerId && rows.has(userId) ? [userId] : []),
+      );
+      mocks.lockedFile.partnerRecipients.mockImplementation((ownerId) =>
+        Promise.resolve(
+          sharing && ownerId === userId && files.has(partnerId)
+            ? [{ userId: partnerId, publicKey: publicKeyOf(partnerId) }]
+            : [],
+        ),
+      );
+      mocks.lockedEncryption.getLockedAssets.mockImplementation((id) =>
+        Promise.resolve(
+          id === userId ? [{ id: ASSET, originalPath: path, encryptable: true, pendingUnlockAt: null }] : [],
+        ),
+      );
+    });
+
+    afterEach(async () => {
+      await fs.rm(dir, { recursive: true, force: true });
+    });
+
+    it('PIN-mode owner: a partner with a key pair opens the shared item with their own PIN-loaded key', async () => {
+      await enablePin();
+      // Jamie enters their own PIN: their PIN-only key pair is created and loaded (spec §4.1)
+      await sut.onPinVerified(partnerId, PIN);
+      await seal(true);
+      // Taylor's key is not open
+      await sut.lock(auth);
+      expect(lockedKeys.has(userId)).toBe(false);
+
+      expect((await readAs(partnerId)).equals(plain)).toBe(true);
+      await expect(viewOf()).resolves.toEqual({ openable: true, ownerName: 'Taylor' });
+      // nobody else opens it with Jamie's key
+      await expect(readAs('00000000-0000-4000-8000-0000000000ff')).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+    }, 30_000);
+
+    it("a partner without a key pair sees reason 'not-ready'; after the partner sets a PIN and the owner unlocks, LockedRewrap adds them and the item opens", async () => {
+      await enablePin();
+      await seal(false);
+      await sut.lock(auth);
+      await expect(viewOf()).resolves.toEqual({ openable: false, reason: 'not-ready', ownerName: 'Taylor' });
+
+      // Jamie sets a PIN: their key pair is made, and Taylor's items are checked for a re-wrap
+      mocks.job.queueAll.mockClear();
+      await sut.onPinSet(partnerId, PIN);
+      expect(files.has(partnerId)).toBe(true);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSweep, data: { userId } }]);
+      await sut.onPinVerified(partnerId, PIN);
+      // still sealed to Taylor only, whose key isn't open: not ready yet
+      await expect(readAs(partnerId)).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+      await expect(viewOf()).resolves.toEqual({ openable: false, reason: 'not-ready', ownerName: 'Taylor' });
+
+      // Taylor unlocks: the sweep the key load queues finds the missing entry and queues LockedRewrap
+      await sut.onPinVerified(userId, PIN);
+      const jobs = sealService();
+      mocks.job.queueAll.mockClear();
+      await jobs.handleSweep({ userId });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: ASSET } }]);
+      await expect(jobs.handleRewrap({ id: ASSET })).resolves.toBe(JobStatus.Success);
+      expect((await readHeader(path)).keyIds).toEqual([keyId(publicKeyOf(userId)), keyId(publicKeyOf(partnerId))]);
+
+      await sut.lock(auth);
+      expect((await readAs(partnerId)).equals(plain)).toBe(true);
+      await expect(viewOf()).resolves.toEqual({ openable: true, ownerName: 'Taylor' });
+    }, 60_000);
+
+    it("ending the partnership queues LockedRewrap that removes the partner's entry", async () => {
+      await enablePin();
+      await sut.onPinVerified(partnerId, PIN);
+      await seal(true);
+
+      sharing = false;
+      mocks.job.queueAll.mockClear();
+      await sut.onPartnershipEnded(userId, partnerId);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: ASSET } }]);
+
+      await expect(sealService().handleRewrap({ id: ASSET })).resolves.toBe(JobStatus.Success);
+      expect((await readHeader(path)).keyIds).toEqual([keyId(publicKeyOf(userId))]);
+      await sut.lock(auth);
+      await expect(readAs(partnerId)).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+    }, 30_000);
+
+    it('starting a partnership queues LockedRewrap for the owner’s encrypted set', async () => {
+      await enablePin();
+      mocks.job.queueAll.mockClear();
+      await sut.onPartnershipStarted(userId, partnerId);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: ASSET } }]);
+
+      // nothing to do for someone without encryption
+      mocks.job.queueAll.mockClear();
+      await sut.onPartnershipStarted(partnerId, userId);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it("Advanced owner: the partner sees 'owner-passphrase'; unlockPartner with the owner's passphrase grants that partner only, until the owner's key expires", async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+      await enableAdvanced();
+      await sut.onPinVerified(partnerId, PIN);
+      await seal(false);
+      await sut.lock(auth);
+
+      await expect(viewOf()).resolves.toEqual({ openable: false, reason: 'owner-passphrase', ownerName: 'Taylor' });
+      await expect(readAs(partnerId)).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+      await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: 'not the passphrase' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(lockedKeys.has(userId)).toBe(false);
+
+      vi.mocked(publishLockedKey).mockClear();
+      await sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE });
+      expect((await readAs(partnerId)).equals(plain)).toBe(true);
+      await expect(viewOf()).resolves.toEqual({ openable: true, ownerName: 'Taylor' });
+      // the grant reaches the job workers with the key, and lasts for the owner's ask-again time
+      expect(publishLockedKey).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'load', userId, grants: [partnerId] }),
+      );
+      expect(lockedKeys.expiresAt(userId)).toEqual(new Date('2026-11-03T12:00:00.000Z'));
+      // that partner only
+      const other = '00000000-0000-4000-8000-0000000000ff';
+      expect(lockedKeys.canRead(other, userId)).toBe(false);
+      await expect(readAs(other)).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+
+      // the grant ends with the owner's key: Lock now
+      await sut.lock(auth);
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+      await expect(readAs(partnerId)).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+
+      // and its ask-again time
+      await sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE });
+      vi.setSystemTime(new Date('2026-11-03T12:00:01.000Z'));
+      lockedKeys.sweepExpired();
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+    }, 60_000);
+
+    it('the owner typing their own passphrase does not grant partners', async () => {
+      await enableAdvanced();
+      await sut.onPinVerified(partnerId, PIN);
+      await seal(false);
+      await sut.lock(auth);
+
+      await sut.unlock(auth, { passphrase: PASSPHRASE });
+      expect(lockedKeys.canRead(userId, userId)).toBe(true);
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+      await expect(readAs(partnerId)).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+      await expect(viewOf()).resolves.toEqual({ openable: false, reason: 'owner-passphrase', ownerName: 'Taylor' });
+
+      // nor does typing it again keep a partner's grant going past what the partner typed for
+      await sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE });
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(true);
+      await sut.unlock(auth, { passphrase: PASSPHRASE });
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+    }, 60_000);
+
+    it('ending the partnership drops a grant the partner holds for that owner at once', async () => {
+      await enableAdvanced();
+      await sut.onPinVerified(partnerId, PIN);
+      await sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE });
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(true);
+
+      sharing = false;
+      vi.mocked(publishLockedKey).mockClear();
+      await sut.onPartnershipEnded(userId, partnerId);
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+      // the owner keeps their own key, and the workers drop the grant too
+      expect(lockedKeys.has(userId)).toBe(true);
+      expect(publishLockedKey).toHaveBeenCalledWith(expect.objectContaining({ action: 'load', userId, grants: [] }));
+    }, 30_000);
+
+    it('unlockPartner refuses someone who is not a partner, a PIN-mode owner, and a session that is not unlocked', async () => {
+      await enableAdvanced();
+      await sut.onPinVerified(partnerId, PIN);
+      sharing = false;
+      await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+        BadRequestException,
+      );
+      sharing = true;
+      const locked = { ...partner, session: { ...partner.session!, hasElevatedPermission: false } };
+      await expect(sut.unlockPartner(locked, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(sut.unlockPartner(auth, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+
+      rows.set(userId, { ...rows.get(userId)!, mode: 'pin' });
+      files.set(userId, { ...files.get(userId)!, mode: 'pin' });
+      await expect(sut.unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })).rejects.toThrow(
+        BadRequestException,
+      );
+    }, 30_000);
+
+    it('an Advanced partner must have typed their own passphrase first (423)', async () => {
+      await enableAdvanced();
+      files.set(partnerId, { ...files.get(userId)!, userId: partnerId, mode: 'advanced' });
+      const error = await sut
+        .unlockPartner(partner, { ownerId: userId, passphrase: PASSPHRASE })
+        .catch((error_) => error_);
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(423);
+      expect(lockedKeys.canRead(partnerId, userId)).toBe(false);
+    }, 30_000);
+
+    it('a partner key pair that is replaced or deleted queues a check of the owners who share with them', async () => {
+      await enablePin();
+      // a PIN the old key pair doesn't open replaces a PIN-only key pair (spec §4.1)
+      await sut.onPinSet(partnerId, PIN);
+      mocks.job.queueAll.mockClear();
+      await sut.onPinSet(partnerId, '654321');
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSweep, data: { userId } }]);
+      // a new PIN on the same key pair changes no recipient
+      mocks.job.queueAll.mockClear();
+      await sut.onPinSet(partnerId, '111111', '654321');
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    }, 30_000);
   });
 
   it('LockedKeyUnavailableException is a 423 with the code and mode the web app reads', () => {

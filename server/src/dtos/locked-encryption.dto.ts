@@ -75,6 +75,13 @@ const LockedEncryptionUnlockSchema = z
   .object({ passphrase: z.string().min(1).max(1024).describe('Your passphrase') })
   .meta({ id: 'LockedEncryptionUnlockDto' });
 
+const LockedEncryptionPartnerUnlockSchema = z
+  .object({
+    ownerId: z.uuidv4().describe('The partner who shares their library with you and uses Advanced Security'),
+    passphrase: z.string().min(1).max(1024).describe("That partner's passphrase"),
+  })
+  .meta({ id: 'LockedEncryptionPartnerUnlockDto' });
+
 const LockedEncryptionUpdateSchema = z
   .object({
     mode: ModeSchema.optional().describe('Switch between PIN and Advanced Security'),
@@ -114,6 +121,7 @@ export class LockedEncryptionStatusResponseDto extends createZodDto(LockedEncryp
 export class LockedEncryptionEnableDto extends createZodDto(LockedEncryptionEnableSchema) {}
 export class LockedEncryptionDisableDto extends createZodDto(LockedEncryptionDisableSchema) {}
 export class LockedEncryptionUnlockDto extends createZodDto(LockedEncryptionUnlockSchema) {}
+export class LockedEncryptionPartnerUnlockDto extends createZodDto(LockedEncryptionPartnerUnlockSchema) {}
 export class LockedEncryptionUpdateDto extends createZodDto(LockedEncryptionUpdateSchema) {}
 export class LockedEncryptionRecoveryKeyDto extends createZodDto(LockedEncryptionRecoveryKeySchema) {}
 export class LockedEncryptionRecoverDto extends createZodDto(LockedEncryptionRecoverSchema) {}

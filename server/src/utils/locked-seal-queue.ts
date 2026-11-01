@@ -1,5 +1,6 @@
 import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
+import type { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import type { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { JobName } from 'src/enum.js';
@@ -55,5 +56,30 @@ export async function queueLockedSealFor(
     }
   } catch (error) {
     deps.logger.warn(`Could not queue sealing of new Locked files; the hourly sweep seals them: ${error}`);
+  }
+}
+
+/**
+ * FL-721 (spec §6.2, Ruling 11): `userId`'s key pair was created, replaced or deleted, so the encrypted
+ * Locked items of everyone who shares with them may name a key that is gone or miss the new one. Each
+ * such owner gets a sweep, which queues the re-wraps (`LockedRewrap` brings every file to exactly the
+ * owner and their current partners) once the owner's key is open. A failure to queue never fails the
+ * change; the hourly sweep finds the same work.
+ */
+export async function queueLockedPartnerChecks(
+  deps: {
+    lockedEncryption: Pick<LockedEncryptionRepository, 'getOwnersSharingWith'>;
+    job: Pick<JobRepository, 'queueAll'>;
+    logger: Pick<LoggingRepository, 'warn'>;
+  },
+  userId: string,
+): Promise<void> {
+  try {
+    const owners = await deps.lockedEncryption.getOwnersSharingWith(userId);
+    if (owners.length > 0) {
+      await deps.job.queueAll(owners.map((ownerId) => ({ name: JobName.LockedSweep, data: { userId: ownerId } })));
+    }
+  } catch (error) {
+    deps.logger.warn(`Could not queue the Locked partner re-wrap checks; the hourly sweep finds them: ${error}`);
   }
 }

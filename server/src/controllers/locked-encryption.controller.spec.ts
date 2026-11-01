@@ -26,6 +26,7 @@ describe(LockedEncryptionController.name, () => {
       'disableLockedEncryption',
       'updateLockedEncryption',
       'unlockLockedEncryption',
+      'unlockPartnerLockedEncryption',
       'lockLockedEncryption',
       'createLockedEncryptionRecoveryKey',
       'recoverLockedEncryption',

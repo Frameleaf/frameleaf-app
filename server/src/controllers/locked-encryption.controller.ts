@@ -5,6 +5,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   LockedEncryptionDisableDto,
   LockedEncryptionEnableDto,
+  LockedEncryptionPartnerUnlockDto,
   LockedEncryptionRecoverDto,
   LockedEncryptionRecoveryKeyDto,
   LockedEncryptionRecoveryKeyResponseDto,
@@ -93,6 +94,19 @@ export class LockedEncryptionController {
   })
   unlockLockedEncryption(@Auth() auth: AuthDto, @Body() dto: LockedEncryptionUnlockDto): Promise<void> {
     return this.service.unlock(auth, dto);
+  }
+
+  @Post('partner-unlock')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated({ permission: Permission.UserPreferenceUpdate })
+  @Endpoint({
+    summary: 'Open a partner’s encrypted Locked items',
+    description:
+      'FL-721: for a partner who shares their library with you and uses Advanced Security. Their passphrase, typed after your own PIN (or your own passphrase), opens their shared Locked items for you only, until their key is asked for again or they lock it. Tries are limited as for the Locked PIN.',
+    history: history(),
+  })
+  unlockPartnerLockedEncryption(@Auth() auth: AuthDto, @Body() dto: LockedEncryptionPartnerUnlockDto): Promise<void> {
+    return this.service.unlockPartner(auth, dto);
   }
 
   @Post('lock')

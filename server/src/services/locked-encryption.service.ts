@@ -5,6 +5,8 @@ import {
   generateKeyPair,
   generateRecoveryKey,
   isLockedFile,
+  keyId as toKeyId,
+  readHeader,
   removeWrap,
   unwrapKey,
   wrapKey,
@@ -12,6 +14,7 @@ import {
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -25,6 +28,7 @@ import {
   LOCKED_ASK_AGAIN_DEFAULT,
   LockedEncryptionDisableDto,
   LockedEncryptionEnableDto,
+  LockedEncryptionPartnerUnlockDto,
   LockedEncryptionRecoverDto,
   LockedEncryptionRecoveryKeyDto,
   LockedEncryptionRecoveryKeyResponseDto,
@@ -47,6 +51,9 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
+import { hasUsableLockedKey } from 'src/utils/locked-read.js';
+import { queueLockedPartnerChecks } from 'src/utils/locked-seal-queue.js';
+import { type PartnerLockedEncryptionView, partnerLockedEncryptionView } from 'src/utils/locked.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
 
 type Mode = LockedKeyFile['mode'];
@@ -169,6 +176,7 @@ export class LockedEncryptionService {
     let publicKey: Buffer;
     let privateKey: Buffer;
     let createdAt = new Date().toISOString();
+    let newKeyPair = false;
     const reused = existing ? await this.privateKeyOf(userId, existing, dto.pinCode) : null;
     if (existing && reused) {
       // a PIN-only key pair (spec §4.1): partners' files already carry entries for it
@@ -177,6 +185,7 @@ export class LockedEncryptionService {
       createdAt = existing.createdAt;
     } else if (!existing || this.isReplaceable(existing, false)) {
       ({ publicKey, privateKey } = generateKeyPair());
+      newKeyPair = true;
     } else {
       throw new ConflictException(
         'A Locked key file is already on this server and your PIN doesn’t open it, so nothing was changed.',
@@ -242,6 +251,9 @@ export class LockedEncryptionService {
     } catch (error) {
       this.logger.error(`Could not queue the Locked sweep of user ${userId}: ${(error as Error).name}`);
     }
+    if (newKeyPair) {
+      await this.queuePartnerChecks(userId);
+    }
     return { recoveryKey };
   }
 
@@ -278,7 +290,59 @@ export class LockedEncryptionService {
     }
     const privateKey = await this.unwrap(userId, file, 'passphrase', dto.passphrase);
     const decrypting = row.status === 'decrypting';
+    // spec §6.2: the owner typing their passphrase never grants partners, nor keeps a partner's
+    // grant going; each partner types it for themselves (`unlockPartner`)
+    lockedKeys.setGrants(userId, []);
     this.load(userId, file, privateKey, decrypting ? null : this.askAgainExpiry(row.askAgainHours), decrypting);
+  }
+
+  /**
+   * Spec §6.2, owner decision: a partner opens an Advanced Security owner's encrypted Locked items by
+   * typing the owner's passphrase as well as their own PIN (an unlocked session) or, when they use
+   * Advanced Security themselves, their own passphrase (their key open). It loads the owner's key, if
+   * it isn't open, and grants this partner only, until the owner's key is closed (ask-again time, Lock
+   * now, a restart). Tries count against the owner's attempt limit, as the owner's own unlock does.
+   * A PIN-mode owner's items open with the partner's own key, so there is nothing to type.
+   */
+  async unlockPartner(auth: AuthDto, dto: LockedEncryptionPartnerUnlockDto): Promise<void> {
+    const viewerId = auth.user.id;
+    const ownerId = dto.ownerId.toLowerCase();
+    if (ownerId === viewerId.toLowerCase()) {
+      throw new BadRequestException('Type your own passphrase to open your Locked items');
+    }
+    if (!auth.session?.hasElevatedPermission || auth.sharedLink) {
+      throw new ForbiddenException('Enter your Locked PIN first');
+    }
+    const own = await this.readKeyFile(viewerId);
+    if (own?.mode === 'advanced' && !lockedKeys.has(viewerId)) {
+      throw new LockedKeyUnavailableException('advanced', 'Type your own passphrase first');
+    }
+    const owners = await this.lockedEncryptionRepository.getOwnersSharingWith(viewerId);
+    if (owners.every((id) => id.toLowerCase() !== ownerId)) {
+      throw new BadRequestException('This person doesn’t share encrypted Locked items with you');
+    }
+    const row = await this.requireRow(ownerId);
+    const file = await this.requireKeyFile(ownerId);
+    if (file.mode !== 'advanced') {
+      throw new BadRequestException('Their Locked items open with your own PIN');
+    }
+
+    const privateKey = await this.unwrap(ownerId, file, 'passphrase', dto.passphrase);
+    const publicKey = Buffer.from(file.publicKey, 'base64');
+    if (this.held(ownerId)?.publicKey.equals(publicKey)) {
+      // already open: the passphrase was still checked, and the grant ends with that key
+      privateKey.fill(0);
+    } else {
+      const expiresAt = row.status === 'decrypting' ? null : this.askAgainExpiry(row.askAgainHours);
+      try {
+        lockedKeys.load(ownerId, publicKey, privateKey, expiresAt);
+      } catch (error) {
+        privateKey.fill(0);
+        throw error;
+      }
+    }
+    lockedKeys.grant(viewerId, ownerId);
+    this.publishHeld(ownerId);
   }
 
   /** Lock now. Refused while turning off, which needs the key until it finishes (spec §4.3). */
@@ -473,6 +537,63 @@ export class LockedEncryptionService {
     return this.lockedEncryptionRepository.getUserIds(userIds);
   }
 
+  /**
+   * Spec §6.2: `ownerId` started sharing their library with `partnerId`. In PIN mode their encrypted
+   * Locked items gain the partner's entry (when the partner has a key pair) by a re-wrap, which waits
+   * for the owner's key. Never throws: the partnership is stored, and the sweep queues it again.
+   */
+  async onPartnershipStarted(ownerId: string, partnerId: string): Promise<void> {
+    await this.queuePartnerRewrap(ownerId, partnerId);
+  }
+
+  /**
+   * Spec §6.2: `ownerId` stopped sharing with `partnerId` (the partner row is already gone). Any
+   * grant the partner holds for the owner's key ends now, here and in the workers, and a re-wrap
+   * removes the partner's entries from the owner's files. Never throws.
+   */
+  async onPartnershipEnded(ownerId: string, partnerId: string): Promise<void> {
+    const grants = lockedKeys.grantsOf(ownerId);
+    if (grants.includes(partnerId)) {
+      lockedKeys.setGrants(
+        ownerId,
+        grants.filter((id) => id !== partnerId),
+      );
+      this.publishHeld(ownerId);
+    }
+    await this.queuePartnerRewrap(ownerId, partnerId);
+  }
+
+  /**
+   * Spec §6.2: what `viewerId`'s own Locked copy of `ownerId`'s item shows, when its file `path` (the
+   * owner's) is encrypted; undefined while it is plain or can't be read. Display only: reads are
+   * checked by `openLockedRead`.
+   */
+  async getPartnerItemView(
+    viewerId: string,
+    ownerId: string,
+    ownerName: string,
+    path: string,
+  ): Promise<PartnerLockedEncryptionView | undefined> {
+    let keyIds: Buffer[];
+    try {
+      if (!(await isLockedFile(path))) {
+        return undefined;
+      }
+      ({ keyIds } = await readHeader(path));
+    } catch {
+      return undefined;
+    }
+    const own = await this.lockedKeyRepository.read(viewerId).catch(() => null);
+    const ownKeyId = own ? toKeyId(Buffer.from(own.publicKey, 'base64')) : null;
+    const row = await this.lockedEncryptionRepository.get(ownerId);
+    return partnerLockedEncryptionView({
+      ownerName,
+      ownerMode: row?.mode ?? null,
+      usable: hasUsableLockedKey(keyIds, viewerId),
+      hasOwnEntry: !!ownKeyId && keyIds.some((id) => id.equals(ownKeyId)),
+    });
+  }
+
   /** `resetPinCode` (forgot PIN, with the password): refused while encryption is on (spec §7.5, owner). */
   async assertPinResettable(userId: string): Promise<void> {
     if (await this.isOn(userId)) {
@@ -522,6 +643,10 @@ export class LockedEncryptionService {
       );
     }
     await this.lockedKeyRepository.write(next);
+    if (next.publicKey !== file?.publicKey) {
+      // owners who share with this person re-wrap to the new key pair (or drop the old one)
+      await this.queuePartnerChecks(userId);
+    }
     return () => this.restoreKeyFile(userId, file, next);
   }
 
@@ -558,6 +683,7 @@ export class LockedEncryptionService {
         throw error;
       }
       this.load(userId, created, privateKey, until);
+      await this.queuePartnerChecks(userId);
       return;
     }
 
@@ -579,6 +705,7 @@ export class LockedEncryptionService {
       const replaced = await this.newPinKeyPair(userId, pinCode);
       await this.lockedKeyRepository.write(replaced.file);
       this.load(userId, replaced.file, replaced.privateKey, until);
+      await this.queuePartnerChecks(userId);
       return;
     }
     this.load(userId, file, privateKey, until, decrypting);
@@ -883,6 +1010,36 @@ export class LockedEncryptionService {
       expiresAt: expiresAt?.toISOString() ?? null,
       grants: lockedKeys.grantsOf(userId),
     });
+  }
+
+  /** Sends the owner's loaded key, with its current grants, to the job workers again. */
+  private publishHeld(ownerId: string) {
+    const held = this.held(ownerId);
+    if (held) {
+      this.publishLoad(ownerId, held.publicKey.toString('base64'), held.privateKey, held.expiresAt);
+    }
+  }
+
+  /** Spec §6.2: the owner's encrypted Locked items are re-wrapped to their current partners. */
+  private async queuePartnerRewrap(ownerId: string, partnerId: string) {
+    try {
+      const row = await this.lockedEncryptionRepository.get(ownerId);
+      if (row && row.status !== 'decrypting') {
+        await this.queueFor(ownerId, JobName.LockedRewrap);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Could not queue the Locked re-wrap of user ${ownerId} for partner ${partnerId}: ${(error as Error).name}`,
+      );
+    }
+  }
+
+  /** This person's key pair is new, replaced or gone: owners who share with them check their entries. */
+  private queuePartnerChecks(userId: string) {
+    return queueLockedPartnerChecks(
+      { lockedEncryption: this.lockedEncryptionRepository, job: this.jobRepository, logger: this.logger },
+      userId,
+    );
   }
 
   private drop(userId: string) {

@@ -43,6 +43,7 @@ import {
   removeStalePlainCopies,
   takeLockedDeferrals,
 } from 'src/utils/locked-read.js';
+import { queueLockedPartnerChecks } from 'src/utils/locked-seal-queue.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
@@ -731,6 +732,7 @@ export class LockedSealService {
    * Advanced key file) is deleted. Either way the row goes and the pinned key is released.
    */
   private async finishTurnOff(userId: string) {
+    let keyDeleted = false;
     const finished = await this.databaseRepository.withLockedKeyFileLock(userId, async () => {
       const row = await this.lockedEncryptionRepository.get(userId);
       if (row?.status !== 'decrypting') {
@@ -771,14 +773,22 @@ export class LockedSealService {
           });
         } else {
           await this.lockedKeyRepository.delete(userId);
+          keyDeleted = true;
         }
-        // TODO(FL-721 Task 8): partners' items still wrapped to a deleted key file need a re-wrap.
       }
       await this.lockedEncryptionRepository.delete(userId);
       return true;
     });
     if (!finished) {
       return;
+    }
+    if (keyDeleted) {
+      // Ruling 11, spec §6.2: owners who share with this person still name the deleted key in their
+      // files; their sweeps queue the re-wraps that remove it (a kept PIN-only key pair is unchanged)
+      await queueLockedPartnerChecks(
+        { lockedEncryption: this.lockedEncryptionRepository, job: this.jobRepository, logger: this.logger },
+        userId,
+      );
     }
     lockedKeys.pin(userId, false);
     lockedKeys.drop(userId);

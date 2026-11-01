@@ -652,6 +652,50 @@ describe(LockedSealService.name, () => {
         expect(row).toBeUndefined();
       });
 
+      it('a deleted key file queues a sweep of the owners who share with this person (Ruling 11, Task 8)', async () => {
+        const SHARER = '00000000-0000-4000-8000-000000000003';
+        keyFile.mode = 'advanced';
+        keyFile.wraps = keyFile.wraps.map((wrap) => (wrap.kind === 'pin' ? { ...wrap, kind: 'passphrase' } : wrap));
+        mocks.lockedEncryption.getOwnersSharingWith.mockResolvedValue([SHARER]);
+
+        await sut.handleSweep({ userId: OWNER });
+
+        expect(mocks.lockedEncryption.getOwnersSharingWith).toHaveBeenCalledWith(OWNER);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSweep, data: { userId: SHARER } }]);
+      });
+
+      it('a key file kept as a PIN-only key pair changes no partner entry, so nothing is queued for sharers', async () => {
+        mocks.lockedEncryption.getOwnersSharingWith.mockResolvedValue([PARTNER]);
+
+        await sut.handleSweep({ userId: OWNER });
+
+        expect(mocks.lockedEncryption.getOwnersSharingWith).not.toHaveBeenCalled();
+      });
+
+      it('a sharer’s re-wrap drops the entry of a partner whose key is gone', async () => {
+        row = { userId: OWNER, mode: 'pin', status: 'on' };
+        state.status = 'on';
+        const path = await write('original.jpg', 'original', 'asset');
+        mocks.lockedFile.partnerRecipients.mockResolvedValue([{ userId: PARTNER, publicKey: partner.publicKey }]);
+        await sut.handleSeal({ id: ASSET });
+        expect((await readHeader(path)).keyIds).toHaveLength(2);
+
+        // the partner's key file was deleted (or replaced): partnerRecipients no longer lists that key
+        mocks.lockedFile.partnerRecipients.mockResolvedValue([]);
+        mocks.job.queueAll.mockClear();
+        await sut.handleSweep({ userId: OWNER });
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: ASSET } }]);
+        await expect(sut.handleRewrap({ id: ASSET })).resolves.toBe(JobStatus.Success);
+        expect((await readHeader(path)).keyIds).toEqual([keyId(owner.publicKey)]);
+
+        // and a replaced key pair gets the new key instead
+        const replaced = generateKeyPair();
+        mocks.lockedFile.partnerRecipients.mockResolvedValue([{ userId: PARTNER, publicKey: replaced.publicKey }]);
+        await expect(sut.handleRewrap({ id: ASSET })).resolves.toBe(JobStatus.Success);
+        expect((await readHeader(path)).keyIds).toEqual([keyId(owner.publicKey), keyId(replaced.publicKey)]);
+        expect((await decrypted(path, replaced.privateKey)).equals(plain.get(path)!)).toBe(true);
+      });
+
       it('never deletes a key file it cannot read', async () => {
         mocks.lockedKey.read.mockRejectedValue(new SyntaxError('Unexpected token'));
 
