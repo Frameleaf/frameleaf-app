@@ -232,7 +232,7 @@ describe(MetadataService.name, () => {
     });
 
     it('identifies the metadata inference follow-up separately from embedding work', async () => {
-      await sut.onLandmarkMetadataExtracted({ assetId: 'photo' });
+      await sut.onLandmarkMetadataExtracted({ assetId: 'photo', userId: 'owner' });
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.LandmarkInfer,
         data: { id: 'photo', trigger: 'metadata' },
