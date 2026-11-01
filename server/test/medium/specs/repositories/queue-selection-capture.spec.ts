@@ -2,6 +2,7 @@ import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { queueAdmission } from 'src/queue/admission.js';
+import { attachLibraryParticipants } from 'src/queue/library-admission.js';
 import { freezeSelection, shareSelectionPage, shareSelections } from 'src/queue/manifest.js';
 import { mirrorSelectionLineage } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
@@ -263,6 +264,97 @@ describe('selection capture isolation', () => {
       await sql`drop function reject_legacy_selection_version()`.execute(db);
     }
   });
+
+  it.each([
+    ['producer', 'none'],
+    ['queue', 'none'],
+    ['producer', 'headers'],
+    ['queue', 'headers'],
+    ['producer', 'lineage'],
+    ['queue', 'lineage'],
+  ] as const)(
+    'skips frozen items during %s attachment with unrelated library state: %s',
+    async (mode, unrelatedState) => {
+      let attachment: CompiledQuery | undefined;
+      const observed = await getKyselyDB(undefined, (event) => {
+        if (event.level === 'query' && event.query.sql.startsWith('with candidates as materialized'))
+          attachment = event.query;
+      });
+      try {
+        const localStore = new SqlQueueStore(observed);
+        await localStore.initialize([queue], worker);
+        await localStore.enqueue([producer()]);
+        const [claim] = await localStore.claim(queue, worker);
+        const runId = await freezeSelection(
+          observed,
+          intent(),
+          observed.selectFrom(sql<{ id: string }>`(select 'unused'::text id where false)`.as('selected')).select('id'),
+          context(claim),
+        );
+        const {
+          rows: [selection],
+        } = await sql<{ id: string }>`select id from job_selection where "runId" = ${runId}::uuid`.execute(observed);
+        expect(
+          await attachLibraryParticipants(observed, mode === 'producer' ? { producerId: claim.id } : { queue }),
+        ).toBe(false);
+        expect(attachment).toBeDefined();
+        if (unrelatedState !== 'none') {
+          const unrelatedRun = await localStore.createRun('unrelated-library', {});
+          const childId = randomUUID();
+          await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"sourceKind","libraryOperationId","capturedAt","sourceClosedAt")
+            values (${childId}::uuid,${unrelatedRun}::uuid,'unrelated-child',${queue},true,false,60000,'ready','library-child',${unrelatedRun}::uuid,now(),now())`.execute(
+            observed,
+          );
+          if (unrelatedState === 'lineage') {
+            const frozenId = randomUUID();
+            await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state)
+              values (${frozenId}::uuid,${unrelatedRun}::uuid,'unrelated-frozen',${queue},true,false,60000,'ready')`.execute(
+              observed,
+            );
+            await sql`insert into job_run_item("runId","itemKey",stage,queue,selection,"selectionId","libraryOriginComplete")
+              values (${unrelatedRun}::uuid,'unrelated-child','fixture',${queue},'{}'::jsonb,${childId}::uuid,true)`.execute(
+              observed,
+            );
+            await sql`insert into job_selection_run("runId","selectionId","copyComplete")
+              values (${unrelatedRun}::uuid,${frozenId}::uuid,true)`.execute(observed);
+            await sql`insert into job_selection_lineage("selectionId","runId","itemKey",stage)
+              values (${frozenId}::uuid,${unrelatedRun}::uuid,'unrelated-child','fixture')`.execute(observed);
+          }
+        }
+        await sql`analyze job_run_item`.execute(observed);
+        await observed.transaction().execute(async (tx) => {
+          // During capture, new frozen rows are visible while statistics still describe producer requests.
+          await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
+          select ${runId}::uuid, n::text, n::text, 'fixture', ${queue}, '{}'::jsonb, ${selection.id}::uuid
+          from generate_series(1,25000)n`.execute(tx);
+          type Plan = {
+            Alias?: string;
+            'Actual Rows': number;
+            'Actual Loops': number;
+            'Rows Removed by Filter'?: number;
+            Plans?: Plan[];
+          };
+          const { rows } = await tx.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
+            CompiledQuery.raw(`explain (analyze, buffers, format json) ${attachment!.sql}`, [
+              ...attachment!.parameters,
+            ]),
+          );
+          const nodes = (node: Plan): Plan[] => [node, ...(node.Plans ?? []).flatMap((child) => nodes(child))];
+          const items = nodes(rows[0]['QUERY PLAN'][0].Plan).filter((node) => node.Alias === 'item');
+          expect(items.length).toBeGreaterThan(0);
+          expect(
+            items.reduce(
+              (total, node) =>
+                total + (node['Actual Rows'] + (node['Rows Removed by Filter'] ?? 0)) * node['Actual Loops'],
+              0,
+            ),
+          ).toBeLessThanOrEqual(mode === 'queue' && unrelatedState === 'lineage' ? 1 : 0);
+        });
+      } finally {
+        await observed.destroy();
+      }
+    },
+  );
 
   it('rolls back partial materialization on cancellation and never publishes it', async () => {
     await store.enqueue([producer()]);
