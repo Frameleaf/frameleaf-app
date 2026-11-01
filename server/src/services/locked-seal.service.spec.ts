@@ -10,7 +10,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import { JobName, JobStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -988,6 +988,32 @@ describe(LockedSealService.name, () => {
     expect(mocks.lockedEncryption.update).toHaveBeenCalledWith(OWNER, { mode: 'advanced' });
     expect(mocks.lockedEncryption.update).toHaveBeenCalledTimes(1);
     expect(mocks.lockedEncryption.create).not.toHaveBeenCalled();
+  });
+
+  it('the start-up sweep runs in the background, so job start never waits for it (M9)', async () => {
+    const listing = Promise.withResolvers<string[]>();
+    mocks.lockedEncryption.getAllUserIds.mockReturnValueOnce(listing.promise);
+    const sweep = vi.spyOn(sut, 'removeStaleTemp');
+
+    await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+    expect(sweep).toHaveBeenCalledWith(expect.any(Date));
+    listing.resolve([]);
+    await vi.waitFor(() => expect(mocks.lockedEncryption.getAllUserIds).toHaveBeenCalled());
+  });
+
+  it('the background sweep leaves temporary files written since start-up: a job is writing them (M9)', async () => {
+    const path = await write('original.jpg', 'original', 'asset');
+    const stale = `${path}.0b6e5c7e-3f0b-4c8e-9a51-2f1f3c4d5e6f.fllk.tmp`;
+    const fresh = `${path}.1c7f6d8f-4a1c-4d9f-8b62-3a2a4d5e6f70.fllk.tmp`;
+    await fs.writeFile(stale, 'left by a crash');
+    const old = new Date(Date.now() - 60_000);
+    await fs.utimes(stale, old, old);
+    await fs.writeFile(fresh, 'being written');
+
+    await sut.removeStaleTemp(new Date(Date.now() - 1000));
+
+    expect(await temporaries()).toEqual([basename(fresh)]);
   });
 
   it('removeStaleTemp leaves read-only library folders alone (M4)', async () => {

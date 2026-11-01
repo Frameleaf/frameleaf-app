@@ -188,7 +188,9 @@ export class LockedSealService {
       onTick: () => handlePromiseError(this.jobRepository.queue({ name: JobName.LockedSweep, data: {} }), this.logger),
       start: true,
     });
-    await this.removeStaleTemp();
+    // M9: in the background, so job start never waits for a large library's folders; only files from
+    // before this start are stale (a job may already be writing its own)
+    handlePromiseError(this.removeStaleTemp(new Date()), this.logger);
     await this.matchRowsToKeyFiles();
     // spec §8: plain copies are made only in a RAM-backed folder; without one, readers defer
     try {
@@ -226,9 +228,10 @@ export class LockedSealService {
    * Spec §7.1 step 5: deletes the `.fllk.tmp` files a crash left beside the files of every Locked item
    * of everyone with encryption on, turning on or turning off. Every temporary file is written beside
    * a path the registry lists, and an item that crashed mid-step still has work left, so it is still
-   * listed here.
+   * listed here. With `writtenBefore` (start-up, while jobs already run) a file changed since then is
+   * a job's own and is left alone.
    */
-  async removeStaleTemp(): Promise<void> {
+  async removeStaleTemp(writtenBefore?: Date): Promise<void> {
     let removed = 0;
     const folders = new Map<string, Set<string>>();
     const add = (path: string) => {
@@ -268,6 +271,9 @@ export class LockedSealService {
           continue;
         }
         try {
+          if (writtenBefore && (await fs.stat(join(folder, entry))).mtime >= writtenBefore) {
+            continue;
+          }
           await fs.unlink(join(folder, entry));
           removed++;
         } catch (error) {
