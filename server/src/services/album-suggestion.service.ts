@@ -48,7 +48,7 @@ export class AlbumSuggestionService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
     const suggestions = this.albumRepository.suggestions;
     const autoAdd = await suggestions.isAutoAdd(id, auth.user.id);
-    const photos = await suggestions.getTripPhotos(id);
+    const photos = await suggestions.getTripPhotos(id, auth.user.id);
     const trip = describeTrip(photos);
     if (!trip) return { autoAdd, tripStart: null, tripEnd: null, places: [], fromTrip: [], needDate: [] };
 
@@ -109,14 +109,14 @@ export class AlbumSuggestionService extends BaseService {
       // A photo whose date can't be trusted is only ever suggested for review, never added.
       if (!candidate || suspiciousDate(candidate.originalFileName, candidate.hasCameraDetails)) continue;
       // Most new photos are nowhere near the trip: check its span before reading the album's photos.
-      const span = await suggestions.getTimeSpan(albumId);
+      const span = await suggestions.getTimeSpan(albumId, owner.id);
       if (
         !span ||
         candidate.takenAt.getTime() < span.from.getTime() - TRIP_PADDING_MS ||
         candidate.takenAt.getTime() > span.to.getTime() + TRIP_PADDING_MS
       )
         continue;
-      const trip = describeTrip(await suggestions.getTripPhotos(albumId));
+      const trip = describeTrip(await suggestions.getTripPhotos(albumId, owner.id));
       if (!trip || !matchTripCandidate(trip, candidate)?.likely) continue;
       try {
         // The same path as adding by hand: access is rechecked, so a person who left the album adds nothing.

@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { AlbumSuggestionRepository } from 'src/repositories/album-suggestion.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -84,8 +84,11 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
     const someoneElses = await makeAsset({ day: 12, owner: other.id });
     await sut.dismiss(albumId, [dismissed]);
 
-    const photos = await sut.getTripPhotos(albumId);
-    await expect(sut.getTimeSpan(albumId)).resolves.toEqual({ from: photos[0].takenAt, to: photos.at(-1)!.takenAt });
+    const photos = await sut.getTripPhotos(albumId, ownerId);
+    await expect(sut.getTimeSpan(albumId, ownerId)).resolves.toEqual({
+      from: photos[0].takenAt,
+      to: photos.at(-1)!.takenAt,
+    });
     expect(photos.map(({ id }) => id)).toEqual(tripIds);
     expect(photos[0]).toMatchObject({ ...LAKE, place: 'Lake Louise', make: 'Apple' });
 
@@ -104,6 +107,33 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
 
     const distances = await sut.getVisualDistances([unlocated], tripIds);
     expect(distances.get(unlocated)).toBeCloseTo(1 - 1 / Math.sqrt(1.0025), 4);
+  });
+
+  it("leaves out another member's photos that their owner's Locked rules hide (FL-446)", async () => {
+    const own = await makeAsset({ day: 12 });
+    const member = await mediumFactory.userWithClusterGroup(db);
+    await new UserRepository(db).create(member);
+    const hidden = await makeAsset({ day: 20, owner: member.id });
+    for (const id of [own, hidden]) await inAlbum(id);
+    const [tag] = await db.insertInto('tag').values({ userId: member.id, value: 'Private' }).returning('id').execute();
+    await db.insertInto('tag_closure').values({ id_ancestor: tag.id, id_descendant: tag.id }).execute();
+    await db.insertInto('tag_asset').values({ assetId: hidden, tagId: tag.id }).execute();
+    await db
+      .insertInto('user_metadata')
+      .values({
+        userId: member.id,
+        key: UserMetadataKey.Preferences,
+        value: { privacy: { suppression: { tagIds: [tag.id], personIds: [], petIds: [], scope: 'owned' } } },
+      } as never)
+      .execute();
+
+    expect((await sut.getTripPhotos(albumId, ownerId)).map(({ id }) => id)).toEqual([own]);
+    await expect(sut.getTimeSpan(albumId, ownerId)).resolves.toEqual({
+      from: new Date(Date.UTC(2026, 7, 12, 18)),
+      to: new Date(Date.UTC(2026, 7, 12, 18)),
+    });
+    // Its owner still sees it in their own trip.
+    expect((await sut.getTripPhotos(albumId, member.id)).map(({ id }) => id).sort()).toEqual([own, hidden].sort());
   });
 
   it('finds saved and undated photos that look like album photos', async () => {

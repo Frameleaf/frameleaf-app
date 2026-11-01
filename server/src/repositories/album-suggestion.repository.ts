@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import { LibraryScope } from 'src/enum.js';
 import { LOOKS_LIKE_DISTANCE } from 'src/utils/album-suggestions.js';
-import { hiddenByOwnerRules, validLandmarkMatch } from 'src/utils/database.js';
+import { hiddenByOwnerRules, hiddenFromOthers, validLandmarkMatch } from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
 
@@ -59,8 +59,11 @@ export class AlbumSuggestionRepository {
     ];
   }
 
-  /** The album's own photos that are not Locked, to describe its trip. */
-  getTripPhotos(albumId: string): Promise<TripPhotoRow[]> {
+  /**
+   * The album's photos that `viewerId` may see, to describe its trip: not Locked, and not another member's
+   * photo that its owner's Locked rules hide (FL-446), since trip dates, places and matches reveal them.
+   */
+  getTripPhotos(albumId: string, viewerId: string): Promise<TripPhotoRow[]> {
     return this.db
       .selectFrom('album_asset')
       .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
@@ -68,6 +71,7 @@ export class AlbumSuggestionRepository {
       .where('album_asset.albumId', '=', albumId)
       .where('photo.deletedAt', 'is', null)
       .where(isNotLocked('photo'))
+      .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
       .select([
         'photo.id',
         'photo.fileCreatedAt as takenAt',
@@ -82,13 +86,14 @@ export class AlbumSuggestionRepository {
   }
 
   /** When the album's photos (not Locked) were taken, for a cheap check before reading them all. */
-  async getTimeSpan(albumId: string): Promise<{ from: Date; to: Date } | undefined> {
+  async getTimeSpan(albumId: string, viewerId: string): Promise<{ from: Date; to: Date } | undefined> {
     const row = await this.db
       .selectFrom('album_asset')
       .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
       .where('album_asset.albumId', '=', albumId)
       .where('photo.deletedAt', 'is', null)
       .where(isNotLocked('photo'))
+      .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
       .select([
         sql<Date | null>`min(photo."fileCreatedAt")`.as('from'),
         sql<Date | null>`max(photo."fileCreatedAt")`.as('to'),
