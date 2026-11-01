@@ -358,6 +358,17 @@ describe(LockedEncryptionService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedRewrap, data: { id: 'asset-1' } }]);
     }, 30_000);
 
+    it('a new recovery key is returned when recording its date fails, since the old one no longer opens the file', async () => {
+      await enableAdvanced();
+      mocks.lockedEncryption.update.mockRejectedValueOnce(new Error('db down'));
+
+      const { recoveryKey } = await sut.newRecoveryKey(auth, { secret: PASSPHRASE });
+
+      expect(recoveryKey).toMatch(RECOVERY_KEY);
+      await expect(unwrapKey(fileOf(), 'recovery', recoveryKey)).resolves.toHaveLength(32);
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('recovery key date'));
+    }, 30_000);
+
     it('puts the key file back when the new mode cannot be stored', async () => {
       await enablePin();
       const before = structuredClone(fileOf());

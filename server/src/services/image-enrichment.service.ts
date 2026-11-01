@@ -1101,133 +1101,150 @@ export class ImageEnrichmentService extends BaseService {
     const publicationChecksum = queueExecution.getStore()
       ? (await this.assetRepository.getById(id))?.checksum
       : undefined;
-    // A video is described as a grid of its reusable frames. When none can be cut (too short, too
-    // long, unreadable), persist a `skipped` status with `video-frames-unavailable` so the badge can
-    // explain why, and bail without invoking the model — a single thumbnail is a poor input.
-    let videoGrid:
-      | {
-          path: string;
-          videoContext: VideoContext;
-        }
-      | undefined;
-    if (asset.type === AssetType.Video) {
-      videoGrid = await this.prepareVideoGrid(asset.id, asset.ownerId, config);
-      if (!videoGrid) {
-        await publishJobResult(() =>
-          this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-            const m = await this.getEnrichmentMetadata(id, trx);
-            m.description = {
-              status: 'skipped',
-              updatedAt: new Date().toISOString(),
-              reason: 'video-frames-unavailable',
-            };
-            await this.saveEnrichmentMetadata(id, m, trx);
-          }),
+    // FL-721 M6: a grid of an encrypted video's frames is made in the RAM-backed Locked folder, kept
+    // until the description has read it
+    const gridFolder =
+      asset.type === AssetType.Video && (await isLockedPath(asset.previewFile!))
+        ? await makeWorkDir('description', true)
+        : undefined;
+    try {
+      // A video is described as a grid of its reusable frames. When none can be cut (too short, too
+      // long, unreadable), persist a `skipped` status with `video-frames-unavailable` so the badge can
+      // explain why, and bail without invoking the model — a single thumbnail is a poor input.
+      let videoGrid:
+        | {
+            path: string;
+            videoContext: VideoContext;
+          }
+        | undefined;
+      if (asset.type === AssetType.Video) {
+        videoGrid = await this.prepareVideoGrid(
+          asset.id,
+          asset.ownerId,
+          config,
+          gridFolder && join(gridFolder, 'grid.jpeg'),
         );
-        return { status: JobStatus.Skipped, reasonKey: 'video-frames-unavailable' };
+        if (!videoGrid) {
+          await publishJobResult(() =>
+            this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+              const m = await this.getEnrichmentMetadata(id, trx);
+              m.description = {
+                status: 'skipped',
+                updatedAt: new Date().toISOString(),
+                reason: 'video-frames-unavailable',
+              };
+              await this.saveEnrichmentMetadata(id, m, trx);
+            }),
+          );
+          return { status: JobStatus.Skipped, reasonKey: 'video-frames-unavailable' };
+        }
       }
-    }
-    const descriptionInputPath = videoGrid ? videoGrid.path : asset.previewFile!;
-    // Snapshot the metadata to decide whether NSFW inference is needed; the
-    // canonical read happens again inside the lock when we persist.
-    const snapshot = await this.getEnrichmentMetadata(id);
-    let nsfw = this.getStoredNsfw(snapshot);
-    let nsfwIsFresh = false;
-    if (!nsfw && isNsfwDetectionEnabled(machineLearning)) {
+      const descriptionInputPath = videoGrid ? videoGrid.path : asset.previewFile!;
+      // Snapshot the metadata to decide whether NSFW inference is needed; the
+      // canonical read happens again inside the lock when we persist.
+      const snapshot = await this.getEnrichmentMetadata(id);
+      let nsfw = this.getStoredNsfw(snapshot);
+      let nsfwIsFresh = false;
+      if (!nsfw && isNsfwDetectionEnabled(machineLearning)) {
+        try {
+          // NSFW always runs against the preview thumbnail, not the composite
+          // grid — the classifier is calibrated for single-image input.
+          const selection = await this.selectEnrichmentDestination(
+            MlWorkload.Enrichment,
+            JobName.ImageDescription,
+            id,
+            options,
+          );
+          nsfw = await this.machineLearningRepository.detectNsfw(
+            selection,
+            asset.previewFile!,
+            machineLearning.nsfwDetection,
+          );
+          nsfwIsFresh = true;
+        } catch (error) {
+          // NSFW failure is non-fatal for description; persist the failed
+          // detection status alongside whatever description result we get.
+          await publishJobDiagnostic(() =>
+            this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+              if (publicationChecksum) await assertPublicationSource(id, publicationChecksum);
+              const m = await this.getEnrichmentMetadata(id, trx);
+              m.nsfwDetection = {
+                status: 'failed',
+                modelName: machineLearning.nsfwDetection.modelName,
+                updatedAt: new Date().toISOString(),
+                error: getErrorMessage(error),
+                ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
+              };
+              await this.saveEnrichmentMetadata(id, m, trx);
+            }),
+          );
+          nsfw = undefined;
+        }
+      }
+      const knownPersons = await this.getKnownPersonsForAsset(asset.id, asset.ownerId);
+      let result: ImageDescriptionResult;
+      let destinationId: string;
       try {
-        // NSFW always runs against the preview thumbnail, not the composite
-        // grid — the classifier is calibrated for single-image input.
+        const { prompt } = this.promptAssembler.build({
+          config: machineLearning.imageDescription.prompt,
+          knownPersons,
+          nsfw: nsfw ? { isNsfw: nsfw.isNsfw } : null,
+          videoContext: videoGrid?.videoContext,
+        });
         const selection = await this.selectEnrichmentDestination(
           MlWorkload.Enrichment,
           JobName.ImageDescription,
           id,
           options,
         );
-        nsfw = await this.machineLearningRepository.detectNsfw(
+        destinationId = selection.destinationId;
+        result = await this.machineLearningRepository.describeImage(
           selection,
-          asset.previewFile!,
-          machineLearning.nsfwDetection,
+          descriptionInputPath,
+          machineLearning.imageDescription,
+          nsfw,
+          prompt,
         );
-        nsfwIsFresh = true;
       } catch (error) {
-        // NSFW failure is non-fatal for description; persist the failed
-        // detection status alongside whatever description result we get.
         await publishJobDiagnostic(() =>
           this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
             if (publicationChecksum) await assertPublicationSource(id, publicationChecksum);
             const m = await this.getEnrichmentMetadata(id, trx);
-            m.nsfwDetection = {
+            m.description = {
               status: 'failed',
-              modelName: machineLearning.nsfwDetection.modelName,
+              modelName: machineLearning.imageDescription.modelName,
               updatedAt: new Date().toISOString(),
               error: getErrorMessage(error),
-              ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
             };
             await this.saveEnrichmentMetadata(id, m, trx);
           }),
         );
-        nsfw = undefined;
+        return { status: JobStatus.Failed, reasonKey: 'model-error', message: getErrorMessage(error) };
+      } finally {
+        // The composite grid is cheap to rebuild from the reusable frames; clean up after every run.
+        if (videoGrid) {
+          await this.storageRepository.unlink(videoGrid.path).catch(() => {});
+        }
       }
-    }
-    const knownPersons = await this.getKnownPersonsForAsset(asset.id, asset.ownerId);
-    let result: ImageDescriptionResult;
-    let destinationId: string;
-    try {
-      const { prompt } = this.promptAssembler.build({
-        config: machineLearning.imageDescription.prompt,
-        knownPersons,
-        nsfw: nsfw ? { isNsfw: nsfw.isNsfw } : null,
-        videoContext: videoGrid?.videoContext,
-      });
-      const selection = await this.selectEnrichmentDestination(
-        MlWorkload.Enrichment,
-        JobName.ImageDescription,
-        id,
+      return this.publishDescription({
+        asset,
+        config,
+        machineLearning,
         options,
-      );
-      destinationId = selection.destinationId;
-      result = await this.machineLearningRepository.describeImage(
-        selection,
-        descriptionInputPath,
-        machineLearning.imageDescription,
+        result,
         nsfw,
-        prompt,
-      );
-    } catch (error) {
-      await publishJobDiagnostic(() =>
-        this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-          if (publicationChecksum) await assertPublicationSource(id, publicationChecksum);
-          const m = await this.getEnrichmentMetadata(id, trx);
-          m.description = {
-            status: 'failed',
-            modelName: machineLearning.imageDescription.modelName,
-            updatedAt: new Date().toISOString(),
-            error: getErrorMessage(error),
-          };
-          await this.saveEnrichmentMetadata(id, m, trx);
-        }),
-      );
-      return { status: JobStatus.Failed, reasonKey: 'model-error', message: getErrorMessage(error) };
+        nsfwIsFresh,
+        fingerprintBefore,
+        publicationChecksum,
+        knownPersons,
+        destinationId,
+        modelName: machineLearning.imageDescription.modelName,
+      });
     } finally {
-      // The composite grid is cheap to rebuild from the reusable frames; clean up after every run.
-      if (videoGrid) {
-        await this.storageRepository.unlink(videoGrid.path).catch(() => {});
+      if (gridFolder) {
+        await rm(gridFolder, { recursive: true, force: true });
       }
     }
-    return this.publishDescription({
-      asset,
-      config,
-      machineLearning,
-      options,
-      result,
-      nsfw,
-      nsfwIsFresh,
-      fingerprintBefore,
-      publicationChecksum,
-      knownPersons,
-      destinationId,
-      modelName: machineLearning.imageDescription.modelName,
-    });
   }
   /**
    * Publish a finished description (the local model's, or a Frameleaf Cloud batch's for one photo):
@@ -2300,6 +2317,8 @@ export class ImageEnrichmentService extends BaseService {
     assetId: string,
     ownerId: string,
     config: SystemConfig,
+    /** Where the grid goes; by default beside the thumbnails (a sealed video's caller gives a Locked work folder). */
+    gridPath?: string,
   ): Promise<
     | {
         path: string;
@@ -2311,10 +2330,14 @@ export class ImageEnrichmentService extends BaseService {
     if (!moments) {
       return undefined;
     }
-    const outputPath = attemptOutputPath(
-      StorageCore.getNestedPath(StorageFolder.Thumbnails, ownerId, `${assetId}_description_grid.jpeg`),
-    );
-    this.storageCore.ensureFolders(outputPath);
+    const outputPath =
+      gridPath ??
+      attemptOutputPath(
+        StorageCore.getNestedPath(StorageFolder.Thumbnails, ownerId, `${assetId}_description_grid.jpeg`),
+      );
+    if (!gridPath) {
+      this.storageCore.ensureFolders(outputPath);
+    }
     const fingerprint = await this.getSourceFingerprint(assetId);
     const [index, frames] = await Promise.all([moments.getIndex(assetId), moments.getFrames(assetId)]);
     if (index && frames.length >= 2 && index.sourceFingerprint === fingerprint) {

@@ -533,13 +533,17 @@ const checkTmp = async (): Promise<{ ok: true } | { ok: false; reason: string }>
 
 /**
  * Spec §8: plain copies are made only in a RAM-backed folder. Run at startup (and once, lazily, by
- * the first plain copy). When it fails, every plain copy is refused with `LockedTmpUnavailableError`,
- * which a job treats as a deferral, so plaintext never reaches a disk.
+ * the first plain copy). When it fails, the plain copy is refused with `LockedTmpUnavailableError`,
+ * which a job treats as a deferral, so plaintext never reaches a disk; the next one checks again.
  */
 export async function assertLockedTmpIsTmpfs(): Promise<void> {
-  tmpCheck ??= checkTmp();
-  const result = await tmpCheck;
+  const check = (tmpCheck ??= checkTmp());
+  const result = await check;
   if (!result.ok) {
+    // only a success is kept: the folder may be mounted or repaired before the next plain copy
+    if (tmpCheck === check) {
+      tmpCheck = undefined;
+    }
     throw new LockedTmpUnavailableError(result.reason);
   }
 }

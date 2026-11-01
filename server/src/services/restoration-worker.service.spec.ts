@@ -1,4 +1,5 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import {
@@ -364,6 +365,24 @@ describe(RestorationWorkerService.name, () => {
   });
 
   describe('run: still preview', () => {
+    it('copies a work file from another filesystem beside its final path first, so a failed copy never leaves a partial result there', async () => {
+      const exdev = Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' });
+      const enospc = Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      mocks.storage.rename.mockRejectedValueOnce(exdev);
+      mocks.storage.copyFile.mockRejectedValueOnce(enospc);
+
+      await sut.run(operation(), CLAIM).catch(() => {});
+
+      const [[from, final]] = mocks.storage.rename.mock.calls as [string, string][];
+      const [[copiedFrom, staged]] = mocks.storage.copyFile.mock.calls as [string, string][];
+      expect(copiedFrom).toBe(from);
+      expect(staged).not.toBe(final);
+      expect(path.dirname(staged)).toBe(path.dirname(final));
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged);
+      // nothing was renamed onto the final path
+      expect(mocks.storage.rename).not.toHaveBeenCalledWith(staged, final);
+    });
+
     it('crops, downsizes, restores on the admitted destination and publishes both preview files atomically', async () => {
       await sut.run(operation(), CLAIM);
 

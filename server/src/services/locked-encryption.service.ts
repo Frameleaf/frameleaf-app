@@ -521,7 +521,13 @@ export class LockedEncryptionService {
     } finally {
       privateKey.fill(0);
     }
-    await this.lockedEncryptionRepository.update(userId, { recoveryKeyCreatedAt: new Date() });
+    // the new recovery key is on disk and the old one no longer opens the file: it must reach the
+    // person; the date is only shown
+    try {
+      await this.lockedEncryptionRepository.update(userId, { recoveryKeyCreatedAt: new Date() });
+    } catch (error) {
+      this.logger.error(`Could not record the new recovery key date of user ${userId}: ${(error as Error).name}`);
+    }
     return { recoveryKey };
   }
 

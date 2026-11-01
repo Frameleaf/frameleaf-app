@@ -129,7 +129,8 @@ export class IdenticalFilesRepository {
 
   /**
    * FL-520: extra copies on the drive, from what the scan already recorded: for each content held in
-   * more than one file, every file but one, and the space they take. Reads no file.
+   * more than one file, every file but one, and the space they take. Reads no file. A file an encrypted
+   * Locked item reads is left out, as `getMembers` leaves it out: it is never merged, so frees nothing.
    */
   async countExtraCopies(): Promise<{ files: number; contents: number; bytes: number }> {
     const { rows } = await sql<{ files: number; contents: number; bytes: string }>`
@@ -138,7 +139,7 @@ export class IdenticalFilesRepository {
       FROM (
         SELECT c."sizeInBytes" AS size, count(DISTINCT a."originalPath") AS copies
         FROM public.asset_checksum c JOIN public.asset a ON a.id = c."assetId"
-        WHERE ${managed}
+        WHERE ${managed} AND NOT ${holdsEncryptedOriginal('a')}
         GROUP BY c.sha256, c."sizeInBytes"
         HAVING count(DISTINCT a."originalPath") > 1
       ) g`.execute(this.db);
