@@ -1766,6 +1766,7 @@ export class CloudBackupService {
       bucketKey,
       progress,
       uploadedNow: new Set(),
+      sealedOriginals: new Map(),
       clientKeys: opened.clientKeys,
       eligibleOwners: null,
       decided: false,
@@ -2734,6 +2735,9 @@ export class CloudBackupService {
     // A file that is encrypted but whose header cannot be read counts as keyless (fail safe), never as plain.
     const ownerKeyId = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
     const sealed = ownerKeyId !== null;
+    if (file.role === 'original' && file.assetId) {
+      run.sealedOriginals.set(file.assetId, sealed);
+    }
     if (ownerKeyId && !run.progress.result.sealedKeyIds.includes(ownerKeyId)) {
       run.progress.result = {
         ...run.progress.result,
@@ -2915,13 +2919,17 @@ export class CloudBackupService {
           }
         }
       }
-      // FL-738: the item's checksum is kept only for an encrypted original (see `backupRecordFor`)
+      // FL-738: the item's checksum is kept only for an original that was encrypted when this run hashed it
+      // (see `backupRecordFor`)
       const original = known?.record.checksum ? current.files.find((file) => file.role === 'original') : undefined;
       const body = JSON.stringify({
         owner: current.owner,
         files: current.files,
         ...(known && {
-          ...backupRecordFor(known.record, !!original && (await sealedFileOwnerKeyId(original.path)) !== null),
+          ...backupRecordFor(
+            known.record,
+            !!original && (run.sealedOriginals.get(current.id) ?? (await sealedFileOwnerKeyId(original.path)) !== null),
+          ),
           details: known.details,
         }),
       });
@@ -5470,6 +5478,11 @@ type Run = {
   progress: { result: CloudBackupRunResult };
   /** Hashes this claim uploaded, so a second file with the same content in this run is never uploaded. */
   uploadedNow: Set<string>;
+  /**
+   * FL-738: whether each original this claim backed up was encrypted when it was hashed, by asset, so the
+   * manifest keeps an item's checksum for the bytes it holds. A claim resumed after hashing reads the file.
+   */
+  sealedOriginals: Map<string, boolean>;
   /** FL-362: the accounts whose originals and profile images this run uploads; null: every account. */
   eligibleOwners: Set<string> | null;
   /** FL-362: the run holds an inventory; its walk is the inventory's kept originals. */

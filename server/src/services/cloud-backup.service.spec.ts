@@ -3118,6 +3118,51 @@ describe(CloudBackupService.name, () => {
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('had no key file when the run started'));
       });
 
+      /** FL-738: the manifest entry for asset-1 when its file is swapped between hashing and the manifest. */
+      const manifestAfter = async (path: string, swap: () => Promise<void>) => {
+        const record = {
+          type: 'IMAGE',
+          originalFileName: 'IMG_1.jpg',
+          fileCreatedAt: '2026-08-14T07:12:00.000Z',
+          fileModifiedAt: '2026-08-14T07:12:00.000Z',
+          localDateTime: '2026-08-14T09:12:00.000Z',
+          duration: null,
+          checksum: 'b'.repeat(64),
+          checksumAlgorithm: 'sha256' as const,
+        };
+        index.getAssetDetails.mockResolvedValue(new Map([['asset-1', { record, details: EMPTY_DETAILS }]]));
+        index.listAssets
+          .mockResolvedValueOnce([{ ...asset('asset-1', null), ownerId: OWNER, originalPath: path }])
+          .mockResolvedValueOnce([]);
+        index.getEntriesPage.mockImplementationOnce(async () => {
+          await swap();
+          return index.upsertEntries.mock.calls.flatMap(([, entries]) => entries);
+        });
+        await sut.run(managedOperation(), 'claim-1');
+        expect(operations.complete).toHaveBeenCalled();
+        return manifestOf().assets['asset-1'];
+      };
+
+      it('keeps an encrypted original’s item checksum though the file is unsealed before the manifest (FL-738)', async () => {
+        const sealed = await sealedToOwner();
+        await expect(manifestAfter(sealed, () => writeFile(sealed, 'the photo'))).resolves.toMatchObject({
+          checksum: 'b'.repeat(64),
+          checksumAlgorithm: 'sha256',
+        });
+      });
+
+      it('drops the item checksum of a plain original sealed before the manifest (FL-738)', async () => {
+        const sealed = await sealedToOwner();
+        const plain = join(media, 'library', OWNER, 'IMG_2.jpg');
+        await writeFile(plain, 'the photo');
+        const later = await manifestAfter(plain, async () => {
+          await rm(plain);
+          await copyFileOf(sealed, plain);
+        });
+        expect(later).toMatchObject({ originalFileName: 'IMG_1.jpg' });
+        expect(later.checksum).toBeUndefined();
+      });
+
       it('a partner copy of an encrypted item needs the owner’s key file, never the partner’s', async () => {
         const PARTNER = '00000000-0000-4000-8000-000000000002';
         const sealed = await sealedToOwner();
@@ -5116,6 +5161,7 @@ describe(CloudBackupService.name, () => {
         bucketKey: key,
         clientKeys: structuredClone(fixture.file.client),
         uploadedNow: new Set<string>(),
+        sealedOriginals: new Map<string, boolean>(),
         eligibleOwners: null,
         decided: false,
         progress: {
