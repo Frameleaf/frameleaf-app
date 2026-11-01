@@ -22,7 +22,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReason } from 'src/enum.js';
 import { isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import { studioExportFormatSpec } from 'src/utils/studio-export-formats.js';
-import { REFRAME_PROFILE, isReframeShape } from 'src/utils/studio-reframe.js';
+import { LANDSCAPE_REFRAME_PROFILE, REFRAME_PROFILE, isReframeShape } from 'src/utils/studio-reframe.js';
 
 /* ------------------------------------------------------------------ */
 /* Seams                                                                */
@@ -459,6 +459,7 @@ export type RequiredOutput = {
   combination?: boolean;
   /** FL-563: a vertical or square export; the session must name `reframe-v1`. */
   reframe?: boolean;
+  landscapeReframe?: boolean;
 };
 
 const impossible = (format: unknown): RequiredOutput => ({
@@ -479,7 +480,7 @@ export const requiredOutput = (settings: Record<string, unknown> | undefined): R
   if (!isReframeShape(shape) || spec?.kind !== 'video' || spec.bitDepth !== 8 || settings?.color !== 'preserve') {
     return impossible(output.format);
   }
-  return { ...output, reframe: true };
+  return { ...output, reframe: true, ...(shape === 'landscape' && { landscapeReframe: true }) };
 };
 
 const requiredFormatOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
@@ -545,7 +546,8 @@ export const provesOutput = (
     formats.includes(output.container) &&
     (!output.combination || capabilities.formats.includes(output.format)) &&
     (!output.profiles || output.profiles.some((profile) => capabilities.formats.includes(profile))) &&
-    (!output.reframe || capabilities.formats.includes(REFRAME_PROFILE))
+    (!output.reframe || capabilities.formats.includes(REFRAME_PROFILE)) &&
+    (!output.landscapeReframe || capabilities.formats.includes(LANDSCAPE_REFRAME_PROFILE))
   );
 };
 

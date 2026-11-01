@@ -83,6 +83,7 @@ import {
   isPublicMediaOperationKind,
 } from 'src/utils/media-operation.js';
 import { PreservationPackageError, isPreservationKind, parsePreservationSnapshot } from 'src/utils/preservation.js';
+import { studioExportFailure, studioRenderProgressOf } from 'src/utils/studio-render-progress.js';
 
 const DEFAULT_TAKE = 100;
 
@@ -321,6 +322,7 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     bulk: privateWeekly ? null : mapBulkSummary(operation),
     cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
     studioWork: studioWorkOf(operation),
+    renderProgress: privateWeekly ? null : studioRenderProgressOf(operation),
     encryptedWithOlderKey: privateWeekly ? null : encryptedWithOlderKeyOf(operation),
     progress: privateWeekly ? 0 : operation.progress,
     processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
@@ -333,7 +335,12 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     autoRetries: operation.autoRetries ?? 0,
     retryAt: asIso(operation.retryAt),
     ...(privateWeekly ? NO_ADMISSION_REFUSAL : admissionRefusalOf(operation)),
-    error: privateWeekly ? null : operation.error,
+    error: privateWeekly
+      ? null
+      : operation.error &&
+          [MediaOperationKind.StudioExport, MediaOperationKind.StudioExportPublish].includes(operation.kind)
+        ? studioExportFailure(operation.errorCode)
+        : operation.error,
     errorCode: privateWeekly ? null : operation.errorCode,
     cancelRequestedAt: asIso(operation.cancelRequestedAt),
     cancelAcknowledgedAt: asIso(operation.cancelAcknowledgedAt),

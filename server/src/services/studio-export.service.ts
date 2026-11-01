@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
@@ -17,6 +17,8 @@ import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
+  StudioExportBatchCreateDto,
+  StudioExportBatchCreateResponseDto,
   StudioExportCreateDto,
   StudioExportCreateResponseDto,
   StudioExportListResponseDto,
@@ -154,6 +156,7 @@ export type StudioExportCreateOptions = {
    * the project.
    */
   retainInProject?: boolean;
+  batch?: { requestKey: string; digest: string; revision: number };
 };
 
 const isRetainedInProject = (snapshot: unknown): boolean =>
@@ -287,6 +290,56 @@ export class StudioExportService {
    * cannot place in Studio (trashed, unshared, Locked…) refuses the export rather than rendering
    * a picture with a hole in it. The render job and its version row are created together.
    */
+  async createBatch(
+    auth: AuthDto,
+    projectId: string,
+    dto: StudioExportBatchCreateDto,
+  ): Promise<StudioExportBatchCreateResponseDto> {
+    this.requireInteractive(auth);
+    await this.requireOwnedProject(auth, projectId);
+    const digest = createHash('sha256').update(canonicalJson(dto)).digest('hex');
+    const items: StudioExportBatchCreateResponseDto['items'] = [];
+    for (const variant of dto.variants) {
+      try {
+        const result = await this.create(
+          auth,
+          projectId,
+          {
+            ...variant,
+            destination: dto.destination as StudioExportCreateDto['destination'],
+            expectedRevision: dto.expectedRevision,
+            requestKey: createHash('sha256').update(`${dto.requestKey}:${variant.shape}`).digest('hex'),
+          },
+          { batch: { requestKey: dto.requestKey, digest, revision: dto.expectedRevision } },
+        );
+        items.push({ shape: variant.shape, result, errorCode: null, error: null });
+      } catch (error) {
+        if (!(error instanceof HttpException)) {
+          // Keep operator correlation without logging exception text, crop paths or retry keys.
+          this.logger.error(
+            `Unexpected Studio export admission failure for project ${projectId}, delivery ${variant.shape}`,
+          );
+        }
+        const response = error instanceof HttpException ? error.getResponse() : null;
+        const code = response && typeof response === 'object' && 'code' in response ? String(response.code) : '';
+        items.push({
+          shape: variant.shape,
+          result: null,
+          errorCode: /^[a-z_:-]{1,128}$/.test(code) ? code : 'studio_export_delivery_refused',
+          error:
+            code === 'studio_export_unsupported'
+              ? 'No qualified worker supports these delivery settings. Choose a supported format, resolution and destination.'
+              : code === 'studio_export_sources_refused'
+                ? 'A source is no longer available. Review source access before retrying.'
+                : code === 'studio_export_batch_key_conflict'
+                  ? 'This batch was already submitted with different settings. Retry the original reviewed choices.'
+                  : 'This delivery could not be queued. Review its settings and source access, then retry.',
+        });
+      }
+    }
+    return { revision: dto.expectedRevision, items };
+  }
+
   async create(
     auth: AuthDto,
     projectId: string,
@@ -302,6 +355,12 @@ export class StudioExportService {
         dto.requestKey,
       );
       if (existing) {
+        if (options.batch && existing.snapshot?.batchDigest !== options.batch.digest) {
+          throw new ConflictException({
+            code: 'studio_export_batch_key_conflict',
+            message: 'This batch key was already used for different deliveries',
+          });
+        }
         if (existing.projectId !== projectId) {
           throw new ConflictException('This request key was already used for another export');
         }
@@ -346,6 +405,7 @@ export class StudioExportService {
     await this.requireOwnedProject(auth, projectId);
     const authorized = await this.studio.authorizeRevision(auth, {
       projectId,
+      ...(options.batch && { revision: options.batch.revision }),
       destination,
       cloudConsent: dto.cloudConsent === true,
     });
@@ -501,7 +561,7 @@ export class StudioExportService {
         kind: MediaOperationKind.StudioExport,
         destination: dto.destination,
         destinationDetail: null,
-        label: authorized.project.name,
+        label: options.batch && dto.shape ? `${authorized.project.name} · ${dto.shape}` : authorized.project.name,
         assetId: null,
         resultAssetId: null,
         retryOfId: null,
@@ -520,6 +580,7 @@ export class StudioExportService {
           manifestDigest: authorized.manifest.digest,
           sourceEpochs: authorized.manifest.sourceEpochs,
           requestKey: dto.requestKey ?? null,
+          ...(options.batch && { batchKey: options.batch.requestKey, batchDigest: options.batch.digest }),
           studio: { stored: true, revision: authorized.revision.revision, cloudConsent: dto.cloudConsent === true },
           // FL-93 / FL-102: the cadence and source timing the worker renders on, and the precision
           // and audio its result must have. Publication holds the result to the contract.
@@ -2343,7 +2404,13 @@ export class StudioExportService {
       reframe: _sealedReframe,
       ...publicSettings
     } = version.settings;
-    const settings = publicSettings as StudioExportVersionDto['settings'];
+    const { shape, ...otherSettings } = publicSettings;
+    // Keep the legacy response enum closed; new delivery shapes are additive metadata.
+    const settings = {
+      ...otherSettings,
+      ...(shape !== undefined && { deliveryShape: shape }),
+      ...(['original', 'vertical', 'square'].includes(String(shape)) && { shape }),
+    } as StudioExportVersionDto['settings'];
     const seal = sidecarSealOf(version.settings);
     return {
       id: version.id,

@@ -358,7 +358,12 @@ export async function createEngineRenderer({
         signal?.throwIfAborted();
         await session.page.exposeBinding('__freecutProgress', (_source, progress) => {
           const value = Number(progress?.progress);
-          if (Number.isFinite(value)) onProgress?.(Math.max(0, Math.min(1, value / 100)));
+          if (Number.isFinite(value))
+            onProgress?.(Math.max(0, Math.min(1, value / 100)), {
+              phase: progress.phase,
+              currentFrame: progress.currentFrame,
+              totalFrames: progress.totalFrames,
+            });
         });
         const summary = await renderJob(
           session.page,
@@ -435,14 +440,23 @@ export async function createEngineRenderer({
       const session = await open(files, signal);
       try {
         await registerClaimFonts(session.page, fonts);
-        const media = [...files.keys()].map((mediaId) => ({ mediaId, url: session.server.mediaUrl(mediaId) }));
+        const media = [...files.keys()].map((mediaId) => ({
+          mediaId,
+          url: session.server.mediaUrl(mediaId),
+        }));
         for (let frame = bounds.inPoint; frame < bounds.outPoint; frame++) {
           signal?.throwIfAborted();
           let result;
           try {
             result = await session.page.evaluate(
               async ({ project, media, frame, target }) => {
-                const rendered = await window.freecut.renderFrameSignal({ project, media, frame, target, strict: true });
+                const rendered = await window.freecut.renderFrameSignal({
+                  project,
+                  media,
+                  frame,
+                  target,
+                  strict: true,
+                });
                 const { width, height, rgba } = rendered;
                 const out = new Uint16Array(width * height * 3);
                 for (let i = 0; i < width * height; i++) {
@@ -453,7 +467,8 @@ export async function createEngineRenderer({
                 }
                 const bytes = new Uint8Array(out.buffer);
                 let binary = '';
-                for (let i = 0; i < bytes.length; i += 32_768) binary += String.fromCharCode(...bytes.subarray(i, i + 32_768));
+                for (let i = 0; i < bytes.length; i += 32_768)
+                  binary += String.fromCharCode(...bytes.subarray(i, i + 32_768));
                 return {
                   width,
                   height,
@@ -473,9 +488,13 @@ export async function createEngineRenderer({
               );
             }
             if (/requires WebGPU|float route/i.test(message)) {
-              throw new BundledRefusal('hdr_needs_gpu', 'HDR export renders on the GPU float route, which this worker could not open.');
+              throw new BundledRefusal(
+                'hdr_needs_gpu',
+                'HDR export renders on the GPU float route, which this worker could not open.',
+              );
             }
-            if (/MISSING_MEDIA/.test(message)) throw new BundledRefusal('missing_media', 'A clip reads media this export was not granted.');
+            if (/MISSING_MEDIA/.test(message))
+              throw new BundledRefusal('missing_media', 'A clip reads media this export was not granted.');
             throw error;
           }
           if (result.warnings.length > 0) {
@@ -484,7 +503,11 @@ export async function createEngineRenderer({
               `The engine could not render this project exactly (${[...new Set(result.warnings)].join(', ')}); nothing was exported.`,
             );
           }
-          yield { width: result.width, height: result.height, rgb48: Buffer.from(result.base64, 'base64') };
+          yield {
+            width: result.width,
+            height: result.height,
+            rgb48: Buffer.from(result.base64, 'base64'),
+          };
         }
       } finally {
         await session.close();

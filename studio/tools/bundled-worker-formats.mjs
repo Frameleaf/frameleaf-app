@@ -14,7 +14,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { HDR_MASTER_FORMAT, hdrEvidenceToken, probeHdrMasters } from './bundled-worker-hdr.mjs';
-import { REFRAME_PROFILE } from './bundled-worker-reframe.mjs';
+import { REFRAME_PROFILE, LANDSCAPE_REFRAME_PROFILE } from './bundled-worker-reframe.mjs';
 
 /** Cancellation must join the child before its output directory can be removed. */
 export function execFileClosed(file, args, options) {
@@ -508,7 +508,10 @@ export async function probeExportMatrix({
   if (sidecar) formats.add(SIDECAR_PROFILE);
   // FL-563: vertical and square exports are a graph this worker derives (`bundled-worker-reframe.mjs`),
   // rendered and probed like any other export at the sealed size; offered with any SDR video writer.
-  if (Object.keys(writers).some((id) => BUNDLED_FORMATS[id].kind === 'video')) formats.add(REFRAME_PROFILE);
+  if (Object.keys(writers).some((id) => BUNDLED_FORMATS[id].kind === 'video')) {
+    formats.add(REFRAME_PROFILE);
+    formats.add(LANDSCAPE_REFRAME_PROFILE);
+  }
   if (
     [...Object.keys(writers)].some(
       (id) => BUNDLED_FORMATS[id].kind === 'video' && codecs.has(BUNDLED_FORMATS[id].textTrack),
@@ -524,13 +527,27 @@ export async function probeExportMatrix({
   let colorPrecision = null;
   if (hdr) {
     const filters = listedNames(await run(['-filters']));
-    const masters = await probeHdrMasters({ ffmpeg, ffprobe, encoders, filters, log, signal });
+    const masters = await probeHdrMasters({
+      ffmpeg,
+      ffprobe,
+      encoders,
+      filters,
+      log,
+      signal,
+    });
     for (const token of masters.formats) formats.add(token);
     for (const codec of masters.codecs) codecs.add(codec);
     for (const transfer of masters.transfers) writers[hdrEvidenceToken(transfer)] = masters.codecs[0];
-    for (const [transfer, why] of Object.entries(masters.refused)) refused[hdrEvidenceToken(transfer, HDR_MASTER_FORMAT)] = why;
+    for (const [transfer, why] of Object.entries(masters.refused))
+      refused[hdrEvidenceToken(transfer, HDR_MASTER_FORMAT)] = why;
     colorPrecision = masters.colorPrecision;
   }
   signal?.throwIfAborted();
-  return { codecs: [...codecs], formats: [...formats], writers, refused, colorPrecision };
+  return {
+    codecs: [...codecs],
+    formats: [...formats],
+    writers,
+    refused,
+    colorPrecision,
+  };
 }
