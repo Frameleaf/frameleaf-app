@@ -1138,7 +1138,7 @@ describe(MemoryService.name, () => {
         finalize: vitest.fn().mockImplementation(() => Promise.resolve(stream.end())),
       } as never);
       mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
-      return { addFile };
+      return { addFile, stream };
     };
 
     it('should skip a run it cannot claim', async () => {
@@ -1238,12 +1238,15 @@ describe(MemoryService.name, () => {
 
     it('puts the run back to pending, not failed, while the job waits for the Locked key (FL-721)', async () => {
       const ownerId = newUuid();
-      const run = exportRun({ ownerId, assetIds: [newUuid()], assetCount: 1 });
+      const asset = AssetFactory.create({ ownerId });
+      const run = exportRun({ ownerId, assetIds: [asset.id], assetCount: 1 });
       mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
-      mocks.asset.getByIds.mockImplementation(() => {
+      mocks.asset.getByIds.mockResolvedValue([asset] as never);
+      const { addFile, stream } = givenZip();
+      addFile.mockImplementation(() => {
         const error = new LockedKeyUnavailableError([ownerId]);
         deferForLockedKey(error);
-        return Promise.reject(error);
+        throw error;
       });
       const execution = {
         claim: { id: 'job-1', attempt: 1, data: {} },
@@ -1259,6 +1262,8 @@ describe(MemoryService.name, () => {
       }
 
       expect(execution.dependencyReason).toBe('locked-key-unavailable');
+      // the open archive and its file are closed, not left behind on every deferral
+      expect(stream.destroyed).toBe(true);
       expect(mocks.storage.unlink).toHaveBeenCalled();
       expect(mocks.memory.updateExport).toHaveBeenCalledWith(run.id, { status: MemoryExportStatus.Pending });
       expect(mocks.memory.updateExport).not.toHaveBeenCalledWith(

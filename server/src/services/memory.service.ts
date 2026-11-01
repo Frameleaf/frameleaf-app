@@ -40,7 +40,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse, ZipDownloadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
@@ -921,6 +921,8 @@ export class MemoryService extends BaseService {
     // written under a partial name and renamed only once the archive is complete, so an
     // interrupted worker can never leave a half-written file that looks downloadable
     const partial = `${target}.partial`;
+    // outside the `try` so a failed or deferred run can close the archive and its file
+    let zip: ZipDownloadStream | undefined;
 
     try {
       this.storageCore.ensureFolders(partial);
@@ -933,7 +935,7 @@ export class MemoryService extends BaseService {
       const assets = await this.assetRepository.getByIds(assetIds);
       const byId = new Map(assets.map((asset) => [asset.id, asset]));
 
-      const zip = this.storageRepository.createZipStream();
+      zip = this.storageRepository.createZipStream();
       const output = this.storageRepository.createWriteStream(partial);
       const finished = pipeline(zip.stream, output);
       // A throw inside the loop below skips `await finished`, which would leave this
@@ -1022,6 +1024,8 @@ export class MemoryService extends BaseService {
 
       return JobStatus.Success;
     } catch (error) {
+      // `pipeline` then destroys the output file stream too; `finished.catch` above absorbs the rejection
+      zip?.stream.destroy();
       // FL-721: the queue defers the job until the owner's Locked key is loaded; the run goes back to
       // pending so the deferred job can claim it again
       if (isLockedKeyUnavailable(error) && queueExecution.getStore()?.dependencyReason === 'locked-key-unavailable') {
