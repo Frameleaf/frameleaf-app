@@ -408,9 +408,25 @@ export async function readPlainFile(
  * The hash of a file's plaintext: the file's own hash when it is plain, the hash of what it decrypts
  * to when it is sealed (a sealed file's own bytes change with every seal). A job read.
  */
-export async function hashPlainFile(path: string, algorithm: 'sha1' | 'sha256' = 'sha256'): Promise<Buffer> {
+export async function hashPlainFile(
+  path: string,
+  algorithm: 'sha1' | 'sha256',
+  /**
+   * M7: a request's viewer (`lockedViewerOf(auth)`; `undefined`, a shared link, never decrypts), or
+   * `null` in a job, which may use any loaded key.
+   */
+  viewerId: string | null | undefined,
+): Promise<Buffer> {
   const hash = createHash(algorithm);
-  const stream = (await isLockedPath(path)) ? (await openLockedRead(path, null)).stream : createReadStream(path);
+  let stream: NodeJS.ReadableStream;
+  if (await isLockedPath(path)) {
+    if (viewerId === undefined) {
+      throw await unavailable((await readHeader(path)).keyIds);
+    }
+    stream = (await openLockedRead(path, viewerId)).stream;
+  } else {
+    stream = createReadStream(path);
+  }
   for await (const chunk of stream as AsyncIterable<Buffer>) {
     hash.update(chunk);
   }

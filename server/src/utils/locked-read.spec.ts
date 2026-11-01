@@ -1,5 +1,5 @@
 import { SEGMENT_SIZE, encryptFile, generateKeyPair } from '@frameleaf/locked-crypto';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -18,6 +18,7 @@ import {
   clearLockedKeyOwners,
   clearLockedPathCache,
   deferForLockedKey,
+  hashPlainFile,
   isLockedPath,
   isPlainCopyPath,
   makeWorkDir,
@@ -279,6 +280,16 @@ describe('locked-read', () => {
     expect(to).toBe(sealed);
     expect(join(staging, '..')).toBe(dir);
     expect(LOCKED_TEMP_NAME.exec(basename(staging))?.[1]).toBe(basename(sealed));
+  });
+
+  it('hashPlainFile on a request uses only the keys its viewer may use (M7)', async () => {
+    loadOwner();
+    const expected = createHash('sha256').update(plain).digest();
+
+    await expect(hashPlainFile(sealed, 'sha256', VIEWER)).rejects.toThrow(LockedKeyUnavailableError);
+    await expect(hashPlainFile(sealed, 'sha256', OWNER)).resolves.toEqual(expected);
+    // a job may use any loaded key
+    await expect(hashPlainFile(sealed, 'sha256', null)).resolves.toEqual(expected);
   });
 
   describe(deferForLockedKey.name, () => {

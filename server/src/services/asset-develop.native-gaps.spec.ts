@@ -98,7 +98,7 @@ describe('AssetDevelopService native API gaps', () => {
 
     it('decodes the still from the motion clip frame at the key frame time', async () => {
       const source = { ...getForGenerateThumbnail(still), originalPath };
-      const result = await sut['decodeSource'](source, defaults.image, 1280, { timeMs: 1200 });
+      const result = await sut['decodeSource'](source, defaults.image, null, 1280, { timeMs: 1200 });
       expect(mocks.assetJob.getForVideoConversion).toHaveBeenCalledWith(motionId);
       const [input, output, command] = mocks.media.transcode.mock.calls[0];
       expect(input).toBe('/library/IMG_0001.mov');
@@ -132,7 +132,7 @@ describe('AssetDevelopService native API gaps', () => {
           Promise.resolve({ ...still, id, livePhotoVideoId: motionId, ...state } as never),
         );
         await expect(
-          sut['decodeSource'](getForGenerateThumbnail(still), defaults.image, 1280, { timeMs: 0 }),
+          sut['decodeSource'](getForGenerateThumbnail(still), defaults.image, null, 1280, { timeMs: 0 }),
         ).rejects.toThrow();
         expect(mocks.media.transcode).not.toHaveBeenCalled();
       },

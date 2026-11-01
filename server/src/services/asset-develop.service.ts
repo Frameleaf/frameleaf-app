@@ -355,21 +355,25 @@ export class AssetDevelopService {
     // Preserve discriminated-union narrowing for the HDR renderer.
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
     if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
-      return this.renderHdrPreview(source, recipe, dto, signal);
+      return this.renderHdrPreview(source, recipe, dto, lockedViewerOf(auth), signal);
     if (dto.dynamicRange === 'hdr') throw new BadRequestException('HDR previews require recipe version 3, 4, 5 or 6');
     const motion =
       recipe.version === 1 && recipe.keyFrame
         ? await this.requireMotionClip(source, recipe.keyFrame.timeMs, auth, Permission.AssetEditGet)
         : undefined;
-    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
+    // FL-721 M7: every read for this request uses the keys this viewer may use
+    const viewerId = lockedViewerOf(auth);
+    const native =
+      recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, viewerId, undefined, signal) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
       native ??
       (keyframe
-        ? await this.decodeKeyframe(source, keyframe.timeMs, dto.size * 2, motion)
-        : await this.decodeSource(source, image, dto.size * 2));
-    const rendered = native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source));
+        ? await this.decodeKeyframe(source, keyframe.timeMs, viewerId, dto.size * 2, motion)
+        : await this.decodeSource(source, image, viewerId, dto.size * 2));
+    const rendered =
+      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source, viewerId));
     const format = image.preview.format;
     const buffer = native
       ? await encodeNativeDevelopOutput(native.nativeBuffer, { format, quality: image.preview.quality, size: dto.size })
@@ -605,8 +609,8 @@ export class AssetDevelopService {
           ? await this.requireMotionClip(source, parsed.keyFrame.timeMs)
           : undefined;
       const sourceChecksum = motion
-        ? await this.hashPlain(motion.originalPath)
-        : await this.currentSourceChecksum(revision.assetId);
+        ? await this.hashPlain(motion.originalPath, null)
+        : await this.currentSourceChecksum(revision.assetId, null);
       const publication: AssetDevelopRevisionUpdate = external
         ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
         : // FL-721 (spec §8.2): a sealed original is rendered from a plain copy
@@ -632,7 +636,7 @@ export class AssetDevelopService {
         external &&
         Number(revision.batchChargedBytes) > 0 &&
         revision.sourceChecksum &&
-        !(await this.currentSourceChecksum(revision.assetId)).equals(revision.sourceChecksum)
+        !(await this.currentSourceChecksum(revision.assetId, null)).equals(revision.sourceChecksum)
       )
         throw new DevelopSourceChanged('The original changed while the returned preview rendered');
       // Rendering a version makes it the working version; Revert walks back through history.
@@ -828,7 +832,7 @@ export class AssetDevelopService {
     if (exports.length === 0) {
       return [];
     }
-    const current = await this.currentSourceChecksum(assetId);
+    const current = await this.currentSourceChecksum(assetId, lockedViewerOf(auth));
     return exports.map((item) => this.toExportDto(item, current));
   }
 
@@ -839,7 +843,7 @@ export class AssetDevelopService {
   async createExport(auth: AuthDto, assetId: string, reservedId?: string): Promise<DevelopExportResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
-    const checksum = await this.currentSourceChecksum(assetId);
+    const checksum = await this.currentSourceChecksum(assetId, lockedViewerOf(auth));
     const create = reservedId
       ? this.photoToolsRepository.createReservedExport.bind(this.photoToolsRepository)
       : this.photoToolsRepository.createExport.bind(this.photoToolsRepository);
@@ -906,7 +910,7 @@ export class AssetDevelopService {
       if (!expected) {
         throw new BadRequestException('Say which export or original checksum the file was developed from');
       }
-      const current = await this.currentSourceChecksum(assetId);
+      const current = await this.currentSourceChecksum(assetId, lockedViewerOf(auth));
       if (!current.equals(expected)) {
         throw new ConflictException(
           'This file was developed from a different original than the photo has now; nothing was changed',
@@ -1393,6 +1397,7 @@ export class AssetDevelopService {
     asset: { id: string; ownerId: string },
     ids: string[],
     kind: AssetDevelopArtifactKind,
+    viewerId: string | null | undefined,
     verify = false,
   ): Promise<Map<string, DevelopBitmap>> {
     const bitmaps = new Map<string, DevelopBitmap>();
@@ -1404,7 +1409,8 @@ export class AssetDevelopService {
     for (const artifact of stored) {
       if (
         verify &&
-        (artifact.ownerId !== asset.ownerId || (await this.hashPlain(artifact.path)).toString('hex') !== artifact.id)
+        (artifact.ownerId !== asset.ownerId ||
+          (await this.hashPlain(artifact.path, viewerId)).toString('hex') !== artifact.id)
       ) {
         throw new BadRequestException({
           message: 'The develop artifact changed or is not owned by this photo',
@@ -1414,7 +1420,9 @@ export class AssetDevelopService {
       bitmaps.set(
         artifact.id,
         // FL-721: a sealed artifact is decoded from a plain copy
-        await withPlainCopy(artifact.path, (path) => this.mediaRepository.decodeDevelopArtifact(path, kind)),
+        await withPlainCopy(artifact.path, (path) => this.mediaRepository.decodeDevelopArtifact(path, kind), {
+          viewerId,
+        }),
       );
     }
     return bitmaps;
@@ -1531,11 +1539,12 @@ export class AssetDevelopService {
   private async decodeSource(
     source: DevelopSource,
     image: SystemConfig['image'],
+    viewerId: string | null | undefined,
     size?: number,
     keyframe?: { timeMs: number },
   ) {
     if (keyframe) {
-      return this.decodeKeyframe(source, keyframe.timeMs, size);
+      return this.decodeKeyframe(source, keyframe.timeMs, viewerId, size);
     }
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     if (!isRaw) {
@@ -1607,6 +1616,7 @@ export class AssetDevelopService {
   private async decodeKeyframe(
     source: DevelopSource,
     timeMs: number,
+    viewerId: string | null | undefined,
     size?: number,
     clip?: NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>,
   ) {
@@ -1617,8 +1627,11 @@ export class AssetDevelopService {
     try {
       const output = path.join(folder, 'frame.png');
       // FL-721 (spec §8.2): a sealed motion part is read from a plain copy
-      await withPlainCopy(motion.originalPath, (input) =>
-        this.mediaRepository.transcode(input, output, getKeyframeCommand(ffmpeg, motion.videoStream, timeMs)),
+      await withPlainCopy(
+        motion.originalPath,
+        (input) =>
+          this.mediaRepository.transcode(input, output, getKeyframeCommand(ffmpeg, motion.videoStream, timeMs)),
+        { viewerId },
       );
       const { data, info } = await this.mediaRepository.decodeImage(output, {
         colorspace: Colorspace.Srgb,
@@ -1636,18 +1649,29 @@ export class AssetDevelopService {
     recipe: ReturnType<typeof renderDevelopProjection>,
     seed: number,
     asset: { id: string; ownerId: string },
+    viewerId: string | null | undefined,
   ) {
     // FL-233: Clean Up works on the original, before every other step
     const cleanup = (recipe.cleanup ?? []).filter((op) => op.enabled);
     if (cleanup.length > 0) {
-      const fills = await this.loadArtifacts(asset, developCleanupArtifacts(cleanup), AssetDevelopArtifactKind.Fill);
+      const fills = await this.loadArtifacts(
+        asset,
+        developCleanupArtifacts(cleanup),
+        AssetDevelopArtifactKind.Fill,
+        viewerId,
+      );
       applyDevelopCleanup(decoded.data, decoded.info as never, cleanup, fills);
     }
     const geometry = planDevelopGeometry(recipe, decoded.info.width, decoded.info.height);
     const shaped = await this.mediaRepository.renderDevelopGeometry(decoded.data, decoded.info, geometry);
     const { params, look } = effectiveDevelop(recipe);
     applyDevelopTone(shaped.data, shaped.info, params, look, seed + 1);
-    const bitmaps = await this.loadArtifacts(asset, developMaskArtifacts(recipe.masks), AssetDevelopArtifactKind.Mask);
+    const bitmaps = await this.loadArtifacts(
+      asset,
+      developMaskArtifacts(recipe.masks),
+      AssetDevelopArtifactKind.Mask,
+      viewerId,
+    );
     applyDevelopMasks(shaped.data, shaped.info, recipe.masks, maskMappingFor(geometry), bitmaps);
     const detail = planDevelopDetail(params, { width: shaped.info.width, height: shaped.info.height });
     return { data: shaped.data, info: shaped.info, detail };
@@ -1656,6 +1680,7 @@ export class AssetDevelopService {
   private async renderNativeRecipe(
     source: DevelopSource,
     recipe: DarktableDevelopRecipe,
+    viewerId: string | null | undefined,
     revisionId?: string,
     signal?: AbortSignal,
   ) {
@@ -1669,7 +1694,7 @@ export class AssetDevelopService {
       const artifacts = (recipe.masks ?? [])
         .filter((mask) => mask.enabled && mask.artifact)
         .map((mask) => mask.artifact!);
-      const bitmaps = await this.loadArtifacts(source, artifacts, AssetDevelopArtifactKind.Mask);
+      const bitmaps = await this.loadArtifacts(source, artifacts, AssetDevelopArtifactKind.Mask, viewerId);
       const buffer = await renderDarktable(source.originalPath, recipe, abort, bitmaps);
       const { width, height } = await this.mediaRepository.getImageMetadata(buffer);
       abort.throwIfAborted();
@@ -1733,6 +1758,7 @@ export class AssetDevelopService {
     source: DevelopSource,
     recipe: HdrAssetDevelopRecipe,
     outputs: Parameters<MediaRepository['generateHdrRenditions']>[1],
+    viewerId: string | null | undefined,
     revisionId?: string,
     seed = 1,
     signal?: AbortSignal,
@@ -1742,9 +1768,9 @@ export class AssetDevelopService {
     if (mimeTypes.isRaw(source.originalFileName))
       throw new BadRequestException('HDR quick edits require a reconstructed still; RAW uses native development');
     const needed = developRenderArtifacts(recipe);
-    const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, true);
-    const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, true);
-    const contentChecksum = checksum ?? (await this.currentSourceChecksum(source.id));
+    const masks = await this.loadArtifacts(source, needed.mask, AssetDevelopArtifactKind.Mask, viewerId, true);
+    const fills = await this.loadArtifacts(source, needed.fill, AssetDevelopArtifactKind.Fill, viewerId, true);
+    const contentChecksum = checksum ?? (await this.currentSourceChecksum(source.id, viewerId));
     const { version: _version, renderer: _renderer, hdr: _hdr, ...fields } = recipe;
     return this.withRenderCancellation(revisionId, signal, (abort) =>
       this.mediaRepository.generateHdrRenditions(
@@ -1761,6 +1787,7 @@ export class AssetDevelopService {
     source: DevelopSource,
     recipe: HdrAssetDevelopRecipe,
     dto: AssetDevelopPreviewDto,
+    viewerId: string | null | undefined,
     signal?: AbortSignal,
   ) {
     await this.requireHdrRenderer(recipe);
@@ -1779,6 +1806,7 @@ export class AssetDevelopService {
             dynamicRange: dto.dynamicRange === 'sdr' || !dto.dynamicRange ? 'sdr' : 'hdr',
           },
         ],
+        viewerId,
         undefined,
         1,
         signal,
@@ -1815,6 +1843,7 @@ export class AssetDevelopService {
         { path: tmp.master, dynamicRange: 'sdr' },
         { path: tmp.preview, size: image.preview.size, dynamicRange: 'sdr' },
       ],
+      null,
       revision.id,
       revision.revision + 1,
       undefined,
@@ -1854,15 +1883,17 @@ export class AssetDevelopService {
   }
 
   /** FL-721: SHA-256 of a file's plaintext, also when it is sealed (a sealed file's own bytes change with every seal). */
-  private async hashPlain(path: string): Promise<Buffer> {
-    return (await isLockedPath(path)) ? hashPlainFile(path, 'sha256') : this.cryptoRepository.hashFile(path, 'sha256');
+  private async hashPlain(path: string, viewerId: string | null | undefined): Promise<Buffer> {
+    return (await isLockedPath(path))
+      ? hashPlainFile(path, 'sha256', viewerId)
+      : this.cryptoRepository.hashFile(path, 'sha256');
   }
 
   /**
    * SHA-256 of the asset's original bytes now. New uploads already store it; older rows (SHA-1,
    * or the path-based checksum of external libraries) are hashed from the file.
    */
-  private async currentSourceChecksum(assetId: string): Promise<Buffer> {
+  private async currentSourceChecksum(assetId: string, viewerId: string | null | undefined): Promise<Buffer> {
     const asset = await this.assetRepository.getById(assetId);
     if (!asset) {
       throw new NotFoundException('Asset not found');
@@ -1871,7 +1902,7 @@ export class AssetDevelopService {
       return asset.checksum;
     }
     // FL-721: the hash of the plaintext, also when the original is sealed
-    return this.hashPlain(asset.originalPath);
+    return this.hashPlain(asset.originalPath, viewerId);
   }
 
   private async renderRecipeRevision(
@@ -1888,17 +1919,18 @@ export class AssetDevelopService {
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
     if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
       return this.renderHdrRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
-    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, revision.id) : undefined;
+    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, null, revision.id) : undefined;
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
       native ??
       (keyframe
-        ? await this.decodeKeyframe(source, keyframe.timeMs, undefined, motion)
-        : await this.decodeSource(source, image));
+        ? await this.decodeKeyframe(source, keyframe.timeMs, null, undefined, motion)
+        : await this.decodeSource(source, image, null));
     await this.progress(revision.id, 25);
 
     const rendered =
-      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision, source));
+      native ??
+      (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision, source, null));
     await this.progress(revision.id, 60);
 
     this.storageRepository.mkdirSync(path.dirname(outputs.master));
