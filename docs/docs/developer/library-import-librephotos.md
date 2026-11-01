@@ -1,6 +1,6 @@
 # LibrePhotos import qualification
 
-The LibrePhotos adapter is under development. Its internal SQLite reader does not create destination accounts, transfer originals or expose migration support. All ten source families must pass combined qualification before the expanded feature releases.
+The LibrePhotos adapter is under development. Its internal SQLite and PostgreSQL readers do not create destination accounts, transfer originals or expose migration support. All ten source families must pass combined qualification before the expanded feature releases.
 
 ## Pinned source evidence
 
@@ -36,7 +36,7 @@ Face boxes use big-thumbnail pixel coordinates and additional local orientation.
 
 ## Outstanding acceptance
 
-PostgreSQL snapshots, complete supported media/companion fixtures, orientation conversion, every sharing path, destination privacy, protected archive persistence, byte transfer, resumable recovery, Manager integration and full migration acceptance remain outstanding. No end-to-end source compatibility claim follows from reader tests. Protected Unraid shares are outside the qualification environment and all agent access.
+Complete supported media/companion fixtures, orientation conversion, every sharing path, destination privacy, protected archive persistence, byte transfer, resumable recovery, Manager integration and full migration acceptance remain outstanding. No end-to-end source compatibility claim follows from reader tests. Protected Unraid shares are outside the qualification environment and all agent access.
 
 ## PostgreSQL schema and value qualification
 
@@ -46,6 +46,12 @@ The PostgreSQL structural fixture was then read in one repeatable-read, read-onl
 
 `createLibrephotosPostgresDecoder` admits only the pinned source version, engine version and catalog fingerprint. It consumes explicit PostgreSQL `column::text` projections, with the source session set to UTC. Integer values become `bigint`, booleans become the same strict `0n`/`1n` flags used by the SQLite reader, and native UUID values become consistent 32-character source IDs across primary and foreign keys. JSONB remains validated JSON text. Timestamp text retains microseconds and removes only the known UTC session suffix; capture dates still need the source-specific wall-clock/offset interpretation. Unknown tables, columns, types and malformed values are refused.
 
-The SQLite reader and PostgreSQL decoder share one credential-free projection allowlist. The PostgreSQL content fixture retains the 56 projected synthetic records used for value conversion tests. Catalog admission and decoding do not establish application identity, writer fencing, complete pagination, permission equivalence or verified original files. Direct PostgreSQL streaming and recovery integration remain outstanding.
+The SQLite reader and PostgreSQL decoder share one credential-free projection allowlist. The PostgreSQL content fixture retains the 56 projected synthetic records used for value conversion tests. Catalog admission and decoding do not establish application identity, writer fencing, permission equivalence or verified original files. Recovery integration remains outstanding.
 
 A native inheritance regression adds an existing compatible membership table as a child of another. PostgreSQL then returns two rows where it previously returned one. The fingerprint includes parent/child relationships and inherited-column/constraint flags, and refuses this schema before decoding records. See [PostgreSQL inheritance behavior](https://www.postgresql.org/docs/18/ddl-inherit.html).
+
+## PostgreSQL snapshot streaming
+
+`openLibrephotosPostgresSnapshot` reserves one dedicated connection and starts a read-only repeatable-read transaction. It requires stopped-writer evidence and refuses elevated roles, table write authority, other database clients, an unqualified engine/schema or incomplete migration inventory. The caller must still verify the source binary and fence services and restart mechanisms before opening the snapshot; admission checks cannot prevent a later external connection.
+
+Allowlisted content is read in batches of at most 1,000 records using native indexed primary keys, explicit text projections and `FROM ONLY`. The connection is never replaced after transport loss. Errors expose fixed codes. Explicit close ends the private pool with a five-second termination timeout; disconnecting rolls back its read-only transaction without waiting for another SQL command. A restored native fixture yielded all 56 expected records across all 51 allowlisted tables; a concurrent synthetic metadata edit remained invisible inside the snapshot, and terminating its backend caused a read failure without reconnection. A query blocked behind an exclusive table lock also closed within the bounded termination window. These checks qualify source reading only, with synthetic data and the pinned PostgreSQL engine.
