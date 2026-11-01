@@ -148,9 +148,9 @@
     }
   };
   /**
-   * FL-729: a step the preview could not check may drop matches. With every match read, the count is then an
-   * upper bound; with only the first matches read (partial), it is neither bound, only what the checked
-   * filters keep. A partial count with every step checked is a lower bound.
+   * FL-729: a step the preview could not check may drop matches, or change an asset before a later filter
+   * reads it, so with such a step the count is only what the checked filters keep today, with no bound
+   * claimed. A partial count with every step checked is a lower bound.
    */
   const matchCountKey = ({ partial, steps }: WorkflowPreviewResponseDto): Translations => {
     const unchecked = steps.some(({ result }) => result === WorkflowPreviewStepResult.Unchecked);
