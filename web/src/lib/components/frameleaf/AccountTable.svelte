@@ -30,6 +30,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { gibWords } from '$lib/components/frameleaf/settings/people/space';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import type { UsageByUserDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
@@ -73,7 +74,8 @@
         return $t('frameleaf_users_status_deleted');
       }
       case 'active': {
-        return $t('frameleaf_users_status_active');
+        // FL-538: an administrator paused this person's new uploads
+        return user.uploadsPaused ? $t('frameleaf_users_status_paused') : $t('frameleaf_users_status_active');
       }
     }
   };
@@ -146,7 +148,11 @@
             <div class="quota">
               <span>
                 {bytes(used)}
-                <small>/ {quota ? bytes(quota.total) : $t('frameleaf_users_quota_unlimited')}</small>
+                <small
+                  >/ {quota
+                    ? (gibWords(quota.total) ?? bytes(quota.total))
+                    : $t('frameleaf_users_quota_unlimited')}</small
+                >
               </span>
               {#if quota}
                 <progress
@@ -168,7 +174,7 @@
             <Badge
               value={statusLabel(user)}
               label={statusLabel(user)}
-              tone={accountLifecycle(user) === 'active' ? 'neutral' : 'warning'}
+              tone={accountLifecycle(user) === 'active' && !user.uploadsPaused ? 'neutral' : 'warning'}
             />
           </td>
         </tr>

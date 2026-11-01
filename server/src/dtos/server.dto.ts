@@ -266,11 +266,19 @@ const ServerConfigSchema = z
     userDeleteDelay: z.int().describe('Delay in days before deleted users are permanently removed'),
     isInitialized: z.boolean().describe('Whether the server has been initialized'),
     isOnboarded: z.boolean().describe('Whether the admin has completed onboarding'),
+    isNewServerSetup: z
+      .boolean()
+      .describe('Whether first-run setup in progress is for a new server rather than an existing library'),
     externalDomain: z.string().describe('External domain URL'),
     publicUsers: z.boolean().describe('Whether public user registration is enabled'),
     mapDarkStyleUrl: z.string().describe('Map dark style URL'),
     mapLightStyleUrl: z.string().describe('Map light style URL'),
     maintenanceMode: z.boolean().describe('Whether maintenance mode is active'),
+    placesRestoring: z
+      .boolean()
+      .describe(
+        'Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes',
+      ),
     defaultImageDescriptionRawPromptTemplate: z
       .string()
       .describe('Canonical default for the image-description advanced raw prompt template'),

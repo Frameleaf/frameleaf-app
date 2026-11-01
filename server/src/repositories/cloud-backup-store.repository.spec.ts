@@ -18,6 +18,8 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CLOUD_BACKUP_MARKER, CLOUD_BACKUP_PART_BYTES, CLOUD_BACKUP_PROBE_PREFIX } from 'src/utils/cloud-backup.js';
 import { withOperationExecution } from 'src/utils/operation-execution.js';
 
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
+
 const SSE_HEADERS = [
   'x-amz-server-side-encryption-customer-algorithm',
   'x-amz-server-side-encryption-customer-key',
@@ -43,6 +45,8 @@ class FakeS3 {
   failures: Array<number | { status: number; code: string }> = [];
   /** A bucket that refuses SSE-C (Amazon S3's default for new buckets): a PUT with a customer key is 403. */
   refusesSseC = false;
+  /** A bucket without versioning: a PUT answers no version id. */
+  unversioned = false;
   /** CompleteMultipartUpload finishes the object, then its answer is lost (a 500), once. */
   loseCompleteAnswer = false;
 
@@ -143,7 +147,9 @@ class FakeS3 {
     switch (method) {
       case 'PUT': {
         this.objects.set(key, { body, keyMd5 });
-        return new Response('', { headers: { etag: '"etag-1"', ...echo } });
+        return new Response('', {
+          headers: { etag: '"etag-1"', ...echo, ...(!this.unversioned && { 'x-amz-version-id': 'version-1' }) },
+        });
       }
       case 'DELETE': {
         this.objects.delete(key);
@@ -388,9 +394,23 @@ describe(CloudBackupStoreRepository.name, () => {
       await expect(sut.claim(connection, bucketKey, options)).rejects.toMatchObject({ reason: 'sse-c-unsupported' });
       expect(s3.objects.size).toBe(0);
     });
+
+    it('refuses a bucket without versioning and leaves it as it found it', async () => {
+      s3.unversioned = true;
+
+      await expect(sut.claim(connection, bucketKey, options)).rejects.toMatchObject({ reason: 'versioning-off' });
+      expect(s3.objects.size).toBe(0);
+    });
   });
 
   describe('probe', () => {
+    it('refuses a bucket without versioning and removes its test file', async () => {
+      s3.unversioned = true;
+
+      await expect(sut.probe(connection)).rejects.toMatchObject({ reason: 'versioning-off' });
+      expect(s3.objects.size).toBe(0);
+    });
+
     it('writes, reads back and deletes a test file encrypted with a throwaway key', async () => {
       await expect(sut.probe(connection)).resolves.toEqual({ state: 'empty' });
 

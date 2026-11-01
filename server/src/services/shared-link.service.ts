@@ -241,8 +241,10 @@ export class SharedLinkService extends BaseService {
     const lockedAssetIds = await this.lockedAssetIds(auth, [...allowedAssetIds]);
 
     const results: AssetIdsResponseDto[] = [];
+    const added = new Set<string>();
     for (const assetId of dto.assetIds) {
-      const hasAsset = existingAssetIds.has(assetId);
+      // an id repeated in one request is added once; the repeat reports as already in the link
+      const hasAsset = existingAssetIds.has(assetId) || added.has(assetId);
       if (hasAsset) {
         results.push({ assetId, success: false, error: AssetIdErrorReason.DUPLICATE });
         continue;
@@ -259,15 +261,20 @@ export class SharedLinkService extends BaseService {
         continue;
       }
 
+      added.add(assetId);
       results.push({ assetId, success: true });
     }
 
-    await this.sharedLinkRepository.update({
-      ...sharedLink,
-      assetIds: results.filter(({ success }) => success).map(({ assetId }) => assetId),
-    });
+    // Only the new rows are written: rewriting the whole link from this earlier read could undo an edit
+    // (a new password, expiry or slug) saved while the assets were being checked.
+    const inserted = new Set((await this.sharedLinkRepository.addAssets(id, [...added])).map(({ assetId }) => assetId));
 
-    return results;
+    // another request may have added an item between this one's read and its insert: that one is a duplicate too
+    return results.map((result) =>
+      result.success && !inserted.has(result.assetId)
+        ? { assetId: result.assetId, success: false, error: AssetIdErrorReason.DUPLICATE }
+        : result,
+    );
   }
 
   async removeAssets(auth: AuthDto, id: string, dto: AssetIdsDto): Promise<AssetIdsResponseDto[]> {

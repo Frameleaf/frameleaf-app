@@ -32,7 +32,7 @@ on:
       tag:
         description: Manager component version matching manager/package.json
         type: string
-        default: manager-v0.2.8
+        default: manager-v0.2.16
 permissions:
   contents: read
 concurrency:
@@ -41,7 +41,7 @@ concurrency:
 jobs:
   manager:
     env:
-      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
     name: Manager (${{ matrix.architecture }})
     if: github.repository == 'Frameleaf/frameleaf-app'

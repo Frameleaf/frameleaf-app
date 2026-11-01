@@ -139,11 +139,12 @@ export class StorageTemplateService extends BaseService {
   async getMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
     const { storageTemplate } = await this.getConfig({ withCache: false });
     const name = QueueName.StorageTemplateMigration;
-    const [isActive, isPaused, hasUnfinishedWork, statistics] = await Promise.all([
+    const [isActive, isPaused, hasUnfinishedWork, statistics, candidates] = await Promise.all([
       this.jobRepository.isActive(name),
       this.jobRepository.isPaused(name),
       this.jobRepository.hasUnfinishedWork(name),
       this.jobRepository.getJobCounts(name),
+      this.assetRepository.countUploadedOriginals(),
     ]);
     return {
       enabled: storageTemplate.enabled,
@@ -152,6 +153,7 @@ export class StorageTemplateService extends BaseService {
       isPaused,
       hasUnfinishedWork,
       statistics,
+      candidates,
     };
   }
 
@@ -374,23 +376,51 @@ export class StorageTemplateService extends BaseService {
           if (moved) {
             await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
           }
+        } else if (asset.libraryPath !== newPath) {
+          // FL-417: the shared file stays where it is; the photo shows its own template path
+          await this.assetRepository.update({ id, libraryPath: newPath });
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
         // A shared copy cannot reserve a template original path; keep its per-asset sidecar path.
         // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
         if (sidecarPath && moved && !isSharedNonCanonical) {
-          await this.storageCore.moveFile({
+          const sidecarMoved = await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetFileType.Sidecar,
             oldPath: sidecarPath,
             newPath: `${newPath}.xmp`,
           });
+          // an uploaded sidecar has its own upload/<user>/xx/yy folder
+          if (sidecarMoved && sidecarPath !== `${newPath}.xmp`) {
+            await this.removeEmptyUploadFolders(asset.ownerId, sidecarPath);
+          }
+        }
+        if (moved && !isSharedNonCanonical && oldPath !== newPath) {
+          await this.removeEmptyUploadFolders(asset.ownerId, oldPath);
         }
       } catch (error: any) {
         this.logger.error(`Problem applying storage template`, error?.stack, { id, oldPath, newPath });
       }
     });
+  }
+
+  /**
+   * OPS-08: an upload waits in `upload/<user>/xx/yy` until it is sorted. Once its original (and sidecar) moved
+   * out, the `yy` and `xx` folders it leaves empty go too; the user's own folder stays. Only an empty folder is
+   * removed (`rmdir`), so a folder another file still sits in is kept.
+   */
+  private async removeEmptyUploadFolders(ownerId: string, oldPath: string) {
+    const userFolder = path.resolve(StorageCore.getFolderLocation(StorageFolder.Upload, ownerId));
+    let folder = path.dirname(path.resolve(oldPath));
+    if (path.dirname(path.dirname(folder)) !== userFolder) {
+      return;
+    }
+    // ponytail: an upload that picks this same xx/yy between its mkdir and its write fails once and is retried;
+    // a per-folder lock with the upload path if that ever shows up
+    while (folder !== userFolder && (await this.storageRepository.removeDirIfEmpty(folder))) {
+      folder = path.dirname(folder);
+    }
   }
 
   private async getTemplatePath(

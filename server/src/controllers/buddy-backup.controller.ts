@@ -31,7 +31,6 @@ import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
-import { unwrapBuddyKeyring, wrapBuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
 import { UUIDParamDto, UUIDv7ParamDto } from 'src/validation.js';
 
 const history = new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
@@ -79,9 +78,10 @@ export class BuddyBackupAdminController {
   }
 
   @Post('refresh')
-  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true, refreshElevation: false })
+  @Authenticated({ permission: Permission.AdminCloudBackupUpdate, admin: true, refreshElevation: false })
   @Endpoint({ operationId: 'refreshBuddyBackup', summary: 'Refresh the Cloud pairing', history })
-  async refresh(): Promise<BuddyStatusDto> {
+  async refresh(@Auth() auth: AuthDto): Promise<BuddyStatusDto> {
+    await this.restore.administrator(auth);
     await this.service.peer.pairing();
     return this.service.status();
   }
@@ -158,7 +158,7 @@ export class BuddyBackupAdminController {
   })
   async wrap(@Auth() auth: AuthDto, @Body() dto: BuddyEscrowWrapDto): Promise<BuddyEscrowDto> {
     await this.restore.administrator(auth);
-    return wrapBuddyKeyring(await this.service.keyring(), dto.passphrase);
+    return this.service.wrapKit(dto.passphrase);
   }
 
   @Post('key/escrow/import')
@@ -171,7 +171,7 @@ export class BuddyBackupAdminController {
   })
   async unlock(@Auth() auth: AuthDto, @Body() dto: BuddyEscrowImportDto): Promise<BuddyStatusDto> {
     await this.restore.administrator(auth);
-    return this.service.importKit(await unwrapBuddyKeyring(dto.escrow, dto.passphrase));
+    return this.service.unlockKit(dto.escrow, dto.passphrase);
   }
 
   @Post('key/verify')

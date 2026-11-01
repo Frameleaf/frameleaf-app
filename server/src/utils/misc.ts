@@ -27,6 +27,20 @@ export class FrameleafStartupError extends Error {}
 export const isStartUpError = (error: unknown): error is FrameleafStartupError =>
   error instanceof FrameleafStartupError;
 
+/** FL-646: PostgreSQL conflicts (lock timeout, deadlock) a worker start-up can lose to another worker's start-up. */
+const RETRYABLE_STARTUP_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01']);
+
+/** Whether a failed start-up should be retried rather than stop the server. Looks through one `cause`. */
+export const isRetryableStartupError = (error: unknown): boolean => {
+  for (const candidate of [error, (error as { cause?: unknown } | undefined)?.cause]) {
+    const code = (candidate as { code?: unknown } | null | undefined)?.code;
+    if (typeof code === 'string' && RETRYABLE_STARTUP_SQLSTATES.has(code)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const getKeyByValue = (object: Record<string, unknown>, value: unknown) =>
   Object.keys(object).find((key) => object[key] === value);
 

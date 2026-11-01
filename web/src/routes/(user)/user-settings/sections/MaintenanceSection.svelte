@@ -16,13 +16,13 @@
   import {
     getIntegrityCheckRuns,
     getIntegrityReportSummary,
-    getQueuesLegacy,
+    getQueue,
     IntegrityReport,
     ManualJobName,
+    QueueName,
     type IntegrityCheckRunsResponseDto,
     type IntegrityReportSummaryResponseDto,
     type JobCreateDto,
-    type QueuesResponseLegacyDto,
   } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
@@ -77,7 +77,6 @@
     [IntegrityReport.ChecksumMismatch]: ManualJobName.IntegrityChecksumMismatchRefresh,
   };
 
-  let jobs: QueuesResponseLegacyDto | undefined = $state();
   const activeJobs = new SvelteSet<ManualJobName>();
 
   const getReportTypeTranslation = (report: IntegrityReport): Translations => {
@@ -109,10 +108,10 @@
   };
 
   const updateReports = async () => {
-    jobs = await getQueuesLegacy();
+    // Only the integrity queue is read, not every queue's counts, every two seconds.
+    const { active, waiting, delayed } = (await getQueue({ name: QueueName.IntegrityCheck })).statistics;
     // A check that is queued but not picked up yet is running too, or its results would be read early.
-    const { active, waiting, delayed } = jobs.integrityCheck.jobCounts;
-    if (jobs.integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
+    if (active + waiting + delayed > 0) {
       activeJobs.add(ManualJobName.IntegrityUntrackedFilesRefresh);
     } else if (activeJobs.size > 0) {
       activeJobs.clear();
@@ -138,9 +137,6 @@
 
     // A check started before the first poll still counts, or a quick run would never be re-read.
     activeJobs.add(dto.name);
-    if (jobs) {
-      jobs.integrityCheck.queueStatus.isActive = true;
-    }
   };
 </script>
 

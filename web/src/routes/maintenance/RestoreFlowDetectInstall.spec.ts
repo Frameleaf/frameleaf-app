@@ -43,3 +43,30 @@ it.each(['current', 'close', 'session'])(
     expect(handleError).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
   },
 );
+
+it('drops the earlier result and offers a retry after a session change drops a refresh', async () => {
+  const pending = deferredPromise<typeof install>();
+  sdkMock.detectPriorInstall.mockResolvedValueOnce(install).mockReturnValueOnce(pending.promise);
+  render(RestoreFlowDetectInstall, { next: vi.fn(), end: vi.fn() });
+  const refresh = await screen.findByRole('button', { name: 'refresh' });
+  await fireEvent.click(refresh);
+  expect(refresh).toBeDisabled();
+  authManager.reset();
+  pending.reject(new Error('Offline'));
+  const retry = await screen.findByRole('button', { name: 'frameleaf_error_retry' });
+  expect(retry).toBeEnabled();
+  expect(screen.queryByText(/upload \(maintenance_restore_library_folder_pass\)/)).not.toBeInTheDocument();
+  expect(handleError).not.toHaveBeenCalled();
+});
+
+it('offers a retry when a session change drops the first check', async () => {
+  const pending = deferredPromise<typeof install>();
+  sdkMock.detectPriorInstall.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(install);
+  render(RestoreFlowDetectInstall, { next: vi.fn(), end: vi.fn() });
+  await waitFor(() => expect(sdkMock.detectPriorInstall).toHaveBeenCalledOnce());
+  authManager.reset();
+  pending.resolve(install);
+  await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_error_retry' }));
+  await screen.findByText(/upload \(maintenance_restore_library_folder_pass\)/);
+  expect(handleError).not.toHaveBeenCalled();
+});

@@ -1,5 +1,13 @@
-import { AssetVisibility, MediaOperationItemStatus, MediaOperationStatus } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import {
+  LibraryAssetItemKind,
+  LibraryBookmarkItemKind,
+  LibraryScope,
+  type BookmarkResponseDto,
+  AssetVisibility,
+  MediaOperationItemStatus,
+  MediaOperationStatus,
+} from '@frameleaf/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +15,7 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+import { assetFactory } from '@test-data/factories/asset-factory';
 import AssetGrid from './AssetGrid.svelte';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
@@ -409,6 +418,49 @@ describe('AssetGrid', () => {
     return { ...view, session };
   };
 
+  it('selects media and bookmarks in one grid without colliding IDs or opening a website', async () => {
+    const session = new LibrarySessionStore({ workspace: 'design' });
+    const bookmark: BookmarkResponseDto = {
+      id: 'shared-id',
+      ownerId: 'owner',
+      title: 'Packaging reference',
+      url: 'https://example.com',
+      note: null,
+      previewAssetId: null,
+      libraryScope: LibraryScope.Design,
+      isArchived: false,
+      isLocked: false,
+      createdAt: '',
+      updatedAt: '',
+      updateId: '',
+      deletedAt: null,
+    };
+    const media = assetFactory.build({ id: bookmark.id });
+    const onOpen = vi.fn();
+    const onOpenBookmark = vi.fn();
+    const { container } = render(AssetGrid, {
+      session,
+      layout: 'browse',
+      items: [
+        { kind: LibraryAssetItemKind.Asset, asset: media },
+        { kind: LibraryBookmarkItemKind.Bookmark, bookmark },
+      ],
+      onOpen,
+      onOpenBookmark,
+    });
+    const open = await screen.findByRole('button', { name: 'frameleaf_boards_open_link' });
+    await fireEvent.click(open);
+    expect(onOpenBookmark).toHaveBeenCalledWith(bookmark);
+    expect(onOpen).not.toHaveBeenCalled();
+    const card = screen.getByTestId('frameleaf-bookmark-card');
+    await fireEvent.click(within(card).getByRole('checkbox'));
+    expect(session.selection).toEqual(['bookmark:shared-id']);
+    const mediaTile = screen.getByTestId('frameleaf-asset-tile');
+    await fireEvent.click(within(mediaTile).getByRole('checkbox'));
+    expect(session.selection).toEqual(['bookmark:shared-id', 'shared-id']);
+    expect(container.querySelector('a[href="https://example.com"]')).toBeNull();
+  });
+
   it('draws Browse as square cells with 2px gutters and no captions', async () => {
     const { container } = renderGrid('browse');
     await waitFor(() => expect(cells(container).length).toBeGreaterThan(0));
@@ -698,7 +750,9 @@ describe('ResultsToolbar', () => {
     expect(screen.getByTestId('frameleaf-result-count').textContent).toContain('items_count');
     await fireEvent.click(screen.getByRole('button', { name: 'slideshow' }));
     expect(onSlideshow).toHaveBeenCalled();
-    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+    // FL-707 item 10: the Information panel switch is in the View menu.
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
     expect(onToggleInspector).toHaveBeenCalled();
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));
     expect(onMoreActions).toHaveBeenCalled();

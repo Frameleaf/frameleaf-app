@@ -37,7 +37,7 @@ import {
   StudioPreviewRepository,
   StudioPreviewRetirement,
 } from 'src/repositories/studio-preview.repository.js';
-import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
+import { holdSourceAdmission, requireAdmissionSession } from 'src/repositories/studio-source-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import {
@@ -200,6 +200,7 @@ export class StudioPreviewService {
    *   3. revision             — `409 studio_preview_stale_revision` with the current revision
    *   4. sources              — `409 studio_preview_sources_refused` when any referenced source
    *                             is unavailable to this account (trashed, unshared, Locked…)
+   *   5. session              — `403 studio_preview_session_required` for an API key
    */
   async request(auth: AuthDto, dto: StudioPreviewRequestDto): Promise<StudioPreviewResponseDto> {
     this.parseTime(dto);
@@ -227,6 +228,7 @@ export class StudioPreviewService {
         refusedCount: authorization.manifest.refusedCount,
       });
     }
+    requireAdmissionSession(authorization.manifest);
 
     // FL-93: the frame is placed with the same mapping the export and its audio use — the project's
     // exact cadence and each source's own timestamps — so a preview never shows a picture the

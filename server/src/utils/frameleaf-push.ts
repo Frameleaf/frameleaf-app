@@ -350,11 +350,15 @@ export type PushPayload = {
   activation?: CloudBackupActivationProgress;
 };
 
+/** Length in Unicode code points, so shortening never splits a surrogate pair. */
+const codePointLength = (value: string) => [...value].length;
+
 const truncate = (value: string, max: number) => {
   if (max <= 0) {
     return '';
   }
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+  const codePoints = [...value];
+  return codePoints.length > max ? `${codePoints.slice(0, max - 1).join('')}…` : value;
 };
 
 /**
@@ -389,10 +393,10 @@ export const buildPushPayload = (
   };
   // Shorten display text while preserving job data and item references.
   while (Buffer.byteLength(JSON.stringify(payload)) > PUSH_PLAINTEXT_MAX_BYTES && payload.body.length > 0) {
-    payload.body = truncate(payload.body, Math.floor(payload.body.length / 2));
+    payload.body = truncate(payload.body, Math.floor(codePointLength(payload.body) / 2));
   }
   while (Buffer.byteLength(JSON.stringify(payload)) > PUSH_PLAINTEXT_MAX_BYTES && payload.title.length > 0) {
-    payload.title = truncate(payload.title, Math.floor(payload.title.length / 2));
+    payload.title = truncate(payload.title, Math.floor(codePointLength(payload.title) / 2));
   }
   if (Buffer.byteLength(JSON.stringify(payload)) > PUSH_PLAINTEXT_MAX_BYTES) {
     throw new Error('The push payload exceeds its size limit');

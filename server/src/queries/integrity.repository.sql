@@ -48,44 +48,6 @@ order by
 limit
   $3
 
--- IntegrityRepository.getAssetPathsByPaths
-select
-  "asset"."originalPath",
-  "asset_file"."path" as "encodedVideoPath"
-from
-  "asset"
-  left join "asset_file" on "asset"."id" = "asset_file"."assetId"
-  and "asset_file"."type" = $1
-where
-  (
-    "originalPath" in $2
-    or "asset_file"."path" in $3
-  )
-
--- IntegrityRepository.getAssetFilePathsByPaths
-select
-  "path"
-from
-  "asset_file"
-where
-  "path" in $1
-
--- IntegrityRepository.getVideoDuplicateFramePathsByPaths
-select
-  "path"
-from
-  "public"."asset_video_duplicate_frame"
-where
-  "path" in $1
-
--- IntegrityRepository.getPersonThumbnailPathsByPaths
-select
-  "person"."thumbnailPath"
-from
-  "person"
-where
-  "person"."thumbnailPath" in $1
-
 -- IntegrityRepository.getTrackedPaths
 select
   "asset"."originalPath" as "path"
@@ -107,6 +69,13 @@ from
   "person"
 where
   "person"."thumbnailPath" in $3
+union
+select
+  "video_moment_frame"."path" as "path"
+from
+  "video_moment_frame"
+where
+  "video_moment_frame"."path" in $4
 
 -- IntegrityRepository.getAssetCount
 select

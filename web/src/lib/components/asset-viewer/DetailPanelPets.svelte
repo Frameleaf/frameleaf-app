@@ -48,7 +48,9 @@
 
   let pets = $state<PetResponseDto[]>([]);
   let observations = $state<PetObservationResponseDto[]>([]);
+  // The photo the list was loaded for, by id and checksum: a replaced original reloads it.
   let loadedFor = $state<string | null>(null);
+  let loadGeneration = 0;
   let taggerOpen = $state(false);
   let busy = $state(false);
 
@@ -71,27 +73,31 @@
   const addable = $derived(pets.filter((pet) => confirmed.every((observation) => observation.petId !== pet.id)));
   const nameOf = (pet: PetResponseDto | undefined) => pet?.name || $t('frameleaf_pets_unnamed');
 
-  const load = async (assetId: string) => {
+  const photoKey = () => `${asset.id}:${asset.checksum}`;
+
+  // Only the latest load is applied, and only while its photo (id and checksum) is still shown.
+  const load = async () => {
+    const generation = ++loadGeneration;
+    const key = photoKey();
     try {
       const [allPets, found] = await Promise.all([
         getAllPets({ withHidden: false }),
-        getAssetPetObservations({ assetId }),
+        getAssetPetObservations({ assetId: asset.id }),
       ]);
-      // A late answer for a photo the viewer has moved away from is dropped.
-      if (assetId !== asset.id) {
+      if (generation !== loadGeneration || key !== photoKey()) {
         return;
       }
       pets = allPets;
       observations = found;
-      loadedFor = assetId;
+      loadedFor = key;
     } catch (error) {
       handleError(error, $t('frameleaf_viewer_pets_error'));
     }
   };
 
   $effect(() => {
-    if (available && loadedFor !== asset.id) {
-      void load(asset.id);
+    if (available && loadedFor !== photoKey()) {
+      void load();
     }
   });
 
@@ -111,29 +117,48 @@
     observations = observations.filter((entry) => entry.id !== id);
   };
 
-  const undoAdd = (observation: PetObservationResponseDto) => async () => {
+  // The photo a decision was made on: its Undo writes against that photo's checksum and only touches
+  // the list on screen while the viewer still shows it.
+  type Source = { id: string; checksum: string };
+  const currentSource = (): Source => ({ id: asset.id, checksum: asset.checksum });
+  const onScreen = (source: Source) => source.id === asset.id && source.checksum === asset.checksum;
+  // Applies a finished write to the list on screen. If the same photo's original was replaced
+  // meanwhile, the list is reloaded from the server instead (a newer load supersedes older ones).
+  const settle = (source: Source, apply: () => void) => {
+    if (onScreen(source)) {
+      apply();
+    } else if (source.id === asset.id && available) {
+      void load();
+    }
+  };
+
+  const undoAdd = (observation: PetObservationResponseDto, source: Source) => async () => {
     try {
-      await deletePetObservation({ id: observation.id, expectedChecksum: asset.checksum });
-      removeLocal(observation.id);
+      await deletePetObservation({ id: observation.id, expectedChecksum: source.checksum });
+      settle(source, () => removeLocal(observation.id));
       toastManager.primary($t('frameleaf_pets_undone'));
     } catch (error) {
       reportFailure(error);
     }
   };
 
-  const added = (observation: PetObservationResponseDto, pet: PetResponseDto) => {
-    upsertLocal(observation);
-    toastPetDecision($t('frameleaf_viewer_pets_added', { values: { name: nameOf(pet) } }), undoAdd(observation));
+  const added = (observation: PetObservationResponseDto, pet: PetResponseDto, source: Source) => {
+    settle(source, () => upsertLocal(observation));
+    toastPetDecision(
+      $t('frameleaf_viewer_pets_added', { values: { name: nameOf(pet) } }),
+      undoAdd(observation, source),
+    );
   };
 
   const addWholePhoto = async (pet: PetResponseDto) => {
+    const source = currentSource();
     busy = true;
     try {
       const observation = await createPetObservation({
         id: pet.id,
-        petObservationCreateDto: { assetId: asset.id, expectedChecksum: asset.checksum },
+        petObservationCreateDto: { assetId: source.id, expectedChecksum: source.checksum },
       });
-      added(observation, pet);
+      added(observation, pet, source);
     } catch (error) {
       reportFailure(error);
     } finally {
@@ -143,19 +168,19 @@
 
   const remove = async (observation: PetObservationResponseDto) => {
     const pet = petsById.get(observation.petId);
+    const source = currentSource();
     busy = true;
     try {
-      await deletePetObservation({ id: observation.id, expectedChecksum: asset.checksum });
-      removeLocal(observation.id);
+      await deletePetObservation({ id: observation.id, expectedChecksum: source.checksum });
+      settle(source, () => removeLocal(observation.id));
       toastPetDecision($t('frameleaf_viewer_pets_removed', { values: { name: nameOf(pet) } }), async () => {
         try {
-          // Undo writes the same decision back, region and all, on the photo still on screen.
-          upsertLocal(
-            await createPetObservation({
-              id: observation.petId,
-              petObservationCreateDto: observationToCreate(observation, asset.checksum),
-            }),
-          );
+          // Undo writes the same decision back, region and all, on the photo it was removed from.
+          const restored = await createPetObservation({
+            id: observation.petId,
+            petObservationCreateDto: observationToCreate(observation, source.checksum),
+          });
+          settle(source, () => upsertLocal(restored));
           toastManager.primary($t('frameleaf_pets_undone'));
         } catch (error) {
           reportFailure(error);
@@ -193,7 +218,7 @@
       {/if}
     </div>
 
-    {#if pets.length === 0 && loadedFor === asset.id}
+    {#if pets.length === 0 && loadedFor === photoKey()}
       <p class="muted">
         <a href={Route.pets()}>{$t('frameleaf_viewer_pets_no_pets')}</a>
       </p>
@@ -207,7 +232,13 @@
         <li class="pet" data-testid="viewer-pet">
           <a href={Route.viewPet({ id: observation.petId })} class="pet-link">
             <!-- Pets get the squircle photo shape, as people do (owner decision, FL-146). -->
-            <PetThumbnail assetId={pet?.featuredAssetId} cacheKey={pet?.updatedAt} size={72} alt="" />
+            <PetThumbnail
+              assetId={pet?.featuredAssetId}
+              cacheKey={pet?.updatedAt}
+              species={pet?.species}
+              size={72}
+              alt=""
+            />
             <span class="name">{nameOf(pet)}</span>
           </a>
           {#if isStaleObservation(observation)}

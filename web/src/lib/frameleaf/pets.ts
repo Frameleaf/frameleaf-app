@@ -75,6 +75,14 @@ export const petsSummary = (
 /** The i18n key for a species, so the page never renders a raw enum value. */
 export const speciesLabelKey = (species: PetSpecies): Translations => `frameleaf_pets_species_${species}`;
 
+/**
+ * Where a square pet thumbnail crops a whole photo. A centre crop of a standing dog or cat lands
+ * on its body and legs; the head sits in the upper part of the frame, so those two crop high.
+ * ponytail: a fixed bias, no pet-face detector exists; crop to a detected head box once one does.
+ */
+export const petThumbnailFocus = (species: PetSpecies | null | undefined): string =>
+  species === PetSpecies.Dog || species === PetSpecies.Cat ? '50% 20%' : '50% 50%';
+
 export const petSpeciesOptions = (): PetSpecies[] => [
   PetSpecies.Dog,
   PetSpecies.Cat,

@@ -9,7 +9,23 @@
    * keeps, with the prototype's pane in place of that layout. What the template shows but production
    * has no source for is left out rather than invented: the frame rate, the device-local note and
    * the prototype's Versions tab (versions live in the editor).
+   *
+   * In Boards (`boards`, or any Boards-only item) the panel follows the approved Boards prototype's
+   * `Inspector` instead: colours, rating with Rejected, editable tags, a note, the collections the
+   * item is in with "Add to…", its source, file facts and the owner's "Show in Photos too" switch.
+   * For a picture there it also shows its annotations (FL-652): drawn over the preview, an
+   * Annotations section under the name, and "View large" opening the Boards viewer to annotate.
    */
+  import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
+  import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
+  import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
+  import {
+    acquireAnnotations,
+    releaseAnnotations,
+    type BoardsAnnotationsState,
+  } from '$lib/frameleaf/boards-annotations-store.svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { onDestroy, untrack } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
   import { formatDuration, cameraLabel, dimensionsLabel } from '$lib/frameleaf/viewer-headline';
   import { locationLabel } from '$lib/frameleaf/info-panel';
@@ -17,9 +33,18 @@
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import {
+    AssetMediaSize,
+    AssetTypeEnum,
+    getAssetInfo,
+    LibraryScope,
+    LibraryViewScope,
+    updateAsset,
+    type AssetResponseDto,
+    type ColorFilter,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiClose, mdiMapMarker, mdiPlay, mdiStar, mdiStarOutline } from '@mdi/js';
+  import { mdiArrowExpand, mdiClose, mdiMapMarker, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -29,9 +54,12 @@
     selectedCount?: number;
     onOpen: (asset: TimelineAsset) => void;
     onClose: () => void;
+    onChooseColor?: (color: ColorFilter) => void;
+    /** Shows the Boards details (the Boards workspace passes it; a Boards-only item gets them anyway). */
+    boards?: boolean;
   };
 
-  let { asset, selectedCount = 0, onOpen, onClose }: Props = $props();
+  let { asset, selectedCount = 0, onOpen, onClose, onChooseColor, boards = false }: Props = $props();
 
   let tab = $state<'info' | 'people'>('info');
   const tabId = $props.id();
@@ -58,10 +86,23 @@
   let detail = $state<AssetResponseDto | null>(null);
   let rating = $state<number | null>(null);
   let ratingBusy = $state(false);
+  let generation = $state(0);
+  let detailFailed = $state(false);
+  /** The scope the item had when it was read, so flipping "Show in Photos too" keeps this layout. */
+  let loadedScope = $state<LibraryScope | undefined>();
+  onDestroy(
+    onLibraryAccessChange(() => {
+      detail = null;
+      rating = null;
+      generation++;
+    }),
+  );
 
   // The full record (EXIF, people, tags) is read per item; a newer selection wins over a slower answer.
   $effect(() => {
     const id = asset?.id;
+    const version = generation;
+    detailFailed = false;
     detail = null;
     rating = null;
     if (!id) {
@@ -70,15 +111,17 @@
     let current = true;
     void getAssetInfo({ ...authManager.params, id })
       .then((response) => {
-        if (!current) {
+        if (!current || generation !== version || asset?.id !== id) {
           return;
         }
 
         detail = response;
+        loadedScope = response.libraryScope;
         rating = getExifRating(response.exifInfo);
       })
       .catch((error) => {
-        if (current) {
+        if (current && generation === version && asset?.id === id) {
+          detailFailed = true;
           handleError(error, $t('errors.failed_to_load_asset'));
         }
       });
@@ -107,20 +150,41 @@
   const location = $derived(locationLabel(detail?.exifInfo));
   const people = $derived((detail?.people ?? []).filter((person) => !person.isHidden && person.name));
   const tags = $derived(detail?.tags ?? []);
-  const canRate = $derived(
-    !!detail &&
-      authManager.authenticated &&
-      !authManager.isSharedLink &&
-      authManager.preferences.ratings.enabled &&
-      detail.ownerId === authManager.user.id,
+  const isOwner = $derived(
+    !!detail && authManager.authenticated && !authManager.isSharedLink && detail.ownerId === authManager.user.id,
   );
+  const boardsMode = $derived(boards || (!!detail && loadedScope === LibraryScope.Design));
+  const canRate = $derived(isOwner && (boardsMode || authManager.preferences.ratings.enabled));
 
-  const rate = async (value: number) => {
+  // FL-652: a Boards picture's annotations, shared by the preview, the section and the viewer.
+  const annotatedId = $derived(boardsMode && detail?.type === AssetTypeEnum.Image ? detail.id : null);
+  let annotations = $state<BoardsAnnotationsState | null>(null);
+  let showAnnotations = $state(true);
+  let viewer = $state<'view' | 'annotate' | null>(null);
+  $effect(() => {
+    const id = annotatedId;
+    viewer = null;
+    if (!id) {
+      annotations = null;
+      return;
+    }
+    // Shared with every other view of this picture, so a save that failed earlier shows here with
+    // Retry. Untracked: reading the annotations reads their status, and this effect must run again
+    // only when the picture changes, never because a read finished or failed.
+    const next = untrack(() => {
+      const state = acquireAnnotations(id);
+      void state.load();
+      return state;
+    });
+    annotations = next;
+    return () => void releaseAnnotations(next);
+  });
+
+  const rate = async (next: number | null) => {
     if (!detail || ratingBusy) {
       return;
     }
     const id = detail.id;
-    const next = rating === value ? null : value;
     const previous = rating;
     rating = next;
     ratingBusy = true;
@@ -137,6 +201,89 @@
   };
 </script>
 
+{#snippet boardsDetails(item: AssetResponseDto)}
+  {#if annotations}
+    {@const current = annotations}
+    <section class="part first">
+      {#await import('$lib/components/frameleaf/BoardsAnnotationsSection.svelte') then { default: BoardsAnnotationsSection }}<BoardsAnnotationsSection
+          annotations={current}
+          show={showAnnotations}
+          onShowChange={(show) => (showAnnotations = show)}
+          onAnnotate={() => (viewer = 'annotate')}
+        />{/await}
+    </section>
+  {/if}
+  <section class="part" class:first={!annotations}>
+    <AssetPalette assetId={item.id} canRetry={isOwner} onChoose={onChooseColor} />
+  </section>
+  {#if canRate}
+    <section class="part" aria-labelledby={`${tabId}-rating`}>
+      <h3 id={`${tabId}-rating`}>{$t('rating')}</h3>
+      <BoardsRating value={rating} disabled={ratingBusy} onChange={(next) => void rate(next)} />
+    </section>
+  {/if}
+  {#if isOwner || tags.length > 0}
+    <section class="part" aria-labelledby={`${tabId}-tags`}>
+      <h3 id={`${tabId}-tags`}>{$t('tags')}</h3>
+      {#await import('$lib/components/frameleaf/BoardsTagEditor.svelte') then { default: BoardsTagEditor }}<BoardsTagEditor
+          assetId={item.id}
+          {tags}
+          canEdit={isOwner}
+          labelledBy={`${tabId}-tags`}
+        />{/await}
+    </section>
+  {/if}
+  {#if isOwner || item.exifInfo?.description}
+    <section class="part" aria-labelledby={`${tabId}-note`}>
+      <h3 id={`${tabId}-note`}>{$t('frameleaf_boards_note')}</h3>
+      {#await import('$lib/components/frameleaf/BoardsNote.svelte') then { default: BoardsNote }}<BoardsNote
+          assetId={item.id}
+          value={item.exifInfo?.description ?? ''}
+          canEdit={isOwner}
+          labelledBy={`${tabId}-note`}
+        />{/await}
+    </section>
+  {/if}
+  <section class="part">
+    {#await import('$lib/components/frameleaf/BoardsCollections.svelte') then { default: BoardsCollections }}<BoardsCollections
+        assetId={item.id}
+        scope={LibraryViewScope.Design}
+        canAdd={isOwner}
+      />{/await}
+  </section>
+  <section class="part">
+    <AssetSources assetId={item.id} canRead={isOwner} added={item.createdAt} />
+  </section>
+  <section class="part" aria-labelledby={`${tabId}-file`}>
+    <h3 id={`${tabId}-file`}>{$t('frameleaf_boards_file')}</h3>
+    <dl class="facts">
+      <dt>{$t('type')}</dt>
+      <dd>{item.originalMimeType ?? (asset?.isVideo ? $t('video') : $t('image'))}</dd>
+      {#if dimensionsLabel(item)}
+        <dt>{$t('resolution')}</dt>
+        <dd>{dimensionsLabel(item)}</dd>
+      {/if}
+      {#if duration}
+        <dt>{$t('duration')}</dt>
+        <dd>{duration}</dd>
+      {/if}
+    </dl>
+  </section>
+  {#if isOwner}
+    <section class="part">
+      {#await import('$lib/components/frameleaf/BoardsScopeSwitch.svelte') then { default: BoardsScopeSwitch }}<BoardsScopeSwitch
+          assetId={item.id}
+          scope={item.libraryScope}
+          onChange={(scope) => {
+            if (detail?.id === item.id) {
+              detail = { ...detail, libraryScope: scope };
+            }
+          }}
+        />{/await}
+    </section>
+  {/if}
+{/snippet}
+
 <section class="inspector" aria-labelledby="fl-work-inspector-title" data-testid="frameleaf-work-inspector">
   <div class="heading">
     <span id="fl-work-inspector-title">{$t('frameleaf_work_inspector_title')}</span>
@@ -146,136 +293,187 @@
   </div>
 
   {#if asset}
-    <button
-      type="button"
-      class="preview"
-      aria-label={$t('frameleaf_work_inspector_open')}
-      onclick={() => onOpen(asset)}
-    >
-      <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })} alt="" />
-      {#if asset.isVideo}
-        <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
-        {#if duration}<span class="duration">{duration}</span>{/if}
-      {/if}
-    </button>
+    {#if annotations && detail}
+      {@const current = annotations}
+      <figure class="preview annotated">
+        {#await import('$lib/components/frameleaf/BoardsAnnotatedImage.svelte')}
+          <img
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+            alt=""
+          />
+        {:then { default: BoardsAnnotatedImage }}
+          <BoardsAnnotatedImage
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+            name={detail.originalFileName}
+            items={current.items}
+            show={showAnnotations}
+            selected={current.selected}
+            maxHeight="260px"
+          />
+        {/await}
+        <button
+          type="button"
+          class="open-large"
+          aria-label={$t('frameleaf_boards_viewer_view_large_name', { values: { name: detail.originalFileName } })}
+          title={$t('frameleaf_boards_viewer_view_large')}
+          onclick={() => (viewer = 'view')}
+        >
+          <Icon icon={mdiArrowExpand} size="18" aria-hidden />
+        </button>
+      </figure>
+    {:else}
+      <button
+        type="button"
+        class="preview"
+        disabled={!detail}
+        aria-label={$t('frameleaf_work_inspector_open')}
+        onclick={() => onOpen(asset)}
+      >
+        {#if detail}<img
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+            alt=""
+          />
+          {#if asset.isVideo}
+            <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
+            {#if duration}<span class="duration">{duration}</span>{/if}
+          {/if}
+        {/if}
+      </button>
+    {/if}
     <h2>{detail?.originalFileName ?? ' '}</h2>
-    {#if selectedCount > 1}
+    {#if detail && selectedCount > 1}
       <p class="muted" aria-live="polite">
         {$t('frameleaf_work_inspector_selected', { values: { count: selectedCount } })}
       </p>
     {/if}
 
-    <div class="tabbar" role="tablist" aria-label={$t('frameleaf_work_inspector_title')}>
-      <button
-        type="button"
-        role="tab"
-        id={`${tabId}-info`}
-        aria-controls={`${tabId}-panel`}
-        aria-selected={tab === 'info'}
-        tabindex={tab === 'info' ? 0 : -1}
-        class:current={tab === 'info'}
-        onkeydown={(event) => onTabKey(event, 'info')}
-        onclick={() => (tab = 'info')}>{$t('frameleaf_work_inspector_tab_info')}</button
-      >
-      <button
-        type="button"
-        role="tab"
-        id={`${tabId}-people`}
-        aria-controls={`${tabId}-panel`}
-        aria-selected={tab === 'people'}
-        tabindex={tab === 'people' ? 0 : -1}
-        class:current={tab === 'people'}
-        onkeydown={(event) => onTabKey(event, 'people')}
-        onclick={() => (tab = 'people')}>{$t('people')}</button
-      >
-    </div>
-
-    <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} tabindex="0">
-      {#if !detail}
-        <p class="muted" role="status">{$t('loading')}</p>
-      {:else if tab === 'info'}
-        <dl>
-          <dt>{$t('type')}</dt>
-          <dd>{asset.isVideo ? $t('video') : $t('image')}</dd>
-          {#if dimensionsLabel(detail)}
-            <dt>{$t('resolution')}</dt>
-            <dd>{dimensionsLabel(detail)}</dd>
-          {/if}
-          {#if duration}
-            <dt>{$t('duration')}</dt>
-            <dd>{duration}</dd>
-          {/if}
-        </dl>
-        <dl>
-          {#if captured}
-            <dt>{$t('frameleaf_info_captured')}</dt>
-            <dd>{captured}</dd>
-          {/if}
-          {#if cameraLabel(detail.exifInfo)}
-            <dt>{$t('camera')}</dt>
-            <dd>{cameraLabel(detail.exifInfo)}</dd>
-          {/if}
-          {#if location}
-            <dt>{$t('location')}</dt>
-            <dd>{location}</dd>
-          {/if}
-        </dl>
-        {#if detail.exifInfo?.city || detail.exifInfo?.country}
-          <div class="location">
-            <Icon icon={mdiMapMarker} size="28" aria-hidden />
-            <span>
-              {detail.exifInfo.city ?? detail.exifInfo.country}
-              <small>{[detail.exifInfo.state, detail.exifInfo.country].filter(Boolean).join(', ')}</small>
-            </span>
-          </div>
+    {#if boardsMode}
+      <div class="boards">
+        {#if !detail}
+          <p class="muted" role="status">
+            {detailFailed ? $t('frameleaf_item_details_unavailable') : $t('loading')}
+          </p>
+        {:else}
+          {@render boardsDetails(detail)}
         {/if}
+      </div>
+    {:else}
+      <div class="tabbar" role="tablist" aria-label={$t('frameleaf_work_inspector_title')}>
+        <button
+          type="button"
+          role="tab"
+          id={`${tabId}-info`}
+          aria-controls={`${tabId}-panel`}
+          aria-selected={tab === 'info'}
+          tabindex={tab === 'info' ? 0 : -1}
+          class:current={tab === 'info'}
+          onkeydown={(event) => onTabKey(event, 'info')}
+          onclick={() => (tab = 'info')}>{$t('frameleaf_work_inspector_tab_info')}</button
+        >
+        <button
+          type="button"
+          role="tab"
+          id={`${tabId}-people`}
+          aria-controls={`${tabId}-panel`}
+          aria-selected={tab === 'people'}
+          tabindex={tab === 'people' ? 0 : -1}
+          class:current={tab === 'people'}
+          onkeydown={(event) => onTabKey(event, 'people')}
+          onclick={() => (tab = 'people')}>{$t('people')}</button
+        >
+      </div>
 
-        <section class="part">
-          <h3>{$t('people')}</h3>
-          {#if people.length > 0}
-            <ul class="chips">
-              {#each people as person (person.id)}<li>{person.name}</li>{/each}
-            </ul>
-          {:else}
-            <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
-          {/if}
-        </section>
-
-        {#if tags.length > 0}
+      <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} tabindex="0">
+        {#if !detail}
+          <p class="muted" role="status">{detailFailed ? $t('frameleaf_item_details_unavailable') : $t('loading')}</p>
+        {:else if tab === 'info'}
           <section class="part">
-            <h3>{$t('tags')}</h3>
-            <ul class="chips">
-              {#each tags as tag (tag.id)}<li>{tag.value}</li>{/each}
-            </ul>
+            <AssetPalette assetId={asset.id} canRetry={isOwner} onChoose={onChooseColor} />
           </section>
-        {/if}
-
-        {#if canRate}
-          <section class="part">
-            <h3>{$t('rating')}</h3>
-            <div class="rating" role="group" aria-label={$t('rating')}>
-              {#each [1, 2, 3, 4, 5] as value (value)}
-                <button
-                  type="button"
-                  aria-label={$t('rating_count', { values: { count: value } })}
-                  aria-pressed={rating === value}
-                  disabled={ratingBusy}
-                  onclick={() => void rate(value)}
-                >
-                  <Icon icon={(rating ?? 0) >= value ? mdiStar : mdiStarOutline} size="18" aria-hidden />
-                </button>
-              {/each}
+          <section class="part"><AssetSources assetId={asset.id} canRead={isOwner} /></section>
+          <dl>
+            <dt>{$t('type')}</dt>
+            <dd>{asset.isVideo ? $t('video') : $t('image')}</dd>
+            {#if dimensionsLabel(detail)}
+              <dt>{$t('resolution')}</dt>
+              <dd>{dimensionsLabel(detail)}</dd>
+            {/if}
+            {#if duration}
+              <dt>{$t('duration')}</dt>
+              <dd>{duration}</dd>
+            {/if}
+          </dl>
+          <dl>
+            {#if captured}
+              <dt>{$t('frameleaf_info_captured')}</dt>
+              <dd>{captured}</dd>
+            {/if}
+            {#if cameraLabel(detail.exifInfo)}
+              <dt>{$t('camera')}</dt>
+              <dd>{cameraLabel(detail.exifInfo)}</dd>
+            {/if}
+            {#if location}
+              <dt>{$t('location')}</dt>
+              <dd>{location}</dd>
+            {/if}
+          </dl>
+          {#if detail.exifInfo?.city || detail.exifInfo?.country}
+            <div class="location">
+              <Icon icon={mdiMapMarker} size="28" aria-hidden />
+              <span>
+                {detail.exifInfo.city ?? detail.exifInfo.country}
+                <small>{[detail.exifInfo.state, detail.exifInfo.country].filter(Boolean).join(', ')}</small>
+              </span>
             </div>
+          {/if}
+
+          <section class="part">
+            <h3>{$t('people')}</h3>
+            {#if people.length > 0}
+              <ul class="chips">
+                {#each people as person (person.id)}<li>{person.name}</li>{/each}
+              </ul>
+            {:else}
+              <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
+            {/if}
           </section>
+
+          {#if tags.length > 0}
+            <section class="part">
+              <h3>{$t('tags')}</h3>
+              <ul class="chips">
+                {#each tags as tag (tag.id)}<li>{tag.value}</li>{/each}
+              </ul>
+            </section>
+          {/if}
+
+          {#if canRate}
+            <section class="part">
+              <h3>{$t('rating')}</h3>
+              <BoardsRating value={rating} disabled={ratingBusy} onChange={(next) => void rate(next)} />
+            </section>
+          {/if}
+        {:else if people.length > 0}
+          <ul class="chips people">
+            {#each people as person (person.id)}<li>{person.name}</li>{/each}
+          </ul>
+        {:else}
+          <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
         {/if}
-      {:else if people.length > 0}
-        <ul class="chips people">
-          {#each people as person (person.id)}<li>{person.name}</li>{/each}
-        </ul>
-      {:else}
-        <p class="muted">{$t('frameleaf_work_inspector_no_people')}</p>
-      {/if}
-    </div>
+      </div>
+    {/if}
+    {#if viewer && annotations && detail}
+      {@const current = annotations}
+      {#await import('$lib/components/frameleaf/BoardsViewer.svelte') then { default: BoardsViewer }}<BoardsViewer
+          name={detail.originalFileName}
+          src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
+          annotations={current}
+          startMode={viewer}
+          show={showAnnotations}
+          onShowChange={(show) => (showAnnotations = show)}
+          onClose={() => (viewer = null)}
+        />{/await}
+    {/if}
   {:else}
     <p class="muted empty">
       {$t(selectedCount > 1 ? 'frameleaf_work_inspector_many' : 'frameleaf_work_inspector_empty', {
@@ -335,6 +533,32 @@
     width: 100%;
     aspect-ratio: 1.38;
     object-fit: cover;
+  }
+  .preview.annotated {
+    display: grid;
+    place-items: center;
+    margin: 0;
+    min-height: 120px;
+    background: var(--fl-viewer-canvas);
+  }
+  .preview.annotated > img {
+    width: auto;
+    max-width: 100%;
+    max-height: 260px;
+    aspect-ratio: auto;
+    object-fit: contain;
+  }
+  .open-large {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: var(--fl-radius-sm);
+    color: white;
+    background: rgb(0 0 0 / 0.55);
   }
   .play {
     position: absolute;
@@ -432,16 +656,15 @@
     background: var(--fl-raised);
     font-size: 12px;
   }
-  .rating {
-    display: flex;
-    gap: 2px;
+  .boards .part.first {
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: 0;
   }
-  .rating button {
-    padding: 6px;
-    color: var(--fl-muted);
-  }
-  .rating button[aria-pressed='true'] {
-    color: var(--fl-text);
+  .facts {
+    padding: 0;
+    border-bottom: 0;
+    font-size: var(--fl-font-small);
   }
   .muted {
     color: var(--fl-muted);

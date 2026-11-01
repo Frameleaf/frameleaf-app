@@ -2,6 +2,7 @@ import { getServerStatistics, searchUsersAdmin, type UserAdminResponseDto } from
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
+import { requestServerInfo } from '$lib/utils/auth';
 import en from '../../../../../../i18n/en.json';
 import UsersSection from './UsersSection.svelte';
 
@@ -24,7 +25,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   getServerStatistics: vi.fn(),
 }));
 vi.mock('$lib/components/frameleaf/AccountTable.svelte', async () => ({
-  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+  default: (await import('../../../../test-data/components/MockAccountTable.svelte')).default,
 }));
 vi.mock('./UserDetail.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
@@ -41,14 +42,14 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     Element.prototype.scrollIntoView = vi.fn();
   });
 
-  it("carries the template's heading with Create account as its primary action", async () => {
+  it("carries the template's heading with Add a person as its primary action (FL-516)", async () => {
     state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
     render(UsersSection);
 
     expect(screen.getByText('Your server')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Users' })).toBeInTheDocument();
-    expect(screen.getByText('Manage profiles, features, preferences, storage and sign-in.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(screen.getByText('Everyone with an account, and how much space each has.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add a person' }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=users&section=accounts&new=1');
   });
 
@@ -63,5 +64,13 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     await waitFor(() =>
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }),
     );
+  });
+  it('reads the accounts without waiting for the disk check', async () => {
+    state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
+    vi.mocked(requestServerInfo).mockReturnValueOnce(new Promise(() => {}));
+    render(UsersSection);
+    await waitFor(() => expect(searchUsersAdmin).toHaveBeenCalledWith({ withDeleted: true }));
+    // The (mocked) account list renders while the disk check is still pending.
+    expect(await screen.findByTestId('account-table')).toBeInTheDocument();
   });
 });

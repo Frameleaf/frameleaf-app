@@ -100,6 +100,7 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
     jobs.commitLibraryScanBatch.mockImplementation(atomicJobs.commitLibraryScanBatch.bind(atomicJobs));
     jobs.settleLibraryScanSource.mockImplementation(atomicJobs.settleLibraryScanSource.bind(atomicJobs));
     jobs.settleTerminalLibrarySources.mockImplementation(atomicJobs.settleTerminalLibrarySources.bind(atomicJobs));
+    jobs.cancelAssetJobs.mockResolvedValue();
 
     this.getMock(EventRepository).emit.mockResolvedValue();
     this.getMock(WebsocketRepository).serverSend.mockReturnValue();
@@ -284,6 +285,20 @@ describe(LibraryService.name, () => {
       const { sut } = setup();
 
       await expect(sut.get(newUuid())).rejects.toThrow('Library not found');
+    });
+
+    it("counts and sizes a first scan's items as soon as it finishes (FL-683)", async () => {
+      const { sut, ctx } = setup();
+      await createFile(join(importPath, 'assetA.png'));
+      await createFile(join(importPath, 'assetB.png'));
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+
+      await ctx.scan(library.id);
+
+      await expect(sut.get(library.id)).resolves.toEqual(expect.objectContaining({ assetCount: 2 }));
+      await expect(sut.getAll()).resolves.toContainEqual(expect.objectContaining({ id: library.id, assetCount: 2 }));
+      // each file is 4 bytes; metadata extraction has not run
+      await expect(sut.getStatistics(library.id)).resolves.toEqual(expect.objectContaining({ total: 2, usage: 8 }));
     });
   });
 

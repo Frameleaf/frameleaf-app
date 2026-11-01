@@ -40,19 +40,25 @@ def test_execute_keeps_tensor_buffers_live_and_returns_native_output(ann: tuple[
     instance, native = ann
     inputs = [np.array([2, 3], dtype=np.float32)]
 
-    def execute(
-        handle: int, network_id: int, input_pointers: Array[c_void_p], output_pointers: Array[c_void_p]
-    ) -> None:
+    def execute(handle: int, network_id: int, input_pointers: Array[c_void_p], output_pointers: Array[c_void_p]) -> int:
         assert (handle, network_id) == (123, 7)
         assert input_pointers[0] == inputs[0].ctypes.data
         source = cast(input_pointers[0], POINTER(c_float))
         target = cast(output_pointers[0], POINTER(c_float))
         target[0], target[1] = source[0] * 2, source[1] * 2
+        return 0
 
     native.execute.side_effect = execute
     outputs = instance.execute(7, inputs)
     np.testing.assert_array_equal(outputs[0], [4, 6])
     np.testing.assert_array_equal(inputs[0], [2, 3])
+
+
+def test_execute_raises_when_native_execution_fails(ann: tuple[loader.Ann, SimpleNamespace]) -> None:
+    instance, native = ann
+    native.execute.return_value = -1
+    with pytest.raises(RuntimeError, match="ANN execution failed"):
+        instance.execute(7, [np.array([2, 3], dtype=np.float32)])
 
 
 @pytest.mark.parametrize("inputs", [(), [], [np.zeros(3, dtype=np.float32)], [np.zeros(4, dtype=np.float32)[::2]]])

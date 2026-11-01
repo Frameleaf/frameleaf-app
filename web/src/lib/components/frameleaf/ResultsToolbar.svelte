@@ -23,6 +23,7 @@
   import { activeFilterFields, withoutDiscoveryFilters } from '$lib/components/discovery/query';
   import { pop } from '$lib/frameleaf/motion';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { resolveEntityName } from '$lib/frameleaf/filter-entity-names';
   import { describeFilterFields, filterFieldEntityIds } from '$lib/frameleaf/library-filters';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibrarySort } from '$lib/frameleaf/library-session';
@@ -40,6 +41,7 @@
     mdiCheck,
     mdiChevronDown,
     mdiDotsHorizontal,
+    mdiEyeOutline,
     mdiFormatListBulleted,
     mdiMagnify,
     mdiMapMarker,
@@ -199,13 +201,72 @@
       chipFaces = { ...chipFaces, [id]: null };
     }
   };
+  /** A pet chip names the one pet it narrows by ("Pet: Max"), as a people chip shows its person. */
+  let chipPetNames = $state<Record<string, string | null>>({});
+  const chipPetId = (chip: (typeof chips)[number]) => {
+    const ids = chip.field === 'petIds' && !chip.negated ? filterFieldEntityIds(session.query, chip.field) : null;
+    return ids?.length === 1 ? ids[0] : null;
+  };
+  $effect(() => {
+    const chip = chips.find((chip) => chip.field === 'petIds');
+    const id = chip ? chipPetId(chip) : null;
+    if (!id || asked.has(id)) {
+      return;
+    }
+    asked.add(id);
+    const generation = faceGeneration;
+    void resolveEntityName('pet', id).then((name) => {
+      if (generation === faceGeneration) {
+        chipPetNames = { ...chipPetNames, [id]: name };
+      }
+    });
+  });
   onDestroy(
     onLibraryAccessChange(() => {
       faceGeneration++;
       asked.clear();
       chipFaces = {};
+      chipPetNames = {};
     }),
   );
+
+  /** FL-707 item 10: the View menu (Information panel). */
+  let viewMenuOpen = $state(false);
+  let viewControl = $state<HTMLElement>();
+  let viewButton = $state<HTMLButtonElement>();
+  let viewSwitch = $state<HTMLInputElement>();
+  const closeViewMenu = (focus = true) => {
+    viewMenuOpen = false;
+    if (focus) {
+      viewButton?.focus();
+    }
+  };
+  /* Escape belongs to the open menu (not the library's clear-selection); Tab out of it closes it. */
+  const onViewKeydown = (event: KeyboardEvent) => {
+    if (viewMenuOpen && event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeViewMenu();
+    }
+  };
+  const onViewFocusOut = (event: FocusEvent) => {
+    if (viewMenuOpen && !viewControl?.contains(event.relatedTarget as Node | null)) {
+      closeViewMenu(false);
+    }
+  };
+  $effect(() => {
+    if (!viewMenuOpen) {
+      return;
+    }
+    viewSwitch?.focus();
+    const onPointerDown = (event: PointerEvent) => {
+      if (!viewControl?.contains(event.target as Node)) {
+        closeViewMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  });
 
   const closeMenu = (focus = true) => {
     menuOpen = false;
@@ -254,12 +315,18 @@
   };
 
   const chipLabel = (chip: (typeof chips)[number]) => {
+    const petId = chipPetId(chip);
+    const petName = petId ? chipPetNames[petId] : null;
+    if (petName) {
+      return $t('frameleaf_library_filter_pet', { values: { name: petName } });
+    }
     const name = $t(chip.labelKey);
     const base = chip.negated ? $t('frameleaf_library_filter_not', { values: { name } }) : name;
     if (chip.count > 1) {
       return `${base} (${chip.count})`;
     }
-    return chip.detail ? `${base}: ${chip.detail}` : base;
+    const detail = chip.detailText ? $t(chip.detailText.key, { values: chip.detailText.values }) : chip.detail;
+    return detail ? `${base}: ${detail}` : base;
   };
 
   /** Prototype "Clear all": the search text and every filter. */
@@ -343,7 +410,7 @@
     </div>
   {/if}
 
-  <div class="fl-toolbar-row">
+  <div class="fl-toolbar-row" class:fl-has-more={!!onMoreActions}>
     {#if count !== null}
       <span class="fl-result-count" aria-live="polite" data-testid="frameleaf-result-count">
         {$t('items_count', { values: { count } })}
@@ -416,15 +483,44 @@
     {/if}
 
     {#if inspectorOpen !== undefined && onToggleInspector}
+      <!--
+        FL-707 item 10: a labelled "View" menu in place of the unlabelled sliders icon, holding the
+        Information panel switch. Thumbnail size stays in the floating bar (owner, 2026-10-30).
+      -->
       <span class="fl-slot fl-slot-info">
-        <IconButton
-          label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
-          pressed={inspectorOpen}
-          onclick={onToggleInspector}
-        >
-          <!-- LIB-P7: the template's tune glyph (App.jsx "Show information panel"), in every layout. -->
-          <Icon icon={mdiTuneVariant} size="18" aria-hidden />
-        </IconButton>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span class="fl-view" bind:this={viewControl} onkeydown={onViewKeydown} onfocusout={onViewFocusOut}>
+          <button
+            bind:this={viewButton}
+            type="button"
+            class="fl-tool fl-view-button"
+            class:is-open={viewMenuOpen}
+            aria-haspopup="true"
+            aria-expanded={viewMenuOpen}
+            title={$t('frameleaf_library_view_menu')}
+            onclick={() => (viewMenuOpen = !viewMenuOpen)}
+          >
+            <Icon icon={mdiEyeOutline} size="16" aria-hidden />
+            {$t('frameleaf_library_view')}
+            <Icon icon={mdiChevronDown} size="16" aria-hidden />
+          </button>
+          {#if viewMenuOpen}
+            <!-- Escape closes the menu and returns to View, as the filter menu does. -->
+            <div class="fl-view-menu fl-pop" role="group" aria-label={$t('frameleaf_library_view_menu')} out:pop>
+              <label class="fl-view-row">
+                <span>{$t('frameleaf_library_information_panel')}</span>
+                <input
+                  bind:this={viewSwitch}
+                  type="checkbox"
+                  role="switch"
+                  aria-label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+                  checked={inspectorOpen}
+                  onchange={onToggleInspector}
+                />
+              </label>
+            </div>
+          {/if}
+        </span>
       </span>
     {/if}
 
@@ -636,6 +732,7 @@
   }
   /* Prototype `.active-filter-bar`. */
   .fl-chips {
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -692,80 +789,103 @@
   .fl-slot {
     display: contents;
   }
+  /* FL-707 item 10 (review-1030-library.css `.view-options`): View ▾ and its menu. */
+  .fl-view {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+  }
+  .fl-view-button {
+    gap: 6px;
+  }
+  .fl-view-button.is-open {
+    background: var(--fl-raised);
+  }
+  .fl-view-menu {
+    position: absolute;
+    z-index: 5;
+    inset-inline-end: 0;
+    top: calc(100% + var(--fl-space-2));
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-3);
+    min-width: 260px;
+    padding: 8px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card, 12px);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+  }
+  .fl-view-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+    min-height: 36px;
+    color: var(--fl-text);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .fl-view-row input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--fl-accent);
+  }
   /*
-   * Phones (LIB-P5, template `styles.css` `@media (max-width: 700px)` `.app .results-toolbar`): two
-   * rows on a grid. The count, Filter, Slideshow and More on the first; Sort across the width with
-   * Grid and List at its end on the second. Filter and Slideshow are their icons.
+   * Phones (UI review 2026-10-30 #7, review-1030-shell.css): the toolbar is one line, so the photos
+   * start on the first screen. The count, Filter, View, Sort as its icon (the native picker still
+   * opens over it) and "…", every control 36px tall and 8px apart. Slideshow and Grid / List are in
+   * the "…" sheet, so neither is repeated here. A page's own choices take a line of their own.
    */
   @media (max-width: 700px) {
     .fl-toolbar-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) repeat(3, var(--fl-control-height-touch, 44px));
+      flex-wrap: wrap;
+      justify-content: flex-start;
       gap: var(--fl-space-3) var(--fl-space-2);
-      align-items: center;
     }
     .fl-result-count {
-      grid-row: 1;
-      grid-column: 1;
+      flex: 1 1 0;
+      min-width: 0;
       margin: 0;
-    }
-    .fl-filter {
-      grid-row: 1;
-      grid-column: 2;
-    }
-    .fl-tool {
-      grid-row: 1;
-      grid-column: 3;
-    }
-    .fl-slot-info {
-      display: none;
-    }
-    .fl-slot-more {
-      display: flex;
-      grid-row: 1;
-      grid-column: 4;
-    }
-    .fl-sort {
-      grid-row: 2;
-      grid-column: 1 / 3;
-      min-width: 0;
-    }
-    .fl-sort select {
-      flex: 1 1 auto;
-      width: 100%;
-      min-width: 0;
-    }
-    .fl-slot-view {
-      display: flex;
-      grid-row: 2;
-      grid-column: 3 / 5;
-      gap: var(--fl-space-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .fl-toolbar-leading {
-      grid-row: 3;
-      grid-column: 1 / -1;
+      order: 1;
+      flex: 1 0 100%;
       margin: 0;
     }
-    /* A page's own controls (Locked's Lock): beside Sort where Grid and List are not offered. */
+    /* Only where the "…" sheet exists to take them over (LibraryView offers both there on phones). */
+    .fl-has-more .fl-tool:not(.fl-view-button),
+    .fl-has-more .fl-slot-view {
+      display: none;
+    }
+    .fl-slot-info,
+    .fl-slot-more,
     .fl-slot-extra {
       display: flex;
-      grid-row: 4;
-      grid-column: 1 / -1;
-      justify-content: flex-end;
       gap: var(--fl-space-2);
     }
-    .fl-toolbar-row:not(:has(.fl-slot-view)) .fl-slot-extra {
-      grid-row: 2;
-      grid-column: 3 / 5;
-    }
-    /* Nothing of its own to show (Work's file-name toggle is not offered on phones): no empty row. */
+    /* Nothing of its own to show (Work's file-name toggle is not offered on phones): no empty box. */
     .fl-slot-extra:not(:has(> :global(:not(.fl-file-names-toggle)))) {
       display: none;
     }
     .fl-filter-button,
-    .fl-tool {
+    .fl-filter-more,
+    .fl-tool,
+    .fl-sort,
+    .fl-slot-info :global(button),
+    .fl-slot-more :global(button),
+    .fl-slot-extra :global(button) {
+      height: 36px;
+      min-height: 36px;
+    }
+    .fl-filter-button,
+    .fl-slot-more :global(button) {
       justify-content: center;
-      min-width: var(--fl-control-height-touch, 44px);
+      width: 36px;
+      min-width: 36px;
       padding: 0;
       font-size: 0;
       gap: 0;
@@ -777,12 +897,25 @@
     }
     .fl-filter-button .fl-filter-badge {
       position: absolute;
-      top: 2px;
-      inset-inline-end: 2px;
+      top: -6px;
+      inset-inline-end: -6px;
       font-size: var(--fl-font-micro, 11px);
     }
     .fl-filter-more {
       display: none;
+    }
+    /* Sort is its icon; the select covers it, invisible, so a tap opens the native picker. */
+    .fl-sort {
+      position: relative;
+      justify-content: center;
+      width: 36px;
+      padding: 0;
+    }
+    .fl-sort select {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      opacity: 0;
     }
   }
 </style>

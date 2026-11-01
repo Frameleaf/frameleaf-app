@@ -1,44 +1,43 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { QueueAdmission } from 'src/queue/admission.js';
 
-/** Best-effort observers never own an item outcome. A timed-out promise still consumes its allowance. */
+/** Reserve before execution; committed callbacks keep their allowance until the entire chain drains. */
 export function createObserverDelivery({ maxInFlight = 16, budgetMs = 5000, warningIntervalMs = 30_000 } = {}) {
-  let inFlight = 0;
+  const admission = new QueueAdmission(maxInFlight);
   let lastWarning = -Infinity;
-  return async (observers: Array<() => Promise<void>>, warn: () => void) => {
-    const deadline = performance.now() + budgetMs;
+  const deliver = async (observers: Array<() => Promise<void>>, warn: () => void, onDrained: () => void) => {
     const unavailable = () => {
       if (!(performance.now() - lastWarning >= warningIntervalMs)) return;
       lastWarning = performance.now();
-      warn();
+      try {
+        warn();
+      } catch {
+        // Diagnostics must not suppress committed callbacks.
+      }
     };
-    for (const observe of observers) {
-      const remaining = deadline - performance.now();
-      if (remaining <= 0 || inFlight >= maxInFlight) {
-        unavailable();
-        return;
+    const delivery = (async () => {
+      try {
+        for (const observe of observers) {
+          try {
+            await observe();
+          } catch {
+            unavailable();
+          }
+        }
+      } finally {
+        onDrained();
       }
-      inFlight++;
-      const timer = new AbortController();
-      const delivery = Promise.try(observe)
-        .then(() => true)
-        .catch(() => {
-          unavailable();
-          return true;
-        })
-        .finally(() => {
-          inFlight--;
-        });
-      const settled = await Promise.race([
-        delivery,
-        sleep(remaining, false, { signal: timer.signal }).catch(() => true),
-      ]);
+      return true;
+    })();
+    const timer = new AbortController();
+    try {
+      // The budget bounds waiting, never the callbacks or their retained reservation.
+      if (!(await Promise.race([delivery, sleep(budgetMs, false, { signal: timer.signal })]))) unavailable();
+    } finally {
       timer.abort();
-      if (!settled) {
-        unavailable();
-        return;
-      }
     }
   };
+  return Object.assign(deliver, { reserve: (signal: AbortSignal) => admission.acquire(signal) });
 }
 
 export const deliverJobObservers = createObserverDelivery();

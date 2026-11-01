@@ -221,7 +221,8 @@
       {/if}
 
       {#if isOwner && !asset.isTrashed}
-        <RatingAction {asset} {onAction} />
+        <!-- FL-707 item 14: no star beside the heart; rating stays in the panel and on the 1–5 keys. -->
+        <RatingAction {asset} {onAction} keysOnly />
       {/if}
 
       <ActionButton action={Edit} />

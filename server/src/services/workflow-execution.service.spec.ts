@@ -334,8 +334,29 @@ describe(WorkflowExecutionService.name, () => {
       // FL-179: an automatic retry carries its own execution id, so it reads and records step progress
       mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
       mocks.workflow.completeStep.mockResolvedValue();
+      mocks.workflow.claimCausation.mockResolvedValue(true);
       return workflow;
     };
+
+    it('does not apply plugin-returned changes after cancellation during a plugin call', async () => {
+      setup();
+      const update = vi.spyOn(AssetService.prototype, 'update').mockResolvedValue({} as never);
+      mocks.plugin.callMethod.mockImplementationOnce(() => {
+        mocks.workflow.getForWorkflowRun.mockResolvedValue(undefined);
+        return Promise.resolve({ changes: { asset: { isFavorite: true } } });
+      });
+      await sut.handleAssetTrigger({ workflowId, assetId });
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('freezes the prepared source in an automatic retry', async () => {
+      setup();
+      const source = { filter: { takenAt: { gte: new Date('2026-10-01Z') } } };
+      mocks.workflow.matchesSource.mockResolvedValue(true);
+      mocks.plugin.callMethod.mockRejectedValue(new Error('retry'));
+      await sut.handleAssetTrigger({ workflowId, assetId, source });
+      expect(mocks.job.queue.mock.calls[0]?.[0]).toMatchObject({ data: { source } });
+    });
 
     it('passes each workflow method allowedHosts through the Extism call context', async () => {
       setup();
@@ -346,7 +367,7 @@ describe(WorkflowExecutionService.name, () => {
       expect(mocks.plugin.callMethod).toHaveBeenCalledWith(
         expect.objectContaining({ methodName: 'webhook' }),
         expect.any(Object),
-        { allowedHosts: ['hooks.example.test'] },
+        expect.objectContaining({ allowedHosts: ['hooks.example.test'] }),
       );
     });
 
@@ -454,6 +475,7 @@ describe(WorkflowExecutionService.name, () => {
           workflowId,
           assetId,
           runId: entry.runId,
+          causation: expect.arrayContaining([expect.stringMatching(/^chain:/)]),
           attempt: 1,
           fromStepId: webhookId,
           definitionSha256: expect.stringMatching(/^[\da-f]{64}$/),
@@ -871,6 +893,7 @@ describe(WorkflowExecutionService.name, () => {
         setup();
         mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
         mocks.workflow.completeStep.mockResolvedValue();
+        mocks.workflow.claimCausation.mockResolvedValue(true);
         mocks.plugin.callMethod.mockResolvedValue({});
 
         await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
@@ -891,6 +914,7 @@ describe(WorkflowExecutionService.name, () => {
         mocks.workflow.getCompletedSteps.mockResolvedValue(new Map([[filterId, { halted: false }]]));
         mocks.workflow.getLatestRunAttempt.mockResolvedValue(undefined);
         mocks.workflow.completeStep.mockResolvedValue();
+        mocks.workflow.claimCausation.mockResolvedValue(true);
         mocks.plugin.callMethod.mockResolvedValue({});
 
         await expect(sut.handleAssetTrigger({ workflowId, assetId, runId, executionId })).resolves.toBeUndefined();
@@ -923,6 +947,7 @@ describe(WorkflowExecutionService.name, () => {
         setup();
         mocks.workflow.getCompletedSteps.mockResolvedValue(new Map());
         mocks.workflow.completeStep.mockResolvedValue();
+        mocks.workflow.claimCausation.mockResolvedValue(true);
         mocks.plugin.callMethod.mockResolvedValueOnce({ workflow: { continue: false } });
 
         await sut.handleAssetTrigger({ workflowId, assetId, runId, executionId });
@@ -1042,4 +1067,151 @@ describe(WorkflowExecutionService.name, () => {
 
     expect(mocks.workflow.search).toHaveBeenCalledWith({ userId, trigger: WorkflowTrigger.AssetTagged, enabled: true });
   });
+});
+
+describe('workflow change causation', () => {
+  it('enumerates all owned photos after a person identity change', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    const ownerId = newUuid(),
+      personGroupId = newUuid();
+    const ids = Array.from({ length: 501 }, () => newUuid());
+    const workflowId = newUuid();
+    mocks.workflow.search.mockResolvedValue([
+      {
+        id: workflowId,
+        definition: { version: 1, trigger: 'AssetChanged', source: { filter: {} }, extra: {}, steps: [] },
+      },
+    ] as never);
+    mocks.person.getAssetIdsForPeople.mockResolvedValueOnce(ids.slice(0, 500)).mockResolvedValueOnce(ids.slice(500));
+    await sut.onPersonChanged({ ownerId, personGroupId });
+    // The owner's workflows are read once and each page is queued together, not one query per photo.
+    expect(mocks.workflow.search).toHaveBeenCalledOnce();
+    expect(mocks.workflow.search).toHaveBeenCalledWith({
+      userId: ownerId,
+      trigger: WorkflowTrigger.AssetChanged,
+      enabled: true,
+    });
+    expect(mocks.workflow.getAssetOwner).not.toHaveBeenCalled();
+    expect(mocks.job.queueAll).toHaveBeenCalledTimes(2);
+    const queued = mocks.job.queueAll.mock.calls.flatMap(([jobs]) => jobs as { data: { assetId: string } }[]);
+    expect(queued.map((job) => job.data.assetId)).toEqual(ids);
+    expect(queued[500]).toMatchObject({
+      name: JobName.WorkflowAssetTrigger,
+      data: {
+        workflowId,
+        assetId: ids[500],
+        causation: [expect.stringMatching(/^chain:/), `${workflowId}:${ids[500]}`],
+      },
+    });
+    expect(mocks.person.getAssetIdsForPeople).toHaveBeenLastCalledWith(ownerId, [personGroupId], {
+      after: ids[499],
+      limit: 500,
+    });
+  });
+  it('does not page through a person whose owner has no change workflows', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    mocks.workflow.search.mockResolvedValue([]);
+    await sut.onPersonChanged({ ownerId: newUuid(), personGroupId: newUuid() });
+    expect(mocks.person.getAssetIdsForPeople).not.toHaveBeenCalled();
+    expect(mocks.job.queueAll).not.toHaveBeenCalled();
+  });
+  it('queues each independent matching change and never the same workflow in its own chain', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    const workflowId = newUuid(),
+      assetId = newUuid(),
+      userId = newUuid();
+    mocks.workflow.getAssetOwner.mockResolvedValue(userId);
+    mocks.workflow.search.mockResolvedValue([
+      {
+        id: workflowId,
+        definition: { version: 1, trigger: 'AssetChanged', source: { filter: {} }, extra: {}, steps: [] },
+      },
+    ] as never);
+    await sut.onAssetChanged({ assetId });
+    await sut.onAssetChanged({ assetId });
+    expect(mocks.job.queueAll).toHaveBeenCalledTimes(2);
+    await sut.onAssetChanged({ assetId, causation: [`${workflowId}:${assetId}`] });
+    expect(mocks.job.queueAll.mock.calls.at(-1)?.[0]).toEqual([]);
+  });
+  it('reads each owner and their workflows once for a batch of changed photos', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    const [first, second, other] = [newUuid(), newUuid(), newUuid()];
+    const [owner, otherOwner] = [newUuid(), newUuid()];
+    mocks.workflow.getAssetOwners.mockResolvedValue([
+      { id: first, ownerId: owner },
+      { id: second, ownerId: owner },
+      { id: other, ownerId: otherOwner },
+    ]);
+    mocks.workflow.search.mockImplementation(({ userId }) =>
+      Promise.resolve(
+        userId === owner
+          ? ([
+              {
+                id: newUuid(),
+                definition: { version: 1, trigger: 'AssetChanged', source: { filter: {} }, extra: {}, steps: [] },
+              },
+            ] as never)
+          : [],
+      ),
+    );
+    await sut.onAssetsChanged({ assetIds: [first, second, other] });
+    expect(mocks.workflow.getAssetOwners).toHaveBeenCalledOnce();
+    expect(mocks.workflow.search).toHaveBeenCalledTimes(2);
+    expect(mocks.job.queueAll).toHaveBeenCalledOnce();
+    expect(mocks.job.queueAll.mock.calls[0][0].map((job) => (job.data as { assetId: string }).assetId)).toEqual([
+      first,
+      second,
+    ]);
+  });
+  it('does not execute plugins from a changed frozen definition', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    mocks.workflow.getForWorkflowRun.mockResolvedValue({
+      id: newUuid(),
+      ownerId: newUuid(),
+      trigger: 'AssetChanged',
+      logging: false,
+      steps: [],
+      definition: { version: 1, trigger: 'AssetChanged', source: { filter: {} }, extra: {}, steps: [] },
+    } as never);
+    await sut.handleAssetTrigger({
+      workflowId: newUuid(),
+      assetId: newUuid(),
+      definitionSha256: 'previous-definition',
+    });
+    expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+  });
+});
+
+it('preserves the schedule cursor when a plugin saves its own state', async () => {
+  const { sut, mocks } = newTestService(WorkflowExecutionService);
+  mocks.workflow.withRuntimeLock.mockImplementation(async (run) => run(async () => {}));
+  mocks.workflow.pendingBatches.mockResolvedValue([]);
+  mocks.workflow.syncSchedule.mockResolvedValue();
+  mocks.workflow.getSchedule.mockResolvedValue({ nextAt: new Date(Date.now() + 86_400_000) } as never);
+  const definition = {
+    version: 1,
+    trigger: 'Schedule',
+    source: { filter: {} },
+    schedule: { cron: '0 9 * * *' },
+    steps: [{ id: newUuid(), method: 'p#stateful', enabled: true, config: { counter: 1 }, extra: {} }],
+    extra: {},
+  };
+  const workflow = { id: newUuid(), ownerId: newUuid(), updatedAt: new Date(), definition };
+  mocks.workflow.search.mockResolvedValue([workflow] as never);
+  await sut.runWorkflowPass();
+  definition.steps[0]!.config.counter = 2;
+  await sut.runWorkflowPass();
+  expect(mocks.workflow.syncSchedule.mock.calls[0]?.[1]).toEqual(mocks.workflow.syncSchedule.mock.calls[1]?.[1]);
+});
+
+it('isolates an impossible imported schedule and still visits pending batches', async () => {
+  const { sut, mocks } = newTestService(WorkflowExecutionService);
+  mocks.workflow.withRuntimeLock.mockImplementation(async (run) => run(async () => {}));
+  mocks.workflow.search.mockResolvedValue([
+    { id: newUuid(), updatedAt: new Date(), definition: { schedule: { cron: '0 0 31 2 *' } } },
+  ] as never);
+  mocks.workflow.pendingBatches.mockResolvedValue([]);
+  mocks.workflow.syncSchedule.mockResolvedValue();
+  await expect(sut.runWorkflowPass()).resolves.toBeUndefined();
+  expect(mocks.workflow.pendingBatches).toHaveBeenCalled();
 });

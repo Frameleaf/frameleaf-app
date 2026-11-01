@@ -1,5 +1,5 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import { type BigIntStats, constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { platform } from 'node:os';
@@ -53,6 +53,82 @@ const hasNamespaceIsolation = (value: unknown) => value === true;
 
 export const STUDIO_IMPORT_DURABILITY_ADAPTER = Symbol('StudioImportDurabilityAdapter');
 
+/** Retail-facing refusal: the storage cannot keep Studio imports safely; the reason stays in `cause`. */
+export class StudioStorageRefusal extends ServiceUnavailableException {
+  constructor(reason: string, cause?: unknown) {
+    super(
+      "Studio can't safely keep files in this storage location. Store Frameleaf's library on a local drive or Docker volume that Frameleaf owns, then try again.",
+      { cause: cause ?? new Error(reason), description: reason },
+    );
+  }
+}
+
+/**
+ * Observed qualification of the exports root: it must be a directory on Linux owned by this server's user and
+ * writable by no one else (that ownership is the namespace isolation), and a probe must prove the file sync,
+ * exclusive hard link, unlink and directory sync primitives the publication journal relies on.
+ */
+export async function qualifyExportsRoot(root: string): Promise<LinuxDurabilityQualification> {
+  try {
+    return await observeExportsRoot(root);
+  } catch (error) {
+    // Unreadable, read-only or missing storage is refused the same way, never answered with a 500.
+    throw error instanceof StudioStorageRefusal ? error : new StudioStorageRefusal('exports_root_unavailable', error);
+  }
+}
+
+async function observeExportsRoot(root: string): Promise<LinuxDurabilityQualification> {
+  if (platform() !== 'linux') throw new StudioStorageRefusal('not_linux');
+  await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  const handle = await fs.open(root, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY);
+  try {
+    const stat = await handle.stat({ bigint: true });
+    if (!stat.isDirectory() || stat.uid !== BigInt(process.getuid!()) || (stat.mode & 0o022n) !== 0n) {
+      throw new StudioStorageRefusal('exports_root_not_owned');
+    }
+    const mount = /^mnt_id:\s+(\d+)$/m.exec(await fs.readFile(`/proc/self/fdinfo/${handle.fd}`, 'utf8'))?.[1];
+    if (!mount) throw new StudioStorageRefusal('mount_unknown');
+    const probe = join(root, `.frameleaf-durability-${randomUUID()}`);
+    const probeLink = `${probe}.link`;
+    try {
+      const file = await fs.open(
+        probe,
+        constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600,
+      );
+      try {
+        await file.writeFile('frameleaf');
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await fs.link(probe, probeLink);
+      const [a, b] = await Promise.all([fs.lstat(probe, { bigint: true }), fs.lstat(probeLink, { bigint: true })]);
+      if (a.ino !== b.ino || a.dev !== b.dev || a.nlink !== 2n || a.dev !== stat.dev) throw new Error('link_identity');
+      await fs.unlink(probeLink);
+      await fs.unlink(probe);
+      await handle.sync();
+    } catch (error) {
+      throw new StudioStorageRefusal('durability_probe_failed', error);
+    } finally {
+      for (const path of [probeLink, probe]) await fs.unlink(path).catch(() => {});
+    }
+    const rootIdentity = identity(stat);
+    return {
+      root,
+      anchor: root,
+      rootIdentity,
+      anchorIdentity: rootIdentity,
+      rootMountId: mount,
+      anchorMountId: mount,
+      evidenceId: `probe:mnt-${mount}:${new Date().toISOString()}`,
+      namespaceIsolated: true,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Internal port only. Journal locks, authority and reference gates belong to its caller. */
 @Injectable()
 export class StudioImportFileRepository implements FilePort {
@@ -65,10 +141,18 @@ export class StudioImportFileRepository implements FilePort {
   }
 
   private getAdapter(): DurabilityAdapter {
-    return (this.durabilityAdapter ??= new LinuxDurabilityAdapter({
-      root: StorageCore.getBaseFolder(StorageFolder.Exports),
-      anchor: StorageCore.getBaseFolder(StorageFolder.Exports),
-      qualification: () => Promise.reject(new Error('UNQUALIFIED')),
+    if (this.durabilityAdapter) return this.durabilityAdapter;
+    const root = StorageCore.getBaseFolder(StorageFolder.Exports);
+    // ponytail: probed once per process; a replaced exports root fails closed (mount/identity checks) until restart.
+    let qualified: Promise<LinuxDurabilityQualification> | undefined;
+    return (this.durabilityAdapter = new LinuxDurabilityAdapter({
+      root,
+      anchor: root,
+      qualification: () =>
+        (qualified ??= qualifyExportsRoot(root).catch((error: unknown) => {
+          qualified = undefined;
+          throw error;
+        })),
     }));
   }
 
@@ -375,7 +459,8 @@ export class LinuxDurabilityAdapter implements DurabilityAdapter {
   }
 
   private async record(): Promise<LinuxDurabilityQualification> {
-    if (!this.options || platform() !== 'linux') throw new Error('UNQUALIFIED');
+    if (!this.options) throw new Error('UNQUALIFIED');
+    if (platform() !== 'linux') throw new StudioStorageRefusal('not_linux');
     inside(this.anchor, this.root);
     const record = await this.options.qualification();
     if (

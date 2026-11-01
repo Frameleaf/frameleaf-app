@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { isEqual } from 'lodash-es';
 import { createHash, randomUUID } from 'node:crypto';
 import { arch, platform } from 'node:os';
@@ -16,8 +22,13 @@ import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  CloudAccountConsentsResponseDto,
+  type CloudAccountLinkRequest,
+  CloudAccountLinkResponseDto,
+  CloudAccountLinkVerifyDto,
   CloudPermissionsUpdateDto,
   CloudRemoteAccessUpdateDto,
+  CloudSignInPeopleResponseDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
@@ -40,6 +51,7 @@ import {
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -65,8 +77,10 @@ import {
   InstanceRegistration,
   KEY_RETIRE_HOURS,
   LINK_REFUSAL_MESSAGES,
+  type PasswordLinkAnswer,
   SLOW_DOWN_SECONDS,
   accountLabelOf,
+  attemptsLeftOf,
   backupPlanNotices,
   buildHeartbeat,
   commandPermission,
@@ -81,10 +95,13 @@ import {
   linkRefusalOf,
   linkTokenSchema,
   nextHeartbeatDelay,
+  passwordLinkAnswerSchema,
+  passwordLinkRefusalOf,
   permissionsOf,
   readBackupPlan,
   regionMismatchOf,
   rememberNotices,
+  signUpConsentsSchema,
 } from 'src/utils/frameleaf-cloud-link.js';
 import {
   type HeartbeatSettings,
@@ -122,6 +139,18 @@ import { type SetupClient, setupRefusal, whileClaimable } from 'src/utils/framel
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** FL-292: the single-use link token the Frameleaf app hands a new server (as FRAMELEAF_LINK_TOKEN takes). */
+/** FL-708: the only hosts a password link may reach over plain HTTP (a cloud on this machine, in tests). */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** FL-708: a password link that was not refused. */
+const NO_ACCOUNT_LINK_REFUSAL = {
+  refusal: null,
+  message: null,
+  attemptsLeft: null,
+  retryAfterSeconds: null,
+  accountRegion: null,
+};
+
 const SETUP_LINK_TOKEN = /^fll_[A-Za-z0-9_-]{8,512}$/;
 
 /**
@@ -421,13 +450,22 @@ export class FrameleafCloudService extends BaseService {
               : {
                   ...current,
                   lastError: message,
-                  pending: { ...current.pending, nextPollAt: this.after(Date.now(), current.pending.intervalSeconds) },
+                  pending: this.afterFailedCheck(current.pending, approved ? error.status : null),
                 },
           'link',
           { expected: link },
         );
       }
     }
+  }
+
+  /**
+   * The next check after one that failed. RFC 8628 section 3.5: a check that got no answer at all (a
+   * timeout, a refused connection) waits longer from then on, as `slow_down` does; a 5xx keeps the interval.
+   */
+  private afterFailedCheck(pending: NonNullable<FrameleafCloudLink['pending']>, status: number | null) {
+    const intervalSeconds = status === null ? pending.intervalSeconds + SLOW_DOWN_SECONDS : pending.intervalSeconds;
+    return { ...pending, intervalSeconds, nextPollAt: this.after(Date.now(), intervalSeconds) };
   }
 
   /** A cloud failure while an administrator waits becomes a 503 with the cloud's plain message. */
@@ -720,9 +758,14 @@ export class FrameleafCloudService extends BaseService {
     }
 
     switch (result.error) {
+      // the cloud answered, so an earlier failed check (a timeout, a 5xx) is no longer shown while waiting
       case 'authorization_pending': {
         await this.saveLink(
-          { ...link, pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) } },
+          {
+            ...link,
+            lastError: undefined,
+            pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) },
+          },
           null,
           { expected: link },
         );
@@ -731,7 +774,11 @@ export class FrameleafCloudService extends BaseService {
       case 'slow_down': {
         const intervalSeconds = pending.intervalSeconds + SLOW_DOWN_SECONDS;
         await this.saveLink(
-          { ...link, pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) } },
+          {
+            ...link,
+            lastError: undefined,
+            pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) },
+          },
           null,
           { expected: link },
         );
@@ -743,6 +790,20 @@ export class FrameleafCloudService extends BaseService {
       }
       case 'access_denied': {
         await this.endPending(cloudUrl, link, 'denied');
+        return;
+      }
+      case 'invalid_grant': {
+        // RFC 8628: the code can't be exchanged any more (spent by a check whose answer was lost, or revoked),
+        // so polling it again until it expires only shows "waiting for approval" for nothing
+        await this.saveLink(
+          {
+            ...emptyLink(cloudUrl, link),
+            lastLinkResult: 'expired',
+            lastError: 'Frameleaf Cloud no longer accepts this code. Get a new code to link this server.',
+          },
+          'link',
+          { expected: link },
+        );
         return;
       }
       default: {
@@ -838,6 +899,34 @@ export class FrameleafCloudService extends BaseService {
       throw error;
     }
 
+    const actor = 'actorId' in source ? source.actorId : undefined;
+    return this.saveRegistration(cloudUrl, registration, {
+      document,
+      previous,
+      permissions,
+      instanceId: identity.instanceId,
+      actor,
+      spendsLinkToken: options.spendsLinkToken,
+    });
+  }
+
+  /**
+   * Save the link a registration made (`POST /v1/instances`, or FL-708's link with an account during
+   * setup), then audit it, connect the administrator who linked and tell the administrators.
+   */
+  private async saveRegistration(
+    cloudUrl: string,
+    registration: InstanceRegistration,
+    context: {
+      document: Awaited<ReturnType<FrameleafCloudService['discover']>>;
+      previous: FrameleafCloudLink | null;
+      permissions: FrameleafCloudPermissions;
+      instanceId: string;
+      actor?: string;
+      spendsLinkToken?: string;
+    },
+  ): Promise<FrameleafCloudLink> {
+    const { document, previous, permissions } = context;
     const { oidc } = registration;
     const problem = cloudAddressProblem(cloudUrl, 'sign-in issuer', oidc.issuer);
     if (problem) {
@@ -845,7 +934,7 @@ export class FrameleafCloudService extends BaseService {
         `Frameleaf Cloud answered with an address this server will not use: ${problem}`,
       );
     }
-    if (registration.instanceId !== identity.instanceId) {
+    if (registration.instanceId !== context.instanceId) {
       // a cloud from before as-built decision #4 names its own id; it is the one it knows this server by
       this.logger.warn(
         `Frameleaf Cloud registered this server as ${registration.instanceId}, not as its own instance ID`,
@@ -880,8 +969,8 @@ export class FrameleafCloudService extends BaseService {
       },
       usedLinkTokens: previous?.usedLinkTokens,
     };
-    if (options.spendsLinkToken) {
-      link = spendLinkToken(link, options.spendsLinkToken);
+    if (context.spendsLinkToken) {
+      link = spendLinkToken(link, context.spendsLinkToken);
     }
     this.frameleafCloudRepository.forget();
     // Only fresh approved registration may replace the Cloud authority; background writes must
@@ -893,16 +982,192 @@ export class FrameleafCloudService extends BaseService {
     // FL-185: a new link starts without a cloud processing suspension; the cloud says again if it holds one
     await this.forgetMlSuspension();
 
-    const actor = 'actorId' in source ? source.actorId : undefined;
+    const { actor } = context;
     await this.audit(AdminAuditAction.CloudLinked, link.accountLabel ?? null, actor);
     await this.connectLinkingAdministrator(link, actor, registration.owner.email);
     this.notify({
       level: NotificationLevel.Info,
       title: 'Server linked to Frameleaf',
       description: `This server is linked to ${link.accountLabel ?? 'a Frameleaf account'}. Cloud features you turn on use this link.`,
+      systemTemplate: link.accountLabel
+        ? { version: 1, key: 'cloud-linked', args: { account: link.accountLabel } }
+        : { version: 1, key: 'cloud-linked-unnamed', args: {} },
       dedupeKey: `frameleaf-cloud:linked:${link.linkedAt}`,
     });
     return link;
+  }
+
+  // ------------------------------------------------------------------ link with an account (FL-708, FC-222)
+
+  /**
+   * FL-708: linking with a Frameleaf account's email and password is for first-run setup only. Once
+   * setup is finished, linking uses the approval code (`startLink`).
+   */
+  private async requireFirstRunSetup() {
+    const setup = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafSetup);
+    if (setup?.completed === true) {
+      throw new ForbiddenException(
+        'Linking with a Frameleaf email and password is only for first-time setup. Link with a code instead.',
+      );
+    }
+  }
+
+  /** `GET admin/cloud/link/account/consents`: the statements a new Frameleaf account agrees to (FC-222). */
+  async getAccountLinkConsents(): Promise<CloudAccountConsentsResponseDto> {
+    await this.requireFirstRunSetup();
+    const cloudUrl = this.requireCloudUrl();
+    const consents = await this.unavailableOnError(async () => {
+      const document = await this.discover(cloudUrl);
+      return this.frameleafCloudRepository.requestJson(signUpConsentsSchema, {
+        url: linkEndpoints(document).signUpConsents,
+        unauthenticated: FrameleafCloudPublicCall.SignUpConsents,
+      });
+    });
+    return {
+      tos: { version: consents.tos.version, text: consents.tos.text },
+      privacy: { version: consents.privacy.version, text: consents.privacy.text },
+    };
+  }
+
+  /**
+   * `POST admin/cloud/link/account` (FL-708, first-run setup only): create a Frameleaf account, or sign
+   * in to one, with an email and password, and link this server to it straight away; no approval code.
+   * The request is a DPoP proof signed by this server's key, which is the key it registers, so the
+   * cloud binds the link to this server as `POST /v1/instances` does. The password is sent once and
+   * never kept. A new account (and an account with an authenticator app) first answers with a code to
+   * enter (`code-needed`). An account that keeps its data in the other region is refused with
+   * `region-mismatch` and that region, so the administrator chooses whether to link there (`dataRegion`).
+   */
+  async linkWithAccount(auth: AuthDto, dto: CloudAccountLinkRequest): Promise<CloudAccountLinkResponseDto> {
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      await this.requireFirstRunSetup();
+      const cloudUrl = this.requireCloudUrl();
+      const previous = await this.readLink(cloudUrl);
+      if (previous?.status === 'linked') {
+        throw new ConflictException('This server is already linked to a Frameleaf account. Unlink it first.');
+      }
+      try {
+        const attempt = await this.passwordLinkAttempt(cloudUrl, previous);
+        // FC-18: a region is sent only when the administrator chose it after a region-mismatch refusal
+        const answer = await this.frameleafCloudRepository.requestJson(passwordLinkAnswerSchema, {
+          method: 'POST',
+          url: attempt.endpoints.passwordLink,
+          dpop: { signer: attempt.signer },
+          body: {
+            mode: dto.mode,
+            email: dto.email,
+            password: dto.password,
+            ...(dto.mode === 'create' && { name: dto.name, consent: dto.consent }),
+            instance: { ...attempt.instance, ...(dto.dataRegion && { dataRegion: dto.dataRegion }) },
+          },
+        });
+        return await this.passwordLinkAnswered(cloudUrl, attempt, answer, auth.user.id);
+      } catch (error) {
+        return this.passwordLinkRefused(error, 'start');
+      }
+    });
+  }
+
+  /** `POST admin/cloud/link/account/verify`: the code a password link asked for (FL-708, FC-222). */
+  async verifyAccountLink(auth: AuthDto, dto: CloudAccountLinkVerifyDto): Promise<CloudAccountLinkResponseDto> {
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      await this.requireFirstRunSetup();
+      const cloudUrl = this.requireCloudUrl();
+      const previous = await this.readLink(cloudUrl);
+      if (previous?.status === 'linked') {
+        throw new ConflictException('This server is already linked to a Frameleaf account. Unlink it first.');
+      }
+      try {
+        // the cloud only accepts the code from the key that started (FC-222)
+        const attempt = await this.passwordLinkAttempt(cloudUrl, previous);
+        const answer = await this.frameleafCloudRepository.requestJson(passwordLinkAnswerSchema, {
+          method: 'POST',
+          url: attempt.endpoints.passwordLinkVerify(dto.challengeId),
+          dpop: { signer: attempt.signer },
+          body: { code: dto.code },
+        });
+        return await this.passwordLinkAnswered(cloudUrl, attempt, answer, auth.user.id);
+      } catch (error) {
+        return this.passwordLinkRefused(error, 'verify');
+      }
+    });
+  }
+
+  /** What a password link sends and signs with: this server's key, registered as it is in `completeLink`. */
+  private async passwordLinkAttempt(cloudUrl: string, previous: FrameleafCloudLink | null) {
+    const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
+    const signer = this.instanceIdentityRepository.currentSigner();
+    const document = await this.discover(cloudUrl);
+    const endpoints = linkEndpoints(document);
+    // a password (and its code) only ever travels over HTTPS; plain HTTP only to this machine (tests)
+    const issuer = new URL(endpoints.passwordLink);
+    if (issuer.protocol !== 'https:' && !LOOPBACK_HOSTS.has(issuer.hostname)) {
+      throw new ServiceUnavailableException(
+        'Frameleaf Cloud is not reached over HTTPS here, so no password is sent. Link with a code instead.',
+      );
+    }
+    const permissions = permissionsOf(previous);
+    return {
+      signer,
+      document,
+      previous,
+      permissions,
+      instanceId,
+      endpoints,
+      instance: {
+        instanceId,
+        name: (await this.serverIdentity()).name,
+        version: serverVersion.toString(),
+        platform: this.platform(),
+        jwk: { ...signer.publicJwk, kid: signer.kid },
+        bootId: await this.bootId(),
+        capabilities: INSTANCE_CAPABILITIES,
+        permissions,
+      },
+    };
+  }
+
+  private async passwordLinkAnswered(
+    cloudUrl: string,
+    attempt: Awaited<ReturnType<FrameleafCloudService['passwordLinkAttempt']>>,
+    answer: PasswordLinkAnswer,
+    actor: string,
+  ): Promise<CloudAccountLinkResponseDto> {
+    if ('challengeId' in answer) {
+      return {
+        ...NO_ACCOUNT_LINK_REFUSAL,
+        outcome: 'code-needed',
+        challenge: {
+          challengeId: answer.challengeId,
+          kind: answer.kind,
+          expiresAt: this.after(Date.now(), answer.expiresIn),
+        },
+        status: await this.getStatus(),
+      };
+    }
+    this.frameleafCloudRepository.forget();
+    await this.saveRegistration(cloudUrl, answer, { ...attempt, actor });
+    return { ...NO_ACCOUNT_LINK_REFUSAL, outcome: 'linked', challenge: null, status: await this.getStatus() };
+  }
+
+  /** A refused password link, in words the setup screen shows; this server's link is unchanged. */
+  private async passwordLinkRefused(error: unknown, step: 'start' | 'verify'): Promise<CloudAccountLinkResponseDto> {
+    if (!(error instanceof FrameleafCloudError)) {
+      // ours, not the cloud's (a link that changed meanwhile): shown as it is
+      throw error;
+    }
+    const refusal = passwordLinkRefusalOf(error, step);
+    this.logger.warn(`Frameleaf Cloud did not link with the account (${refusal}): ${error.message}`);
+    return {
+      outcome: 'refused',
+      challenge: null,
+      refusal,
+      message: error.envelope?.message || null,
+      attemptsLeft: attemptsLeftOf(error),
+      retryAfterSeconds: error.retryAfterSeconds,
+      accountRegion: regionMismatchOf(error)?.accountRegion ?? null,
+      status: await this.getStatus(),
+    };
   }
 
   /** `DELETE admin/cloud/link`: unlink from this side. Local data is never touched. */
@@ -933,6 +1198,7 @@ export class FrameleafCloudService extends BaseService {
         level: NotificationLevel.Info,
         title: 'Server unlinked from Frameleaf',
         description: 'Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.',
+        systemTemplate: { version: 1, key: 'cloud-unlinked', args: {} },
         dedupeKey: `frameleaf-cloud:unlinked:${Date.now()}`,
       });
       return this.getStatus();
@@ -986,6 +1252,73 @@ export class FrameleafCloudService extends BaseService {
       this.logger.log(`Sign in with Frameleaf settings changed by ${auth.user.id}`);
       return this.getStatus();
     });
+  }
+
+  /**
+   * `GET admin/cloud/sign-in/people` (FL-541): who here has linked a Frameleaf account, by name, those
+   * not linked first, and whether a reminder can be emailed.
+   */
+  async getSignInPeople(): Promise<CloudSignInPeopleResponseDto> {
+    const [users, links, base] = await Promise.all([
+      this.userRepository.getList({ withDeleted: false }),
+      this.frameleafAccountRepository.listLinks(),
+      this.reminderBase(),
+    ]);
+    const linkedEmail = new Map(links.map((link) => [link.userId, link.email]));
+    const people = users
+      .map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        linked: linkedEmail.has(user.id),
+        frameleafEmail: linkedEmail.get(user.id) ?? null,
+      }))
+      .sort((a, b) => Number(a.linked) - Number(b.linked) || a.name.localeCompare(b.name));
+    return { people, canRemind: !!base };
+  }
+
+  /**
+   * `POST admin/cloud/sign-in/people/:id/remind` (FL-541): email someone who has not linked a link to
+   * their own sign-in settings, where they link their Frameleaf account. Nothing is linked for them.
+   */
+  async remindSignIn(auth: AuthDto, id: string): Promise<void> {
+    const user = await this.userRepository.get(id, { withDeleted: false });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    const links = await this.frameleafAccountRepository.listLinks();
+    if (links.some((link) => link.userId === id)) {
+      throw new BadRequestException('This person has already linked their Frameleaf account');
+    }
+    const base = await this.reminderBase();
+    if (!base) {
+      throw new BadRequestException('Email and a public address are needed to send a reminder');
+    }
+    const { templates } = await this.getConfig({ withCache: true });
+    const { html, text } = await this.emailRepository.renderEmail({
+      template: EmailTemplate.FRAMELEAF_SIGN_IN_REMINDER,
+      data: {
+        baseUrl: base,
+        displayName: user.name,
+        senderName: auth.user.name,
+        link: `${base}/user-settings?area=preferences&section=frameleaf-account`,
+        showBranding: templates.email.showBranding,
+      },
+      customTemplate: '',
+    });
+    await this.jobRepository.queue({
+      name: JobName.SendMail,
+      data: { to: user.email, subject: 'Link your Frameleaf account to sign in away from home', html, text },
+    });
+  }
+
+  /** The public address reminders link to; undefined while email is off or there is none. */
+  private async reminderBase(): Promise<string | undefined> {
+    const { notifications, server } = await this.getConfig({ withCache: true });
+    if (!notifications.smtp.enabled) {
+      return undefined;
+    }
+    return (await this.getPublicUrl(server)) || undefined;
   }
 
   /**
@@ -1133,6 +1466,7 @@ export class FrameleafCloudService extends BaseService {
       level: NotificationLevel.Warning,
       title: 'Frameleaf Cloud ended this server’s link',
       description: `${reason} Cloud features stopped; local photos, accounts and sign-in are unchanged. Link again from Settings → Frameleaf Cloud.`,
+      systemTemplate: { version: 1, key: 'cloud-revoked', args: { reason } },
       dedupeKey: 'frameleaf-cloud:revoked',
       dedupeDays: 1,
     });
@@ -1444,12 +1778,12 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * FL-434 (owner decision 2026-10-10, FC-147): Buddy Backup needs Server licences, not a plan, as long as
-   * the two servers connect directly; only the relay needs the plan. Without a plan this server has no
-   * Cloud-issued certificate, so the direct address is the one the owner set up themselves: the HTTPS
-   * external domain. It is published only while a Buddy pairing can use it (active, or ended and still
-   * readable). Cloud hands it only to the buddy's grant; the apps' reads for a server without a plan keep
-   * only home-network entries.
+   * FL-434 (owner decision 2026-10-10, FC-147): a Buddy pairing needs Server licences. The direct address
+   * published here is the one the owner set up themselves: the HTTPS external domain. It is published only
+   * while a Buddy pairing can use it (active, or ended and still readable). Cloud decides who receives it:
+   * since FL-513 (FC-139, 2026-10-21) the buddy's grant carries this server's WAN, IPv6, custom and relay
+   * entries only while its owner has REMOTE_ACCESS (active or grace), otherwise only home-network entries;
+   * the apps' reads for a server without a plan keep only home-network entries too.
    */
   private async withBuddyDirect(
     endpoints: Array<{ kind: string; url: string }>,
@@ -1661,6 +1995,7 @@ export class FrameleafCloudService extends BaseService {
               : NotificationLevel.Info,
         title: 'Message from Frameleaf Cloud',
         description: notice.message,
+        systemTemplate: { version: 1, key: 'cloud-message', args: { message: notice.message } },
         dedupeKey: `frameleaf-cloud:notice:${keyOf(notice)}`,
         dedupeDays: 30,
       });
@@ -1794,6 +2129,7 @@ export class FrameleafCloudService extends BaseService {
       level: NotificationLevel.Warning,
       title: 'Custom hostname needs attention',
       description: `${host} is not fully verified by Frameleaf Cloud. ${detail.problem}`,
+      systemTemplate: { version: 1, key: 'cloud-hostname-failing', args: { host, problem: detail.problem } },
       dedupeKey: `frameleaf-cloud:custom-hostname-failing:${host}:${noticedAt}`,
       dedupeDays: 30,
     });
@@ -2097,6 +2433,7 @@ export class FrameleafCloudService extends BaseService {
           ? 'Frameleaf Cloud no longer accepts this server’s key.'
           : 'Frameleaf Cloud asked for this server to be linked again.'
       } Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.`,
+      systemTemplate: { version: 1, key: why === 'key' ? 'cloud-relink-key' : 'cloud-relink-command', args: {} },
       dedupeKey: 'frameleaf-cloud:relink',
       dedupeDays: 1,
     });
@@ -2148,6 +2485,7 @@ export class FrameleafCloudService extends BaseService {
       title: 'This server’s new identity key could not be read',
       description:
         'The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is under way. If it does not finish before the previous key expires (within a day of that rotation), the link to Frameleaf Cloud stops working and this server must be linked again. This rotation runs whatever the cloud command permissions are set to.',
+      systemTemplate: { version: 1, key: 'cloud-identity-key-damaged', args: {} },
       dedupeKey: 'frameleaf-cloud:identity-key-damaged',
       dedupeDays: 1,
     });
@@ -2283,6 +2621,7 @@ export class FrameleafCloudService extends BaseService {
       title: 'Link this server to Frameleaf again',
       description:
         'This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.',
+      systemTemplate: { version: 1, key: 'cloud-identity-key-expired', args: {} },
       dedupeKey: 'frameleaf-cloud:identity-key-expired',
       dedupeDays: 1,
     });
@@ -2550,12 +2889,34 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
-  private notifyBackupPlan({ key, audience, title, body, data, userIds }: BackupPlanNotice & { userIds: string[] }) {
+  private notifyBackupPlan({
+    key,
+    audience,
+    title,
+    body,
+    data,
+    systemTemplate,
+    userIds,
+  }: BackupPlanNotice & { userIds: string[] }) {
     if (audience === 'admins') {
-      this.notify({ level: NotificationLevel.Warning, title, description: body, dedupeKey: `frameleaf-cloud:${key}` });
+      this.notify({
+        level: NotificationLevel.Warning,
+        title,
+        description: body,
+        systemTemplate,
+        dedupeKey: `frameleaf-cloud:${key}`,
+      });
     }
     this.eventRepository
-      .emit('PushNotify', { type: PushEventType.BackupNeedsAttention, userIds, title, body, data, dedupeKey: key })
+      .emit('PushNotify', {
+        type: PushEventType.BackupNeedsAttention,
+        userIds,
+        title,
+        body,
+        data,
+        systemTemplate,
+        dedupeKey: key,
+      })
       .catch((error) => this.logger.warn(`Could not push the Frameleaf backup plan notice: ${error}`));
   }
 
@@ -2565,7 +2926,8 @@ export class FrameleafCloudService extends BaseService {
     description: string;
     dedupeKey: string;
     dedupeDays?: number;
-    systemTemplate?: SystemNotificationTemplate;
+    /** FL-406: every notice here renders in each administrator's language; title/description stay the English fallback. */
+    systemTemplate: SystemNotificationTemplate;
   }) {
     this.eventRepository.emit('AdminNotify', { type: NotificationType.SystemMessage, ...notice }).catch((error) => {
       this.logger.warn(`Could not notify administrators: ${error}`);

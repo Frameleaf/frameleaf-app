@@ -99,6 +99,15 @@ const isAfterSentenceEnd = (text: string, index: number): boolean => {
   return true; // reached start
 };
 
+/** Ends with the preposition "in" as a whole word, followed by whitespace. */
+const PLACE_PREPOSITION = /(?<![\p{L}\p{M}\p{N}_])in\s+$/iu;
+
+/**
+ * What follows a name that makes it a possessive: "'s", or ", Name and Name's" naming more owners.
+ * "and" stands alone between spaces; ", and" starts a new clause ("in Paris, and Mary's child").
+ */
+const POSSESSIVE_AFTER_NAME = /^(?:(?:\s*[,&]\s*|\s+and\s+)\p{Lu}[\p{L}\p{M}'’-]*?)*['’]s(?![\p{L}\p{M}\p{N}_])/u;
+
 const escapeRegExp = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 export class IdentityPostValidator {
@@ -124,8 +133,18 @@ export class IdentityPostValidator {
         p.name
           .split(/\s+/)
           .map((token) => token.trim())
-          .filter((token) => token.length > 0),
+          .filter((token) => token.length > 0)
+          // A caption may spell a name composed ("José") or decomposed ("Jose\u0301") either way.
+          .flatMap((token) => [token, token.normalize('NFC'), token.normalize('NFD')]),
       ),
+    );
+    // Each person's name as its ordered parts, for hyphenated spellings of a name stored with spaces.
+    const knownTokenRuns = knownPersons.map((p) =>
+      p.name
+        .normalize('NFC')
+        .toLowerCase()
+        .split(/[\s-]+/)
+        .filter((token) => token.length > 0),
     );
     // Protect complete known tokens before the English candidate heuristic splits their spelling.
     const knownNameSpans = [...knownNames].flatMap((token) =>
@@ -140,8 +159,15 @@ export class IdentityPostValidator {
     // ---- Step 1: strip hallucinated names ----
     // Candidate pattern: a CamelCase word (single capital + lowercase letters)
     // that appears mid-sentence (not at sentence start, not in allow-list).
-    const candidateRe = /\b([A-Z][a-z]+)\b/g;
+    // Whole Unicode words only, so "Zoë", "José", "O'Brien" and "Anne-Marie" are replaced as one
+    // name instead of leaving a fragment such as "Someoneë" or "O'Someone"; a short lower-case
+    // particle ("d'Artagnan", "d’Angelo") belongs to the name it starts.
+    const candidateRe =
+      /(?<![\p{L}\p{M}\p{N}_-])((?:\p{Ll}{1,3}['’])?\p{Lu}(?:[\p{Ll}\p{M}]+|['’]\p{Lu}[\p{Ll}\p{M}]+)(?:-\p{Lu}[\p{Ll}\p{M}]+)*)(?![\p{L}\p{M}\p{N}_-])/gu;
     const hallucinatedNames: string[] = [];
+    // What the final description keeps: replaced candidates, and whether a hyphenated known name stays.
+    const replaced: Array<[number, number]> = [];
+    let keptCompound = false;
     let stripped = description.replaceAll(candidateRe, (match, word, offset) => {
       // Sentence-start capitals are legitimate — don't strip them.
       if (isAfterSentenceEnd(description, offset)) {
@@ -151,11 +177,32 @@ export class IdentityPostValidator {
       if (COMMON_NON_NAME_WORDS.has(word)) {
         return match;
       }
+      // A capitalised word right after "in" is a place ("in Zürich", "in Paris"), not a person,
+      // unless it starts a possessive, alone or coordinated ("in Anne's arms", "in Zoë and Chloé's arms").
+      if (
+        PLACE_PREPOSITION.test(description.slice(0, offset)) &&
+        !POSSESSIVE_AFTER_NAME.test(description.slice(offset + word.length))
+      ) {
+        return match;
+      }
+      // A known name, or a hyphenated run of one known person's name ("Anne-Marie" for a stored
+      // "Anne Marie"); parts taken from different people ("Anne-Smith") are not a known name.
+      const parts = (word as string).normalize('NFC').toLowerCase().split('-');
       if (knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end)) {
+        return match;
+      }
+      if (
+        parts.length > 1 &&
+        knownTokenRuns.some((tokens) =>
+          tokens.some((_, at) => parts.every((part, index) => tokens[at + index] === part)),
+        )
+      ) {
+        keptCompound = true;
         return match;
       }
       // Anything else that looks like a name mid-sentence is hallucinated.
       hallucinatedNames.push(word);
+      replaced.push([offset, offset + word.length]);
       return 'Someone';
     });
 
@@ -163,8 +210,11 @@ export class IdentityPostValidator {
       flags.hallucinatedNames = [...new Set(hallucinatedNames)];
     }
 
-    // ---- Step 2: substitute / flag generic references when no known token was present ----
-    if (knownNameSpans.length === 0 && knownPersons.length > 0) {
+    // ---- Step 2: substitute / flag generic references when no known name remains ----
+    // A known token inside a replaced name ("Anne" of "Anne-Sophie") is no longer in the description.
+    const knownRemains =
+      keptCompound || knownNameSpans.some(([start, end]) => replaced.every(([from, to]) => start < from || end > to));
+    if (!knownRemains && knownPersons.length > 0) {
       const genericMatch = GENERIC_PERSON_PATTERN.exec(stripped);
       if (genericMatch) {
         if (knownPersons.length === 1) {

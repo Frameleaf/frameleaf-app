@@ -11,6 +11,7 @@ import type {
   FrameleafRemoteEnrollment,
 } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { type CloudGatewayDeps, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { entitlementFlags, hasServerLicence } from 'src/utils/frameleaf-license.js';
 import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
@@ -478,10 +479,9 @@ export const hostnameProblem = (hostname: Pick<RemoteHostname, 'state' | 'failur
 // ------------------------------------------------------------------ availability
 
 /** Why remote access cannot be turned on without a Server licence or a plan. */
-export const REMOTE_NEEDS_LICENCE = 'Remote access needs a Server licence or a Frameleaf Cloud plan.';
+export const REMOTE_NEEDS_LICENCE = CLOUD_GATES.remoteNeedsCloud;
 /** Why the relay (and what goes through it: the custom hostname and its meter) is not available. */
-export const RELAY_NEEDS_PLAN =
-  'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.';
+export const RELAY_NEEDS_PLAN = CLOUD_GATES.relayNeedsCloud;
 
 /**
  * FL-437 (FC-147, owner decision 2026-10-17): what remote access this server is entitled to. A live
@@ -511,7 +511,7 @@ export const remoteAccessUnavailable = async (
     return 'Frameleaf Cloud is not set up on this server.';
   }
   if (!linked) {
-    return 'Link this server to a Frameleaf account first.';
+    return CLOUD_GATES.linkFirst;
   }
   const licenses = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
   if (!remoteEntitlement(licenses, now).direct) {

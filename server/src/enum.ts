@@ -254,6 +254,14 @@ export const AssetOrderWithRandomSchema = z
 export enum Permission {
   All = 'all',
 
+  BookmarkCreate = 'bookmark.create',
+  BookmarkRead = 'bookmark.read',
+  BookmarkUpdate = 'bookmark.update',
+  BookmarkDelete = 'bookmark.delete',
+
+  CaptureCreate = 'capture.create',
+  CaptureCatalogRead = 'capture.catalog.read',
+
   ActivityCreate = 'activity.create',
   ActivityRead = 'activity.read',
   ActivityUpdate = 'activity.update',
@@ -268,6 +276,7 @@ export enum Permission {
 
   // ASSET_CREATE = 'asset.create',
   AssetRead = 'asset.read',
+  AssetSourceRead = 'assetSource.read',
   AssetUpdate = 'asset.update',
   AssetDelete = 'asset.delete',
   AssetStatistics = 'asset.statistics',
@@ -539,7 +548,8 @@ export enum SystemMetadataKey {
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
-  PhysicalDeduplicationMigration = 'physical-deduplication-migration',
+  /** FL-413: the identical-files run's stage, cursor, counts and problems, and every owner's Recovered Media album. */
+  IdenticalFiles = 'identical-files',
   /** FL-159: the Frameleaf Cloud link written by linking the server (FL-155); read by cloud processing. */
   FrameleafCloudLink = 'frameleaf-cloud-link',
   /** FL-159: this server's Ed25519 identity (public part only; the private key is a 0600 file). */
@@ -631,6 +641,21 @@ export enum SystemMetadataKey {
   FrameleafRecoveryMlAuthority = 'frameleaf-recovery-ml-authority',
   /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
   IntegrityCheckRuns = 'integrity-check-runs',
+  /** FL-521: counts of what each reading feature has done, a few hours of readings, for "N an hour". */
+  LibraryProgressSamples = 'library-progress-samples',
+  /** FL-521: work to start again over every photo in the next overnight run ("Save and … tonight"). */
+  OvernightRedo = 'overnight-redo',
+  /**
+   * FL-537: when the graphics card last stopped helping the video converter (a copy was made on the
+   * processor instead), and the last "Test it" of the card, for Video playback copies.
+   */
+  VideoCardState = 'video-card-state',
+  /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
+  IntegrityCheckHistory = 'integrity-check-history',
+  /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
+  IntegrityCheckStop = 'integrity-check-stop',
+  /** FL-520: look-alike photos are to be compared again in the next overnight run (after a change of "How alike"). */
+  DuplicateRecompare = 'duplicate-recompare',
   /**
    * FL-71 (CC-9): when an administrator last proved a backup restores: the database (metadata) and
    * the original files, each recorded separately, and who recorded it.
@@ -638,12 +663,20 @@ export enum SystemMetadataKey {
   BackupRestoreVerification = 'backup-restore-verification',
   /** FL-362: the backup run in progress: which place it has reached, and a start that is still due. */
   BackupSequence = 'backup-sequence',
+  /** FL-367: when each API key was last used, by key id (recorded at most every few minutes). */
+  ApiKeyLastUsed = 'api-key-last-used',
+  /** FL-363: the overnight run in progress, and the last few nights' results. */
+  OvernightSequence = 'overnight-sequence',
+  /** FL-363: the Overview items an administrator dismissed, so they stop counting as needing attention. */
+  OverviewDismissed = 'overview-dismissed',
   /**
    * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
    * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
    * password.
    */
   FrameleafSetup = 'frameleaf-setup',
+  /** FL-667: when the one-off removal of filler tags left by AI descriptions before FL-659 finished. */
+  DescriptionFillerTagCleanup = 'description-filler-tag-cleanup',
 }
 
 export enum UserMetadataKey {
@@ -727,8 +760,12 @@ export enum ManualJobName {
   MemoryCreate = 'memory-create',
   BackupDatabase = 'backup-database',
   BestPhotosBackfill = 'best-photos-backfill',
+  /** @deprecated FL-413: retired; refused. Use `identical-files-check`. */
   PhysicalDeduplicationDryRun = 'physical-deduplication-dry-run',
+  /** @deprecated FL-413: retired; refused. Use `identical-files-check`. */
   PhysicalDeduplicationApply = 'physical-deduplication-apply',
+  /** FL-413: "Check again" for identical files. */
+  IdenticalFilesCheck = 'identical-files-check',
   IntegrityMissingFiles = `integrity-missing-files`,
   IntegrityUntrackedFiles = `integrity-untracked-files`,
   IntegrityChecksumFiles = `integrity-checksum-mismatch`,
@@ -929,9 +966,9 @@ export const MediaHealthStatusSchema = z
   .meta({ id: 'MediaHealthStatus' });
 
 /**
- * Where a machine-learning workload may run (FL-110). A destination is always named
- * explicitly by the caller; the server never picks one on the caller's behalf and never
- * moves work from one kind to another when the chosen destination is unavailable.
+ * Where a machine-learning workload may run (FL-110). Since FL-456 a library job goes to the first
+ * available place in its processing order (`MlProcessingSource`), which the person sets; work never
+ * goes to a place outside that order, and a destination a caller names explicitly is never swapped.
  */
 export enum MlDestinationKind {
   /** The deployment's own machine-learning container (the configured ML URLs). */
@@ -990,6 +1027,50 @@ export enum MlWorkload {
 }
 
 export const MlWorkloadSchema = z.enum(MlWorkload).describe('Machine-learning workload').meta({ id: 'MlWorkload' });
+
+/**
+ * FL-456: the places processing can run, in the order a person puts them. A job runs on the first one
+ * that is available and allowed to do its work; when none is, it waits.
+ */
+export enum MlProcessingSource {
+  /** This server's own machine learning (`local` destinations). */
+  Local = 'local',
+  /** The person's own computers: Frameleaf Desktop helpers and computers added by address (`lan`). */
+  Desktops = 'desktops',
+  /** Frameleaf Cloud. */
+  Cloud = 'cloud',
+}
+
+export const MlProcessingSourceSchema = z
+  .enum(MlProcessingSource)
+  .describe('Where processing can run')
+  .meta({ id: 'MlProcessingSource' });
+
+/** FL-456 (owner 2026-10-18): this server first, then the person's computers, then Frameleaf Cloud. */
+export const DEFAULT_ML_PROCESSING_ORDER: readonly MlProcessingSource[] = [
+  MlProcessingSource.Local,
+  MlProcessingSource.Desktops,
+  MlProcessingSource.Cloud,
+];
+
+/** FL-456: what the settings page says about one place in the processing order. */
+export enum MlProcessingSourceState {
+  /** It can take work now. */
+  Ready = 'ready',
+  /** It is set up but did not answer when last checked. */
+  NotAnswering = 'not-answering',
+  /** It is set up and turned off. */
+  TurnedOff = 'turned-off',
+  /** Frameleaf Cloud is linked but nobody has agreed to send photos there yet. */
+  NeedsPermission = 'needs-permission',
+  /** Nothing is set up for it yet. */
+  NotSetUp = 'not-set-up',
+}
+
+export const MlProcessingSourceStateSchema = z
+  .enum(MlProcessingSourceState)
+  .describe('Whether a place in the processing order can take work now')
+  .meta({ id: 'MlProcessingSourceState' });
 
 /** The workloads the ordinary `/predict` container serves; restoration and Studio need dedicated workers. */
 export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
@@ -1342,6 +1423,13 @@ export enum MediaOperationKind {
    * the job's result, and nothing else is kept once it settles.
    */
   StudioTranscription = 'studio_transcription',
+  /** Internal library indexing. Its live status and controls use the dedicated speech API. */
+  SpeechTranscription = 'speech_transcription',
+  /**
+   * Make a movie (FL-561): the best moments of an album, a memory or a selection, cut on the beat of
+   * music made for it or a song from the library, saved as a Studio project.
+   */
+  StudioMovie = 'studio_movie',
   /**
    * A bounded WebRTC playback session of a stored Studio revision (FL-96): the worker holding the
    * claim streams to the browser that opened it, signalled and authorised through the server. It
@@ -1462,6 +1550,8 @@ export enum MediaOperationKind {
 
 export const MediaOperationKindSchema = z
   .enum(MediaOperationKind)
+  // Legacy clients decode a closed enum. Internal indexing is never a generic Activity/render response.
+  .exclude(['SpeechTranscription'])
   .describe('Media operation kind')
   .meta({ id: 'MediaOperationKind' });
 
@@ -2225,14 +2315,22 @@ export enum JobName {
   AssetDetectDuplicatesQueueAll = 'AssetDetectDuplicatesQueueAll',
   AssetDetectDuplicates = 'AssetDetectDuplicates',
   DuplicateResolutionLifecycle = 'DuplicateResolutionLifecycle',
+  /** @deprecated FL-651 replaced the sampled CLIP frames: a queued job changes nothing. */
   AssetGenerateVideoDuplicateFramesQueueAll = 'AssetGenerateVideoDuplicateFramesQueueAll',
+  /** @deprecated FL-651 replaced the sampled CLIP frames: a queued job changes nothing. */
   AssetGenerateVideoDuplicateFrames = 'AssetGenerateVideoDuplicateFrames',
+  /** FL-651: timeline hashes from the seek-bar filmstrip, which video look-alikes are confirmed with. */
+  AssetVideoFingerprintQueueAll = 'AssetVideoFingerprintQueueAll',
+  AssetVideoFingerprint = 'AssetVideoFingerprint',
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
+  AssetPaletteExtract = 'AssetPaletteExtract',
+  AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
   AssetEncodeVideo = 'AssetEncodeVideo',
+  AssetWarmFilmstrip = 'AssetWarmFilmstrip',
   /** FL-97: make the Studio HDR intermediate of one HDR video. */
   StudioHdrProxyGenerate = 'StudioHdrProxyGenerate',
   AssetEmptyTrash = 'AssetEmptyTrash',
@@ -2309,10 +2407,16 @@ export enum JobName {
 
   StorageTemplateMigration = 'StorageTemplateMigration',
   StorageTemplateMigrationSingle = 'StorageTemplateMigrationSingle',
+  /** @deprecated FL-413 retired the per-account deduplication: a queued job changes nothing. */
   PhysicalDeduplicationMigrationDryRun = 'PhysicalDeduplicationMigrationDryRun',
+  /** @deprecated FL-413 retired the per-account deduplication: a queued job changes nothing. */
   PhysicalDeduplicationMigrationApply = 'PhysicalDeduplicationMigrationApply',
+  /** FL-413: identical files stored once, photos merged, orphans recovered; resumable, on the storage queue. */
+  IdenticalFilesCheck = 'IdenticalFilesCheck',
 
   TagCleanup = 'TagCleanup',
+  /** FL-667: once after upgrade, removes filler tags AI descriptions added before FL-659's stop list. */
+  DescriptionFillerTagCleanup = 'DescriptionFillerTagCleanup',
 
   VersionCheck = 'VersionCheck',
 
@@ -2331,6 +2435,8 @@ export enum JobName {
   CloudBackupSchedule = 'CloudBackupSchedule',
   /** FL-362: the one backup schedule's tick: back up each place that is on, one after another. */
   BackupSequence = 'BackupSequence',
+  /** FL-363: the overnight schedule's tick: run each night step that is due, one after another. */
+  OvernightSequence = 'OvernightSequence',
   /** FL-164: the hourly check that queues the weekly sample or the monthly full verification when due. */
   CloudBackupVerify = 'CloudBackupVerify',
   /** FL-228: one push notice, encrypted per device and handed to the Frameleaf push gateway. */
@@ -2382,10 +2488,19 @@ export enum JobName {
   IntegrityDeleteReports = 'IntegrityDeleteReports',
 }
 
-// Internal photography jobs are observed through the scoped workflow API, not legacy queue clients.
+// Internal jobs stay out of the public enum, which strict native decoders reject new values of:
+// photography jobs are observed through the scoped workflow API, FL-650's seek-bar preview
+// warm-up is a background cache fill nobody watches, FL-651's video fingerprints run on the video
+// duplicate queue, observed as that queue, and FL-667's filler-tag clean-up runs once.
 export const JobNameSchema = z
   .enum(JobName)
-  .exclude([JobName.PhotographyWorkflowRender])
+  .exclude([
+    JobName.PhotographyWorkflowRender,
+    JobName.AssetWarmFilmstrip,
+    JobName.AssetVideoFingerprintQueueAll,
+    JobName.AssetVideoFingerprint,
+    JobName.DescriptionFillerTagCleanup,
+  ])
   .describe('Job name')
   .meta({ id: 'JobName' });
 
@@ -2428,7 +2543,7 @@ export enum DatabaseLock {
   Migrations = 200,
   SystemFileMounts = 300,
   StorageTemplateMigration = 420,
-  /** One reviewed physical deduplication plan at a time (FL-73): held while the job row is created. */
+  /** @deprecated FL-73's one-plan-at-a-time lock; the plans were retired by FL-413. Kept so the id is never reused. */
   PhysicalDeduplicationApply = 425,
   VersionHistory = 500,
   CLIPDimSize = 512,
@@ -2504,6 +2619,10 @@ export enum DatabaseLock {
   FrameleafMailConnection = 975,
   /** Serialize backup run state changes across the schedule owner and job workers. */
   BackupSequenceRun = 976,
+  /** FL-363: one server watches the overnight run and moves it from one step to the next. */
+  OvernightSequence = 977,
+  /** FL-363: overnight run state changes happen one at a time. */
+  OvernightSequenceRun = 978,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two
@@ -2524,6 +2643,7 @@ export const MaintenanceActionSchema = z
   .describe('Maintenance action')
   .meta({ id: 'MaintenanceAction' });
 
+/** @deprecated FL-413: kept only for the deprecated physical deduplication endpoints. */
 export enum PhysicalDeduplicationDecision {
   Share = 'share',
   Skip = 'skip',
@@ -3009,6 +3129,18 @@ export const OAuthTokenEndpointAuthMethodSchema = z
   .describe('OAuth token endpoint auth method')
   .meta({ id: 'OAuthTokenEndpointAuthMethod' });
 
+export enum LibraryScope {
+  Personal = 'personal',
+  Design = 'design',
+  Both = 'both',
+}
+
+export const LibraryScopeSchema = z.enum(LibraryScope).meta({ id: 'LibraryScope' });
+export const LibraryViewScopeSchema = z
+  .enum([LibraryScope.Personal, LibraryScope.Design])
+  .meta({ id: 'LibraryViewScope' });
+export type LibraryViewScope = z.infer<typeof LibraryViewScopeSchema>;
+
 export enum AssetVisibility {
   Archive = 'archive',
   Timeline = 'timeline',
@@ -3118,6 +3250,18 @@ export enum VersionCheckFrequency {
   Weekly = 'weekly',
 }
 
+/** FL-363: when one overnight step runs: every night with the others, once a week, or only when started. */
+export enum OvernightStepTiming {
+  Nightly = 'nightly',
+  Weekly = 'weekly',
+  Manual = 'manual',
+}
+
+export const OvernightStepTimingSchema = z
+  .enum(OvernightStepTiming)
+  .describe('When the step runs')
+  .meta({ id: 'OvernightStepTiming' });
+
 export const VersionCheckFrequencySchema = z
   .enum(VersionCheckFrequency)
   .describe('Check frequency')
@@ -3136,6 +3280,8 @@ export enum ConfigVisibility {
 }
 
 export enum ApiTag {
+  Capture = 'Capture',
+  Bookmarks = 'Bookmarks',
   Activities = 'Activities',
   Albums = 'Albums',
   AlbumSources = 'Album sources',
@@ -3209,6 +3355,13 @@ export const WorkflowTriggerSchema = z
   .enum(WorkflowTrigger)
   .describe('Plugin trigger type')
   .meta({ id: 'WorkflowTrigger' });
+
+// Existing discovery clients decode a closed enum; new clients use /workflows/automation/discovery.
+export const LegacyWorkflowTriggerSchema = z.enum([
+  WorkflowTrigger.AssetCreate,
+  WorkflowTrigger.AssetMetadataExtraction,
+  WorkflowTrigger.AssetTagged,
+]);
 
 export enum WorkflowType {
   AssetV1 = 'AssetV1',

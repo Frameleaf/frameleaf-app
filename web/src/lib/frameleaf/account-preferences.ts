@@ -25,6 +25,8 @@ export type AccountPreferencesDraft = {
   'albums.defaultAssetOrder': AssetOrder;
   'folders.enabled': boolean;
   'folders.sidebarWeb': boolean;
+  /** Clients (photography studios) is opt-in; on, it sits in the top bar. */
+  'clients.enabled': boolean;
   'memories.enabled': boolean;
   'memories.sidebarWeb': boolean;
   /** Seconds; `null` while the field is empty. */
@@ -56,6 +58,8 @@ export type AccountPreferencesDraft = {
   'people.suggestInSpaces': boolean;
   'purchase.showSupportBadge': boolean;
   'purchase.hideBuyButtonUntil': string;
+  /** FL-556: Look & playback › Safety, the account's own choice (never on an administrator's editor) */
+  'trash.reuploadUntil': string;
 };
 
 export type AccountPreferenceKey = keyof AccountPreferencesDraft;
@@ -92,6 +96,7 @@ export const SECTION_KEYS: Record<AccountPreferencesSection, readonly AccountPre
   features: [
     'folders.enabled',
     'folders.sidebarWeb',
+    'clients.enabled',
     'memories.enabled',
     'memories.sidebarWeb',
     'memories.duration',
@@ -133,6 +138,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   // FL-146 (2026-09-27): what the prototype rail and tab bar show is on by default.
   'folders.enabled': true,
   'folders.sidebarWeb': true,
+  'clients.enabled': false,
   'memories.enabled': true,
   'memories.sidebarWeb': true,
   'memories.duration': 5,
@@ -158,12 +164,14 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'people.suggestInSpaces': false,
   'purchase.showSupportBadge': true,
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
+  'trash.reuploadUntil': '',
 });
 
 export const draftFromPreferences = (preferences: UserPreferencesResponseDto): AccountPreferencesDraft => ({
   'albums.defaultAssetOrder': preferences.albums.defaultAssetOrder,
   'folders.enabled': preferences.folders.enabled,
   'folders.sidebarWeb': preferences.folders.sidebarWeb,
+  'clients.enabled': preferences.clients?.enabled ?? false,
   'memories.enabled': preferences.memories.enabled,
   'memories.sidebarWeb': preferences.memories.sidebarWeb,
   'memories.duration': preferences.memories.duration,
@@ -188,6 +196,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'people.suggestInSpaces': preferences.people.suggestInSpaces,
   'purchase.showSupportBadge': preferences.purchase.showSupportBadge,
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,
+  'trash.reuploadUntil': preferences.trash.reuploadUntil,
 });
 
 export const changedPreferenceKeys = (

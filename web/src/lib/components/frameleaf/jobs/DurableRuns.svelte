@@ -120,7 +120,15 @@
     }
   });
   $effect(() => {
-    const timer = setInterval(() => void load(), runs.some((run) => !isRunSettled(run)) ? 5000 : 30_000);
+    // A hidden tab is not polled; the next tick after it shows again catches up.
+    const timer = setInterval(
+      () => {
+        if (!document.hidden) {
+          void load();
+        }
+      },
+      runs.some((run) => !isRunSettled(run)) ? 5000 : 30_000,
+    );
     return () => clearInterval(timer);
   });
 </script>
@@ -142,7 +150,6 @@
           <progress max={run.total} value={settledItems(run)} aria-label={$t('frameleaf_job_runs_selected_items')}
           ></progress>
         {/if}
-        {#if !run.enumerationDone}<p>{$t('frameleaf_job_runs_enumerating')}</p>{/if}
         <dl>
           {#each DURABLE_OUTCOMES as outcome (outcome)}
             {#if run[outcome] > 0}<dt>{$t(runOutcomeKey(outcome))}</dt>

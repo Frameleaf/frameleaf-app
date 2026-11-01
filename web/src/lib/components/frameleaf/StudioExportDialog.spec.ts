@@ -6,8 +6,12 @@ import {
   StudioExportFormat,
   StudioExportResolution,
   StudioExportQuality,
+  StudioExportShape,
   StudioExportSubtitleMode,
+  StudioReframeShotType,
+  StudioReframeSubject,
   getMlCapabilities,
+  getStudioFraming,
 } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -18,6 +22,7 @@ import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
 vi.mock('@frameleaf/sdk', async () => ({
   ...(await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk')),
   getMlCapabilities: vi.fn(),
+  getStudioFraming: vi.fn(),
 }));
 
 /** The Studio video export dialog (FL-88 header, `Studio.jsx` ExportDialog). */
@@ -44,6 +49,8 @@ describe('Studio export dialog', () => {
           maxBitDepth: row.maxBitDepth,
           hdr10: row.hdr10,
           dolbyVision: row.dolbyVision,
+          // FL-674: this worker writes its 10-bit formats for an SDR picture too.
+          sdrTenBit: true,
         },
       ],
       ...overrides,
@@ -293,6 +300,33 @@ describe('Studio export dialog', () => {
     }
   });
 
+  it('names the other caption languages saved as subtitle files, unless captions are off (FL-641)', async () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      captionLanguages: ['French', 'German'],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByTestId('studio-export-caption-languages')).toHaveTextContent(
+      'frameleaf_studio_export_caption_languages',
+    );
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_subtitles'), {
+      target: { value: StudioExportSubtitleMode.Off },
+    });
+    expect(screen.queryByTestId('studio-export-caption-languages')).toBeNull();
+  });
+
+  it('shows no caption languages note without translations (FL-641)', () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      onExport: vi.fn(),
+    });
+    expect(screen.queryByTestId('studio-export-caption-languages')).toBeNull();
+  });
+
   it('requires Embedded paired writer proof on the same candidate and refuses withdrawal before submission', async () => {
     const onExport = vi.fn();
     const row = evidence();
@@ -394,6 +428,22 @@ describe('Studio export dialog', () => {
     expect(onExport.mock.calls.at(-1)![0]).not.toHaveProperty('range');
   });
 
+  it('exports the still at any start frame, with no end to set', async () => {
+    const onExport = vi.fn();
+    const row = evidence();
+    row.candidates![0].outputFormats.push(StudioExportFormat.SdrJpeg);
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [row], onExport });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+      target: { value: StudioExportFormat.SdrJpeg },
+    });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_range'), { target: { value: 'frames' } });
+    expect(screen.queryByLabelText('frameleaf_studio_export_range_end')).toBeNull();
+    await fireEvent.input(screen.getByLabelText('frameleaf_studio_export_range_start'), { target: { value: '120' } });
+    expect(screen.queryByText('frameleaf_studio_export_range_invalid')).toBeNull();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenLastCalledWith(expect.objectContaining({ range: { inPoint: 120, outPoint: 121 } }));
+  });
+
   it('renders at home only: this server or the home network, never Frameleaf Cloud (FL-159 §2.7)', () => {
     render(StudioExportDialog, {
       open: true,
@@ -417,10 +467,10 @@ describe('Studio export dialog', () => {
       onExport,
     });
 
-    // 2160p needs 8 GB: refused before anything is submitted.
-    expect(screen.getByText('frameleaf_studio_render_refusal_insufficient_memory')).toBeInTheDocument();
-    expect(exportButton()).toBeDisabled();
+    // FL-674: 2160p needs 8 GB, so the dialog opens on the largest resolution this worker can render.
     const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    expect(resolution).toHaveValue(StudioExportResolution.$1080P);
+    expect(screen.queryByText('frameleaf_studio_render_refusal_insufficient_memory')).not.toBeInTheDocument();
     const option = (value: string) =>
       within(resolution)
         .getAllByRole('option')
@@ -434,13 +484,114 @@ describe('Studio export dialog', () => {
       expect.arrayContaining([StudioExportFormat.WebmAv1, StudioExportFormat.Prores422Hq]),
     );
 
+    // Asking for 2160p anyway is refused before anything is submitted, with the reason.
+    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$2160P } });
+    expect(screen.getByText('frameleaf_studio_render_refusal_insufficient_memory')).toBeInTheDocument();
+    expect(exportButton()).toBeDisabled();
+
     await fireEvent.change(resolution, { target: { value: StudioExportResolution.$1080P } });
-    expect(screen.queryByText('frameleaf_studio_render_refusal_insufficient_memory')).not.toBeInTheDocument();
     await fireEvent.click(exportButton());
-    expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ resolution: StudioExportResolution.$1080P }));
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ format: StudioExportFormat.Mp4HevcMain10, resolution: StudioExportResolution.$1080P }),
+    );
   });
 
-  it('keeps Studio export and Memory highlight in agreement for split-worker and supported evidence (FL-342)', () => {
+  it('opens on what the bundled CPU worker can render and never offers Main10 for an SDR project (FL-674)', async () => {
+    const onExport = vi.fn();
+    // The bundled worker: a software renderer admitted with 7 GiB, 10-bit only as HDR masters.
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    const renderEvidence = [{ ...bundled, candidates: [candidate] }];
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence, onExport });
+
+    const format = screen.getByLabelText('frameleaf_studio_export_format');
+    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    expect(format).toHaveValue(StudioExportFormat.Mp4H264);
+    expect(resolution).toHaveValue(StudioExportResolution.$1440P);
+    expect(exportButton()).not.toBeDisabled();
+    const main10 = within(format)
+      .getAllByRole('option')
+      .find((item) => (item as HTMLOptionElement).value === StudioExportFormat.Mp4HevcMain10) as HTMLOptionElement;
+    expect(main10).toBeDisabled();
+    expect(main10.title).toBe('frameleaf_studio_render_refusal_incompatible_color');
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_export_preset_best' })).toBeDisabled();
+
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ format: StudioExportFormat.Mp4H264, resolution: StudioExportResolution.$1440P }),
+    );
+  });
+
+  it('keeps Main10 when every placed video is HDR on the bundled worker, where it is an HDR master (FL-674)', () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      outputIntent: 'hdr',
+      hdrPicture: true,
+      renderEvidence: [{ ...bundled, candidates: [candidate] }],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4HevcMain10);
+    expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toHaveValue(StudioExportResolution.$1440P);
+    expect(exportButton()).not.toBeDisabled();
+  });
+
+  it('judges an HDR working range with SDR sources as SDR, as the server seals it (FL-674)', () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      outputIntent: 'hdr',
+      hdrPicture: false,
+      renderEvidence: [{ ...bundled, candidates: [candidate] }],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4H264);
+  });
+
+  it('follows render evidence that arrives after opening, until the person picks something (FL-674)', async () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    const arrived = [{ ...bundled, candidates: [candidate] }];
+    const view = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [],
+      onExport: vi.fn(),
+    });
+    const format = screen.getByLabelText('frameleaf_studio_export_format');
+    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    // Nothing known yet: the prototype's defaults, explained.
+    expect(format).toHaveValue(StudioExportFormat.Mp4HevcMain10);
+    expect(screen.getByText('frameleaf_studio_render_refusal_no_qualified_worker')).toBeInTheDocument();
+
+    await view.rerender({ renderEvidence: arrived });
+    expect(format).toHaveValue(StudioExportFormat.Mp4H264);
+    expect(resolution).toHaveValue(StudioExportResolution.$1440P);
+    expect(exportButton()).not.toBeDisabled();
+
+    // A choice the person made stays put when the evidence changes again.
+    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$720P } });
+    await view.rerender({ renderEvidence: [...arrived] });
+    expect(resolution).toHaveValue(StudioExportResolution.$720P);
+  });
+
+  it('refuses an empty timeline before anything is queued, and says why (FL-677)', () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      empty: true,
+      onExport: vi.fn(),
+    });
+    expect(screen.getByTestId('studio-export-empty')).toHaveTextContent('frameleaf_studio_export_empty');
+    expect(exportButton()).toBeDisabled();
+  });
+
+  it('keeps Studio export and Memory highlight in agreement for split-worker and supported evidence (FL-342)', async () => {
     const [candidate] = evidence().candidates!;
     for (const candidates of [
       [
@@ -455,6 +606,13 @@ describe('Studio export dialog', () => {
         sequenceName: 'Lake trip',
         renderEvidence,
         onExport: vi.fn(),
+      });
+      // A highlight renders with the Best quality settings; compare the export at the same settings.
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+        target: { value: StudioExportFormat.Mp4HevcMain10 },
+      });
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_resolution'), {
+        target: { value: StudioExportResolution.$2160P },
       });
       const exportDisabled = (exportButton() as HTMLButtonElement).disabled;
       studio.unmount();
@@ -472,7 +630,7 @@ describe('Studio export dialog', () => {
     }
   });
 
-  it('can reach H264/720p when qualified export proof cannot support either default (FL-342)', async () => {
+  it('opens on H264/720p when qualified export proof cannot support either default (FL-342, FL-674)', async () => {
     const onExport = vi.fn();
     const [candidate] = evidence().candidates!;
     render(StudioExportDialog, {
@@ -494,20 +652,8 @@ describe('Studio export dialog', () => {
         }),
       ],
     });
-    const format = screen.getByLabelText('frameleaf_studio_export_format');
-    const h264 = within(format)
-      .getAllByRole('option')
-      .find((item) => (item as HTMLOptionElement).value === StudioExportFormat.Mp4H264) as HTMLOptionElement;
-    expect(h264).not.toBeDisabled();
-    expect(exportButton()).toBeDisabled();
-    await fireEvent.change(format, { target: { value: StudioExportFormat.Mp4H264 } });
-    expect(exportButton()).toBeDisabled();
-    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
-    const smallest = within(resolution)
-      .getAllByRole('option')
-      .find((item) => (item as HTMLOptionElement).value === StudioExportResolution.$720P) as HTMLOptionElement;
-    expect(smallest).not.toBeDisabled();
-    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$720P } });
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4H264);
+    expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toHaveValue(StudioExportResolution.$720P);
     expect(exportButton()).not.toBeDisabled();
     await fireEvent.click(exportButton());
     expect(onExport).toHaveBeenCalledWith({
@@ -607,5 +753,195 @@ describe('Studio export dialog', () => {
       );
       expect(exportButton()).toBeDisabled();
     });
+  });
+});
+
+/** FL-563: Shape, with the framing of each shot following its subject (prototype `ReframePreview`). */
+describe('Studio export dialog: vertical and square', () => {
+  const PROJECT = '0195e2a0-0000-7000-8000-000000000001';
+  const exportButton = () => screen.getByRole('button', { name: 'frameleaf_studio_export_start' });
+  const framing = {
+    revision: 3,
+    width: 1920,
+    height: 1080,
+    shots: [
+      {
+        clipId: 'lake',
+        type: StudioReframeShotType.Video,
+        assetId: '0195e2a0-0000-4000-8000-000000000002',
+        from: 0,
+        durationInFrames: 120,
+        subject: StudioReframeSubject.Face,
+        path: [
+          { t: 0.15, x: 0.3 },
+          { t: 0.85, x: 0.7 },
+        ],
+      },
+      {
+        clipId: 'dock',
+        type: StudioReframeShotType.Image,
+        assetId: null,
+        from: 120,
+        durationInFrames: 90,
+        subject: StudioReframeSubject.None,
+        path: [{ t: 0.5, x: 0.5 }],
+      },
+    ],
+  };
+  const evidence = (reframe = true): StudioRenderEvidence => ({
+    destination: MediaOperationDestination.Local,
+    sessions: 1,
+    gpuMemoryBytes: 16 * 1024 ** 3,
+    codecs: ['webcodecs-avc'],
+    maxBitDepth: 8,
+    hdr10: false,
+    dolbyVision: false,
+    candidates: [
+      {
+        gpuMemoryBytes: 16 * 1024 ** 3,
+        outputFormats: [StudioExportFormat.Mp4H264, StudioExportFormat.Mp4HevcMain10],
+        maxBitDepth: 8,
+        hdr10: false,
+        dolbyVision: false,
+        ...(reframe && { reframe: true }),
+      },
+    ],
+  });
+  const open = (props: Record<string, unknown> = {}) => {
+    const onExport = vi.fn();
+    vi.mocked(getStudioFraming).mockResolvedValue(framing);
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      projectId: PROJECT,
+      renderEvidence: [evidence()],
+      onExport,
+      ...props,
+    });
+    return onExport;
+  };
+  const shapeButton = (name: string) => screen.getByRole('radio', { name });
+
+  it('offers Original, Vertical 9:16 and Square 1:1, starting from the original shape', async () => {
+    const onExport = open();
+    expect(shapeButton('frameleaf_studio_export_shape_original')).toHaveAttribute('aria-checked', 'true');
+    expect(shapeButton('frameleaf_studio_export_shape_vertical')).toHaveAttribute('aria-checked', 'false');
+    expect(shapeButton('frameleaf_studio_export_shape_square')).toBeInTheDocument();
+    expect(getStudioFraming).not.toHaveBeenCalled();
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+      target: { value: StudioExportFormat.Mp4H264 },
+    });
+    await fireEvent.click(exportButton());
+    expect(onExport.mock.calls[0][0]).not.toHaveProperty('shape');
+  });
+
+  it('is not offered without a saved project', () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      onExport: vi.fn(),
+    });
+    expect(screen.queryByRole('radio', { name: 'frameleaf_studio_export_shape_vertical' })).not.toBeInTheDocument();
+  });
+
+  it('frames every shot automatically and exports the shape with each crop path', async () => {
+    const onExport = open();
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_vertical'));
+    expect(getStudioFraming).toHaveBeenCalledWith({ id: PROJECT });
+    expect(await screen.findByTestId('studio-export-reframe')).toBeInTheDocument();
+    // a 10-bit master cannot be reshaped: the export switches to MP4 · H.264
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4H264);
+    // the resolution options say the shaped size
+    expect(screen.getByRole('option', { name: '2160 × 3840' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '1080 × 1920' })).toBeInTheDocument();
+    expect(screen.getByText(/frameleaf_studio_reframe_titles/)).toBeInTheDocument();
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(2);
+
+    await fireEvent.click(exportButton());
+    const choice = onExport.mock.calls[0][0];
+    expect(choice).toMatchObject({ shape: StudioExportShape.Vertical, format: StudioExportFormat.Mp4H264 });
+    expect(choice.framing).toEqual([
+      {
+        clipId: 'lake',
+        path: [
+          { t: 0.15, x: 0.3 },
+          { t: 0.85, x: 0.7 },
+        ],
+      },
+      { clipId: 'dock', path: [{ t: 0.5, x: 0.5 }] },
+    ]);
+  });
+
+  it('moves a whole shot with the arrow keys, and Back to automatic undoes it', async () => {
+    const onExport = open();
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_square'));
+    const box = await screen.findByRole('slider', { name: 'frameleaf_studio_reframe_box' });
+    const automatic = screen.getByRole('button', { name: /frameleaf_studio_reframe_automatic/ });
+    expect(automatic).toBeDisabled();
+    await fireEvent.keyDown(box, { key: 'ArrowRight' });
+    await fireEvent.keyDown(box, { key: 'ArrowRight', shiftKey: true });
+    expect(screen.getByText('frameleaf_studio_reframe_note_moved')).toBeInTheDocument();
+    expect(screen.getByText(/frameleaf_studio_reframe_moved/)).toBeInTheDocument();
+    await fireEvent.click(exportButton());
+    // +0.06 on the whole shot, and the square crop (0.5625 of the width) is kept inside the frame
+    expect(onExport.mock.calls[0][0].framing[0].path).toEqual([
+      { t: 0.15, x: 0.36 },
+      { t: 0.85, x: 0.7188 },
+    ]);
+    expect(automatic).toBeEnabled();
+    await fireEvent.click(automatic);
+    expect(screen.getByText('frameleaf_studio_reframe_note_auto')).toBeInTheDocument();
+    await fireEvent.click(exportButton());
+    expect(onExport.mock.calls[1][0].framing[0].path[0]).toEqual({ t: 0.15, x: 0.3 });
+  });
+
+  it('moves a shot by dragging its box', async () => {
+    const onExport = open();
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_vertical'));
+    const frame = await screen.findByTestId('studio-reframe-frame');
+    frame.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 500,
+      height: 281,
+      right: 500,
+      bottom: 281,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const box = screen.getByTestId('studio-reframe-box');
+    await fireEvent.pointerDown(box, { clientX: 200, pointerId: 1 });
+    await fireEvent.pointerMove(globalThis as unknown as Window, { clientX: 150, pointerId: 1 });
+    await fireEvent.pointerUp(globalThis as unknown as Window, { pointerId: 1 });
+    await fireEvent.click(exportButton());
+    // 50 px of a 500 px frame to the left: a tenth of the width
+    expect(onExport.mock.calls[0][0].framing[0].path[0].x).toBe(0.2);
+  });
+
+  it('keeps the export possible, centred, when the framing cannot be worked out', async () => {
+    const onExport = vi.fn();
+    vi.mocked(getStudioFraming).mockRejectedValue(new Error('offline'));
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      projectId: PROJECT,
+      renderEvidence: [evidence()],
+      onExport,
+    });
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_vertical'));
+    expect(await screen.findByText('frameleaf_studio_reframe_failed')).toBeInTheDocument();
+    await fireEvent.click(exportButton());
+    expect(onExport.mock.calls[0][0]).toMatchObject({ shape: StudioExportShape.Vertical });
+    expect(onExport.mock.calls[0][0]).not.toHaveProperty('framing');
+  });
+
+  it('explains when no render worker can reframe', async () => {
+    open({ renderEvidence: [evidence(false)] });
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_vertical'));
+    await screen.findByTestId('studio-export-reframe');
+    expect(exportButton()).toBeDisabled();
+    expect(screen.getByText('frameleaf_studio_render_refusal_codec_unavailable')).toBeInTheDocument();
   });
 });

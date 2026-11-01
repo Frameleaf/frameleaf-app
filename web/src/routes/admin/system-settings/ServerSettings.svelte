@@ -11,6 +11,10 @@
    * Advanced, "Welcome message is" switches the message between plain text (the default, shown
    * exactly as typed) and web formatting, which is cleaned before it is shown. The sample and the
    * sign-in page draw the message with the same `WelcomeMessage`.
+   *
+   * OPS-14: the Public server URL (`server.externalDomain`) is under "Finding this server" too, so
+   * any server can set the address its emails and shared links use; Frameleaf Cloud › Remote access
+   * keeps its own copy beside the Frameleaf address and your own domain.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { goto } from '$app/navigation';
@@ -138,6 +142,17 @@
       </Section>
 
       <Section title={$t('frameleaf_server_identity_finding')}>
+        <Row label={$t('frameleaf_remote_public_url_title')} help={$t('frameleaf_remote_public_url_description')}>
+          <Field
+            wide
+            type="url"
+            label={$t('frameleaf_remote_public_url_title')}
+            value={server.externalDomain}
+            placeholder="https://photos.example.com"
+            {disabled}
+            onChange={(value) => (settingsDraft.draft.server.externalDomain = value.trim())}
+          />
+        </Row>
         <Row
           label={$t('frameleaf_server_identity_lan')}
           help={server.lanDiscovery ? $t('frameleaf_server_identity_lan_on') : $t('frameleaf_server_identity_lan_off')}

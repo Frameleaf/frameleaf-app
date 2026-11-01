@@ -483,8 +483,9 @@ export class StudioProjectService {
   }
 
   /**
-   * A new project of the owner's whose revision 1 is this project's head, byte for byte. The copy
-   * is not shared with the original's space: review is something the owner grants per project.
+   * A new project of the owner's whose revision 1 is this project's head, byte for byte, with the
+   * imports and generated media that head names (the repository copies them in the same commit).
+   * The copy is not shared with the original's space: review is something the owner grants per project.
    */
   async duplicate(auth: AuthDto, id: string, dto: StudioProjectDuplicateDto): Promise<StudioProjectDto> {
     const { project } = await this.requireOwner(auth, id);
@@ -1151,7 +1152,11 @@ export class StudioProjectService {
    * considered, so nothing is said about a source the account cannot read.
    */
   private async hdrResources(project: StudioProject, entries: readonly StudioAuthorizedEntry[]) {
-    const hdrSources = await this.resources.hdrLibraryAssets(
+    const {
+      hdr: hdrSources,
+      pq: pqSources,
+      hlg: hlgSources,
+    } = await this.resources.hdrLibrarySources(
       entries.filter((entry) => entry.kind === StudioResourceKind.LibraryAsset).map((entry) => entry.id),
     );
     // Owner decision (2026-09-29): a shared-space project counts only while its space is live, shared
@@ -1162,6 +1167,8 @@ export class StudioProjectService {
         : false;
     return {
       hdrSources,
+      pqSources,
+      hlgSources,
       hdrProxySources: await this.resources.studioHdrProxies(hdrSources, { ownerId: project.ownerId, sharedSpace }),
     };
   }
@@ -1235,7 +1242,10 @@ export class StudioProjectService {
     // FL-195: an unlocked session resolves the owner's revealed locks, a locked one refuses them, so a
     // resolution is never shared between the two
     const privacy = getLockedOwnerId(auth) ? 'unlocked' : 'locked';
-    const key = `${project.id}:${revision.revision}:${auth.user.id}:${privacy}:${destination}:${declarations}`;
+    // The manifest's interactive admission view names the session that resolved it, so another
+    // session, or an API key, of the same account never reuses it.
+    const credential = auth.session ? `session:${auth.session.id}` : auth.apiKey ? `key:${auth.apiKey.id}` : '';
+    const key = `${project.id}:${revision.revision}:${auth.user.id}:${credential}:${privacy}:${destination}:${declarations}`;
     const now = Date.now();
 
     if (cacheable) {

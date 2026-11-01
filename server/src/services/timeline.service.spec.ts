@@ -14,6 +14,14 @@ describe(TimelineService.name, () => {
     mocks.partner.getAll.mockResolvedValue([]);
   });
 
+  it('checks every subtree root before running timeline queries', async () => {
+    await expect(
+      sut.getTimeBuckets(authStub.user1, { filter: { albumSubtreeIds: { any: ['root'] } } }),
+    ).rejects.toThrow();
+    expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+    expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.user1.user.id, new Set(['root']));
+  });
+
   describe('getTimeBuckets', () => {
     it("should return buckets if userId and albumId aren't set", async () => {
       mocks.asset.getTimeBuckets.mockResolvedValue([{ timeBucket: 'bucket', count: 1 }]);
@@ -27,6 +35,13 @@ describe(TimelineService.name, () => {
         },
         authStub.admin,
       );
+    });
+
+    it('should refuse a favourites filter through a shared link', async () => {
+      await expect(sut.getTimeBuckets(authStub.adminSharedLink, { isFavorite: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
 
     it('should exclude NSFW assets when privacy hiding is active', async () => {

@@ -19,6 +19,7 @@
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import { mlDestinationKindLabelKey, mlRefusalLabelKey, mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
+  import { operationKindKey } from '$lib/frameleaf/render-workers';
   import {
     accelerationLabelKey,
     applyWorkerUrlChange,
@@ -43,6 +44,7 @@
     getMlDestination,
     getWorkerInventory,
     MlDestinationKind,
+    MlWorkerReadiness,
     probeMlDestination,
     updateConfig,
     WorkerInventorySource,
@@ -62,9 +64,11 @@
     destinations: MlDestinationResponseDto[];
     /** Bumped by the page when a neighbouring panel changed something; reloads the inventory. */
     refreshKey?: number;
+    /** Each inventory this panel reads, so the page's list shows the same state (a check, the timer). */
+    onInventory?: (inventory: WorkerInventoryResponseDto) => void;
   };
 
-  let { inventory: initialInventory, destinations, refreshKey = 0 }: Props = $props();
+  let { inventory: initialInventory, destinations, refreshKey = 0, onInventory }: Props = $props();
 
   /**
    * The three "manage" buttons open the addresses and limits, which are on the same page since
@@ -101,6 +105,7 @@
     try {
       inventory = await getWorkerInventory();
       refreshFailed = false;
+      onInventory?.(inventory);
     } catch {
       // Keep the last snapshot on screen and say it is old; never blank the page.
       refreshFailed = true;
@@ -260,7 +265,7 @@
       <dd>
         {#if entry.source === WorkerInventorySource.RenderWorker}
           {entry.renderKinds.length > 0
-            ? entry.renderKinds.join(', ')
+            ? entry.renderKinds.map((kind) => $t(operationKindKey[kind])).join(', ')
             : $t('admin.frameleaf_workers_capabilities_none')}
         {:else}
           {workloadList(entry.servedWorkloads)}
@@ -290,7 +295,10 @@
       <div>
         <dt>{$t('admin.frameleaf_workers_admission')}</dt>
         <dd>
-          {#if entry.admission.length === 0}
+          {#if entry.readiness === MlWorkerReadiness.Unknown}
+            <!-- Every verdict is "did not answer" until the first check; that is not a refusal yet. -->
+            {$t('admin.frameleaf_ml_destinations_never_probed')}
+          {:else if entry.admission.length === 0}
             {$t('admin.frameleaf_workers_capabilities_none')}
           {:else}
             <ul class="admission">
@@ -334,7 +342,10 @@
         {#if entry.latencyMs !== null}
           · {entry.latencyMs} ms
         {/if}
-        {#if entry.summary}<span class="muted"> · {entry.summary}</span>{/if}
+        <!-- The server's summary repeats the work and the time above when all is well; it only adds the reason it isn't. -->
+        {#if entry.summary && entry.readiness === MlWorkerReadiness.Unreachable}
+          <span class="muted"> · {entry.summary}</span>
+        {/if}
       </dd>
     </div>
   </dl>
@@ -529,7 +540,9 @@
           <li>
             <span>{$t(mlWorkloadLabelKey(route.workload))}</span>
             <span class:refused={!target}>
-              {#if target}
+              {#if target && target.name === kindLabel(target)}
+                {target.name}
+              {:else if target}
                 {$t('admin.frameleaf_workers_route_value', { values: { name: target.name, kind: kindLabel(target) } })}
               {:else}
                 {$t('admin.frameleaf_workers_route_none')}

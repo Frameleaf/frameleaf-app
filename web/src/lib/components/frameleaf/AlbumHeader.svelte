@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
-  import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
-  import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
+  import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import AlbumInlineEdit from '$lib/components/frameleaf/AlbumInlineEdit.svelte';
   import AlbumOptionsDialog from '$lib/components/frameleaf/AlbumOptionsDialog.svelte';
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
-  import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
-  import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import RuleChips from '$lib/components/frameleaf/RuleChips.svelte';
@@ -20,9 +20,9 @@
   import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import { fromResponse, timeAgo } from '$lib/frameleaf/classification-rules';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
+  import { getAssetMediaUrl } from '$lib/utils';
   import {
     canEdit,
-    defaultIconFor,
     isOwner,
     monthSpan,
     othersOf,
@@ -32,8 +32,10 @@
   } from '$lib/frameleaf/album-directory';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { workspaceHref } from '$lib/frameleaf/search-context';
   import {
     handleCreateAlbumEntry,
     handleDeleteAlbum,
@@ -46,6 +48,10 @@
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     AlbumKind,
+    AssetMediaSize,
+    LibraryScope,
+    LibraryViewScope,
+    getWorkflowCapabilities,
     AlbumUserRole,
     getAlbumMapMarkers,
     createClassificationRule,
@@ -61,18 +67,24 @@
     mdiAccountCircleOutline,
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
+    mdiAlertOutline,
+    mdiCheck,
+    mdiChevronDown,
     mdiChevronRight,
     mdiCommentTextOutline,
     mdiDeleteOutline,
     mdiDotsHorizontal,
     mdiDownloadOutline,
+    mdiFolderMultipleOutline,
     mdiImageMultipleOutline,
     mdiImageOutline,
     mdiLinkVariant,
     mdiLogoutVariant,
     mdiMapOutline,
     mdiPencilOutline,
+    mdiMovieOpenPlayOutline,
     mdiPlayCircleOutline,
+    mdiPaletteOutline,
     mdiPlus,
     mdiRefresh,
     mdiTextBoxCheckOutline,
@@ -86,8 +98,8 @@
    * The album detail header (FL-53), ported from
    * `design/frameleaf/template/src/CollectionHeader.jsx`.
    *
-   * It carries inline title and description, the icon popover over the whole Material
-   * catalogue, members with roles, links, map, slideshow, download, cover, options, delete
+   * It carries inline title and description, "Icon and colour…" (the icon chooser over the whole
+   * Material catalogue and the eight album colours), members with roles, links, map, slideshow, download, cover, options, delete
    * keeping assets, and leave — and, on a collection, the strip of its albums above its
    * photos with a New album tile and a New album primary action in place of Add photos.
    *
@@ -103,12 +115,19 @@
    */
   interface Props {
     album: AlbumResponseDto;
+    uploadScope?: LibraryScope;
     /** Albums inside this collection, from the tree endpoint. Empty for an album or space. */
     childAlbums?: AlbumResponseDto[];
     /** The collection this album sits in, for the breadcrumb. */
     parent?: AlbumResponseDto;
+    ancestors?: AlbumResponseDto[];
     /** Collections the current user may create an album in. */
     collections?: AlbumResponseDto[];
+    /**
+     * Every album the viewer can see (the page's directory), for "N inside" on the collection cards.
+     * Without it the cards count only the albums passed in `childAlbums`.
+     */
+    albums?: AlbumResponseDto[];
     likeCount?: number;
     commentCount?: number;
     activityOpen?: boolean;
@@ -117,6 +136,8 @@
     ownerBadges?: boolean;
     /** Items on the page; the slideshow and download are offered only when there are some. */
     assetCount?: number;
+    /** Total authorized media and bookmarks; media actions still use assetCount. */
+    itemCount?: number;
     onAlbumChange: (album: AlbumResponseDto) => void;
     /** Re-read the album and the tree after membership or structure changed. */
     onRefresh: () => Promise<void> | void;
@@ -124,30 +145,50 @@
     onSlideshow?: () => void;
     onToggleActivity?: () => void;
     onToggleOwnerBadges?: () => void;
+    /** Replaces the immediate download, for Boards' Download dialog (FL-660). */
+    onDownload?: () => void;
+    /** What a filter or search shows, when one narrows the items; the summary counts it instead. */
+    filteredCount?: number | null;
   }
 
   let {
     album,
+    uploadScope,
     childAlbums = [],
     parent,
+    ancestors,
     collections = [],
+    albums = [],
     likeCount = 0,
     commentCount = 0,
     activityOpen = false,
     canShowOwnerBadges = false,
     ownerBadges = false,
     assetCount = 0,
+    itemCount,
     onAlbumChange,
     onRefresh,
     onAddPhotos,
     onSlideshow,
     onToggleActivity,
     onToggleOwnerBadges,
+    onDownload,
+    filteredCount = null,
   }: Props = $props();
+  const download = () => (onDownload ? onDownload() : void handleDownloadAlbum(album));
 
   const currentUserId = $derived(authManager.user.id);
+  let automationAvailable = $state(false);
+  onMount(() => {
+    void Promise.resolve(getWorkflowCapabilities())
+      .then((value) => {
+        automationAvailable = value?.sourceFilters ?? false;
+      })
+      .catch(() => {});
+  });
   const owner = $derived(isOwner(album, currentUserId));
   const editor = $derived(canEdit(album, currentUserId));
+  const breadcrumbAlbums = $derived(ancestors ?? (parent ? [parent] : []));
   const isCollection = $derived(album.kind === AlbumKind.Collection);
   const others = $derived(othersOf(album, currentUserId));
   const albumOwner = $derived(ownerOf(album));
@@ -169,8 +210,38 @@
   /** Phones (apple-style.css `max-width: 700px`): the secondary actions live in the "…" menu. */
   const phone = new MediaQuery('max-width: 700px');
   const compact = $derived(phone.current);
+  /**
+   * A Boards collection (prototype screen 02, FL-670): the path starts at Boards, the board's own Add
+   * replaces Add photos, the secondary actions sit in "…", and the cards of collections inside show
+   * only when there are any, so the items start near the top.
+   */
+  const boards = $derived(uploadScope === LibraryScope.Design);
+  const folded = $derived(compact || boards);
+  /** Another collection, opened in Boards whatever its own scope (a "both" collection would open in Library). */
+  const albumHref = (id: string) =>
+    workspaceHref(Route.viewAlbum({ id }), boards ? LibraryViewScope.Design : undefined, page.url.origin);
 
+  /** "Icon and colour…" (README point 22): the header's icon tile and the "…" menu open it. */
   let iconOpen = $state(false);
+  /** How many albums sit directly inside `id`, from the directory when the page passed one. */
+  const insideCount = (id: string) => albums.filter(({ parentId }) => parentId === id).length;
+  const coverOf = (child: AlbumResponseDto) =>
+    child.albumThumbnailAssetId
+      ? getAssetMediaUrl({ id: child.albumThumbnailAssetId, size: AssetMediaSize.Thumbnail })
+      : null;
+  /** Where the albums inside move when this one is deleted: its parent, or the top level. */
+  const deleteDestination = $derived(
+    breadcrumbAlbums.at(-1)?.albumName || (breadcrumbAlbums.length > 0 ? $t('unnamed_album') : null),
+  );
+  const childNames = $derived(
+    new Intl.ListFormat($locale ?? undefined, { style: 'long', type: 'conjunction' }).format(
+      childAlbums.map((child) => child.albumName || $t('unnamed_album')),
+    ),
+  );
+  const saveAppearance = async ({ icon, color }: { icon: string | null; color: string | null }) =>
+    save({ icon, color }, $t('frameleaf_album_color_saved'));
+  /** Make a movie (FL-561): beside Slideshow, in the "…" menu on phones. */
+  let movieOpen = $state(false);
   let shareOpen = $state(false);
   let shareSection = $state<'people' | 'links'>('people');
   const openShare = (section: 'people' | 'links' = 'people') => {
@@ -205,6 +276,8 @@
   let reviewOpen = $state(false);
   let ruleOpen = $state(false);
   /** Edit details, owner badges, rule, cover and options: the "…" menu's middle group. */
+  /** FL-707 item 11: "New album" (a sub-album here) in the … menu, where the empty shelf's tile was. */
+  const canCreateChild = $derived(editor && !boards && album.kind !== AlbumKind.Space);
   const hasMiddleItems = $derived(editor || canShowOwnerBadges || !!rule);
 
   const loadRule = async (id: string) => {
@@ -334,7 +407,10 @@
 
   /** Creating inside a collection stays here and says so (CollectionHeader.jsx); the strip refreshes. */
   const createChildAlbum = async (dto: CreateAlbumDto) => {
-    const created = await handleCreateAlbumEntry(dto);
+    const created = await handleCreateAlbumEntry({
+      ...dto,
+      libraryScope: dto.libraryScope ?? uploadScope ?? album.libraryScope,
+    });
     if (!created) {
       return false;
     }
@@ -348,7 +424,11 @@
   /** A new smart album in this collection, created with its rule (FL-60). */
   const createChildSmartAlbum = async (dto: ClassificationRuleCreateDto) => {
     try {
-      const created = await createClassificationRule({ classificationRuleCreateDto: dto });
+      const scope = uploadScope ?? album.libraryScope;
+      const libraryScope = scope === LibraryScope.Design ? LibraryViewScope.Design : LibraryViewScope.Personal;
+      const created = await createClassificationRule({
+        classificationRuleCreateDto: { ...dto, filter: { ...dto.filter, libraryScope } },
+      });
       await goto(Route.viewAlbum({ id: created.albumId }));
       return true;
     } catch (error) {
@@ -363,6 +443,16 @@
       await goto(Route.albums());
     }
   };
+  let deleting = $state(false);
+  const runDelete = async () => {
+    deleting = true;
+    try {
+      await confirmDelete();
+      deleteOpen = false;
+    } finally {
+      deleting = false;
+    }
+  };
 
   const confirmLeave = async () => {
     const left = await handleLeaveAlbum(album);
@@ -373,7 +463,10 @@
 
   const upload = async () => {
     try {
-      await openFileUploadDialog({ albumId: album.id });
+      await openFileUploadDialog({
+        albumId: album.id,
+        libraryScope: uploadScope ?? (album.libraryScope === LibraryScope.Design ? LibraryScope.Design : undefined),
+      });
     } catch (error) {
       handleError(error, $t('errors.unable_to_upload_file'));
     }
@@ -384,16 +477,33 @@
 </script>
 
 <header class="album-header" aria-label={kindLabel}>
+  {#if compact && uploadScope === LibraryScope.Design}
+    <!-- Boards on a phone: the rail is the "Collections and filters" sheet (prototype screen 22). -->
+    <button
+      type="button"
+      class="sheet-trigger"
+      aria-haspopup="dialog"
+      aria-expanded={sidebarStore.isOpen}
+      aria-controls="sidebar"
+      onclick={() => sidebarStore.toggle()}
+    >
+      <Icon icon={mdiFolderMultipleOutline} size="18" aria-hidden={true} />
+      {$t('frameleaf_boards_collections_and_filters')}
+      <Icon icon={mdiChevronDown} size="16" aria-hidden={true} />
+    </button>
+  {/if}
   <nav class="crumbs" aria-label={$t('frameleaf_album_breadcrumb')}>
     {#if album.kind === AlbumKind.Space}
       <a href={Route.sharing()}>{$t('frameleaf_shared_spaces')}</a>
+    {:else if boards}
+      <a href="/pro">{$t('frameleaf_pro_title')}</a>
     {:else}
       <a href={Route.albums()}>{$t('albums')}</a>
     {/if}
-    {#if parent}
+    {#each breadcrumbAlbums as ancestor (ancestor.id)}
       <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
-      <a href={Route.viewAlbum({ id: parent.id })}>{parent.albumName || $t('unnamed_album')}</a>
-    {/if}
+      <a href={albumHref(ancestor.id)}>{ancestor.albumName || $t('unnamed_album')}</a>
+    {/each}
     <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
     <span aria-current="page">{name}</span>
   </nav>
@@ -407,25 +517,16 @@
           class:open={iconOpen}
           aria-haspopup="dialog"
           aria-expanded={iconOpen}
-          aria-label={$t('frameleaf_album_change_icon')}
-          onclick={() => (iconOpen = !iconOpen)}
+          aria-label={$t('frameleaf_album_color_change', { values: { name } })}
+          title={$t('frameleaf_album_color_menu')}
+          onclick={() => (iconOpen = true)}
         >
-          <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size="26" />
+          <AlbumMark icon={album.icon} color={album.color} kind={album.kind} size="26" />
           <span class="badge" aria-hidden="true"><Icon icon={mdiPencilOutline} size="12" /></span>
         </button>
-        {#if iconOpen}
-          <div class="popover">
-            <IconChooser
-              value={album.icon ?? defaultIconFor(album.kind)}
-              label={$t('frameleaf_album_icon_for', { values: { name } })}
-              onClose={() => (iconOpen = false)}
-              onChange={(icon) => void save({ icon }, $t('frameleaf_album_icon_updated'))}
-            />
-          </div>
-        {/if}
       {:else}
         <span class="icon-button static" aria-hidden="true">
-          <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size="26" />
+          <AlbumMark icon={album.icon} color={album.color} kind={album.kind} size="26" />
         </span>
       {/if}
     </div>
@@ -459,15 +560,15 @@
         {/if}
       </div>
 
-      <AlbumInlineEdit
-        as="p"
-        label={$t('frameleaf_album_edit_description')}
-        value={album.description}
-        editable={editor}
-        multiline
-        placeholder={$t('frameleaf_album_add_description')}
-        onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
-      />
+      {#if !boards || album.description || album.isSmart}<AlbumInlineEdit
+          as="p"
+          label={$t('frameleaf_album_edit_description')}
+          value={album.description}
+          editable={editor}
+          multiline
+          placeholder={$t('frameleaf_album_add_description')}
+          onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
+        />{/if}
 
       {#if rule}
         <div class="rule-row">
@@ -485,7 +586,7 @@
       {/if}
 
       <div class="summary">
-        <span>{$t('frameleaf_albums_items', { values: { count: assetCount } })}</span>
+        <span>{$t('frameleaf_albums_items', { values: { count: filteredCount ?? itemCount ?? assetCount } })}</span>
         {#if span}
           <span>{span}</span>
         {/if}
@@ -517,7 +618,7 @@
         <Icon icon={mdiPlus} size="18" />
         <span>{$t('frameleaf_albums_create_album')}</span>
       </button>
-    {:else if editor && !album.isSmart}
+    {:else if editor && !album.isSmart && !boards}
       <!-- CollectionHeader.jsx:1373: Add photos is the header's primary menu. -->
       <div class="primary-menu">
         <Menu label={$t('add_photos')} align="start">
@@ -553,7 +654,7 @@
       (CollectionHeader.jsx:1142-1154, 1410-1510; apple-style.css:872-877): only Add photos (or New
       album), Re-evaluate and Share stay in the row.
     -->
-    {#if !compact}
+    {#if !folded}
       {#if owner}
         <button type="button" class="action" onclick={openLinks}>
           <Icon icon={mdiLinkVariant} size="18" />
@@ -573,7 +674,12 @@
         <span>{$t('slideshow')}</span>
       </button>
 
-      <button type="button" class="action" disabled={assetCount === 0} onclick={() => void handleDownloadAlbum(album)}>
+      <button type="button" class="action" disabled={assetCount === 0} onclick={() => (movieOpen = true)}>
+        <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+        <span>{$t('frameleaf_movie_make')}</span>
+      </button>
+
+      <button type="button" class="action" disabled={assetCount === 0} onclick={download}>
         <Icon icon={mdiDownloadOutline} size="18" />
         <span>{$t('download')}</span>
       </button>
@@ -603,7 +709,13 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
-      {#if compact}
+      {#if folded}
+        {#if boards && editor && !isCollection}
+          <MenuItem onSelect={() => (createOpen = true)}>
+            <Icon icon={mdiPlus} size="18" />
+            {$t('frameleaf_boards_new_collection')}
+          </MenuItem>
+        {/if}
         {#if owner}
           <MenuItem onSelect={openLinks}>
             <Icon icon={mdiLinkVariant} size="18" />
@@ -620,7 +732,11 @@
           <Icon icon={mdiPlayCircleOutline} size="18" />
           {$t('slideshow')}
         </MenuItem>
-        <MenuItem disabled={assetCount === 0} onSelect={() => void handleDownloadAlbum(album)}>
+        <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
+          <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+          {$t('frameleaf_movie_make')}
+        </MenuItem>
+        <MenuItem disabled={assetCount === 0} onSelect={download}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('download')}
         </MenuItem>
@@ -634,10 +750,31 @@
         {/if}
         <div class="menu-separator" role="separator"></div>
       {/if}
+      {#if canCreateChild}
+        <MenuItem onSelect={() => (createOpen = true)}>
+          <Icon icon={mdiPlus} size="18" />
+          {$t('frameleaf_albums_create_album')}
+        </MenuItem>
+      {/if}
       {#if editor && !rule && !album.isSmart}
+        {#if !isCollection && automationAvailable}
+          <MenuItem
+            onSelect={() =>
+              void goto(`${Route.workflows()}&${new URLSearchParams({ workflowAlbum: album.id, workflowName: name })}`)}
+          >
+            <Icon icon={mdiAutoFix} size="18" />
+            {$t('frameleaf_workflows.automate_album')}
+          </MenuItem>
+        {/if}
         <MenuItem onSelect={() => (editOpen = true)}>
           <Icon icon={mdiPencilOutline} size="18" />
           {$t('frameleaf_album_edit_details')}
+        </MenuItem>
+      {/if}
+      {#if editor && album.kind !== AlbumKind.Space}
+        <MenuItem onSelect={() => (iconOpen = true)}>
+          <Icon icon={mdiPaletteOutline} size="18" />
+          {$t('frameleaf_album_color_menu')}
         </MenuItem>
       {/if}
       {#if canShowOwnerBadges}
@@ -693,29 +830,59 @@
 
   <p class="status" role="status" aria-live="polite">{status}</p>
 
-  {#if isCollection}
-    <section class="strip" aria-label={$t('albums')}>
-      <div class="strip-head">
-        <h2>{$t('albums')}</h2>
-        <small>{$t('frameleaf_albums_count', { values: { count: childAlbums.length } })}</small>
-      </div>
+  <!-- FL-707 item 11: no empty "Albums 0 albums + New album" block; New album is in the … menu. -->
+  {#if album.kind !== AlbumKind.Space && childAlbums.length > 0}
+    <section class="strip" class:boards aria-label={$t(boards ? 'frameleaf_boards_collections' : 'albums')}>
+      {#if !boards}<div class="strip-head">
+          <h2>{$t('albums')}</h2>
+          <small>{$t('frameleaf_albums_count', { values: { count: childAlbums.length } })}</small>
+        </div>{/if}
       <div class="strip-grid">
         {#each childAlbums as child (child.id)}
-          <AlbumTile album={child} {currentUserId} />
+          {@const cover = coverOf(child)}
+          {@const inside = insideCount(child.id)}
+          {@const childName = child.albumName || $t('unnamed_album')}
+          <!-- The collections inside, as cards (prototype `pro-subcollections`): cover, own mark, counts. -->
+          <a class="sub-card" href={albumHref(child.id)} data-testid="sub-collection-card">
+            <span class="sub-cover" aria-hidden="true">
+              {#if cover}
+                <img src={cover} alt="" loading="lazy" draggable="false" />
+              {:else}
+                <AlbumMark icon={child.icon} color={child.color} kind={child.kind} hasChildren={inside > 0} size="28" />
+              {/if}
+            </span>
+            <strong class="sub-name">
+              <AlbumMark icon={child.icon} color={child.color} kind={child.kind} hasChildren={inside > 0} size="15" />
+              <span>{childName}</span>
+            </strong>
+            <small class="sub-meta">
+              {$t('frameleaf_albums_items', {
+                values: { count: child.assetCount + (child.bookmarkCount ?? 0) },
+              })}{inside > 0 ? ` · ${$t('frameleaf_boards_inside_count', { values: { count: inside } })}` : ''}
+            </small>
+          </a>
         {/each}
-        {#if editor}
+        {#if editor && !boards}
           <button type="button" class="new-tile" onclick={() => (createOpen = true)}>
             <Icon icon={mdiPlus} size="22" />
             <span>{$t('frameleaf_albums_create_album')}</span>
           </button>
         {/if}
       </div>
-      {#if childAlbums.length === 0 && !editor}
-        <p class="empty">{$t('frameleaf_albums_shelf_empty')}</p>
-      {/if}
     </section>
   {/if}
 </header>
+
+<MakeMovieSheet
+  bind:open={movieOpen}
+  source={{
+    kind: 'album',
+    albumId: album.id,
+    name,
+    itemCount: itemCount ?? assetCount,
+    previewIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
+  }}
+/>
 
 <AlbumShareDialog
   {album}
@@ -727,24 +894,28 @@
 <AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
 
-<AlbumCreateDialog
-  kind={album.kind}
-  {album}
-  collections={collections.filter(({ id }) => id !== album.id)}
-  canMove={album.kind === AlbumKind.Album && owner}
-  bind:open={editOpen}
-  onCreate={createChildAlbum}
-  onSave={saveDetails}
-/>
+{#if editOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
+    <AlbumCreateDialog
+      kind={album.kind}
+      {album}
+      collections={collections.filter(({ id }) => id !== album.id)}
+      canMove={album.kind !== AlbumKind.Space && owner}
+      bind:open={editOpen}
+      onCreate={createChildAlbum}
+      onSave={saveDetails}
+    />
+  {/await}{/if}
 
-<AlbumCreateDialog
-  kind={AlbumKind.Album}
-  collections={collections.length > 0 ? collections : [album]}
-  defaultParentId={album.id}
-  bind:open={createOpen}
-  onCreate={createChildAlbum}
-  onCreateSmart={createChildSmartAlbum}
-/>
+{#if createOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
+    <AlbumCreateDialog
+      kind={AlbumKind.Album}
+      collections={collections.length > 0 ? collections : [album]}
+      defaultParentId={album.id}
+      bind:open={createOpen}
+      onCreate={createChildAlbum}
+      onCreateSmart={createChildSmartAlbum}
+    />
+  {/await}{/if}
 
 {#if rule}
   <SmartAlbumReevaluateDialog {rule} sources={ruleSources} bind:open={reevaluateOpen} onApplied={onRuleChanged} />
@@ -764,22 +935,81 @@
   />
 {/if}
 
-<AlbumConfirmDialog
+{#if editor && album.kind !== AlbumKind.Space}
+  {#if iconOpen}{#await import('$lib/components/frameleaf/AlbumAppearanceDialog.svelte') then { default: AlbumAppearanceDialog }}
+      <AlbumAppearanceDialog
+        {album}
+        hasChildren={childAlbums.length > 0}
+        bind:open={iconOpen}
+        onSave={saveAppearance}
+      />
+    {/await}{/if}
+{/if}
+
+<!--
+  Delete spells out what happens (prototype `DeleteCollectionDialog`, README point 8): the items stay
+  in the library, the albums inside move up a level, and people it was shared with lose access.
+-->
+<Dialog
   title={$t('frameleaf_album_delete_title', { values: { name } })}
-  body={isCollection
-    ? $t('frameleaf_album_delete_collection_body')
-    : album.kind === AlbumKind.Space
-      ? $t('frameleaf_album_delete_space_body')
-      : $t('frameleaf_album_delete_body', { values: { kind: kindLabel } })}
-  keepNote={isCollection
-    ? $t('frameleaf_album_delete_collection_keep', { values: { count: childAlbums.length } })
-    : album.isSmart
-      ? $t('frameleaf_album_delete_smart_keep')
-      : $t('frameleaf_album_delete_keep', { values: { count: assetCount } })}
-  confirmLabel={$t('frameleaf_album_delete', { values: { kind: kindLabel } })}
+  closeLabel={$t('close')}
   bind:open={deleteOpen}
-  onConfirm={confirmDelete}
-/>
+>
+  <ul class="consequences" data-testid="delete-consequences">
+    <li>
+      <Icon icon={mdiCheck} size="16" aria-hidden={true} />
+      <span>
+        {album.isSmart
+          ? $t('frameleaf_album_delete_smart_keep')
+          : $t('frameleaf_boards_delete_items_stay', { values: { count: itemCount ?? assetCount } })}
+      </span>
+    </li>
+    {#if childAlbums.length > 0}
+      <li>
+        <Icon icon={mdiCheck} size="16" aria-hidden={true} />
+        <span>
+          {deleteDestination
+            ? $t('frameleaf_boards_delete_children_move', {
+                values: { children: childNames, count: childAlbums.length, parent: deleteDestination },
+              })
+            : $t('frameleaf_boards_delete_children_top', {
+                values: { children: childNames, count: childAlbums.length },
+              })}
+        </span>
+      </li>
+    {/if}
+    {#if others.length > 0}
+      <li class="warn">
+        <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
+        <span>
+          {$t('frameleaf_boards_delete_people_lose_access', {
+            values: {
+              count: others.length,
+              names: new Intl.ListFormat($locale ?? undefined, { style: 'long', type: 'conjunction' }).format(
+                others.map((user) => user.name),
+              ),
+              kind: kindLabel,
+            },
+          })}
+        </span>
+      </li>
+    {/if}
+    {#if album.hasSharedLink}
+      <li class="warn">
+        <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
+        <span>{$t('frameleaf_boards_delete_links_stop')}</span>
+      </li>
+    {/if}
+  </ul>
+  {#snippet actions()}
+    <button type="button" class="button" data-initial-focus disabled={deleting} onclick={() => (deleteOpen = false)}
+      >{$t('cancel')}</button
+    >
+    <button type="button" class="button fl-danger" disabled={deleting} onclick={() => void runDelete()}
+      >{$t('frameleaf_album_delete', { values: { kind: kindLabel } })}</button
+    >
+  {/snippet}
+</Dialog>
 
 <AlbumConfirmDialog
   title={$t('frameleaf_album_leave_title', { values: { name } })}
@@ -790,6 +1020,98 @@
 />
 
 <style>
+  .sheet-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 0.25rem;
+    border: 0;
+    background: none;
+    color: var(--fl-text);
+    font: inherit;
+    font-weight: 600;
+  }
+  .sheet-trigger:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  .consequences {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    width: min(28rem, 100%);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.875rem;
+  }
+  .consequences li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    color: var(--fl-text);
+  }
+  .consequences li > :global(svg) {
+    flex-shrink: 0;
+    margin-block-start: 2px;
+    color: var(--fl-teal, var(--fl-accent));
+  }
+  .consequences li.warn > :global(svg) {
+    color: var(--fl-warning, var(--fl-danger));
+  }
+  /* The collections inside (prototype .pro-subcollections): a cover, the own mark and name, counts. */
+  .sub-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    color: var(--fl-text);
+    text-decoration: none;
+    border-radius: var(--fl-radius-card);
+  }
+  .sub-card:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 3px;
+  }
+  .sub-cover {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    overflow: hidden;
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-card);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fl-text), transparent 91%);
+  }
+  .sub-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .sub-card:hover .sub-cover {
+    box-shadow:
+      inset 0 0 0 1px var(--fl-border),
+      var(--fl-shadow-1, none);
+  }
+  .sub-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 0.8125rem;
+  }
+  .sub-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sub-meta {
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
   .rule-row {
     display: flex;
     flex-wrap: wrap;
@@ -888,12 +1210,6 @@
   .icon-button:focus-visible .badge,
   .icon-button.open .badge {
     opacity: 1;
-  }
-  .popover {
-    position: absolute;
-    inset-block-start: calc(100% + 0.375rem);
-    inset-inline-start: 0;
-    z-index: 40;
   }
   .text {
     flex: 1;
@@ -1070,6 +1386,36 @@
     padding-block-start: var(--fl-space-4);
     border-block-start: 1px solid var(--fl-border);
   }
+  /* Boards (prototype screen 02): small cards in a row, cover beside the name, no rule above. */
+  .strip.boards {
+    padding-block-start: 0;
+    border-block-start: 0;
+  }
+  .strip.boards .strip-grid {
+    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+    gap: var(--fl-space-3);
+  }
+  .strip.boards .sub-card {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: var(--fl-space-3);
+    row-gap: 2px;
+    padding: var(--fl-space-2);
+    border: 1px solid var(--fl-border);
+  }
+  .strip.boards .sub-cover {
+    grid-row: span 2;
+    border-radius: var(--fl-radius-control);
+  }
+  .strip.boards .sub-name,
+  .strip.boards .sub-meta {
+    align-self: end;
+  }
+  .strip.boards .sub-meta {
+    align-self: start;
+  }
   .strip-head {
     display: flex;
     align-items: baseline;
@@ -1125,11 +1471,6 @@
     color: var(--fl-text);
     background: var(--fl-raised);
   }
-  .empty {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: 0.875rem;
-  }
   .menu-separator {
     height: 1px;
     margin: 0.25rem 0.375rem;
@@ -1180,5 +1521,10 @@
     to {
       opacity: 0.2;
     }
+  }
+  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
+     the page area already adds 8px. */
+  .album-header {
+    padding-top: calc(var(--fl-page-top) - 8px);
   }
 </style>

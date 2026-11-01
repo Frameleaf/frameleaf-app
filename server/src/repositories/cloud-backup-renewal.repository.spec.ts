@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { access, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -24,6 +24,13 @@ import {
 } from 'src/utils/managed-backup-session.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+
+vi.mock('src/utils/disk-usage.js', () => ({
+  getDiskUsage: () =>
+    Promise.resolve({ total: 4096 * 1_000_000_000, free: 4096 * 1_000_000_000, available: 4096 * 1_000_000_000 }),
+}));
+
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
 
 const sha = (body: Buffer) => createHash('sha256').update(body).digest('hex');
 const fixture = (operation: BackupOperation) =>
@@ -372,6 +379,26 @@ describe('temporary backup capability storage integration', () => {
     expect(sha(provider.objects.get(`o/${sha(bytes)}`)!)).toBe(sha(bytes));
   });
 
+  it('starts a new multipart upload when the provider expired the saved one before the run resumed', async () => {
+    const bytes = Buffer.alloc(25 * 1024 * 1024, 4);
+    const path = join(folder, 'video');
+    await writeFile(path, bytes);
+    provider.failPart = 3;
+    await expect(
+      store.uploadFile(provider.connection('upload', journal()), `o/${sha(bytes)}`, path, key, sha(bytes)),
+    ).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
+    expect(durable).toMatchObject({ kind: 'upload', completing: false });
+    // an abort-incomplete-multipart lifecycle rule removes the upload while the run waits
+    provider.uploads.clear();
+    provider.failPart = 0;
+    provider.unavailable = false;
+
+    await store.uploadFile(provider.connection('upload', journal()), `o/${sha(bytes)}`, path, key, sha(bytes));
+
+    expect(sha(provider.objects.get(`o/${sha(bytes)}`)!)).toBe(sha(bytes));
+    expect(durable).toBeNull();
+  });
+
   it('resumes the same encrypted multipart bytes across renewal, outage and a replacement worker', async () => {
     const bytes = Buffer.alloc(25 * 1024 * 1024, 3);
     const objectKey = encryptedKey(bytes);
@@ -571,6 +598,35 @@ describe('temporary backup capability storage integration', () => {
     expect(durable).toBeNull();
   });
 
+  it('starts a download again when its target moved since the interrupted attempt, leaving no partial', async () => {
+    const bytes = Buffer.alloc(4096, 5);
+    provider.objects.set(`o/${sha(bytes)}`, bytes);
+    provider.breakDownload = true;
+    provider.expireDownload = true;
+    store.retryDelaysMs = [0];
+    await mkdir(join(folder, 'before'));
+    await mkdir(join(folder, 'after'));
+    await expect(
+      store.download(
+        provider.connection('restore', journal()),
+        `o/${sha(bytes)}`,
+        key,
+        join(folder, 'before', 'a'),
+        sha(bytes),
+      ),
+    ).rejects.toThrow();
+    expect(await readdir(join(folder, 'before'))).toHaveLength(1);
+    provider.expireDownload = false;
+    provider.unavailable = false;
+
+    const target = join(folder, 'after', 'a');
+    await store.download(provider.connection('restore', journal()), `o/${sha(bytes)}`, key, target, sha(bytes));
+
+    expect(await readFile(target)).toEqual(bytes);
+    expect(await readdir(join(folder, 'before'))).toEqual([]);
+    expect(durable).toBeNull();
+  });
+
   it('reconciles process death after multipart completion before clearing its receipt', async () => {
     const bytes = Buffer.alloc(9 * 1024 * 1024, 1);
     const path = join(folder, 'video');
@@ -614,6 +670,66 @@ describe('temporary backup capability storage integration', () => {
     expect(provider.seen.filter((request) => request.method === 'GET')).toHaveLength(1);
     expect(await readFile(target)).toEqual(bytes);
     expect(durable).toBeNull();
+  });
+
+  it('renews a permitted restore when a signed download arrives after its access key expires', async () => {
+    const bytes = Buffer.alloc(4096, 5);
+    const object = `o/${sha(bytes)}`;
+    provider.objects.set(object, bytes);
+    const connection = provider.connection('restore', journal());
+    let held = false;
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'GET' && !held) {
+        held = true;
+        provider.clock += 900_000;
+        return error('InvalidAccessKeyId');
+      }
+      return provider.fetch(input, init);
+    });
+    const target = join(folder, 'restored');
+    await store.download(connection, object, key, target, sha(bytes));
+    expect(held).toBe(true);
+    expect(provider.renewals).toBe(1);
+    expect(await readFile(target)).toEqual(bytes);
+    expect(provider.seen.filter((request) => request.method === 'GET').map((request) => request.operation)).toEqual([
+      'restore',
+    ]);
+  });
+
+  it.each(['InvalidAccessKeyId', 'ExpiredToken'])('stops after one renewal on repeated %s refusals', async (code) => {
+    const connection = provider.connection('restore', journal());
+    vi.stubGlobal('fetch', () => Promise.resolve(error(code)));
+    await expect(store.get(connection, 'o/item', key)).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
+    expect(provider.renewals).toBe(1);
+  });
+
+  it('preserves the destination when an expired access key cannot renew its restore authority', async () => {
+    const connection = provider.connection('restore', journal());
+    const target = join(folder, 'existing');
+    await writeFile(target, 'keep');
+    provider.objects.set('o/item', Buffer.from('data'));
+    vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method !== 'GET') return provider.fetch(input, init);
+      provider.revoked = true;
+      return Promise.resolve(error('InvalidAccessKeyId'));
+    });
+    await expect(store.download(connection, 'o/item', key, target, null)).rejects.toBeInstanceOf(
+      ManagedBackupAuthorizationError,
+    );
+    expect(provider.renewals).toBe(1);
+    expect(await readFile(target, 'utf8')).toBe('keep');
+  });
+
+  it('does not renew an ordinary access denial or an independent storage connection', async () => {
+    const connection = provider.connection('restore', journal());
+    vi.stubGlobal('fetch', () => Promise.resolve(error('AccessDenied')));
+    await expect(store.get(connection, 'o/item', key)).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
+    expect(provider.renewals).toBe(0);
+    vi.stubGlobal('fetch', () => Promise.resolve(error('InvalidAccessKeyId')));
+    await expect(store.get({ ...connection, managedCredentials: undefined }, 'o/item', key)).rejects.toMatchObject({
+      code: 'InvalidAccessKeyId',
+    });
+    expect(provider.renewals).toBe(0);
   });
 
   it('stops after one renewal when the provider repeatedly returns an expired session with HTTP 400', async () => {

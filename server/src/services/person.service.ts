@@ -71,7 +71,7 @@ import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
-import { asDateTimeString } from 'src/utils/date.js';
+import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import {
   FaceBoundingBoxRow,
   NormalizedBox,
@@ -152,12 +152,14 @@ export class PersonService extends BaseService {
       closestFaceAssetId = person.faceAssetId;
     }
     const privacyOptions = getHiddenContentQueryOptions(auth);
-    const { items, hasNextPage } = await this.personRepository.getAllForUser(pagination, auth.user.id, {
-      withHidden,
-      closestFaceAssetId,
-      ...privacyOptions,
-    });
-    const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions);
+    const [{ items, hasNextPage }, { total, hidden }] = await Promise.all([
+      this.personRepository.getAllForUser(pagination, auth.user.id, {
+        withHidden,
+        closestFaceAssetId,
+        ...privacyOptions,
+      }),
+      this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions),
+    ]);
 
     return {
       people: items.map((person) => ({
@@ -791,15 +793,8 @@ export class PersonService extends BaseService {
       throw new NotFoundException();
     }
 
-    if (auth.hideNsfwAssets && person.faceAssetId) {
-      const allowedFaces = await this.accessRepository.person.checkFaceOwnerAccess(
-        auth.user.id,
-        new Set([person.faceAssetId]),
-        auth.hiddenContent ?? true,
-      );
-      if (!allowedFaces.has(person.faceAssetId)) {
-        throw new NotFoundException();
-      }
+    if (person.faceAssetId && !(await this.featuredAssetId(auth, person))) {
+      throw new NotFoundException();
     }
 
     return new FileDownloadResponse({
@@ -867,6 +862,16 @@ export class PersonService extends BaseService {
       return person;
     });
 
+    if (
+      (['name', 'birthDate', 'isHidden', 'isFavorite', 'color', 'faceAssetId'] as const).some((key) =>
+        key === 'birthDate'
+          ? asDateString(current.birthDate) !== asDateString(person.birthDate)
+          : current[key] !== person[key],
+      )
+    ) {
+      await this.eventRepository.emit('PersonChanged', { ownerId, personGroupId });
+    }
+
     if (assetId) {
       await this.jobRepository.queue({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
     }
@@ -921,7 +926,9 @@ export class PersonService extends BaseService {
       return;
     }
 
+    const affected = ownerId ? await this.workflowPersonAssets(ownerId, groupIds) : [];
     const people = await this.personRepository.delete(groupIds, ownerId);
+    await this.emitAssetsChanged(affected);
     await this.cleanupRemovedPeople(people, ownerId);
   }
 
@@ -1528,6 +1535,7 @@ export class PersonService extends BaseService {
         this.logger.log(`Merging ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
 
         try {
+          const affected = await this.workflowPersonAssets(targetPerson.ownerId, [mergeId, targetPerson.personGroupId]);
           const people = await this.personRepository.withMergeWrite(async () => {
             const survivor = await this.personRepository.getByGroupId({
               ownerId: targetPerson.ownerId,
@@ -1546,6 +1554,7 @@ export class PersonService extends BaseService {
             );
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
+          await this.emitAssetsChanged(affected);
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
@@ -1843,10 +1852,22 @@ export class PersonService extends BaseService {
   }
 
   /** Face overrides commit with the edit; dispatch changes to following copies afterward. */
+  private async workflowPersonAssets(ownerId: string, personGroupIds: string[]): Promise<string[]> {
+    const result: string[] = [];
+    let after: string | undefined;
+    while (true) {
+      const ids = await this.personRepository.getAssetIdsForPeople(ownerId, personGroupIds, { after, limit: 500 });
+      result.push(...ids);
+      if (ids.length < 500) return result;
+      after = ids.at(-1);
+    }
+  }
+
   private async noteFaceEdit(assetIds: string[]) {
     if (assetIds.length === 0) {
       return;
     }
+    await this.emitAssetsChanged(assetIds);
     const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
     if (sources.length > 0) {
       await this.jobRepository.queueAll(

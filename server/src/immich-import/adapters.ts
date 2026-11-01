@@ -30,6 +30,9 @@ export const CONTENT_TABLES = [
   'album',
   'album_user',
   'album_asset',
+  'smart_album',
+  'smart_album_asset',
+  'smart_album_exclusion',
   'partner',
   'shared_link',
   'shared_link_asset',
@@ -56,6 +59,7 @@ export const DEFERRED_COLUMNS: Record<string, string[]> = {
   asset: ['livePhotoVideoId', 'stackId'],
   person: ['faceAssetId'],
   tag: ['parentId'],
+  album: ['parentId'],
 };
 export const PATH_COLUMNS: Record<string, string[]> = {
   user: ['profileImagePath'],
@@ -94,6 +98,52 @@ export const frozenSource = (version: string): FrozenSource => {
   );
   const migrations = releaseMigrations(release);
   return { commit: selected.commit, structure, tables, migrations, views: sourceViews(migrations, tables), exact };
+};
+/**
+ * Content the pre-Frameleaf fork added on top of upstream Immich: nested albums (1779700000000-AddAlbumParentAndClosure,
+ * 1779800000000-AddAlbumIcon, 1779900000000-AddAlbumSortOrder) and smart albums (1779600000000-CreateSmartAlbumTables).
+ * Read only when the source has every column with this type; upstream sources never do.
+ */
+const FORK_COLUMNS: Record<string, Record<string, string>> = {
+  album: { parentId: 'uuid', icon: 'character varying', sortOrder: 'double precision' },
+};
+const FORK_TABLES: Record<string, TableShape> = {
+  smart_album: {
+    columns: ['id', 'kind', 'ownerId', 'albumId', 'createdAt'],
+    key: ['id'],
+    types: { id: 'uuid', kind: 'text', ownerId: 'uuid', albumId: 'uuid', createdAt: 'timestamp with time zone' },
+  },
+  smart_album_asset: {
+    columns: ['smartAlbumId', 'assetId', 'addedAt', 'matchReason'],
+    key: ['smartAlbumId', 'assetId'],
+    types: { smartAlbumId: 'uuid', assetId: 'uuid', addedAt: 'timestamp with time zone', matchReason: 'text' },
+  },
+  smart_album_exclusion: {
+    columns: ['smartAlbumId', 'assetId'],
+    key: ['smartAlbumId', 'assetId'],
+    types: { smartAlbumId: 'uuid', assetId: 'uuid' },
+  },
+};
+export const withForkContent = (source: FrozenSource, structure: SourceStructure): FrozenSource => {
+  const present = (table: string, types: Record<string, string>) =>
+    Object.entries(types).every(([column, type]) => structure.tables[table]?.[column]?.type === type);
+  const tables = { ...source.tables };
+  for (const [table, types] of Object.entries(FORK_COLUMNS)) {
+    const shape = tables[table];
+    if (shape && present(table, types)) {
+      tables[table] = {
+        ...shape,
+        columns: [...shape.columns, ...Object.keys(types)],
+        types: { ...shape.types, ...types },
+      };
+    }
+  }
+  for (const [table, shape] of Object.entries(FORK_TABLES)) {
+    if (present(table, shape.types)) {
+      tables[table] = shape;
+    }
+  }
+  return { ...source, tables, views: sourceViews(source.migrations, tables) };
 };
 /** The newest frozen release whose complete migration ledger the source contains. */
 export const newestContainedRelease = (ledger: readonly string[]): string | undefined => {

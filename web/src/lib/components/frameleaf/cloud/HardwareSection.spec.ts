@@ -28,6 +28,7 @@ const container = (overrides: Partial<HardwareCheckResponseDto['ml']> = {}): Har
   vendor: null,
   model: null,
   vramGb: null,
+  integrated: null,
   driver: null,
   backend: HardwareBackend.Cpu,
   test: null,
@@ -142,7 +143,7 @@ describe('Graphics card check (FL-364)', () => {
 
     await screen.findByRole('heading', { name: 'No graphics card found' });
     expect(can('Studio export')).toContain('Works here');
-    expect(can('Studio export')).toContain('A computer with a graphics card is connected for Studio exports.');
+    expect(can('Studio export')).toContain('A computer is connected for Studio exports.');
   });
 
   it('says it can’t tell about Studio export when that answer could not be read', async () => {
@@ -157,6 +158,7 @@ describe('Graphics card check (FL-364)', () => {
   it('explains a detected problem with its fix closed, and checks again on request', async () => {
     sdkMock.getHardwareCheck.mockResolvedValue(
       check({
+        ml: container({ gpu: { present: true, visible: false, usable: false } }),
         issues: ['nvidia-toolkit'],
         findings: [
           {
@@ -187,9 +189,38 @@ describe('Graphics card check (FL-364)', () => {
     expect(screen.getByRole('heading', { name: 'No graphics card found' })).toBeInTheDocument();
   });
 
+  it('says no graphics card was found on Docker Desktop on a Mac, where none can be seen', async () => {
+    const unknown = { present: null, visible: false, usable: false };
+    const finding = (container: HardwareFindingContainer) => ({
+      id: 'macos',
+      container,
+      gid: null,
+      pciAddress: null,
+      gfxVersion: null,
+      computeCapability: null,
+    });
+    sdkMock.getHardwareCheck.mockResolvedValue(
+      check({
+        mlImage: 'cpu',
+        server: container({ gpu: unknown }),
+        ml: container({ gpu: unknown }),
+        issues: ['macos'],
+        findings: [finding(HardwareFindingContainer.Server), finding(HardwareFindingContainer.Ml)],
+      }),
+    );
+    render(HardwareSection);
+
+    expect(await screen.findByRole('heading', { name: 'No graphics card found' })).toBeInTheDocument();
+    expect(status().queryByText('Graphics card not reached')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show the fix for NVIDIA')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Faster once the graphics card can be used/)).not.toBeInTheDocument();
+    expect(status().getByText(/Last checked .*[^.]\.$/)).toBeInTheDocument();
+  });
+
   it('fills the fix with what the check found, and shows a card limit as a note', async () => {
     sdkMock.getHardwareCheck.mockResolvedValue(
       check({
+        server: container({ gpu: { present: true, visible: false, usable: false } }),
         issues: ['render-group', 'nvidia-bf16'],
         findings: [
           {
@@ -262,6 +293,19 @@ describe('Graphics card check (FL-364)', () => {
               unavailable: HardwareWorkloadUnavailable.NoLocalRunner,
               error: null,
             },
+            {
+              workload: HardwareBenchmarkWorkload.Restoration,
+              source: null,
+              unit: null,
+              perHour: null,
+              secondsPerUnit: null,
+              runsOn: null,
+              worker: null,
+              model: null,
+              fallbackFrom: null,
+              unavailable: HardwareWorkloadUnavailable.Failed,
+              error: '{"detail":"openvino-genai is required","destinationId":"0f1e2d3c"}',
+            },
           ],
         },
       }),
@@ -280,6 +324,9 @@ describe('Graphics card check (FL-364)', () => {
     const technical = within(screen.getByText('Technical details').closest('details')!);
     expect(technical.getByText('420 ms')).toBeInTheDocument();
     expect(technical.getByText("Can't run here: Frameleaf Cloud only.")).toBeInTheDocument();
+    // FL-589: a failed test says so in words; the worker's raw error stays in the server log.
+    expect(technical.getByText('Couldn’t be measured here.')).toBeInTheDocument();
+    expect(technical.queryByText(/openvino-genai|destinationId/)).not.toBeInTheDocument();
     // FL-427: the model that answered, when the configured one could not run.
     expect(
       technical.getByText(

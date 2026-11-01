@@ -59,6 +59,7 @@ ${drift.asSql().join('\n')}
     } catch (error) {
       console.error(error);
       console.error('Unable to debug migrations');
+      process.exitCode = 1;
     }
   }
 }

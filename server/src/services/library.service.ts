@@ -11,6 +11,10 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryFolderBrowseDto,
+  LibraryFolderBrowseResponseDto,
+  LibraryFolderEstimateDto,
+  LibraryFolderEstimateResponseDto,
   LibraryRemovalDto,
   LibraryRemovalReviewDto,
   LibraryResponseDto,
@@ -35,10 +39,12 @@ import {
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
+  DEFAULT_LIBRARY_EXCLUSION_PATTERNS,
   type ImportPathNeighbour,
   checkImportPathOnDisk,
   checkImportPaths,
   invalidExclusionPatterns,
+  isBrowsableFolder,
   isSameOrInside,
   normalizeImportPath,
   resolvesIntoMediaStorage,
@@ -46,11 +52,18 @@ import {
 import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 /**
  * One entry for the administrator audit trail about a library (FL-76), listed in its owner's
  * account history. `auth` is absent when a library changes without an administrator's request.
  */
+/** FL-365: how many folders one browse lists at most. */
+const BROWSE_FOLDER_LIMIT = 500;
+/** FL-539: a folder estimate stops after this many files or this long, and says it is incomplete. */
+const FOLDER_ESTIMATE_LIMIT = 50_000;
+const FOLDER_ESTIMATE_MS = 8000;
+
 const libraryEvent = (
   auth: AuthDto | undefined,
   library: { id: string; name: string; ownerId: string },
@@ -68,7 +81,7 @@ const libraryEvent = (
 export class LibraryService extends BaseService {
   private watchLibraries = false;
   private lock = false;
-  private watchers: Record<string, () => Promise<void>> = {};
+  private watchers = new Map<string, () => Promise<void>>();
   private watchRequests = new Map<string, symbol>();
 
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
@@ -87,7 +100,9 @@ export class LibraryService extends BaseService {
         name: CronJob.LibraryScan,
         expression: scan.cronExpression,
         onTick: () => handlePromiseError(this.jobRepository.queue({ name: JobName.LibraryScanQueueAll }), this.logger),
-        start: scan.enabled,
+        // FL-363: added folders are checked by the overnight schedule (`OvernightService`), so this
+        // timer no longer starts; `scan.enabled` decides whether the overnight step runs.
+        start: false,
       });
     }
 
@@ -105,7 +120,7 @@ export class LibraryService extends BaseService {
     this.cronRepository.update({
       name: CronJob.LibraryScan,
       expression: library.scan.cronExpression,
-      start: library.scan.enabled,
+      start: false,
     });
 
     if (library.watch.enabled !== this.watchLibraries) {
@@ -200,21 +215,21 @@ export class LibraryService extends BaseService {
     const close = () => {
       active = false;
       ready.resolve();
-      closing ??= Promise.try(stop).catch((error: unknown) => {
+      closing ??= tryPromise(stop).catch((error: unknown) => {
         closing = undefined;
         throw error;
       });
       return closing;
     };
-    this.watchers[id] = close;
+    this.watchers.set(id, close);
     try {
       await ready.promise;
       return active && this.watchRequests.get(id) === request;
     } catch (error) {
       try {
         await close();
-        if (this.watchers[id] === close) {
-          delete this.watchers[id];
+        if (this.watchers.get(id) === close) {
+          this.watchers.delete(id);
         }
       } catch (closeError) {
         this.logger.error(`Unable to close library watcher ${id}: ${closeError}`);
@@ -224,11 +239,11 @@ export class LibraryService extends BaseService {
   }
 
   private async stopWatcher(id: string) {
-    const close = this.watchers[id];
+    const close = this.watchers.get(id);
     if (close) {
       await close();
-      if (this.watchers[id] === close) {
-        delete this.watchers[id];
+      if (this.watchers.get(id) === close) {
+        this.watchers.delete(id);
       }
     }
   }
@@ -249,7 +264,7 @@ export class LibraryService extends BaseService {
       return false;
     }
 
-    const ids = new Set([...Object.keys(this.watchers), ...this.watchRequests.keys()]);
+    const ids = new Set([...this.watchers.keys(), ...this.watchRequests.keys()]);
     const results = await Promise.allSettled([...ids].map((id) => this.unwatch(id)));
     for (const result of results) {
       if (result.status === 'rejected') {
@@ -279,12 +294,14 @@ export class LibraryService extends BaseService {
 
   async get(id: string): Promise<LibraryResponseDto> {
     const library = await this.findOrFail(id);
-    return mapLibrary(library);
+    const counts = await this.libraryRepository.getAssetCounts([library.id]);
+    return mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 });
   }
 
   async getAll(dto: LibrarySearchDto = {}): Promise<LibraryResponseDto[]> {
     const libraries = await this.libraryRepository.getAll(dto.withDeleted ?? false);
-    return libraries.map((library) => mapLibrary(library));
+    const counts = await this.libraryRepository.getAssetCounts(libraries.map((library) => library.id));
+    return libraries.map((library) => mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 }));
   }
 
   @OnJob({ name: JobName.LibraryDeleteCheck, queue: QueueName.Library })
@@ -313,14 +330,7 @@ export class LibraryService extends BaseService {
     await this.requireValidImportPaths(dto.importPaths ?? []);
     const importPaths = (dto.importPaths ?? []).map((importPath) => normalizeImportPath(importPath));
 
-    const exclusionPatterns = dto.exclusionPatterns ?? [
-      '**/@eaDir/**',
-      '**/._*',
-      '**/#recycle/**',
-      '**/#snapshot/**',
-      '**/.stversions/**',
-      '**/.stfolder/**',
-    ];
+    const exclusionPatterns = dto.exclusionPatterns ?? [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS];
     this.requireValidExclusionPatterns(exclusionPatterns);
 
     const library = await this.libraryRepository.create({
@@ -335,6 +345,82 @@ export class LibraryService extends BaseService {
       await this.notifyWatchers(library.id);
     }
     return mapLibrary(library);
+  }
+
+  /**
+   * FL-365: the folders this server can see under `path`, for an administrator choosing a folder of
+   * photos to add. Only names are read; hidden, system and NAS folders are left out.
+   */
+  async browseFolders({ path: requested }: LibraryFolderBrowseDto): Promise<LibraryFolderBrowseResponseDto> {
+    const raw = requested?.trim() || '/';
+    const folder = normalizeImportPath(raw);
+    if (!path.isAbsolute(raw) || raw.split('/').includes('..')) {
+      throw new BadRequestException('Choose a whole path, starting with a slash, with no .. in it');
+    }
+    const parent = folder === '/' ? null : path.posix.dirname(folder);
+    let readable = true;
+    let folders: { name: string; path: string }[] = [];
+    try {
+      const entries = await this.storageRepository.readdirWithTypes(folder);
+      folders = entries
+        .filter((entry) => entry.isDirectory() && isBrowsableFolder(entry.name))
+        .map((entry) => ({ name: entry.name, path: path.posix.join(folder, entry.name) }))
+        .toSorted((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      readable = false;
+    }
+    return {
+      path: folder,
+      parent,
+      folders: folders.slice(0, BROWSE_FOLDER_LIMIT),
+      truncated: folders.length > BROWSE_FOLDER_LIMIT,
+      readable,
+      defaultExclusionPatterns: [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS],
+    };
+  }
+
+  /**
+   * FL-539: about how many photos and videos a folder holds, and how much they take, for "About N
+   * photos and videos, X GB" on Add a folder. It walks the folder as a scan would (same skips), and
+   * stops after a while on a very large or slow folder, saying the count is incomplete.
+   */
+  async estimateFolder({
+    path: requested,
+    exclusionPatterns,
+  }: LibraryFolderEstimateDto): Promise<LibraryFolderEstimateResponseDto> {
+    const raw = requested.trim();
+    if (!path.isAbsolute(raw) || raw.split('/').includes('..')) {
+      throw new BadRequestException('Choose a whole path, starting with a slash, with no .. in it');
+    }
+    const folder = normalizeImportPath(raw);
+    const deadline = Date.now() + FOLDER_ESTIMATE_MS;
+    let count = 0;
+    let bytes = 0;
+    let complete = true;
+    try {
+      const batches = this.storageRepository.walkLibrary({
+        pathsToCrawl: [folder],
+        includeHidden: false,
+        exclusionPatterns,
+        take: 500,
+      });
+      for await (const batch of batches) {
+        for (const file of batch) {
+          count++;
+          bytes += await this.storageRepository
+            .stat(file)
+            .then((stats) => stats.size)
+            .catch(() => 0);
+        }
+        if (count >= FOLDER_ESTIMATE_LIMIT || Date.now() > deadline) {
+          complete = false;
+          break;
+        }
+      }
+    } catch {
+      return { readable: false, count: 0, bytes: 0, complete: true };
+    }
+    return { readable: true, count, bytes, complete };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */
@@ -358,6 +444,11 @@ export class LibraryService extends BaseService {
     const owner = await this.userRepository.get(library.ownerId, { withDeleted: true });
     if (!owner || owner.deletedAt || owner.status !== UserStatus.Active) {
       this.logger.debug(`Library ${job.libraryId} belongs to a deleted account, won't import assets into it`);
+      return JobStatus.Skipped;
+    }
+    // FL-538: nothing new is added while an administrator has paused the owner's uploads
+    if (owner.uploadsPaused) {
+      this.logger.debug(`Library ${job.libraryId}: new uploads are paused for its owner, won't import assets`);
       return JobStatus.Skipped;
     }
 
@@ -446,7 +537,8 @@ export class LibraryService extends BaseService {
       await this.notifyWatchers(id);
     }
 
-    return mapLibrary(library);
+    const counts = await this.libraryRepository.getAssetCounts([library.id]);
+    return mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 });
   }
 
   /**
@@ -588,6 +680,8 @@ export class LibraryService extends BaseService {
       JOBS_LIBRARY_PAGINATION_SIZE,
     )) {
       this.logger.debug(`Queueing deletion of ${assets.length} asset(s) in library ${libraryId}`);
+      // their thumbnails, faces, search and text jobs would only wait in the queues for items that are gone
+      await this.jobRepository.cancelAssetJobs(assets.map((asset) => asset.id));
       await this.jobRepository.queueAll(
         assets.map((asset) => ({ name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: false } })),
       );

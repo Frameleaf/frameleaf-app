@@ -11,6 +11,7 @@ import { userInteraction } from '$lib/stores/user.svelte';
  */
 export const openSupportDialog = async () => {
   const info = userInteraction.aboutInfo ?? (await getAboutInfo());
+  userInteraction.aboutInfo = info;
   await modalManager.show(HelpFeedbackDialog, { info });
 };
 

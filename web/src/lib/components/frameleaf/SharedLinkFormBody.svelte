@@ -458,10 +458,10 @@
           created = saved;
         }
       }
+    } finally {
       // The password value never leaves this pending submission; drop it now
       // whether or not the save succeeded.
       password = '';
-    } finally {
       saving = false;
     }
   }

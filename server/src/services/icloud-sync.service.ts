@@ -233,7 +233,8 @@ export class ICloudSyncService {
       label: connection.label,
       state: connection.state,
       authenticated: !!connection.encryptedSession,
-      config: connection.config,
+      // FL-539: a connection saved before "Only when I ask" existed is checked by itself
+      config: { ...connection.config, automatic: connection.config.automatic ?? true },
       lastError: connection.lastError,
       nextRunAt: this.nextRunAt(connection, run),
       counts: {
@@ -245,18 +246,20 @@ export class ICloudSyncService {
     };
   }
 
-  /** When the schedule will queue the next run, by the same rule `dueConnections` applies. */
+  /**
+   * FL-518: connections are checked by the overnight run (and "Sync now"), not on an interval, so the
+   * only time worth saying is a back-off the provider asked for.
+   */
   private nextRunAt(connection: ICloudConnection, run: MediaOperation | undefined): string | null {
-    if (connection.state !== 'connected' || !connection.encryptedSession) {
+    // FL-539: "Only when I ask" is never checked by itself
+    if (connection.state !== 'connected' || !connection.encryptedSession || !connection.config.automatic) {
       return null;
     }
     if (run && isActiveMediaOperation(run.status as MediaOperationStatus)) {
       return null;
     }
     const backoff = connection.nextRunAt ? new Date(connection.nextRunAt).getTime() : 0;
-    const last = run ? new Date((run.finishedAt ?? run.createdAt) as unknown as string).getTime() : 0;
-    const interval = run ? last + connection.config.intervalHours * 3_600_000 : 0;
-    return new Date(Math.max(backoff, interval, Date.now())).toISOString();
+    return backoff > Date.now() ? new Date(backoff).toISOString() : null;
   }
 
   async list(auth: AuthDto): Promise<ICloudConnectionsResponseDto> {
@@ -441,6 +444,9 @@ export class ICloudSyncService {
 
   /** Queue a run through the one locked path, turning a refusal into a stable code for the client. */
   private async queue(connection: ICloudConnection, trigger: ICloudRunTrigger, retryOfId: string | null = null) {
+    if (await this.repository.ownerUploadsPaused(connection.ownerId)) {
+      throw new BadRequestException('icloud_uploads_paused');
+    }
     const queued = await this.repository.queueOperation(connection.id, connection.ownerId, { trigger, retryOfId });
     switch (queued.outcome) {
       case 'created':
@@ -573,10 +579,11 @@ export class ICloudSyncService {
     await Promise.allSettled(this.lanes);
   }
 
+  /**
+   * FL-518: ordinary checks run only in the overnight "Bring in new iCloud photos" step; this
+   * schedule keeps the weekly identity audits and nudges the worker.
+   */
   private async schedule(): Promise<void> {
-    for (const { id, ownerId } of await this.repository.dueConnections()) {
-      await this.repository.queueOperation(id, ownerId, { trigger: 'schedule' });
-    }
     await this.weeklySchedule.schedule();
     this.tick();
   }
@@ -679,6 +686,11 @@ export class ICloudSyncService {
     }
     if (!this.transport.enabled()) {
       await this.settle(claim, connectionId, 'icloud_disabled');
+      return;
+    }
+    if (await this.repository.ownerUploadsPaused(ownerId)) {
+      // FL-538: nothing new is imported while an administrator has paused this account's uploads
+      await this.settle(claim, connectionId, 'icloud_uploads_paused');
       return;
     }
     if (connection.state === 'authenticating') {
@@ -898,7 +910,8 @@ export class ICloudSyncService {
       // The run record ends with the run; the next run starts a fresh inventory pass.
       await this.repository.endRun(connectionId, 'failed').catch(() => {});
     }
-    if (outcome === 'failed' && !SIGN_IN_CODES.has(code)) {
+    // FL-538: a pause the administrator chose is not a failure to warn the owner about
+    if (outcome === 'failed' && !SIGN_IN_CODES.has(code) && code !== 'icloud_uploads_paused') {
       await this.repository
         .notify(
           claim.operation.ownerId,

@@ -32,7 +32,7 @@ const findingItems = async (accessToken: string) => {
 
 const openMissingMedia = async (page: Page) => {
   await page.goto('/user-settings?area=utilities&section=missing-media');
-  await expect(page.getByRole('heading', { name: 'Missing media' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Missing files' })).toBeVisible();
 };
 
 test.describe('Library Care', () => {

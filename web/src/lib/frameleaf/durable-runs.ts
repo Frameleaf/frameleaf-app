@@ -26,8 +26,9 @@ export const runOutcomeKey = (state: DurableJobOutcome): Translations =>
   `frameleaf_job_runs_outcome_${state === 'needsAttention' ? 'needs_attention' : state}` as Translations;
 export const runReasonKey = (reason: DurableJobReason): Translations =>
   `frameleaf_job_runs_reason_${reason}` as Translations;
+/** A run needs attention only when its library scan failed or was cancelled: nothing more will run in it (FL-588). */
 export const isRunSettled = (run: Pick<DurableJobRun, 'state'>) =>
-  ['completed', 'completed_with_errors', 'cancelled'].includes(run.state);
+  ['completed', 'completed_with_errors', 'cancelled', 'needs_attention'].includes(run.state);
 export const settledItems = (counts: DurableJobCounts) =>
   counts.completed + counts.failed + counts.needsAttention + counts.cancelled;
 export const runTone = (state: DurableJobState): ActivityTone =>
@@ -41,7 +42,8 @@ export const runTone = (state: DurableJobState): ActivityTone =>
 export const matchesRunFilter = (run: DurableJobRun, filter: ActivityFilter) =>
   filter === 'all' ||
   (filter === 'running' && !isRunSettled(run)) ||
-  (filter === 'done' && isRunSettled(run) && run.state !== 'completed_with_errors') ||
+  (filter === 'done' && isRunSettled(run) && !['completed_with_errors', 'needs_attention'].includes(run.state)) ||
+  (filter === 'failed' && run.state === 'needs_attention') ||
   (filter === 'failed' &&
     run.failed +
       run.needsAttention +

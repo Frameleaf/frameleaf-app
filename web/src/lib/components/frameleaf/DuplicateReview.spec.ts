@@ -31,6 +31,8 @@ const group = (id: string, members: string[]): ReviewGroup => ({
   hiddenMemberCount: 0,
   totalBytes: 0,
   qualities: [],
+  albums: [],
+  lookAlike: false,
 });
 
 const setup = (blocked: Partial<ReviewGroup> = {}) => {
@@ -177,38 +179,136 @@ it('keeps one accessible active heading focused while the previous group fades a
   }
 });
 
-it('keeps the chosen two contact-sheet copies in the durable decision payload', async () => {
-  const copies = group('copies', ['first', 'second', 'third']);
-  const submit = vi.fn().mockResolvedValue({ id: 'keepers-job' });
-  render(DuplicateReview, {
-    groups: [copies],
+const renderReview = (groups: ReviewGroup[], submit = vi.fn().mockResolvedValue({ id: 'job' })) => ({
+  submit,
+  view: render(DuplicateReview, {
+    groups,
     history: { recent: [], active: [] },
     gateway: { getReview: vi.fn(), getHistory: vi.fn(), submit, getOperation: vi.fn() },
     trashEnabled: true,
     onOpen: vi.fn(),
     onOpenTrash: vi.fn(),
-  });
+  }),
+});
+
+const keepers = (duplicateId: string, memberIds: string[], keepAssetIds: string[]) => [
+  MediaOperationBulkAction.ResolveDuplicates,
+  [{ duplicateId, decision: DuplicateDecisionKind.Keepers, memberIds, keepAssetIds }],
+  expect.any(String),
+];
+
+it('keeps the chosen look-alikes in the durable decision payload', async () => {
+  const { submit } = renderReview([
+    {
+      ...group('retakes', ['first', 'second', 'third']),
+      lookAlike: true,
+      suggestedKeepAssetIds: [],
+    },
+  ]);
   screen.getByRole('heading', { level: 2 }).focus();
   await userEvent.keyboard('12');
-  expect(screen.getByRole('checkbox', { name: 'Keep frame 1' })).toBeChecked();
-  expect(screen.getByRole('checkbox', { name: 'Keep frame 2' })).toBeChecked();
-  expect(screen.getByRole('checkbox', { name: 'Keep frame 3' })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Keep frame 1' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Keep frame 2' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Keep frame 3' })).toHaveAttribute('aria-pressed', 'false');
   await userEvent.keyboard('e');
   await waitFor(() =>
-    expect(submit).toHaveBeenCalledWith(
-      MediaOperationBulkAction.ResolveDuplicates,
-      [
-        {
-          duplicateId: 'copies',
-          decision: DuplicateDecisionKind.Keepers,
-          memberIds: ['first', 'second', 'third'],
-          keepAssetIds: ['first', 'second'],
-        },
-      ],
-      expect.any(String),
-    ),
+    expect(submit).toHaveBeenCalledWith(...keepers('retakes', ['first', 'second', 'third'], ['first', 'second'])),
   );
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+describe('duplicate triage (FL-558)', () => {
+  beforeAll(() => addMessages('dev', en));
+
+  it('starts with the best copy chosen, compares every copy, and keeps another copy by number and Enter', async () => {
+    const { submit } = renderReview([group('copies', ['first', 'second', 'third'])]);
+    expect(screen.getByRole('radio', { name: 'Keep first.jpg' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: /Keep 1, trash 2/ })).toBeEnabled();
+    screen.getByRole('heading', { level: 2 }).focus();
+    await userEvent.keyboard('2');
+    expect(screen.getByRole('radio', { name: 'Keep second.jpg' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Keep first.jpg' })).toHaveAttribute('aria-checked', 'false');
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith(...keepers('copies', ['first', 'second', 'third'], ['second'])),
+    );
+  });
+
+  it('lines the copies up fact by fact, naming the albums that hold each one', () => {
+    renderReview([
+      {
+        ...group('copies', ['first', 'second']),
+        albums: [
+          { assetId: 'first', names: ['Summer', 'Best of 2025'] },
+          { assetId: 'second', names: [] },
+        ],
+      },
+    ]);
+    expect(screen.getByText('Albums')).toBeInTheDocument();
+    expect(screen.getByText('Summer, Best of 2025')).toHaveClass('differs');
+  });
+
+  it('splits copies and look-alikes into two lanes', async () => {
+    renderReview([
+      group('lake', ['a', 'b']),
+      { ...group('forest', ['c', 'd']), kind: DuplicateGroupKind.Burst, suggestedKeepAssetIds: [] },
+    ]);
+    const same = screen.getByRole('tab', { name: /Same photo/ });
+    const alike = screen.getByRole('tab', { name: /Look-alikes/ });
+    expect(same).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { level: 2, name: 'a' })).toBeInTheDocument();
+    await userEvent.click(alike);
+    expect(alike).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { level: 2, name: 'c' })).toBeInTheDocument();
+  });
+
+  it('makes Stack the primary action of a burst and says why', () => {
+    renderReview([{ ...group('forest', ['c', 'd']), kind: DuplicateGroupKind.Burst, suggestedKeepAssetIds: [] }]);
+    expect(screen.getByText('Burst detected · Stack is recommended')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Stack burst/ })).toHaveClass('primary');
+    expect(screen.getByRole('button', { name: /Choose photos to keep/ })).toBeDisabled();
+  });
+
+  it('ignores a second click on Keep while the next group arrives under the pointer', async () => {
+    const { submit } = renderReview([group('lake', ['a', 'b']), group('forest', ['c', 'd'])]);
+    const keep = screen.getByTestId('frameleaf-duplicate-keep');
+    await userEvent.dblClick(keep);
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit).toHaveBeenCalledWith(...keepers('lake', ['a', 'b'], ['a']));
+    expect(screen.getByTestId('frameleaf-duplicate-keep')).toBe(keep);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await userEvent.click(keep);
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
+    expect(submit).toHaveBeenLastCalledWith(...keepers('forest', ['c', 'd'], ['c']));
+  });
+
+  it('keeps the best copy in every same-photo group after one confirmation', async () => {
+    const { submit } = renderReview([
+      group('lake', ['a', 'b']),
+      group('forest', ['c', 'd', 'e']),
+      { ...group('protected', ['f', 'g']), reviewRequiredReasons: ['edited-copy'] },
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: /Keep best copy in all 2/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('3 copies go to the trash');
+    expect(dialog).toHaveTextContent('1 group needs a closer look and is left for you.');
+    await userEvent.click(screen.getByRole('button', { name: 'Keep best in 2 groups' }));
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith(
+        MediaOperationBulkAction.ResolveDuplicates,
+        [
+          { duplicateId: 'lake', decision: DuplicateDecisionKind.Keepers, memberIds: ['a', 'b'], keepAssetIds: ['a'] },
+          {
+            duplicateId: 'forest',
+            decision: DuplicateDecisionKind.Keepers,
+            memberIds: ['c', 'd', 'e'],
+            keepAssetIds: ['c'],
+          },
+        ],
+        expect.any(String),
+      ),
+    );
+  });
 });
 
 it('keeps focus through the virtual window and decides the previously offscreen group', async () => {

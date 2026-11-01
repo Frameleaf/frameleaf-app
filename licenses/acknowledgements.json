@@ -283,11 +283,11 @@
     },
     {
       "status": "looked-up",
-      "notice": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX and quantized (smoothquant) by Olicorne.",
+      "notice": "Parakeet TDT 0.6B v3 by NVIDIA, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: converted to ONNX (fp16) and quantized (int8) by Olicorne.",
       "id": "parakeet-tdt",
       "group": "studio-models",
       "name": "Parakeet TDT 0.6B v3 speech recognition (quantized ONNX)",
-      "author": "NVIDIA; smoothquant ONNX conversion by Olicorne",
+      "author": "NVIDIA; ONNX conversion by Olicorne",
       "licence": "CC-BY-4.0",
       "link": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
       "shipped": "downloaded",
@@ -630,6 +630,25 @@
         "ml:transcribe:*"
       ],
       "source": "OpenAI Whisper repository LICENSE (MIT); Hugging Face cards openai/whisper-large-v3-turbo (mit), openai/whisper-small (apache-2.0), dropbox-dash/faster-whisper-large-v3-turbo (mit), Systran/faster-whisper-small (mit); faster-whisper and CTranslate2 on PyPI (MIT); the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/whisper-large-v3-turbo and frameleaf/whisper-small)"
+    },
+    {
+      "status": "looked-up",
+      "notice": "Studio captions in other languages (owner decision 2026-10-29, FL-641): Meta AI's M2M100 418M as the int8 CTranslate2 conversion jncraton/m2m100_418M-ct2-int8 revision 7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0 (model.bin SHA-256 d6703dd9f920ff896e45c3d97b490761bed5944937b90bbe6a7245f5652542d4), run by CTranslate2 (MIT, OpenNMT) with SentencePiece (Apache-2.0, Google), served unchanged by the Frameleaf model mirror. Only caption text is sent; it runs on this server's ML worker or a computer at home.",
+      "id": "m2m100-translate",
+      "group": "library-models",
+      "name": "M2M100 418M translation for Studio captions (CTranslate2 conversion)",
+      "author": "Meta AI (fairseq); CTranslate2 conversion by Jon Craton",
+      "licence": "MIT (M2M100 weights and the conversion; CTranslate2), Apache-2.0 (SentencePiece)",
+      "link": "https://github.com/facebookresearch/fairseq/tree/main/examples/m2m_100",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/fairseq-m2m100-mit.txt",
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "ml:translate:*"
+      ],
+      "source": "fairseq repository LICENSE (MIT); model cards facebook/m2m100_418M (mit) and jncraton/m2m100_418M-ct2-int8 (mit); CTranslate2 (MIT) and sentencepiece (Apache-2.0) on PyPI; the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/m2m100-418m)"
     },
     {
       "status": "recorded",
@@ -1657,6 +1676,13 @@
       "source": "https://raw.githubusercontent.com/openai/whisper/main/LICENSE",
       "retrievedOn": "2026-09-25",
       "sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d"
+    },
+    {
+      "file": "licenses/texts/fairseq-m2m100-mit.txt",
+      "title": "MIT (fairseq, M2M100)",
+      "source": "https://raw.githubusercontent.com/facebookresearch/fairseq/main/LICENSE",
+      "retrievedOn": "2026-10-29",
+      "sha256": "52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85"
     },
     {
       "file": "licenses/texts/multilingual-clip-mit.txt",

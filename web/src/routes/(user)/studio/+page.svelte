@@ -11,7 +11,7 @@
    */
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@frameleaf/ui';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -31,6 +31,7 @@
   } from '$lib/frameleaf/studio/assets';
   import { createStudioSourceResolution, studioSourceJson } from '$lib/frameleaf/studio/source-resolution';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { createStudioCutoutServices } from '$lib/frameleaf/studio/cutout';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
@@ -85,23 +86,42 @@
   import { rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioProjectSession,
+    isEmptyStudioExport,
     STUDIO_DRAFT_PROJECT_ID,
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { readEditorContinuity, reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
-  import { getProfileImageUrl } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
+  import { downloadBlob, getPeopleThumbnailUrl, getProfileImageUrl } from '$lib/utils';
   import {
+    studioCaptionExportSidecars,
+    studioCaptionLanguageTracks,
+    studioCaptionSidecarName,
+  } from '$lib/frameleaf/studio/caption-languages';
+  import { handleError } from '$lib/utils/handle-error';
+  import { createStudioLibraryServices } from '$lib/frameleaf/studio/library-search';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import {
+    type AssetResponseDto,
+    type PersonResponseDto,
     AssetRestorationMode,
+    createStudioCutout,
     createStudioExport,
+    getStudioCutout,
+    getStudioCutoutSubjects,
     getMediaOperation,
     resolveStudioProjectSource,
     getStudioRestoredVersion,
     isHttpError,
+    StudioExportSubtitleMode,
+    translateStudioCaptions,
     type StudioRestoredVersionDto,
   } from '@frameleaf/sdk';
-  import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
+  import {
+    studioKeepsHdrPicture,
+    studioRenderRefusalFromError,
+    studioRenderRefusalKey,
+  } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
@@ -147,7 +167,18 @@
         : 'frameleaf_studio_restored_name',
       { values: { name: version.originalFileName } },
     );
-  const libraryAssets = $derived(toStudioAssets(data.assets));
+  /**
+   * FL-636: library items the person brought in from the bin's Library view, after the handoff
+   * selection. They are offered exactly like handoff items, so the eligibility check still applies
+   * (a Locked one drops out when the session locks) and the server grants each when it is placed.
+   */
+  let libraryAdded = $state<AssetResponseDto[]>([]);
+  const libraryAssets = $derived(
+    toStudioAssets([
+      ...data.assets,
+      ...libraryAdded.filter((added) => data.assets.every((asset) => asset.id !== added.id)),
+    ]),
+  );
   const assets = $derived(
     withHdrSources(
       [...libraryAssets, ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version)))],
@@ -268,14 +299,13 @@
       const result = await cancelPublication(receipt.importId, receipt.publicationId, origin.scope);
       receiptOperation =
         result.status === 'already-published'
-          ? 'Already published in this project; cancellation did not erase the retained file.'
+          ? $t('frameleaf_studio_receipts_already_published')
           : result.receipt.cleanupPending
-            ? 'Cancelled; private file cleanup is pending.'
-            : 'Cancelled.';
+            ? $t('frameleaf_studio_receipts_cancelled_cleanup')
+            : $t('frameleaf_studio_receipts_state_cancelled');
     } catch {
       if (!origin.controller.signal.aborted && isImportScopeCurrent(origin.scope)) {
-        receiptOperation =
-          'Cancellation unavailable; the publication outcome is unknown. Refresh receipts to reconcile.';
+        receiptOperation = $t('frameleaf_studio_receipts_cancel_unknown');
       }
     }
   };
@@ -847,8 +877,45 @@
     resolve: (id, studioSourceResolutionRequestDto, signal) =>
       resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }, { signal }),
   });
+  // FL-639: Cut out the subject. A completed cut-out's matte is a project file; reload the files first.
+  const cutouts = createStudioCutoutServices({
+    projectId: () => project.id,
+    api: {
+      subjects: (id, clipId) => getStudioCutoutSubjects({ id, clipId }),
+      create: (id, studioCutoutCreateDto) => createStudioCutout({ id, studioCutoutCreateDto }),
+      get: (id, cutoutId) => getStudioCutout({ id, cutoutId }),
+    },
+    // The same origin checks as the canonical import load: a sign-out, relock or Save as copy while
+    // the files reload must not write one project's files into another's list.
+    matteKept: async () => {
+      const origin = importOrigin;
+      if (!origin || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
+      const loaded = await loadStudioProjectImports(origin.scope.projectId, origin.controller.signal);
+      if (origin.controller.signal.aborted || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
+      const loadedIds = new Set(loaded.map((item) => item.id));
+      projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
+      await tick();
+    },
+  });
+  const libraryServices = createStudioLibraryServices({
+    language: () => $locale ?? 'en',
+    elevated: () => sessionAccess.isElevated,
+    offered: () => assets,
+    adopt: async (records) => {
+      const known = new Set(libraryAdded.map((asset) => asset.id));
+      libraryAdded = [...libraryAdded, ...records.filter((asset) => !known.has(asset.id))];
+      await tick();
+    },
+    personThumbnailUrl: (id) => getPeopleThumbnailUrl({ id } as PersonResponseDto),
+  });
   const services: StudioHostServices = {
+    ...libraryServices,
     resolveStudioProjectSource: resolveSource,
+    ...cutouts,
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,
     commitEditorDraft: async (graph, baseRevision, scope) => {
@@ -979,10 +1046,20 @@
       }
     },
     cancelProjectImportPublication: cancelPublication,
+    // FL-641: caption lines, as text, translated on the processing order (this server, then home computers).
+    translateCaptions: async (request) => {
+      const { lines } = await translateStudioCaptions({
+        id: project.id,
+        studioCaptionTranslationCreateDto: request as Parameters<
+          typeof translateStudioCaptions
+        >[0]['studioCaptionTranslationCreateDto'],
+      });
+      return { lines };
+    },
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
-        videoExportOpen = true;
+        void openVideoExport();
       } else {
         toastManager.danger($t('frameleaf_studio_export_unavailable'));
       }
@@ -1111,6 +1188,98 @@
     }
   };
   const canExportVideo = $derived(canExportBundle && writable);
+  /** FL-641: the language names Studio shows, in the person's own language. */
+  const captionLanguageName = (code: string) => {
+    try {
+      const name = new Intl.DisplayNames([$locale ?? 'en'], { type: 'language' }).of(code) ?? code;
+      return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+    } catch {
+      return code;
+    }
+  };
+  /** FL-641: the other languages ticked "Subtitle track in the export", named for the export dialog. */
+  const captionExportLanguages = $derived(
+    studioCaptionLanguageTracks(project.graph)
+      .filter((track) => track.subtitle)
+      .map((track) => captionLanguageName(track.language)),
+  );
+  /**
+   * FL-641: each ticked language travels with a video export as its own subtitle file (SRT), saved next
+   * to it when the export is queued. The picture carries the language "In the picture".
+   */
+  const saveCaptionSidecars = (choice: StudioExportChoice) => {
+    if (!choice.subtitleMode || choice.subtitleMode === StudioExportSubtitleMode.Off) {
+      return;
+    }
+    const sidecars = studioCaptionExportSidecars(project.graph, choice.range);
+    for (const sidecar of sidecars) {
+      downloadBlob(
+        new Blob([sidecar.srt], { type: 'application/x-subrip' }),
+        studioCaptionSidecarName(project.name, sidecar.language),
+      );
+    }
+    if (sidecars.length > 0) {
+      const languages = sidecars.map((sidecar) => captionLanguageName(sidecar.language)).join(', ');
+      toastManager.primary($t('frameleaf_studio_export_caption_languages_saved', { values: { languages } }));
+    }
+  };
+  /** How long Export waits for the editor to hand over an edit it has marked but not staged yet. */
+  const EDITOR_STAGE_WAIT_MS = 3000;
+  let stagedWaiters: Array<() => void> = [];
+  $effect(() => {
+    if (!dirty || sessionState?.hasDraft) {
+      const waiting = stagedWaiters;
+      stagedWaiters = [];
+      for (const resolve of waiting) {
+        resolve();
+      }
+    }
+  });
+  /** Resolves true once the editor's latest edit is staged with the session (or there is none). */
+  const editorStaged = () =>
+    new Promise<boolean>((resolve) => {
+      if (!dirty || sessionState?.hasDraft) {
+        resolve(true);
+        return;
+      }
+      const done = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        stagedWaiters = stagedWaiters.filter((waiter) => waiter !== done);
+        resolve(false);
+      }, EDITOR_STAGE_WAIT_MS);
+      stagedWaiters.push(done);
+    });
+
+  /**
+   * FL-674: the dialog picks its options from what the server knows about the project's sources
+   * (which are HDR, what is placed), so the latest edit is saved first: one the editor has marked but
+   * not staged yet (it stages after a short pause) is waited for, then the draft is flushed. A save
+   * that fails, or a session that can no longer write, leaves the dialog closed and says why.
+   */
+  const openVideoExport = async () => {
+    if ((dirty || sessionState?.hasDraft) && writable) {
+      if (!(await editorStaged())) {
+        toastManager.danger($t('frameleaf_studio_export_failed'));
+        return;
+      }
+      try {
+        await session.flush();
+      } catch (error) {
+        handleError(error, $t('frameleaf_studio_export_failed'));
+        return;
+      }
+      // The session reports a failed save in its state rather than throwing: the edit is still unsaved,
+      // or the project was lost (a 404 clears the draft and leaves the session forbidden).
+      if (session.state.hasDraft || !writable || forbidden || accessLost) {
+        toastManager.danger($t('frameleaf_studio_export_failed'));
+        return;
+      }
+    }
+    videoExportOpen = true;
+  };
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
       try {
@@ -1138,11 +1307,18 @@
       exportJob = operation;
       followExport(operation.id);
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
+      saveCaptionSidecars(choice);
     } catch (error) {
       // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
       const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
       if (refusal) {
         toastManager.danger($t(studioRenderRefusalKey(refusal)));
+      } else if (
+        isHttpError(error) &&
+        (error.data as { code?: unknown } | null)?.code === 'studio_export_sources_refused'
+      ) {
+        // FL-673: name why, rather than a generic failure.
+        toastManager.danger($t('frameleaf_studio_export_sources_refused'));
       } else {
         handleError(error, $t('frameleaf_studio_export_failed'));
       }
@@ -1372,7 +1548,7 @@
         void readReceipts();
       }
     : undefined}
-  onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
+  onExport={canExportVideo ? () => void openVideoExport() : undefined}
   onRename={canRename ? onRename : undefined}
   {workspace}
   {opening}
@@ -1413,44 +1589,42 @@
     : 'sdr'}
   busy={exporting}
   {renderEvidence}
+  projectId={storedRevision === null ? null : project.id}
+  captionLanguages={captionExportLanguages}
+  empty={isEmptyStudioExport(project.graph)}
+  hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources)}
   onExport={(choice) => void onExportVideo(choice)}
 />
 
 {#if sessionState?.access === 'owner' && !accessLost && !forbidden && project.id !== STUDIO_DRAFT_PROJECT_ID}
-  <Dialog bind:open={receiptsOpen} title="Import receipts" closeLabel={$t('close')}>
-    <section aria-label="Generated import retention" class="fl-import-receipts">
-      <p>
-        Retained generated imports may carry historical processing and source labels into exported bundles. These labels
-        grant no access to the original source.
-      </p>
-      <Button disabled={receiptsBusy} onclick={() => void readReceipts()}>Refresh receipts</Button>
-      {#if receiptsUnavailable}<p role="status">
-          Receipts unavailable; publication outcomes are unknown. No files were resent.
-        </p>{/if}
+  <Dialog bind:open={receiptsOpen} title={$t('frameleaf_studio_receipts_title')} closeLabel={$t('close')}>
+    <section aria-label={$t('frameleaf_studio_receipts_section')} class="fl-import-receipts">
+      <p>{$t('frameleaf_studio_receipts_intro')}</p>
+      <Button disabled={receiptsBusy} onclick={() => void readReceipts()}
+        >{$t('frameleaf_studio_receipts_refresh')}</Button
+      >
+      {#if receiptsUnavailable}<p role="status">{$t('frameleaf_studio_receipts_unavailable')}</p>{/if}
       {#if receiptOperation}<p role="status">{receiptOperation}</p>{/if}
       {#if receiptPage}
         {#each receiptPage.items as receipt (receipt.publicationId)}
           <p>
             <code>{receipt.importId}</code>:
-            {#if receipt.state === 'registered'}Incomplete: registered before upload; vanished local bytes cannot be
-              recovered.
-            {:else if receipt.state === 'preparing'}Pending or unknown; refresh receipts to reconcile.
-            {:else if receipt.state === 'published'}Published in this project.
-            {:else}Cancelled.{/if}
-            {#if receipt.cleanupPending}Private file cleanup pending.{/if}
+            {#if receipt.state === 'registered'}{$t('frameleaf_studio_receipts_state_registered')}
+            {:else if receipt.state === 'preparing'}{$t('frameleaf_studio_receipts_state_preparing')}
+            {:else if receipt.state === 'published'}{$t('frameleaf_studio_receipts_state_published')}
+            {:else}{$t('frameleaf_studio_receipts_state_cancelled')}{/if}
+            {#if receipt.cleanupPending}{$t('frameleaf_studio_receipts_cleanup_pending')}{/if}
             {#if receipt.state === 'registered' || receipt.state === 'preparing'}
               <Button disabled={receiptsBusy} onclick={() => void onCancelPublication(receipt)}
-                >Cancel publication</Button
+                >{$t('frameleaf_studio_receipts_cancel')}</Button
               >
             {/if}
           </p>
         {/each}
-        {#if receiptPage.items.length === 0}<p>
-            No publication receipts on this page. Retained files load separately.
-          </p>{/if}
+        {#if receiptPage.items.length === 0}<p>{$t('frameleaf_studio_receipts_empty')}</p>{/if}
         {#if receiptPage.nextCursor}
           <Button disabled={receiptsBusy} onclick={() => void readReceipts(receiptPage?.nextCursor ?? undefined)}
-            >Older receipts</Button
+            >{$t('frameleaf_studio_receipts_older')}</Button
           >
         {/if}
       {/if}

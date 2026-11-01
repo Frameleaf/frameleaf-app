@@ -7,12 +7,12 @@ import { join } from 'node:path';
 import type { AuditReport } from 'src/commands/migrate/audit';
 import { ServerClient } from 'src/commands/migrate/client';
 import { Controller } from 'src/commands/migrate/controller';
-import { describePreflight, runPipeline, verifyLedger } from 'src/commands/migrate/index';
+import { describePreflight, printSummary, runPipeline, verifyLedger } from 'src/commands/migrate/index';
 import { Ledger } from 'src/commands/migrate/ledger';
 import { FOREIGN_PATH, sanitizeDetail, sanitizeUrl } from 'src/commands/migrate/report';
 import type { MigrateOptions } from 'src/commands/migrate/types';
 import ts from 'typescript';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Disposable source/destination fixtures: two in-process HTTP servers speaking the slice of
@@ -31,6 +31,8 @@ interface FixtureAsset {
   originalFileName: string;
   type: string;
   livePhotoVideoId?: string;
+  visibility?: string;
+  isFavorite?: boolean;
 }
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('base64');
@@ -86,8 +88,8 @@ class SourceFixture {
       type: asset.type,
       fileCreatedAt: '2024-05-01T10:00:00.000Z',
       fileModifiedAt: '2024-05-01T10:00:00.000Z',
-      isFavorite: false,
-      visibility: 'timeline',
+      isFavorite: asset.isFavorite ?? false,
+      visibility: asset.visibility ?? 'timeline',
       livePhotoVideoId: asset.livePhotoVideoId ?? null,
       exifInfo: {},
     };
@@ -113,7 +115,9 @@ class SourceFixture {
         tagIds?: string[];
         personIds?: string[];
       };
-      let items = dto.visibility === 'timeline' ? this.assets : [];
+      // Like the server: exactly the requested visibility. Locked needs an elevated session,
+      // which an API key never has, so those items are never listed.
+      let items = this.assets.filter((asset) => (asset.visibility ?? 'timeline') === dto.visibility);
       if (dto.albumIds) {
         const members = new Set(this.albumMembers.get(dto.albumIds[0]));
         items = items.filter((asset) => members.has(asset.id));
@@ -164,8 +168,16 @@ class SourceFixture {
 class DestinationFixture {
   config: unknown = { frameleaf: { cloudConfigured: false } };
   uploads = 0;
-  assets = new Map<string, { id: string; checksum: string }>();
-  albums: Array<{ id: string; albumName: string; parentId?: string; assetIds: Set<string> }> = [];
+  assets = new Map<string, { id: string; checksum: string; isTrashed?: boolean }>();
+  albums: Array<{
+    id: string;
+    albumName: string;
+    parentId?: string;
+    kind?: string;
+    ownerId?: string;
+    assetIds: Set<string>;
+  }> = [];
+  assetUpdates = new Map<string, Json>();
   tags = new Map<string, string>();
   stacks: string[][] = [];
   people: Json[] = [];
@@ -198,7 +210,7 @@ class DestinationFixture {
         results: assets.map(({ id, checksum }) => {
           const existing = this.assets.get(checksum);
           return existing
-            ? { id, action: 'reject', reason: 'duplicate', assetId: existing.id }
+            ? { id, action: 'reject', reason: 'duplicate', assetId: existing.id, isTrashed: !!existing.isTrashed }
             : { id, action: 'accept' };
         }),
       });
@@ -220,19 +232,48 @@ class DestinationFixture {
       const asset = this.assets.values().find(({ id }) => id === assetMatch[1]);
       return asset ? send(res, 200, asset) : send(res, 404, { message: 'missing asset' });
     }
-    if (/^PUT \/assets\/[^/]+(\/metadata)?$/.test(route)) {
-      return send(res, 200, route.endsWith('/metadata') ? [] : {});
+    if (route === 'POST /trash/restore/assets') {
+      const ids = new Set(json().ids as string[]);
+      for (const item of this.assets.values()) {
+        if (ids.has(item.id)) {
+          item.isTrashed = false;
+        }
+      }
+      return send(res, 200, { count: ids.size });
+    }
+    const assetUpdate = /^PUT \/assets\/([^/]+)$/.exec(route);
+    if (assetUpdate) {
+      this.assetUpdates.set(assetUpdate[1], { ...this.assetUpdates.get(assetUpdate[1]), ...json() });
+      return send(res, 200, {});
+    }
+    if (/^PUT \/assets\/[^/]+\/metadata$/.test(route)) {
+      return send(res, 200, []);
     }
     if (route === 'GET /albums') {
+      // Like the server: every album the user belongs to, unless isOwned=true narrows it.
+      const isOwned = new URLSearchParams(path.split('?', 2)[1]).get('isOwned') === 'true';
       return send(
         res,
         200,
-        this.albums.map((album) => ({ id: album.id, albumName: album.albumName, parentId: album.parentId })),
+        this.albums
+          .filter((album) => !isOwned || (album.ownerId ?? 'user-b') === 'user-b')
+          .map((album) => ({ id: album.id, albumName: album.albumName, parentId: album.parentId, kind: album.kind })),
       );
     }
     if (route === 'POST /albums') {
-      const dto = json() as { albumName: string; parentId?: string };
-      const album = { id: randomUUID(), albumName: dto.albumName, parentId: dto.parentId, assetIds: new Set<string>() };
+      const dto = json() as { albumName: string; parentId?: string; kind?: string };
+      // Like the server's requireCollection: albums nest only inside a collection.
+      if (dto.parentId && this.albums.find((item) => item.id === dto.parentId)?.kind !== 'collection') {
+        return send(res, 400, { message: 'Albums nest only inside a collection' });
+      }
+      const album = {
+        id: randomUUID(),
+        albumName: dto.albumName,
+        parentId: dto.parentId,
+        kind: dto.kind ?? 'album',
+        ownerId: 'user-b',
+        assetIds: new Set<string>(),
+      };
       this.albums.push(album);
       return send(res, 201, { id: album.id });
     }
@@ -264,8 +305,16 @@ class DestinationFixture {
       return send(res, 200, { count: 0 });
     }
     if (route === 'POST /stacks') {
-      this.stacks.push(json().assetIds as string[]);
+      // Like the server: a stack listing another stack's primary absorbs that stack.
+      const assetIds = json().assetIds as string[];
+      this.stacks = this.stacks.filter((stack) => !assetIds.includes(stack[0]));
+      this.stacks.push(assetIds);
       return send(res, 201, { id: randomUUID() });
+    }
+    const personMatch = /^GET \/people\/([^/]+)$/.exec(route);
+    if (personMatch) {
+      const person = this.people.find((item) => item.id === personMatch[1]);
+      return person ? send(res, 200, person) : send(res, 400, { message: 'Not found or no person.read access' });
     }
     if (route === 'GET /search/person') {
       return send(res, 200, this.people);
@@ -356,11 +405,28 @@ describe('migrate against disposable source/destination fixtures', { timeout: 15
       asset('a2', 'IMG_0002.jpg'),
       asset('a3', 'Lake morning.jpg'),
       asset('a4', 'IMG_0004.HEIC', { livePhotoVideoId: 'a5' }),
-      asset('a5', 'IMG_0004.MOV', { type: 'VIDEO' }),
+      // The server stores every Live Photo motion clip as Hidden.
+      asset('a5', 'IMG_0004.MOV', { type: 'VIDEO', visibility: 'hidden' }),
     ];
     source.albums = [
-      { id: 'al-trips', albumName: 'Trips', description: '', parentId: null, order: 'desc', sortOrder: null },
-      { id: 'al-banff', albumName: 'Banff', description: '', parentId: 'al-trips', order: 'desc', sortOrder: 1 },
+      {
+        id: 'al-trips',
+        albumName: 'Trips',
+        description: '',
+        parentId: null,
+        kind: 'collection',
+        order: 'desc',
+        sortOrder: null,
+      },
+      {
+        id: 'al-banff',
+        albumName: 'Banff',
+        description: '',
+        parentId: 'al-trips',
+        kind: 'album',
+        order: 'desc',
+        sortOrder: 1,
+      },
     ];
     source.albumMembers.set('al-banff', ['a1', 'a2', 'a3']);
     source.tags = [{ id: 't-canada', value: 'Travel/Canada' }];
@@ -475,6 +541,54 @@ describe('migrate against disposable source/destination fixtures', { timeout: 15
     expect(source.writes()).toEqual([]);
   }, 15_000);
 
+  it('resume skips photos added after a finished scan; --rescan copies only those, with no duplicates', async () => {
+    const { report: first } = await run(options());
+    expect(first!.ok).toBe(true);
+    expect(destination.uploads).toBe(5);
+
+    // A new photo lands on the source, in an existing album, tag and stack.
+    source.assets.push(asset('a6', 'IMG_0006.jpg'));
+    source.albumMembers.get('al-banff')!.push('a6');
+    source.tagMembers.get('t-canada')!.push('a6');
+    source.stacks = [{ id: 's1', primaryAssetId: 'a1', assets: [{ id: 'a1' }, { id: 'a2' }, { id: 'a6' }] }];
+    // An existing photo gains its Live Photo motion clip.
+    source.assets.push(asset('a7', 'Lake morning.MOV', { type: 'VIDEO', visibility: 'hidden' }));
+    source.assets[2].livePhotoVideoId = 'a7';
+    // The owner renamed the copied person on the destination.
+    (destination.people[0] as { name: string }).name = 'Alice Smith';
+
+    // A plain rerun resumes fast from the ledger and never sees it.
+    const { report: resumed } = await run(options());
+    expect(destination.uploads).toBe(5);
+    expect(resumed!.assets.total).toBe(5);
+    expect(resumed!.ok).toBe(true);
+
+    // --rescan walks the source again and copies only the new files.
+    const { report: rescanned } = await run(options({ rescan: true }));
+    expect(destination.uploads).toBe(7);
+    const bIdOf = (item: FixtureAsset) => destination.assets.get(sha256(item.bytes))!.id;
+    expect(destination.assets.has(sha256(source.assets[5].bytes))).toBe(true);
+    expect(rescanned!.assets).toEqual({ total: 7, transferred: 7, checked: 7, verified: 7, missing: 0, failed: 0 });
+    expect(rescanned!.ok).toBe(true);
+    // Same albums, same person, one stack; the new photo joins its existing album and stack.
+    expect(destination.albums.map((album) => album.albumName).toSorted()).toEqual(['Banff', 'Trips']);
+    expect(destination.albums.find((album) => album.albumName === 'Banff')!.assetIds.size).toBe(4);
+    expect(destination.people).toEqual([expect.objectContaining({ name: 'Alice Smith' })]);
+    expect(destination.stacks).toEqual([[bIdOf(source.assets[0]), bIdOf(source.assets[1]), bIdOf(source.assets[5])]]);
+    // The changed Live Photo pairing is linked on the destination.
+    expect(destination.assetUpdates.get(bIdOf(source.assets[2]))).toMatchObject({
+      livePhotoVideoId: bIdOf(source.assets[6]),
+    });
+
+    // Rescanning again with nothing new copies nothing.
+    await run(options({ rescan: true }));
+    expect(destination.uploads).toBe(7);
+    expect(destination.stacks).toHaveLength(1);
+    expect(destination.people).toHaveLength(1);
+    expect(destination.albums).toHaveLength(2);
+    expect(source.writes()).toEqual([]);
+  });
+
   it('writes a report with owners, hierarchy, physical references and no secrets or local paths', async () => {
     source.failing.add('a3');
     const { report, auditPath } = await run(options());
@@ -517,6 +631,94 @@ describe('migrate against disposable source/destination fixtures', { timeout: 15
     const { report } = await run(options());
     expect(report?.physicalReferences).toMatchObject({ newUploads: 4, matchedExisting: 1 });
     expect(report?.ok).toBe(true);
+  });
+
+  it('copies the Hidden motion clip of a Live Photo and links it to its still', async () => {
+    const { report } = await run(options());
+    expect(destination.assets.has(sha256(source.assets[4].bytes))).toBe(true);
+    expect(report?.assets).toMatchObject({ total: 5, verified: 5, failed: 0 });
+    expect(report?.physicalReferences).toMatchObject({ livePhotoPairs: 1, livePhotoPairsLinked: 1 });
+    expect(report?.ok).toBe(true);
+  });
+
+  it('never calls the source safe to decommission, because Locked items are not copied', async () => {
+    source.assets.push(asset('a6', 'Secret.jpg', { visibility: 'locked' }));
+    const { report } = await run(options());
+    expect(report?.lockedMedia).toBe('not-copied');
+
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void lines.push(line));
+    try {
+      printSummary(report, 'ledger.sqlite', 'ledger.sqlite.audit.json');
+    } finally {
+      log.mockRestore();
+    }
+    const text = lines.join('\n');
+    expect(text).not.toMatch(/safe to decommission/i);
+    expect(text).toMatch(/Locked/);
+  });
+
+  it('recreates a collection as a collection, so its albums nest inside it', async () => {
+    const { report } = await run(options());
+    const trips = destination.albums.find((album) => album.albumName === 'Trips')!;
+    expect(trips.kind).toBe('collection');
+    expect(destination.albums.find((album) => album.albumName === 'Banff')?.parentId).toBe(trips.id);
+    expect(report?.albums).toMatchObject({ created: 2, linked: 2 });
+  });
+
+  it('restores an original that only sits in the destination trash instead of counting it present', async () => {
+    destination.assets.set(sha256(source.assets[0].bytes), {
+      id: 'b-trashed',
+      checksum: sha256(source.assets[0].bytes),
+      isTrashed: true,
+    });
+    const { report } = await run(options());
+    expect(destination.assets.get(sha256(source.assets[0].bytes))?.isTrashed).toBe(false);
+    expect(report?.ok).toBe(true);
+
+    // Trashed again after the run: the audit must not count it as verified.
+    destination.assets.get(sha256(source.assets[0].bytes))!.isTrashed = true;
+    const { client: to } = await ServerClient.connect(destination.url, DEST_KEY);
+    const verified = await verifyLedger(to, 'owner@destination.test', options().ledger, new Controller(), [DEST_KEY]);
+    expect(verified.report.ok).toBe(false);
+    expect(verified.report.assets).toMatchObject({ verified: 4, missing: 1 });
+  });
+
+  it('never reuses an album another user shared, and keeps same-named source albums apart', async () => {
+    const shared = {
+      id: 'b-shared-trips',
+      albumName: 'Trips',
+      kind: 'collection',
+      ownerId: 'user-other',
+      assetIds: new Set<string>(),
+    };
+    destination.albums.push(shared);
+    source.albums.push(
+      { id: 'al-misc-1', albumName: 'Misc', description: '', parentId: null, kind: 'album', sortOrder: null },
+      { id: 'al-misc-2', albumName: 'Misc', description: '', parentId: null, kind: 'album', sortOrder: null },
+    );
+    source.albumMembers.set('al-misc-1', ['a1']);
+    source.albumMembers.set('al-misc-2', ['a2']);
+
+    await run(options());
+    const banff = destination.albums.find((album) => album.albumName === 'Banff')!;
+    expect(banff.parentId).not.toBe(shared.id);
+    expect(shared.assetIds.size).toBe(0);
+    const misc = destination.albums.filter((album) => album.albumName === 'Misc');
+    expect(misc).toHaveLength(2);
+    expect(misc.map((album) => album.assetIds.size)).toEqual([1, 1]);
+
+    // A repeat run reuses its own albums and creates nothing new.
+    await run(options());
+    expect(destination.albums.filter((album) => album.albumName === 'Misc')).toHaveLength(2);
+  });
+
+  it('applies favorite and archive to originals the destination already held', async () => {
+    source.assets[0].isFavorite = true;
+    source.assets[0].visibility = 'archive';
+    destination.assets.set(sha256(source.assets[0].bytes), { id: 'b-existing', checksum: 'x' });
+    await run(options());
+    expect(destination.assetUpdates.get('b-existing')).toMatchObject({ isFavorite: true, visibility: 'archive' });
   });
 
   it('verify re-audits only the destination and separates transferred from verified', async () => {

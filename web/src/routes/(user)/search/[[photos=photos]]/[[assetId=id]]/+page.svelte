@@ -9,6 +9,7 @@
   import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import SpokenWordsResults from '$lib/components/frameleaf/SpokenWordsResults.svelte';
   import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
   import SearchAsk from '$lib/components/frameleaf/SearchAsk.svelte';
@@ -166,6 +167,9 @@
   /** ACCOUNT-P3: Search › "Include archived items", as the search palette applies it. */
   const includeArchived = $derived(authManager.authenticated && !!authManager.preferences.search?.includeArchived);
   const activeSearch = $derived.by((): LibrarySearchQuery | null => {
+    if (discoveryQuery?.mode === 'speech') {
+      return null;
+    }
     if (hasSearchQuery) {
       const request = discoveryQuery
         ? structuredSearchRequest(withArchivePreference(toSearchDto(discoveryQuery), includeArchived), null)
@@ -739,7 +743,7 @@
             <Icon icon={mdiTuneVariant} size="16" aria-hidden />
             {$t('frameleaf_search_results_filter')}
           </button>
-          {#if discoveryQuery}
+          {#if discoveryQuery && discoveryQuery.mode !== 'speech'}
             <button type="button" class="button" onclick={() => (saving = true)}>
               <Icon icon={mdiContentSaveOutline} size="16" aria-hidden />
               {$t('frameleaf_search_save_search')}
@@ -764,7 +768,9 @@
         <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
         <VideoMomentResults query={terms.query} />
       {/if}
-      {#if !hasSearchQuery && showAskSearch}
+      {#if discoveryQuery?.mode === 'speech'}
+        <SpokenWordsResults query={discoveryQuery} />
+      {:else if !hasSearchQuery && showAskSearch}
         <!-- FL-31: Ask about your photos, in the search palette's language (SearchAsk.svelte). -->
         <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-2 sm:px-6">
           <SearchAsk

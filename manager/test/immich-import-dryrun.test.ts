@@ -56,6 +56,24 @@ test('pg_restore --list closing stdin after the table of contents is not a faile
   }
 });
 
+test('database commands pass the password through the docker environment, not its argv', async () => {
+  const calls: { args: string[]; options?: CommandOptions }[] = [];
+  const docker = new Docker((async (_binary: string, args: string[], options?: CommandOptions) => {
+    calls.push({ args, options });
+    return '';
+  }) as typeof command);
+  const db = { container: 'c'.repeat(64), user: 'postgres', name: 'frameleaf', password: 's3cret-value' } as never;
+  await docker.sql(db, 'SELECT 1');
+  await docker.dump(db, '/unused-destination');
+  await docker.restore(db, '/unused-source');
+  assert.equal(calls.length, 3);
+  for (const { args, options } of calls) {
+    assert.ok(!args.some((arg) => arg.includes('s3cret-value')));
+    assert.equal(args[args.indexOf('--env') + 1], 'PGPASSWORD');
+    assert.equal(options?.env?.PGPASSWORD, 's3cret-value');
+  }
+});
+
 test('the source fingerprint ignores the order Docker lists mounts and network aliases in', () => {
   const first = [container('a'), container('b')];
   const second = structuredClone(first).reverse();
@@ -105,6 +123,22 @@ test('failed commands log the command, exit code and a redacted stderr tail', as
   assert.match(logged, /input file is too short/);
   assert.doesNotMatch(logged, /hunter2|s3cret-value/);
   assert.ok(logged.length < 3000, 'only the tail of stderr is logged');
+});
+
+test('failed commands also redact secrets passed through the environment', async (t) => {
+  const lines: string[] = [];
+  t.mock.method(console, 'error', (line: string) => lines.push(line));
+  await assert.rejects(
+    command('docker', ['-e', 'process.stderr.write("auth failed for " + process.env.PGPASSWORD);process.exit(2)'], {
+      executable: process.execPath,
+      timeout: 5000,
+      env: { PGPASSWORD: 'env-s3cret' },
+    }),
+    { message: 'docker_operation_failed' },
+  );
+  const logged = lines.join('\n');
+  assert.match(logged, /auth failed for/);
+  assert.doesNotMatch(logged, /env-s3cret/);
 });
 
 test('import failures read as reasons, not error codes', () => {

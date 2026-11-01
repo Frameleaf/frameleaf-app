@@ -65,8 +65,7 @@
     <strong>{when}</strong>
     <small class="filename">{filename}</small>
     <small>
-      {#if relativeTime}{relativeTime} ·
-      {/if}{$t('version')}
+      {#if relativeTime}{`${relativeTime} · `}{/if}{$t('version')}
       {version ? `v${version}` : $t('unknown')}
     </small>
   </div>
@@ -201,7 +200,8 @@
   .mt-actions .button.danger {
     color: var(--fl-danger);
   }
-  @media (max-width: 700px) {
+  /* Stack by the list's width, not the window's: the restore card is narrow on any screen. */
+  @container backup-list (max-width: 640px) {
     .mt-row {
       grid-template-columns: 22px minmax(0, 1fr);
     }
@@ -209,6 +209,11 @@
     .mt-actions {
       grid-column: 2;
       justify-content: flex-start;
+    }
+    .mt-row-meta {
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
     }
   }
 </style>

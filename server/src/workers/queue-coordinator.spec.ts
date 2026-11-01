@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
+import { performance } from 'node:perf_hooks';
 import type { MessagePort } from 'node:worker_threads';
 import { QUEUE_EXECUTION_CAPACITY } from 'src/queue/admission.js';
+import { pruneQueueHistory } from 'src/queue/retention.js';
 import { QUEUE_TIMING, QueueClaim, QueueDispatch } from 'src/queue/types.js';
 import { coordinate } from 'src/workers/queue-coordinator.js';
 
@@ -62,6 +64,7 @@ describe('coordinator capacity admission', () => {
     fixture.port = undefined;
     fixture.wake = undefined;
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it.each(['manifest', 'claim'])(
@@ -189,7 +192,7 @@ describe('coordinator capacity admission', () => {
     expect(fixture.store.claim).toHaveBeenLastCalledWith('deep', 'worker', QUEUE_EXECUTION_CAPACITY - 1);
   });
 
-  it('reconciles all queues on startup and every five seconds despite dropped notifications, including idle cleanup', async () => {
+  it('finds work within five seconds despite dropped notifications, and reconciles after a claim', async () => {
     vi.useFakeTimers();
     await coordinate(coordinatorData);
     expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
@@ -199,8 +202,11 @@ describe('coordinator capacity admission', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
     expect(fixture.store.feedManifest).not.toHaveBeenCalled();
-    // A durable child commits with no delivered notification. Only the full scan discovers it.
+    // A durable child commits with no delivered notification. The scan's discovery probe finds it.
     let childAvailable = true;
+    fixture.store.queuesWithUnfinishedWork.mockImplementation(() =>
+      Promise.resolve(childAvailable ? ['thumbnail'] : []),
+    );
     fixture.store.claim.mockImplementation((queue: string) => {
       if (queue !== 'thumbnail' || !childAvailable) return Promise.resolve([]);
       childAvailable = false;
@@ -211,15 +217,39 @@ describe('coordinator capacity admission', () => {
       type: 'execute',
       claim: { id: 'dropped-child', queue: 'thumbnail', deadlineMs: 60_000 },
     });
-    expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
-    expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
     fixture.store.feedManifest.mockClear();
     fixture.port!.emit('message', { type: 'settled', id: 'dropped-child' });
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.store.feedManifest).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
-    // feedManifest runs sharing/terminal-alias settlement and redaction even without unfinished work.
-    expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
+    // feedManifest runs sharing/terminal-alias settlement and redaction even without unfinished work;
+    // the pass starts from the queue after the last one served
+    expect(fixture.store.feedManifest.mock.calls.flat().toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual(
+      coordinatorData.queues.toSorted((a, b) => a.localeCompare(b)),
+    );
+  });
+
+  it('backs off full reconciliation while every queue is idle, up to 30 seconds', async () => {
+    vi.useFakeTimers();
+    fixture.store.queuesWithUnfinishedWork.mockResolvedValue([]);
+    await coordinate(coordinatorData);
+    const advance = async (ms: number) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      await vi.advanceTimersByTimeAsync(0);
+    };
+    const fullPasses = () => fixture.store.feedManifest.mock.calls.length / coordinatorData.queues.length;
+    expect(fullPasses()).toBe(1);
+    // idle passes are spaced 10 s, 20 s, then 30 s apart
+    await advance(10_000);
+    expect(fullPasses()).toBe(2);
+    await advance(20_000);
+    expect(fullPasses()).toBe(3);
+    await advance(25_000);
+    expect(fullPasses()).toBe(3);
+    await advance(5000);
+    expect(fullPasses()).toBe(4);
+    await advance(30_000);
+    expect(fullPasses()).toBe(5);
   });
 
   it('remembers a full scan requested while an ordinary dispatch visit is waiting', async () => {
@@ -234,7 +264,8 @@ describe('coordinator capacity admission', () => {
       fixture.wake!();
       await vi.advanceTimersByTimeAsync(0);
       expect(fixture.store.feedManifest.mock.calls).toEqual([['deep']]);
-      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
+      // an idle start-up skips the first scan's full pass, so the second one asks for it
+      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan * 2);
       expect(fixture.store.feedManifest).toHaveBeenCalledOnce();
       release();
       await vi.advanceTimersByTimeAsync(0);
@@ -242,6 +273,114 @@ describe('coordinator capacity admission', () => {
       expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
     } finally {
       release();
+    }
+  });
+
+  it('renews leases while recovery is still waiting', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    fixture.store.claim.mockResolvedValueOnce([{ id: 'running', queue: 'deep', deadlineMs: 600_000 }]);
+    await coordinate(coordinatorData);
+    const recovery = Promise.withResolvers<void>();
+    fixture.store.recoverExpired.mockImplementationOnce(() => recovery.promise);
+    try {
+      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
+      const beats = fixture.store.heartbeat.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.heartbeat * 2);
+      expect(fixture.store.heartbeat.mock.calls.length).toBeGreaterThan(beats);
+      expect(coordinatorData.supervisor.postMessage).not.toHaveBeenCalledWith({ type: 'terminate' });
+      expect(fixture.port!.postMessage).not.toHaveBeenCalledWith({ type: 'cancel', id: 'running' });
+    } finally {
+      recovery.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+  });
+
+  it.each(['recovery', 'retention'])(
+    'dispatches while %s is pending without overlapping maintenance',
+    async (stage) => {
+      vi.useFakeTimers();
+      vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+      await coordinate(coordinatorData);
+      const held = Promise.withResolvers<number>();
+      const task = stage === 'recovery' ? fixture.store.recoverExpired : vi.mocked(pruneQueueHistory);
+      task.mockImplementationOnce(() => held.promise);
+      try {
+        await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
+        const sweeps = fixture.store.recoverExpired.mock.calls.length;
+        const prunes = vi.mocked(pruneQueueHistory).mock.calls.length;
+        fixture.store.claim.mockResolvedValueOnce([{ id: 'new-work', queue: 'deep', deadlineMs: 600_000 }]);
+        fixture.wake!();
+        await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep * 2);
+        expect(fixture.port!.postMessage).toHaveBeenCalledWith({
+          type: 'execute',
+          claim: { id: 'new-work', queue: 'deep', deadlineMs: 600_000 },
+        });
+        expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(sweeps);
+        expect(pruneQueueHistory).toHaveBeenCalledTimes(prunes);
+      } finally {
+        held.resolve(0);
+        await vi.advanceTimersByTimeAsync(0);
+      }
+    },
+  );
+
+  it('does not start maintenance before initialization succeeds', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    const initialized = Promise.withResolvers<void>();
+    fixture.store.initialize.mockImplementationOnce(() => initialized.promise);
+    const started = coordinate(coordinatorData);
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep * 2);
+    expect(fixture.store.recoverExpired).not.toHaveBeenCalled();
+    expect(pruneQueueHistory).not.toHaveBeenCalled();
+    initialized.resolve();
+    await started;
+    expect(fixture.store.recoverExpired).toHaveBeenCalledOnce();
+  });
+
+  it('retries failed maintenance on the next sweep without stopping dispatch', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    fixture.store.recoverExpired.mockRejectedValueOnce(new Error('fixture recovery failure'));
+    await coordinate(coordinatorData);
+    expect(fixture.port!.postMessage).toHaveBeenCalledWith({ type: 'unavailable' });
+    expect(fixture.store.feedManifest).toHaveBeenCalledTimes(coordinatorData.queues.length);
+    expect(pruneQueueHistory).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
+    expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(2);
+    expect(pruneQueueHistory).toHaveBeenCalledOnce();
+  });
+
+  it('does not start retention after shutdown during pending recovery', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    const recovery = Promise.withResolvers<void>();
+    fixture.store.recoverExpired.mockImplementationOnce(() => recovery.promise);
+    await coordinate(coordinatorData);
+    fixture.port!.emit('message', { type: 'stop' });
+    recovery.resolve();
+    await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep * 2);
+    expect(fixture.store.recoverExpired).toHaveBeenCalledOnce();
+    expect(pruneQueueHistory).not.toHaveBeenCalled();
+  });
+
+  it('keeps heartbeat requests serialized and still terminates after a real heartbeat outage', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    fixture.store.claim.mockResolvedValueOnce([{ id: 'running', queue: 'deep', deadlineMs: 600_000 }]);
+    await coordinate(coordinatorData);
+    const heartbeat = Promise.withResolvers<void>();
+    fixture.store.heartbeat.mockImplementation(() => heartbeat.promise);
+    try {
+      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.heartbeat * 4 + QUEUE_TIMING.cancelGrace);
+      // One initial heartbeat and one pending request; timer wakes cannot overlap it.
+      expect(fixture.store.heartbeat).toHaveBeenCalledTimes(2);
+      expect(coordinatorData.supervisor.postMessage).toHaveBeenCalledWith({ type: 'terminate' });
+      expect(fixture.port!.postMessage).toHaveBeenCalledWith({ type: 'cancel', id: 'running' });
+    } finally {
+      heartbeat.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     }
   });
 

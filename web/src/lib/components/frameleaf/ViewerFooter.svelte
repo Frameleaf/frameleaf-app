@@ -12,7 +12,7 @@
   import { getSharedLink } from '$lib/utils';
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
-  import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { canPlaySlideshow } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -38,7 +38,6 @@
 
   interface Props {
     asset: AssetResponseDto;
-    position?: ViewerPosition | null;
     canNavigateCollection: boolean;
     canShowFilmstrip: boolean;
     hasStack: boolean;
@@ -52,7 +51,6 @@
 
   let {
     asset,
-    position = null,
     canNavigateCollection,
     canShowFilmstrip,
     hasStack,
@@ -65,6 +63,9 @@
 
   const sharedLink = getSharedLink();
   const canPlayOriginal = $derived(!sharedLink || sendCopyPermitted(sharedLink));
+  // FL-630: without a playback copy the server plays the original, so that is what is selected, unless
+  // real-time playback makes a copy as the video plays
+  const hasPlaybackCopy = $derived(asset.playbackCopy !== false || featureFlagsManager.value.realtimeTranscoding);
   const { slideshowState, settingsOpen } = slideshowStore;
   const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
   // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.
@@ -94,12 +95,8 @@
     >
       <Icon icon={playing ? mdiPause : mdiPlay} size="21" aria-hidden />
     </button>
-    {#if position}
-      <span class="fl-position" aria-live="polite" data-testid="viewer-position">
-        {$t('frameleaf_viewer_position', { values: { index: position.index + 1, total: position.total } })}
-      </span>
-    {/if}
-    <!-- Phones reach the slideshow settings from the More menu; the footer keeps Play, the position and the filmstrip. -->
+    <!-- FL-707 item 14: one "N of M" counter, beside the file name at the top (ViewerTitle). -->
+    <!-- Phones reach the slideshow settings from the More menu; the footer keeps Play and the filmstrip. -->
     <button
       type="button"
       class="fl-tool fl-wide-only"
@@ -137,13 +134,18 @@
   <div class="fl-foot-group">
     {#if isVideoAsset(asset) && canPlayOriginal}
       <div class="fl-segment" role="group" aria-label={$t('frameleaf_viewer_video_source')}>
-        <button type="button" aria-pressed={isPlayingOriginalVideo} onclick={() => setPlayOriginalVideo(true)}>
+        <button
+          type="button"
+          aria-pressed={isPlayingOriginalVideo || !hasPlaybackCopy}
+          onclick={() => setPlayOriginalVideo(true)}
+        >
           {$t('frameleaf_viewer_source_original')}
         </button>
         <button
           type="button"
-          aria-pressed={!isPlayingOriginalVideo}
-          title={$t('frameleaf_viewer_optimized_title')}
+          aria-pressed={!isPlayingOriginalVideo && hasPlaybackCopy}
+          disabled={!hasPlaybackCopy}
+          title={hasPlaybackCopy ? $t('frameleaf_viewer_optimized_title') : $t('frameleaf_viewer_optimized_none')}
           onclick={() => setPlayOriginalVideo(false)}
         >
           {$t('frameleaf_viewer_source_optimized')}
@@ -290,14 +292,6 @@
     display: contents;
   }
 
-  .fl-position {
-    min-width: 58px;
-    color: var(--fl-on-material-muted);
-    font-size: var(--fl-font-small);
-    font-variant-numeric: var(--fl-numeric);
-    text-align: center;
-  }
-
   .fl-key-hint {
     color: var(--fl-on-material-muted);
     font-size: var(--fl-font-micro);
@@ -343,6 +337,11 @@
     cursor: pointer;
   }
 
+  .fl-segment button:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
   .fl-segment button[aria-pressed='true'] {
     background: color-mix(in srgb, var(--fl-viewer-text) 14%, transparent);
     color: var(--fl-viewer-text);
@@ -369,7 +368,7 @@
       height: var(--fl-control-height);
     }
 
-    /* One row that fits a 320px phone: Play, the position and the filmstrip, then what the item needs. */
+    /* One row that fits a 320px phone: Play and the filmstrip, then what the item needs. */
     .fl-zoom,
     .fl-wide-only {
       display: none;

@@ -22,6 +22,8 @@
   import {
     albumDirectoryFilters,
     albumDirectorySorts,
+    albumAncestors,
+    directoryAlbums,
     arrangeAlbumDirectory,
     canDropOnCollection,
     canEdit,
@@ -37,6 +39,7 @@
     type AlbumDetailsDraft,
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
+  import { albumColorStyle } from '$lib/frameleaf/album-tree';
   import { toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -54,11 +57,14 @@
   } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
+  import { searchContextFor } from '$lib/frameleaf/search-context';
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumDragData, isAlbumDrag } from '$lib/utils/album-drag';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     AlbumKind,
+    LibraryScope,
+    LibraryViewScope,
     SharedLinkType,
     createClassificationRule,
     getClassificationRule,
@@ -175,13 +181,9 @@
   const arrangement = $derived(
     arrangeAlbumDirectory(tree, { filter: view.filter, sort: view.sort, search, userId: currentUserId }),
   );
-  const everything = $derived([
-    ...tree.collections.flatMap((node) => [node.collection, ...node.albums]),
-    ...tree.albums,
-    ...tree.spaces,
-  ]);
+  const everything = $derived(directoryAlbums(tree));
   const editableCollections = $derived(
-    tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
+    everything.filter((album) => album.kind !== AlbumKind.Space && canEdit(album, currentUserId)),
   );
   const find = (id: string) => everything.find((album) => album.id === id);
 
@@ -197,6 +199,10 @@
   const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
   const openRoute = (album: AlbumResponseDto) =>
     isSpace(album) ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id });
+  /** Where "Move to…" may put an album: every album or collection the user can edit. */
+  const moveCandidates = $derived(
+    directoryAlbums(tree).filter((album) => album.kind !== AlbumKind.Space && canEdit(album, currentUserId)),
+  );
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
   const kindOf = (album: AlbumResponseDto) =>
     album.kind === AlbumKind.Collection
@@ -204,8 +210,7 @@
       : isSpace(album)
         ? $t('frameleaf_album_kind_space')
         : $t('frameleaf_album_kind_album');
-  const albumCountOf = (album: AlbumResponseDto) =>
-    tree.collections.find(({ collection }) => collection.id === album.id)?.albumCount ?? 0;
+  const albumCountOf = (album: AlbumResponseDto) => everything.filter(({ parentId }) => parentId === album.id).length;
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
     all: () => $t('all'),
@@ -316,7 +321,13 @@
   const createSmart = async (dto: ClassificationRuleCreateDto) => {
     busy = true;
     try {
-      const rule = await createClassificationRule({ classificationRuleCreateDto: dto });
+      const design = searchContextFor(new URL(page.url.href)).query.filter.libraryScope === LibraryViewScope.Design;
+      const rule = await createClassificationRule({
+        classificationRuleCreateDto: {
+          ...dto,
+          ...(design && { filter: { ...dto.filter, libraryScope: LibraryViewScope.Design } }),
+        },
+      });
       announce($t('frameleaf_albums_created', { values: { name: rule.albumName } }));
       await goto(Route.viewAlbum({ id: rule.albumId }));
       return true;
@@ -351,7 +362,8 @@
   const create = async (dto: CreateAlbumDto) => {
     busy = true;
     try {
-      const album = await handleCreateAlbumEntry(dto);
+      const design = searchContextFor(new URL(page.url.href)).query.filter.libraryScope === LibraryViewScope.Design;
+      const album = await handleCreateAlbumEntry({ ...dto, ...(design && { libraryScope: LibraryScope.Design }) });
       if (!album) {
         return false;
       }
@@ -459,7 +471,7 @@
   };
   /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
   const canDrag = (album: AlbumResponseDto) =>
-    reorderable || (album.kind === AlbumKind.Album && isOwner(album, currentUserId));
+    reorderable || (album.kind !== AlbumKind.Space && isOwner(album, currentUserId));
 
   /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
   const confirmDelete = async () => {
@@ -586,7 +598,6 @@
   {@const owner = isOwner(album, currentUserId)}
   {@const editor = canEdit(album, currentUserId)}
   {@const isAlbum = album.kind === AlbumKind.Album}
-  {@const isCollection = album.kind === AlbumKind.Collection}
   <!--
     The item menu in the prototype's order (Collections.jsx `menuFor`, lines 298-372), on the
     Frameleaf Menu. "Move earlier" / "Move later" (FL-52 custom order) sit with "Move to…", the
@@ -602,12 +613,12 @@
         <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('edit')}
       </MenuItem>
     {/if}
-    {#if editor && isCollection}
+    {#if editor && !isSpace(album)}
       <MenuItem onSelect={() => openCreate(AlbumKind.Album, album.id)}>
         <Icon icon={mdiPlus} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_album')}
       </MenuItem>
     {/if}
-    {#if owner && isAlbum}
+    {#if owner && !isSpace(album)}
       <MenuItem onSelect={() => (moveDialog = { open: true, album })}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
       </MenuItem>
@@ -671,10 +682,19 @@
       {#each list as album (album.id)}
         <div
           class="cell"
+          class:tile-tinted={!!albumColorStyle(album.color)}
+          style={albumColorStyle(album.color)}
           animate:listFlip={{ count: list.length }}
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
         >
+          {#if album.parentId}
+            <small class="album-path"
+              >{albumAncestors(tree, album)
+                .map(({ albumName }) => albumName)
+                .join(' / ')}</small
+            >
+          {/if}
           <AlbumTile
             {album}
             {currentUserId}
@@ -699,10 +719,19 @@
       {#each list as album (album.id)}
         <div
           role="listitem"
+          class:tile-tinted={!!albumColorStyle(album.color)}
+          style={albumColorStyle(album.color)}
           animate:listFlip={{ count: list.length }}
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
         >
+          {#if album.parentId}
+            <small class="album-path"
+              >{albumAncestors(tree, album)
+                .map(({ albumName }) => albumName)
+                .join(' / ')}</small
+            >
+          {/if}
           <AlbumTile
             {album}
             {currentUserId}
@@ -815,22 +844,29 @@
 
   {#each arrangement.shelves as shelf (shelf.collection.id)}
     {@const editor = canEdit(shelf.collection, currentUserId)}
-    <CollectionShelf
-      {shelf}
-      {currentUserId}
-      collapsed={isCollapsed(shelf.collection.id)}
-      canEdit={editor}
-      acceptsDrop={canDropOnCollection(dragged, shelf.collection, currentUserId)}
-      onToggle={() => toggleCollapsed(shelf.collection.id)}
-      onNewAlbum={() => openCreate(AlbumKind.Album, shelf.collection.id)}
-      onDrop={(albumId) => void dropOnCollection(albumId, shelf.collection)}
+    <!-- The shelf's icon wears the collection's colour (README point 22: "They also show in Albums"). -->
+    <div
+      class="shelf-tint"
+      class:tinted={!!albumColorStyle(shelf.collection.color)}
+      style={albumColorStyle(shelf.collection.color)}
     >
-      {#snippet actions()}{@render menu(shelf.collection)}{/snippet}
-      {@render albums(
-        shelf.albums,
-        editor ? $t('frameleaf_albums_shelf_empty_editor') : $t('frameleaf_albums_shelf_empty'),
-      )}
-    </CollectionShelf>
+      <CollectionShelf
+        {shelf}
+        {currentUserId}
+        collapsed={isCollapsed(shelf.collection.id)}
+        canEdit={editor}
+        acceptsDrop={canDropOnCollection(dragged, shelf.collection, currentUserId)}
+        onToggle={() => toggleCollapsed(shelf.collection.id)}
+        onNewAlbum={() => openCreate(AlbumKind.Album, shelf.collection.id)}
+        onDrop={(albumId) => void dropOnCollection(albumId, shelf.collection)}
+      >
+        {#snippet actions()}{@render menu(shelf.collection)}{/snippet}
+        {@render albums(
+          shelf.albums,
+          editor ? $t('frameleaf_albums_shelf_empty_editor') : $t('frameleaf_albums_shelf_empty'),
+        )}
+      </CollectionShelf>
+    </div>
   {/each}
 
   {#if arrangement.albums.length > 0}
@@ -932,7 +968,7 @@
   <AlbumMoveDialog
     bind:open={moveDialog.open}
     album={moveDialog.album}
-    targets={moveTargets(tree, moveDialog.album, currentUserId)}
+    albums={moveCandidates}
     {busy}
     onMove={(collectionId) => moveDialog.album && void move(moveDialog.album, collectionId)}
   />
@@ -972,8 +1008,10 @@
     bind:open={editDialog.open}
     kind={editDialog.album.kind}
     album={editDialog.album}
-    collections={editableCollections}
-    canMove={editDialog.album.kind === AlbumKind.Album && isOwner(editDialog.album, currentUserId)}
+    collections={editDialog.album
+      ? moveTargets(tree, editDialog.album, currentUserId).map(({ collection }) => collection)
+      : editableCollections}
+    canMove={editDialog.album.kind !== AlbumKind.Space && isOwner(editDialog.album, currentUserId)}
     onCreate={create}
     onSave={saveDetails}
   />
@@ -1026,6 +1064,21 @@
 {/if}
 
 <style>
+  /*
+   * An album or collection with a colour draws its fallback icon (no cover yet) in that colour, in
+   * the light or dark shade (AlbumMark's custom properties).
+   */
+  .shelf-tint {
+    display: contents;
+  }
+  .tile-tinted :global(.cover-empty),
+  .shelf-tint.tinted :global(.mosaic-icon) {
+    color: var(--mark-light);
+  }
+  :global([data-theme='dark']) .tile-tinted :global(.cover-empty),
+  :global([data-theme='dark']) .shelf-tint.tinted :global(.mosaic-icon) {
+    color: var(--mark-dark);
+  }
   /*
    * The Albums page rhythm of apple-style.css:941-984 ("tighter rhythm, denser grid, like Photos'
    * Albums"), over collections.css: page padding, 20px under the filters, 28px between shelves and
@@ -1337,5 +1390,10 @@
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+  }
+  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
+     the page area already adds 8px. */
+  .albums {
+    padding-top: calc(var(--fl-page-top) - 8px);
   }
 </style>

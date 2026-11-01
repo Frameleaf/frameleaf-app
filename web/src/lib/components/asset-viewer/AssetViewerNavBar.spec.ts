@@ -94,9 +94,9 @@ describe('AssetViewerNavBar component', () => {
       expect(getByLabelText('frameleaf_viewer_move_to_trash')).toBeInTheDocument();
     });
 
-    // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
+    // FL-34: sensitivity is the one lock, offered as a single Lock entry (the prototype's
     // `lock`); the separate NSFW review entries were removed with the old mark.
-    it('offers Mark Sensitive, and no separate NSFW review entries, for a full-size owned image', () => {
+    it('offers Lock, and no separate NSFW review entries, for a full-size owned image', () => {
       const ownerId = 'id-of-the-user';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
@@ -111,9 +111,9 @@ describe('AssetViewerNavBar component', () => {
       expect(queryByRole('menuitem', { name: 'mark_safe' })).not.toBeInTheDocument();
     });
 
-    // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
+    // FL-34: sensitivity is the one lock, offered as a single Lock entry (the prototype's
     // `lock`); the separate NSFW review entries were removed with the old mark.
-    it('offers Mark Sensitive, and no separate NSFW review entries, for a full-size owned video', () => {
+    it('offers Lock, and no separate NSFW review entries, for a full-size owned video', () => {
       const ownerId = 'id-of-the-user';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Video });
@@ -539,13 +539,13 @@ describe('AssetViewerNavBar component', () => {
       expect(getByRole('menuitem', { name: 'restore' })).toBeInTheDocument();
     });
 
-    it('puts the Rating tool in the top row for the owner (V-3)', () => {
+    it('keeps no star in the top row beside the heart (FL-707 item 14)', () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
 
-      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      expect(getByTestId('viewer-rating-button')).toHaveAttribute('aria-haspopup', 'true');
+      const { queryByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(queryByTestId('viewer-rating-button')).not.toBeInTheDocument();
     });
 
     it('plays a Live Photo from the on-photo badge, not the toolbar (V-16)', () => {

@@ -1,7 +1,8 @@
-import { AssetVisibility, type AssetResponseDto } from '@frameleaf/sdk';
+import type { AssetResponseDto } from '@frameleaf/sdk';
 import type { ServerClient } from 'src/commands/migrate/client';
 import type { Controller } from 'src/commands/migrate/controller';
 import type { Ledger } from 'src/commands/migrate/ledger';
+import { VISIBILITIES } from 'src/commands/migrate/search';
 import type { AssetRecord, MigrateOptions } from 'src/commands/migrate/types';
 
 const toRecord = (a: AssetResponseDto): AssetRecord => ({
@@ -25,12 +26,15 @@ const toRecord = (a: AssetResponseDto): AssetRecord => ({
  * Phase 1: walk SERVER A and snapshot every asset (+ albums/tags/stacks/people) into the
  * ledger. Each page is persisted before its cursor advances, so a huge scan resumes
  * mid-way. Runs once per visibility because the server filters to a single visibility.
+ * A finished scan is not repeated on resume; `--rescan` walks the source again to pick up
+ * assets added since, and the ledger's upsert keeps every known asset's progress.
  */
 export async function enumerate(from: ServerClient, ledger: Ledger, options: MigrateOptions, controller: Controller) {
   controller.setPhase('enumerate');
-  let count = ledger.counts().assetsTotal;
+  const restarted = options.rescan && ledger.reopenForRescan(VISIBILITIES);
+  let count = restarted ? 0 : ledger.counts().assetsTotal;
 
-  for (const visibility of [AssetVisibility.Timeline, AssetVisibility.Archive]) {
+  for (const visibility of VISIBILITIES) {
     if (ledger.getCursor(`enum:${visibility}:done`)) {
       continue;
     }
@@ -65,6 +69,7 @@ export async function enumerate(from: ServerClient, ledger: Ledger, options: Mig
     ledger.upsertAlbum({
       aId: album.id,
       name: album.albumName,
+      kind: album.kind,
       description: album.description,
       icon: album.icon,
       order: album.order,

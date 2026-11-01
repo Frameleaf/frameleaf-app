@@ -65,6 +65,104 @@ describe(UserAdminService.name, () => {
         storageLabel: 'label',
         password: expect.anything(),
         clusterGroupId: expect.any(String),
+        quotaSizeInBytes: null,
+      });
+    });
+
+    it('starts an account added without a space of its own with "Space for new people" (FL-516)', async () => {
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+      mocks.systemMetadata.get.mockResolvedValue({ user: { newUserStorageQuota: 200 } });
+
+      await sut.create(authStub.admin, { email: 'a@example.test', name: 'A', password: 'password' });
+      expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: 200e9 }));
+
+      // A space chosen for this person wins, "no limit" included.
+      await sut.create(authStub.admin, {
+        email: 'b@example.test',
+        name: 'B',
+        password: 'password',
+        quotaSizeInBytes: null,
+      });
+      expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
+    });
+
+    describe('with a link to choose a password (FL-538)', () => {
+      const mailReady = {
+        notifications: { smtp: { enabled: true } },
+        server: { externalDomain: 'https://photos.example.test' },
+      };
+
+      it('sets no password, emails a single-use link and sends no welcome email', async () => {
+        mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+        mocks.user.create.mockResolvedValue(userStub.user1);
+        mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.crypto.randomBytes.mockReturnValue(Buffer.from('a'.repeat(32)));
+        mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+        mocks.email.renderEmail.mockResolvedValue({ html: '<p>link</p>', text: 'link' });
+
+        await sut.create(authStub.admin, {
+          email: userStub.user1.email,
+          name: userStub.user1.name,
+          password: 'ignored',
+          notify: true,
+          passwordLink: true,
+        });
+
+        expect(mocks.user.create).toHaveBeenCalledWith(
+          expect.objectContaining({ password: '', shouldChangePassword: false }),
+        );
+        expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+        expect(mocks.user.update).toHaveBeenCalledWith(userStub.user1.id, {
+          passwordLinkHash: Buffer.from('digest'),
+          passwordLinkExpiresAt: expect.any(Date),
+        });
+        const token = Buffer.from('a'.repeat(32)).toString('base64url');
+        expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              link: `https://photos.example.test/auth/choose-password#${token}`,
+              isNew: true,
+            }),
+          }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.SendMail,
+          data: expect.objectContaining({ to: userStub.user1.email, subject: 'Choose your Frameleaf password' }),
+        });
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('UserSignup', expect.anything());
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.AccountCreated }),
+          expect.objectContaining({ action: AdminAuditAction.PasswordReset, detail: 'link' }),
+        ]);
+      });
+
+      it('refuses before adding anyone while email is off or the server has no address', async () => {
+        mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+        const dto = { email: 'a@example.test', name: 'A', password: '', passwordLink: true };
+
+        await expect(sut.create(authStub.admin, dto)).rejects.toThrow('Email is not set up');
+
+        mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: true } } });
+        await expect(sut.create(authStub.admin, dto)).rejects.toThrow('needs a public address');
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
+
+      it('emails an existing person a new link from their page', async () => {
+        mocks.user.get.mockResolvedValue(userStub.user1);
+        mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.crypto.randomBytes.mockReturnValue(Buffer.from('b'.repeat(32)));
+        mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+        await sut.sendPasswordLink(authStub.admin, userStub.user1.id);
+
+        expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ isNew: false }) }),
+        );
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.SendMail,
+          data: expect.objectContaining({ subject: 'Choose a new Frameleaf password' }),
+        });
       });
     });
 
@@ -711,6 +809,26 @@ describe(UserAdminService.name, () => {
         entry(AdminAuditAction.AdminGranted),
         entry(AdminAuditAction.QuotaChanged, '1024'),
         entry(AdminAuditAction.StorageLabelChanged, 'label'),
+      ]);
+    });
+
+    it('records pausing and resuming new uploads (FL-538)', async () => {
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, uploadsPaused: false });
+      mocks.user.update.mockResolvedValue({ ...userStub.user1, uploadsPaused: true });
+      await sut.update(authStub.admin, userStub.user1.id, { uploadsPaused: true });
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        userStub.user1.id,
+        expect.objectContaining({ uploadsPaused: true }),
+      );
+      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([
+        entry(AdminAuditAction.AccountUpdated, 'uploads-paused'),
+      ]);
+
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, uploadsPaused: true });
+      mocks.user.update.mockResolvedValue({ ...userStub.user1, uploadsPaused: false });
+      await sut.update(authStub.admin, userStub.user1.id, { uploadsPaused: false });
+      expect(mocks.adminAudit.create).toHaveBeenLastCalledWith([
+        entry(AdminAuditAction.AccountUpdated, 'uploads-resumed'),
       ]);
     });
 

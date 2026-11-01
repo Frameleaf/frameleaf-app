@@ -216,6 +216,15 @@ export abstract class VirtualScrollManager {
     return this.#viewportHeight;
   }
 
+  /** Sets both dimensions and lays out once; each setter on its own lays out again. */
+  protected setViewportSize(width: number, height: number) {
+    const changedWidth = width !== this.#viewportWidth;
+    this.#viewportWidth = width;
+    this.#viewportHeight = height;
+    this.suspendTransitions = true;
+    this.updateViewportGeometry(changedWidth);
+  }
+
   get hasEmptyViewport() {
     return this.viewportWidth === 0 || this.viewportHeight === 0;
   }

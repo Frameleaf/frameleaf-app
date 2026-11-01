@@ -1,10 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  CloudAccountConsentsResponseDto,
+  CloudAccountLinkDto,
+  type CloudAccountLinkRequest,
+  CloudAccountLinkResponseDto,
+  CloudAccountLinkVerifyDto,
   CloudPermissionsUpdateDto,
   CloudRemoteAccessUpdateDto,
+  CloudSignInPeopleResponseDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
   CloudTourResponseDto,
@@ -22,6 +28,7 @@ import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 /**
  * Linking this server to a Frameleaf account (FL-154 status, FL-155 link lifecycle). Nothing is
@@ -103,6 +110,52 @@ export class CloudAdminController {
     return this.service.getLink();
   }
 
+  @Get('link/account/consents')
+  @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
+  @Endpoint({
+    operationId: 'getCloudAccountLinkConsents',
+    summary: 'Get the statements a new Frameleaf account agrees to',
+    description:
+      'First-run setup only (FL-708): the current Terms of Use and privacy statements, with their versions, to show before creating a Frameleaf account. Asks Frameleaf Cloud; nothing is saved.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAccountLinkConsents(): Promise<CloudAccountConsentsResponseDto> {
+    return this.service.getAccountLinkConsents();
+  }
+
+  @Post('link/account')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
+  @RateLimited(RATE_LIMITS.accountLink)
+  @Endpoint({
+    operationId: 'linkCloudWithAccount',
+    summary: 'Link this server with a Frameleaf account’s email and password',
+    description:
+      'First-run setup only (FL-708): creates a Frameleaf account, or signs in to one, and links this server to it with no approval code. A new account, or one with an authenticator app, first answers code-needed; send that code to link/account/verify. The password goes to Frameleaf Cloud once and is never kept. After setup, linking uses the approval code.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  linkWithAccount(@Auth() auth: AuthDto, @Body() dto: CloudAccountLinkDto): Promise<CloudAccountLinkResponseDto> {
+    return this.service.linkWithAccount(auth, dto as CloudAccountLinkRequest);
+  }
+
+  @Post('link/account/verify')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
+  @RateLimited(RATE_LIMITS.accountLink)
+  @Endpoint({
+    operationId: 'verifyCloudAccountLink',
+    summary: 'Send the code a Frameleaf account link asked for',
+    description:
+      'First-run setup only (FL-708): the emailed code, the authenticator app code or a recovery code; links this server when it is right.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  verifyAccountLink(
+    @Auth() auth: AuthDto,
+    @Body() dto: CloudAccountLinkVerifyDto,
+  ): Promise<CloudAccountLinkResponseDto> {
+    return this.service.verifyAccountLink(auth, dto);
+  }
+
   @Post('link/continue')
   @Authenticated({ permission: Permission.AdminCloudLink, admin: true })
   @Endpoint({
@@ -165,6 +218,33 @@ export class CloudAdminController {
   })
   updateSignIn(@Auth() auth: AuthDto, @Body() dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
     return this.service.updateSignIn(auth, dto);
+  }
+
+  @Get('sign-in/people')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudSignInPeople',
+    summary: 'List who has linked a Frameleaf account',
+    description:
+      'Every account here and whether it is linked to a Frameleaf account, so it can sign in away from home. Those not linked come first. Reads local state only.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getSignInPeople(): Promise<CloudSignInPeopleResponseDto> {
+    return this.service.getSignInPeople();
+  }
+
+  @Post('sign-in/people/:id/remind')
+  @Authenticated({ permission: Permission.AdminCloudUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    operationId: 'remindCloudSignIn',
+    summary: 'Remind someone to link their Frameleaf account',
+    description:
+      'Emails the person a link to their own sign-in settings, where they link their Frameleaf account. Needs email and a public address. Nothing is linked for them.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  remindSignIn(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.remindSignIn(auth, id);
   }
 
   @Put('remote-access')

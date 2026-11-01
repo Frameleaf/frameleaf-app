@@ -1,5 +1,5 @@
 import {
-  getAssetInfo,
+  getAssetsInfo,
   getStudioProject,
   getStudioRestoredVersion,
   type StudioRestoredVersionDto,
@@ -18,8 +18,8 @@ import type { PageLoad } from './$types';
  * selection or an album arrives as `?assets=`, in the order the person chose; `?project=`
  * reopens an existing project.
  *
- * Assets are resolved one by one and settled, because a handoff list can legitimately
- * contain an id this session may no longer read (moved to Locked, trashed, or shared from a
+ * Assets are resolved in bulk (FL-647) and unreadable ones left out, because a handoff list can
+ * legitimately contain an id this session may no longer read (moved to Locked, trashed, or shared from a
  * partner who revoked access). Those are dropped rather than failing the route: losing one
  * item from a selection must not cost the person the whole editor, and the server, not this
  * loader, remains the access boundary.
@@ -36,7 +36,10 @@ export const load = (async ({ url }) => {
   const assetIds = [
     ...new Set([...handoff.assetIds, ...libraryAssetIdsIn(stored?.envelope?.graph)].map((id) => id.toLowerCase())),
   ];
-  const assets = await resolveStudioAssets(assetIds, (id) => getAssetInfo({ id }));
+  const assets = await resolveStudioAssets(assetIds, async (ids) => {
+    const { assets } = await getAssetsInfo({ assetInfoBatchDto: { ids } });
+    return assets;
+  });
 
   // FL-115: restorations chosen with Use in Studio. The server decides each with the rules a clip of it
   // is resolved by; one that is not the person's is dropped like an unreadable asset, and one that was

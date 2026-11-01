@@ -50,7 +50,7 @@ vi.mock('$lib/managers/event-manager.svelte', () => ({
 }));
 // FL-426: the cleaning itself is tested with a browser-like DOM in welcome-message.spec.ts.
 vi.mock('$lib/frameleaf/welcome-message', () => ({
-  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script[\s\S]*?<\/script>/gi, ''),
+  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script\b[\s\S]*?<\/script\s*>/gi, ''),
 }));
 
 const frameleafOff = {
@@ -110,6 +110,17 @@ describe('login mandatory-change routing', () => {
     expect(container.querySelector(':scope .auth-brand .fl-logo-arrive')).not.toBeNull();
     // the lockup stands on the page by itself: no plate behind it
     expect(container.querySelector('.auth-brand-plate')).toBeNull();
+  });
+
+  it('says when the sign-in is for Save to Frameleaf, and Allow comes next (FL-655)', () => {
+    const extension = { ...data(false), continueUrl: '/auth/allow-extension?client=chrome' };
+    render(Page, { data: extension } as never);
+    expect(screen.getByText(en.frameleaf_auth_extension_note)).toBeInTheDocument();
+  });
+
+  it('says nothing about the extension for an ordinary sign-in (FL-655)', () => {
+    render(Page, { data: data(false) } as never);
+    expect(screen.queryByText(en.frameleaf_auth_extension_note)).not.toBeInTheDocument();
   });
 
   it('shows the welcome message as plain text, or as cleaned web formatting (FL-426)', () => {

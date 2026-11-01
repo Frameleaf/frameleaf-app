@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import { open, readFile, rm, stat } from 'node:fs/promises';
@@ -36,6 +36,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable, deferJobOnTransientFailure, deferJobUntilDependency } from 'src/queue/dependency.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
@@ -284,6 +285,11 @@ export type MlUsage = {
  */
 export type DesktopPoolOptions = {
   jobId?: string | null;
+  /**
+   * FL-456: take the job only when one of the owner's Frameleaf Desktop helpers is online and qualified
+   * for its model now; otherwise hand it back so the next place in the processing order can take it.
+   */
+  requireReady?: boolean;
   modelName: string;
   ocr?: MachineLearningConfig['ocr'];
   face?: MachineLearningConfig['facialRecognition'];
@@ -443,6 +449,10 @@ export const transcriptStreamItemSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('info'),
     model: z.string().max(128),
+    fingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     language: z.string().max(16),
     languageProbability: z.number().min(0).max(1),
     duration: z.number().min(0).max(1e6),
@@ -465,6 +475,115 @@ export type TranscriptInfo = Extract<TranscriptStreamItem, { type: 'info' }>;
 const TRANSCRIPT_LINE_BYTES = 256 * 1024;
 const TRANSCRIPT_TOTAL_BYTES = 64 * 1024 * 1024;
 
+/** The music model Make a movie asks for (FL-561, owner decision 2026-10-26: MusicGen small). */
+export const MUSIC_MODEL_NAME = 'frameleaf-music';
+
+/** The worker cannot make music: no `/music` route (an older worker) or the model is unavailable. */
+export class MusicUnavailableError extends Error {}
+
+/** One line of a worker's `/music` stream (machine-learning/frameleaf_ml/main.py). */
+export const musicStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e7),
+    total: z.int().min(1).max(1e7),
+  }),
+  z.object({
+    type: z.literal('info'),
+    sampleRate: z.int().min(8000).max(192_000),
+    seconds: z.number().min(0).max(600),
+  }),
+  z.object({ type: z.literal('audio'), data: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+
+/** A music line above this is not music; the whole answer is bounded too (three minutes of WAV, base64). */
+const MUSIC_LINE_BYTES = 1024 * 1024;
+const MUSIC_TOTAL_BYTES = 64 * 1024 * 1024;
+
+/** The translation model Studio captions ask for (FL-641, owner decision 2026-10-29: M2M100 418M). */
+export const TRANSLATE_MODEL_NAME = 'frameleaf-translate';
+
+/** The worker cannot translate: no `/translate` route (an older worker), no runtime or no model. */
+export class TranslationUnavailableError extends Error {}
+
+/** A worker's `/translate` answer (machine-learning/frameleaf_ml/main.py). */
+const translationResultSchema = z.object({
+  model: z.string().max(128),
+  translations: z.array(z.string().max(8192)).max(2000),
+});
+
+/** A translation answer above this is not caption text. */
+const TRANSLATION_TOTAL_BYTES = 16 * 1024 * 1024;
+
+/** The speech clean-up model Studio's "Clean up voice" asks for (FL-637: DeepFilterNet3 on the CPU). */
+export const VOICE_CLEANUP_MODEL_NAME = 'frameleaf-voice-cleanup';
+
+/** The worker cannot clean up voices: no `/voice-cleanup` route (an older worker) or no model. */
+export class VoiceCleanupUnavailableError extends Error {}
+
+const VoiceNoiseSchema = z.enum(['wind', 'hum', 'background', 'echo']);
+
+/** One line of a worker's `/voice-cleanup` stream (machine-learning/frameleaf_ml/main.py). */
+export const voiceCleanupStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e8),
+    total: z.int().min(1).max(1e8),
+  }),
+  z.object({
+    type: z.literal('analysis'),
+    noises: z.array(VoiceNoiseSchema).max(4),
+    humHz: z.union([z.literal(50), z.literal(60)]).nullable(),
+  }),
+  z.object({
+    type: z.literal('info'),
+    sampleRate: z.literal(48_000),
+    seconds: z.number().min(0).max(1200),
+  }),
+  z.object({ type: z.literal('audio'), data: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+export type VoiceCleanupAnalysis = { noises: Array<z.infer<typeof VoiceNoiseSchema>>; humHz: 50 | 60 | null };
+
+/** Ten minutes and two seconds of 48 kHz mono 16-bit WAV, as base64, bounds a clean-up answer. */
+const VOICE_LINE_BYTES = 1024 * 1024;
+const VOICE_TOTAL_BYTES = 80 * 1024 * 1024;
+
+/** FL-639: the worker cannot cut out a subject: no `/subject-matte` route (an older worker) or no pinned model. */
+export class CutoutUnavailableError extends Error {}
+/** The worker could not follow the subject, in words a person can read (no subject on the first frame). */
+export class CutoutWorkerError extends Error {}
+
+/** The model the cut-out asks for: the pinned Florence-2 + SAM2.1 snapshots photo masks use. */
+export const SUBJECT_MATTE_MODEL_NAME = 'frameleaf-florence2-sam2.1';
+
+/** One line of a worker's `/subject-matte` stream (machine-learning/frameleaf_ml/main.py). */
+export const subjectMatteStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e6),
+    total: z.int().min(1).max(1e6),
+    seedBox: z.array(z.number()).length(4).optional(),
+  }),
+  z.object({ type: z.literal('frame'), index: z.int().min(0).max(1e6), png: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+
+const SUBJECT_MATTE_LINE_BYTES = 1024 * 1024 + 256;
+const SUBJECT_MATTE_TOTAL_BYTES = 128 * 1024 * 1024;
+
+export type SubjectMatteOptions = {
+  seedKind: 'face' | 'subject';
+  seedBox: [number, number, number, number] | null;
+  points: Array<{ frame: number; x: number; y: number; label: 0 | 1 }>;
+  matteWidth: number;
+  matteHeight: number;
+};
+
 /** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
@@ -483,6 +602,29 @@ export class RestorationWorkerError extends Error {
   }
 }
 
+/** The worker answered that it lacks the library this model needs (FL-676); it will never run the model. */
+export class MachineLearningModelRuntimeUnavailableError extends Error {}
+
+/** No answer from the worker at all (refused, reset or dropped connection), as opposed to an error it returned. */
+export class MachineLearningTransportError extends Error {}
+
+/** How long a worker's "can't run this model" answer is trusted before the model is asked for again. */
+export const MODEL_RUNTIME_UNAVAILABLE_TTL_MS = 10 * 60 * 1000;
+/** Up to this many claims, a description job whose worker dropped the connection waits instead of failing. */
+const TRANSPORT_DEFERRAL_ATTEMPTS = 4;
+
+/** undici's errors for a refused, reset or dropped connection (before or while the answer arrives). */
+const isConnectionFailure = (error: unknown) =>
+  error instanceof TypeError && (error.message === 'fetch failed' || error.message === 'terminated');
+
+const readDetail = (body: string): unknown => {
+  try {
+    return (JSON.parse(body) as { detail?: unknown } | null)?.detail;
+  } catch {
+    return undefined;
+  }
+};
+
 /** The same URL and credentials; endpoints are compared by value, never by object identity. */
 export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
   !!a && !!b && a.url === b.url && (a.authToken ?? null) === (b.authToken ?? null);
@@ -493,7 +635,13 @@ export class MachineLearningRepository implements RestorationInference {
   private desktopPoolSelector: DesktopPoolSelector | null = null;
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
-  private probeCache = new Map<string, { authToken?: string; authorityIdentity?: string; probe: MlEndpointProbe }>();
+  private probeCache = new Map<
+    string,
+    { authToken?: string; authorityIdentity?: string; hardwareChecked: boolean; probe: MlEndpointProbe }
+  >();
+  private probesInFlight = new Map<string, Promise<MlEndpointProbe>>();
+  /** `${endpoint url}\n${model}` -> when the worker's "this container can't run it" answer expires. */
+  private modelsWithoutRuntime = new Map<string, number>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -673,6 +821,25 @@ export class MachineLearningRepository implements RestorationInference {
    * called as each segment arrives, so the caller can report progress; aborting `signal` closes the
    * connection, which stops the worker at its next segment. Answers the stream's `info` and segments.
    */
+  async transcriptionIdentity(selection: MlSelection): Promise<{ model: string; fingerprint: string }> {
+    if (selection.endpoint.cloud) throw new TranscriptionUnavailableError('Speech requires a local or LAN worker');
+    await this.authorize(selection.endpoint);
+    const response = await fetch(new URL('transcribe/info', selection.endpoint.url), {
+      headers: this.authHeaders(selection.endpoint),
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new TranscriptionUnavailableError('The worker cannot report its speech model');
+    }
+    const identity = z
+      .object({ model: z.string().max(128), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+      .parse(await this.readDiagnosticJson(response));
+    await this.authorize(selection.endpoint);
+    return identity;
+  }
+
   async transcribe(
     selection: MlSelection,
     wavPath: string,
@@ -708,7 +875,8 @@ export class MachineLearningRepository implements RestorationInference {
         signal,
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
         // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
         if ([404, 422, 501, 503].includes(response.status)) {
           throw new TranscriptionUnavailableError(`The worker cannot transcribe (${response.status})`);
@@ -779,9 +947,515 @@ export class MachineLearningRepository implements RestorationInference {
     return { info, segments };
   }
 
+  /**
+   * Make a movie (FL-561): new music from `prompt` on the selected worker, written to `wavPath` as the
+   * 16-bit mono WAV the worker sends. Only the prompt leaves this server. Progress is the worker's
+   * decoder steps; aborting `signal` closes the connection, which stops the worker.
+   */
+  async generateMusic(
+    selection: MlSelection,
+    options: { prompt: string; durationSeconds: number; seed: number },
+    wavPath: string,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<{ seconds: number }> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent: 0, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        music: {
+          audio: {
+            modelName: MUSIC_MODEL_NAME,
+            options: { prompt: options.prompt, duration: options.durationSeconds, seed: options.seed },
+          },
+        },
+      }),
+    );
+    const file = await open(wavPath, 'w');
+    let seconds: number | undefined;
+    let finished = false;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('music', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new MusicUnavailableError(`The worker cannot make music (${response.status})`);
+        }
+        throw new Error(`The music worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The music worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length > MUSIC_LINE_BYTES * 2) throw new Error('A music line is too long');
+        if (line.length === 0) {
+          return;
+        }
+        const item = musicStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'info': {
+            seconds = item.seconds;
+            break;
+          }
+          case 'audio': {
+            if (seconds === undefined) throw new Error('The music worker sent audio before its info');
+            await file.write(Buffer.from(item.data, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new Error(`The music worker failed: ${item.message}`);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > MUSIC_TOTAL_BYTES) throw new Error('The music is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > MUSIC_LINE_BYTES * 2) throw new Error('A music line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished || seconds === undefined) {
+        throw new Error('The music worker stopped before it finished');
+      }
+    } catch (error) {
+      if (!(error instanceof MusicUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    } finally {
+      await file.close();
+    }
+    record('success');
+    return { seconds };
+  }
+
+  /**
+   * Studio captions in other languages (FL-641): send caption lines, as text only, to exactly the admitted
+   * local or home-network worker and read one translation per line, in order. Nothing else of the project
+   * leaves this server.
+   */
+  async translateCaptions(
+    selection: MlSelection,
+    options: { source: string; target: string; lines: readonly string[] },
+    signal: AbortSignal,
+  ): Promise<{ model: string; translations: string[] }> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    const body = JSON.stringify(options.lines);
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({
+        bytesSent: Buffer.byteLength(body),
+        bytesReceived,
+        durationMs: Date.now() - started,
+        outcome,
+      });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        translate: {
+          textual: { modelName: TRANSLATE_MODEL_NAME, options: { source: options.source, target: options.target } },
+        },
+      }),
+    );
+    form.append('lines', body);
+    let result: z.infer<typeof translationResultSchema>;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('translate', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new TranslationUnavailableError(`The worker cannot translate (${response.status})`);
+        }
+        throw new Error(`The translation worker answered ${response.status}`);
+      }
+      // Bound the answer while it is read, before any JSON allocation.
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('The translation worker sent no answer');
+      const chunks: Uint8Array[] = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > TRANSLATION_TOTAL_BYTES) throw new Error('The translation is too large');
+          chunks.push(value);
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      result = translationResultSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      if (result.translations.length !== options.lines.length) {
+        throw new Error('The translation worker did not answer every line');
+      }
+      await this.authorize(selection.endpoint);
+    } catch (error) {
+      if (!(error instanceof TranslationUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    }
+    record('success');
+    return result;
+  }
+
+  /** Clean up voice (FL-637): what is in the sound of `wavPath` (48 kHz mono 16-bit WAV). */
+  async analyzeVoice(selection: MlSelection, wavPath: string, signal: AbortSignal): Promise<VoiceCleanupAnalysis> {
+    let analysis: VoiceCleanupAnalysis | undefined;
+    await this.voiceCleanup(
+      selection,
+      wavPath,
+      { mode: 'analyze' },
+      null,
+      signal,
+      () => {},
+      (found) => {
+        analysis = found;
+      },
+    );
+    if (!analysis) {
+      throw new Error('The voice clean-up worker sent no analysis');
+    }
+    return analysis;
+  }
+
+  /**
+   * Clean up voice (FL-637): the cleaned sound of `wavPath` (48 kHz mono 16-bit WAV), written to
+   * `outPath` as the 48 kHz mono 16-bit WAV the worker sends. Progress is the worker's frames done;
+   * aborting `signal` closes the connection, which stops the worker at its next run of the model.
+   */
+  async cleanVoice(
+    selection: MlSelection,
+    wavPath: string,
+    options: { strength: string; noises: string[]; humHz: 50 | 60 | null },
+    outPath: string,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<{ seconds: number }> {
+    const entryOptions = {
+      mode: 'clean',
+      strength: options.strength,
+      noises: options.noises,
+      ...(options.humHz && { humHz: options.humHz }),
+    };
+    const seconds = await this.voiceCleanup(selection, wavPath, entryOptions, outPath, signal, onProgress, () => {});
+    if (seconds === undefined) {
+      throw new Error('The voice clean-up worker sent no audio');
+    }
+    return { seconds };
+  }
+
+  private async voiceCleanup(
+    selection: MlSelection,
+    wavPath: string,
+    options: Record<string, unknown>,
+    outPath: string | null,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+    onAnalysis: (analysis: VoiceCleanupAnalysis) => void,
+  ): Promise<number | undefined> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    const { size: bytesSent } = await stat(wavPath);
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({ 'voice-cleanup': { audio: { modelName: VOICE_CLEANUP_MODEL_NAME, options } } }),
+    );
+    form.append('audio', await openAsBlob(wavPath, { type: 'audio/wav' }), 'audio.wav');
+    const file = outPath ? await open(outPath, 'w') : null;
+    let seconds: number | undefined;
+    let wroteAudio = false;
+    let finished = false;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('voice-cleanup', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new VoiceCleanupUnavailableError(`The worker cannot clean up voices (${response.status})`);
+        }
+        throw new Error(`The voice clean-up worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The voice clean-up worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length > VOICE_LINE_BYTES * 2) throw new Error('A voice clean-up line is too long');
+        if (line.length === 0) {
+          return;
+        }
+        const item = voiceCleanupStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'analysis': {
+            onAnalysis({ noises: item.noises, humHz: item.humHz });
+            break;
+          }
+          case 'info': {
+            seconds = item.seconds;
+            break;
+          }
+          case 'audio': {
+            if (seconds === undefined || !file) throw new Error('The voice clean-up worker sent audio out of turn');
+            wroteAudio = true;
+            await file.write(Buffer.from(item.data, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new Error(`The voice clean-up worker failed: ${item.message}`);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > VOICE_TOTAL_BYTES) throw new Error('The cleaned sound is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > VOICE_LINE_BYTES * 2) throw new Error('A voice clean-up line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished) {
+        throw new Error('The voice clean-up worker stopped before it finished');
+      }
+      if (file && !wroteAudio) {
+        throw new Error('The voice clean-up worker sent no audio');
+      }
+    } catch (error) {
+      if (!(error instanceof VoiceCleanupUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    } finally {
+      await file?.close();
+    }
+    record('success');
+    return seconds;
+  }
+
+  /**
+   * FL-639: send a clip's frames (JPEG files, in order) to exactly the admitted home destination and read
+   * its `/subject-matte` stream. `onFrame` gets each frame's matte (a grayscale PNG) as it arrives and
+   * `onProgress` the frames followed; aborting `signal` closes the connection, which stops the worker at
+   * its next frame. Frameleaf Cloud never gets the frames.
+   */
+  async subjectMatte(
+    selection: MlSelection,
+    framePaths: readonly string[],
+    options: SubjectMatteOptions,
+    signal: AbortSignal,
+    onFrame: (index: number, png: Buffer) => Promise<void> | void,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<void> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    let bytesSent = 0;
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        'subject-matte': {
+          visual: {
+            modelName: SUBJECT_MATTE_MODEL_NAME,
+            options: {
+              seedKind: options.seedKind,
+              ...(options.seedBox && { seedBox: options.seedBox }),
+              points: options.points,
+              matteWidth: options.matteWidth,
+              matteHeight: options.matteHeight,
+            },
+          },
+        },
+      }),
+    );
+    for (const [index, framePath] of framePaths.entries()) {
+      const blob = await openAsBlob(framePath, { type: 'image/jpeg' });
+      bytesSent += blob.size;
+      form.append('frames', blob, `${String(index).padStart(5, '0')}.jpg`);
+    }
+    let finished = false;
+    const seen = new Set<number>();
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('subject-matte', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new CutoutUnavailableError(`The worker cannot cut out a subject (${response.status})`);
+        }
+        throw new Error(`The cut-out worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The cut-out worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length === 0) {
+          return;
+        }
+        const item = subjectMatteStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'frame': {
+            if (item.index >= framePaths.length || seen.has(item.index)) {
+              throw new Error('The cut-out worker sent an unexpected frame');
+            }
+            seen.add(item.index);
+            await onFrame(item.index, Buffer.from(item.png, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new CutoutWorkerError(item.message);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > SUBJECT_MATTE_TOTAL_BYTES) throw new Error('The cut-out is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > SUBJECT_MATTE_LINE_BYTES) throw new Error('A cut-out line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished || seen.size !== framePaths.length) {
+        throw new Error('The cut-out worker stopped before it finished');
+      }
+      await this.authorize(selection.endpoint);
+    } catch (error) {
+      if (!(error instanceof CutoutUnavailableError || error instanceof CutoutWorkerError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    }
+    record('success');
+  }
+
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
   setCloudProber(prober: CloudMlProber | null) {
     this.cloudProber = prober;
+  }
+
+  private refuseBusyWorker() {
+    deferJobUntilDependency('destination-capacity');
+    throw new ServiceUnavailableException('Machine learning worker is busy; try again shortly');
+  }
+
+  private async checkWorkerCapacity(response: Response) {
+    const body = await this.readDiagnosticJson(response).catch(() => null);
+    if (z.object({ detail: z.literal('ml_worker_busy') }).safeParse(body).success) this.refuseBusyWorker();
   }
 
   private authHeaders(endpoint: MlEndpoint): Record<string, string> {
@@ -797,7 +1471,10 @@ export class MachineLearningRepository implements RestorationInference {
    * serves and `/hardware` for its acceleration. A result younger than `maxAgeMs` is
    * reused so a burst of jobs does not turn into a burst of probes.
    */
-  async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
+  async probe(
+    endpoint: MlEndpoint,
+    { maxAgeMs = 0, includeHardware = true }: { maxAgeMs?: number; includeHardware?: boolean } = {},
+  ): Promise<MlEndpointProbe> {
     const authorityIdentity = await this.authorize(endpoint);
     if (endpoint.cloud) {
       if (!this.cloudProber) {
@@ -819,6 +1496,7 @@ export class MachineLearningRepository implements RestorationInference {
     const cached = this.probeCache.get(endpoint.url);
     if (
       cached &&
+      (!includeHardware || cached.hardwareChecked) &&
       cached.authToken === endpoint.authToken &&
       cached.authorityIdentity === authorityIdentity &&
       maxAgeMs > 0 &&
@@ -827,13 +1505,39 @@ export class MachineLearningRepository implements RestorationInference {
       return cached.probe;
     }
 
+    const key = JSON.stringify([endpoint.url, endpoint.authToken, authorityIdentity, includeHardware]);
+    let operation = this.probesInFlight.get(key);
+    if (!operation) {
+      operation = this.probeLocal(endpoint, authorityIdentity, includeHardware);
+      this.probesInFlight.set(key, operation);
+    }
+    try {
+      const result = await operation;
+      // Sharing a network observation never shares another caller's permission to use it.
+      if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
+      return result;
+    } finally {
+      if (this.probesInFlight.get(key) === operation) this.probesInFlight.delete(key);
+    }
+  }
+
+  private async probeLocal(
+    endpoint: MlEndpoint,
+    authorityIdentity: string | undefined,
+    includeHardware: boolean,
+  ): Promise<MlEndpointProbe> {
     const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
     const finish = async (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): Promise<MlEndpointProbe> => {
       if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, authorityIdentity, probe: result });
+      this.probeCache.set(endpoint.url, {
+        authToken: endpoint.authToken,
+        authorityIdentity,
+        hardwareChecked: includeHardware,
+        probe: result,
+      });
       return result;
     };
     const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -881,20 +1585,22 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     let hardware: MachineLearningHardwareResponse | null = null;
-    try {
-      await this.authorize(endpoint);
-      const response = await fetch(new URL('hardware', endpoint.url), {
-        headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(timeout),
-        redirect: 'error',
-      });
-      if (response.ok) {
-        hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
-      } else {
-        await response.body?.cancel();
+    if (includeHardware) {
+      try {
+        await this.authorize(endpoint);
+        const response = await fetch(new URL('hardware', endpoint.url), {
+          headers: this.authHeaders(endpoint),
+          signal: AbortSignal.timeout(timeout),
+          redirect: 'error',
+        });
+        if (response.ok) {
+          hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+        } else {
+          await response.body?.cancel();
+        }
+      } catch {
+        // Hardware is informational; a worker without the route is still admissible.
       }
-    } catch {
-      // Hardware is informational; a worker without the route is still admissible.
     }
 
     // FL-42: a worker's own `/capabilities` list is a diagnostic claim, not admission proof. A
@@ -976,6 +1682,8 @@ export class MachineLearningRepository implements RestorationInference {
     payload: ModelPayload,
     config: MachineLearningRequest,
     bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T; path?: 'predict-face-bound' },
+    /** Ends the request early, as well as the queue deadline and the job's own signal. */
+    signal?: AbortSignal,
   ): Promise<T> {
     if (selection.desktopClip || selection.desktopOcr || selection.desktopFace)
       throw new Error('desktop_bound_profile_required');
@@ -1010,20 +1718,39 @@ export class MachineLearningRepository implements RestorationInference {
           headers: this.authHeaders(selection.endpoint),
           body: formData,
           redirect: 'error',
+          ...(signal && { signal }),
         },
+        undefined,
+        bound ? 4 * 1024 * 1024 : undefined,
       ));
       await this.authorize(selection.endpoint);
     } catch (error: Error | unknown) {
       this.probeCache.delete(selection.endpoint.url);
       selection.record(usage('failure', 0));
-      throw new Error(
-        `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
+      const message = `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`;
+      // Only a lost connection is a transport failure. An aborted job (its own deadline or cancellation),
+      // an oversized or unreadable answer, or a revoked authority stays an ordinary failure.
+      throw isConnectionFailure(error)
+        ? new MachineLearningTransportError(message, { cause: error })
+        : new Error(message, { cause: error });
     }
 
     if (!response.ok) {
       selection.record(usage('failure', body.length));
+      if (response.status === 422 && readDetail(body) === 'model_runtime_unavailable') {
+        throw new MachineLearningModelRuntimeUnavailableError(
+          `Machine learning request '${this.redact(config)}' to ${target} names a model this worker can't run`,
+        );
+      }
+      if (response.status === 503) {
+        let detail: unknown;
+        try {
+          detail = JSON.parse(body)?.detail;
+        } catch {
+          // Unknown errors retain the ordinary failure path.
+        }
+        if (detail === 'ml_worker_busy') this.refuseBusyWorker();
+      }
       throw new Error(
         `Machine learning request '${this.redact(config)}' to ${target} failed with status ${response.status}: ${response.statusText}`,
       );
@@ -1079,7 +1806,13 @@ export class MachineLearningRepository implements RestorationInference {
     });
   }
 
-  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
+  async detectFaces(
+    selection: MlSelection,
+    imagePath: string,
+    { modelName, minScore }: FaceDetectionOptions,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
     const request = faceEntries({ modelName, minScore });
     let response: FacialRecognitionResponse;
     if (selection.desktopFace) {
@@ -1096,7 +1829,9 @@ export class MachineLearningRepository implements RestorationInference {
       } finally {
         selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
       }
-    } else response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
+    } else
+      response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request, undefined, signal);
+    signal?.throwIfAborted();
     return {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
@@ -1108,7 +1843,11 @@ export class MachineLearningRepository implements RestorationInference {
     this.desktopPoolSelector = selector;
   }
 
-  async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
+  async selectBackgroundPool(
+    selection: MlSelection,
+    jobId?: string | null,
+    requireReady = false,
+  ): Promise<MlSelection> {
     if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload))
       return selection;
     if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
@@ -1117,6 +1856,7 @@ export class MachineLearningRepository implements RestorationInference {
     const modelName = face?.modelName ?? ocr?.modelName ?? this.config.clip.modelName;
     return this.desktopPoolSelector(selection, {
       jobId,
+      ...(requireReady && { requireReady }),
       modelName,
       ...(ocr && { ocr }),
       ...(face && { face }),
@@ -1381,8 +2121,20 @@ export class MachineLearningRepository implements RestorationInference {
     if (fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
       candidateModels.push(fallbackModelName);
     }
+    // FL-676: a worker that said it can't run the configured model (the CPU image has no OpenVINO
+    // GenAI for Qwen) is not asked again for a while; its photos go straight to the fallback.
+    // The answer holds for one worker, model and acceleration: switching to CUDA must ask again.
+    const runtimeKey = (model: string) => `${selection.endpoint.url}\n${acceleration}\n${model}`;
+    const lacksRuntime = (model: string) => (this.modelsWithoutRuntime.get(runtimeKey(model)) ?? 0) > Date.now();
+    const skipped = candidateModels.length > 1 && lacksRuntime(modelName);
+    if (skipped) {
+      candidateModels.shift();
+    }
 
     let lastError: unknown;
+    // The latest lost connection, unless a later candidate got a real answer (a runtime refusal does not
+    // count: it says nothing about the model that could not be reached).
+    let transportError: MachineLearningTransportError | undefined;
     for (const candidateModel of candidateModels) {
       try {
         const body = await this.predict<ImageDescriptionResponse>(
@@ -1390,20 +2142,42 @@ export class MachineLearningRepository implements RestorationInference {
           { imagePath },
           buildRequest(candidateModel),
         );
-        if (candidateModel !== modelName) {
+        if (candidateModel !== modelName && !skipped) {
           this.logger.warn(
             `Image description model '${modelName}' failed on destination ${selection.destinationId}; succeeded with fallback model '${candidateModel}'`,
           );
         }
         return describedBy(body[ModelTask.IMAGE_DESCRIPTION], candidateModel);
       } catch (error) {
+        if (error instanceof JobDependencyUnavailable || error instanceof ServiceUnavailableException) throw error;
         lastError = error;
+        if (error instanceof MachineLearningTransportError) {
+          transportError = error;
+        } else if (!(error instanceof MachineLearningModelRuntimeUnavailableError)) {
+          transportError = undefined;
+        }
+        if (error instanceof MachineLearningModelRuntimeUnavailableError) {
+          this.modelsWithoutRuntime.set(runtimeKey(candidateModel), Date.now() + MODEL_RUNTIME_UNAVAILABLE_TTL_MS);
+          this.logger.warn(
+            `Image description model '${candidateModel}' can't run on destination ${selection.destinationId} (its runtime isn't installed there)` +
+              (candidateModel === modelName && candidateModels.length > 1
+                ? `; using '${candidateModels.at(-1)}' there instead`
+                : ''),
+          );
+          continue;
+        }
         this.logger.warn(
           `Image description request to destination ${selection.destinationId} (model='${candidateModel}') failed: ${error instanceof Error ? error.message : error}`,
         );
       }
     }
 
+    if (transportError) {
+      // The worker dropped or refused the connection (it was restarting or overloaded). The job
+      // waits and tries again a few times before it counts as a failure (FL-676).
+      deferJobOnTransientFailure('destination-unavailable', TRANSPORT_DEFERRAL_ATTEMPTS);
+      throw transportError;
+    }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 

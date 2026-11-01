@@ -1,9 +1,12 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ClassificationRuleWithAlbum } from 'src/repositories/classification.repository.js';
 import {
+  AssetVisibility,
   ClassificationMatchDecision,
   ClassificationMediaType,
   ClassificationRuleAction,
+  JobName,
+  JobStatus,
   MediaOperationItemStatus,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -14,6 +17,7 @@ import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const criteria = {
+  filter: null,
   personIds: [],
   tagIds: [] as string[],
   takenAfter: null,
@@ -42,7 +46,16 @@ const ruleOf = (overrides: Partial<ClassificationRuleWithAlbum> = {}): Classific
   ...overrides,
 });
 
-const emptyOutcome = { added: 0, suggested: 0, removed: 0, unchanged: 0, tagged: [], untagged: [] };
+const emptyOutcome = {
+  added: 0,
+  suggested: 0,
+  removed: 0,
+  unchanged: 0,
+  tagged: [],
+  untagged: [],
+  locked: [],
+  missing: [],
+};
 
 describe(ClassificationService.name, () => {
   let sut: ClassificationService;
@@ -56,6 +69,55 @@ describe(ClassificationService.name, () => {
     mocks.classification.markApplied.mockResolvedValue(new Date());
   });
 
+  it('reevaluates color rules after accepted palette publication', async () => {
+    const auth = factory.auth();
+    mocks.asset.getById.mockResolvedValue({ id: 'asset', ownerId: auth.user.id } as never);
+    const evaluate = vi.spyOn(sut, 'evaluateAsset').mockResolvedValue();
+    await sut.onPalettePublished({
+      job: { name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev' } },
+      response: JobStatus.Skipped,
+    });
+    expect(evaluate).not.toHaveBeenCalled();
+    await sut.onPalettePublished({
+      job: { name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev' } },
+      response: JobStatus.Success,
+    });
+    expect(evaluate).toHaveBeenCalledWith('asset', auth.user.id, expect.any(Function));
+    // Only rules that filter by colour can change once the palette is ready.
+    const only = evaluate.mock.calls[0][2]!;
+    const rule = (filter: unknown) => ({ filter }) as never;
+    expect([
+      only(rule({ color: { hex: '#336699' } })),
+      only(rule({ or: [{ color: { hex: '#336699' } }] })),
+      only(rule(null)),
+      only(rule({ tagIds: { any: ['tag'] } })),
+    ]).toEqual([true, true, false, false]);
+  });
+  it('rejects an empty shared query as an accidental whole-library rule', async () => {
+    await expect(sut.preview(factory.auth(), { ...criteria, filter: {}, sampleSize: 100 })).rejects.toThrow(
+      'Add at least one rule',
+    );
+  });
+  it('refuses archive actions that would invalidate their own visibility filter', async () => {
+    const auth = factory.auth();
+    const filter = { visibility: { eq: AssetVisibility.Timeline } };
+    await expect(
+      sut.createRule(auth, {
+        ...criteria,
+        filter,
+        albumName: 'References',
+        archive: true,
+        archiveConsent: true,
+        enabled: true,
+      }),
+    ).rejects.toThrow('Archive actions cannot use visibility filters');
+    const rule = ruleOf({ ownerId: auth.user.id, archive: true });
+    mocks.classification.getRule.mockResolvedValue(rule);
+    mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(rule.tagIds));
+    await expect(sut.updateRule(auth, rule.id, { filter })).rejects.toThrow(
+      'Archive actions cannot use visibility filters',
+    );
+  });
   describe('createRule', () => {
     it.each(['insert response', 'readback'] as const)(
       'never deletes a committed rule after a failed %s',
@@ -251,6 +313,29 @@ describe(ClassificationService.name, () => {
         { id: 'b', status: MediaOperationItemStatus.Ok },
       ]);
       expect(mocks.classification.apply).toHaveBeenCalledWith(rule, ['a', 'b'], new Map([['a', null]]));
+    });
+
+    it('reports an item the rule could not touch, locked or gone, as skipped rather than done', async () => {
+      const auth = factory.auth();
+      const rule = ruleOf({ ownerId: auth.user.id });
+      mocks.classification.getRule.mockResolvedValue(rule);
+      mocks.classification.findMatches.mockResolvedValue([]);
+      mocks.classification.apply.mockResolvedValue({
+        added: 0,
+        suggested: 0,
+        removed: 0,
+        unchanged: 3,
+        tagged: [],
+        untagged: [],
+        locked: ['b'],
+        missing: ['c'],
+      });
+
+      await expect(sut.applyBulkBatch(auth, rule.id, ['a', 'b', 'c'])).resolves.toEqual([
+        { id: 'a', status: MediaOperationItemStatus.Ok },
+        { id: 'b', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' },
+        { id: 'c', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+      ]);
     });
   });
 

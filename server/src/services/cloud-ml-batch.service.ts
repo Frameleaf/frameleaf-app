@@ -94,6 +94,7 @@ import {
   CloudUsage,
   FrameleafCloudError,
   catalogGroupKey,
+  cloudCustomerCost,
   cloudErrorCode,
   descriptionsResultSchema,
   estimateUsable,
@@ -363,13 +364,38 @@ export class CloudMlBatchService extends BaseService {
       return empty;
     }
 
-    const sample = await this.estimateSample(
+    let sample = await this.estimateSample(
       gateway,
       model.sku,
       batches[0],
       destination.lastProbeCloud?.features ?? null,
     );
+    if (sample.estimate.promotion && batches[0].assetIds.length > CLOUD_DESCRIPTION_SAMPLE_SIZE) {
+      sample = await this.estimateSample(
+        gateway,
+        model.sku,
+        batches[0],
+        destination.lastProbeCloud?.features ?? null,
+        batches[0].assetIds.length,
+      );
+    }
     const projection = projectCloudDescriptionCost(sample.estimate, sample.photos, batches);
+    const promotionalFirstBatch = sample.estimate.promotion
+      ? {
+          ...batches[0],
+          assetIds: [...batches[0].assetIds],
+          p90Usd: cloudCustomerCost(sample.estimate).p90,
+          holdUsd: cloudCustomerCost(sample.estimate).hold,
+        }
+      : undefined;
+    if (promotionalFirstBatch) {
+      const first = projection.batches[0];
+      const net = cloudCustomerCost(sample.estimate);
+      projection.p50Usd = micros(projection.p50Usd - first.p50Usd + net.p50);
+      projection.p90Usd = micros(projection.p90Usd - first.p90Usd + net.p90);
+      projection.holdUsd = micros(projection.holdUsd - first.holdUsd + net.hold);
+      Object.assign(first, { p50Usd: net.p50, p90Usd: net.p90, holdUsd: net.hold });
+    }
     const guidance = heavyModelGuidance(
       model,
       batches.map(({ assetIds }) => assetIds.length),
@@ -392,6 +418,7 @@ export class CloudMlBatchService extends BaseService {
       photos: projection.photos,
       p90Usd: projection.p90Usd,
       owners,
+      ...(promotionalFirstBatch ? { promotionalFirstBatch } : {}),
       createdBy: auth.user.id,
       started: null,
     };
@@ -405,8 +432,8 @@ export class CloudMlBatchService extends BaseService {
       p90Usd: projection.p90Usd,
       holdUsd: projection.holdUsd,
       startupUsd: projection.startupUsd,
-      perPhotoP50Usd: projection.perPhotoP50Usd,
-      perPhotoP90Usd: projection.perPhotoP90Usd,
+      perPhotoP50Usd: batches.length === 1 ? micros(projection.p50Usd / projection.photos) : projection.perPhotoP50Usd,
+      perPhotoP90Usd: batches.length === 1 ? micros(projection.p90Usd / projection.photos) : projection.perPhotoP90Usd,
       basis: projection.basis,
       guidance,
       refusal: this.spendingRefusal(
@@ -484,6 +511,17 @@ export class CloudMlBatchService extends BaseService {
     const approvals = batches.map(({ assetIds }) =>
       micros(record.startupUsd + assetIds.length * record.perPhotoP90Usd),
     );
+    const promotional = record.promotionalFirstBatch;
+    if (promotional) {
+      const first = batches[0];
+      if (
+        !first ||
+        first.ownerId !== promotional.ownerId ||
+        JSON.stringify(first.assetIds) !== JSON.stringify(promotional.assetIds)
+      )
+        throw new BadRequestException('The promoted batch changed; estimate again');
+      approvals[0] = promotional.p90Usd;
+    }
     const approvedTotal = micros(approvals.reduce((sum, value) => sum + value, 0));
     // a subset of the estimated photos never costs more than the estimate's ceiling; checked anyway
     if (approvedTotal > record.p90Usd + 1e-6) {
@@ -497,7 +535,7 @@ export class CloudMlBatchService extends BaseService {
         wallet,
         Math.max(0, wallet.balanceUsd - wallet.heldUsd),
         approvedTotal,
-        approvals[0],
+        promotional?.holdUsd ?? approvals[0],
         await this.spentInWindow(destination.id, now),
       );
       if (refusal) {
@@ -668,6 +706,7 @@ export class CloudMlBatchService extends BaseService {
       level: NotificationLevel.Info,
       title: 'Automatic descriptions paused for today',
       description: `Describing new photos with Frameleaf Cloud reached today's budget of $${dailyBudgetUsd.toFixed(2)}. New photos wait and are described from tomorrow; nothing is sent to another destination.`,
+      systemTemplate: { version: 1, key: 'cloud-description-budget', args: { budget: dailyBudgetUsd.toFixed(2) } },
       dedupeKey: `frameleaf-cloud:description-budget:${serverDay(now, await this.serverZone())}`,
       dedupeDays: 1,
     });
@@ -891,9 +930,9 @@ export class CloudMlBatchService extends BaseService {
         expiresAt: estimate.expiresAt,
         modelRev: estimate.modelRev,
         computeSku: estimate.computeSku,
-        p50Usd: estimate.cost.p50,
-        p90Usd: estimate.cost.p90,
-        holdUsd: estimate.cost.hold,
+        p50Usd: cloudCustomerCost(estimate).p50,
+        p90Usd: cloudCustomerCost(estimate).p90,
+        holdUsd: cloudCustomerCost(estimate).hold,
         startupUsd: estimate.cost.startup,
         request,
         attemptedAt: null,
@@ -901,7 +940,12 @@ export class CloudMlBatchService extends BaseService {
       waiting: null,
     };
 
-    await this.preflight(run, gateway, { p90Usd: estimate.cost.p90, holdUsd: estimate.cost.hold }, destination ?? null);
+    await this.preflight(
+      run,
+      gateway,
+      { p90Usd: cloudCustomerCost(estimate).p90, holdUsd: cloudCustomerCost(estimate).hold },
+      destination ?? null,
+    );
     if (!(await this.save(run))) {
       return;
     }
@@ -1038,11 +1082,16 @@ export class CloudMlBatchService extends BaseService {
     try {
       await this.mediaRepository.writeCloudUpload(asset.previewFile, output);
       const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(output);
-      return { ...base, sha256: sha256.toString('hex'), bytes: sizeInBytes, contentType: 'image/jpeg' };
+      const checksum = await this.originalChecksum(item.assetId);
+      return { ...base, sha256: sha256.toString('hex'), bytes: sizeInBytes, contentType: 'image/jpeg', checksum };
     } catch (error) {
       this.logger.warn(`Could not prepare photo ${item.assetId} for Frameleaf Cloud: ${errorMessage(error)}`);
       return { ...base, refused: 'prepare-failed' };
     }
+  }
+
+  private async originalChecksum(assetId: string) {
+    return (await this.assetRepository.getById(assetId))?.checksum.toString('hex');
   }
 
   private toInput(item: CloudDescriptionItem) {
@@ -1438,6 +1487,7 @@ export class CloudMlBatchService extends BaseService {
     const documents = delivered ? await this.downloadResults(run, gateway, view) : new Map();
     const modelName = run.snapshot.modelName ?? run.snapshot.modelSku;
     const items: typeof run.result.items = [];
+    const changed: string[] = [];
     const context = queueExecution.getStore();
     const adoptionStart = context?.adoptions.length ?? 0;
     let adoptions: NonNullable<typeof context>['adoptions'] = [];
@@ -1447,8 +1497,19 @@ export class CloudMlBatchService extends BaseService {
           items.push(item);
           continue;
         }
+        // The original was replaced while the cloud worked: its description is of the old image
+        const isChanged = !!item.checksum && item.checksum !== (await this.originalChecksum(item.assetId));
+        if (isChanged) {
+          changed.push(item.assetId);
+        }
         items.push(
-          await this.writeResult(item, documents.get(item.inputId) ?? null, run.snapshot.destinationId, modelName),
+          await this.writeResult(
+            item,
+            documents.get(item.inputId) ?? null,
+            run.snapshot.destinationId,
+            modelName,
+            isChanged,
+          ),
         );
       }
     };
@@ -1518,6 +1579,10 @@ export class CloudMlBatchService extends BaseService {
       }
       await afterJobCommit(async () => {
         await this.release(gateway, run.operation.id, job.jobId, false);
+        // described again from the new original, wherever descriptions are routed now
+        if (changed.length > 0) {
+          await this.jobRepository.queueAll(changed.map((id) => ({ name: JobName.ImageDescription, data: { id } })));
+        }
       });
     };
     if (!deferJobAdoption(commit)) {
@@ -1600,16 +1665,22 @@ export class CloudMlBatchService extends BaseService {
     document: CloudDescriptionOutcome | null,
     destinationId: string,
     modelName: string,
+    changed = false,
   ): Promise<CloudDescriptionItem> {
     const found = document && !('invalid' in document) ? document : null;
     const warnings = found?.item.warnings ?? [];
     const failed = warnings.filter((warning) => CLOUD_DESCRIPTION_FAILURE_WARNINGS.includes(warning));
-    const failure = found
-      ? failed.length > 0
-        ? `Frameleaf Cloud could not describe this photo (${failed.join(', ')})`
-        : undefined
-      : 'Frameleaf Cloud returned no readable description for this photo';
-    const base: CloudDescriptionItem = { ...item, ...(found && { modelRev: found.modelRev, warnings: [...warnings] }) };
+    const failure = changed
+      ? 'The photo changed while Frameleaf Cloud described it; it is described again'
+      : found
+        ? failed.length > 0
+          ? `Frameleaf Cloud could not describe this photo (${failed.join(', ')})`
+          : undefined
+        : 'Frameleaf Cloud returned no readable description for this photo';
+    const base: CloudDescriptionItem = {
+      ...item,
+      ...(found && { modelRev: found.modelRev, warnings: [...warnings] }),
+    };
     const onPublished = (outcome: Awaited<ReturnType<ImageEnrichmentService['publishCloudDescription']>>) => {
       if (!failure && outcome.status === JobStatus.Success) {
         base.outcome = 'described';
@@ -1809,7 +1880,8 @@ export class CloudMlBatchService extends BaseService {
         run.operation.id,
         run.claimToken,
         { error: refusal.message, errorCode: refusal.code },
-        { retry: refusal.transient },
+        // the batch resumes by its phase, cloud job and idempotency key, so its one retry repeats nothing
+        { retry: refusal.transient, resumable: true },
       );
     }
   }
@@ -2099,8 +2171,9 @@ export class CloudMlBatchService extends BaseService {
     modelSku: string,
     batch: { ownerId: string; assetIds: string[] },
     features: CloudConsentFeatures | null,
+    sampleSize = CLOUD_DESCRIPTION_SAMPLE_SIZE,
   ): Promise<{ estimate: CloudEstimate; photos: number }> {
-    const assetIds = batch.assetIds.slice(0, CLOUD_DESCRIPTION_SAMPLE_SIZE);
+    const assetIds = batch.assetIds.slice(0, sampleSize);
     const locked = await this.mediaOperationRepository.getLockedAssetIds(batch.ownerId, assetIds);
     const folder = join(tmpdir(), 'frameleaf-cloud-descriptions', `sample-${this.cryptoRepository.randomUUID()}`);
     this.storageRepository.mkdirSync(folder);

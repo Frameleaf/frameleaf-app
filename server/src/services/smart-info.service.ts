@@ -76,22 +76,18 @@ export class SmartInfoService extends BaseService {
     await this.databaseRepository.withLock(DatabaseLock.CLIPDimSize, async () => {
       const { dimSize } = getCLIPModelInfo(newConfig.machineLearning.clip.modelName);
       const smartSearchDimSize = await this.databaseRepository.getDimensionSize('smart_search');
-      const videoDuplicateFrameDimSize = await this.databaseRepository.getDimensionSize('asset_video_duplicate_frame');
       this.logger.verbose(`Current smart search database CLIP dimension size is ${smartSearchDimSize}`);
-      this.logger.verbose(
-        `Current video duplicate frame database CLIP dimension size is ${videoDuplicateFrameDimSize}`,
-      );
 
       const modelChange =
         oldConfig && oldConfig.machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName;
-      const isDimSizeChange = smartSearchDimSize !== dimSize || videoDuplicateFrameDimSize !== dimSize;
+      const isDimSizeChange = smartSearchDimSize !== dimSize;
       if (!modelChange && !isDimSizeChange) {
         return;
       }
 
       if (isDimSizeChange) {
         this.logger.log(
-          `Dimension size of model ${newConfig.machineLearning.clip.modelName} is ${dimSize}, but database dimensions are smart_search=${smartSearchDimSize}, asset_video_duplicate_frame=${videoDuplicateFrameDimSize}.`,
+          `Dimension size of model ${newConfig.machineLearning.clip.modelName} is ${dimSize}, but database dimension is smart_search=${smartSearchDimSize}.`,
         );
         this.logger.log(`Updating database CLIP dimension size to ${dimSize}.`);
         await this.databaseRepository.setDimensionSize(dimSize);

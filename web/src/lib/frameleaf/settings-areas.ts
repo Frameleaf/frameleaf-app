@@ -36,6 +36,7 @@ export type SettingsAreaId =
   | 'processing'
   | 'cloud'
   | 'security'
+  | 'privacy'
   | 'notifications'
   | 'server'
   | 'sharing'
@@ -76,7 +77,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'storage',
     group: 'library',
-    sections: ['storage-template', 'trash', 'user-settings', 'migration'],
+    // FL-365: Deleted items (`trash`) holds deleted accounts too; the area opens on its landing page.
+    sections: ['storage-template', 'trash', 'migration'],
   },
   // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
   // are the server's. One mount of each, in the template's order.
@@ -84,7 +86,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'backup',
     group: 'library',
-    sections: ['backup'],
+    // FL-540: Phones, the prototype's "See phones" (devices-backup)
+    sections: ['backup', 'devices-backup'],
     // FL-362: "What Cloud Backup keeps" is each account's own choice, beside its preservation.
     personal: ['takeout', 'preservation', 'cloud-backup-choice'],
     order: ['takeout', 'backup', 'preservation', 'cloud-backup-choice'],
@@ -105,16 +108,16 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   },
   // The template's People & sharing: partner sharing moved out of the personal settings list.
   { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
-  // Library care (FL-366): File checks (the one checker), Things to fix, Duplicates with Merge older
-  // copies behind it, and Search and recognition progress, under a landing page that says how the
-  // library is.
+  // Library care (FL-366): File checks (the one checker), Things to fix, Duplicates, and Search and
+  // recognition progress, under a landing page that says how the library is. FL-416: Unused files (the
+  // old File trash) is a page here too, offered only to the server owner (the first administrator).
   {
     id: 'care',
     group: 'library',
-    // universal storage: the deduplication history and verification live in Library Care
-    sections: ['integrity-checks', 'duplicates', 'deduplication', 'enrichment-care'],
+    // FL-413: identical files merge automatically; the per-account Merge older copies is retired
+    sections: ['integrity-checks', 'duplicates', 'enrichment-care', 'unused-files'],
     personal: ['repair'],
-    order: ['integrity-checks', 'repair', 'duplicates', 'deduplication', 'enrichment-care'],
+    order: ['integrity-checks', 'repair', 'duplicates', 'enrichment-care', 'unused-files'],
   },
   // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
   // how the computers and the background work are doing, then Computers, Where work runs, Background
@@ -132,17 +135,17 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'cloud',
     group: 'server',
-    sections: ['cloud-account', 'cloud-plan', 'cloud-license', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
+    sections: ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup'],
     adminOnly: true,
   },
-  // The template's Access & security holds each account's own sign-in (password, PIN, provider),
-  // Locked tags & people, and devices & API keys next to the server's sign-in methods.
+  // FL-367 (owner, 2026-10-10): Access & security is two entries. "Who can sign in" holds what an
+  // administrator sets for everyone; FL-158: Sign in with Frameleaf sits beside the server's own
+  // sign-in methods.
   {
     id: 'security',
     group: 'server',
-    // FL-158: Sign in with Frameleaf sits beside the administrator's own provider.
     sections: ['authentication', 'frameleaf-signin'],
-    personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
+    adminOnly: true,
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
   // FL-368: "Emails you receive" comes first, because every account has it. FL-421: an
@@ -180,6 +183,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'user-purchase-settings',
     ],
   },
+  // FL-367: "Your sign-in & privacy", what belongs to the person signed in: how they sign in, their
+  // devices and API keys, and their Locked PIN and Always Locked rules.
+  {
+    id: 'privacy',
+    group: 'personal',
+    sections: [],
+    personal: ['password', 'oauth', 'authorized-devices', 'api-keys', 'user-pin-code-settings', 'suppressed-content'],
+  },
   // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
   { id: 'users', group: 'server', sections: ['accounts'] },
   // FL-78: the template moves external library settings out of "Import & protection" into their own
@@ -194,35 +205,6 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   // FL-71 (CC-10): every account has its own preference history here; administrators also see the settings history.
   { id: 'history', group: 'personal', sections: [] },
 ]);
-
-/**
- * Each area's coloured icon tile in the settings navigation, like System Settings (FL-76; the
- * template's apple-style.css:565-640 `--tile` per area). The icon is drawn white on the tile.
- */
-export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object.freeze({
-  overview: '#0a84ff',
-  analytics: '#bf5af2',
-  backups: '#30b0c7',
-  storage: '#8e8e93',
-  // Import & protection no longer shares Backup's teal tile (design review finding 66).
-  backup: '#64d2ff',
-  intelligence: '#5e5ce6',
-  editing: '#ff9f0a',
-  sharing: '#0a84ff',
-  care: '#30d158',
-  libraries: '#64d2ff',
-  utilities: '#636366',
-  trash: '#8e8e93',
-  processing: '#636366',
-  cloud: '#0a84ff',
-  security: '#0a84ff',
-  notifications: '#ff453a',
-  server: '#8e8e93',
-  maintenance: '#636366',
-  users: '#0a84ff',
-  preferences: '#8e8e93',
-  history: '#636366',
-});
 
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
   'command',
@@ -278,6 +260,13 @@ export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
   'intelligence',
   'editing',
   'maintenance',
+  // FL-365
+  'storage',
+  'backup',
+  // FL-367
+  'cloud',
+  'security',
+  'privacy',
 ]);
 export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
 
@@ -301,7 +290,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   repair: 'frameleaf_page_repair_description',
   'enrichment-care': 'frameleaf_page_enrichment_description',
   duplicates: 'frameleaf_page_duplicates_description',
-  deduplication: 'frameleaf_page_deduplication_description',
+  'unused-files': 'frameleaf_page_unused_files_description',
   notifications: 'frameleaf_page_email_description',
   'email-preferences': 'frameleaf_page_email_preferences_description',
   signals: 'frameleaf_page_signals_description',
@@ -388,11 +377,11 @@ export const presentedAreaForSection = (sectionKey: string): SettingsAreaId | un
 };
 
 /**
- * Areas whose pages read the "Viewing" scope (`?scope=`): Overview, Library analytics, Library care
- * and the Job manager. Everywhere else a setting applies to the whole server, so the picker is not
- * offered there (design review finding 65).
+ * Areas whose pages read the "Viewing" scope (`?scope=`): Library analytics, Library care and the Job
+ * manager. Everywhere else a setting applies to the whole server, so the picker is not offered there
+ * (design review finding 65). The Overview (FL-363) answers for the whole server only.
  */
-export const SCOPED_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'care']);
+export const SCOPED_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'care']);
 export const honoursScope = (area: SettingsAreaId, section?: string | null) =>
   SCOPED_AREAS.includes(area) || (area === 'processing' && section === 'queues');
 
@@ -434,6 +423,16 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
  * and Render workers are one page, Computers (FL-364).
  */
 const SERVER_ALIASES: Record<string, string> = {
+  // FL-544: Plan and Licence are one page, Your Frameleaf Cloud
+  'cloud-license': 'cloud-plan',
+  // FL-365: Deleted items is one page for deleted photos and deleted accounts; the prototype's addresses.
+  // FL-539: the prototype's address of Folder checks
+  checking: 'external-library',
+  'user-settings': 'trash',
+  'deleted-items': 'trash',
+  retention: 'trash',
+  'retention-policy': 'trash',
+  organization: 'storage-template',
   job: 'queues',
   workers: 'computers',
   'render-workers': 'computers',
@@ -443,7 +442,10 @@ const SERVER_ALIASES: Record<string, string> = {
   'advanced-integrity-budget': 'integrity-checks',
   'integrity-schedules': 'integrity-checks',
   'advanced-duplicate-matching': 'duplicates',
-  'exact-copies': 'deduplication',
+  'exact-copies': 'duplicates',
+  deduplication: 'duplicates',
+  // FL-416: File trash is Unused files now
+  'file-trash': 'unused-files',
   metadata: 'faces',
   pets: 'faces',
   'advanced-recognition-models': 'faces',
@@ -509,10 +511,16 @@ export const areaSectionKeys = (areaId: SettingsAreaId): string[] => {
  */
 export const resolveSettingsArea = (params: {
   area?: string | null;
+  section?: string | null;
   isOpen?: string | null;
   isAdmin?: boolean;
 }): SettingsAreaId => {
   if (isSettingsAreaId(params.area)) {
+    // FL-367: a person's own sign-in pages moved from Access & security to "Your sign-in & privacy";
+    // addresses written before still open them.
+    if (params.area === 'security' && params.section && areaForPersonalSection(params.section) === 'privacy') {
+      return 'privacy';
+    }
     return params.area;
   }
   for (const key of (params.isOpen ?? '').split(' ')) {
@@ -656,9 +664,14 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'storage-template': 'storage',
     migration: 'storage',
     trash: 'trash',
-    'user-settings': 'trash',
   },
-  backup: { takeout: 'import', backup: 'protection', preservation: 'protection', 'cloud-backup-choice': 'protection' },
+  backup: {
+    takeout: 'import',
+    'devices-backup': 'import',
+    backup: 'protection',
+    preservation: 'protection',
+    'cloud-backup-choice': 'protection',
+  },
   intelligence: {
     'smart-search': 'search',
     descriptions: 'search',
@@ -680,6 +693,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     repair: 'repairs',
     duplicates: 'identical_files',
     deduplication: 'identical_files',
+    'unused-files': 'identical_files',
     'enrichment-care': 'repairs',
   },
   processing: {
@@ -692,7 +706,6 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   cloud: {
     'cloud-account': 'account_link',
     'cloud-plan': 'licensing',
-    'cloud-license': 'licensing',
     'cloud-remote': 'remote',
     'cloud-processing': 'cloud_services',
     'cloud-backup': 'cloud_services',
@@ -700,6 +713,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   security: {
     authentication: 'sign_in',
     'frameleaf-signin': 'sign_in',
+  },
+  privacy: {
     password: 'sign_in',
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',

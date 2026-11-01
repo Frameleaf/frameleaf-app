@@ -1,14 +1,13 @@
 /**
  * What each moved administration section loads when it opens (FL-71). These are the old route
  * loaders of `/admin/render-workers`, `/admin/processing-destinations` and
- * `/admin/physical-deduplication` and `/admin/users`, without the page titles the Command Center heading now carries.
+ * and `/admin/users`, without the page titles the Command Center heading now carries.
  */
 import {
   getAllLibraries,
   getLibraryStatistics,
   getManagedUploadStatistics,
   getMlWorkloadRoutes,
-  getPhysicalDeduplicationPreview,
   getRenderWorkerLimits,
   getUserPreferencesAdmin,
   getUserSessionsAdmin,
@@ -49,17 +48,10 @@ export const loadComputers = async () => {
 };
 export type ComputersData = Awaited<ReturnType<typeof loadComputers>>;
 
-export const loadDeduplication = async () => {
-  const [preview, users] = await Promise.all([
-    getPhysicalDeduplicationPreview(),
-    searchUsersAdmin({ withDeleted: false }),
-  ]);
-  return { preview, users };
-};
-
 /** One account's detail, the old `/admin/users/[id]` layout loader (FL-76). */
 export const loadUserDetail = async (id: string) => {
-  const [user] = await searchUsersAdmin({ id, withDeleted: true }).catch(() => []);
+  // A failed read rejects (the detail offers a retry); only an account that is not there returns null.
+  const [user] = await searchUsersAdmin({ id, withDeleted: true });
   if (!user) {
     return null;
   }

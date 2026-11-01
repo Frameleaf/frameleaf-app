@@ -17,7 +17,7 @@
   import { buildCommandIndex, type CommandInput, type CommandItem } from '$lib/frameleaf/command-palette';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
-  import { searchContextFor } from '$lib/frameleaf/search-context';
+  import { albumSearchContext, searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import { openAboutDialog, openSupportDialog } from '$lib/frameleaf/system-dialogs';
   import {
@@ -32,6 +32,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { LibraryScope, LibraryViewScope, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import { handlePromiseError } from '$lib/utils';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -87,12 +88,20 @@
   const preferences = $derived(authManager.authenticated ? authManager.preferences : undefined);
   const isAdmin = $derived(authManager.authenticated && authManager.user.isAdmin);
 
+  // Route metadata supplies the workspace on an album deep link.
+  const currentContext = $derived.by(() => {
+    const url = new URL(page.url.href);
+    const album = (page.data as { album?: AlbumResponseDto } | undefined)?.album;
+    return album ? { query: albumSearchContext(url, album), unsupported: [] } : searchContextFor(url);
+  });
+  const currentQuery = $derived(currentContext.query);
+
   const context = $derived({
     isAdmin,
     capabilities: {
       // The palette reaches every page; only the rail follows the "in navigation" choices.
       recentlyAdded: true,
-      search: featureFlagsManager.value.search,
+      search: featureFlagsManager.value.search || currentQuery.filter.libraryScope === LibraryViewScope.Design,
       map: featureFlagsManager.value.map,
       trash: featureFlagsManager.value.trash,
       people: !!preferences?.people.enabled,
@@ -122,7 +131,11 @@
       title: $t('frameleaf_search_command_upload_photos'),
       icon: mdiUpload,
       run: async () => {
-        await openFileUploadDialog({ albumId: uploadAlbumId, isLockedAssets: uploadIsLocked });
+        await openFileUploadDialog({
+          albumId: uploadAlbumId,
+          isLockedAssets: uploadIsLocked,
+          libraryScope: currentQuery.filter.libraryScope === LibraryViewScope.Design ? LibraryScope.Design : undefined,
+        });
       },
     },
     {
@@ -176,13 +189,6 @@
 
   const settingsCommandIndex = $derived(commandIndex.filter((item) => item.group === 'settings'));
   const paletteIndex = $derived(paletteScope === 'settings' ? settingsCommandIndex : commandIndex);
-
-  /**
-   * The query the palette opens on: the search the page already shows, or the scope it stands for,
-   * together with its session's filters (FL-48). Nothing the page is narrowed by is reset.
-   */
-  const currentContext = $derived(searchContextFor(new URL(page.url.href)));
-  const currentQuery = $derived(currentContext.query);
 
   /**
    * The prototype's `screen === "admin"` branch (App.jsx): the top bar's one search entry hides
@@ -253,7 +259,13 @@
 
   const runCommand = (command: CommandItem) => {
     if (command.href) {
-      handlePromiseError(goto(command.href));
+      handlePromiseError(
+        goto(
+          command.href.startsWith('/albums')
+            ? workspaceHref(command.href, currentQuery.filter.libraryScope, page.url.origin)
+            : command.href,
+        ),
+      );
       return;
     }
     void command.run?.();

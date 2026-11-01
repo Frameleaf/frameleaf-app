@@ -224,8 +224,12 @@ describe('getAltText', () => {
   });
 
   it('supplies the compiled memory image caller with the real translated accessibility label', async () => {
+    // jsdom reports an unfetched image as complete with no width, which the viewer reads as broken;
+    // keep the preview pending so the load event below is what settles it.
+    const complete = vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(false);
     const item = asset({ city: 'Edmonton', country: 'Canada', people: ['Alice'] });
     const { container } = render(MemoryPhotoViewer, { asset: item, onImageLoad: vi.fn() });
+    complete.mockRestore();
     await fireEvent.load(container.querySelector('img')!);
     expect(screen.getByRole('img')).toHaveAttribute(
       'alt',

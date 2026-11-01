@@ -18,7 +18,7 @@ const config = {
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'Frameleaf', // Usually your GitHub org/user name.
   projectName: 'frameleaf-app', // Usually your repo name.
-  deploymentBranch: 'main',
+  deploymentBranch: 'gh-pages',
   // Even if you don't use internalization, you can use this field to set useful
   // metadata like html lang. For example, if your site is Chinese, you may want
   // to replace "en" with "zh-Hans".
@@ -99,7 +99,7 @@ const config = {
             type: 'html',
             position: 'right',
             value:
-              '<a href="/overview/support-the-project" class="no-underline hover:no-underline"><button class="buy-button bg-frameleaf-primary dark:bg-frameleaf-dark-primary text-white dark:text-black rounded-xl">Support Frameleaf</button></a>',
+              '<a href="/overview/support-the-project" class="buy-button inline-block no-underline hover:no-underline bg-frameleaf-primary dark:bg-frameleaf-dark-primary text-white dark:text-black hover:text-white dark:hover:text-black rounded-xl">Support Frameleaf</a>',
           },
         ],
       },

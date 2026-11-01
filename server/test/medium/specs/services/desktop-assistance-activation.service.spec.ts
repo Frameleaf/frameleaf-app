@@ -33,12 +33,7 @@ const profile = catalogue.profiles.find((p: { modelKey: string }) => p.modelKey 
 let db: Kysely<DB>;
 beforeEach(async () => {
   db = await getKyselyDB();
-  for (const table of [
-    'smart_search',
-    'smart_search_description',
-    'asset_video_duplicate_frame',
-    'video_moment_frame_embedding',
-  ])
+  for (const table of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'])
     await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
 });
 afterEach(async () => db.destroy());

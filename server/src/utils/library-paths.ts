@@ -47,6 +47,33 @@ const invalid = (importPath: string, reason: LibraryImportPathReason, message: s
 });
 
 /** `/mnt/photos/` and `/mnt//photos` are the folder `/mnt/photos`; the root stays `/`. */
+/**
+ * What a new folder skips unless it says otherwise: NAS thumbnails, macOS resource files, recycle
+ * bins, snapshots and sync tools' own folders (FL-365: one list, offered by the web form as its
+ * recommended "What to skip" boxes).
+ */
+export const DEFAULT_LIBRARY_EXCLUSION_PATTERNS: readonly string[] = Object.freeze([
+  '**/@eaDir/**',
+  '**/._*',
+  '**/#recycle/**',
+  '**/#snapshot/**',
+  '**/.stversions/**',
+  '**/.stfolder/**',
+]);
+
+/** Folder names never offered when browsing for a folder to add: system, NAS and sync clutter. */
+const HIDDEN_FOLDER_NAMES = new Set([
+  '@eaDir',
+  '#recycle',
+  '#snapshot',
+  'lost+found',
+  '$RECYCLE.BIN',
+  'System Volume Information',
+]);
+
+/** Whether a folder is worth offering when browsing for a folder of photos. */
+export const isBrowsableFolder = (name: string) => !name.startsWith('.') && !HIDDEN_FOLDER_NAMES.has(name);
+
 export const normalizeImportPath = (value: string): string => {
   const normalized = path.posix.normalize(value);
   return normalized.length > 1 && normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;

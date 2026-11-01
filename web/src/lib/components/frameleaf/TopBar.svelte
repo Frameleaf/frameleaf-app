@@ -12,10 +12,13 @@
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
-  import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
+  import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
+  import { libraryUploadScope } from '$lib/frameleaf/search-context';
+  import { buildPrimaryDestinations, currentPrimaryDestination, isClientsEnabled } from '$lib/frameleaf/navigation';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import '$lib/frameleaf/tokens.css';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -23,8 +26,9 @@
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
+  import { readAuthStatus } from '$lib/utils/auth-status-read';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { getAuthStatus } from '@frameleaf/sdk';
+  import { LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
@@ -51,8 +55,9 @@
    * on the first row, the switcher on the second, and the activity indicator hidden.
    *
    * September 24 (apple-style.css "#3 materials", "#9 edge-to-edge", "top bar", "#7 phone tab
-   * bar"): the bar is frosted and keeps clear of the notch; from 1200px the search field sits in
-   * the true centre; on phones (≤700px) the bar has no search field, because the tab bar owns
+   * bar"): the bar is frosted and keeps clear of the notch; the search field sits in the true centre
+   * only where the sections and the buttons both fit beside it (from 1440px, so five sections fit),
+   * and otherwise sits in the row between them; on phones (≤700px) the bar has no search field, because the tab bar owns
    * Search, and the brand shows the Frameleaf symbol only while keeping "Frameleaf" as its name.
    *
    * Every control drives an existing production service: the Locked toggle is the elevated
@@ -73,13 +78,21 @@
 
   let { onUploadClick, noBorder = false, hasRail = true }: Props = $props();
 
-  const primaryDestinations = buildPrimaryDestinations();
+  // Clients joins the sections once the account uses it (ClientsIntro.jsx, owner October 28).
+  const primaryDestinations = $derived(
+    buildPrimaryDestinations({
+      clients: authManager.authenticated && isClientsEnabled(authManager.preferences),
+    }),
+  );
   /** apple-style.css: phones show the Frameleaf symbol only. */
   const phone = new MediaQuery('max-width: 700px');
-  const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
+  const proContext = $derived(
+    libraryUploadScope(new URL(page.url.href), (page.data as { album?: AlbumResponseDto } | undefined)?.album) ===
+      LibraryScope.Design,
+  );
+  const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname, proContext));
 
   let showNotifications = $state(false);
-  let showHelp = $state(false);
   let bellButton = $state<HTMLButtonElement>();
 
   /** Close the panel; from the keyboard (Escape, its close button) focus goes back to the bell. */
@@ -127,7 +140,7 @@
     if (sessionAccess.lockPending) {
       void lockSession();
     } else {
-      void refreshAuthStatus();
+      void refreshAuthStatus('recent');
     }
 
     const stopEvents = eventManager.on({
@@ -163,12 +176,13 @@
     }
   };
 
-  const refreshAuthStatus = async () => {
+  // FL-647: opening a page shares the status the privacy guard just read instead of asking again
+  const refreshAuthStatus = async (mode: 'passive' | 'recent' = 'passive') => {
     const revision = sessionRevision;
     const privacyRevision = sessionAccess.revision;
     isSessionLoading = true;
     try {
-      const status = await getAuthStatus();
+      const { status } = await readAuthStatus(mode);
       if (revision === sessionRevision && privacyRevision === sessionAccess.revision && !sessionAccess.lockPending) {
         isElevated = status.isElevated;
       }
@@ -280,7 +294,7 @@
         </a>
       </div>
 
-      <!-- The prototype's `.primary-nav`: the three workspaces, text only, in this order. -->
+      <!-- The prototype's `.primary-nav`: the workspaces, text only, in this order. -->
       <nav class="fl-primary-nav" aria-label={$t('frameleaf_primary_navigation')}>
         {#each primaryDestinations as destination (destination.id)}
           <a
@@ -302,14 +316,18 @@
       shortcuts: a second instance would open the dialog twice.
     -->
     <div class="fl-topbar-search">
-      {#if featureFlagsManager.value.search}
+      {#if featureFlagsManager.value.search || proContext}
         <SearchEntry onToggleLocked={toggleSession} />
       {/if}
     </div>
 
     <section class="fl-topbar-actions">
       {#if onUploadClick}
-        <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
+        <UploadMenuButton
+          libraryScope={proContext ? LibraryScope.Design : undefined}
+          defaultAlbumId={uploadAlbumId}
+          isLockedAssets={uploadIsLocked}
+        />
       {/if}
 
       <!-- The one "work in progress" indicator, at every width; on phones it is the ring alone. -->
@@ -318,20 +336,20 @@
       <!-- FL-489: help for this screen, every help article and Ask Frameleaf (frameleaf-prototype #5). -->
       <button
         type="button"
-        class="fl-topbar-button"
-        onclick={() => (showHelp = true)}
+        class="fl-topbar-button fl-help-button"
+        onclick={() => (helpPanel.open = true)}
         title={$t('frameleaf_help_panel_open')}
         aria-label={$t('frameleaf_help_panel_open')}
         aria-haspopup="dialog"
-        aria-expanded={showHelp}
+        aria-expanded={helpPanel.open}
         data-testid="help-button"
       >
         <Icon icon={mdiHelpCircleOutline} size="20" aria-hidden="true" />
       </button>
-      {#if showHelp}
+      {#if helpPanel.open}
         <!-- Loaded on first use: the panel, its Markdown renderer and sanitizer stay out of every page's bundle (FL-139). -->
         {#await import('$lib/components/frameleaf/HelpPalette.svelte') then { default: HelpPalette }}
-          <HelpPalette onClose={() => (showHelp = false)} />
+          <HelpPalette onClose={() => (helpPanel.open = false)} />
         {/await}
       {/if}
 
@@ -430,14 +448,13 @@
     border-bottom: 0;
   }
   /*
-   * Three tracks: brand and workspaces, search, actions. The outer two share the spare width
-   * equally, so the search field sits in the true centre whenever both sides fit; when they do
-   * not, each side keeps the width of its content and the search field is what gives way. It can
-   * never run under the Upload button.
+   * One row: brand and workspaces, search, actions (apple-style.css "top bar", changed so five
+   * sections fit). Below 1440px the search field sits in the row, midway between the sections and
+   * the buttons, and is what gives way first, down to its magnifier; only after that do the
+   * sections scroll sideways. Nothing in the bar can run under anything else.
    */
   .fl-topbar-grid {
-    display: grid;
-    grid-template-columns: minmax(max-content, 1fr) minmax(0, 30rem) minmax(max-content, 1fr);
+    display: flex;
     align-items: center;
     column-gap: 1.125rem;
     height: 100%;
@@ -445,6 +462,7 @@
   }
   .fl-topbar-start {
     display: flex;
+    flex: 0 1 auto;
     align-items: center;
     align-self: stretch;
     gap: 1.125rem;
@@ -457,15 +475,24 @@
     gap: 0.25rem;
     min-width: 10.6875rem;
   }
+  /* B1 (UI review 2026-10-30): the mark never shrinks. With `min-width: 0` the lead's overflow
+     squeezed the logo to 2px on every phone page that has the menu button. */
   .fl-topbar-brand {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
-    min-width: 0;
   }
   .fl-primary-nav {
     display: flex;
     align-self: stretch;
     gap: 0.75rem;
+    /* Five sections on a narrow window scroll sideways rather than run under the buttons. */
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .fl-primary-nav::-webkit-scrollbar {
+    display: none;
   }
   .fl-primary-nav a {
     position: relative;
@@ -482,6 +509,12 @@
   .fl-primary-nav a.fl-current {
     color: var(--fl-text);
   }
+  /* Inset, so the scrolling row never clips the focus ring. */
+  .fl-primary-nav a:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: -2px;
+    border-radius: var(--fl-radius-control);
+  }
   .fl-primary-nav a.fl-current::after {
     content: '';
     position: absolute;
@@ -492,11 +525,38 @@
     border-radius: 2px;
     background: var(--fl-accent);
   }
+  /*
+   * Only the space the sections and the buttons leave, up to 30rem and centred in it. It never goes
+   * below its 44px magnifier; only then do the sections give way, by scrolling.
+   */
   .fl-topbar-search {
-    min-width: 0;
+    flex: 1 1 0;
+    min-width: 2.75rem;
+    max-width: 30rem;
+    margin-inline: auto;
+    container-type: inline-size;
+  }
+  /* Squeezed to a magnifier, the entry drops the shortcut hint and hides its label visually only,
+     so the button keeps its accessible name. */
+  @container (max-width: 9rem) {
+    .fl-topbar-search :global(.search-entry) {
+      justify-content: center;
+    }
+    .fl-topbar-search :global(.search-entry kbd) {
+      display: none;
+    }
+    .fl-topbar-search :global(.search-entry .label) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   .fl-topbar-actions {
     display: flex;
+    flex: none;
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;
@@ -509,10 +569,19 @@
     z-index: 40;
     padding-top: 0.5rem;
   }
-  /* From laptop width up the search field keeps a usable floor, whatever the actions hold. */
-  @media (min-width: 62.5625rem) {
+  /*
+   * Wide enough for five sections either side of it: three tracks, the outer two sharing the spare
+   * width equally, so the search field sits in the true centre whenever both sides fit; when they
+   * do not, each side keeps the width of its content and the search field gives way, down to a
+   * usable floor.
+   */
+  @media (min-width: 90rem) {
     .fl-topbar-grid {
+      display: grid;
       grid-template-columns: minmax(max-content, 1fr) minmax(12rem, 30rem) minmax(max-content, 1fr);
+    }
+    .fl-topbar-search {
+      margin-inline: 0;
     }
   }
   @media (max-width: 80rem) {
@@ -599,6 +668,9 @@
     }
     .fl-topbar-search {
       grid-area: search;
+      min-width: 0;
+      max-width: none;
+      margin-inline: 0;
     }
     .fl-topbar-actions {
       grid-area: actions;
@@ -623,14 +695,60 @@
   }
   /* apple-style.css: on phones the tab bar owns Search, so the bar keeps no search field. The
      entry stays mounted (only its trigger is hidden) so the tab bar and ⌘K still open it. */
+  /*
+   * UI review 2026-10-30 #8 (review-1030-shell.css): phones have one navigation, the ☰ menu and the
+   * tab bar, so the top Library / Boards / Studio / Activity tabs go and the bar is one 56px row with
+   * the 16px phone gutter: menu, logo, then Upload, the bell, Locked, theme and account. Every box is
+   * 36px and 8px from the next; Help moves into the menu (LibraryRail `fl-phone-sections`).
+   */
   @media (max-width: 700px) {
     .fl-topbar-grid {
-      /* The spare column is the gap between the brand and Upload, so it never closes further than the others. */
-      grid-template-columns: minmax(0, auto) minmax(var(--fl-topbar-gap), 1fr) auto;
-      grid-template-areas:
-        'lead . actions'
-        'primary primary primary';
-      column-gap: 0;
+      display: flex;
+      align-items: center;
+      gap: var(--fl-space-2);
+      padding: 0 max(1rem, var(--fl-safe-right)) 0 max(1rem, var(--fl-safe-left));
+    }
+    .fl-topbar-lead {
+      gap: var(--fl-space-2);
+      overflow: visible;
+    }
+    .fl-primary-nav {
+      display: none;
+    }
+    .fl-topbar-actions {
+      flex: none;
+      gap: var(--fl-space-2);
+      margin-inline-start: auto;
+    }
+    .fl-topbar-actions > .fl-help-button {
+      display: none;
+    }
+    .fl-topbar-lead > :global(button),
+    .fl-topbar-actions > :global(button),
+    .fl-topbar-actions :global(.upload-menu .menu-root > button),
+    .fl-notif-bell,
+    .fl-locked-control {
+      width: 36px;
+      min-width: 36px;
+      height: 36px;
+      min-height: 36px;
+      padding: 0;
+    }
+    /* The bordered Locked box is the 36px; its button fills it. */
+    .fl-locked-control .fl-locked-toggle {
+      width: 100%;
+      min-width: 0;
+      height: 100%;
+      min-height: 0;
+      padding: 0;
+    }
+    .fl-topbar-button::before,
+    .fl-topbar-actions :global(.upload-menu .menu-root > button)::before {
+      inset: 0;
+    }
+    .fl-topbar-actions :global(.fl-account-button) {
+      min-height: 36px;
+      padding: 0 var(--fl-space-half);
     }
     .fl-topbar-search {
       position: absolute;
@@ -756,5 +874,22 @@
     text-align: center;
     box-shadow: 0 0 0 2px var(--fl-panel);
     pointer-events: none;
+  }
+  /*
+   * Narrow phones keep every control on screen inside the 16px gutter. While work runs, the ring takes
+   * the Locked box's place under 420px; Locked stays in the ☰ menu (Library › Locked).
+   */
+  @media (max-width: 419px) {
+    .fl-topbar-actions:has(:global(.fl-activity)) .fl-locked-control {
+      display: none;
+    }
+  }
+  /* Under 352px the 8px gaps would push the account button into the gutter: 4px apart instead. */
+  @media (max-width: 351px) {
+    .fl-topbar-grid,
+    .fl-topbar-lead,
+    .fl-topbar-actions {
+      gap: var(--fl-space-1);
+    }
   }
 </style>

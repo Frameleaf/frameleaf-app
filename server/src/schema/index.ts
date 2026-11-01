@@ -5,14 +5,17 @@ import {
   asset_face_source_type,
   asset_visibility_enum,
   assets_status_enum,
+  library_scope_enum,
 } from 'src/schema/enums.js';
 import {
+  album_library_scope_refresh,
   album_user_after_insert,
   album_user_delete,
   album_user_delete_audit,
   asset_delete_audit,
   asset_exif_landmark_match,
   asset_face_audit,
+  asset_library_scope_refresh,
   asset_metadata_audit,
   asset_ocr_delete_audit,
   desktop_clip_producer_guard,
@@ -35,11 +38,13 @@ import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
+import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { ApiKeyTable } from 'src/schema/tables/api-key.table.js';
+import { AssetAnnotationTable } from 'src/schema/tables/asset-annotation.table.js';
 import { AssetAuditTable } from 'src/schema/tables/asset-audit.table.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
 import { AssetBackupDeletionTable } from 'src/schema/tables/asset-backup-deletion.table.js';
@@ -68,11 +73,20 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
-import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
+import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-fingerprint.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
+import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
+import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
+import {
+  BrowserExtensionAccessTable,
+  BrowserExtensionSignInCodeTable,
+} from 'src/schema/tables/browser-extension-sign-in.table.js';
+import { CaptureReceiptTable } from 'src/schema/tables/capture-receipt.table.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import {
@@ -95,7 +109,13 @@ import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/des
 import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
 import { DesktopWorkerQualificationTable } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
+import {
+  DevelopBatchItemTable,
+  DevelopBatchReturnTable,
+  DevelopBatchTable,
+} from 'src/schema/tables/develop-batch.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
+import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import {
@@ -104,6 +124,7 @@ import {
   ICloudEditDecisionTable,
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
+import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
@@ -119,6 +140,7 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { MlProcessingOrderTable } from 'src/schema/tables/ml-processing-order.table.js';
 import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-origin.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
@@ -176,6 +198,14 @@ import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusio
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-description.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
+import { SourceOriginalTable, SourceResourceReadTable } from 'src/schema/tables/source-resource-read.table.js';
+import { SourceResourceGrantNonceTable, SourceResourceGrantTable } from 'src/schema/tables/source-resource.table.js';
+import {
+  SpeechCheckpointTable,
+  SpeechSettingsTable,
+  SpeechTranscriptTable,
+  SpeechWindowTable,
+} from 'src/schema/tables/speech.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import {
@@ -222,6 +252,12 @@ import {
   VideoStreamSessionTable,
   VideoStreamVariantTable,
 } from 'src/schema/tables/video-stream.table.js';
+import {
+  WorkflowBatchItemTable,
+  WorkflowBatchTable,
+  WorkflowCausationTable,
+  WorkflowScheduleTable,
+} from 'src/schema/tables/workflow-batch.table.js';
 import { WorkflowDefinitionTable } from 'src/schema/tables/workflow-definition.table.js';
 import { WorkflowLogDetailTable } from 'src/schema/tables/workflow-log-detail.table.js';
 import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table.js';
@@ -236,10 +272,15 @@ export class ImmichDatabase {
     DesktopClipIndexTable,
     DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
+    MlProcessingOrderTable,
     DesktopDeviceTable,
     PhotoSourceTable,
     PhotoSourceRunTable,
     PhotoSourceResourceTable,
+    SourceResourceGrantTable,
+    SourceResourceGrantNonceTable,
+    SourceOriginalTable,
+    SourceResourceReadTable,
     DesktopWorkerSessionTable,
     DesktopWorkerChallengeTable,
     DesktopWorkerQualificationTable,
@@ -260,6 +301,16 @@ export class ImmichDatabase {
     PushDeviceActivityTable,
     AssetBackupDeletionTable,
     BackupReconciliationTable,
+    AssetPaletteTable,
+    AssetPaletteSwatchTable,
+    AssetAnnotationTable,
+    CaptureReceiptTable,
+    BrowserExtensionSignInCodeTable,
+    BrowserExtensionAccessTable,
+    BookmarkTable,
+    AlbumBookmarkTable,
+    BookmarkTagTable,
+    AssetSourceTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -293,7 +344,7 @@ export class ImmichDatabase {
     AssetHealthCandidateTable,
     AssetExifTable,
     AssetVideoTable,
-    AssetVideoDuplicateFrameTable,
+    AssetVideoFingerprintTable,
     ClassificationRuleTable,
     ClassificationMatchTable,
     CloudBackupObjectTable,
@@ -341,6 +392,7 @@ export class ImmichDatabase {
     PartnerTable,
     PersonTable,
     PersonAuditTable,
+    IdenticalFileChangeTable,
     PhysicalFileTable,
     PersonGroupTable,
     PersonGroupAuditTable,
@@ -379,6 +431,8 @@ export class ImmichDatabase {
     StudioExportVersionTable,
     StudioExportVersionSourceTable,
     StudioExportRemoteReferenceTable,
+    EagleImportTable,
+    EagleImportItemTable,
     TakeoutImportTable,
     TakeoutSourceTable,
     TakeoutFileTable,
@@ -415,6 +469,17 @@ export class ImmichDatabase {
     WorkflowLogTable,
     WorkflowLogDetailTable,
     WorkflowRunStepTable,
+    DevelopBatchTable,
+    SpeechSettingsTable,
+    SpeechTranscriptTable,
+    SpeechWindowTable,
+    SpeechCheckpointTable,
+    DevelopBatchItemTable,
+    DevelopBatchReturnTable,
+    WorkflowBatchTable,
+    WorkflowBatchItemTable,
+    WorkflowScheduleTable,
+    WorkflowCausationTable,
   ];
 
   functions = [
@@ -428,6 +493,8 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
+    asset_library_scope_refresh,
+    album_library_scope_refresh,
     album_user_after_insert,
     album_user_delete_audit,
     memory_delete_audit,
@@ -442,7 +509,7 @@ export class ImmichDatabase {
     album_user_delete,
   ];
 
-  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum];
+  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum, library_scope_enum];
 }
 
 export interface Migrations {
@@ -458,6 +525,10 @@ export interface DB extends QueueDatabase {
   photo_source: PhotoSourceTable;
   photo_source_run: PhotoSourceRunTable;
   photo_source_resource: PhotoSourceResourceTable;
+  source_resource_grant: SourceResourceGrantTable;
+  source_resource_grant_nonce: SourceResourceGrantNonceTable;
+  source_original: SourceOriginalTable;
+  source_resource_read: SourceResourceReadTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;
@@ -499,6 +570,16 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  asset_palette: AssetPaletteTable;
+  asset_palette_swatch: AssetPaletteSwatchTable;
+  asset_annotation: AssetAnnotationTable;
+  capture_receipt: CaptureReceiptTable;
+  browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;
+  browser_extension_access: BrowserExtensionAccessTable;
+  bookmark: BookmarkTable;
+  album_bookmark: AlbumBookmarkTable;
+  bookmark_tag: BookmarkTagTable;
+  asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;
   asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;
@@ -507,7 +588,7 @@ export interface DB extends QueueDatabase {
   asset_audio: AssetAudioTable;
   asset_video: AssetVideoTable;
   asset_keyframe: AssetKeyframeTable;
-  asset_video_duplicate_frame: AssetVideoDuplicateFrameTable;
+  asset_video_fingerprint: AssetVideoFingerprintTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;
@@ -546,6 +627,7 @@ export interface DB extends QueueDatabase {
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
   ml_workload_route_origin: MlWorkloadRouteOriginTable;
+  ml_processing_order: MlProcessingOrderTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
   ml_cloud_model_choice: MlCloudModelChoiceTable;
   operational_metric_sample: OperationalMetricSampleTable;
@@ -577,6 +659,7 @@ export interface DB extends QueueDatabase {
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 
+  identical_file_change: IdenticalFileChangeTable;
   physical_file: PhysicalFileTable;
 
   preservation_package: PreservationPackageTable;
@@ -625,12 +708,21 @@ export interface DB extends QueueDatabase {
 
   takeout_album: TakeoutAlbumTable;
   takeout_file: TakeoutFileTable;
+  eagle_import: EagleImportTable;
+  eagle_import_item: EagleImportItemTable;
   takeout_import: TakeoutImportTable;
   takeout_item: TakeoutItemTable;
   takeout_pair: TakeoutPairTable;
   takeout_source: TakeoutSourceTable;
 
   develop_export: DevelopExportTable;
+  develop_batch: DevelopBatchTable;
+  speech_settings: SpeechSettingsTable;
+  speech_transcript: SpeechTranscriptTable;
+  speech_window: SpeechWindowTable;
+  speech_checkpoint: SpeechCheckpointTable;
+  develop_batch_item: DevelopBatchItemTable;
+  develop_batch_return: DevelopBatchReturnTable;
   develop_preset: DevelopPresetTable;
 
   tag: TagTable;
@@ -669,4 +761,8 @@ export interface DB extends QueueDatabase {
   workflow_definition: WorkflowDefinitionTable;
   workflow_log_detail: WorkflowLogDetailTable;
   workflow_run_step: WorkflowRunStepTable;
+  workflow_batch: WorkflowBatchTable;
+  workflow_batch_item: WorkflowBatchItemTable;
+  workflow_schedule: WorkflowScheduleTable;
+  workflow_causation: WorkflowCausationTable;
 }

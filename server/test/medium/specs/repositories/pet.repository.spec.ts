@@ -336,6 +336,31 @@ describe(PetRepository.name, () => {
 
       await expect(sut.getCandidates(user.id, 10)).resolves.toEqual([expect.objectContaining({ petId: rex.id })]);
     });
+
+    it('leaves answered pairs and photos with a confirmed pet out before the limit (FL-712)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: matched } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: rejected } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: open } = await ctx.newAsset({ ownerId: user.id });
+      const biscuit = await sut.create({ ownerId: user.id, name: 'Biscuit' });
+      const rex = await sut.create({ ownerId: user.id, name: 'Rex' });
+      await sut.upsertObservation({ petId: biscuit.id, assetId: matched.id, state: PetObservationState.Confirmed });
+      await sut.upsertObservation({ petId: biscuit.id, assetId: rejected.id, state: PetObservationState.Rejected });
+      for (const asset of [matched, rejected, open]) {
+        const [detection] = await sut.replaceDetections(asset.id, [], [{ modelName: 'clip', modelRevision: 'r' }]);
+        await sut.upsertCandidates([
+          { detectionId: detection.id, petId: biscuit.id, score: 0.9 },
+          { detectionId: detection.id, petId: rex.id, score: 0.8 },
+        ]);
+      }
+
+      const left = await sut.getCandidates(user.id, 3);
+
+      expect(left.map(({ assetId, petId }) => `${assetId}:${petId}`).sort()).toEqual(
+        [`${rejected.id}:${rex.id}`, `${open.id}:${biscuit.id}`, `${open.id}:${rex.id}`].sort(),
+      );
+    });
   });
 
   describe('recognition runs (FL-58)', () => {

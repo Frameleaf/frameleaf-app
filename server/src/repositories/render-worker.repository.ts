@@ -38,6 +38,7 @@ import {
   evaluateClaimAdmission,
   evaluateRenderOutput,
   evaluateSessionAdmission,
+  operationOutputRequest,
   tightestLimits,
 } from 'src/utils/render-admission.js';
 
@@ -542,12 +543,14 @@ export class RenderWorkerRepository {
       .selectAll()
       .select(memoryBytes)
       .where('token', '=', token)
+      .where('revokedAt', 'is', null)
+      .where('expiresAt', '>', sql<Date>`now()`)
       .executeTakeFirst()) as unknown as RenderWorkerSession | undefined;
     if (!session) {
       return undefined;
     }
     const worker = await this.getWorker(session.workerId);
-    return worker ? { worker, session } : undefined;
+    return worker?.status === RenderWorkerStatus.Active ? { worker, session } : undefined;
   }
   /**
    * Every session that could still render: unrevoked, unexpired and held by an active worker, with
@@ -963,7 +966,7 @@ export class RenderWorkerRepository {
               engineDigest: session.engineDigest,
             },
           ],
-          operation.settings as { format: string; color: string; resolution: string },
+          operationOutputRequest(operation.settings, operation.snapshot),
         );
         if (!output.supported)
           return refuse(

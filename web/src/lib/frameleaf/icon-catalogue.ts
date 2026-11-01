@@ -84,6 +84,22 @@ export const derivedIconLabel = (name: string): string =>
     .trim()
     .toLowerCase();
 
+/**
+ * Search keywords for icons whose names miss common words people type ("lake" finds no water
+ * icon by name, only "snowflake"). `@mdi/js` ships names and paths only, no tags.
+ * ponytail: hand-picked for outdoor/travel albums; load MDI's meta.json tags if this list keeps growing.
+ */
+const ICON_KEYWORDS: Record<string, string> = {
+  mdiWaves: 'water lake sea ocean',
+  mdiWater: 'lake river drop',
+  mdiSailBoat: 'lake sea sailing',
+  mdiKayaking: 'lake river canoe',
+  mdiRowing: 'lake river canoe',
+  mdiFish: 'lake fishing',
+  mdiBeach: 'sea ocean coast',
+  mdiImageFilterHdr: 'mountain hiking',
+};
+
 export interface CatalogueEntry {
   name: string;
   label: string;
@@ -97,7 +113,8 @@ export const buildCatalogueEntries = (catalogue: AlbumIconCatalogueResponseDto):
   return catalogue.names.map((name) => {
     const derived = derivedIconLabel(name);
     const label = curated.get(name);
-    return { name, label: label ?? derived, text: label ? `${label.toLowerCase()} ${derived}` : derived };
+    const text = [label?.toLowerCase(), derived, ICON_KEYWORDS[name]].filter(Boolean).join(' ');
+    return { name, label: label ?? derived, text };
   });
 };
 
@@ -106,5 +123,27 @@ export const searchCatalogue = (entries: CatalogueEntry[], query: string): Catal
   if (terms.length === 0) {
     return entries;
   }
-  return entries.filter((entry) => terms.every((term) => entry.text.includes(term)));
+  // Each term scores 0 for a whole word, 1 for a word prefix, 2 inside a word; lowest total first.
+  const scoreOf = (entry: CatalogueEntry) => {
+    const words = entry.text.split(' ');
+    let total = 0;
+    for (const term of terms) {
+      if (words.includes(term)) {
+        continue;
+      }
+      if (words.some((word) => word.startsWith(term))) {
+        total += 1;
+      } else if (entry.text.includes(term)) {
+        total += 2;
+      } else {
+        return -1;
+      }
+    }
+    return total;
+  };
+  return entries
+    .map((entry) => ({ entry, score: scoreOf(entry) }))
+    .filter(({ score }) => score >= 0)
+    .sort((a, b) => a.score - b.score)
+    .map(({ entry }) => entry);
 };

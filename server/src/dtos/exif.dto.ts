@@ -68,7 +68,7 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     country: entity.country,
     description: entity.description,
     projectionType: entity.projectionType,
-    rating: entity.rating === -1 ? null : entity.rating,
+    rating: entity.rating === -1 || entity.rating === 0 ? null : entity.rating,
     isRejected: entity.rating === -1,
     fps: entity.fps ?? null,
   };

@@ -1,4 +1,5 @@
 /** Pinned dotLottie v1/v2 packaging; byte reads reuse the bounded bundle reader. */
+import { tryPromise } from 'src/utils/promise.js';
 import { StudioImportRefusal } from 'src/utils/studio-imports.js';
 import { readZipDirectory, readZipEntry } from 'src/utils/studio-zip-reader.js';
 
@@ -92,7 +93,7 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const source = {
       size: buffer.length,
-      read: (offset: number, length: number) => Promise.try(() => buffer.subarray(offset, offset + length)),
+      read: (offset: number, length: number) => tryPromise(() => buffer.subarray(offset, offset + length)),
     };
     const directory = await readZipDirectory(source, {
       strictPaths: true,
@@ -105,7 +106,8 @@ export async function readLottieArchive(bytes: Uint8Array): Promise<LottieArchiv
     });
     const aliases = new Set<string>();
     for (const entry of directory.entries) {
-      if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x8_00) return fail();
+      // UTF-8 names (bit 11), data descriptors (bit 3) and deflate level hints (bits 1-2) are safe.
+      if (aliases.has(entry.name.toLowerCase()) || (entry.flags ?? 0) & ~0x8_0e) return fail();
       aliases.add(entry.name.toLowerCase());
       files[entry.name] = await readZipEntry(source, entry, MAX_BYTES);
     }

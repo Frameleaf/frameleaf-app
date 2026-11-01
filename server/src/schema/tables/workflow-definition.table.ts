@@ -1,5 +1,6 @@
 import { Column, ForeignKeyColumn, Table, UpdateDateColumn } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { WorkflowSchedule, WorkflowSource } from 'src/utils/workflow-source.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 
 /** One ordered step of a stored workflow definition (FL-82). */
@@ -16,6 +17,8 @@ export type WorkflowDefinitionStep = {
 
 export type WorkflowDefinitionDocument = {
   version: 1;
+  source?: WorkflowSource | null;
+  schedule?: WorkflowSchedule | null;
   /** The trigger as written, including one this server does not offer. */
   trigger: string;
   /** Top-level fields of the imported definition this server does not use. */

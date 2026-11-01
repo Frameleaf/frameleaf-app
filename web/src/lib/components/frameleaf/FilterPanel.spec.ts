@@ -1,4 +1,11 @@
-import { ImageEnrichmentFilter, SearchFacetField, type PersonResponseDto } from '@frameleaf/sdk';
+import {
+  ColorTolerance,
+  LibraryViewScope,
+  ImageEnrichmentFilter,
+  SearchFacetField,
+  type PersonResponseDto,
+  type PetResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -6,6 +13,12 @@ import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discov
 import { emptyFilterPanelOptions } from '$lib/frameleaf/search-options';
 import { renderWithTooltips } from '$tests/helpers';
 import FilterPanel from './FilterPanel.svelte';
+
+/** The option names of the listbox a combobox controls. */
+const optionNames = (combobox: HTMLElement) =>
+  [...document.querySelectorAll(`#${combobox.getAttribute('aria-controls')} [role="option"]`)].map((option) =>
+    option.textContent?.trim(),
+  );
 
 const JAMIE = '00000000-0000-4000-8000-000000000001';
 
@@ -38,6 +51,27 @@ describe('FilterPanel', () => {
     return { onChange, panel: screen.getByRole('complementary', { name: 'Library filters' }) };
   };
 
+  it('edits the shared color filter without changing workspace scope', async () => {
+    const { onChange, panel } = setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
+    await fireEvent.input(within(panel).getByRole('textbox', { name: 'Hex color' }), { target: { value: '#609060' } });
+    await fireEvent.click(within(panel).getByRole('button', { name: 'Show matches' }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: {
+          libraryScope: LibraryViewScope.Design,
+          color: { hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 },
+        },
+      }),
+    );
+  });
+  it('offers subtree membership through the existing album selector', async () => {
+    const { onChange, panel } = setup(emptyDiscoveryQuery(), {
+      options: { ...options, albums: [{ value: JAMIE, label: 'Brand / Packaging' }] },
+    });
+    const section = within(panel).getByRole('heading', { name: 'Albums including nested albums' }).closest('section')!;
+    await fireEvent.click(within(section).getByRole('checkbox', { name: /Brand \/ Packaging/ }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ filter: { albumSubtreeIds: { any: [JAMIE] } } }));
+  });
   it('embedded in the search palette, draws no heading and shows live counts', () => {
     const { panel } = setup(emptyDiscoveryQuery(), {
       embedded: true,
@@ -54,6 +88,15 @@ describe('FilterPanel', () => {
         .getByRole('radio', { name: /^No description/ })
         .closest('label'),
     ).toHaveTextContent('5');
+  });
+
+  it('shows each pet with its live count, as people are shown (LIB-11)', () => {
+    const MAX = '00000000-0000-4000-8000-000000000002';
+    const { panel } = setup(emptyDiscoveryQuery(), {
+      options: { ...options, pets: [{ id: MAX, name: 'Max' } as PetResponseDto] },
+      facets: { [SearchFacetField.Pets]: [{ value: MAX, label: 'Max', count: 4 }] },
+    });
+    expect(within(panel).getByRole('checkbox', { name: /Max/ }).closest('label')).toHaveTextContent('4');
   });
 
   it('keeps its heading and capture labels outside the palette', () => {
@@ -79,5 +122,40 @@ describe('FilterPanel', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ imageEnrichment: ImageEnrichmentFilter.ImageDescriptionFailed }),
     );
+  });
+
+  /** LIB-09: star counts read as English, "0 stars or more" is gone, and 0 stars is one of the exact counts. */
+  it('lists rating choices with correct plurals and no "0 stars or more"', async () => {
+    const { panel } = setup();
+    const rating = within(panel).getByRole('combobox', { name: 'Star rating' });
+    await fireEvent.focus(rating);
+    await fireEvent.keyDown(rating, { key: 'ArrowDown' });
+    const names = optionNames(rating);
+    expect(names).toEqual([
+      'Any rating',
+      'Not rated',
+      'Rejected',
+      'Exactly 0 stars',
+      'Exactly 1 star',
+      'Exactly 2 stars',
+      'Exactly 3 stars',
+      'Exactly 4 stars',
+      'Exactly 5 stars',
+      '1 star or more',
+      '2 stars or more',
+      '3 stars or more',
+      '4 stars or more',
+      '5 stars or more',
+    ]);
+  });
+
+  it('names visibility choices instead of showing the stored value', async () => {
+    const { panel } = setup();
+    const visibility = within(panel).getByRole('combobox', { name: 'Visibility' });
+    await fireEvent.focus(visibility);
+    await fireEvent.keyDown(visibility, { key: 'ArrowDown' });
+    const names = optionNames(visibility);
+    expect(names).toEqual(expect.arrayContaining(['Archived', 'Timeline', 'Hidden', 'Locked']));
+    expect(names).not.toContain('archive');
   });
 });

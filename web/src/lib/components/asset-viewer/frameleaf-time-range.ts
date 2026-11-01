@@ -4,7 +4,8 @@ import MediaTimeRange from 'media-chrome/media-time-range';
 const COMMIT_DELAY_MS = 750;
 
 /** Custom MediaTimeRange that only seeks after pointer release to avoid hammering the server.
- * Keyboard input uses timed debouncing instead since there's no release event. */
+ * Keyboard input uses timed debouncing instead since there's no release event.
+ * With `live` (FL-650: a file played directly, where a seek is just a byte-range read) it seeks as you drag. */
 class FrameleafTimeRange extends MediaTimeRange {
   private seeking = false;
   private pending: number | undefined;
@@ -41,6 +42,9 @@ class FrameleafTimeRange extends MediaTimeRange {
   }
 
   private hold = (event: Event) => {
+    if (this.hasAttribute('live')) {
+      return;
+    }
     if (event instanceof KeyboardEvent && !this.keysUsed.includes(event.key)) {
       return;
     }

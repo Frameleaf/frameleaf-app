@@ -219,7 +219,11 @@ export class ArchiveOperationRepository {
             select 1 from stack where stack.id = asset."stackId" and stack."primaryAssetId" <> asset.id
           )`,
         )
-        .$call((qb) => withHiddenContentFilter(qb, getHiddenContentQueryOptions(auth)));
+        .$call((qb) => withHiddenContentFilter(qb, getHiddenContentQueryOptions(auth)))
+        .orderBy('asset.fileCreatedAt', 'desc')
+        .orderBy('asset.id')
+        // one past the cap is enough to refuse an over-cap selection without inserting every match
+        .limit(BULK_MAX_ITEMS + 1);
       // One statement freezes membership; nothing loaded in a browser is the authority.
       await sql`
         INSERT INTO public.archive_operation_item ("operationId", "assetId", ordinal)
@@ -230,7 +234,7 @@ export class ArchiveOperationRepository {
       const count = await this.countItems(id, tx);
       if (count > BULK_MAX_ITEMS) {
         throw new BadRequestException(
-          `This selection has ${count} items; archive at most ${BULK_MAX_ITEMS} at a time by narrowing the view`,
+          `This selection has more than ${BULK_MAX_ITEMS} items; archive at most ${BULK_MAX_ITEMS} at a time by narrowing the view`,
         );
       }
       return id;
@@ -372,7 +376,7 @@ export class ArchiveOperationRepository {
             AND NOT EXISTS (
               SELECT 1 FROM media_operation job
               WHERE job.id IN (o."archiveJobId", o."undoJobId")
-                AND job.status IN ('queued', 'preparing', 'rendering', 'validating', 'cancelling', 'paused')
+                AND job.status = ANY(${LIVE_JOB_STATUSES}::text[])
             )
           )
         RETURNING o.id

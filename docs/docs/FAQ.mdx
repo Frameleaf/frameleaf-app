@@ -279,15 +279,15 @@ You can use [Smart Search](/features/searching.md) for this to some extent. For 
 In **Settings → Search & intelligence → Faces & identity**, under **Advanced: face model and numbers**, you can increase **Face clarity needed** to 0.8 to help prevent bad thumbnails. Setting it too high (above 0.9) might filter out too many real faces depending on the library used. If you just want to hide specific faces, you can raise **Photos needed before someone appears**
 to increase the bar for what the algorithm considers a "core face" for that person, reducing the chance of bad thumbnails being chosen.
 
-### The immich_model-cache volume takes up a lot of space, what could be the problem?
+### The frameleaf_model-cache volume takes up a lot of space, what could be the problem?
 
-If you installed several models and chose not to use some of them, it might be worth deleting the old models that are in immich_model-cache. To do this you can mount the model cache and remove the undesired models.
+If you installed several models and chose not to use some of them, it might be worth deleting the old models that are in frameleaf_model-cache (`immich_model-cache` on a stack that kept the `immich` project name). To do this you can mount the model cache and remove the undesired models.
 
 <details>
 <summary>Steps</summary>
 
 ```bash
-docker run -it --rm -v immich_model-cache:/mnt-models alpine sh
+docker run -it --rm -v frameleaf_model-cache:/mnt-models alpine sh
 cd /mnt-models
 ls clip/ facial-recognition/
 # rm -r clip/ABC facial-recognition/DEF # delete unused models
@@ -374,6 +374,13 @@ You can change the user in the container by setting the `user` argument in `dock
 <ComposeBuilder query="rootless.enabled=true" />
 
 The non-root user/group needs read/write access to the volume mounts, including `UPLOAD_LOCATION` and `/cache` for machine-learning.
+
+Before the first `docker compose up`, create the rootless file's `./studio-worker` and `./ml-model-cache` folders, plus the media and database folders set by `UPLOAD_LOCATION` and `DB_DATA_LOCATION` in `.env`, and give them to that user. Otherwise Docker creates them owned by root, and the server and database cannot write to them, the Studio render worker cannot enrol and models cannot be cached. With the default `.env` (replace `./library` and `./postgres19` if you changed those values):
+
+```sh
+mkdir -p ./studio-worker ./ml-model-cache ./library ./postgres19
+sudo chown 1000:1000 ./studio-worker ./ml-model-cache ./library ./postgres19
+```
 
 :::note Docker Compose Volumes
 The Docker Compose top level volume element does not support non-root access, all of the above volumes must be local volume mounts.

@@ -173,6 +173,13 @@
     --fl-tabbar-space: 0px;
   }
 
+  /* UI review 2026-10-30 #8: on phones the top bar is one 56px row (no top tabs, TopBar.svelte). */
+  @media (max-width: 700px) {
+    :root {
+      --fl-topbar-height-phone: calc(3.5rem + env(safe-area-inset-top, 0px));
+    }
+  }
+
   :root.dark {
     color-scheme: dark;
   }
@@ -409,7 +416,7 @@ body:not(.asset-viewer-open) {
  * circle drops it, so the squircle is the only outline.
  */
 :root {
-  --fl-squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 88 88 100 50 100S0 88 0 50 12 0 50 0 100 12 100 50Z'/%3E%3C/svg%3E");
+  --fl-squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 94 94 100 50 100S0 94 0 50 6 0 50 0 100 6 100 50Z'/%3E%3C/svg%3E");
 }
 
 .fl-squircle,

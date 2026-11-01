@@ -7,6 +7,7 @@ select
   "ownerId",
   "duplicateId",
   "stackId",
+  "deletedAt",
   (
     case
       when "asset"."visibility" = 'hidden' then "asset"."visibility"
@@ -357,10 +358,12 @@ select
   "asset"."isExternal",
   "asset"."visibility",
   "asset"."libraryId",
+  "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
   "asset"."originalFileName",
   "asset"."originalPath",
+  "asset"."libraryPath",
   "asset"."physicalOriginalFileId",
   "asset"."ownerId",
   "asset"."type",
@@ -459,29 +462,6 @@ where
     )
   )
   and "job_status"."duplicatesDetectedAt" is null
-
--- AssetJobRepository.streamForVideoDuplicateFrames
-select
-  "asset"."id"
-from
-  "asset"
-  left join "asset_video_duplicate_frame" as "frame" on "frame"."assetId" = "asset"."id"
-where
-  "asset"."type" = 'VIDEO'
-  and "asset"."deletedAt" is null
-  and "asset"."visibility" != 'hidden'
-  and not exists (
-    select
-      1
-    from
-      asset_lock
-    where
-      asset_lock."assetId" = "asset"."id"
-  )
-group by
-  "asset"."id"
-having
-  count("frame"."assetId") < $1
 
 -- AssetJobRepository.getForVideoDuplicateFrameJob
 select
@@ -663,7 +643,8 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."id" = $2
+  "asset"."libraryScope" in ($2, $3)
+  and "asset"."id" = $4
 
 -- AssetJobRepository.getForOcr
 select
@@ -714,7 +695,8 @@ select
 from
   "asset"
 where
-  "asset"."type" in ('IMAGE', 'VIDEO')
+  "asset"."libraryScope" in ($1, $2)
+  and "asset"."type" in ('IMAGE', 'VIDEO')
   and "asset"."status" = 'active'
   and "asset"."deletedAt" is null
   and "asset"."visibility" in ('archive', 'timeline')
@@ -740,7 +722,7 @@ where
         "asset_best_photo_score"
       where
         "asset_best_photo_score"."assetId" = "asset"."id"
-        and "asset_best_photo_score"."scoreVersion" < $1
+        and "asset_best_photo_score"."scoreVersion" < $3
     )
   )
 
@@ -778,7 +760,8 @@ select
 from
   "asset"
 where
-  "asset"."id" = $1
+  "asset"."libraryScope" in ($1, $2)
+  and "asset"."id" = $3
 
 -- AssetJobRepository.getForSyncAssets
 select
@@ -796,6 +779,7 @@ where
 -- AssetJobRepository.getForAssetDeletion
 select
   "asset"."id",
+  "asset"."type",
   "asset"."visibility",
   "asset"."libraryId",
   "asset"."ownerId",
@@ -1008,6 +992,7 @@ select
   "asset"."type",
   "asset"."checksum",
   "asset"."originalPath",
+  "asset"."libraryPath",
   "asset"."physicalOriginalFileId",
   "asset"."isExternal",
   "asset"."visibility",
@@ -1053,6 +1038,7 @@ select
   "asset"."type",
   "asset"."checksum",
   "asset"."originalPath",
+  "asset"."libraryPath",
   "asset"."physicalOriginalFileId",
   "asset"."isExternal",
   "asset"."visibility",
@@ -1133,6 +1119,7 @@ where
       "assetId" = "asset"."id"
       and "asset_file"."type" = $2
   )
+  and "asset"."libraryScope" in ($3, $4)
 order by
   "asset"."fileCreatedAt" desc
 

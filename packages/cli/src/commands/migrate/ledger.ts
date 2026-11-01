@@ -4,6 +4,8 @@ import type { AssetRecord } from 'src/commands/migrate/types';
 export interface AlbumSnapshot {
   aId: string;
   name: string;
+  /** Album, collection or space. Albums nest only inside a collection, so this must survive. */
+  kind?: string;
   description: string;
   icon: string | null;
   order?: string;
@@ -24,6 +26,8 @@ export interface PersonSnapshot {
   isHidden: boolean;
   isFavorite: boolean;
   color: string | null;
+  /** The destination person an earlier run attached this name to, if any. */
+  bId?: string | null;
 }
 
 interface AssetRow {
@@ -133,6 +137,11 @@ export class Ledger {
     if (runColumns.every((column) => column.name !== 'source_email')) {
       this.db.exec('ALTER TABLE run ADD COLUMN source_email TEXT');
     }
+    // Likewise the album kind; enumeration re-snapshots albums on every run, which fills it in.
+    const albumColumns = this.db.prepare('PRAGMA table_info(album)').all() as Array<{ name: string }>;
+    if (albumColumns.every((column) => column.name !== 'kind')) {
+      this.db.exec('ALTER TABLE album ADD COLUMN kind TEXT');
+    }
   }
 
   // --- run metadata ---
@@ -203,6 +212,35 @@ export class Ledger {
       .run(name, value);
   }
 
+  /**
+   * `--rescan`: walk the source library again on this ledger to pick up assets added since
+   * the last run. Only the enumeration cursors are cleared; every enumerated asset keeps its
+   * destination id and upload state, and albums keep the destination album they map to, so
+   * nothing is uploaded or created twice. Album links, tag assignments, people and stacks with
+   * unseen members are reopened because adding members to them is idempotent and new assets
+   * may belong to them.
+   * Returns whether the scan starts over (false when an interrupted scan is resumed instead).
+   */
+  reopenForRescan(visibilities: readonly string[]): boolean {
+    return this.db.transaction(() => {
+      // An interrupted scan (first or rescan) resumes from its cursors; only a finished one restarts.
+      const shouldRestart = visibilities.every((visibility) => this.getCursor(`enum:${visibility}:done`));
+      if (shouldRestart) {
+        this.stmt("DELETE FROM cursor WHERE name LIKE 'enum:%'").run();
+      }
+      this.stmt('UPDATE album SET linked = 0').run();
+      this.stmt('UPDATE tag SET assigned = 0').run();
+      this.stmt('UPDATE person SET done = 0').run();
+      // A stack finished without a member the ledger never saw (added to the source after the
+      // last scan) waits for it again. Re-creating merges into the existing destination stack.
+      this.stmt(
+        `UPDATE stack SET done = 0 WHERE EXISTS (SELECT 1 FROM json_each(stack.member_a_ids) m
+           WHERE NOT EXISTS (SELECT 1 FROM asset WHERE asset.a_id = m.value))`,
+      ).run();
+      return shouldRestart;
+    })();
+  }
+
   // --- assets ---
   upsertAsset(r: AssetRecord) {
     this.stmt(
@@ -217,7 +255,9 @@ export class Ledger {
       is_favorite = excluded.is_favorite, visibility = excluded.visibility,
       live_video_a_id = excluded.live_video_a_id, description = excluded.description,
       date_time_original = excluded.date_time_original, latitude = excluded.latitude,
-      longitude = excluded.longitude, rating = excluded.rating
+      longitude = excluded.longitude, rating = excluded.rating,
+      -- A changed Live Photo pairing (seen on --rescan) must be linked again on the destination.
+      meta_applied = CASE WHEN asset.live_video_a_id IS excluded.live_video_a_id THEN asset.meta_applied ELSE 0 END
     `,
     ).run({
       a_id: r.aId,
@@ -368,15 +408,16 @@ export class Ledger {
   upsertAlbum(a: AlbumSnapshot) {
     this.db
       .prepare(
-        `INSERT INTO album (a_id, name, description, icon, sort_order, album_order, parent_a_id, thumb_a_id)
-         VALUES (@a_id, @name, @description, @icon, @sort_order, @album_order, @parent_a_id, @thumb_a_id)
-         ON CONFLICT(a_id) DO UPDATE SET name = excluded.name, description = excluded.description,
+        `INSERT INTO album (a_id, name, kind, description, icon, sort_order, album_order, parent_a_id, thumb_a_id)
+         VALUES (@a_id, @name, @kind, @description, @icon, @sort_order, @album_order, @parent_a_id, @thumb_a_id)
+         ON CONFLICT(a_id) DO UPDATE SET name = excluded.name, kind = excluded.kind, description = excluded.description,
            icon = excluded.icon, sort_order = excluded.sort_order, album_order = excluded.album_order,
            parent_a_id = excluded.parent_a_id, thumb_a_id = excluded.thumb_a_id`,
       )
       .run({
         a_id: a.aId,
         name: a.name,
+        kind: a.kind ?? null,
         description: a.description,
         icon: a.icon,
         sort_order: a.sortOrder,
@@ -389,6 +430,7 @@ export class Ledger {
     const rows = this.stmt('SELECT * FROM album').all() as Array<{
       a_id: string;
       name: string;
+      kind: string | null;
       description: string;
       icon: string | null;
       sort_order: number | null;
@@ -401,6 +443,7 @@ export class Ledger {
     return rows.map((r) => ({
       aId: r.a_id,
       name: r.name,
+      kind: r.kind ?? undefined,
       description: r.description,
       icon: r.icon,
       sortOrder: r.sort_order,
@@ -451,7 +494,10 @@ export class Ledger {
     this.db
       .prepare(
         `INSERT INTO stack (primary_a_id, member_a_ids) VALUES (?, ?)
-         ON CONFLICT(primary_a_id) DO UPDATE SET member_a_ids = excluded.member_a_ids`,
+         ON CONFLICT(primary_a_id) DO UPDATE SET member_a_ids = excluded.member_a_ids,
+           -- New members (seen on --rescan) reopen the stack. Creating it again on the
+           -- destination merges into the stack its primary already heads, so none is duplicated.
+           done = CASE WHEN stack.member_a_ids = excluded.member_a_ids THEN stack.done ELSE 0 END`,
       )
       .run(s.primaryAId, JSON.stringify(s.memberAIds));
   }
@@ -503,6 +549,7 @@ export class Ledger {
       is_hidden: number;
       is_favorite: number;
       color: string | null;
+      b_id: string | null;
     }>;
     return rows.map((r) => ({
       aId: r.a_id,
@@ -511,6 +558,7 @@ export class Ledger {
       isHidden: !!r.is_hidden,
       isFavorite: !!r.is_favorite,
       color: r.color,
+      bId: r.b_id,
     }));
   }
 

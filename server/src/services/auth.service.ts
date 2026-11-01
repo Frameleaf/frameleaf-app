@@ -20,6 +20,9 @@ import {
   OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
   OAuthConfigDto,
+  PasswordLinkCheckDto,
+  PasswordLinkCheckResponseDto,
+  PasswordLinkRedeemDto,
   PinCodeChangeDto,
   PinCodeResetDto,
   PinCodeSetupDto,
@@ -27,7 +30,16 @@ import {
   SignUpDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, AuthCookie, AuthType, JobName, Permission, RequestHeader, RequestQuery } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  AuthCookie,
+  AuthType,
+  JobName,
+  Permission,
+  RequestHeader,
+  RequestQuery,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
@@ -46,7 +58,7 @@ import {
   logoutTokenAudiences,
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { getPreferences } from 'src/utils/preferences.js';
+import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { createSession } from 'src/utils/session.js';
@@ -89,6 +101,10 @@ type PinAttemptState = { failureCount: number; lastFailureAt: number; lockedUnti
 const pinAttemptsByUser = new Map<string, PinAttemptState>();
 // Keep PIN backoff admission serial while bcrypt runs outside the event loop.
 const pinChecksByUser = new Map<string, Promise<void>>();
+
+/** FL-367: API key uses recorded by this process, so "last used" is written at most every few minutes. */
+const API_KEY_USE_INTERVAL_MS = 5 * 60 * 1000;
+const apiKeyUseRecorded = new Map<string, number>();
 
 function lookupPinLockoutMs(failureCount: number): number {
   let lockout = 0;
@@ -384,6 +400,32 @@ export class AuthService extends BaseService {
     return mapUserAdmin(updatedUser);
   }
 
+  /** FL-538: who an emailed "choose a password" link is for, while it can still be used. */
+  async checkPasswordLink(dto: PasswordLinkCheckDto): Promise<PasswordLinkCheckResponseDto> {
+    const user = await this.userRepository.getByPasswordLink(this.cryptoRepository.hashSha256(dto.token));
+    if (!user) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    return { name: user.name, email: user.email };
+  }
+
+  /**
+   * FL-538: choose a password with an emailed link. The link works once; every session the account
+   * had is signed out, as after any password change.
+   */
+  async redeemPasswordLink(dto: PasswordLinkRedeemDto): Promise<void> {
+    const hash = this.cryptoRepository.hashSha256(dto.token);
+    if (!(await this.userRepository.getByPasswordLink(hash))) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    const hashedPassword = await this.cryptoRepository.hashBcrypt(dto.newPassword, SALT_ROUNDS);
+    const user = await this.userRepository.redeemPasswordLink(hash, hashedPassword);
+    if (!user) {
+      throw new BadRequestException('This link has expired or was already used');
+    }
+    await this.eventRepository.emit('AuthChangePassword', { userId: user.id, invalidateSessions: true });
+  }
+
   async setupPinCode(auth: AuthDto, { pinCode }: PinCodeSetupDto) {
     const user = await this.userRepository.getForPinCode(auth.user.id);
     if (!user) {
@@ -504,6 +546,8 @@ export class AuthService extends BaseService {
         email: dto.email,
         name: dto.name,
         password: dto.password,
+        // The administrator chose this password themselves: there is nothing to change at first sign-in.
+        shouldChangePassword: false,
         storageLabel: 'admin',
       });
       await this.recordAdminEvents([
@@ -733,7 +777,7 @@ export class AuthService extends BaseService {
   }
 
   async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
-    const { oauth } = await this.getConfig({ withCache: false });
+    const { oauth, user: userConfig } = await this.getConfig({ withCache: false });
     if (!oauth.enabled) {
       throw new BadRequestException('OAuth is not enabled');
     }
@@ -812,7 +856,9 @@ export class AuthService extends BaseService {
       });
       const storageQuota = this.getClaim(profile, {
         key: storageQuotaClaim,
-        default: defaultStorageQuota,
+        // FL-516: "Space for new people" decides, however the account is made; the older sign-in
+        // provider default applies only while it is unset
+        default: userConfig.newUserStorageQuota ?? defaultStorageQuota,
         isValid: (value: unknown) => Number(value) >= 0,
       });
 
@@ -1004,6 +1050,7 @@ export class AuthService extends BaseService {
     const hashed = this.cryptoRepository.hashSha256(key);
     const apiKey = await this.apiKeyRepository.getKey(hashed);
     if (apiKey?.user) {
+      void this.recordApiKeyUse(apiKey.id);
       return {
         user: apiKey.user,
         apiKey,
@@ -1011,6 +1058,27 @@ export class AuthService extends BaseService {
     }
 
     throw new UnauthorizedException('Invalid API key');
+  }
+
+  /**
+   * FL-367: "Last used" for API keys. Kept in system metadata rather than on the key, so a request
+   * never writes to the key's row; recorded at most once every few minutes per key and process.
+   */
+  private async recordApiKeyUse(id: string): Promise<void> {
+    const now = Date.now();
+    if (now - (apiKeyUseRecorded.get(id) ?? 0) < API_KEY_USE_INTERVAL_MS) {
+      return;
+    }
+    apiKeyUseRecorded.set(id, now);
+    try {
+      const used = (await this.systemMetadataRepository.get(SystemMetadataKey.ApiKeyLastUsed)) ?? {};
+      await this.systemMetadataRepository.set(SystemMetadataKey.ApiKeyLastUsed, {
+        ...used,
+        [id]: new Date(now).toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(`Could not record when an API key was last used: ${error}`);
+    }
   }
 
   private async validateSecret(inputSecret: string, existingHash?: string | null): Promise<boolean> {
@@ -1059,7 +1127,9 @@ export class AuthService extends BaseService {
           // refresh finds the session locked, this request is not elevated either
           hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
             session.id,
-            DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+            DateTime.now()
+              .plus({ minutes: await this.relockMinutes(session.user.id) })
+              .toJSDate(),
           );
           if (!hasElevatedPermission) {
             // A concurrent lock leaves a valid ordinary session, but a concurrent revocation or expiry
@@ -1084,6 +1154,15 @@ export class AuthService extends BaseService {
     throw new UnauthorizedException('Invalid user token');
   }
 
+  /** FL-517: the account's "Lock again after" choice (an hour unless it chose 5 or 15 minutes). */
+  private async relockMinutes(userId: string): Promise<number> {
+    try {
+      return relockMinutesOf(getPreferences(await this.userRepository.getMetadata(userId)));
+    } catch {
+      return ELEVATED_SESSION_DURATION_MINUTES;
+    }
+  }
+
   async unlockSession(auth: AuthDto, dto: SessionUnlockDto): Promise<void> {
     if (!auth.session) {
       throw new BadRequestException('This endpoint can only be used with a session token');
@@ -1097,7 +1176,9 @@ export class AuthService extends BaseService {
       auth.session.id,
       auth.user.id,
       user,
-      DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+      DateTime.now()
+        .plus({ minutes: await this.relockMinutes(auth.user.id) })
+        .toJSDate(),
     );
     if (!elevated) {
       throw new UnauthorizedException('Your PIN or password changed; unlock again');

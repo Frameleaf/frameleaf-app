@@ -432,7 +432,6 @@ describe('attempt output retention and cleanup', () => {
         'photo-master',
         'photo-preview',
         'person',
-        'duplicate',
         'moment',
         'video-master',
         'video-proxy',
@@ -445,10 +444,6 @@ describe('attempt output retention and cleanup', () => {
       db,
     );
     const { person } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: paths.person });
-    await sql`INSERT INTO asset_video_duplicate_frame ("assetId","frameIndex","timestampMs",path,embedding)
-      VALUES (${asset.id}::uuid,0,0,${paths.duplicate},${`[${Array.from({ length: 512 }, () => 0).join(',')}]`}::vector)`.execute(
-      db,
-    );
     await sql`INSERT INTO video_moment_frame ("assetId","frameIndex","timestampMs",path,score,rank)
       VALUES (${asset.id}::uuid,0,0,${paths.moment},1,1)`.execute(db);
     await sql`INSERT INTO video_edit_version ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose,status,"masterPath","proxyPath",files)
@@ -472,7 +467,6 @@ describe('attempt output retention and cleanup', () => {
       .where('ownerId', '=', user.id)
       .where('personGroupId', '=', person.personGroupId)
       .execute();
-    await sql`DELETE FROM asset_video_duplicate_frame WHERE "assetId"=${asset.id}::uuid`.execute(db);
     await sql`DELETE FROM video_moment_frame WHERE "assetId"=${asset.id}::uuid`.execute(db);
     await sql`DELETE FROM video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
     await sql`DELETE FROM asset_file WHERE "assetId"=${asset.id}::uuid`.execute(db);

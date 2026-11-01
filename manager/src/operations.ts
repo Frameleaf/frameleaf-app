@@ -6,10 +6,10 @@ import { Store } from './store.js';
 import { Docker } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
-import { isNewerRelease } from './release-order.js';
+import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { ApplicationConfig, releaseImages, renderCompose, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
@@ -41,6 +41,8 @@ export const ReviewInput = z
     port: z.number().int().min(1024).max(65535),
     ml: z.boolean(),
     lifecycle: z.literal('docker-only'),
+    /** Advanced container settings; applied to the generated stack and kept across updates. */
+    services: ServiceOverrides.optional(),
   })
   .strict();
 type Review = {
@@ -112,7 +114,7 @@ type RestoreReview = {
 };
 type UpdateReview = { expires: number; current: Installation; release: VerifiedRelease; platform: string };
 type Cancellation = {
-  kind: 'backup' | 'update' | 'source' | 'restore';
+  kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
   installation: Installation | null;
   archive: string;
 };
@@ -143,7 +145,7 @@ export class Operations {
       store,
       docker,
       this.fencing,
-      new PostgresStorage(docker, store.directory, roots, !!autostartFile),
+      new PostgresStorage(docker, store.directory, roots, !!databaseStorage?.unraid),
       store.directory,
       process.env.MANAGER_BACKUP_ROOT ?? join(store.directory, 'backups'),
       undefined,
@@ -302,6 +304,8 @@ export class Operations {
       await storagePath(input.mediaPath, this.roots, 1024 ** 3);
     }
     await this.checkPort(input.port, null, source);
+    // The same conflict check the stack generator runs, against the mounts this installation will have.
+    checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {});
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -411,9 +415,10 @@ export class Operations {
       if (operation.kind === 'update') {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
-        return this.applyUpdate(operation, review);
+        return this.applyUpdate(operation, await this.retargetWithdrawnUpdate(operation, review));
       }
       if (['start', 'stop', 'restart', 'backup'].includes(operation.kind)) return this.runControl(operation);
+      if (operation.kind === 'reconfigure') return this.applyReconfigure(operation);
       const restoring = operation.kind === 'restore';
       const review = this.store.get<Review | RestoreReview>(
         `${restoring ? 'restore' : 'review'}:${operation.input.reviewId}`,
@@ -485,7 +490,7 @@ export class Operations {
     });
     await this.step(operation, 'download-images', async () => {
       const release = await this.releases.verify(review.release.directory, review.input.tag);
-      for (const image of await releaseImages(release.nas.images))
+      for (const image of await releaseImages(release.nas.images, review.input))
         await this.docker.pull(image, review.platform);
       return release.nas.tag;
     });
@@ -526,6 +531,7 @@ export class Operations {
         environment: review.source?.environment ?? {},
         settings: review.source?.settings ?? null,
         authority: review.source?.settingsAuthority ?? 'database',
+        services: review.input.services ?? {},
       });
       await mkdir(this.directory(), { recursive: true, mode: 0o700 });
       await this.managerToken();
@@ -613,6 +619,19 @@ export class Operations {
           const checkpoint = await this.checkpoint(operation, dump);
           return this.backups.snapshot(checkpoint, operation.id);
         });
+      // FL-414: after the import, Frameleaf stores identical files once and recovers orphaned files in
+      // place, so every media folder it keeps must be writable. Checked before anything is imported.
+      await this.step(operation, 'check-media-writable', async () => {
+        const targets = installation.mounts.filter((mount) => !mount.readOnly).map((mount) => mount.target);
+        const blocked = await this.docker.unwritableMedia(this.directory(), installation.project, targets);
+        if (blocked.length > 0)
+          throw new Refusal(
+            'media_folder_not_writable',
+            409,
+            `Frameleaf must be able to write to every media folder: after the import it stores identical files once and recovers orphaned files where they are. Make these folders writable for the Frameleaf server, then try again: ${blocked.join(', ')}.`,
+          );
+        return { writable: targets };
+      });
       await this.step(operation, 'configure-offline-import', async () => {
         await this.fencing.verify(source);
         await this.configureImport(operation, review, installation);
@@ -668,6 +687,11 @@ export class Operations {
         await this.docker.sql(source.database, `ALTER ROLE "${reader.name}" NOLOGIN;`);
         return true;
       });
+      // FL-476: the verified import was the source database's last reader (import-settings above still used it).
+      // Safe default: stop it and its Redis, with no restart policy and no Unraid autostart; recovery restores them.
+      await this.step(operation, 'retire-source-services', async () =>
+        (await this.fencing.retireSourceServices(source)).map((s) => ({ role: s.role, name: s.name })),
+      );
     }
     await this.step(operation, 'start-frameleaf', async () => {
       if (source) await this.fencing.verify(source);
@@ -917,15 +941,58 @@ export class Operations {
         return this.backups.snapshot(checkpoint, operation.id);
       });
     } else if (kind === 'start' || kind === 'stop' || kind === 'restart') {
-      await this.step(operation, kind, async () => {
-        if (kind !== 'stop') await this.databaseStorage.verify(installation);
-        if (kind !== 'stop' && installation.sourceId)
-          await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
-        if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
-        await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
-        return true;
-      });
+      await this.step(operation, kind, () => this.composeAction(installation, kind));
     } else throw new Refusal('invalid_control_operation');
+  }
+  /** Storage, source fencing and media ownership are rechecked before anything that can start containers. */
+  private async composeAction(installation: Installation, kind: 'start' | 'stop' | 'restart'): Promise<boolean> {
+    if (kind !== 'stop') await this.databaseStorage.verify(installation);
+    if (kind !== 'stop' && installation.sourceId)
+      await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
+    if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
+    await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
+    return true;
+  }
+  /** The advanced container settings the installed stack was last rendered with. */
+  containerSettings(): { services: ServiceOverrides } {
+    if (!this.installation()) throw new Refusal('no_installation');
+    return { services: this.application().services };
+  }
+  /**
+   * Replaces the advanced container settings of the installed stack. The previous settings are journaled
+   * before anything changes so a failed apply can be cancelled back to them; either way the stack is
+   * brought up with `compose up`, which recreates only the containers whose definition changed.
+   */
+  reconfigure(services: ServiceOverrides, key: string): Operation {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    const input = { services };
+    const prior = this.store.request('reconfigure', key, input);
+    if (prior) return prior;
+    checkServiceOverrides(installation.mounts.map(({ target }) => target), services);
+    const { operation, created } = this.store.start('reconfigure', key, input);
+    if (created) this.launch(operation, () => this.applyReconfigure(operation));
+    return operation;
+  }
+  private async renderServices(installation: Installation, services: ServiceOverrides): Promise<void> {
+    checkServiceOverrides(installation.mounts.map(({ target }) => target), services);
+    const application = ApplicationConfig.parse({ ...this.application(), services });
+    const release = await this.releases.acquire(installation.release);
+    await renderCompose(release, installation, this.store.get<string>('database-password')!, this.directory(), application);
+    this.store.set('application-config', application);
+  }
+  private async applyReconfigure(operation: Operation): Promise<void> {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    if (!operation.receipts['previous-container-settings']) {
+      operation.receipts['previous-container-settings'] = this.application().services;
+      this.store.save(operation);
+    }
+    await this.step(operation, 'apply-container-settings', async () => {
+      await this.renderServices(installation, ServiceOverrides.parse(operation.input.services));
+      return true;
+    });
+    await this.step(operation, 'start', () => this.composeAction(installation, 'start'));
   }
   async reviewUpdate(tag: string) {
     const current = this.installation();
@@ -972,11 +1039,44 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
   }
+  // A failed update keeps the operation lock, so retrying is the only way forward. When its release was
+  // withdrawn (1.1.17, issue 626), retry with the newest offered release instead. The database checkpoint
+  // taken before the failed attempt is kept: the withdrawn release never started.
+  private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
+    const withdrawn = await this.releases.eligible(review.release.nas.tag).then(
+      () => false,
+      (error) => {
+        if (error instanceof Refusal && error.code === 'release_not_eligible') return true;
+        throw error;
+      },
+    );
+    if (!withdrawn) return review;
+    // Same checks as reviewUpdate: a release that changes PostgreSQL or lacks this platform needs a restore instead.
+    const postgres = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    let release: VerifiedRelease | undefined;
+    const newer = (await this.releases.available())
+      .map(({ tag }) => tag)
+      .filter((tag) => isNewerRelease(tag, review.release.nas.tag))
+      .sort((a, b) => compareReleases(b, a));
+    for (const tag of newer) {
+      const candidate = await this.releases.acquire(tag);
+      if (candidate.nas.images.postgres === postgres && candidate.nas.platforms.includes(review.platform)) {
+        release = candidate;
+        break;
+      }
+    }
+    if (!release) throw new Refusal('release_not_eligible');
+    const retargeted = { ...review, release };
+    this.store.set(`update:${operation.input.reviewId}`, retargeted);
+    operation.completed = operation.completed.filter((step) => step !== 'download-images');
+    this.store.save(operation);
+    return retargeted;
+  }
   private async applyUpdate(operation: Operation, review: UpdateReview): Promise<void> {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
-      for (const image of await releaseImages(review.release.nas.images))
+      for (const image of await releaseImages(review.release.nas.images, review.current))
         await this.docker.pull(image, review.platform);
       return true;
     });
@@ -1088,7 +1188,7 @@ export class Operations {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
       await this.releases.verify(review.release.directory, review.release.nas.tag);
-      for (const image of await releaseImages(review.release.nas.images))
+      for (const image of await releaseImages(review.release.nas.images, review.recovery.installation))
         await this.docker.pull(image, review.platform);
       return true;
     });
@@ -1218,7 +1318,9 @@ export class Operations {
                   !operation.completed.includes('apply-release') &&
                   operation.step !== 'apply-release'
                 ? 'update'
-                : 'source';
+                : operation.kind === 'reconfigure'
+                  ? 'reconfigure'
+                  : 'source';
         if (kind === 'source' && installation?.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
         const restoreReview =
           kind === 'restore' ? this.store.get<RestoreReview>(`restore:${operation.input.reviewId}`) : null;
@@ -1328,6 +1430,20 @@ export class Operations {
       operation.receipts['cancelled'] = 'update_cancelled_previous_release_running';
       return;
     }
+    if (intent.kind === 'reconfigure') {
+      if (!installation) throw new Refusal('no_installation');
+      await this.step(operation, 'restore-container-settings', async () => {
+        // Absent when the apply never began: nothing changed, and the current settings are the previous ones.
+        await this.renderServices(
+          installation,
+          ServiceOverrides.parse(operation.receipts['previous-container-settings'] ?? this.application().services),
+        );
+        return true;
+      });
+      await this.step(operation, 'start', () => this.composeAction(installation, 'start'));
+      operation.receipts['cancelled'] = 'reconfigure_cancelled_previous_settings_running';
+      return;
+    }
     if (installation) {
       await this.step(operation, 'cancel-stop-target', async () => {
         // Configuration may not have been published when setup failed. Reconcile exact owned
@@ -1343,7 +1459,8 @@ export class Operations {
       await this.step(operation, 'cancel-import-reader', async () => {
         const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
         const reader = this.store.get<{ name: string }>(`import-reader:${operation.id}`);
-        if (source && reader)
+        // A retired source database already locked the reader at import-settings; cancel-source restarts it.
+        if (source && reader && !this.fencing.retiredServices(source))
           await this.docker.sql(
             source.database,
             `DO $role$ BEGIN
@@ -1405,6 +1522,7 @@ export class Operations {
         (operation.kind === 'move-library'
           ? !receipts['move-writes-intent']
           : operation.kind === 'backup' ||
+            operation.kind === 'reconfigure' ||
             (operation.kind === 'update' &&
               operation.step !== 'apply-release' &&
               !operation.completed.includes('apply-release')) ||

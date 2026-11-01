@@ -18,8 +18,8 @@
    *    Memories card previews use the same engine; under Reduce Motion photos only crossfade.
    *  - Share, which the legacy viewer had commented out entirely; it now opens the shared
    *    `ShareSheet` with the memory's current asset ids.
-   *  - "Make a movie in Studio" opens Studio with the memory's items, in the memory's order, through
-   *    Studio's own asset-list handoff (`Route.studio({ assetIds })`, MPY-10).
+   *  - "Make a movie" opens the Make a movie sheet for the memory (FL-561): Frameleaf picks its best
+   *    moments, cuts them on the beat and saves a Studio project.
    *  - The rest of the template's player (MemoryPlayer.jsx): a header with the memory's title, its
    *    subtitle and item count; progress segments named "Go to item n of N"; the soundtrack toggle
    *    (the memory's own video sound; there is no separate music library); the "Show all items"
@@ -71,7 +71,7 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
-  import { maxStudioHandoffAssets } from '$lib/frameleaf/studio/handoff';
+  import type { MakeMovieSource } from '$lib/frameleaf/studio/make-movie';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -139,6 +139,7 @@
   import { t } from 'svelte-i18n';
   import type { Attachment } from 'svelte/attachments';
   import { Tween } from 'svelte/motion';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
   import MemoryHighlightControl from '$lib/components/frameleaf/MemoryHighlightControl.svelte';
   import MemoryPhotoViewer from '$lib/components/frameleaf/MemoryPhotoViewer.svelte';
   import MemoryVideoViewer from '$lib/components/frameleaf/MemoryVideoViewer.svelte';
@@ -155,6 +156,8 @@
   let shareOpen = $state(false);
   let status = $state('');
   const current = $derived(memoryManager.current);
+  // `current` is rebuilt for every item; this changes only when the memory itself does.
+  const currentMemoryId = $derived(current?.memory.id);
   /** The memory's title and subtitle as the index shows them (the owner's own title first). */
   const headline = $derived(current ? $memoryHeadline(current.memory) : undefined);
   /** FL-356: a visit to a landmark can be kept as an album of everything taken there on those days. */
@@ -461,6 +464,15 @@
     handlePromiseError(handleAction('resetAndPlay', 'play'));
   };
 
+  /** A photo's preview settled (loaded or broken): start its slide, but leave a paused player paused. */
+  const onPhotoSettled = () => {
+    if (paused) {
+      handlePromiseError(progressBarController?.set(0) ?? Promise.resolve());
+      return;
+    }
+    resetAndPlay();
+  };
+
   function runTitleCardTimer() {
     if (titleCardTimer || !titleCardFor) {
       return;
@@ -713,7 +725,7 @@
   // Pick up an export that is already running for this memory — started here before a
   // reload, or from another tab — instead of offering to start a second one.
   $effect(() => {
-    const memoryId = current?.memory.id;
+    const memoryId = currentMemoryId;
     exportGeneration++;
     stopPolling();
     exportRun = undefined;
@@ -798,13 +810,14 @@
   };
 
   const saveExport = async () => {
-    if (!exportRun?.isDownloadable || exportBusy) {
+    const run = exportRun;
+    if (!run?.isDownloadable || exportBusy) {
       return;
     }
     exportBusy = true;
     try {
-      const blob = await downloadMemoryExport({ id: exportRun.id });
-      downloadBlob(blob, `${exportRun.title}.zip`);
+      const blob = await downloadMemoryExport({ id: run.id });
+      downloadBlob(blob, `${run.title}.zip`);
     } catch (error) {
       handleError(error, $t('frameleaf_memories_export_failed'));
     } finally {
@@ -812,13 +825,22 @@
     }
   };
 
-  /** MPY-10: Studio opens with the memory's items, in the memory's order (MemoryPlayer.jsx:512-526). */
+  /** FL-561: "Make a movie" opens the sheet for this memory; playback holds while it is open. */
+  let movieOpen = $state(false);
+  let movieSource = $state<MakeMovieSource | null>(null);
   const makeMovie = () => {
     if (!current) {
       return;
     }
-    const assetIds = current.memory.assets.map((asset) => asset.id).slice(0, maxStudioHandoffAssets);
-    void goto(Route.studio({ assetIds }));
+    movieSource = {
+      kind: 'memory',
+      memoryId: current.memory.id,
+      name: titleCard?.title ?? headline?.title ?? '',
+      itemCount: current.memory.assets.length,
+      previewIds: current.memory.assets.slice(0, 3).map(({ id }) => id),
+    };
+    movieOpen = true;
+    handlePromiseError(handleAction('makeMovie', 'pause'));
   };
 
   const togglePlay = () => handlePromiseError(handleAction('togglePlay', paused ? 'play' : 'pause'));
@@ -1188,7 +1210,7 @@
                 ></div>
                 <MemoryPhotoViewer
                   asset={current.asset}
-                  onImageLoad={resetAndPlay}
+                  onImageLoad={onPhotoSettled}
                   motionClass={slideClass}
                   motionStyle={slideStyle}
                 />
@@ -1366,14 +1388,15 @@
                   </IconButton>
                 {/if}
                 <!-- FL-194: a highlight video rendered directly from the memory, beside the Studio handoff. -->
+                <!-- the stable id, so a new slide does not restart the control's export lookup -->
                 <MemoryHighlightControl
-                  memoryId={current.memory.id}
+                  memoryId={currentMemoryId ?? current.memory.id}
                   memoryTitle={titleCard?.title ?? ''}
                   onStatus={(message) => (status = message)}
                 />
                 <button type="button" class="fmp-studio" onclick={makeMovie}>
                   <Icon icon={mdiMovieEditOutline} size="18" aria-hidden="true" />
-                  {$t('frameleaf_memories_make_movie')}
+                  {$t('frameleaf_movie_make')}
                 </button>
               </div>
               {#if exportRun?.status === MemoryExportStatus.Failed}
@@ -1597,6 +1620,10 @@
     </div>
   </form>
 </Dialog>
+
+{#if movieSource}
+  <MakeMovieSheet bind:open={movieOpen} source={movieSource} />
+{/if}
 
 <style>
   .fmp {

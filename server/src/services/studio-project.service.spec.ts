@@ -61,7 +61,7 @@ describe(StudioProjectService.name, () => {
   };
   /** The owner's items the session may not see (Locked while locked, or hidden by a rule). */
   let hiddenFromSession: Set<string>;
-  let resources: { resolveProjectResources: AnyMock; hdrLibraryAssets: AnyMock; studioHdrProxies: AnyMock };
+  let resources: { resolveProjectResources: AnyMock; hdrLibrarySources: AnyMock; studioHdrProxies: AnyMock };
   let owner: AuthDto;
   let reviewer: AuthDto;
   let project: StudioProject;
@@ -184,7 +184,7 @@ describe(StudioProjectService.name, () => {
     };
     resources = {
       resolveProjectResources: vi.fn().mockResolvedValue(manifest(true)),
-      hdrLibraryAssets: vi.fn().mockResolvedValue([]),
+      hdrLibrarySources: vi.fn().mockResolvedValue({ hdr: [], pq: [], hlg: [] }),
       studioHdrProxies: vi.fn().mockResolvedValue([]),
     };
 
@@ -718,6 +718,18 @@ describe(StudioProjectService.name, () => {
       expect(vi.mocked(resources.resolveProjectResources).mock.calls[1][0]).toBe(owner);
     });
 
+    it('never shares a resolution between sessions or an API key of the same account', async () => {
+      // A manifest carries the admission view of the session that resolved it.
+      const first = { ...owner, session: { id: newUuid(), hasElevatedPermission: false } } as typeof owner;
+      const second = { ...owner, session: { id: newUuid(), hasElevatedPermission: false } } as typeof owner;
+      const key = { ...owner, session: undefined, apiKey: { id: newUuid() } } as typeof owner;
+      await sut.authorizeRevision(first, { projectId: project.id });
+      expect((await sut.authorizeRevision(second, { projectId: project.id })).cached).toBe(false);
+      expect((await sut.authorizeRevision(key, { projectId: project.id })).cached).toBe(false);
+      expect((await sut.authorizeRevision(first, { projectId: project.id })).cached).toBe(true);
+      expect(resources.resolveProjectResources).toHaveBeenCalledTimes(3);
+    });
+
     it('resolves again for another account and never caches a cloud destination', async () => {
       project = projectStub({ spaceId: newUuid() });
       memberOf(project.spaceId as string);
@@ -1010,14 +1022,15 @@ describe(StudioProjectService.name, () => {
           entries: [hdr, sdr].map((id) => ({ key: `library-asset:${id}`, kind: StudioResourceKind.LibraryAsset, id })),
         },
       });
-      resources.hdrLibraryAssets.mockResolvedValue([hdr]);
+      resources.hdrLibrarySources.mockResolvedValue({ hdr: [hdr], pq: [hdr], hlg: [] });
       resources.studioHdrProxies.mockResolvedValue([hdr]);
 
       const seen = await sut.get(owner, project.id);
 
       expect(seen.resources?.hdrSources).toEqual([hdr]);
       expect(seen.resources?.hdrProxySources).toEqual([hdr]);
-      expect(resources.hdrLibraryAssets).toHaveBeenCalledWith([hdr, sdr]);
+      expect(seen.resources).toMatchObject({ pqSources: [hdr], hlgSources: [] });
+      expect(resources.hdrLibrarySources).toHaveBeenCalledWith([hdr, sdr]);
       expect(resources.studioHdrProxies).toHaveBeenCalledWith([hdr], {
         ownerId: project.ownerId,
         sharedSpace: false,
@@ -1034,7 +1047,7 @@ describe(StudioProjectService.name, () => {
           entries: [{ key: `library-asset:${hdr}`, kind: StudioResourceKind.LibraryAsset, id: hdr }],
         },
       });
-      resources.hdrLibraryAssets.mockResolvedValue([hdr]);
+      resources.hdrLibrarySources.mockResolvedValue({ hdr: [hdr], pq: [hdr], hlg: [] });
       project = projectStub({ spaceId: newUuid() });
 
       // a solo, deleted or left space: personal rules

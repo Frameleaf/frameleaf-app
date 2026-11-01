@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { PreservationExportCreateDto } from 'src/dtos/preservation.dto.js';
 import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
@@ -127,6 +128,7 @@ describe(PreservationService.name, () => {
       listItems: vi.fn(),
       lockedItemIds: vi.fn().mockResolvedValue(new Set()),
       hasLockedItems: vi.fn().mockResolvedValue(false),
+      lockedBookmarkPackageIds: vi.fn().mockResolvedValue(new Set()),
       listedItems: vi.fn().mockResolvedValue([]),
       resetFailedItems: vi.fn().mockResolvedValue(0),
       createPackage: vi.fn(),
@@ -184,7 +186,27 @@ describe(PreservationService.name, () => {
     );
   });
 
+  it('validates mixed explicit selections without accepting a filter alongside ids', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(PreservationExportCreateDto.schema.safeParse({ name: 'Links', scope: { bookmarkIds: [id] } }).success).toBe(
+      true,
+    );
+    expect(
+      PreservationExportCreateDto.schema.safeParse({ name: 'Mixed', scope: { assetIds: [id], bookmarkIds: [id] } })
+        .success,
+    ).toBe(true);
+    expect(
+      PreservationExportCreateDto.schema.safeParse({ name: 'Ambiguous', scope: { filter: {}, bookmarkIds: [id] } })
+        .success,
+    ).toBe(false);
+  });
+
   describe('preview', () => {
+    it('previews metadata using the same choice as export', async () => {
+      await sut.preview(owner, { includeMetadata: false });
+      expect(repository.previewSelection).toHaveBeenCalledWith(owner.user.id, { filter: {} }, false);
+    });
+
     it('never tells an ordinary session how much of its library is Locked', async () => {
       const preview = await sut.preview(owner, { includeLocked: true });
       expect(preview).toMatchObject({
@@ -204,6 +226,15 @@ describe(PreservationService.name, () => {
   });
 
   describe('createExport', () => {
+    it('queues a saved-link-only selection without adding unselected originals', async () => {
+      const id = '11111111-1111-4111-8111-111111111111';
+      repository.createExport.mockResolvedValue({ package: packageOf(), items: 0, bookmarkItems: 1 });
+      await sut.createExport(owner, { name: 'Links', scope: { bookmarkIds: [id, id] } });
+      expect(repository.createExport.mock.calls[0][2]).toEqual({ assetIds: [], bookmarkIds: [id] });
+      expect(operations.create).toHaveBeenCalledWith(expect.objectContaining({ totalUnits: '1' }));
+      expect(repository.updatePackage).not.toHaveBeenCalled();
+    });
+
     it('refuses Locked items from a session that has not unlocked', async () => {
       await expect(sut.createExport(owner, { name: 'All', includeLocked: true })).rejects.toBeInstanceOf(
         ForbiddenException,
@@ -270,6 +301,25 @@ describe(PreservationService.name, () => {
   });
 
   describe('reading packages', () => {
+    it('reports saved links separately from originals and withholds restricted package counts', async () => {
+      const found = packageOf({
+        scope: { bookmarkIds: [newUuid(), newUuid(), newUuid()] },
+        manifest: { ...packageOf().manifest, counts: { bookmarks: 2, bookmarkSkipped: 1 } },
+      });
+      repository.getPackage.mockResolvedValue(found);
+      expect((await sut.getPackage(owner, found.id)).bookmarks).toEqual({ selected: 3, written: 2, skipped: 1 });
+      repository.lockedBookmarkPackageIds.mockResolvedValue(new Set([found.id]));
+      expect((await sut.getPackage(owner, found.id)).bookmarks).toBeNull();
+      expect((await sut.getPackage(unlocked, found.id)).bookmarks).toEqual({ selected: 3, written: 2, skipped: 1 });
+    });
+
+    it('batches the privacy lookup when listing saved-link packages', async () => {
+      const packages = [packageOf(), packageOf()];
+      repository.listPackages.mockResolvedValue(packages);
+      await sut.listPackages(owner);
+      expect(repository.lockedBookmarkPackageIds).toHaveBeenCalledExactlyOnceWith(packages.map(({ id }) => id));
+    });
+
     it('answers somebody else’s package exactly like a missing one', async () => {
       repository.getPackage.mockResolvedValue(undefined);
       await expect(sut.getPackage(owner, newUuidV7())).rejects.toBeInstanceOf(NotFoundException);

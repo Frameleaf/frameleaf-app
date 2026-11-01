@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -16,6 +16,14 @@ import {
   rootForPath,
   rootKindOf,
 } from 'src/utils/media-health-roots.js';
+
+// Real filesystem calls by default; single cases simulate other filesystems through `link`.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, link: vi.fn(actual.link), open: vi.fn(actual.open) };
+});
+
+const failWith = (code: string) => Object.assign(new Error(code), { code });
 
 describe('media-health-roots (FL-69)', () => {
   describe(parseRecoveryRoots.name, () => {
@@ -157,6 +165,143 @@ describe('media-health-roots (FL-69)', () => {
       const destination = join(root, 'asset-finding.damaged.jpg');
       await writeFile(source, 'damaged');
       await link(source, destination);
+
+      await retainFile(source, destination);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('moves across filesystems to a destination that cannot hard-link, never replacing a file', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV')).mockRejectedValueOnce(failWith('EPERM'));
+
+      await retainFile(source, destination);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+
+      const other = join(root, 'other.jpg');
+      await writeFile(other, 'other');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV')).mockRejectedValueOnce(failWith('EPERM'));
+      await expect(retainFile(other, destination)).rejects.toThrow('different file');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(other, 'utf8')).resolves.toBe('other');
+    });
+
+    it('runs overlapping moves to the same name one after another', async () => {
+      const first = join(root, 'first.jpg');
+      const second = join(root, 'second.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(first, 'damaged');
+      await writeFile(second, 'damaged');
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let started!: () => void;
+      const firstLinked = new Promise<void>((resolve) => (started = resolve));
+      const linked: string[] = [];
+      vi.mocked(link).mockImplementation(async (from, to) => {
+        linked.push(String(from));
+        if (from === first) {
+          started();
+          await gate;
+        }
+        return actual.link(from, to);
+      });
+      onTestFinished(() => {
+        vi.mocked(link).mockImplementation(actual.link);
+      });
+
+      const moves = [retainFile(first, destination), retainFile(second, destination)];
+      await firstLinked;
+      // Give the second move time to start, had it not been queued.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(linked).toEqual([first]);
+      release();
+      await Promise.all(moves);
+
+      expect(linked).toEqual([first, second]);
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(first)).rejects.toThrow();
+      await expect(readFile(second)).rejects.toThrow();
+    });
+
+    it('treats an overlapping move of the same file as done once the first succeeds', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+
+      await Promise.all([retainFile(source, destination), retainFile(source, destination)]);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('tries an overlapping move of the same file afresh after the first fails', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EIO'));
+
+      const [first, second] = await Promise.allSettled([
+        retainFile(source, destination),
+        retainFile(source, destination),
+      ]);
+
+      expect(first.status).toBe('rejected');
+      expect(second.status).toBe('fulfilled');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('moves one source to two names one after another, never interleaving them', async () => {
+      const source = join(root, 'damaged.jpg');
+      const firstName = join(root, 'asset-finding-1.damaged.jpg');
+      const secondName = join(root, 'asset-finding-2.damaged.jpg');
+      await writeFile(source, 'damaged');
+
+      const [first, second] = await Promise.allSettled([retainFile(source, firstName), retainFile(source, secondName)]);
+
+      // The second starts only after the first has finished, so it finds the source already gone.
+      expect(first.status).toBe('fulfilled');
+      expect(second.status).toBe('rejected');
+      await expect(readFile(firstName, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(secondName)).rejects.toThrow();
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
+    it('never removes a destination it did not create when publishing by copy fails', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'nolinks', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      vi.mocked(link).mockRejectedValueOnce(failWith('EXDEV')).mockRejectedValueOnce(failWith('EPERM'));
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(open).mockImplementation(async (file, flags, mode) => {
+        if (flags === 'wx') {
+          // Another writer takes the name, then this call's exclusive create fails for another reason.
+          await writeFile(destination, 'someone else');
+          throw failWith('EIO');
+        }
+        return actual.open(file, flags, mode);
+      });
+      onTestFinished(() => {
+        vi.mocked(open).mockImplementation(actual.open);
+      });
+
+      await expect(retainFile(source, destination)).rejects.toThrow('EIO');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('someone else');
+      await expect(readFile(source, 'utf8')).resolves.toBe('damaged');
+    });
+
+    it('finishes a cross-filesystem move whose complete copy is already at the new name', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      // A separate file with the same bytes, as an interrupted copy across filesystems leaves it.
+      await writeFile(destination, 'damaged');
 
       await retainFile(source, destination);
 

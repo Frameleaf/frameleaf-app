@@ -33,6 +33,8 @@ import {
   MailTransportTypeSchema,
   OAuthTokenEndpointAuthMethod,
   OAuthTokenEndpointAuthMethodSchema,
+  OvernightStepTiming,
+  OvernightStepTimingSchema,
   ReleaseChannel,
   ReleaseChannelSchema,
   ToneMapping,
@@ -407,18 +409,39 @@ export const DuplicateDetectionConfigSchema = AdminConfigMachineLearningTaskSche
   enhancedVideo: z
     .object({
       enabled: z.boolean().describe('Whether enhanced video duplicate detection is enabled'),
-      frameCount: z.int().min(2).max(8).describe('Number of video frames to sample for duplicate confirmation'),
+      // FL-651: videos are compared by their whole timeline; the sampled-frame settings below are kept
+      // for compatibility and no longer read.
+      minMatchFraction: z
+        .number()
+        .meta({ format: 'double' })
+        .min(0.5)
+        .max(1)
+        .default(0.7)
+        .describe('Share of the frames two videos have in common that must match to call them duplicates'),
+      maxHashDistance: z
+        .int()
+        .min(0)
+        .max(16)
+        .default(8)
+        .describe('Most bits two frame hashes (64 bits) may differ by and still count as the same picture'),
+      frameCount: z
+        .int()
+        .min(2)
+        .max(8)
+        .describe('Deprecated: videos are compared by their whole timeline')
+        .meta({ deprecated: true }),
       minMatchingFrames: z
         .int()
         .min(1)
         .max(8)
-        .describe('Minimum matching sampled frames required to confirm a video duplicate'),
+        .describe('Deprecated: videos are compared by their whole timeline')
+        .meta({ deprecated: true }),
       maxDistance: z
         .number()
-        .meta({ format: 'double' })
+        .meta({ format: 'double', deprecated: true })
         .min(0.001)
         .max(0.1)
-        .describe('Maximum distance threshold for enhanced video duplicate frame matching'),
+        .describe('Deprecated: videos are compared by their whole timeline'),
     })
     .meta({ id: 'AdminConfigEnhancedVideoDuplicateDetectionDto' })
     .refine(({ frameCount, minMatchingFrames }) => minMatchingFrames <= frameCount, {
@@ -1206,8 +1229,65 @@ const AdminConfigSchemaWithVisibility = z
         clusterNewFaces: configBool.describe('Cluster new faces'),
         generateMemories: configBool.describe('Generate memories'),
         syncQuotaUsage: configBool.describe('Sync quota usage'),
+        // FL-363: one overnight schedule. Defaulted, so a stored configuration, a config file or an
+        // older client that does not name them keeps today's behaviour plus the new order.
+        stopTime: z
+          .union([
+            z.literal(''),
+            z.iso.time({
+              precision: -1,
+              error: (iss) => `Invalid input: expected string in HH:MM format, received ${typeof iss.input}`,
+            }),
+          ])
+          .default('06:00')
+          .describe('No step starts after this time (HH:MM); empty runs every step to the end'),
+        days: z
+          .array(z.int().min(0).max(6))
+          .min(1)
+          .default([0, 1, 2, 3, 4, 5, 6])
+          .describe('Days of the week the night’s work starts on, Sunday 0 to Saturday 6'),
+        emptyTrash: configBool
+          .default(true)
+          .describe('The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone'),
+        // FL-577: quiet hours. The window is the schedule's own start and stop times.
+        quietHours: configBool
+          .default(true)
+          .describe('Heavy background work (beyond thumbnails) waits for the overnight window'),
+        weeklyDay: z
+          .int()
+          .min(0)
+          .max(6)
+          .default(0)
+          .describe('The day a step set to run once a week runs on, Sunday 0 to Saturday 6'),
+        steps: z
+          .object({
+            cleanup: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            folders: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            icloud: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            fileChecks: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+          })
+          .meta({ id: 'AdminConfigOvernightStepsDto' })
+          .default({
+            cleanup: OvernightStepTiming.Nightly,
+            folders: OvernightStepTiming.Nightly,
+            icloud: OvernightStepTiming.Nightly,
+            fileChecks: OvernightStepTiming.Nightly,
+          })
+          .describe('When each step runs: every night, once a week, or only when started'),
       })
       .meta({ id: 'AdminConfigNightlyTasksDto' }),
+    // FL-365: Storage & originals › "Warn me when the disk is nearly full". Defaulted, so a stored
+    // configuration or a config file that does not name it keeps today's 90%.
+    storageWarning: z
+      .object({
+        percent: z
+          .int()
+          .min(0)
+          .max(99)
+          .describe('Warn when the drive the library is on is this full, in per cent; 0 turns the warning off'),
+      })
+      .meta({ id: 'AdminConfigStorageWarningDto' })
+      .default({ percent: 90 }),
     trash: z
       .object({
         enabled: configBool.describe('Enabled').meta({ visibility: User }),
@@ -1303,7 +1383,18 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigServerDto' }),
     user: z
-      .object({ deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }) })
+      .object({
+        deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }),
+        // FL-516: "Space for new people", however an account is made: added by hand, invited through
+        // Frameleaf, or created by a sign-in provider. Decimal GB (D5); null is no limit.
+        newUserStorageQuota: z
+          .int()
+          .min(0)
+          .max(1_000_000)
+          .nullable()
+          .optional()
+          .describe('Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit'),
+      })
       .meta({ id: 'AdminConfigUserDto' }),
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
     frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
@@ -1653,6 +1744,8 @@ export const defaults = Object.freeze<SystemConfig>({
       preferOriginalFormat: true,
       enhancedVideo: {
         enabled: true,
+        minMatchFraction: 0.7,
+        maxHashDistance: 8,
         frameCount: 4,
         minMatchingFrames: 2,
         maxDistance: 0.01,
@@ -1692,7 +1785,7 @@ export const defaults = Object.freeze<SystemConfig>({
   oauth: {
     autoLaunch: false,
     autoRegister: true,
-    buttonText: 'Login with OAuth',
+    buttonText: 'Sign in with your provider',
     clientId: '',
     clientSecret: '',
     defaultStorageQuota: null,
@@ -1768,6 +1861,20 @@ export const defaults = Object.freeze<SystemConfig>({
     syncQuotaUsage: true,
     missingThumbnails: true,
     clusterNewFaces: true,
+    stopTime: '06:00',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    emptyTrash: true,
+    quietHours: true,
+    weeklyDay: 0,
+    steps: {
+      cleanup: OvernightStepTiming.Nightly,
+      folders: OvernightStepTiming.Nightly,
+      icloud: OvernightStepTiming.Nightly,
+      fileChecks: OvernightStepTiming.Nightly,
+    },
+  },
+  storageWarning: {
+    percent: 90,
   },
   trash: {
     enabled: true,
@@ -1822,6 +1929,7 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   user: {
     deleteDelay: 7,
+    newUserStorageQuota: null,
   },
   smartAlbums: smartAlbumsDefaults,
   frameleafCloud: frameleafCloudDefaults,

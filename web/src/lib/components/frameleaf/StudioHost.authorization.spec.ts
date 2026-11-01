@@ -5,7 +5,12 @@ import { addMessages } from 'svelte-i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
 import { pinnedFreecutRevision, type StudioEngineResolution } from '$lib/frameleaf/studio/engine-loader';
-import { emptyStudioCapabilities, type StudioHostServices } from '$lib/frameleaf/studio/host-contract';
+import {
+  emptyStudioCapabilities,
+  type StudioEngineInstance,
+  type StudioEngineModule,
+  type StudioHostServices,
+} from '$lib/frameleaf/studio/host-contract';
 import {
   createStudioProjectSession,
   type StudioProjectApi,
@@ -43,6 +48,8 @@ const detail = (access: StudioProjectAccess): StudioProjectDetailDto => ({
     unsupportedSources: [],
     hiddenSources: [],
     hdrSources: [],
+    pqSources: [],
+    hlgSources: [],
     hdrProxySources: [],
     checkedAt: '2026-10-09T12:00:00Z',
   },
@@ -65,6 +72,7 @@ afterEach(async () => {
 async function open(
   access: StudioProjectAccess,
   engine: 'missing-workers' | 'absent' | 'failed' | 'ready' = 'missing-workers',
+  options: { mount?: StudioEngineModule['mount']; services?: StudioHostServices } = {},
 ) {
   const stored = detail(access);
   const api = {
@@ -99,7 +107,11 @@ async function open(
     engine === 'ready'
       ? {
           status: 'available',
-          module: { engineRevision: pinnedFreecutRevision, features: [], mount: async () => instance },
+          module: {
+            engineRevision: pinnedFreecutRevision,
+            features: [],
+            mount: options.mount ?? (async () => instance),
+          },
         }
       : {
           status: 'absent',
@@ -120,7 +132,7 @@ async function open(
       engine === 'missing-workers'
         ? emptyStudioCapabilities()
         : { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true },
-    services: {} as StudioHostServices,
+    services: options.services ?? ({} as StudioHostServices),
     onBack: vi.fn(),
     onImportRetention: undefined as (() => void) | undefined,
     accessLost: false,
@@ -134,7 +146,9 @@ async function open(
   const view = render(Wrapper, { component: StudioHost, componentProps: props() });
   const refresh = (changes: Partial<ReturnType<typeof props>> = {}) =>
     view.rerender({ component: StudioHost, componentProps: { ...props(), ...changes } });
-  if (engine === 'ready') {
+  if (options.mount) {
+    // The caller drives the mount itself.
+  } else if (engine === 'ready') {
     await waitFor(() => expect(view.queryByTestId('studio-state')).toBeNull());
   } else {
     await waitFor(() => expect(view.getByTestId('studio-state')).toHaveAttribute('data-phase', 'unavailable'));
@@ -226,6 +240,33 @@ describe('project chrome authorization transitions', () => {
   });
 });
 
+it('ignores a fatal report from a mount the replacement superseded', async () => {
+  const services = { reportFatal: vi.fn() } as unknown as StudioHostServices;
+  const first = { update: vi.fn(), dispose: vi.fn() } as unknown as StudioEngineInstance;
+  const second = { update: vi.fn(), dispose: vi.fn() } as unknown as StudioEngineInstance;
+  let finishFirst!: () => void;
+  let firstServices!: StudioHostServices;
+  const mount = vi
+    .fn<StudioEngineModule['mount']>()
+    .mockImplementationOnce((_target, _context, given) => {
+      firstServices = given;
+      return new Promise((resolve) => (finishFirst = () => resolve(first)));
+    })
+    .mockResolvedValueOnce(second);
+  const view = await open(StudioProjectAccess.Owner, 'ready', { mount, services });
+  await waitFor(() => expect(mount).toHaveBeenCalledTimes(1));
+  const ready = { ...emptyStudioCapabilities(), gpuWorker: true, renderWorker: true };
+  // The workers flap away and back: the first mount is abandoned and a replacement starts.
+  await view.refresh({ capabilities: emptyStudioCapabilities() });
+  await view.refresh({ capabilities: ready });
+  firstServices.reportFatal(new Error('abandoned engine failed'));
+  finishFirst();
+  await waitFor(() => expect(mount).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(view.queryByTestId('studio-state')).toBeNull());
+  expect(services.reportFatal).not.toHaveBeenCalled();
+  expect(first.dispose).toHaveBeenCalledTimes(1);
+});
+
 it.each(['absent', 'missing-workers', 'ready'] as const)(
   'offers explicit receipt navigation through the active owner callback with %s editor',
   async (engine) => {
@@ -233,9 +274,9 @@ it.each(['absent', 'missing-workers', 'ready'] as const)(
     const onImportRetention = vi.fn();
     await view.refresh({ onImportRetention });
     await fireEvent.click(view.getByRole('button', { name: 'more' }));
-    await fireEvent.click(view.getByRole('menuitem', { name: 'Import receipts' }));
+    await fireEvent.click(view.getByRole('menuitem', { name: 'frameleaf_studio_receipts_title' }));
     expect(onImportRetention).toHaveBeenCalledTimes(1);
     await view.refresh({ accessLost: true });
-    expect(view.queryByRole('menuitem', { name: 'Import receipts' })).toBeNull();
+    expect(view.queryByRole('menuitem', { name: 'frameleaf_studio_receipts_title' })).toBeNull();
   },
 );

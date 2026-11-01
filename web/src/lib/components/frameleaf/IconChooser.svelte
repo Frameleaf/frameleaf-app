@@ -12,7 +12,7 @@
   import type { AlbumIconCatalogueResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiMagnify } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -62,6 +62,11 @@
       const [loadedCatalogue, loadedPaths] = await Promise.all([loadIconCatalogue(), loadIconPaths()]);
       catalogue = loadedCatalogue;
       paths = loadedPaths;
+      if (!inline) {
+        // The field is disabled until the catalogue arrives, and a disabled field cannot take focus.
+        await tick();
+        search?.focus();
+      }
     } catch {
       failed = true;
     }
@@ -70,14 +75,25 @@
   onMount(() => {
     void load();
     if (!inline) {
-      search?.focus();
       const outside = (event: PointerEvent) => {
         if (root && !root.contains(event.target as Node)) {
           onClose?.();
         }
       };
+      // Escape closes the popover wherever focus is, before the page's own Escape (LIB-04).
+      const escape = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose?.();
+        }
+      };
       document.addEventListener('pointerdown', outside);
-      return () => document.removeEventListener('pointerdown', outside);
+      document.addEventListener('keydown', escape, { capture: true });
+      return () => {
+        document.removeEventListener('pointerdown', outside);
+        document.removeEventListener('keydown', escape, true);
+      };
     }
   });
 
@@ -103,15 +119,6 @@
     if (event.key === 'Enter' && event.target === search) {
       // Never submit an enclosing form from the icon search.
       event.preventDefault();
-      return;
-    }
-    if (event.key === 'Escape') {
-      if (inline) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      onClose?.();
       return;
     }
     const options = [...(root?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];

@@ -537,6 +537,13 @@ export class StorageCore {
     return join(StorageCore.getFolderLocation(folder, ownerId), filename.slice(0, 2), filename.slice(2, 4));
   }
 
+  /** FL-651: where the retired video duplicate check kept up to 8 CLIP frames of a video. */
+  static getLegacyVideoDuplicateFramePaths(ownerId: string, assetId: string): string[] {
+    return Array.from({ length: 8 }, (_, index) =>
+      StorageCore.getNestedPath(StorageFolder.Thumbnails, ownerId, `${assetId}_video_duplicate_${index}.jpeg`),
+    );
+  }
+
   static getNestedPath(folder: StorageFolder, ownerId: string, filename: string): string {
     return join(StorageCore.getNestedFolder(folder, ownerId, filename), filename);
   }

@@ -447,3 +447,38 @@ it.each([false, true])(
   },
   largeGalleryTimeout,
 );
+it('loads both comparison previews together and drops a reply for an earlier comparison', async () => {
+  const second = { ...view.photos[0], id: 'second', number: 8 };
+  vi.mocked(galleryRequest).mockResolvedValue({ ...structuredClone(view), photos: [view.photos[0], second] });
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await screen.findByText('The wedding collection');
+  const pending: ((blob: Blob) => void)[] = [];
+  vi.mocked(galleryMedia).mockImplementation((_gallery, _id, kind) =>
+    kind === 'preview'
+      ? new Promise((resolve) => {
+          pending.push(resolve);
+        })
+      : Promise.resolve(new Blob(['jpeg'], { type: 'image/jpeg' })),
+  );
+  await fireEvent.click(screen.getByRole('checkbox', { name: 'Compare photo 7' }));
+  await fireEvent.click(screen.getByRole('checkbox', { name: 'Compare photo 8' }));
+  vi.mocked(galleryMedia).mockClear();
+  const compare = screen.getAllByRole('button', { name: 'Compare' })[0];
+  await fireEvent.click(compare);
+  // Both previews are requested before either answers.
+  expect(galleryMedia).toHaveBeenCalledWith('shoot', 'capture', 'preview', 'scoped');
+  expect(galleryMedia).toHaveBeenCalledWith('shoot', 'second', 'preview', 'scoped');
+  const stale = pending.splice(0);
+  await fireEvent.click(compare);
+  vi.mocked(URL.createObjectURL).mockClear();
+  for (const resolve of stale) {
+    resolve(new Blob(['old'], { type: 'image/jpeg' }));
+  }
+  await tick();
+  await tick();
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  for (const resolve of pending) {
+    resolve(new Blob(['new'], { type: 'image/jpeg' }));
+  }
+  await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(2));
+});

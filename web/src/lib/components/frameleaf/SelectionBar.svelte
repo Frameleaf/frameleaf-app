@@ -1,6 +1,7 @@
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
-  import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
+  import DevelopBatchPanel from '$lib/components/frameleaf/DevelopBatchPanel.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import BulkDateDialog from '$lib/components/frameleaf/BulkDateDialog.svelte';
   import BulkDescriptionDialog from '$lib/components/frameleaf/BulkDescriptionDialog.svelte';
@@ -22,6 +23,7 @@
     type BulkAsset,
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { MODAL_SELECTOR } from '$lib/frameleaf/library-key-actions';
   import { isTypingTarget } from '$lib/frameleaf/library-shortcuts';
   import { selectionForPreservation } from '$lib/frameleaf/preservation';
@@ -133,7 +135,7 @@
     total = null,
     /** The selected assets, when the view has them loaded. */
     assets = [],
-    selectedIds = assets.map((asset) => asset.id),
+    selectedIds: selectedIdsProp,
     context = {},
     tagOptions = [],
     operations = [],
@@ -174,7 +176,10 @@
     resolveCaptureTimes?: (ids: string[]) => Promise<Record<string, CaptureTime> | null>;
   } = $props();
 
+  const selectedIds = $derived(selectedIdsProp ?? assets.map((asset) => asset.id));
+
   let menuOpen = $state(false);
+  let batchOpen = $state(false);
   let dialog = $state<BulkActionId | null>(null);
   /** Bound to the open dialog, so closing it from inside clears the parent's choice too. */
   let dialogOpen = $state(false);
@@ -218,10 +223,24 @@
     menuLeaving = true;
     cancelMenuLeave = leave(node, 'pop', () => (menuLeaving = false));
   });
+  /** The server's trash flag; unknown (flags not loaded) counts as on, the server default. */
+  const trashEnabled = () => {
+    try {
+      return featureFlagsManager.value.trash;
+    } catch {
+      return true;
+    }
+  };
   let trash = $derived(!!context.trash);
   let locked = $derived(!!context.locked);
   let actions = $derived(
-    bulkActions({ canSendCopy: canSendCopies() && sendCopyPermitted(), ...context, assets, count }),
+    bulkActions({
+      canSendCopy: canSendCopies() && sendCopyPermitted(),
+      trashEnabled: trashEnabled(),
+      ...context,
+      assets,
+      count,
+    }),
   );
   let byId = $derived(bulkActionById(actions));
   let primary = $derived(primaryBulkActions(actions, trash, locked));
@@ -242,7 +261,9 @@
    * Actions that need a payload open their dialog; everything else is dispatched straight away.
    * Stack order and the Live Photo pair are derived here because only the bar knows the selection.
    */
-  const perform = (id: BulkActionId) => {
+  const perform = (requested: BulkActionId) => {
+    // With trash off, Delete is the confirmed permanent delete, from the button, a key or a tile.
+    const id = requested === 'delete' && !byId.delete?.available ? 'delete-permanently' : requested;
     const action: BulkAction | undefined = byId[id];
     if (!action?.available) {
       return;
@@ -414,7 +435,7 @@
 </script>
 
 <svelte:window
-  use:shortcuts={open && !dialog
+  use:shortcuts={open && !dialog && !batchOpen
     ? [
         { shortcut: { key: 'Escape' }, onShortcut: guardShortcut(handleEscape), preventDefault: false },
         { shortcut: { key: 'D', ctrl: true }, onShortcut: guardShortcut(onClear), preventDefault: false },
@@ -546,6 +567,17 @@
               aria-label={$t('frameleaf_selection_more_actions')}
               onkeydown={menuKeydown}
             >
+              {#if !context.sharedLinkId && !context.readOnly && !context.trash && !context.snapshot}
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabindex="-1"
+                  onclick={() => {
+                    menuOpen = false;
+                    batchOpen = true;
+                  }}>{$t('frameleaf_batch.title')}</button
+                >
+              {/if}
               {#each menuGroups as group (group.id)}
                 <div role="group" aria-labelledby={`${menuId}-${group.id}`}>
                   <p class="menu-title" id={`${menuId}-${group.id}`}>{$t(group.titleKey)}</p>
@@ -625,6 +657,11 @@
   </div>
 {/if}
 
+<Dialog bind:open={batchOpen} title={$t('frameleaf_batch.title')} closeLabel={$t('close')} size="wide">
+  {#if batchOpen}<DevelopBatchPanel assetIds={[...selectedIds]} />{/if}
+  <p><a href="/develop-batches">{$t('frameleaf_batch.manage')}</a></p>
+</Dialog>
+
 {#if dialog === 'change-date'}
   <BulkDateDialog
     {count}
@@ -649,7 +686,9 @@
     onSubmit={(payload) => submitDialog('tag', payload)}
   />
 {:else if dialog === 'add-to-album'}
-  <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
+  {#await import('$lib/components/frameleaf/BulkAlbumDialog.svelte') then { default: BulkAlbumDialog }}
+    <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
+  {/await}
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
 {:else if dialog === 'export-preservation'}

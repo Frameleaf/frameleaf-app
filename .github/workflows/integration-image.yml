@@ -277,7 +277,12 @@ jobs:
               mkdir -p "$layout"
               tar -xf "$archive/image.tar" -C "$layout"
               jq -e --arg d "$digest" '[.manifests[].digest] == [$d]' "$layout/index.json" > /dev/null
-              oras cp --from-oci-layout "${layout}@${digest}" "${image}@${digest}"
+              # GHCR can briefly 404 an index whose child manifests were just pushed.
+              for attempt in 1 2 3; do
+                oras cp --from-oci-layout "${layout}@${digest}" "${image}@${digest}" && break
+                (( attempt < 3 )) || exit 1
+                sleep $((attempt * 15))
+              done
               [[ "$(oras resolve "${image}@${digest}")" == "$digest" ]] || { echo "::error::Pushed $name digest differs from the tested archive"; exit 1; }
               printf '%s\n' "$digest" > "$RUNNER_TEMP/digests/$name/$architecture"
             done

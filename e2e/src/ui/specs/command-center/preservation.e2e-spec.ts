@@ -337,7 +337,7 @@ const setupPreservationMocks = async (context: BrowserContext) => {
 };
 
 const exportSearch = async (page: Page) => {
-  await page.getByRole('button', { name: 'Preview preservation manifest' }).click();
+  await page.getByRole('button', { name: 'Export a copy…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Preservation export' });
   await dialog.getByRole('button', { name: 'Search', exact: true }).click();
   await dialog.getByRole('searchbox', { name: /^Items matching/ }).fill('Harbour Street');
@@ -377,7 +377,7 @@ test.describe('Preservation packages', () => {
         { originalPath: { like: 'Harbour Street' } },
       ],
     };
-    expect(mocks.state.preview).toEqual([{ scope: { filter }, includeLocked: false }]);
+    expect(mocks.state.preview).toEqual([{ scope: { filter }, includeMetadata: true, includeLocked: false }]);
     expect(mocks.state.created).toEqual([
       expect.objectContaining({ scope: { filter }, includeMetadata: true, includeLocked: false }),
     ]);
@@ -401,8 +401,8 @@ test.describe('Preservation packages', () => {
     await exportSearch(page);
 
     await page.getByRole('button', { name: 'Restore…' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Restore from a package' });
-    await dialog.getByRole('button', { name: 'Check package' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Restore from an exported copy' });
+    await dialog.getByRole('button', { name: 'Check this copy' }).click();
 
     // The review job finishes on the next poll and lands on the differences.
     await expect(dialog.getByText('receipt.jpg')).toBeVisible({ timeout: 15_000 });
@@ -411,13 +411,13 @@ test.describe('Preservation packages', () => {
     await expect(dialog.getByText(/Generated moment captions/)).toBeVisible();
 
     const description = dialog.getByRole('group', { name: 'Description' });
-    await description.getByRole('button', { name: 'Use package' }).click();
+    await description.getByRole('button', { name: 'Use what is in the copy' }).click();
     await expect
       .poll(() => mocks.state.decisions)
       .toEqual([{ items: [{ id: 'item-conflict', decisions: { description: 'replace' } }] }]);
 
     await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
-    expect(mocks.state.applies).toEqual(['restore-1']);
+    await expect.poll(() => mocks.state.applies).toEqual(['restore-1']);
 
     // The first restore job is lost part-way: one item failed, and it can be tried again.
     const again = dialog.getByRole('button', { name: 'Try failed items again' });
@@ -432,7 +432,7 @@ test.describe('Preservation packages', () => {
     });
     await dialog.getByRole('button', { name: 'Differences' }).click();
     await expect(
-      dialog.getByRole('group', { name: 'Description' }).getByRole('button', { name: 'Use package' }),
+      dialog.getByRole('group', { name: 'Description' }).getByRole('button', { name: 'Use what is in the copy' }),
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -442,7 +442,7 @@ test.describe('Preservation packages', () => {
 
     const restorations = page.locator('section', { hasText: 'Restorations in progress' });
     await restorations.locator('li', { hasText: 'Old laptop package' }).getByRole('button', { name: 'Open' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Restore from a package' });
+    const dialog = page.getByRole('dialog', { name: 'Restore from an exported copy' });
     await expect(dialog.getByRole('alert')).toHaveText('The package is no longer available.');
     await expect(dialog.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
     expect(mocks.state.applies).toEqual([]);

@@ -1,4 +1,4 @@
-import { AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@frameleaf/sdk';
+import { LibraryViewScope, AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -112,6 +112,7 @@ describe('SearchPalette', () => {
       ],
     });
     sdkMock.searchAssetStatistics.mockResolvedValue({ total: 42 });
+    sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
     sdkMock.searchSmartStatistics.mockResolvedValue({ total: 1000, capped: true });
     sdkMock.searchAssets.mockResolvedValue(searchResponse([asset('a1', 'IMG_0001.jpg')]) as never);
     sdkMock.searchSmart.mockResolvedValue(searchResponse([asset('a2', 'IMG_0002.jpg')]) as never);
@@ -133,6 +134,46 @@ describe('SearchPalette', () => {
   };
 
   const type = (input: HTMLElement, value: string) => fireEvent.input(input, { target: { value } });
+
+  it('replaces settled Filename answers with neutral spoken guidance and submits the literal query', async () => {
+    sdkMock.getSpeechCapabilities.mockResolvedValue({ version: 1 } as never);
+    sdkMock.searchAssetStatistics.mockResolvedValue({ total: 2 });
+    sdkMock.searchFacets.mockResolvedValue({
+      total: 2,
+      facets: [{ fieldName: SearchFacetField.Type, counts: [{ value: 'IMAGE', count: 2 }] }],
+    });
+    const { input } = setup({ ...emptyDiscoveryQuery(), mode: 'text', text: 'IMG', filter: { city: { eq: 'Banff' } } });
+    await screen.findAllByText('2 matches');
+    await screen.findByRole('option', { name: 'IMG_0001.jpg' });
+    expect(screen.getByRole('complementary', { name: 'Refine' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Search mode: Filename' }));
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Spoken words' }));
+    await type(input, '"ask not"');
+    expect((await screen.findAllByText('Open full results to search spoken words.')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Searching…')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('2 matches')).toHaveLength(0);
+    expect(screen.queryByRole('complementary', { name: 'Refine' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox', { name: 'Search results' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/No matches/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save search' })).toBeDisabled();
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    for (const scope of screen.getAllByRole('radio')) {
+      expect(scope.textContent).not.toMatch(/2|…/);
+    }
+    await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+    const url = new URL(String(vi.mocked(goto).mock.calls[0][0]), 'http://localhost');
+    expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({
+      mode: 'speech',
+      text: '"ask not"',
+      filter: { city: { eq: 'Banff' } },
+    });
+    expect(sdkMock.searchSpokenWords).not.toHaveBeenCalled();
+  });
+
+  it('starts Pro in mixed All text even when semantic models are available', () => {
+    setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
+    expect(screen.getByRole('button', { name: 'Search mode: All text' })).toBeInTheDocument();
+  });
 
   describe('what the server can answer', () => {
     const TEXT_EXAMPLE = 'Welcome';
@@ -342,6 +383,8 @@ describe('SearchPalette', () => {
   it('shows all results on Enter and remembers the search with its chips', async () => {
     const { input, onClose } = setup();
     await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    // let the mocked vocabulary settle (its shared suggestion requests resolve a few ticks later)
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await type(input, 'person:Jamie ');
     await type(input, 'beach');
     await fireEvent.keyDown(input, { key: 'Enter' });

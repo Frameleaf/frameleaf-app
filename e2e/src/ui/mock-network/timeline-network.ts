@@ -115,17 +115,20 @@ export const setupTimelineMockApiRoutes = async (
       const pathname = url.pathname;
       const assetId = basename(pathname);
       let asset = getAsset(timelineRestData, assetId);
-      if (changes.assetDeletions.includes(asset!.id)) {
+      if (!asset) {
+        return route.fallback();
+      }
+      if (changes.assetDeletions.includes(asset.id)) {
         asset = {
           ...asset,
           isTrashed: true,
         } as AssetResponseDto;
       }
       // The asset endpoint reports the same changes the buckets do.
-      if (changes.assetFavorites.includes(asset!.id)) {
+      if (changes.assetFavorites.includes(asset.id)) {
         asset = { ...asset, isFavorite: true } as AssetResponseDto;
       }
-      if (changes.assetArchivals.includes(asset!.id)) {
+      if (changes.assetArchivals.includes(asset.id)) {
         asset = { ...asset, visibility: AssetVisibility.Archive } as AssetResponseDto;
       }
       return route.fulfill({
@@ -240,6 +243,11 @@ export const setupTimelineMockApiRoutes = async (
       // The library rail reads the album tree; the mock album stands on its own.
       const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
       return route.fulfill({ json: { albums: [album], collections: [], spaces: [] } });
+    }
+    if (pathname === '/api/albums/hierarchy') {
+      // The same rail data in the nested shape the rail now reads.
+      const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
+      return route.fulfill({ json: { roots: [{ album, children: [] }] } });
     }
     // Only the album itself: sub-resources (descendant counts, members, ...) are not mocked.
     const albumsMatch = pathname.match(/^\/api\/albums\/(?<albumId>[0-9a-f-]{36})$/);

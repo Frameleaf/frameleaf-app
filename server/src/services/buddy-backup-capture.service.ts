@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import type { FrameleafCloudBackup } from 'src/types.js';
+import type { FrameleafCloudBackup, IDeleteFilesJob } from 'src/types.js';
 import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
 import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 import { serverVersion } from 'src/constants.js';
@@ -31,7 +31,7 @@ import {
   type BuddyKeyring,
   buddyObjectId,
   decryptBuddyBlock,
-  encryptBuddyBlock,
+  sealBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
 import { type BuddyAssetFidelity, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
@@ -92,15 +92,13 @@ export type BuddyCapture = {
   derivedInventoryVersion?: 1;
 };
 
+type PinnedOriginal = NonNullable<IDeleteFilesJob['original']>;
 type DerivedBackupPath = { path: string; role: string; assetId: string | null };
 
 /** Read from the same exported snapshot as the dump, never from directory names or temporary-file globs. */
 const derivedPaths = sql<DerivedBackupPath>`
   SELECT p."thumbnailPath" AS path, 'person-thumbnail'::text AS role, NULL::uuid AS "assetId"
   FROM public.person p WHERE p."thumbnailPath" <> ''
-  UNION ALL SELECT f.path, 'video-duplicate-frame'::text, f."assetId"
-  FROM public.asset_video_duplicate_frame f JOIN public.asset a ON a.id = f."assetId"
-  WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
   UNION ALL SELECT f.path, 'video-moment-frame'::text, f."assetId"
   FROM public.video_moment_frame f JOIN public.asset a ON a.id = f."assetId"
   WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})`;
@@ -158,7 +156,7 @@ export class BuddyBackupCaptureService {
       } catch (readError) {
         if ((readError as NodeJS.ErrnoException).code !== 'ENOENT') throw readError;
         const nonce = randomBytes(12);
-        const sealed = encryptBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, bytes, nonce);
+        const sealed = sealBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, bytes, nonce);
         journal = {
           nonce: nonce.toString('base64url'),
           digest: BuddyVault.receipt(id, sealed).digest,
@@ -166,7 +164,7 @@ export class BuddyBackupCaptureService {
         };
         await writeBuddyFile(journalPath, JSON.stringify(journal), true);
       }
-      encrypted = encryptBuddyBlock(
+      encrypted = sealBuddyBlock(
         key,
         { vaultId: ring.vaultId, id, keyVersion: ring.current },
         bytes,
@@ -384,21 +382,64 @@ export class BuddyBackupCaptureService {
           UNION SELECT "profileImagePath" AS path FROM public.user WHERE "profileImagePath" <> '' AND "deletedAt" IS NULL`.execute(
               trx,
             );
+            // A library scan marks a vanished file offline and trashes it with its status unchanged.
+            // Like Cloud Backup, such an item is left out of the snapshot instead of failing it.
+            const offline = new Set(
+              (
+                await sql<{ path: string }>`SELECT "originalPath" AS path FROM public.asset
+          WHERE "isOffline" AND status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
+          UNION SELECT f.path FROM public.asset_file f JOIN public.asset a ON a.id=f."assetId"
+          WHERE a."isOffline" AND a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})`.execute(trx)
+              ).rows.map((entry) => entry.path),
+            );
+            const present = (path: string) => !offline.has(path) || pinnedPaths.has(path);
             for (const path of new Set([
               ...[...required.rows, ...dependencies, ...derived].map((entry) => entry.path).filter(Boolean),
               ...configurationPaths,
             ])) {
               const canonical = await realpath(path).catch((error: NodeJS.ErrnoException) => {
+                if (error.code === 'ENOENT' && offline.has(path)) return null;
                 if (error.code === 'ENOENT' && derivedRoleByPath.has(path))
                   throw new Error(
                     `A selected Buddy derived file is missing (${derivedRoleByPath.get(path)}). Regenerate the cache or remove its stale reference before retrying the backup.`,
                   );
                 throw error;
               });
+              if (canonical === null) continue;
               if (inside(hostRoot, canonical) || inside(sourceRoot, canonical))
                 throw new Error('A backup contains a Buddy vault or server identity files');
               pinnedPaths.set(path, canonical);
             }
+            // A deletion this run holds back is replayed on release, after the asset row is gone. Record
+            // who held each pinned original first, so the replay can still put it in the file trash.
+            const originals = await trx
+              .selectFrom('asset')
+              .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+              .select([
+                'asset.id',
+                'asset.ownerId',
+                'asset.originalPath',
+                'asset.originalFileName',
+                'asset.checksum',
+                'asset_exif.fileSizeInByte',
+              ])
+              .where('asset.status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
+              .execute();
+            await writeBuddyFile(
+              this.originalsPath(options.runId),
+              JSON.stringify(
+                originals
+                  .filter((row) => pinnedPaths.has(row.originalPath))
+                  .map((row): PinnedOriginal => ({
+                    path: row.originalPath,
+                    ownerId: row.ownerId,
+                    assetId: row.id,
+                    originalFileName: row.originalFileName,
+                    checksum: Buffer.from(row.checksum).toString('hex'),
+                    sizeInBytes: row.fileSizeInByte ?? 0,
+                  })),
+              ),
+            );
             const paths = [...new Set([...pinnedPaths.keys(), ...pinnedPaths.values()])];
             for (let offset = 0; offset < paths.length; offset += 1000)
               await sql`INSERT INTO public.buddy_backup_reference ("runId", path)
@@ -470,15 +511,17 @@ export class BuddyBackupCaptureService {
                   const metadata = details.get(asset.id);
                   const original = originals.find((row) => row.id === asset.id);
                   if (!metadata || !original) throw new Error('Snapshot inventory is incomplete');
+                  if (!present(asset.originalPath)) continue;
                   const files = [
                     await captureFile(asset.originalPath, 'original', {
                       checksum: original.checksum,
                       algorithm: original.checksumAlgorithm,
                     }),
                   ];
-                  for (const file of asset.files) files.push(await captureFile(file.path, file.type));
+                  for (const file of asset.files)
+                    if (present(file.path)) files.push(await captureFile(file.path, file.type));
                   for (const file of derivedByAsset.get(asset.id) ?? [])
-                    if (files.every((entry) => entry.path !== file.path))
+                    if (present(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.role));
                   // Edited outputs and recorded version files are non-regenerable dependencies even with caches disabled.
                   const edited = await trx
@@ -488,7 +531,7 @@ export class BuddyBackupCaptureService {
                     .where('isEdited', '=', true)
                     .execute();
                   for (const file of edited)
-                    if (files.every((entry) => entry.path !== file.path))
+                    if (present(file.path) && files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.type));
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
@@ -582,9 +625,14 @@ export class BuddyBackupCaptureService {
     return capture;
   }
 
+  private originalsPath(runId: string) {
+    return join(this.runDirectory(runId), 'originals.json');
+  }
+
   async release(runId: string) {
     const { rows } = await sql<{ path: string }>`SELECT path FROM public.buddy_backup_reference
       WHERE "runId" = ${runId}::uuid ORDER BY path`.execute(this.repository.db);
+    let originals: Map<string, PinnedOriginal> | undefined;
     for (const { path } of rows) {
       const deferred = await this.repository.db.transaction().execute(async (trx) => {
         await lockFilePath(trx, path);
@@ -595,7 +643,30 @@ export class BuddyBackupCaptureService {
       });
       // A released row is a durable outbox until the existing durable queue accepts the deletion.
       // Retrying after a crash can enqueue twice; FileDelete's reference check is idempotent.
-      if (deferred) await this.jobs.queue({ name: JobName.FileDelete, data: { files: [path] } });
+      if (deferred) {
+        originals ??= new Map(
+          (
+            JSON.parse(
+              await readFile(this.originalsPath(runId), 'utf8').catch((error: NodeJS.ErrnoException) => {
+                if (error.code !== 'ENOENT') throw error;
+                return '[]';
+              }),
+            ) as PinnedOriginal[]
+          ).map((entry) => [entry.path, entry]),
+        );
+        const original = originals.get(path);
+        const removed =
+          original &&
+          !(await this.repository.db
+            .selectFrom('asset')
+            .select('id')
+            .where('id', '=', original.assetId)
+            .executeTakeFirst());
+        await this.jobs.queue({
+          name: JobName.FileDelete,
+          data: removed ? { files: [path], removedAssetId: original.assetId, original } : { files: [path] },
+        });
+      }
       await sql`DELETE FROM public.buddy_backup_reference
         WHERE "runId" = ${runId}::uuid AND path = ${path} AND released`.execute(this.repository.db);
     }

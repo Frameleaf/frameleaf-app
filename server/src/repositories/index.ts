@@ -8,17 +8,23 @@ import { AnalyticsRepository } from 'src/repositories/analytics.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
+import { AssetAnnotationRepository } from 'src/repositories/asset-annotation.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetPaletteRepository } from 'src/repositories/asset-palette.repository.js';
 import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
+import { AssetSourceRepository } from 'src/repositories/asset-source.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
+import { BrowserExtensionSignInRepository } from 'src/repositories/browser-extension-sign-in.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
@@ -35,10 +41,13 @@ import { DesktopDeviceRepository } from 'src/repositories/desktop-device.reposit
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { DevelopBatchRepository } from 'src/repositories/develop-batch.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EagleImportRepository } from 'src/repositories/eagle-import.repository.js';
+import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
@@ -60,6 +69,7 @@ import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-schedul
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
+import { IdenticalFilesRepository } from 'src/repositories/identical-files.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -104,15 +114,19 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
+import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
+import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
 import { StudioSourceResolutionRepository } from 'src/repositories/studio-source-resolution.repository.js';
+import { StudioStabiliseRepository } from 'src/repositories/studio-stabilise.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -130,9 +144,18 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  SpeechRepository,
+  AssetAnnotationRepository,
+  AssetPaletteRepository,
+  CaptureRepository,
+  BrowserExtensionSignInRepository,
+  AssetSourceRepository,
+  BookmarkRepository,
+  DevelopBatchRepository,
   DesktopClipIndexRepository,
   DesktopDeviceRepository,
   PhotoSourceRepository,
+  SourceResourceRepository,
   DesktopMlRepository,
   DesktopWorkerRepository,
   DesktopWorkerChallengeRepository,
@@ -220,6 +243,7 @@ export const repositories = [
   PetRepository,
   PhotoToolsRepository,
   PhysicalFileRepository,
+  IdenticalFilesRepository,
   PhysicalFileTrashRepository,
   RateLimitRepository,
   RawSupportRepository,
@@ -234,6 +258,8 @@ export const repositories = [
   StudioImportPublicationRepository,
   StudioImportFileRepository,
   StudioReverseConformRepository,
+  StudioMovieRepository,
+  StudioStabiliseRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,
@@ -251,6 +277,8 @@ export const repositories = [
   TagRepository,
   TakeoutRepository,
   TakeoutStagingRepository,
+  EagleImportRepository,
+  EagleLibraryRepository,
   TrashRepository,
   UserRepository,
   ViewRepository,

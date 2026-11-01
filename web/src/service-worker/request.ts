@@ -88,6 +88,9 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
       pendingRequest.settled = true;
       // never reused once settled: release the original response rather than hold it for the cancel window
       pendingRequest.promise = undefined;
+      // Every caller reads a clone, so the original body is never read and would buffer what the clones
+      // read. No joiner can clone it now: earlier joiners' clones ran before this, later ones are refused.
+      void promise.then((original) => original.body?.cancel()).catch(() => {});
       // Keep the entry while the body may still be streaming, so a cancel can abort it
       pendingRequest.cleanupTimeout = setTimeout(() => {
         // a newer request for the same URL may have replaced this entry

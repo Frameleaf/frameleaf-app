@@ -2,8 +2,11 @@ import { Permission, type SessionResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canSubmitPin,
+  keyPurpose,
+  PURPOSE_PERMISSIONS,
   filterPermissions,
   INDIVIDUAL_PERMISSIONS,
+  KEY_PURPOSES,
   isCompletePin,
   isProfileImageFile,
   keyCanDelete,
@@ -39,6 +42,8 @@ describe('personal access (FL-67)', () => {
     it('explains what is missing or wrong', () => {
       expect(passwordFormError({ ...valid, current: '' })).toBe('required');
       expect(passwordFormError({ current: 'old-password', next: 'short', confirm: 'short' })).toBe('too_short');
+      // FL-708: eight characters is the one rule; seven is still too short.
+      expect(passwordFormError({ current: 'old-password', next: 'sevench', confirm: 'sevench' })).toBe('too_short');
       expect(passwordFormError({ ...valid, confirm: 'new-passw0rd' })).toBe('mismatch');
       expect(passwordFormError({ current: 'same-password', next: 'same-password', confirm: 'same-password' })).toBe(
         'unchanged',
@@ -135,5 +140,39 @@ describe('personal access (FL-67)', () => {
     expect(isProfileImageFile({ name: 'me.heic', size: 1000 })).toBe(true);
     expect(isProfileImageFile({ name: 'me.gif', size: 1000 })).toBe(false);
     expect(isProfileImageFile({ name: 'me.png', size: 0 })).toBe(false);
+  });
+});
+
+describe('API key purposes (FL-367)', () => {
+  it('keeps browser capture limited to its own capture and destination catalog operations', () => {
+    expect(PURPOSE_PERMISSIONS.capture).toEqual([Permission.CaptureCreate, Permission.CaptureCatalogRead]);
+    expect(keyPurpose([...PURPOSE_PERMISSIONS.capture])).toBe('capture');
+    expect(keyPurpose([...PURPOSE_PERMISSIONS.capture, Permission.AssetRead])).toBe('custom');
+    for (const permission of [
+      Permission.AssetRead,
+      Permission.AssetView,
+      Permission.AssetUpload,
+      Permission.AssetDelete,
+      Permission.TagCreate,
+      Permission.AlbumShare,
+      Permission.All,
+    ]) {
+      expect(PURPOSE_PERMISSIONS.capture).not.toContain(permission);
+    }
+    expect(keyCanDelete([...PURPOSE_PERMISSIONS.capture])).toBe(false);
+  });
+  it('offers the browser extension just before Everything, as ApiKeys.jsx does', () => {
+    expect(KEY_PURPOSES).toEqual(['view', 'upload', 'view-upload', 'capture', 'everything']);
+  });
+  it('recognises a purpose from its exact permissions, and anything else as your own choice', () => {
+    expect(keyPurpose([...PURPOSE_PERMISSIONS.view])).toBe('view');
+    expect(keyPurpose([Permission.AssetUpload])).toBe('upload');
+    expect(keyPurpose([Permission.All])).toBe('everything');
+    expect(keyPurpose([Permission.AssetRead])).toBe('custom');
+  });
+
+  it('keeps downloads and deletes out of View only', () => {
+    expect(PURPOSE_PERMISSIONS.view).not.toContain(Permission.AssetDownload);
+    expect(PURPOSE_PERMISSIONS.view.some((permission) => permission.endsWith('.delete'))).toBe(false);
   });
 });

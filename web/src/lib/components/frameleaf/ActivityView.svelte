@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -390,6 +391,8 @@
     </div>
   </header>
 
+  <SpokenWordsActivity />
+
   {#if activitySession.unreachable}
     <div class="fla-offline" role="status">
       <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
@@ -644,12 +647,12 @@
     padding: 32px 36px 48px;
     color: var(--fl-text);
   }
+  /* P4 (review-1030-shell.css): the filters sit on their own row, in line with the content. */
   .fla-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     gap: 16px;
-    flex-wrap: wrap;
     margin-bottom: 20px;
     max-width: 900px;
   }
@@ -670,7 +673,6 @@
   }
   .fla-head-text {
     min-width: 0;
-    flex: 1 1 320px;
   }
   /* activity.css `.fla-intro`: what the page is for, above the counts. */
   .fla-intro {
@@ -690,7 +692,6 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    padding-top: 6px;
   }
   .fla-filters {
     display: inline-flex;

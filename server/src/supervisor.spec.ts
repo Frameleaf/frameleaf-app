@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { ExitCode, FrameleafWorker } from 'src/enum.js';
+import { API_STARTUP_RETRY_EXIT_CODE } from 'src/utils/shutdown.js';
 
 const fixture = vi.hoisted(() => ({
   maintenance: false,
@@ -412,6 +413,48 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
   });
 
+  it('backs off an executor that keeps failing at startup, and resets after a minute of running', async () => {
+    const restarts = () => fixture.starts.filter((name) => name === 'microservices').length;
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(2);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(3);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(restarts()).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(restarts()).toBe(4);
+    await vi.advanceTimersByTimeAsync(61_000);
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(restarts()).toBe(5);
+  });
+
+  // FL-646: an API start-up that lost a lock race to another worker comes back instead of stopping the server.
+  it('restarts an API worker whose start-up hit a transient lock conflict, backing off while it keeps failing', async () => {
+    latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
+    expect(process.exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
+    latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api', 'api']);
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it('still stops the server when the API worker fails for any other reason', async () => {
+    latest(FrameleafWorker.Api).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
+  });
+
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {
     latest(FrameleafWorker.Api).emit('message', { type: 'database-unusable' });
     latest(FrameleafWorker.Api).emit('exit', 1);
@@ -438,7 +481,8 @@ describe('supervisor worker-local restart lifecycle', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices']);
     proof.resolve();
-    await vi.advanceTimersByTimeAsync(1000);
+    // its second failure in a row waits 2 s
+    await vi.advanceTimersByTimeAsync(2000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'microservices', 'microservices']);
   });
 });

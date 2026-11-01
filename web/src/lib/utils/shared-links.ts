@@ -58,7 +58,7 @@ export const loadSharedLink = async ({
       },
     };
   } catch (error) {
-    if (isHttpError(error) && error.data.message === 'Password required') {
+    if (isHttpError(error) && error.data?.message === 'Password required') {
       return {
         ...common,
         passwordRequired: true,

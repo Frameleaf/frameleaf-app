@@ -6,6 +6,12 @@ import type {
   WorkflowDefinitionStep,
 } from 'src/schema/tables/workflow-definition.table.js';
 import { WorkflowIssueCode, WorkflowType } from 'src/enum.js';
+import {
+  type WorkflowSchedule,
+  WorkflowScheduleSchema,
+  type WorkflowSource,
+  WorkflowSourceSchema,
+} from 'src/utils/workflow-source.js';
 import { isMethodCompatible, parseMethodString, triggerMap } from 'src/utils/workflow.js';
 
 /**
@@ -168,7 +174,7 @@ export function validateStepConfig(schema: WorkflowParameterSchema, config: unkn
  * disabled one, so turning a step on later never turns on something that cannot run.
  */
 export function workflowIssues(
-  definition: Pick<WorkflowDefinitionDocument, 'trigger' | 'steps'>,
+  definition: Pick<WorkflowDefinitionDocument, 'trigger' | 'steps' | 'source' | 'schedule'>,
   methods: WorkflowMethodDefinition[],
 ): WorkflowIssue[] {
   const issues: WorkflowIssue[] = [];
@@ -176,8 +182,23 @@ export function workflowIssues(
   if (!knownTrigger) {
     issues.push({
       code: WorkflowIssueCode.TriggerUnavailable,
-      message: 'This trigger is unavailable. Scheduled workflows are not supported.',
+      message: 'This trigger is unavailable.',
     });
+  }
+  if ((definition.trigger === 'Schedule' || definition.trigger === 'AssetChanged') && !definition.source) {
+    issues.push({ code: WorkflowIssueCode.ConfigInvalid, message: 'Choose a source before enabling this workflow.' });
+  }
+  if (definition.trigger === 'Schedule' && !definition.schedule) {
+    issues.push({
+      code: WorkflowIssueCode.ConfigInvalid,
+      message: 'Configure a schedule before enabling this workflow.',
+    });
+  }
+  if (
+    (definition.source && !WorkflowSourceSchema.safeParse(definition.source).success) ||
+    (definition.schedule && !WorkflowScheduleSchema.safeParse(definition.schedule).success)
+  ) {
+    issues.push({ code: WorkflowIssueCode.ConfigInvalid, message: 'The workflow source or schedule is invalid.' });
   }
   for (const [index, step] of definition.steps.entries()) {
     const label = `Step ${index + 1}`;
@@ -209,7 +230,8 @@ export function workflowIssues(
 // Credentials
 
 /** Parameter names whose text values are credentials: kept on the server, never read back. */
-const CREDENTIAL_KEY = /^(headerValue|password|token|secret|authorization|apiKey|clientSecret)$/i;
+const CREDENTIAL_KEY =
+  /^(headerValue|password|passphrase|token|accessToken|refreshToken|bearerToken|secret|authorization|api[_-]?key|privateKey|clientSecret)$/i;
 
 /** The key path of every non-empty credential value in a step's parameters. */
 export function credentialPaths(value: unknown, path: string[] = []): string[][] {
@@ -341,6 +363,8 @@ const withoutKnown = (extra: Record<string, unknown> | null | undefined, known: 
   Object.fromEntries(Object.entries(extra ?? {}).filter(([key]) => !known.has(key)));
 
 export type WorkflowDefinitionInput = {
+  source?: WorkflowSource | null;
+  schedule?: WorkflowSchedule | null;
   trigger: string;
   extra?: Record<string, unknown> | null;
   steps: Array<{
@@ -371,6 +395,8 @@ export function toDefinition(input: WorkflowDefinitionInput): WorkflowDefinition
   });
   const definition: WorkflowDefinitionDocument = {
     version: 1,
+    ...(input.source !== undefined && { source: JSON.parse(JSON.stringify(input.source)) }),
+    ...(input.schedule !== undefined && { schedule: input.schedule }),
     trigger: input.trigger,
     extra: withoutKnown(input.extra, KNOWN_WORKFLOW_KEYS),
     steps,

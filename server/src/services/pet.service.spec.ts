@@ -153,6 +153,7 @@ describe(PetService.name, () => {
       mocks.logger as never,
       mocks.job as never,
       petRecognition,
+      mocks.event as never,
     );
 
     mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
@@ -212,6 +213,20 @@ describe(PetService.name, () => {
   });
 
   describe('update', () => {
+    it('does not notify workflows when a stored birthday date matches the submitted string', async () => {
+      (petRepository.getById as AnyMock).mockResolvedValue(pet({ birthDate: new Date('2000-01-15') }));
+      (petRepository.getObservations as AnyMock).mockResolvedValue([observation()]);
+      await sut.update(authStub.user1, petId, { birthDate: '2000-01-15' });
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+    it('rechecks affected photos once after a real pet edit, independently of recognition', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([observation(), observation()]);
+      await sut.update(authStub.user1, petId, { name: 'New name' });
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetsChanged', { assetIds: [assetId] });
+      mocks.event.emit.mockClear();
+      await sut.update(authStub.user1, petId, { name: 'Biscuit' });
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
     it('refuses a Locked photo as the featured photo (FL-53)', async () => {
       (petRepository.isOwnLockedAsset as AnyMock).mockResolvedValue(true);
 
@@ -297,7 +312,7 @@ describe(PetService.name, () => {
       await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
 
       expect(petRepository.mergeInto).toHaveBeenCalledWith(ownerId, { sourceId: otherPetId, targetId: petId });
-      expect(petRepository.getObservations).not.toHaveBeenCalled();
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, [petId, otherPetId], { withLocked: true });
     });
 
     it('answers a pet suppressed while the session is locked exactly like a missing one', async () => {
@@ -370,6 +385,19 @@ describe(PetService.name, () => {
       await sut.remove(unlockedAuth(), petId);
 
       expect(petRepository.delete).toHaveBeenCalledWith(ownerId, petId);
+    });
+
+    it('looks again at the photos it was confirmed in once it is deleted (FL-712)', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([
+        { assetId: 'confirmed-asset', state: PetObservationState.Confirmed },
+        { assetId: 'rejected-asset', state: PetObservationState.Rejected },
+      ]);
+
+      await sut.remove(unlockedAuth(), petId);
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PetRecognition, data: { id: 'confirmed-asset' } },
+      ]);
     });
   });
 
@@ -682,6 +710,17 @@ describe(PetService.name, () => {
     });
   });
 
+  it('reevaluates affected photos after deleting a pet', async () => {
+    (petRepository.getObservations as AnyMock).mockResolvedValue([observation()]);
+    await sut.remove(authStub.user1, petId);
+    expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
+  });
+  it('reevaluates affected photos after merging a pet', async () => {
+    (petRepository.getByIds as AnyMock).mockResolvedValue([pet({ id: otherPetId })]);
+    (petRepository.getObservations as AnyMock).mockResolvedValue([observation()]);
+    await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
+    expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
+  });
   describe('merge', () => {
     it('refuses to merge a pet into itself', async () => {
       await expect(sut.merge(authStub.user1, petId, { ids: [petId] })).rejects.toBeInstanceOf(BadRequestException);
@@ -703,7 +742,7 @@ describe(PetService.name, () => {
         sourceId: otherPetId,
         targetId: petId,
       });
-      expect(petRepository.getObservations).not.toHaveBeenCalled();
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, [petId, otherPetId], { withLocked: true });
     });
   });
 

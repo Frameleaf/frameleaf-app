@@ -266,11 +266,24 @@ export interface LibraryMediaSeeder {
   forget(mediaId: string): void
   /** The media is in the current bin again (imported again, or linked again by Freecut). */
   remember(mediaId: string): void
+  /**
+   * FL-636: the person asked for these again from the bin's Library view. Offer each afresh, even one
+   * they removed from the bin earlier, which `seed` alone would leave out.
+   */
+  restore(assets: readonly StudioAssetRef[]): Promise<void>
   /** What this seeder linked to `projectId`: the bin it put there, before anyone else changed it. */
   linked(projectId: string): ReadonlySet<string>
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
+
+/**
+ * FL-639: the server keeps a cut-out's matte with the project under this file name. It is project
+ * data for the renderer, not media the person placed, so it stays out of the bin.
+ */
+export const SUBJECT_MATTE_FILE_PREFIX = 'frameleaf-subject-matte-'
+export const isSubjectMatteImport = (item: Pick<StudioProjectImportRef, 'name' | 'mimeType'>): boolean =>
+  item.mimeType === 'image/png' && item.name.startsWith(SUBJECT_MATTE_FILE_PREFIX)
 
 export function createLibraryMediaSeeder(options: {
   workspace: VirtualWorkspace
@@ -284,6 +297,8 @@ export function createLibraryMediaSeeder(options: {
   const seeded = new Set<string>()
   /** Assets already recorded as HDR originals (FL-97). */
   const hdrMarked = new Set<string>()
+  /** Seeds run one at a time, each over what is still unseeded once the previous one settles. */
+  let seeding: Promise<void> = Promise.resolve()
   /** Removed from the bin by the person; never carried to another mount. */
   const removed = new Set<string>()
   /** What was linked to each recent mount's project here (the last few mounts only). */
@@ -340,27 +355,19 @@ export function createLibraryMediaSeeder(options: {
     onChange()
   }
 
-  return {
-    async seed(assets) {
-      if (controller.signal.aborted) return
-      const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
-      const now = Date.now()
-      // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
-      for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
-      // FL-97: the server names HDR originals once they are placed; record it on media the bin
-      // already holds, so the project becomes HDR without a remount.
-      let marked = false
-      for (const asset of assets) {
-        if (!asset.hdr || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
-        hdrMarked.add(asset.id)
-        if (await getMedia(asset.id)) {
-          await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
-          marked = true
-        }
-      }
-      if (marked) onChange()
+  /** One seed pass; `seed` queues these so overlapping calls never share an asset (FL-722). */
+  const seedNow = async (assets: readonly StudioAssetRef[]) => {
+    if (controller.signal.aborted) return
+    const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
+    const freshIds = new Set(fresh.map((asset) => asset.id))
+    for (const id of freshIds) seeded.add(id)
+    const now = Date.now()
+    // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
+    for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
+    let started = 0
+    try {
       for (const asset of fresh) {
-        seeded.add(asset.id)
+        started++
         if (asset.hdr) hdrMarked.add(asset.id)
         if (controller.signal.aborted) return
         const record = initialMediaRecord(asset, now)
@@ -377,11 +384,35 @@ export function createLibraryMediaSeeder(options: {
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
         await link(projectId(), asset.id)
       }
-      if (fresh.length > 0) onChange()
-      // Probe one at a time in the background, handoff order first: it is the starting cut.
-      probing = probing.then(async () => {
-        for (const asset of fresh) await enrich(asset)
-      })
+    } finally {
+      // Assets this seed never started stay free for the next seed; started ones keep their reservation.
+      for (const asset of fresh.slice(started)) seeded.delete(asset.id)
+    }
+    if (fresh.length > 0) onChange()
+    // FL-97: the server names HDR originals once they are placed; record it on media the bin
+    // already holds, so the project becomes HDR without a remount.
+    let marked = false
+    for (const asset of assets) {
+      if (!asset.hdr || freshIds.has(asset.id) || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
+      if (await getMedia(asset.id)) {
+        await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
+        hdrMarked.add(asset.id)
+        marked = true
+      }
+    }
+    if (marked) onChange()
+    // Probe one at a time in the background, handoff order first: it is the starting cut.
+    probing = probing.then(async () => {
+      for (const asset of fresh) await enrich(asset)
+    })
+  }
+
+  return {
+    async seed(assets) {
+      const run = seeding.then(() => seedNow(assets))
+      seeding = run.catch(() => {})
+      await run
+      // Probing runs in the background, outside the queue, so it never holds up the next seed.
       await probing
     },
     async associate(target, from) {
@@ -402,8 +433,17 @@ export function createLibraryMediaSeeder(options: {
       }
       onChange()
     },
-    async seedImports(imports) {
+    async seedImports(all) {
       if (controller.signal.aborted) return
+      // FL-639: a cut-out matte is read by the renderer by its id, never offered in the bin.
+      const imports: StudioProjectImportRef[] = []
+      for (const item of all) {
+        if (!isSubjectMatteImport(item)) imports.push(item)
+        else if (!seeded.has(item.id)) {
+          seeded.add(item.id)
+          blobUrlManager.registerUrl(item.id, item.url)
+        }
+      }
       // A canonical reload wins over stale workspace metadata, including records already seeded.
       for (const item of imports) {
         if (removed.has(item.id) || !item.processingProvenance) continue
@@ -461,6 +501,15 @@ export function createLibraryMediaSeeder(options: {
     remember(mediaId) {
       removed.delete(mediaId)
       options.onAvailabilityChange?.(mediaId, true)
+    },
+    restore(assets) {
+      for (const asset of assets) {
+        if (removed.delete(asset.id)) options.onAvailabilityChange?.(asset.id, true)
+        seeded.delete(asset.id)
+        // A restored record starts afresh, so a later HDR report marks it again.
+        hdrMarked.delete(asset.id)
+      }
+      return this.seed(assets)
     },
     linked(projectId) {
       return linkedTo.get(projectId) ?? new Set()

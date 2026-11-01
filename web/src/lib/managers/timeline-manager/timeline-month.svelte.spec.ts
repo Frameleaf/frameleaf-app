@@ -68,3 +68,15 @@ it('keeps coordinates absent when either axis is unknown', () => {
   expect(asset.latitude).toBeUndefined();
   expect(asset.longitude).toBeUndefined();
 });
+
+it('does not move the current months when a month a refresh replaced changes height', () => {
+  const manager = { months: [] as TimelineMonth[], topSectionHeight: 0 } as unknown as TimelineManager;
+  const current = [0, 1].map((index) => new TimelineMonth(manager, { year: 2026, month: 10 - index }, 0, true));
+  manager.months = current;
+  current[0].height = 100;
+  current[1].height = 50;
+  expect(current.map((month) => month.top)).toEqual([0, 100]);
+  const detached = new TimelineMonth(manager, { year: 2020, month: 1 }, 0, true);
+  detached.height = 300;
+  expect(current.map((month) => month.top)).toEqual([0, 100]);
+});

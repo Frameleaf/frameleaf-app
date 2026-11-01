@@ -261,6 +261,10 @@ export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
   });
 };
 
+/** FL-650: a video's filmstrip sprite, the variant and version its filmstrip index names. */
+export const getAssetFilmstripSpriteUrl = (id: string, options: { count: number; height: number; version: string }) =>
+  createUrl(`/assets/${id}/filmstrip/sprite`, { ...authManager.params, ...options });
+
 /** FL-97: the Studio HDR intermediate of an HDR original, read under asset.view; never the original. */
 export const getStudioHdrVideoUrl = (id: string) =>
   createUrl(`/assets/${id}/video/studio-hdr`, { ...authManager.params });
@@ -332,7 +336,13 @@ export const downloadUrl = (url: string, filename: string) => {
  * Streams an archive through a form POST. `edited: true` asks for each item as it is shown; left
  * out, the server sends the originals.
  */
-export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string, edited?: boolean) => {
+export const downloadUrlPost = (
+  url: string,
+  assetIds: string[],
+  archiveName: string,
+  edited?: boolean,
+  fields: Record<string, string> = {},
+) => {
   const form = document.createElement('form');
   form.method = 'post';
   form.action = url;
@@ -350,6 +360,9 @@ export const downloadUrlPost = (url: string, assetIds: string[], archiveName: st
   mkInput('archiveName', archiveName);
   if (edited !== undefined) {
     mkInput('edited', String(edited));
+  }
+  for (const [name, value] of Object.entries(fields)) {
+    mkInput(name, value);
   }
 
   document.body.append(form);

@@ -1,14 +1,14 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SearchFilter, SearchFilterBranch } from 'src/dtos/search.dto.js';
-import { AssetVisibility } from 'src/enum.js';
-import { requireElevatedPermission } from 'src/utils/access.js';
+import { AssetVisibility, Permission } from 'src/enum.js';
+import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
 
 type EnumField = 'type' | 'visibility';
 type EnumOperator = keyof NonNullable<SearchFilterBranch[EnumField]>;
 type EnumOperandMap<T> = { eq: T; ne: T; in: T[]; notIn: T[] };
 type EnumCondition<T> = { [K in EnumOperator]?: EnumOperandMap<T>[K] };
-type IdsFilterField = 'albumIds' | 'personIds' | 'petIds' | 'tagIds';
+type IdsFilterField = 'albumSubtreeIds' | 'albumIds' | 'personIds' | 'petIds' | 'tagIds';
 
 const filterBranches = (filter: SearchFilter): SearchFilterBranch[] => [filter, ...(filter.or ?? [])];
 
@@ -107,5 +107,15 @@ export const filterNamesPeople = (filter: SearchFilter | undefined): boolean => 
 export const requirePetFilterAllowed = (auth: AuthDto, petIds: readonly string[] | undefined): void => {
   if (auth.sharedLink && petIds && petIds.length > 0) {
     throw new BadRequestException('Pet filters are not available through a shared link');
+  }
+};
+
+export const requireSourceFilterAllowed = (auth: AuthDto, filter: SearchFilter): void => {
+  if (filterBranches(filter).every((branch) => !branch.source)) return;
+  if (
+    auth.sharedLink ||
+    (auth.apiKey && !isGranted({ requested: [Permission.AssetSourceRead], current: auth.apiKey.permissions }))
+  ) {
+    throw new ForbiddenException('Source filters require assetSource.read access');
   }
 };

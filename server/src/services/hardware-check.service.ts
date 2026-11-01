@@ -6,10 +6,12 @@ import { HardwareCheck, HardwareCheckResponseDto } from 'src/dtos/hardware-check
 import { MlDestinationKind, MlWorkerRole, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { RENDER_WORKER_STALE_MS } from 'src/services/worker-inventory.service.js';
 import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   ContainerTest,
   MlContainerReport,
+  WORKER_MODEL_MODES,
   WorkerCheck,
   WorkloadBenchmark,
   benchmarkFactors,
@@ -213,7 +215,9 @@ export class HardwareCheckService extends BaseService {
       .filter((worker) => worker.status === RenderWorkerStatus.Active)
       .map((worker) => {
         const qualified = evaluated.find((entry) => entry.worker.id === worker.id && entry.budget.valid);
-        return renderWorkerCheckFrom(worker, qualified?.budget.valid ? qualified.budget : null);
+        const seenAt = worker.lastSeenAt ? new Date(worker.lastSeenAt).getTime() : null;
+        const answering = seenAt !== null && Date.now() - seenAt <= RENDER_WORKER_STALE_MS;
+        return renderWorkerCheckFrom(worker, qualified?.budget.valid ? qualified.budget : null, answering);
       });
     const restoration = await Promise.all(
       this.restorationDestinations(destinations).map(async (row) =>
@@ -261,8 +265,9 @@ export class HardwareCheckService extends BaseService {
   /**
    * Throughput per kind of work the model sliders estimate. Descriptions are timed on this server's
    * ML container with the configured model and a generated test photo (never sent to Frameleaf
-   * Cloud); restoration comes from what its worker measured on the GPU it has now; the rest have no
-   * local runner or no measurement, and say so.
+   * Cloud); restoration and Smooth motion (interpolation, which the restoration service runs on the
+   * same worker, FL-162) come from what that worker measured on the GPU it has now; the rest have
+   * no local runner or no measurement, and say so.
    */
   private async benchmarkWorkloads(source: MeasurementSource): Promise<WorkloadBenchmark[]> {
     const { destinations, machineLearning } = source;
@@ -270,13 +275,14 @@ export class HardwareCheckService extends BaseService {
       (row) =>
         row.enabled && row.kind !== MlDestinationKind.FrameleafCloud && row.workloads.includes(MlWorkload.StudioAi),
     );
+    const [restoration, interpolation] = await this.benchmarkRestorationWorkers(destinations);
     return [
       await this.benchmarkDescriptions(destinations, machineLearning),
       unavailableWorkload('upscale', 'no-local-runner'),
-      await this.benchmarkRestoration(destinations),
+      restoration,
       // A transcription worker publishes no throughput and has no test route to time.
       unavailableWorkload('studio', studioWorker ? 'not-measured' : 'no-local-worker'),
-      unavailableWorkload('interpolation', 'no-local-runner'),
+      interpolation,
     ];
   }
 
@@ -344,28 +350,49 @@ export class HardwareCheckService extends BaseService {
     }
   }
 
-  private async benchmarkRestoration(destinations: MlDestinationRow[]): Promise<WorkloadBenchmark> {
-    const rows = this.restorationDestinations(destinations);
-    if (rows.length === 0) {
-      return unavailableWorkload('restoration', 'no-local-worker');
-    }
-    let best: { row: MlDestinationRow; fps: number } | null = null;
-    for (const row of rows) {
-      const report = await this.restorationReport(row);
-      const fps = report ? restorationThroughput(report) : null;
-      if (fps !== null && (!best || fps > best.fps)) {
-        best = { row, fps };
+  /**
+   * Restoration and Smooth motion from the restoration workers' own reports, each read once: the
+   * fastest ready model of the workload's modes measured on the GPU the worker has now. Smooth motion
+   * counts only workers allowed to run it.
+   */
+  private async benchmarkRestorationWorkers(
+    destinations: MlDestinationRow[],
+  ): Promise<[WorkloadBenchmark, WorkloadBenchmark]> {
+    const reports = await Promise.all(
+      this.restorationDestinations(destinations).map(async (row) => ({
+        row,
+        report: await this.restorationReport(row),
+      })),
+    );
+    const benchmark = (
+      workload: 'restoration' | 'interpolation',
+      serves: (row: MlDestinationRow) => boolean,
+    ): WorkloadBenchmark => {
+      const candidates = reports.filter(({ row }) => serves(row));
+      if (candidates.length === 0) {
+        return unavailableWorkload(workload, 'no-local-worker');
       }
-    }
-    if (!best) {
-      return unavailableWorkload('restoration', 'not-measured');
-    }
-    return measuredWorkload('restoration', {
-      unit: 'frame',
-      secondsPerUnit: 1 / best.fps,
-      source: 'qualification',
-      runsOn: 'gpu',
-      worker: best.row.name,
-    });
+      let best: { row: MlDestinationRow; fps: number } | null = null;
+      for (const { row, report } of candidates) {
+        const fps = report ? restorationThroughput(report, WORKER_MODEL_MODES[workload]) : null;
+        if (fps !== null && (!best || fps > best.fps)) {
+          best = { row, fps };
+        }
+      }
+      if (!best) {
+        return unavailableWorkload(workload, 'not-measured');
+      }
+      return measuredWorkload(workload, {
+        unit: 'frame',
+        secondsPerUnit: 1 / best.fps,
+        source: 'qualification',
+        runsOn: 'gpu',
+        worker: best.row.name,
+      });
+    };
+    return [
+      benchmark('restoration', () => true),
+      benchmark('interpolation', (row) => row.workloads.includes(MlWorkload.Interpolation)),
+    ];
   }
 }

@@ -1,14 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
+  LegacyPluginTemplateResponseDto,
   PluginMethodResponseDto,
   PluginMethodSearchDto,
   PluginResponseDto,
   PluginSearchDto,
-  PluginTemplateResponseDto,
   mapMethod,
   mapPlugin,
   mapTemplate,
 } from 'src/dtos/plugin.dto.js';
+import { LegacyWorkflowTriggerSchema } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isMethodCompatible } from 'src/utils/workflow.js';
 
@@ -34,9 +35,14 @@ export class PluginService extends BaseService {
       .map((method) => mapMethod(method));
   }
 
-  async searchTemplates(): Promise<PluginTemplateResponseDto[]> {
+  async searchTemplates(): Promise<LegacyPluginTemplateResponseDto[]> {
     // templates of enabled plugins only, like the methods they use
     const plugins = await this.pluginRepository.search({ enabled: true });
-    return plugins.flatMap((plugin) => plugin.templates.map((template) => mapTemplate(plugin, template)));
+    return plugins
+      .flatMap((plugin) => plugin.templates.map((template) => mapTemplate(plugin, template)))
+      .filter(
+        (template): template is LegacyPluginTemplateResponseDto =>
+          LegacyWorkflowTriggerSchema.safeParse(template.trigger).success,
+      );
   }
 }

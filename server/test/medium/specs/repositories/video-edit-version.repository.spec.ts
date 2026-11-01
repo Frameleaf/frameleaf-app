@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -27,6 +28,8 @@ import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
 beforeAll(async () => {
+  // the asset deletion names the retired video duplicate frames under the thumbnails folder (FL-651)
+  StorageCore.setMediaLocation('/data');
   db = await getKyselyDB();
 });
 afterAll(async () => {

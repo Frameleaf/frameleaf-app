@@ -83,7 +83,8 @@ describe('E2E fixture reset executor-stop authority', () => {
         queue,
         name: 'reset-stop-control',
         data: { id: asset.id, ...(operation && { operationId: operation.id }) },
-        safeToRetry: true,
+        // An unclassified control job: repeatable work is retried after an unconfirmed stop (FL-675).
+        safeToRetry: false,
         sensitive: options.sensitive ?? false,
         deadlineMs: 60_000,
       },

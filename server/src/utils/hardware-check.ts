@@ -9,6 +9,8 @@
  * the container cannot see; a problem is named only when the container gives evidence of it.
  */
 
+import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
+
 export type HardwareBackend = 'CUDA' | 'ROCm' | 'OpenVINO' | 'NVENC' | 'VA-API' | 'QSV' | 'CPU';
 
 export type RenderNode = {
@@ -113,6 +115,8 @@ export type ContainerCheck = {
   vendor: string | null;
   model: string | null;
   vramGb: number | null;
+  /** The GPU is an integrated one, sharing the computer's memory (so `vramGb` is null); null when not known. */
+  integrated: boolean | null;
   driver: string | null;
   backend: HardwareBackend;
   test: ContainerTest | null;
@@ -160,6 +164,33 @@ export const isIntegratedGpu = (vendor: string, pciAddress: string, memoryTotalB
     return pciAddress.endsWith('00:02.0');
   }
   return vendor === 'AMD' && (memoryTotalBytes ?? 0) < 2 * GB;
+};
+
+/**
+ * Whether the GPU a container reaches is an integrated one: what the host's PCI list says about the
+ * GPU behind the container's render node (or the only GPU of that vendor on the host); failing that,
+ * an Intel GPU that reports no memory of its own is the integrated one (Arc cards report theirs).
+ * NVIDIA makes none here. Null when nothing says either way.
+ */
+export const integratedGpu = (
+  vendor: string | null,
+  memoryTotalBytes: number | null | undefined,
+  node: RenderNode | null,
+  host: HostFacts | null | undefined,
+): boolean | null => {
+  if (!vendor) {
+    return null;
+  }
+  if (vendor === 'NVIDIA') {
+    return false;
+  }
+  const candidates = (host?.gpus ?? []).filter((gpu) => gpu.vendor === vendor);
+  const behindNode = node ? candidates.find((gpu) => gpu.renderNode === (node.hostNode ?? node.node)) : undefined;
+  const known = behindNode ?? (candidates.length === 1 ? candidates[0] : undefined);
+  if (known) {
+    return known.integrated;
+  }
+  return vendor === 'Intel' && (memoryTotalBytes ?? null) === null ? true : null;
 };
 
 export type HostEnvironment = 'wsl2' | 'docker-desktop' | 'unraid' | null;
@@ -239,6 +270,7 @@ export const serverCheckFrom = (facts: ServerHardwareFacts): ContainerCheck => {
       vendor: 'NVIDIA',
       model: facts.nvidia.name,
       vramGb: gb(facts.nvidia.memoryTotalBytes),
+      integrated: false,
       driver: facts.nvidia.driver,
       backend,
       test,
@@ -250,6 +282,7 @@ export const serverCheckFrom = (facts: ServerHardwareFacts): ContainerCheck => {
     vendor: node?.vendor ?? null,
     model: null,
     vramGb: gb(node?.memoryTotalBytes),
+    integrated: node ? integratedGpu(node.vendor, node.memoryTotalBytes, node, facts.host) : null,
     driver: facts.nvidiaError,
     backend,
     test,
@@ -264,6 +297,7 @@ export const mlCheckFrom = (report: MlContainerReport | null, embedding: Contain
       vendor: null,
       model: null,
       vramGb: null,
+      integrated: null,
       driver: null,
       backend: 'CPU',
       test: embedding,
@@ -272,11 +306,15 @@ export const mlCheckFrom = (report: MlContainerReport | null, embedding: Contain
   }
   const gpu = report.gpus[0] ?? null;
   const node = report.devices.renderNodes[0] ?? null;
+  const vendor = gpu?.vendor ?? node?.vendor ?? null;
+  const memoryTotalBytes = gpu?.memoryTotalBytes ?? node?.memoryTotalBytes ?? null;
   return {
     reachable: true,
-    vendor: gpu?.vendor ?? node?.vendor ?? null,
+    vendor,
     model: gpu?.name ?? null,
-    vramGb: gb(gpu?.memoryTotalBytes ?? node?.memoryTotalBytes),
+    vramGb: gb(memoryTotalBytes),
+    // An integrated GPU (OpenVINO on an Intel iGPU) reports no memory of its own; it is still the GPU in use.
+    integrated: gpu ? integratedGpu(vendor, memoryTotalBytes, node, report.host) : null,
     driver: report.driver ?? report.nvidiaError,
     backend: gpu && ML_BACKENDS.has(report.backend) ? (report.backend as HardwareBackend) : 'CPU',
     test: embedding,
@@ -357,6 +395,16 @@ const wrongRenderNode = (nodes: RenderNode[], host: HostFacts | null | undefined
   return first?.integrated ? card.pciAddress : null;
 };
 
+/**
+ * Both images set `NVIDIA_VISIBLE_DEVICES=all` themselves, so the variable alone is no sign that
+ * NVIDIA was wanted. It counts only on a host that may have an NVIDIA card: not Docker Desktop, and
+ * an NVIDIA card in the PCI list when that list can be read.
+ */
+const nvidiaWanted = (requested: boolean, host: HostFacts | null | undefined) =>
+  requested &&
+  hostEnvironment(host) !== 'docker-desktop' &&
+  (!host?.gpus || host.gpus.some((gpu) => gpu.vendor === 'NVIDIA'));
+
 /** Findings that follow from where the container runs rather than from how it was set up. */
 const environmentFindings = (host: HostFacts | null | undefined, facts: GpuFacts, add: Finder) => {
   const environment = hostEnvironment(host);
@@ -402,7 +450,7 @@ export const detectHardwareFindings = (
   if (server) {
     const add = finder('server');
     fromMessages(`${server.nvidiaError ?? ''} ${server.test?.error ?? ''}`, add);
-    if (server.nvidiaRequested && !server.nvidiaDevice && !server.nvidia) {
+    if (nvidiaWanted(server.nvidiaRequested, server.host) && !server.nvidiaDevice && !server.nvidia) {
       add('nvidia-toolkit');
     }
     // An NVIDIA card handed over as /dev/dri instead of through the toolkit: the common mix-up.
@@ -430,7 +478,7 @@ export const detectHardwareFindings = (
     const facts = mlGpuFacts(ml);
     const gpuUsed = facts.usable === true;
     const nodes = ml.devices.renderNodes;
-    if (ml.devices.nvidiaRequested && !ml.devices.nvidia && !gpuUsed) {
+    if (nvidiaWanted(ml.devices.nvidiaRequested, ml.host) && !ml.devices.nvidia && !gpuUsed) {
       add('nvidia-toolkit');
     }
     if (image === 'cpu' && (ml.devices.nvidia || nodes.length > 0)) {
@@ -500,26 +548,46 @@ export type WorkerCheck = {
  * shows the GPU visible and usable; the worker never reports its host, so a GPU there is known only
  * through that. Without a live session nothing is known.
  */
+/**
+ * A render worker answers when it has an admitted session and checked in recently: a session lasts
+ * hours, so it alone outlives a worker that stopped. The Studio worker bundled with this server
+ * (`local`) is admitted to render on the processor, so its session says nothing about a GPU.
+ */
 export const renderWorkerCheckFrom = (
-  worker: { id: string; name: string },
+  worker: { id: string; name: string; destination?: string },
   session: { valid: true; qualifiedBytes: string } | null,
-): WorkerCheck => ({
-  id: worker.id,
-  name: worker.name,
-  kind: 'render',
-  reachable: !!session,
-  model: null,
-  // A measured working budget is not dedicated physical VRAM.
-  vramGb: null,
-  gpu: session ? { present: true, visible: true, usable: true } : UNKNOWN_FACTS,
-});
+  answering = true,
+): WorkerCheck => {
+  const reachable = !!session && answering;
+  return {
+    id: worker.id,
+    name: worker.name,
+    kind: 'render',
+    reachable,
+    model: null,
+    // A measured working budget is not dedicated physical VRAM.
+    vramGb: null,
+    gpu: reachable && worker.destination !== 'local' ? { present: true, visible: true, usable: true } : UNKNOWN_FACTS,
+  };
+};
 
 type RestorationReport = {
   gpus: Array<{ name: string; memoryTotalBytes: number }>;
   models: Array<{
     state: string;
+    /** The mode the model serves: `faithful` or `creative` restoration, or `smooth_motion` (RIFE, FL-162). */
+    mode: string;
     measured: Array<{ gpu: string; framesPerSecond: number }>;
   }>;
+};
+
+/**
+ * The modes a restoration worker's models serve per benchmarked workload: Smooth motion (RIFE) is the
+ * interpolation workload the restoration service runs locally (FL-162); the rest are restoration.
+ */
+export const WORKER_MODEL_MODES: Readonly<Record<'restoration' | 'interpolation', readonly string[]>> = {
+  restoration: [AssetRestorationMode.Faithful, AssetRestorationMode.Creative],
+  interpolation: [AssetRestorationMode.SmoothMotion],
 };
 
 /**
@@ -661,13 +729,17 @@ export const measuredWorkload = (
 });
 
 /**
- * Restoration throughput from a worker's report: the fastest ready model measured on the GPU the
- * worker has now. A measurement on another GPU says nothing about this one.
+ * Throughput from a restoration worker's report for the models of the given modes: the fastest ready
+ * one measured on the GPU the worker has now. A measurement on another GPU says nothing about this
+ * one, and a Smooth motion (interpolation) rate says nothing about restoration, or the reverse.
  */
-export const restorationThroughput = (report: RestorationReport): number | null => {
+export const restorationThroughput = (
+  report: RestorationReport,
+  modes: readonly string[] = WORKER_MODEL_MODES.restoration,
+): number | null => {
   const names = new Set(report.gpus.map((gpu) => gpu.name));
   const rates = report.models
-    .filter((model) => model.state === 'available')
+    .filter((model) => model.state === 'available' && modes.includes(model.mode))
     .flatMap((model) => model.measured)
     .filter((entry) => names.has(entry.gpu) && entry.framesPerSecond > 0)
     .map((entry) => entry.framesPerSecond);

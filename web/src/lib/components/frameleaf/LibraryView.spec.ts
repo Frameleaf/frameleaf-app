@@ -13,8 +13,9 @@ import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
+import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { renderWithTooltips } from '$tests/helpers';
-import { assetFactory } from '@test-data/factories/asset-factory';
+import { assetFactory, timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import LibraryView from './LibraryView.svelte';
@@ -152,6 +153,25 @@ describe('LibraryView', () => {
     }
   });
 
+  it('opens a page that is not an album on the library scope when the device last showed an album', async () => {
+    authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+    authManager.setPreferences(preferencesFactory.build());
+    const stored = new Map<string, string>();
+    const storage = { getItem: (key: string) => stored.get(key) ?? null, setItem: stored.set.bind(stored) };
+    // the album page left its scope in this device's last view
+    const albumSession = new LibrarySessionStore({ storage, transientStorage: null });
+    albumSession.restore(undefined, 'owner', 'album');
+    albumSession.setScope({ kind: 'album', id: 'album-1' });
+    albumSession.persist('owner');
+
+    const session = new LibrarySessionStore({ storage, transientStorage: null });
+    render(LibraryView, { options: {}, destination: { kind: 'library' }, session, noSelectionBar: true });
+    await screen.findByTestId('frameleaf-library');
+
+    // otherwise "everything matching" on Photos would resolve to that album's items only
+    await waitFor(() => expect(session.state.scope).toEqual({ kind: 'library' }));
+  });
+
   it('does not loop or drop a session write when replaceState leaves page.url stale (FL-40 regression)', async () => {
     // Real SvelteKit `replaceState` updates the address bar without synchronously updating the
     // reactive `page.url` store. The default `navigation.replaceState` mock (a plain vi.fn() no-op,
@@ -266,6 +286,43 @@ describe('LibraryView', () => {
     libraryGridPreferences.showFileNames = false;
   });
 
+  it('hides the timeline and its year scrubber while Compare is open (LIB-09)', async () => {
+    await setup(false);
+    librarySession.patchView({ view: 'compare' });
+    await tick();
+    try {
+      const compare = screen.getByTestId('frameleaf-library-compare');
+      expect(compare.closest('[inert]')).toBeNull();
+      // the scrubber and the sticky toolbar live in the timeline; nothing in it may draw over Compare
+      expect(screen.getByTestId('frameleaf-results-toolbar').closest('[inert]')).toHaveClass('fl-behind-compare');
+    } finally {
+      librarySession.patchView({ view: 'grid' });
+    }
+  });
+
+  it('says why Compare and Quick edit are off while everything matching is selected (LIB-09)', async () => {
+    render(LibraryView, {
+      options: { albumId: 'album-1' },
+      destination: { kind: 'album', id: 'album-1' },
+      syncUrl: false,
+      viewer: createRawSnippet(() => ({ render: () => '<div></div>' })),
+    });
+    await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+    librarySession.dispatch({ type: 'selection', ids: ['a', 'b'], allMatching: true });
+    await tick();
+    try {
+      // this spec renders translation keys
+      const reason = 'frameleaf_selection_needs_picked_items';
+      for (const name of ['frameleaf_compare_title', 'frameleaf_selection_quick_edit']) {
+        const action = screen.getByRole('button', { name });
+        expect(action).toHaveAttribute('aria-disabled', 'true');
+        expect(action).toHaveAttribute('title', reason);
+      }
+    } finally {
+      librarySession.dispatch({ type: 'selection', ids: [] });
+    }
+  });
+
   it('draws no layout switch, Filter menu or Work panel on a public shared-link page', async () => {
     await setup(true);
     expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
@@ -299,7 +356,8 @@ describe('LibraryView', () => {
       await tick();
       expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
       // the toggle still says the panel is on: it comes back when the side panel closes
-      expect(screen.getByRole('button', { name: 'frameleaf_work_inspector_hide' })).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      expect(screen.getByRole('switch', { name: 'frameleaf_work_inspector_hide' })).toBeChecked();
     });
 
     it('describes the selection itself when the page supplies no panel of its own', async () => {
@@ -314,7 +372,9 @@ describe('LibraryView', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_close' }));
       expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
 
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      // FL-707 item 10: the Information panel switch is in the View menu.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
 
       await fireEvent.keyDown(document, { key: 'i' });
@@ -345,7 +405,9 @@ describe('LibraryView', () => {
       librarySession.setLayout('work');
       await tick();
       expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      // FL-707 item 10: the Information panel switch is in the View menu.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
     });
 
@@ -925,10 +987,57 @@ describe('LibraryView', () => {
     });
 
     // Favorites, Archive and Recently added (prototype `.collection-header`): one row, not a bar above.
-    it('draws a named destination’s title as the page heading, on the layout switch’s row', async () => {
+    it('draws a named destination’s title as the page heading, the layout tabs on their own row (FL-707 P2/12)', async () => {
       await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' }, title: 'Favorites' });
       const heading = screen.getByRole('heading', { level: 1, name: 'Favorites' });
-      expect(heading.closest('.fl-library-header')).toContainElement(screen.getByTestId('frameleaf-layout-switch'));
+      const tabs = screen.getByTestId('frameleaf-layout-switch');
+      expect(heading.closest('.fl-library-header')).not.toContainElement(tabs);
+      const row = tabs.closest('.fl-library-layouts');
+      expect(row).toHaveTextContent('frameleaf_library_layout_browse_hint');
+      expect(screen.getByRole('button', { name: 'frameleaf_library_layout_work' })).toHaveAttribute(
+        'title',
+        'frameleaf_library_layout_work_hint (⇧W)',
+      );
+    });
+
+    // FL-529: unfavoriting in Favorites takes the items off the page and out of the selection.
+    it('drops unfavorited items from the selection in Favorites', async () => {
+      authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+      authManager.setPreferences(preferencesFactory.build());
+      const at = '2024-03-10T12:00:00.000Z';
+      const favorite = timelineAssetFactory.build({ id: 'fav', ownerId: 'owner', isFavorite: true });
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2024-03-01', count: 1 }] as never);
+      sdkMock.getTimeBucket.mockResolvedValue(
+        toResponseDto({
+          ...favorite,
+          fileCreatedAt: fromISODateTimeUTCToObject(at),
+          localDateTime: fromISODateTimeUTCToObject(at),
+        }),
+      );
+      sdkMock.updateAssets.mockResolvedValue(undefined as never);
+      const session = new LibrarySessionStore({ storage: null, transientStorage: null });
+      const timeline = { manager: undefined as TimelineManager | undefined };
+      render(LibraryView, {
+        options: { isFavorite: true },
+        destination: { kind: 'favorites' },
+        syncUrl: false,
+        session,
+        get timelineManager() {
+          return timeline.manager;
+        },
+        set timelineManager(value) {
+          timeline.manager = value;
+        },
+      });
+      await waitFor(() => expect(timeline.manager?.months.length).toBe(1));
+      await timeline.manager!.updateViewport({ width: 1000, height: 400 });
+      await waitFor(() => expect(timeline.manager?.months[0]?.isLoaded).toBe(true));
+      session.select('fav');
+      await tick();
+
+      await fireEvent.keyDown(document, { key: 'f' });
+      await waitFor(() => expect(sdkMock.updateAssets).toHaveBeenCalled());
+      await waitFor(() => expect(session.selection).toEqual([]));
     });
 
     it('draws no heading of its own where the page gives no title', async () => {
@@ -940,7 +1049,9 @@ describe('LibraryView', () => {
       sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
       await setupLibrary();
       expect(librarySession.layout).toBe('browse');
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      // FL-707 item 10: the Information panel switch is in the View menu.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
 
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));

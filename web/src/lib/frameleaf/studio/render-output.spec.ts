@@ -3,11 +3,13 @@ import {
   StudioExportColor,
   StudioExportFormat,
   StudioExportResolution,
+  StudioExportShape,
   type StudioRenderEvidenceDto,
 } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateStudioRender,
+  studioKeepsHdrPicture,
   studioRenderChoices,
   studioRenderRefusalFromError,
   studioRenderRefusalKey,
@@ -36,6 +38,7 @@ const evidence = (overrides: Partial<StudioRenderEvidenceDto> = {}): StudioRende
         maxBitDepth: row.maxBitDepth,
         hdr10: row.hdr10,
         dolbyVision: row.dolbyVision,
+        sdrTenBit: true,
       },
     ],
     ...overrides,
@@ -151,6 +154,60 @@ describe('Studio render output (FL-42)', () => {
     });
   });
 
+  it('offers a 10-bit format for an SDR picture only from a session that writes one (FL-674)', () => {
+    const lan = MediaOperationDestination.Lan;
+    const { sdrTenBit: _, ...mastersOnly } = evidence().candidates![0];
+    const bundled = evidence({ candidates: [mastersOnly] });
+    for (const format of [
+      StudioExportFormat.Mp4HevcMain10,
+      StudioExportFormat.WebmAv1,
+      StudioExportFormat.Prores422Hq,
+    ]) {
+      const tenBit = { ...settings, format, resolution: StudioExportResolution.$1080P };
+      expect(
+        evaluateStudioRender([{ ...bundled, candidates: [{ ...mastersOnly, outputFormats: [format] }] }], lan, tenBit),
+      ).toEqual({
+        supported: false,
+        refusal: 'incompatible-color',
+      });
+    }
+    const sdr = { ...settings, resolution: StudioExportResolution.$1080P };
+    // An HDR project's Main10 is an HDR master, which the bundled worker writes; so is asking for HDR10.
+    expect(evaluateStudioRender([bundled], lan, { ...sdr, hdrPicture: true })).toEqual({ supported: true });
+    expect(evaluateStudioRender([bundled], lan, { ...sdr, color: StudioExportColor.Hdr10 })).toEqual({
+      supported: true,
+    });
+    // 8-bit formats are unaffected, and a worker that verified 10-bit SDR keeps Main10.
+    expect(evaluateStudioRender([bundled], lan, { ...sdr, format: StudioExportFormat.Mp4H264 })).toEqual({
+      supported: true,
+    });
+    expect(evaluateStudioRender([evidence()], lan, sdr)).toEqual({ supported: true });
+  });
+
+  it('keeps an HDR picture only when every placed video shares one HDR transfer, as the server seals it (FL-674, FL-689)', () => {
+    const graph = (...ids: string[]) => ({
+      timeline: {
+        items: [
+          ...ids.map((mediaId, index) => ({ id: `v${index}`, type: 'video', mediaId })),
+          { id: 'still', type: 'image', mediaId: 'photo' },
+        ],
+        compositions: [],
+      },
+    });
+    const pq = { pqSources: ['a', 'b'], hlgSources: ['h'] };
+    expect(studioKeepsHdrPicture(graph('A', 'B'), pq)).toBe(true);
+    expect(studioKeepsHdrPicture(graph('h'), pq)).toBe(true);
+    // PQ mixed with HLG seals SDR, so a 10-bit format needs a worker that writes 10-bit SDR.
+    expect(studioKeepsHdrPicture(graph('a', 'h'), pq)).toBe(false);
+    // Dolby Vision with neither transfer is an HDR original, but seals SDR too.
+    expect(studioKeepsHdrPicture(graph('dolby'), pq)).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a', 'sdr'), pq)).toBe(false);
+    expect(studioKeepsHdrPicture(graph(), pq)).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a'), { pqSources: [], hlgSources: [] })).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a'), undefined)).toBe(false);
+    expect(studioKeepsHdrPicture(null, pq)).toBe(false);
+  });
+
   it('accepts a combination a qualified session verified', () => {
     expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
   });
@@ -244,6 +301,34 @@ describe('Studio render output (FL-42)', () => {
       refusal: 'codec-unavailable',
     });
     expect(verdict(choices.colors, StudioExportColor.Hdr10)).toEqual({ supported: true });
+  });
+
+  it('offers a vertical or square export only from a session that reframes, in SDR video (FL-563)', () => {
+    const settings = {
+      format: StudioExportFormat.Mp4H264,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$1080P,
+      shape: StudioExportShape.Vertical,
+    };
+    const reframing = evidence();
+    reframing.candidates![0].reframe = true;
+    expect(evaluateStudioRender([reframing], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
+    expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({
+      supported: false,
+      refusal: 'codec-unavailable',
+    });
+    expect(
+      evaluateStudioRender([reframing], MediaOperationDestination.Lan, {
+        ...settings,
+        format: StudioExportFormat.Mp4HevcMain10,
+      }),
+    ).toEqual({ supported: false, refusal: 'codec-unavailable' });
+    expect(
+      evaluateStudioRender([evidence()], MediaOperationDestination.Lan, {
+        ...settings,
+        shape: StudioExportShape.Original,
+      }),
+    ).toEqual({ supported: true });
   });
 
   it('names every refusal and reads it from a refused export', () => {

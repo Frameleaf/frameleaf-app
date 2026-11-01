@@ -6,6 +6,7 @@ import {
   MemoryExportStatus,
   Permission,
   QueueName,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
@@ -121,7 +122,14 @@ describe(RunningJobService.name, () => {
       {} as never,
       {} as never,
     );
-    sut = new RunningJobService(mocks.logger as never, mocks.job as never, operationService, mocks.memory as never);
+    sut = new RunningJobService(
+      mocks.logger as never,
+      mocks.job as never,
+      operationService,
+      mocks.memory as never,
+      mocks.config as never,
+      mocks.systemMetadata as never,
+    );
   });
 
   describe('the viewer’s own work', () => {
@@ -139,6 +147,8 @@ describe(RunningJobService.name, () => {
         includeDismissed: false,
         take: RUNNING_OPERATIONS_LIMIT,
         skip: 0,
+        // Internal kinds (spoken-word transcription) never reach the public Activity list.
+        publicOnly: true,
       });
       expect(ACTIVE_MEDIA_OPERATION_STATUSES).toContain(MediaOperationStatus.Paused);
       expect(result.operations.map((operation) => operation.status)).toEqual([
@@ -244,6 +254,44 @@ describe(RunningJobService.name, () => {
       const result = await sut.getRunning(authStub.admin);
 
       expect(result.queues).toEqual([expect.objectContaining({ name: QueueName.SmartSearch, isPaused: true })]);
+    });
+
+    it('says when quiet hours saved a paused queue for the night, and when it starts again (FL-711)', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-31T03:28:00.000Z'), toFake: ['Date'] });
+      mocks.systemMetadata.get.mockImplementation((key: SystemMetadataKey) =>
+        Promise.resolve(
+          key === SystemMetadataKey.OvernightSequence
+            ? { run: null, nights: [], quiet: { holding: [QueueName.VideoConversion, QueueName.SmartSearch] } }
+            : key === SystemMetadataKey.SystemConfig
+              ? {
+                  nightlyTasks: { startTime: '00:00', days: [0, 1, 2, 3, 4, 5, 6] },
+                  server: { timeZone: 'America/Edmonton' },
+                }
+              : null,
+        ),
+      );
+      mocks.job.observeQueueRun.mockImplementation((name: QueueName) =>
+        Promise.resolve(
+          name === QueueName.VideoConversion || name === QueueName.ThumbnailGeneration
+            ? { ...idle, waiting: 3, startedAt: new Date() }
+            : idle,
+        ),
+      );
+      mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
+
+      const result = await sut.getRunning(authStub.admin);
+      vi.useRealTimers();
+
+      expect(result.queues).toEqual([
+        expect.objectContaining({ name: QueueName.ThumbnailGeneration, isPaused: false }),
+        expect.objectContaining({
+          name: QueueName.VideoConversion,
+          isPaused: true,
+          heldForNight: true,
+          resumesAt: '2026-10-31T06:00:00.000Z',
+        }),
+      ]);
+      expect(result.queues[0]).not.toHaveProperty('heldForNight');
     });
 
     it('marks a queue that cannot be paused', async () => {

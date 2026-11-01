@@ -71,9 +71,12 @@
       if (await onSave(next)) {
         await finish(fromKeyboard);
       } else {
-        // Refused: the field stays, with what was typed, ready to be corrected.
-        await tick();
-        field?.focus();
+        // Refused: the field stays, with what was typed, ready to be corrected. Focus only
+        // returns to it after Enter; a blur that moved focus elsewhere is not pulled back.
+        if (fromKeyboard) {
+          await tick();
+          field?.focus();
+        }
       }
     } finally {
       saving = false;

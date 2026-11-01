@@ -24,6 +24,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -57,8 +58,16 @@ const setup = (db?: Kysely<DB>) => {
       AssetEditRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
+    mock: [
+      EventRepository,
+      JobRepository,
+      LoggingRepository,
+      StorageRepository,
+      MachineLearningRepository,
+      MlDestinationRepository,
+    ],
   });
+  service.ctx.getMock(EventRepository).emit.mockResolvedValue();
   // FL-57: face changes queue the refresh of generated text that may name the wrong people
   service.ctx.getMock(JobRepository).queue.mockResolvedValue();
   useRealJobPublication(service.ctx.database, service.ctx.getMock(JobRepository), [service.sut]);

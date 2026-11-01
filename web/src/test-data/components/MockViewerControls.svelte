@@ -24,6 +24,7 @@
   } = $props();
 </script>
 
+<output data-testid="viewer-capture-time">{cursor?.current.exifInfo?.dateTimeOriginal}</output>
 <button type="button" onclick={() => onClose?.(true)}>Save video edits</button>
 {#if asset && onRendered}
   <button type="button" onclick={() => onRendered?.(asset.id)}>Publish photo render</button>

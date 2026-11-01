@@ -16,6 +16,7 @@
     type AnalyticsReportResponseDto,
     type AnalyticsScopeOptionDto,
   } from '@frameleaf/sdk';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   const range = $derived(
@@ -38,9 +39,13 @@
     failed = false;
     void (async () => {
       try {
-        scopes ??= (await getAnalyticsScopes()).scopes;
+        // Read untracked: storing the scopes must not re-run this effect and request the report twice.
+        const known = untrack(() => scopes) ?? (scopes = (await getAnalyticsScopes()).scopes);
+        if (cancelled) {
+          return;
+        }
         // An unknown or no-longer-available scope falls back to the whole server.
-        const scope = scopes.some((option) => option.value === wanted.scope) ? wanted.scope : 'all';
+        const scope = known.some((option) => option.value === wanted.scope) ? wanted.scope : 'all';
         const next = await getAnalyticsReport({ scope, range: wanted.range });
         if (!cancelled) {
           report = next;

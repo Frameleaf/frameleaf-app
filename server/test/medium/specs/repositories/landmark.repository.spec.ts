@@ -7,9 +7,10 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import type { AddressInfo } from 'node:net';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetFileType } from 'src/enum.js';
+import { AssetFileType, SystemMetadataKey } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { mediumFactory } from 'test/medium.factory.js';
@@ -101,6 +102,10 @@ describe('landmark matching', () => {
     await setup(writePack([park, resort, tower])).importPack();
   });
 
+  afterEach(async () => {
+    await db?.destroy();
+  });
+
   it('imports places and their boundaries', async () => {
     const places = await db.selectFrom('landmark').select(['id', 'names']).orderBy('id').execute();
     expect(places).toEqual([
@@ -171,7 +176,8 @@ describe('landmark matching', () => {
     writeFileSync(dateFile, '2026-10-01');
     const logger = { setContext: () => {}, log: () => {}, warn: () => {} };
     // The geodata of this date is already in, as it is in a database that has just been restored.
-    const metadata = { get: () => Promise.resolve({ lastUpdate: '2026-10-01' }) };
+    const metadata = new SystemMetadataRepository(db);
+    await metadata.set(SystemMetadataKey.ReverseGeocodingState, { lastUpdate: '2026-10-01' });
     const withPack = (pack: string) =>
       new MapRepository(
         { getEnv: () => ({ resourcePaths: { geodata: { dateFile, landmarks: pack } } }) } as never,
@@ -181,6 +187,8 @@ describe('landmark matching', () => {
       );
 
     await expect(withPack(landmarks).init()).resolves.toBe(false);
+    // FL-402: nothing was put back, so the app has nothing to explain
+    await expect(metadata.get(SystemMetadataKey.ReverseGeocodingState)).resolves.toEqual({ lastUpdate: '2026-10-01' });
 
     await db.deleteFrom('landmark_area').execute();
     await db.deleteFrom('landmark').execute();
@@ -197,6 +205,44 @@ describe('landmark matching', () => {
     ]);
     // The item's own matches came back with the backup and are still its matches.
     await expect(landmarksOf(assetId)).resolves.toEqual(['Q1516525', 'Q181185']);
+  });
+
+  // FL-402: the app shows "putting place names back" while this flag is up
+  it('flags the places as being put back until the worker clears it, keeping the rest of the state', async () => {
+    const dateFile = join(mkdtempSync(join(tmpdir(), 'geodata-date-')), 'geodata-date.txt');
+    writeFileSync(dateFile, '2026-10-01');
+    const metadata = new SystemMetadataRepository(db);
+    await metadata.set(SystemMetadataKey.ReverseGeocodingState, {
+      lastUpdate: '2026-10-01',
+      lastImportFileName: 'cities500.txt',
+    });
+    const sut = new MapRepository(
+      {
+        getEnv: () => ({ resourcePaths: { geodata: { dateFile, landmarks: writePack([park, resort, tower]) } } }),
+      } as never,
+      metadata,
+      { setContext: () => {}, log: () => {}, warn: () => {} } as never,
+      db as never,
+    );
+    await db.deleteFrom('landmark_area').execute();
+    await db.deleteFrom('landmark').execute();
+
+    await expect(sut.init()).resolves.toBe(true);
+    await expect(metadata.get(SystemMetadataKey.ReverseGeocodingState)).resolves.toEqual({
+      lastUpdate: '2026-10-01',
+      lastImportFileName: 'cities500.txt',
+      restoring: true,
+    });
+
+    await sut.setPlacesRestoring(false);
+    await expect(metadata.get(SystemMetadataKey.ReverseGeocodingState)).resolves.toEqual({
+      lastUpdate: '2026-10-01',
+      lastImportFileName: 'cities500.txt',
+      restoring: false,
+    });
+    // With the places in, a restart leaves the flag down.
+    await expect(sut.init()).resolves.toBe(false);
+    await expect(metadata.get(SystemMetadataKey.ReverseGeocodingState)).resolves.toMatchObject({ restoring: false });
   });
 
   it('knows which landmarks have a brand icon, and none without the icon pack', () => {

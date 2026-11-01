@@ -67,4 +67,15 @@ export class ApiKeyRepository {
       .orderBy('createdAt', 'desc')
       .execute();
   }
+
+  /** FL-655: the keys Save to Frameleaf received by signing in, and from which browser. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getSignedInClients(userId: string): Promise<Record<string, string>> {
+    const rows = await this.db
+      .selectFrom('browser_extension_access')
+      .select(['apiKeyId', 'client'])
+      .where('userId', '=', userId)
+      .execute();
+    return Object.fromEntries(rows.map((row) => [row.apiKeyId, row.client]));
+  }
 }

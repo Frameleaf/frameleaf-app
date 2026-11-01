@@ -326,6 +326,7 @@ const CloudBackupEscrowStatusSchema = z
     available: z.boolean().describe('Server key mode and a linked server: escrow can be turned on'),
     stored: z.boolean(),
     storedAt: z.string().nullable(),
+    outdated: z.boolean().describe('The stored copy predates the current backup key: store it again'),
   })
   .meta({ id: 'CloudBackupEscrowStatusDto' });
 
@@ -435,6 +436,27 @@ const CloudBackupStatusSchema = z
   })
   .meta({ id: 'CloudBackupStatusResponseDto' });
 
+const CloudBackupRecoveryHistoryRequestSchema = z
+  .object({
+    recovery: z
+      .string()
+      .max(8 * 1024 * 1024)
+      .optional()
+      .describe('The `recovery` field of the saved recovery file, as JSON: merged, so a newer saved history is kept'),
+  })
+  .meta({ id: 'CloudBackupRecoveryHistoryRequestDto' });
+
+const CloudBackupRecoveryHistorySchema = z
+  .object({
+    history: z
+      .string()
+      .nullable()
+      .describe('The signed snapshot history as JSON, for the recovery file’s `recovery` field. Holds no keys'),
+  })
+  .meta({ id: 'CloudBackupRecoveryHistoryDto' });
+
+export class CloudBackupRecoveryHistoryDto extends createZodDto(CloudBackupRecoveryHistorySchema) {}
+export class CloudBackupRecoveryHistoryRequestDto extends createZodDto(CloudBackupRecoveryHistoryRequestSchema) {}
 export class CloudBackupCheckDto extends createZodDto(CloudBackupCheckSchema) {}
 export class CloudBackupCheckResponseDto extends createZodDto(CloudBackupCheckResponseSchema) {}
 export class CloudBackupGeneratedKeyDto extends createZodDto(CloudBackupGeneratedKeySchema) {}

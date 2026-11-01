@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
@@ -6,6 +7,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
@@ -16,9 +18,12 @@ import {
   RestorationWorkerErrorCode,
 } from 'src/dtos/restoration-inference.dto.js';
 import { MachineLearningHardwareAcceleration, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CloudJobsUnavailableError,
+  CutoutUnavailableError,
+  CutoutWorkerError,
   FRAMELEAF_CLOUD_ENDPOINT,
   MachineLearningRepository,
   MlSelection,
@@ -129,6 +134,70 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('predict', () => {
+    it.each([
+      ['ml_worker_busy', 'destination-capacity'],
+      ['model_identity_unavailable', undefined],
+    ])('only defers a structured worker capacity refusal (%s)', async (detail, expected) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail }, 503)));
+      const context = {
+        claim: { data: {}, safeToRetry: true },
+        signal: new AbortController().signal,
+      } as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.encodeText(selection(MlDestinationKind.Local, localUrl), 'fixture', { modelName: 'synthetic' }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe(expected);
+    });
+
+    it('defers audio memory pressure instead of treating it as a missing transcription model', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      const context = {
+        claim: { data: {}, safeToRetry: true },
+        signal: new AbortController().signal,
+      } as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.transcribe(
+            selection(MlDestinationKind.Local, localUrl),
+            imagePath,
+            { language: null },
+            context.signal,
+            vi.fn(),
+          ),
+        ),
+      ).rejects.toMatchObject({ reason: 'destination-capacity' });
+      expect(context.dependencyReason).toBe('destination-capacity');
+    });
+
+    it('keeps structured transcription capacity distinct for durable operations outside SQL queue context', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      await expect(
+        sut.transcribe(
+          selection(MlDestinationKind.Local, localUrl),
+          imagePath,
+          { language: null },
+          new AbortController().signal,
+          vi.fn(),
+        ),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('does not try a fallback model when the worker is full', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      vi.stubGlobal('fetch', fetch);
+      await expect(
+        sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, {
+          modelName: 'primary',
+          fallbackModelName: 'fallback',
+          acceleration: MachineLearningHardwareAcceleration.Auto,
+          device: 'AUTO',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it.each([MlWorkload.Clip, MlWorkload.PetRecognition])(
       'binds NAS %s transport and returned vector to the exact producing profile',
       async (workload) => {
@@ -417,6 +486,133 @@ describe(MachineLearningRepository.name, () => {
       expect(result).not.toHaveProperty('device');
     });
 
+    it('skips a model the worker cannot run and goes straight to the fallback (FL-676)', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ detail: 'model_runtime_unavailable', reason: 'openvino-genai' }, 422))
+        .mockImplementation(() => Promise.resolve(jsonResponse(description)));
+      vi.stubGlobal('fetch', fetch);
+      const options = {
+        modelName: qwenModelName,
+        fallbackModelName: florenceModelName,
+        acceleration: MachineLearningHardwareAcceleration.Auto,
+        device: 'AUTO',
+      };
+      const models = () =>
+        fetch.mock.calls.map(
+          ([, init]) =>
+            JSON.parse(String((init.body as FormData).get('entries')))[ModelTask.IMAGE_DESCRIPTION][ModelType.VISUAL]
+              .modelName,
+        );
+
+      for (let photo = 0; photo < 3; photo++) {
+        const run = await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, options);
+        expect(run.model).toBe(florenceModelName);
+      }
+      expect(models()).toEqual([qwenModelName, florenceModelName, florenceModelName, florenceModelName]);
+
+      // Another worker or another acceleration has not said so, and the answer expires.
+      await sut.describeImageRun(selection(MlDestinationKind.Local, 'http://other-ml:3003'), imagePath, options);
+      expect(models().at(-1)).toBe(qwenModelName);
+      await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, {
+        ...options,
+        acceleration: MachineLearningHardwareAcceleration.Cuda,
+      });
+      expect(models().at(-1)).toBe(qwenModelName);
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60 * 1000);
+      await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, options);
+      expect(models().at(-1)).toBe(qwenModelName);
+    });
+
+    it.each([
+      [1, 'destination-unavailable'],
+      [4, 'destination-unavailable'],
+      [5, undefined],
+    ])('waits instead of failing when the worker drops the connection (claim %s)', async (attempt, expected) => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: florenceModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe(expected);
+    });
+
+    it('does not wait when the worker answered with a response it could not use', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response('{}', { headers: { 'content-length': String(64 * 1024 * 1024) } })),
+      );
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt: 1 },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: florenceModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow('too large');
+      expect(context.dependencyReason).toBeUndefined();
+    });
+
+    it('still waits when the configured model lost the connection and the fallback cannot run', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockRejectedValueOnce(new TypeError('fetch failed'))
+          .mockResolvedValueOnce(jsonResponse({ detail: 'model_runtime_unavailable' }, 422)),
+      );
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt: 1 },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: qwenModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe('destination-unavailable');
+    });
+
+    it('does not wait on an ordinary error the worker returned', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })));
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt: 1 },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: florenceModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow('failed with status 500');
+      expect(context.dependencyReason).toBeUndefined();
+    });
+
     it('never retries the fallback model on a cloud destination', async () => {
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);
@@ -439,6 +635,100 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('probe', () => {
+    it('shares concurrent probes of the same endpoint and authority', async () => {
+      const held = Promise.withResolvers<void>();
+      const fetch = vi.fn().mockImplementation(async (url: URL) => {
+        if (url.pathname === '/capabilities') {
+          await held.promise;
+          return jsonResponse({ workloads: ['face'] });
+        }
+        return url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      const calls = Array.from({ length: 8 }, () => sut.probe({ url: localUrl }, { maxAgeMs: 10_000 }));
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+      held.resolve();
+      const results = await Promise.all(calls);
+      expect(results.every((probe) => probe.reachable)).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not share in-flight observations between access tokens', async () => {
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          url.pathname === '/ping'
+            ? new Response('pong')
+            : url.pathname === '/capabilities'
+              ? jsonResponse({ workloads: ['face'] })
+              : new Response('', { status: 404 }),
+        );
+      vi.stubGlobal('fetch', fetch);
+      await Promise.all(['first', 'second'].map((authToken) => sut.probe({ url: localUrl, authToken })));
+      expect(fetch).toHaveBeenCalledTimes(6);
+    });
+
+    it('reauthorizes each caller after a shared probe finishes', async () => {
+      let allowed = true;
+      const held = Promise.withResolvers<void>();
+      const fetch = vi.fn().mockImplementation(async (url: URL) => {
+        if (url.pathname === '/capabilities') {
+          await held.promise;
+          return jsonResponse({ workloads: ['face'] });
+        }
+        return url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      const first = sut.probe({ url: localUrl });
+      const second = sut.probe({
+        url: localUrl,
+        assertAuthority: () => (allowed ? Promise.resolve() : Promise.reject(new Error('synthetic authority revoked'))),
+      });
+      await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => url.pathname === '/capabilities')).toBe(true));
+      allowed = false;
+      held.resolve();
+      const results = await Promise.allSettled([first, second]);
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({ status: 'rejected', reason: { message: 'synthetic authority revoked' } });
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('retries after a failed shared probe instead of retaining the settled promise', async () => {
+      let healthy = false;
+      const fetch = vi.fn().mockImplementation((url: URL) => {
+        if (!healthy) return Promise.reject(new TypeError('synthetic offline'));
+        return url.pathname === '/ping'
+          ? new Response('pong')
+          : url.pathname === '/capabilities'
+            ? jsonResponse({ workloads: ['face'] })
+            : new Response('', { status: 404 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      expect((await sut.probe({ url: localUrl })).reachable).toBe(false);
+      healthy = true;
+      expect((await sut.probe({ url: localUrl })).workloads).toEqual(['face']);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    });
+
+    it('does not fetch hardware during admission and still fetches it for a diagnostic probe', async () => {
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          url.pathname === '/ping'
+            ? new Response('pong')
+            : url.pathname === '/capabilities'
+              ? jsonResponse({ workloads: ['face'] })
+              : new Response('', { status: 404 }),
+        );
+      vi.stubGlobal('fetch', fetch);
+      expect((await sut.probe({ url: localUrl }, { maxAgeMs: 10_000, includeHardware: false })).workloads).toEqual([
+        'face',
+      ]);
+      expect(fetch.mock.calls.some(([url]) => url.pathname === '/hardware')).toBe(false);
+      await sut.probe({ url: localUrl }, { maxAgeMs: 10_000 });
+      expect(fetch.mock.calls.some(([url]) => url.pathname === '/hardware')).toBe(true);
+    });
+
     it.each(['policy', 'consent', 'quarantine-clear'])(
       're-probes unchanged URL/token after %s authority changes',
       async (transition) => {
@@ -1102,6 +1392,101 @@ describe(MachineLearningRepository.name, () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
 
       await expect(sut.getRestorationModels({ url: localUrl })).rejects.toThrow('does not run the restoration worker');
+    });
+  });
+
+  describe('subjectMatte (FL-639)', () => {
+    const stream = (lines: unknown[]) =>
+      new Response(lines.map((line) => JSON.stringify(line)).join('\n') + '\n', {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      });
+    const options = {
+      seedKind: 'face' as const,
+      seedBox: [0.4, 0.1, 0.6, 0.3] as [number, number, number, number],
+      points: [{ frame: 1, x: 0.5, y: 0.5, label: 0 as const }],
+      matteWidth: 192,
+      matteHeight: 108,
+    };
+
+    it('sends the frames and the seed to the named home worker and reads one matte per frame', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          stream([
+            { type: 'progress', done: 0, total: 2, seedBox: [1, 2, 3, 4] },
+            { type: 'frame', index: 0, png: Buffer.from('a').toString('base64') },
+            { type: 'progress', done: 1, total: 2 },
+            { type: 'frame', index: 1, png: Buffer.from('b').toString('base64') },
+            { type: 'done' },
+          ]),
+        );
+      vi.stubGlobal('fetch', fetch);
+      const frames: Array<[number, string]> = [];
+      const progress = vi.fn();
+      const usage = vi.fn();
+      await sut.subjectMatte(
+        selection(MlDestinationKind.Lan, lanUrl, usage),
+        [imagePath, imagePath],
+        options,
+        new AbortController().signal,
+        (index, png) => {
+          frames.push([index, png.toString()]);
+        },
+        progress,
+      );
+      expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/subject-matte`);
+      const form = fetch.mock.calls[0][1].body as FormData;
+      expect(JSON.parse(form.get('entries') as string)).toEqual({
+        'subject-matte': { visual: { modelName: 'frameleaf-florence2-sam2.1', options } },
+      });
+      expect(form.getAll('frames')).toHaveLength(2);
+      expect(frames).toEqual([
+        [0, 'a'],
+        [1, 'b'],
+      ]);
+      expect(progress).toHaveBeenLastCalledWith(1, 2);
+      expect(usage).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+    });
+
+    it('says when the worker cannot cut out, could not find the subject, or stopped early', async () => {
+      const run = () =>
+        sut.subjectMatte(
+          selection(MlDestinationKind.Local, localUrl),
+          [imagePath],
+          options,
+          new AbortController().signal,
+          vi.fn(),
+          vi.fn(),
+        );
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
+      await expect(run()).rejects.toBeInstanceOf(CutoutUnavailableError);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(stream([{ type: 'error', message: 'No subject found in the first frame' }])),
+      );
+      await expect(run()).rejects.toThrow(new CutoutWorkerError('No subject found in the first frame'));
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(stream([{ type: 'done' }])));
+      await expect(run()).rejects.toThrow('stopped before it finished');
+    });
+
+    it('never sends frames to Frameleaf Cloud', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      await expect(
+        sut.subjectMatte(
+          {
+            ...selection(MlDestinationKind.FrameleafCloud, FRAMELEAF_CLOUD_ENDPOINT.url),
+            endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+          },
+          [imagePath],
+          options,
+          new AbortController().signal,
+          vi.fn(),
+          vi.fn(),
+        ),
+      ).rejects.toBeInstanceOf(CloudJobsUnavailableError);
+      expect(fetch).not.toHaveBeenCalled();
     });
   });
 });

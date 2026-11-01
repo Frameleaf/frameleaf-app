@@ -11,6 +11,7 @@ import {
   translateDarktableExposure,
   verifyDarktableVersion,
 } from 'src/utils/darktable-renderer.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 const mocks = vi.hoisted(() => ({
   exec: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock('node:child_process', async () => {
         const child = Object.assign(new EventEmitter(), { kill: vi.fn().mockReturnValue(true) });
         mocks.children.push(child);
         mocks.onSpawn?.();
-        const execution = Promise.try(() => mocks.exec(...args));
+        const execution = tryPromise(() => mocks.exec(...args));
         const close = () => {
           if (mocks.autoClose) {
             child.emit('close');

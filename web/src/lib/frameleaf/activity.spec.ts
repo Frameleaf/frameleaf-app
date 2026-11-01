@@ -27,11 +27,13 @@ import {
   isUnfinishedCloudWork,
   matchesActivityFilter,
   mediaOperationEdit,
+  mediaOperationKindKey,
   mediaOperationPauseState,
   mediaOperationStage,
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
+import en from '../../../../i18n/en.json';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -96,6 +98,21 @@ describe('fromMediaOperation', () => {
     expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Lan })).destinationKey).toBe(
       'frameleaf_activity_destination_lan',
     );
+  });
+
+  describe('Studio clip jobs that share a kind (FL-637)', () => {
+    it('names a voice clean-up by its work, not by the shared captions kind', () => {
+      const voice = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'voice-cleanup' });
+      expect(fromMediaOperation(voice).kindKey).toBe('frameleaf_activity_kind_studio_voice_cleanup');
+      expect(mediaOperationKindKey(voice)).toBe('frameleaf_activity_kind_studio_voice_cleanup');
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioTranscription })).kindKey).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+      expect(mediaOperationKindKey(operation({ kind: MediaOperationKind.StudioTranscription, studioWork: null }))).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+      expect(en.frameleaf_activity_kind_studio_voice_cleanup).toBe('Clean up voice');
+    });
   });
 
   describe('edits the server renders (FL-43)', () => {
@@ -290,6 +307,25 @@ describe('fromMediaOperation', () => {
   it('reads a fresh queued job as queued', () => {
     expect(fromMediaOperation(operation({ status: MediaOperationStatus.Queued })).statusKey).toBe(
       'frameleaf_activity_status_queued',
+    );
+  });
+});
+
+describe('Studio clip jobs that share the captions kind (FL-638)', () => {
+  it('names a stabilise job Stabilise, not Captions', () => {
+    const stabilise = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'stabilise' });
+    expect(fromMediaOperation(stabilise).kindKey).toBe('frameleaf_activity_kind_studio_stabilise');
+    expect(mediaOperationKindKey(stabilise)).toBe('frameleaf_activity_kind_studio_stabilise');
+  });
+
+  it('keeps Captions for a transcription and the kind for an unknown or absent Studio work', () => {
+    for (const studioWork of [null, undefined, 'something-new']) {
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioTranscription, studioWork })).kindKey).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+    }
+    expect(mediaOperationKindKey({ kind: MediaOperationKind.StudioExport, studioWork: null })).toBe(
+      'frameleaf_activity_kind_studio_export',
     );
   });
 });
