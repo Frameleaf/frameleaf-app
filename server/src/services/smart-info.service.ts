@@ -223,6 +223,10 @@ export class SmartInfoService extends BaseService {
     });
     await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding, read);
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (reverseGeocoding.enabled) {
+      await this.jobRepository.queue({ name: JobName.LandmarkInfer, data: { id } });
+    }
     return JobStatus.Success;
   }
 }

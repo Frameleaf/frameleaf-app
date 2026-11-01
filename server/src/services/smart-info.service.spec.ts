@@ -24,6 +24,18 @@ describe(SmartInfoService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  it('reconsiders landmark recognition after image embeddings are available', async () => {
+    const asset = { id: 'asset', ownerId: 'owner', visibility: AssetVisibility.Timeline };
+    mocks.assetJob.getForClipEncoding.mockResolvedValue(asset as never);
+    mocks.search.getEmbedding.mockResolvedValue({
+      assetId: asset.id,
+      embedding: '[1]',
+      producerModelKey: 'producer',
+    } as never);
+    await sut.handlePostprocessClip({ id: asset.id });
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkInfer, data: { id: asset.id } });
+  });
+
   it('refuses a stored producer change even when postprocessing vector bytes stay equal', async () => {
     const asset = { id: 'asset', ownerId: 'owner', visibility: AssetVisibility.Timeline };
     mocks.assetJob.getForClipEncoding.mockResolvedValue(asset as never);

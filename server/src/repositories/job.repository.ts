@@ -115,6 +115,7 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluateAll,
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
+  JobName.LandmarkInfer,
   // FL-413: every batch saves the run's cursor; a retry carries on from it
   JobName.IdenticalFilesCheck,
   // a restart mid-batch must not leave the partner card "queued" forever; copies are keyed by

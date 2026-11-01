@@ -19,6 +19,12 @@ export const LandmarkSummarySchema = z
     id: z.string().describe('Landmark ID (its Wikidata ID, for example Q243)'),
     name: z.string().describe('Landmark name'),
     kind: z.string().describe('Kind of place, for example theme_park, museum or national_park'),
+    inference: z
+      .enum(['temporal', 'visual'])
+      .optional()
+      .describe(
+        'Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.',
+      ),
     icon: LandmarkIconSchema.optional().describe(
       'Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind',
     ),

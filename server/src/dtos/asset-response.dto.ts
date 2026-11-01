@@ -94,7 +94,7 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     landmarks: z
       .array(LandmarkSummarySchema)
       .optional()
-      .describe('Landmarks this asset was taken at, the most specific first. Only on the single-asset response.'),
+      .describe('Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response.'),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own asset when partner sharing copied it from another library (GET /assets/{id})',

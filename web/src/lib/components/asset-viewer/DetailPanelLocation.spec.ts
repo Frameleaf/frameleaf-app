@@ -31,4 +31,24 @@ describe('DetailPanelLocation', () => {
     expect(screen.getByTestId('frameleaf-info-location')).toHaveTextContent('Anaheim');
     expect(screen.queryByTestId('frameleaf-info-landmark')).not.toBeInTheDocument();
   });
+
+  it.each([
+    ['temporal', 'Inferred at Disneyland Park'],
+    ['visual', 'Likely showing Disneyland Park'],
+  ] as const)('labels %s evidence on a photo without GPS', (inference, label) => {
+    const asset = assetFactory.build({
+      exifInfo: { latitude: null, longitude: null } as never,
+      landmarks: [{ ...park, inference }],
+    });
+    render(DetailPanelLocation, { asset, isOwner: true });
+    expect(screen.getByTestId('frameleaf-info-landmark')).toHaveTextContent(label);
+    expect(screen.queryByRole('link', { name: 'Open in OpenStreetMap' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the recorded place first and labels a recognised distant landmark alongside it', () => {
+    const asset = assetFactory.build({ exifInfo: at as never, landmarks: [park, { ...resort, inference: 'visual' }] });
+    render(DetailPanelLocation, { asset, isOwner: true });
+    expect(screen.getByText('At Disneyland Park')).toBeInTheDocument();
+    expect(screen.getByText('Likely showing Disneyland Resort')).toBeInTheDocument();
+  });
 });

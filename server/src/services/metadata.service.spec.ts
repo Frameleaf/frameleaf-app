@@ -139,7 +139,7 @@ describe(MetadataService.name, () => {
       expect(mocks.job.pause).toHaveBeenCalledTimes(1);
       expect(mocks.map.init).toHaveBeenCalledTimes(1);
       expect(mocks.job.resume).toHaveBeenCalledTimes(1);
-      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkInfer });
       // FL-402: nothing was put back, so the "putting place names back" notice comes down
       expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
     });
@@ -209,6 +209,25 @@ describe(MetadataService.name, () => {
 
       await expect(sut.handleLandmarkMatchAll()).rejects.toThrow('database went away');
       expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('landmark inference', () => {
+    it('runs local inference with reverse geocoding enabled', async () => {
+      mocks.map.inferLandmarks.mockResolvedValue();
+      await expect(sut.handleLandmarkInfer({ id: 'photo' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.map.inferLandmarks).toHaveBeenCalledWith('photo');
+    });
+
+    it('skips inference with reverse geocoding disabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: false } });
+      await expect(sut.handleLandmarkInfer({})).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.map.inferLandmarks).not.toHaveBeenCalled();
+    });
+
+    it('queues a backfill for existing photos during nightly maintenance', async () => {
+      await sut.onNightlyLandmarkInference();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkInfer });
     });
   });
 

@@ -66,6 +66,7 @@ import {
   isDefaultVisible,
   isLocked,
   isNotLocked,
+  isTimelineVisible,
   lockedAssetIdExists,
   notLockedOrOwnedBy,
   revealedLockScope,
@@ -887,6 +888,7 @@ function landmarkIdsPredicates(eb: AssetExpressionBuilder, filter?: LandmarkIdsF
       eb
         .selectFrom('asset_landmark')
         .whereRef('asset_landmark.assetId', '=', 'asset.id')
+        .where(validLandmarkMatch())
         .where('asset_landmark.landmarkId', 'in', ids),
     );
   return [...(any ? [at(any)] : []), ...(none ? [eb.not(at(none))] : [])];
@@ -1756,6 +1758,55 @@ export const hiddenFromOthers = (viewerId: string | null | undefined, assetAlias
   viewerId
     ? sql<boolean>`(${sql.ref(`${assetAlias}.ownerId`)} != ${asUuid(viewerId)} and ${hiddenByOwnerRules(assetAlias)})`
     : hiddenByOwnerRules(assetAlias);
+
+/** Only ordinary personal-library photos may lend or receive inferred landmark evidence (FL-358). */
+export const landmarkInferenceEligible = (alias = 'asset') => sql<boolean>`(
+  ${isTimelineVisible(alias)} and ${libraryScopePredicate(LibraryScope.Personal, alias)}
+  and ${sql.ref(`${alias}.type`)} = ${AssetType.Image}
+  and ${sql.ref(`${alias}.deletedAt`)} is null
+  and not ${hiddenByOwnerRules(alias)}
+)`;
+
+/** Every consumer rechecks donors: a private, edited or deleted source cannot reveal a place indirectly. */
+export const validLandmarkMatch = () => sql<boolean>`(asset_landmark.inference is null or (
+  ${landmarkInferenceEligible()}
+  and exists (select 1 from asset_exif inferred_exif where inferred_exif."assetId" = asset.id
+    and not coalesce(inferred_exif."lockedProperties" && array['latitude','longitude']::varchar[], false)
+    and (asset_landmark.inference != 'temporal' or (inferred_exif.latitude is null and inferred_exif.longitude is null)))
+  and cardinality(asset_landmark."sourceAssetIds") = (
+    select count(distinct donor.checksum) from asset donor
+    join asset_exif donor_exif on donor_exif."assetId" = donor.id
+    join asset_exif target_exif on target_exif."assetId" = asset.id
+    join asset_landmark recorded on recorded."assetId" = donor.id
+      and recorded."landmarkId" = asset_landmark."landmarkId" and recorded.inference is null
+    where donor.id = any(asset_landmark."sourceAssetIds") and donor.id != asset.id
+      and donor."ownerId" = asset."ownerId" and ${landmarkInferenceEligible('donor')}
+      and donor_exif.latitude is not null and donor_exif.longitude is not null
+      and case when asset_landmark.inference = 'temporal' then
+        donor."libraryId" is not distinct from asset."libraryId"
+        and nullif(trim(target_exif.make), '') is not null and nullif(trim(target_exif.model), '') is not null
+        and donor_exif.make = target_exif.make and donor_exif.model = target_exif.model
+        and abs(extract(epoch from donor."fileCreatedAt" - asset."fileCreatedAt")) <= 300
+        and not exists (
+          select 1 from asset nearby join asset_exif nearby_exif on nearby_exif."assetId" = nearby.id
+          where nearby."ownerId" = asset."ownerId" and nearby.id != asset.id
+            and nearby."libraryId" is not distinct from asset."libraryId"
+            and ${landmarkInferenceEligible('nearby')}
+            and nearby_exif.make = target_exif.make and nearby_exif.model = target_exif.model
+            and nearby."fileCreatedAt" between asset."fileCreatedAt" - interval '5 minutes' and asset."fileCreatedAt" + interval '5 minutes'
+            and nearby_exif.latitude is not null and nearby_exif.longitude is not null
+            and earth_distance(ll_to_earth_public(donor_exif.latitude, donor_exif.longitude),
+              ll_to_earth_public(nearby_exif.latitude, nearby_exif.longitude)) > 200
+        )
+      else exists (
+        select 1 from smart_search donor_embedding join smart_search target_embedding
+          on target_embedding."assetId" = asset.id
+          and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+        where donor_embedding."assetId" = donor.id and target_embedding."producerModelKey" is not null
+          and (donor_embedding.embedding <=> target_embedding.embedding) <= 0.12
+      ) end
+  )
+))`;
 /**
  * FL-446: what the session hides beyond locks — its hidden-content filter (`getHiddenContentFilter`)
  * and other owners' Locked-rule matches (`hiddenFromOthers`) — or undefined when neither applies.
