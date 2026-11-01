@@ -1,4 +1,4 @@
-import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
@@ -48,6 +48,34 @@ const projections = {
 } as Record<PhotoprismTable, { name: string; columns: string }>;
 export type PhotoprismTable = (typeof contentTables)[number] | 'users' | 'markers' | 'links' | 'shares';
 export type PhotoprismRow = Record<string, SQLOutputValue>;
+export const photoprismTables = Object.keys(projections) as PhotoprismTable[];
+
+const relationshipChecks = [
+  [
+    'PHOTOPRISM_FILE_PHOTO_MISMATCH',
+    'SELECT 1 FROM files f LEFT JOIN photos p ON p.photo_uid=f.photo_uid WHERE p.id IS NULL OR f.photo_id IS NULL OR f.photo_id<>p.id LIMIT 1',
+  ],
+  [
+    'PHOTOPRISM_DETAILS_PHOTO_MISSING',
+    'SELECT 1 FROM details d LEFT JOIN photos p ON p.id=d.photo_id WHERE p.id IS NULL LIMIT 1',
+  ],
+  [
+    'PHOTOPRISM_MEMBERSHIP_ALBUM_MISSING',
+    'SELECT 1 FROM photos_albums m LEFT JOIN albums a ON a.album_uid=m.album_uid WHERE a.id IS NULL LIMIT 1',
+  ],
+  [
+    'PHOTOPRISM_ALBUM_MEMBERSHIP_INVALID',
+    'SELECT 1 FROM photos_albums WHERE hidden IS NULL OR missing IS NULL OR hidden NOT IN (0,1) OR missing NOT IN (0,1) LIMIT 1',
+  ],
+  [
+    'PHOTOPRISM_ALBUM_PHOTO_MISSING',
+    'SELECT 1 FROM photos_albums m LEFT JOIN photos p ON p.photo_uid=m.photo_uid WHERE p.id IS NULL AND m.hidden=0 AND m.missing=0 LIMIT 1',
+  ],
+  [
+    'PHOTOPRISM_PHOTO_WITHOUT_ORIGINAL',
+    "SELECT 1 FROM photos p WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.photo_id=p.id AND f.photo_uid=p.photo_uid AND f.file_root='/' AND f.file_sidecar=0) LIMIT 1",
+  ],
+] as const;
 
 class PhotoprismReadError extends Error {
   constructor(readonly code: string) {
@@ -59,6 +87,7 @@ class PhotoprismReadError extends Error {
 export const openPhotoprismSnapshot = (path: string, version: string) => {
   if (version !== fixture.source.version) throw new PhotoprismReadError('PHOTOPRISM_VERSION_UNQUALIFIED');
   let database: DatabaseSync;
+  let photoDetails: StatementSync;
   try {
     database = new DatabaseSync(path, { readOnly: true, allowExtension: false });
   } catch {
@@ -90,6 +119,8 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
     ) {
       throw new PhotoprismReadError('PHOTOPRISM_MIGRATIONS_INCOMPLETE');
     }
+    photoDetails = database.prepare('SELECT * FROM details WHERE photo_id=?');
+    photoDetails.setReadBigInts(true);
   } catch (error) {
     database.close();
     if (error instanceof PhotoprismReadError) throw error;
@@ -98,6 +129,23 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
+    validateRelationships: () => {
+      try {
+        for (const [code, sql] of relationshipChecks) {
+          if (database.prepare(sql).get()) throw new PhotoprismReadError(code);
+        }
+      } catch (error) {
+        if (error instanceof PhotoprismReadError) throw error;
+        throw new PhotoprismReadError('PHOTOPRISM_SNAPSHOT_READ_FAILED');
+      }
+    },
+    photoDetails: (id: bigint) => {
+      try {
+        return photoDetails.get(id);
+      } catch {
+        throw new PhotoprismReadError('PHOTOPRISM_SNAPSHOT_READ_FAILED');
+      }
+    },
     *rows(table: PhotoprismTable): Generator<PhotoprismRow[]> {
       if (!Object.hasOwn(projections, table)) throw new PhotoprismReadError('PHOTOPRISM_TABLE_NOT_ALLOWED');
       const { name, columns } = projections[table];
