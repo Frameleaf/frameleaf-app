@@ -96,7 +96,9 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     landmarks: z
       .array(LandmarkSummarySchema)
       .optional()
-      .describe('Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response.'),
+      .describe(
+        'Recorded and inferred landmarks, with recorded locations first. Included in single and batch asset-info responses.',
+      ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own asset when partner sharing copied it from another library (GET /assets/{id})',

@@ -230,7 +230,7 @@ export class MetadataService extends BaseService {
   private async queueLandmarkInference(id?: string): Promise<void> {
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
     if (reverseGeocoding.enabled) {
-      await this.jobRepository.queue({ name: JobName.LandmarkInfer, ...(id && { data: { id } }) });
+      await this.jobRepository.queue({ name: JobName.LandmarkInfer, ...(id && { data: { id, trigger: 'metadata' } }) });
     }
   }
 

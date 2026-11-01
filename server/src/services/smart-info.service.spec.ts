@@ -33,7 +33,10 @@ describe(SmartInfoService.name, () => {
       producerModelKey: 'producer',
     } as never);
     await sut.handlePostprocessClip({ id: asset.id });
-    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkInfer, data: { id: asset.id } });
+    expect(mocks.job.queue).toHaveBeenCalledWith({
+      name: JobName.LandmarkInfer,
+      data: { id: asset.id, trigger: 'embedding' },
+    });
   });
 
   it('refuses a stored producer change even when postprocessing vector bytes stay equal', async () => {

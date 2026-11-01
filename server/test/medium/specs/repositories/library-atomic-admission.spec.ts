@@ -214,6 +214,75 @@ describe('library atomic source admission', () => {
     } satisfies QueueExecution;
   };
 
+  it('admits embedding inference after metadata inference completed for the same library item', async () => {
+    await accept(1, true);
+    await store.feedManifest(queue);
+    const [initial] = await store.claim(queue, worker);
+    const metadataQueue = `${queue}-metadata`,
+      embeddingQueue = `${queue}-embedding`,
+      inferenceQueue = `${queue}-inference`;
+    await store.initialize([metadataQueue, embeddingQueue, inferenceQueue]);
+    jobs['handlers'][JobName.LandmarkInfer] = {
+      jobName: JobName.LandmarkInfer,
+      queueName: inferenceQueue as QueueName,
+      label: 'inference fixture',
+      handler: vi.fn(),
+    };
+    const child = { data: { id: initial.data.id }, safeToRetry: true, sensitive: false, deadlineMs: 60_000 };
+    expect(
+      await store.complete(initial, [
+        { ...child, name: JobName.AssetMetadataPostprocess, queue: metadataQueue },
+        { ...child, name: JobName.SmartSearchPostprocess, queue: embeddingQueue },
+      ]),
+    ).toBe(true);
+    expect(await store.feedManifest(metadataQueue)).toBe(1);
+    expect(await store.feedManifest(embeddingQueue)).toBe(1);
+    const [metadataParent] = await store.claim(metadataQueue, worker);
+    expect(metadataParent).toBeDefined();
+    const publish = async (claim: typeof metadataParent, trigger: 'metadata' | 'embedding') => {
+      const context: QueueExecution = {
+        claim,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        followups: [],
+        adoptions: [],
+        buffering: false,
+      };
+      await queueExecution.run(context, () =>
+        jobs.collectFollowups(() =>
+          jobs.queue({
+            name: JobName.LandmarkInfer,
+            data: { id: String(claim.data.id), trigger },
+          }),
+        ),
+      );
+      expect(await store.complete(claim, context.followups)).toBe(true);
+    };
+
+    await publish(metadataParent, 'metadata');
+    expect(await store.feedManifest(inferenceQueue)).toBe(1);
+    const [metadata] = await store.claim(inferenceQueue, worker);
+    expect(await store.complete(metadata, [])).toBe(true);
+    const [embeddingParent] = await store.claim(embeddingQueue, worker);
+    expect(embeddingParent).toBeDefined();
+    await publish(embeddingParent, 'embedding');
+    const {
+      rows: [source],
+    } = await sql<{ headers: number; entries: number; keys: number }>`
+      select count(distinct s.id)::int headers, count(*)::int entries,
+        count(distinct i."librarySourceKey")::int keys
+      from job_selection s join job_run_item i on i."selectionId" = s.id
+      where s."libraryOperationId" = ${operationId}::uuid and s.stage = ${`library-child/${JobName.LandmarkInfer}`}
+        and i."runId" = ${operationId}::uuid`.execute(db);
+    expect(source).toEqual({ headers: 1, entries: 2, keys: 2 });
+    expect(await store.feedManifest(inferenceQueue)).toBe(1);
+    const [embedding] = await store.claim(inferenceQueue, worker);
+    expect(embedding.data.trigger).toBe('embedding');
+    expect(await store.complete(embedding, [])).toBe(true);
+    expect((await store.listRuns(10, 0)).find((run) => run.id === operationId)).toMatchObject({ total: 1 });
+  });
+
   it('attaches a QueueAll origin before producer completion without confusing its run with operation media', async () => {
     const context = await wake(JobName.LibraryScanQueueAll);
     await queueExecution.run(context, () => jobs.ensureLibraryScanSource({ operationId, libraryId: library.id }));

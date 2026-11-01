@@ -667,7 +667,10 @@ export class JobRepository {
     const subject = String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'));
     // A job with its own identity (one per workflow execution, one per album recipient) is its own run item:
     // keyed by subject alone, the second one would hit job_run_stage and be dropped.
-    const identity = options?.deduplication?.id ?? options?.jobId;
+    const identity =
+      options?.deduplication?.id ??
+      options?.jobId ??
+      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined);
     return {
       name: item.name,
       data,

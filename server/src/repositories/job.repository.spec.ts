@@ -108,6 +108,29 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('keeps metadata and embedding inference distinct within one media run', async () => {
+    const execution = context();
+    execution.claim.rootItemKey = 'asset';
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'metadata' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'embedding' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset', trigger: 'metadata' } },
+          { name: JobName.LandmarkInfer, data: { id: 'asset' } },
+        ]),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'asset/metadata',
+      'asset/embedding',
+      'asset/metadata',
+      'asset',
+    ]);
+    expect(execution.followups.every((item) => item.runId === 'run' && item.rootItemKey === 'asset')).toBe(true);
+    expect(execution.followups.every((item) => item.options === undefined)).toBe(true);
+  });
+
   it('keys same-subject jobs with their own identity as separate run items', async () => {
     const execution = context();
     await queueExecution.run(execution, () =>

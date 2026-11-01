@@ -225,7 +225,7 @@ export class SmartInfoService extends BaseService {
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
     const { reverseGeocoding } = await this.getConfig({ withCache: true });
     if (reverseGeocoding.enabled) {
-      await this.jobRepository.queue({ name: JobName.LandmarkInfer, data: { id } });
+      await this.jobRepository.queue({ name: JobName.LandmarkInfer, data: { id, trigger: 'embedding' } });
     }
     return JobStatus.Success;
   }

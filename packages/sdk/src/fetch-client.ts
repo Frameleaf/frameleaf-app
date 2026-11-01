@@ -4595,7 +4595,7 @@ export type AssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
-    /** Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response. */
+    /** Recorded and inferred landmarks, with recorded locations first. Included in single and batch asset-info responses. */
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
@@ -6375,7 +6375,7 @@ export type BestPhotoAssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
-    /** Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response. */
+    /** Recorded and inferred landmarks, with recorded locations first. Included in single and batch asset-info responses. */
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;

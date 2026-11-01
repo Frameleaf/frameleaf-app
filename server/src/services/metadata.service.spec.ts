@@ -230,6 +230,14 @@ describe(MetadataService.name, () => {
       await sut.onNightlyLandmarkInference();
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkInfer });
     });
+
+    it('identifies the metadata inference follow-up separately from embedding work', async () => {
+      await sut.onLandmarkMetadataExtracted({ assetId: 'photo' });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.LandmarkInfer,
+        data: { id: 'photo', trigger: 'metadata' },
+      });
+    });
   });
 
   describe('onConfigInit', () => {
