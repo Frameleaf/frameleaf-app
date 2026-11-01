@@ -485,7 +485,7 @@
         "id": "DmT-2qMT3TmFsnFDeaGa0DKR",
         "legacy_id": null,
         "created_at": "2026-11-01 23:01:45.850340",
-        "updated_at": "2026-11-01 23:02:40.973145",
+        "updated_at": "2026-11-01 23:26:36.471324",
         "title": "Fixture private",
         "description": null,
         "owner_id": 2,
@@ -642,7 +642,13 @@
       }
     ],
     "photo_ratings": [],
-    "tags": [],
+    "tags": [
+      {
+        "id": 1,
+        "name": "Fixture regular album tag",
+        "description": null
+      }
+    ],
     "photos_tags": [],
     "user_groups": [],
     "users_user_groups": [],
@@ -731,7 +737,14 @@
         "updated_at": "2026-11-01 23:03:07.689401"
       }
     ],
-    "faces": []
+    "faces": [],
+    "albums_tags": [
+      {
+        "id": 1,
+        "tag_id": 1,
+        "album_id": "DmT-2qMT3TmFsnFDeaGa0DKR"
+      }
+    ]
   },
   "originals": [
     {
@@ -854,6 +867,13 @@
     "staticOriginalUrl": {
       "status": 200,
       "meaning": "URL reachability is not policy authorization; preserve can_download and can_access_original restrictions in destination."
+    },
+    "regularAlbumTag": {
+      "albumId": "DmT-2qMT3TmFsnFDeaGa0DKR",
+      "owner": "alice",
+      "tags": [
+        "Fixture regular album tag"
+      ]
     }
   }
 }

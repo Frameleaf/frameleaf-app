@@ -85,6 +85,14 @@ describe('Lychee pinned SQLite extraction', () => {
     expect(permissions[0].has_password).toBe(1n);
     expect(permissions[0]).not.toHaveProperty('password');
   });
+  it('retains native regular album-to-tag associations separately from tag albums', () => {
+    const expected = content.expected.regularAlbumTag;
+    const links = rows('albums_tags');
+    expect(links).toHaveLength(1);
+    expect(links[0].album_id).toBe(expected.albumId);
+    expect(rows('tags').find((tag) => tag.id === links[0].tag_id)?.name).toBe(expected.tags[0]);
+    expect(rows('tag_albums_tags')).toHaveLength(0);
+  });
   it('preserves original size variants separately from generated and watermarked variants', () => {
     const originals = rows('size_variants').filter((row) => row.type === 1n);
     expect(originals).toHaveLength(4);
@@ -133,8 +141,10 @@ describe('Lychee pinned SQLite extraction', () => {
     const source = openLycheeSnapshot(path, 'v7.12.0');
     try {
       const batches = [...source.rows('tags')];
-      expect(batches.map((batch) => batch.length)).toEqual([1000, 1000, 1]);
-      expect(batches[0][0].id).toBe(9_007_199_254_740_993n);
+      expect(batches.map((batch) => batch.length)).toEqual([1000, 1000, 2]);
+      expect(batches[0][0].id).toBe(1n);
+      expect(batches[0][1].id).toBe(9_007_199_254_740_993n);
+      expect(batches.at(-1)!.at(-1)!.id).toBe(9_007_199_254_742_993n);
       expect(() => database.exec("INSERT INTO tags(name) VALUES('changed')")).toThrow();
     } finally {
       source.close();

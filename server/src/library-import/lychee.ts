@@ -7,6 +7,7 @@ const projections = {
   size_variants: '*',
   base_albums: '*',
   albums: '*',
+  albums_tags: '*',
   photo_album: '*',
   photo_ratings: '*',
   tags: '*',
