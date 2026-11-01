@@ -111,13 +111,11 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
     const versionRow = database
       .prepare('SELECT version,error,migrated_at FROM versions ORDER BY id DESC LIMIT 1')
       .get();
-    if (
-      required.size > 0 ||
-      versionRow?.version !== fixture.source.executableVersion ||
-      versionRow.error !== '' ||
-      !finished(versionRow.migrated_at)
-    ) {
+    if (required.size > 0 || !versionRow || versionRow.error !== '' || !finished(versionRow.migrated_at)) {
       throw new PhotoprismReadError('PHOTOPRISM_MIGRATIONS_INCOMPLETE');
+    }
+    if (versionRow.version !== fixture.source.executableVersion) {
+      throw new PhotoprismReadError('PHOTOPRISM_BUILD_UNQUALIFIED');
     }
     photoDetails = database.prepare('SELECT * FROM details WHERE photo_id=?');
     photoDetails.setReadBigInts(true);
