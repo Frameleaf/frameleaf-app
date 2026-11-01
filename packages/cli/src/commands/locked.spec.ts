@@ -11,6 +11,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { chmod, copyFile, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { LockedCliError, buildLockedDecryptCommand, lockedDecrypt, runLockedDecrypt } from 'src/commands/locked';
 
 const walk = async (dir: string): Promise<string[]> => {
@@ -137,6 +138,21 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
 
   afterAll(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('reads a secret piped on standard input', async () => {
+    const stdin = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    Object.defineProperty(process, 'stdin', { configurable: true, value: Readable.from(['correct horse battery\n']) });
+    try {
+      const result = await lockedDecrypt({ library, to, user: beaId });
+      expect(result).toMatchObject({ written: 2, failed: [] });
+      expect(await readFile(join(to, 'bea.png'))).toEqual(plain.beaPhoto);
+      expect(await readFile(join(to, 'shared.png'))).toEqual(plain.shared);
+    } finally {
+      Object.defineProperty(process, 'stdin', stdin);
+      vi.restoreAllMocks();
+    }
   });
 
   it("decrypts the chosen user's originals to <to>/<originalFileName>", async () => {

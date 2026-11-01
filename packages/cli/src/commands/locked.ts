@@ -55,8 +55,9 @@ const readLine = (question: string): Promise<string> =>
     const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
     process.stderr.write(question);
     rl.once('line', (line) => {
-      rl.close();
+      // resolve before closing: close() emits 'close' at once, which would answer '' first
       resolve(line);
+      rl.close();
     });
     rl.once('close', () => resolve(''));
   });
