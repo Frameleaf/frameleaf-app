@@ -17,6 +17,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import StudioBundleExportDialog from '$lib/components/frameleaf/StudioBundleExportDialog.svelte';
+  import { deliverySubmission, type DeliverySubmission } from '$lib/frameleaf/studio/export-batch';
   import StudioExportDialog, { type StudioExportChoice } from '$lib/components/frameleaf/StudioExportDialog.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
@@ -105,8 +106,12 @@
     type AssetResponseDto,
     type PersonResponseDto,
     AssetRestorationMode,
+    MediaOperationDestination,
     createStudioCutout,
     createStudioExport,
+    createStudioExportBatch,
+    StudioDeliveryDestination,
+    StudioDeliveryShape,
     getStudioCutout,
     getStudioCutoutSubjects,
     getMediaOperation,
@@ -1151,6 +1156,8 @@
   /* Video export (FL-106 server; `Studio.jsx` ExportDialog): the owner's saved, writable project. */
   let videoExportOpen = $state(false);
   let exporting = $state(false);
+  let pendingDeliveries = $state<DeliverySubmission | null>(null);
+  let deliveryResults = $state<{ shape: string; queued: boolean; error: string | null }[]>([]);
   /**
    * The newest export this session started, followed in the header until it is done: its progress,
    * then the way to the finished video. Activity keeps the full list; this is the one just asked for.
@@ -1278,6 +1285,8 @@
         return;
       }
     }
+    pendingDeliveries = null;
+    deliveryResults = [];
     videoExportOpen = true;
   };
   const onExportVideo = async (choice: StudioExportChoice) => {
@@ -1295,6 +1304,60 @@
     }
     exporting = true;
     try {
+      if (choice.deliveries) {
+        if (
+          choice.reviewedRevision !== revision ||
+          ![MediaOperationDestination.Local, MediaOperationDestination.Lan].includes(choice.destination)
+        ) {
+          toastManager.danger($t('frameleaf_studio_export_revision_changed'));
+          return;
+        }
+        pendingDeliveries = deliverySubmission(
+          project.id,
+          {
+            expectedRevision: choice.reviewedRevision,
+            destination:
+              choice.destination === MediaOperationDestination.Local
+                ? StudioDeliveryDestination.Local
+                : StudioDeliveryDestination.Lan,
+            variants: choice.deliveries.map((delivery) => ({
+              ...delivery,
+              shape:
+                delivery.shape === 'landscape'
+                  ? StudioDeliveryShape.Landscape
+                  : delivery.shape === 'vertical'
+                    ? StudioDeliveryShape.Vertical
+                    : StudioDeliveryShape.Square,
+            })),
+          },
+          pendingDeliveries,
+        );
+        const batch = await createStudioExportBatch({
+          id: project.id,
+          studioExportBatchCreateDto: pendingDeliveries.body,
+        });
+        deliveryResults = batch.items.map((item) => ({ shape: item.shape, queued: !!item.result, error: item.error }));
+        const admitted = batch.items.flatMap((item) => (item.result ? [item.result] : []));
+        const last = admitted.at(-1);
+        if (last) {
+          exportJob = last.operation;
+          followExport(last.operation.id);
+          toastManager.primary($t('frameleaf_studio_export_batch_queued', { values: { count: admitted.length } }));
+        }
+        const refused = batch.items.filter((item) => item.result === null);
+        if (refused.length > 0) {
+          toastManager.danger(
+            $t('frameleaf_studio_export_batch_partial', {
+              values: { shapes: refused.map((item) => item.shape).join(', ') },
+            }),
+          );
+        } else {
+          videoExportOpen = false;
+          pendingDeliveries = null;
+          saveCaptionSidecars(choice);
+        }
+        return;
+      }
       const { operation } = await createStudioExport({
         id: project.id,
         studioExportCreateDto: {
@@ -1309,6 +1372,10 @@
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
       saveCaptionSidecars(choice);
     } catch (error) {
+      if (error instanceof Error && error.message === 'studio_export_batch_changed') {
+        toastManager.danger($t('frameleaf_studio_export_batch_changed'));
+        return;
+      }
       // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
       const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
       if (refusal) {
@@ -1588,8 +1655,10 @@
     ? 'hdr'
     : 'sdr'}
   busy={exporting}
+  {deliveryResults}
   {renderEvidence}
   projectId={storedRevision === null ? null : project.id}
+  revision={storedRevision}
   captionLanguages={captionExportLanguages}
   empty={isEmptyStudioExport(project.graph)}
   hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources)}

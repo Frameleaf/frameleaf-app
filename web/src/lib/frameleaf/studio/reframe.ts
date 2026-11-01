@@ -19,6 +19,7 @@ export const REFRAME_STEP_LARGE = 0.05;
 const MOVED = 0.001;
 
 const SHAPE_ASPECT: Record<Exclude<StudioExportShape, StudioExportShape.Original>, number> = {
+  [StudioExportShape.Landscape]: 16 / 9,
   [StudioExportShape.Vertical]: 9 / 16,
   [StudioExportShape.Square]: 1,
 };
@@ -47,6 +48,9 @@ export const shapedSize = (
   const short = SHORT_SIDE[resolution];
   if (!short) {
     return null;
+  }
+  if (shape === StudioExportShape.Landscape) {
+    return { width: Math.round((short * 16) / 9 / 2) * 2, height: short };
   }
   if (shape === StudioExportShape.Vertical) {
     return { width: short, height: Math.round((short * 16) / 9 / 2) * 2 };

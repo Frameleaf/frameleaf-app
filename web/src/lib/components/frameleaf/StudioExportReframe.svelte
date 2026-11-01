@@ -54,6 +54,11 @@
   const index = $derived(shot ? shots.indexOf(shot) : -1);
   const frame = $derived({ width: framing.width, height: framing.height });
   const share = $derived(cropShare(shape, frame));
+  const aspect = $derived(
+    shape === StudioExportShape.Landscape ? 16 / 9 : shape === StudioExportShape.Square ? 1 : 9 / 16,
+  );
+  const heightShare = $derived(Math.min(1, frame.width / aspect / frame.height));
+  const top = $derived((1 - heightShare) / 2);
   const nudge = $derived(shot ? (nudges[shot.clipId] ?? 0) : 0);
   const centre = $derived(shot ? cropCentreAt(shot.path, progress, nudge, share) : 0.5);
   const subject = $derived(shot ? pathAt(shot.path, progress) : 0.5);
@@ -71,7 +76,7 @@
 
   const onPointerDown = (event: PointerEvent) => {
     const rect = frameElement?.getBoundingClientRect();
-    if (!shot || !rect || rect.width === 0) {
+    if (!shot || !rect || rect.width === 0 || share >= 1) {
       return;
     }
     event.preventDefault();
@@ -89,7 +94,7 @@
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (!shot || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) {
+    if (!shot || share >= 1 || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) {
       return;
     }
     event.preventDefault();
@@ -99,9 +104,11 @@
   };
 
   const shapeLabel = $derived(
-    shape === StudioExportShape.Square
-      ? $t('frameleaf_studio_export_shape_square')
-      : $t('frameleaf_studio_export_shape_vertical'),
+    shape === StudioExportShape.Landscape
+      ? $t('frameleaf_studio_export_shape_landscape')
+      : shape === StudioExportShape.Square
+        ? $t('frameleaf_studio_export_shape_square')
+        : $t('frameleaf_studio_export_shape_vertical'),
   );
 </script>
 
@@ -119,6 +126,10 @@
         {/if}
         <span class="shade" style:left="0" style:width="{left * 100}%"></span>
         <span class="shade" style:left="{(centre + share / 2) * 100}%" style:right="0"></span>
+        {#if heightShare < 1}
+          <span class="shade" style:inset="0 0 auto 0" style:height="{top * 100}%"></span>
+          <span class="shade" style:inset="auto 0 0 0" style:height="{top * 100}%"></span>
+        {/if}
         <span
           class="box"
           role="slider"
@@ -129,6 +140,8 @@
           aria-valuenow={Math.round(centre * 100)}
           style:left="{left * 100}%"
           style:width="{share * 100}%"
+          style:top="{top * 100}%"
+          style:bottom="{top * 100}%"
           onpointerdown={onPointerDown}
           onkeydown={onKeyDown}
           data-testid="studio-reframe-box"
@@ -142,6 +155,7 @@
       <div
         class="out"
         class:square={shape === StudioExportShape.Square}
+        style:aspect-ratio={aspect}
         role="img"
         aria-label={$t('frameleaf_studio_reframe_out')}
       >
@@ -189,7 +203,12 @@
             {#if thumbnail(item.assetId)}
               <img src={thumbnail(item.assetId)} alt="" draggable="false" />
             {/if}
-            <i style:left="{(crop - share / 2) * 100}%" style:width="{share * 100}%"></i>
+            <i
+              style:left="{(crop - share / 2) * 100}%"
+              style:width="{share * 100}%"
+              style:top="{top * 100}%"
+              style:bottom="{top * 100}%"
+            ></i>
           </span>
           <small>
             {number + 1}{isMoved(nudges[item.clipId]) ? ` · ${$t('frameleaf_studio_reframe_moved')}` : ''}

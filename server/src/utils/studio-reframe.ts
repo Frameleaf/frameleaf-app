@@ -15,12 +15,13 @@
  * (`studio/tools/bundled-worker-reframe.mjs`, `reframe-v1`).
  */
 
-export const STUDIO_EXPORT_SHAPES = ['original', 'vertical', 'square'] as const;
+export const STUDIO_EXPORT_SHAPES = ['original', 'landscape', 'vertical', 'square'] as const;
 export type StudioExportShape = (typeof STUDIO_EXPORT_SHAPES)[number];
 export type StudioReframeShape = Exclude<StudioExportShape, 'original'>;
 
 /** Render-worker evidence that it derives and renders shaped graphs (`bundled-worker-reframe.mjs`). */
 export const REFRAME_PROFILE = 'reframe-v1';
+export const LANDSCAPE_REFRAME_PROFILE = 'reframe-landscape-v1';
 export const REFRAME_VERSION = 1;
 /** Points a crop path may have; the worker refuses longer ones. */
 export const REFRAME_MAX_POINTS = 8;
@@ -31,7 +32,7 @@ export const REFRAME_STILL_RANGE = 0.04;
 /** Faces smaller than this share of the largest face in the picture are background, not the subject. */
 const MIN_FACE_SHARE = 0.2;
 
-const SHAPE_ASPECT: Readonly<Record<StudioReframeShape, number>> = { vertical: 9 / 16, square: 1 };
+const SHAPE_ASPECT: Readonly<Record<StudioReframeShape, number>> = { landscape: 16 / 9, vertical: 9 / 16, square: 1 };
 const SHORT_SIDE: Readonly<Record<string, number>> = { '720p': 720, '1080p': 1080, '1440p': 1440, '2160p': 2160 };
 
 export type ReframePoint = { t: number; x: number };
@@ -44,7 +45,7 @@ export type StudioReframeSeal = {
 };
 
 export const isReframeShape = (shape: unknown): shape is StudioReframeShape =>
-  shape === 'vertical' || shape === 'square';
+  typeof shape === 'string' && ['landscape', 'vertical', 'square'].includes(shape);
 
 const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -59,7 +60,11 @@ export const shapedOutputSize = (shape: StudioReframeShape, resolution: string) 
   if (!short) {
     return null;
   }
-  return shape === 'vertical' ? { width: short, height: even((short * 16) / 9) } : { width: short, height: short };
+  return shape === 'landscape'
+    ? { width: even((short * 16) / 9), height: short }
+    : shape === 'vertical'
+      ? { width: short, height: even((short * 16) / 9) }
+      : { width: short, height: short };
 };
 
 /** The crop width as a share of the frame width; 1 when the frame is no wider than the shape. */

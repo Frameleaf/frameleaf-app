@@ -162,6 +162,7 @@ export const evaluateStudioRender = (
     (candidate) =>
       candidate.outputFormats.includes(settings.format) &&
       (!reshaped || candidate.reframe === true) &&
+      (settings.shape !== StudioExportShape.Landscape || candidate.landscapeReframe === true) &&
       (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)) &&
       (!embedded || candidate.embeddedOutputFormats?.includes(settings.format)),
   );

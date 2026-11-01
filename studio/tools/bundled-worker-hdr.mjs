@@ -123,7 +123,17 @@ export async function streamHdrMaster({
 }) {
   if (!HDR_TRANSFERS.includes(transfer)) throw new Error(`Unsupported HDR transfer ${transfer}`);
   if (transfer === 'pq') validateMastering(light, mastering);
-  const args = encoderArgs({ width, height, fps, transfer, light, mastering, output, audio, lossless });
+  const args = encoderArgs({
+    width,
+    height,
+    fps,
+    transfer,
+    light,
+    mastering,
+    output,
+    audio,
+    lossless,
+  });
   // `-t`-free: the picture count is exactly what was piped; copied sound is cut to it below.
   if (audio) args.splice(args.indexOf('-movflags'), 0, '-shortest');
   const meter = createLightMeter();
@@ -145,14 +155,18 @@ export async function streamHdrMaster({
   try {
     for await (const frame of frames) {
       signal?.throwIfAborted();
-      if (frame.width !== width || frame.height !== height) throw new Error('Every HDR frame must have the master size');
+      if (frame.width !== width || frame.height !== height)
+        throw new Error('Every HDR frame must have the master size');
       if (frame.rgb48.byteLength !== rawFrameBytes(width, height, 'rgb48le')) throw new Error('Incomplete HDR frame');
       meter.add(frame.rgb48, width, height);
       if (wanted.has(written)) references.set(written, lumaGrid(frame.rgb48, width, height));
       if (!child.stdin.write(frame.rgb48)) {
-        await Promise.race([once(child.stdin, 'drain'), closed.then(() => {
-          throw new Error(`ffmpeg stopped while encoding: ${stderr.trim()}`);
-        })]);
+        await Promise.race([
+          once(child.stdin, 'drain'),
+          closed.then(() => {
+            throw new Error(`ffmpeg stopped while encoding: ${stderr.trim()}`);
+          }),
+        ]);
       }
       written++;
       onFrame?.(written);
@@ -178,12 +192,25 @@ export async function streamHdrMaster({
  * decodes to the same pictures without it.
  */
 const PLANE_DECODE_ARGS = (file) => [
-  '-v', 'error', '-xerror', '-i', file, '-map', '0:v:0', '-pix_fmt', 'yuv420p10le', '-f', 'rawvideo', '-',
+  '-v',
+  'error',
+  '-xerror',
+  '-i',
+  file,
+  '-map',
+  '0:v:0',
+  '-pix_fmt',
+  'yuv420p10le',
+  '-f',
+  'rawvideo',
+  '-',
 ];
 
 /** Every frame's ten-bit planes, for the small admission fixtures. */
 const decodePlanes = (ffmpeg, file, width, height) => {
-  const result = spawnSync(ffmpeg, PLANE_DECODE_ARGS(file), { maxBuffer: 1 << 26 });
+  const result = spawnSync(ffmpeg, PLANE_DECODE_ARGS(file), {
+    maxBuffer: 1 << 26,
+  });
   if (result.status !== 0) throw new Error(`ffmpeg decode failed: ${String(result.stderr).trim()}`);
   const frameBytes = rawFrameBytes(width, height, 'yuv420p10le');
   if (result.stdout.byteLength === 0 || result.stdout.byteLength % frameBytes !== 0) {
@@ -245,13 +272,27 @@ export async function verifyHdrMaster({
   signal,
 }) {
   const probe = probeMaster(ffprobe, file);
-  assertMasterSignalling(probe, { transfer, width, height, frames: frameCount, light, mastering });
+  assertMasterSignalling(probe, {
+    transfer,
+    width,
+    height,
+    frames: frameCount,
+    light,
+    mastering,
+  });
   const tags = (
     await collect(
       ffprobe,
       [
-        '-v', 'error', '-select_streams', 'v:0', '-show_entries',
-        'frame=pix_fmt,color_range,color_space,color_primaries,color_transfer', '-of', 'compact=p=0', file,
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'frame=pix_fmt,color_range,color_space,color_primaries,color_transfer',
+        '-of',
+        'compact=p=0',
+        file,
       ],
       { signal },
     )
@@ -276,7 +317,9 @@ export async function verifyHdrMaster({
 
   // Ten-bit planes, one frame at a time; only the sampled frames are compared.
   const frameBytes = rawFrameBytes(width, height, 'yuv420p10le');
-  const child = spawn(ffmpeg, PLANE_DECODE_ARGS(file), { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(ffmpeg, PLANE_DECODE_ARGS(file), {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   const abort = () => child.kill('SIGKILL');
   signal?.addEventListener('abort', abort, { once: true });
   let stderr = '';
@@ -365,7 +408,11 @@ export async function writeHdrMaster({
       signal?.throwIfAborted();
       meter.add(frame.rgb48, frame.width, frame.height);
       measured++;
-      onProgress?.(measured / (frameCount * passes));
+      onProgress?.(measured / (frameCount * passes), {
+        phase: 'rendering',
+        currentFrame: measured,
+        totalFrames: frameCount * passes,
+      });
     }
     if (measured !== frameCount) throw new Error(`Rendered ${measured} HDR frames, expected ${frameCount}`);
     light = meter.result();
@@ -386,7 +433,12 @@ export async function writeHdrMaster({
       lossless,
       output: partial,
       signal,
-      onFrame: (count) => onProgress?.((count + (passes - 1) * frameCount) / (frameCount * passes)),
+      onFrame: (count) =>
+        onProgress?.((count + (passes - 1) * frameCount) / (frameCount * passes), {
+          phase: 'rendering',
+          currentFrame: count + (passes - 1) * frameCount,
+          totalFrames: frameCount * passes,
+        }),
     });
     if (light && (written.light.maxCll !== light.maxCll || written.light.maxFall !== light.maxFall)) {
       throw new Error('The engine rendered different light on the encoding pass; the HDR10 metadata would be wrong');
@@ -424,9 +476,10 @@ const patchFixture = (width, height, scale) => {
   const colour = (p) => [0, 1, 2].map((c) => 0.08 + 0.84 * (((p * 7 + c * 5 + 3) * 0.618_033_988_7) % 1));
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const texel = y < height / 2
-        ? colour(Math.floor(x / (width / 16))).map((value) => Math.min(value * scale, 1))
-        : [x / width, 1 - x / width, (y - height / 2) / (height / 2)];
+      const texel =
+        y < height / 2
+          ? colour(Math.floor(x / (width / 16))).map((value) => Math.min(value * scale, 1))
+          : [x / width, 1 - x / width, (y - height / 2) / (height / 2)];
       rgba.set([...texel, 1], (y * width + x) * 4);
     }
   }
@@ -487,7 +540,12 @@ async function proveTransfer(transfer, { ffmpeg, ffprobe, folder, signal }) {
     y,
     rgb: fixture.rgba.slice((y * width + x) * 4, (y * width + x) * 4 + 3),
   }));
-  for (const { rgbError } of validateHdrPlaneSamples(decodePlanes(ffmpeg, precision, width, height), width, height, samples)) {
+  for (const { rgbError } of validateHdrPlaneSamples(
+    decodePlanes(ffmpeg, precision, width, height),
+    width,
+    height,
+    samples,
+  )) {
     worstRgb = Math.max(worstRgb, ...rgbError);
   }
 
@@ -513,14 +571,25 @@ async function proveTransfer(transfer, { ffmpeg, ffprobe, folder, signal }) {
   const [planes] = decodePlanes(ffmpeg, output, rampWidth, rampHeight);
   const row = new Set(planes.subarray(8 * rampWidth, 9 * rampWidth));
   if (row.size < 512) throw new Error(`the decoded ramp has ${row.size} luma codes; an 8-bit picture has at most 220`);
-  return { worstInverseRgbCodes: worstRgb, rampLumaCodes: row.size, lumaMeanError: result.verified.lumaMeanError };
+  return {
+    worstInverseRgbCodes: worstRgb,
+    rampLumaCodes: row.size,
+    lumaMeanError: result.verified.lumaMeanError,
+  };
 }
 
 /**
  * Admission evidence for HDR masters on this container. Returns the evidence tokens, the encoder,
  * the colour precision (null when no transfer passed) and why a transfer was not offered.
  */
-export async function probeHdrMasters({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', encoders, filters, log = () => {}, signal } = {}) {
+export async function probeHdrMasters({
+  ffmpeg = 'ffmpeg',
+  ffprobe = 'ffprobe',
+  encoders,
+  filters,
+  log = () => {},
+  signal,
+} = {}) {
   const refused = {};
   const proven = {};
   if (encoders && !encoders.has(HDR_MASTER_ENCODER)) {
@@ -533,7 +602,12 @@ export async function probeHdrMasters({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', 
       for (const transfer of HDR_TRANSFERS) {
         signal?.throwIfAborted();
         try {
-          proven[transfer] = await proveTransfer(transfer, { ffmpeg, ffprobe, folder, signal });
+          proven[transfer] = await proveTransfer(transfer, {
+            ffmpeg,
+            ffprobe,
+            folder,
+            signal,
+          });
         } catch (error) {
           signal?.throwIfAborted();
           refused[transfer] = String(error.message).split('\n')[0];
@@ -547,15 +621,28 @@ export async function probeHdrMasters({ ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', 
   log(
     transfers.length > 0
       ? `HDR masters: ${transfers.map((transfer) => `${transfer.toUpperCase()} (worst ${proven[transfer].worstInverseRgbCodes.toFixed(2)} RGB10 codes, ${proven[transfer].rampLumaCodes} ramp codes)`).join(', ')}` +
-          (Object.keys(refused).length > 0 ? `; not offered: ${Object.entries(refused).map(([id, why]) => `${id} (${why})`).join(', ')}` : '')
-      : `HDR masters not offered: ${Object.entries(refused).map(([id, why]) => `${id} (${why})`).join(', ')}`,
+          (Object.keys(refused).length > 0
+            ? `; not offered: ${Object.entries(refused)
+                .map(([id, why]) => `${id} (${why})`)
+                .join(', ')}`
+            : '')
+      : `HDR masters not offered: ${Object.entries(refused)
+          .map(([id, why]) => `${id} (${why})`)
+          .join(', ')}`,
   );
   return {
     transfers,
-    formats: transfers.length > 0 ? [HDR_MASTER_FORMAT, ...transfers.map((transfer) => hdrEvidenceToken(transfer))] : [],
+    formats:
+      transfers.length > 0 ? [HDR_MASTER_FORMAT, ...transfers.map((transfer) => hdrEvidenceToken(transfer))] : [],
     codecs: transfers.length > 0 ? [HDR_MASTER_ENCODER] : [],
     colorPrecision:
-      transfers.length > 0 ? { maxBitDepth: 10, hdr10: transfers.includes('pq'), dolbyVision: false } : null,
+      transfers.length > 0
+        ? {
+            maxBitDepth: 10,
+            hdr10: transfers.includes('pq'),
+            dolbyVision: false,
+          }
+        : null,
     proven,
     refused,
   };

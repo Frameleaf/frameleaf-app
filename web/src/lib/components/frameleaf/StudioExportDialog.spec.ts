@@ -944,4 +944,78 @@ describe('Studio export dialog: vertical and square', () => {
     expect(exportButton()).toBeDisabled();
     expect(screen.getByText('frameleaf_studio_render_refusal_codec_unavailable')).toBeInTheDocument();
   });
+  it('queues multiple reviewed shapes with independent crop adjustments and invalidates review when settings change', async () => {
+    const row = evidence();
+    row.candidates![0]!.landscapeReframe = true;
+    const onExport = open({ revision: 3, renderEvidence: [row] });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_multiple' }));
+    await screen.findByTestId('studio-export-reframe');
+    const confirm = () => screen.getByRole('checkbox', { name: 'frameleaf_studio_export_review_confirm' });
+    await fireEvent.click(confirm());
+    expect(exportButton()).toBeEnabled();
+    await fireEvent.click(exportButton());
+    expect(onExport.mock.calls[0]![0].deliveries).toHaveLength(1);
+    onExport.mockClear();
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_shape_vertical' }));
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_vertical'));
+    const crop = screen.getByTestId('studio-reframe-box');
+    await fireEvent.keyDown(crop, { key: 'ArrowRight', shiftKey: true });
+    await fireEvent.click(confirm());
+    expect(exportButton()).toBeEnabled();
+    await fireEvent.click(exportButton());
+    const choice = onExport.mock.calls[0]![0];
+    expect(choice.reviewedRevision).toBe(3);
+    expect(choice.deliveries.map((item: { shape: string }) => item.shape)).toEqual(['landscape', 'vertical']);
+    expect(choice.deliveries[0].framing[0].path[0].x).toBe(0.5);
+    expect(choice.deliveries[1].framing[0].path[0].x).toBe(0.35);
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_resolution'), {
+      target: { value: StudioExportResolution.$1080P },
+    });
+    expect(exportButton()).toBeDisabled();
+  });
+
+  it('blocks a batch if the framing came from another saved revision or a landscape worker is unavailable', async () => {
+    open({ revision: 4 });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_multiple' }));
+    await screen.findByTestId('studio-export-reframe');
+    expect(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_review_confirm' })).toBeDisabled();
+    expect(exportButton()).toBeDisabled();
+    expect(screen.getByText('frameleaf_studio_export_revision_changed')).toBeInTheDocument();
+  });
+
+  it('invalidates previously reviewed framing when the saved project revision changes', async () => {
+    const row = evidence();
+    row.candidates![0]!.landscapeReframe = true;
+    vi.mocked(getStudioFraming).mockResolvedValue(framing);
+    const ui = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      projectId: PROJECT,
+      revision: 3,
+      renderEvidence: [row],
+      onExport: vi.fn(),
+    });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_multiple' }));
+    await screen.findByTestId('studio-export-reframe');
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_review_confirm' }));
+    expect(exportButton()).toBeEnabled();
+    await ui.rerender({ revision: 4 });
+    expect(exportButton()).toBeDisabled();
+    expect(screen.getByText('frameleaf_studio_export_revision_changed')).toBeInTheDocument();
+  });
+  it('admits only selected reviewed shapes even while inspecting an unsupported unselected shape', async () => {
+    open({ revision: 3 });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_multiple' }));
+    await screen.findByTestId('studio-export-reframe');
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_shape_landscape' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_shape_vertical' }));
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_vertical'));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_review_confirm' }));
+    expect(exportButton()).toBeEnabled();
+    await fireEvent.click(shapeButton('frameleaf_studio_export_shape_landscape'));
+    expect(exportButton()).toBeEnabled();
+    expect(screen.getByTestId('studio-export-summary')).toHaveTextContent('frameleaf_studio_export_shape_vertical');
+    expect(screen.getByTestId('studio-export-summary')).not.toHaveTextContent('frameleaf_studio_export_shape_landscape');
+  });
+
 });

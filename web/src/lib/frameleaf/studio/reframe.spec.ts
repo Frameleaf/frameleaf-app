@@ -16,6 +16,10 @@ const frame = { width: 1920, height: 1080 };
 
 describe('vertical and square export framing (FL-563)', () => {
   it('sizes the exported file for each shape and resolution', () => {
+    expect(shapedSize(StudioExportShape.Landscape, StudioExportResolution.$1080P)).toEqual({
+      width: 1920,
+      height: 1080,
+    });
     expect(shapedSize(StudioExportShape.Vertical, StudioExportResolution.$2160P)).toEqual({
       width: 2160,
       height: 3840,

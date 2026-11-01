@@ -231,7 +231,17 @@ describe('bundled worker recipe', () => {
     Object.assign(claim.settings, {
       resolution,
       shape,
-      reframe: { version: 1, shape, output, shots: { v: [{ t: 0, x: 0.4 }, { t: 1, x: 0.6 }] } },
+      reframe: {
+        version: 1,
+        shape,
+        output,
+        shots: {
+          v: [
+            { t: 0, x: 0.4 },
+            { t: 1, x: 0.6 },
+          ],
+        },
+      },
     });
     return claim;
   };
@@ -243,14 +253,37 @@ describe('bundled worker recipe', () => {
     assert.deepEqual(recipe.dimensions, { width: 1080, height: 1920 });
     assert.deepEqual(recipe.settings.resolution, { width: 1080, height: 1920 });
     assert.equal(recipe.shape, 'vertical');
-    assert.deepEqual(recipe.graph.metadata, { ...project.metadata, width: 608, height: 1080 });
+    assert.deepEqual(recipe.graph.metadata, {
+      ...project.metadata,
+      width: 608,
+      height: 1080,
+    });
     assert.equal(recipe.graph.timeline.keyframes[0].itemId, 'v');
     // the claim's project graph is left exactly as it came
     assert.deepEqual(claim.snapshot.studio.graph, project);
     // the probe holds the file to the shaped size
-    const video = { codec_type: 'video', codec_name: 'h264', width: 1080, height: 1920, duration: '4', pix_fmt: 'yuv420p' };
-    const audio = { codec_type: 'audio', codec_name: 'aac', channels: 2, sample_rate: '48000', duration: '4' };
-    assert.equal(outputMismatch(recipe, { streams: [video, audio], format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' } }), null);
+    const video = {
+      codec_type: 'video',
+      codec_name: 'h264',
+      width: 1080,
+      height: 1920,
+      duration: '4',
+      pix_fmt: 'yuv420p',
+    };
+    const audio = {
+      codec_type: 'audio',
+      codec_name: 'aac',
+      channels: 2,
+      sample_rate: '48000',
+      duration: '4',
+    };
+    assert.equal(
+      outputMismatch(recipe, {
+        streams: [video, audio],
+        format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+      }),
+      null,
+    );
     assert.match(
       outputMismatch(recipe, {
         streams: [{ ...video, width: 1920, height: 1080 }, audio],
@@ -277,7 +310,10 @@ describe('bundled worker recipe', () => {
     ['a shape on sound alone', (claim) => (claim.settings.format = 'audio-mp3'), 'reframe_invalid'],
     [
       'a clip that follows another',
-      (claim) => (claim.snapshot.studio.graph.timeline.items[0].transformParent = { parentItemId: 't' }),
+      (claim) =>
+        (claim.snapshot.studio.graph.timeline.items[0].transformParent = {
+          parentItemId: 't',
+        }),
       'reframe_unsupported',
     ],
   ];
@@ -519,7 +555,11 @@ const fakeRenderer = ({ softwareRenderer = true, fail, onRender } = {}) => {
       const bytes = await readFile(job.files.get(ASSET));
       assert.deepEqual(bytes, MEDIA, 'the renderer reads the verified grant bytes');
       await writeFile(job.outputPath, 'encoded export');
-      job.onProgress(0.5);
+      job.onProgress(0.5, {
+        phase: 'rendering',
+        currentFrame: Math.floor((job.bounds.outPoint - job.bounds.inPoint) / 2),
+        totalFrames: job.bounds.outPoint - job.bounds.inPoint,
+      });
     },
   };
 };
@@ -634,10 +674,18 @@ describe('bundled worker executor', () => {
         'GET /inputs/grant.token-1',
         'POST /progress',
         'POST /progress',
+        'POST /progress',
         'PUT /artifacts/0',
         'POST /validate',
         'POST /complete',
       ]);
+      const reports = server.calls.filter((call) => call.route.endsWith('/progress')).map((call) => call.body);
+      assert.deepEqual(
+        reports.map((report) => report.stage),
+        ['preparing', 'rendering', 'finalising'],
+      );
+      assert.equal(reports[1].unit, 'frames');
+      assert.equal(reports[2].processedUnits, reports[2].totalUnits);
       const plan = server.calls.find((call) => call.route.endsWith('/checkpoints')).body;
       const recipe = bundledRecipe(claim, { softwareRenderer: true });
       assert.deepEqual(

@@ -945,6 +945,14 @@ describe('Sidecar v1 same-session capability admission', () => {
 });
 
 describe('vertical and square exports (FL-563)', () => {
+  it('requires supplemental landscape proof and keeps old reframe workers eligible for existing shapes', () => {
+    const settings = { format: 'mp4-h264', color: 'preserve', resolution: '1080p', shape: 'landscape' };
+    const old = { codecs: ['webcodecs-avc'], formats: ['mp4', 'reframe-v1'] };
+    expect(provesOutput(old, requiredOutput(settings)!)).toBe(false);
+    expect(provesOutput({ ...old, formats: [...old.formats, 'reframe-landscape-v1'] }, requiredOutput(settings)!)).toBe(
+      true,
+    );
+  });
   const gib = 1024 ** 3;
   const capabilities = { codecs: ['webcodecs-avc', 'aac'], formats: ['mp4', 'reframe-v1'] };
   const candidate = { gpuMemoryBytes: 8 * gib, ...capabilities, colorPrecision: null };

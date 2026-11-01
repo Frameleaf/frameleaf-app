@@ -3061,6 +3061,13 @@ export type MediaOperationDto = {
     /** Percent complete, from counted work */
     progress: number;
     projectId: string | null;
+    /** Studio export measurements from the current worker attempt; ETA covers rendering only */
+    renderProgress?: {
+        framesPerSecond: number | null;
+        lastProgressAt: string | null;
+        remainingRenderSeconds: number | null;
+        stage: StudioRenderStage;
+    } | null;
     /** The asset a completed job published */
     resultAssetId: string | null;
     /** When a job waiting for its automatic retry may run again */
@@ -9838,6 +9845,13 @@ export type MediaOperationDetailDto = {
     /** Percent complete, from counted work */
     progress: number;
     projectId: string | null;
+    /** Studio export measurements from the current worker attempt; ETA covers rendering only */
+    renderProgress?: {
+        framesPerSecond: number | null;
+        lastProgressAt: string | null;
+        remainingRenderSeconds: number | null;
+        stage: StudioRenderStage;
+    } | null;
     /** The asset a completed job published */
     resultAssetId: string | null;
     /** When a job waiting for its automatic retry may run again */
@@ -10084,6 +10098,8 @@ export type StudioRenderCandidateDto = {
     embeddedOutputFormats?: StudioExportFormat[];
     gpuMemoryBytes: number | null;
     hdr10: boolean;
+    /** This session renders true 16:9 landscape delivery crops */
+    landscapeReframe?: boolean;
     maxBitDepth: number;
     /** Output formats whose exact writer and container this session verified */
     outputFormats: StudioExportFormat[];
@@ -13958,8 +13974,12 @@ export type RenderWorkerProgressDto = {
     claimToken: string;
     outputBytes?: string;
     processedUnits: number;
+    /** Actual Studio export phase; never advances the publication state */
+    stage?: StudioRenderStage;
     status: Status11;
     totalUnits: number | null;
+    /** Present only when counted units are actual rendered frames */
+    unit?: Unit2;
 };
 export type RenderWorkerStreamSignalRequestDto = {
     /** The claim token this operation was handed out with */
@@ -16258,11 +16278,6 @@ export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
 };
-export type StudioExportListResponseDto = {
-    items: StudioExportVersionDto[];
-    /** Matching versions, before paging */
-    total: number;
-};
 export type StudioReframePointDto = {
     /** Progress through the shot, 0 to 1 */
     t: number;
@@ -16274,6 +16289,51 @@ export type StudioExportFramingDto = {
     clipId: string;
     /** Where the crop centre is through the shot, in order of progress */
     path: StudioReframePointDto[];
+};
+export type StudioExportBatchVariantDto = {
+    /** Defaults to `preserve`; a stereo downmix happens only when asked for */
+    audio?: StudioExportAudio;
+    color: StudioExportColor;
+    format: StudioExportFormat;
+    /** For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    framing?: StudioExportFramingDto[];
+    /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
+    mastering?: StudioExportMastering;
+    /** Defaults to `high` */
+    quality?: StudioExportQuality;
+    /** Absent renders the whole main timeline */
+    range?: StudioExportRangeDto;
+    resolution: StudioExportResolution;
+    shape: StudioDeliveryShape;
+    /** Defaults to `burn` */
+    subtitleMode?: StudioExportSubtitleMode;
+};
+export type StudioExportBatchCreateDto = {
+    destination: StudioDeliveryDestination;
+    expectedRevision: number;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey: string;
+    variants: StudioExportBatchVariantDto[];
+};
+export type StudioExportCreateResponseDto = {
+    /** The render job; follow it in Activity */
+    operation: MediaOperationDto;
+    version: StudioExportVersionDto;
+};
+export type StudioExportBatchItemDto = {
+    error: string | null;
+    errorCode: string | null;
+    result: (StudioExportCreateResponseDto) | null;
+    shape: StudioDeliveryShape;
+};
+export type StudioExportBatchCreateResponseDto = {
+    items: StudioExportBatchItemDto[];
+    revision: number;
+};
+export type StudioExportListResponseDto = {
+    items: StudioExportVersionDto[];
+    /** Matching versions, before paging */
+    total: number;
 };
 export type StudioExportSmoothMotionDto = {
     /** Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately */
@@ -16308,11 +16368,6 @@ export type StudioExportCreateDto = {
     smoothMotion?: StudioExportSmoothMotionDto;
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
-};
-export type StudioExportCreateResponseDto = {
-    /** The render job; follow it in Activity */
-    operation: MediaOperationDto;
-    version: StudioExportVersionDto;
 };
 export type StudioReframeShotDto = {
     /** The library asset it shows, when this session may read it */
@@ -32747,6 +32802,22 @@ export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
     })));
 }
 /**
+ * Queue reviewed delivery shapes from one saved revision
+ */
+export function createStudioExportBatch({ id, studioExportBatchCreateDto }: {
+    id: string;
+    studioExportBatchCreateDto: StudioExportBatchCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioExportBatchCreateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/export-batches`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioExportBatchCreateDto
+    })));
+}
+/**
  * List a Studio project’s exports
  */
 export function getStudioExports({ id, skip, take }: {
@@ -36132,6 +36203,11 @@ export enum RenderWorkerRefusalReason {
     ManifestIncomplete = "manifest_incomplete",
     CodecUnsupported = "codec_unsupported"
 }
+export enum StudioRenderStage {
+    Preparing = "preparing",
+    Rendering = "rendering",
+    Finalising = "finalising"
+}
 export enum MediaOperationStatus {
     Queued = "queued",
     Preparing = "preparing",
@@ -38717,6 +38793,9 @@ export enum Status11 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
+export enum Unit2 {
+    Frames = "frames"
+}
 export enum StudioPreviewStreamCloseReason {
     Closed = "closed",
     Superseded = "superseded",
@@ -38892,6 +38971,7 @@ export enum StudioExportQuality {
 }
 export enum StudioExportShape {
     Original = "original",
+    Landscape = "landscape",
     Vertical = "vertical",
     Square = "square"
 }
@@ -39002,6 +39082,15 @@ export enum StudioCutoutStatus {
 export enum StudioCutoutSubjectKind {
     Person = "person",
     Subject = "subject"
+}
+export enum StudioDeliveryDestination {
+    Local = "local",
+    Lan = "lan"
+}
+export enum StudioDeliveryShape {
+    Landscape = "landscape",
+    Vertical = "vertical",
+    Square = "square"
 }
 export enum StudioReframeSubject {
     Face = "face",

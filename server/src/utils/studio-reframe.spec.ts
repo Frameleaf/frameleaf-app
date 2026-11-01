@@ -107,6 +107,7 @@ describe('smoothSubjectPath', () => {
 
 describe('frame geometry', () => {
   it('sizes shaped files and crops', () => {
+    expect(shapedOutputSize('landscape', '1080p')).toEqual({ width: 1920, height: 1080 });
     expect(shapedOutputSize('vertical', '2160p')).toEqual({ width: 2160, height: 3840 });
     expect(shapedOutputSize('square', '720p')).toEqual({ width: 720, height: 720 });
     expect(shapedOutputSize('vertical', 'original')).toBeNull();

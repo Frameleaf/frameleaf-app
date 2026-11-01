@@ -973,6 +973,9 @@ export class RenderWorkerService {
       processedUnits: dto.processedUnits,
       totalUnits: dto.totalUnits,
       progress,
+      ...(operation.kind === MediaOperationKind.StudioExport && {
+        studioRender: { stage: dto.stage ?? dto.status, unit: dto.unit },
+      }),
     });
     if (accepted && operation.kind === MediaOperationKind.StudioExport) {
       // throttled there: at most every 5% or 10 seconds

@@ -287,8 +287,8 @@ describe('Frameleaf Activity page', () => {
     expect(card?.getAttribute('aria-labelledby')).toBe(heading.id);
     const bar = screen.getByRole('progressbar', { name: /summer in the rockies/i });
     expect(bar.getAttribute('aria-valuenow')).toBe('42');
-    // Prototype `statusText`: the state, the percentage and about how long is left at the rate so far.
-    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toMatch(/^Rendering · 42% · about .+ left$/);
+    // A legacy Studio worker supplies counted percent, but no measured frame rate or render ETA.
+    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toBe('Rendering · 42%');
     expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
     // The prototype's summary names only what is not zero.
     expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');

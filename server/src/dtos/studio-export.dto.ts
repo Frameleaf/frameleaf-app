@@ -154,6 +154,35 @@ const StudioExportCreateSchema = z
   .strict()
   .meta({ id: 'StudioExportCreateDto' });
 
+const StudioDeliveryShapeSchema = z.enum(['landscape', 'vertical', 'square']).meta({ id: 'StudioDeliveryShape' });
+
+const StudioExportBatchVariantSchema = StudioExportCreateSchema.omit({
+  expectedRevision: true,
+  destination: true,
+  cloudConsent: true,
+  requestKey: true,
+  smoothMotion: true,
+})
+  .extend({ shape: StudioDeliveryShapeSchema })
+  .meta({ id: 'StudioExportBatchVariantDto' });
+
+const StudioExportBatchCreateSchema = z
+  .object({
+    expectedRevision: z.int().min(1),
+    requestKey: IdentifierSchema,
+    destination: z.enum(['local', 'lan']).meta({ id: 'StudioDeliveryDestination' }),
+    variants: z
+      .array(StudioExportBatchVariantSchema)
+      .min(1)
+      .max(3)
+      .refine(
+        (variants) => new Set(variants.map((variant) => variant.shape)).size === variants.length,
+        'Each delivery shape may be queued only once',
+      ),
+  })
+  .strict()
+  .meta({ id: 'StudioExportBatchCreateDto' });
+
 const StudioExportSettingsSchema = z
   .object({
     format: StudioExportFormatSchema,
@@ -216,6 +245,22 @@ const StudioExportCreateResponseSchema = z
   })
   .meta({ id: 'StudioExportCreateResponseDto' });
 
+const StudioExportBatchCreateResponseSchema = z
+  .object({
+    revision: z.int().min(1),
+    items: z.array(
+      z
+        .object({
+          shape: StudioDeliveryShapeSchema,
+          result: StudioExportCreateResponseSchema.nullable(),
+          errorCode: z.string().nullable(),
+          error: z.string().nullable(),
+        })
+        .meta({ id: 'StudioExportBatchItemDto' }),
+    ),
+  })
+  .meta({ id: 'StudioExportBatchCreateResponseDto' });
+
 const StudioExportListResponseSchema = z
   .object({
     items: z.array(StudioExportVersionSchema),
@@ -236,3 +281,6 @@ export class StudioExportVersionDto extends createZodDto(StudioExportVersionSche
 export class StudioExportCreateResponseDto extends createZodDto(StudioExportCreateResponseSchema) {}
 export class StudioExportListResponseDto extends createZodDto(StudioExportListResponseSchema) {}
 export class StudioExportSearchDto extends createZodDto(StudioExportSearchSchema) {}
+
+export class StudioExportBatchCreateDto extends createZodDto(StudioExportBatchCreateSchema) {}
+export class StudioExportBatchCreateResponseDto extends createZodDto(StudioExportBatchCreateResponseSchema) {}

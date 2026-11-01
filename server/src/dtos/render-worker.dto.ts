@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { MediaOperationCheckpointDto } from 'src/dtos/media-operation.dto.js';
+import { MediaOperationCheckpointDto, StudioRenderStageSchema } from 'src/dtos/media-operation.dto.js';
 import {
   MediaOperationDestinationSchema,
   MediaOperationKindSchema,
@@ -271,6 +271,10 @@ const RenderWorkerHeartbeatResponseSchema = z
 
 const RenderWorkerProgressSchema = z
   .object({
+    stage: StudioRenderStageSchema.optional().describe(
+      'Actual Studio export phase; never advances the publication state',
+    ),
+    unit: z.literal('frames').optional().describe('Present only when counted units are actual rendered frames'),
     claimToken: ClaimTokenSchema,
     status: z.enum([MediaOperationStatus.Preparing, MediaOperationStatus.Rendering]),
     processedUnits: z.int().min(0),

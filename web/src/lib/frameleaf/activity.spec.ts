@@ -1,4 +1,5 @@
 import {
+  StudioRenderStage,
   CloudMlJobActivityStage,
   CloudMlJobPurpose,
   CloudMlJobStage,
@@ -713,7 +714,7 @@ describe('the status line (FL-30, prototype `statusText`)', () => {
   const formatDuration = (seconds: number) => `${seconds}s`;
   const started = Date.parse('2026-09-22T09:50:00.000Z');
   const item = (overrides: Partial<ReturnType<typeof fromMediaOperation>> = {}) => ({
-    ...fromMediaOperation(operation()),
+    ...fromMediaOperation(operation({ kind: MediaOperationKind.Restoration })),
     startedAt: started,
     ...overrides,
   });
@@ -803,7 +804,16 @@ describe('Studio renders, server estimates and completion (FL-104)', () => {
 
   it("prefers the server's measured estimate and says the finished size", () => {
     const running = fromMediaOperation(
-      operation({ progress: 10, estimate: { seconds: 125.2, sizeBytes: '12000000', cloudCost: null } }),
+      operation({
+        progress: 10,
+        estimate: { seconds: 125.2, sizeBytes: '12000000', cloudCost: null },
+        renderProgress: {
+          stage: StudioRenderStage.Rendering,
+          lastProgressAt: new Date().toISOString(),
+          framesPerSecond: 25,
+          remainingRenderSeconds: 125.2,
+        },
+      }),
     );
     expect(activityEtaSeconds(running, Date.now())).toBe(126);
     expect(running.sizeBytes).toBe(12_000_000);

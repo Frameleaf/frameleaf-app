@@ -36,6 +36,7 @@ import {
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import { type StudioRenderReport, advanceStudioRenderProgress } from 'src/utils/studio-render-progress.js';
 import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
@@ -1072,30 +1073,67 @@ export class MediaOperationRepository {
       processedUnits: number;
       totalUnits: number | null;
       progress: number;
+      studioRender?: StudioRenderReport;
     },
   ): Promise<boolean> {
     const from = PROGRESS_FROM[patch.status];
     if (!from) {
       return false;
     }
-    const row = await this.write((db) =>
-      db
-        .updateTable('media_operation')
-        .set({
-          status: patch.status,
-          processedUnits: String(patch.processedUnits),
-          totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
-          progress: patch.progress,
-          heartbeatAt: sql<Date>`now()`,
-        })
-        .where('id', '=', id)
-        .where('claimToken', '=', claimToken)
-        // Stages only move forward (FL-43): a job checking its output is never reported as rendering
-        // again, and nothing reaches validating except through the stages before it.
-        .where('status', 'in', [...from])
-        .returning(['id', 'ownerId'])
-        .executeTakeFirst(),
-    );
+    const row = await this.write(async (db) => {
+      let renderResult: Record<string, unknown> | undefined;
+      if (patch.studioRender) {
+        const current = await db
+          .selectFrom('media_operation')
+          .select(['kind', 'attempt', 'result'])
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          .where('status', 'in', [...from])
+          .forUpdate()
+          .executeTakeFirst();
+        if (
+          !current ||
+          current.kind !== MediaOperationKind.StudioExport ||
+          (patch.status === MediaOperationStatus.Preparing) !== (patch.studioRender.stage === 'preparing')
+        )
+          return;
+        const measurement = advanceStudioRenderProgress(
+          current.result?.studioRenderProgress,
+          current.attempt,
+          patch.studioRender,
+          patch.processedUnits,
+          patch.totalUnits,
+          Date.now(),
+        );
+        if (!measurement) return;
+        renderResult = { ...current.result, studioRenderProgress: measurement };
+      }
+      return (
+        db
+          .updateTable('media_operation')
+          .set({
+            ...(renderResult && { result: renderResult }),
+            status: patch.status,
+            processedUnits: String(patch.processedUnits),
+            totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
+            progress: patch.progress,
+            heartbeatAt: sql<Date>`now()`,
+          })
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          // Stages only move forward (FL-43): a job checking its output is never reported as rendering
+          // again, and nothing reaches validating except through the stages before it.
+          .where('status', 'in', [...from])
+          .$if(!!patch.studioRender, (qb) =>
+            qb
+              .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+              .where('cancelRequestedAt', 'is', null)
+              .where('pauseRequestedAt', 'is', null),
+          )
+          .returning(['id', 'ownerId'])
+          .executeTakeFirst()
+      );
+    });
     this.changed(row);
     return !!row;
   }

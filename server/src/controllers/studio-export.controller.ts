@@ -17,6 +17,8 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  StudioExportBatchCreateDto,
+  StudioExportBatchCreateResponseDto,
   StudioExportCreateDto,
   StudioExportCreateResponseDto,
   StudioExportListResponseDto,
@@ -61,6 +63,23 @@ export class StudioExportController {
     @Body() dto: StudioExportCreateDto,
   ): Promise<StudioExportCreateResponseDto> {
     return this.service.create(auth, id, dto);
+  }
+
+  @Post('projects/:id/export-batches')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Queue reviewed delivery shapes from one saved revision',
+    description:
+      'Owner only. One local or LAN destination, independently admitted child jobs with stable retry keys. Every child keeps its own source checks, cancellation and publication.',
+    history: history(),
+  })
+  createStudioExportBatch(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioExportBatchCreateDto,
+  ): Promise<StudioExportBatchCreateResponseDto> {
+    return this.service.createBatch(auth, id, dto);
   }
 
   @Get('projects/:id/exports')

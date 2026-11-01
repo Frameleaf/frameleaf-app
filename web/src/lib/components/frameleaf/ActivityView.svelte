@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import StudioRenderProgress from '$lib/components/frameleaf/StudioRenderProgress.svelte';
   import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -503,6 +504,15 @@
             · <span class="fla-error">{item.error}</span>
           {/if}
         </p>
+        {#if item.renderProgress}
+          <StudioRenderProgress
+            progress={item.renderProgress}
+            startedAt={item.startedAt}
+            finishedAt={item.finishedAt}
+            active={item.running}
+            online={!activitySession.unreachable}
+          />
+        {/if}
         {#if item.cloud && item.stage === 'starting'}
           <p class="fla-status">
             {$t('frameleaf_activity_cloud_start_note', { values: { workers: item.cloud.plannedWorkers } })}

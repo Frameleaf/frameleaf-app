@@ -130,6 +130,10 @@ const useAdapterWorkspace = () => ({
  * relative to `studio/`, the test directory.
  */
 const upstreamSuites = [
+  'engine/src/test/voice-music-mix.test.tsx',
+  'engine/src/features/export/utils/canvas-audio.test.ts',
+  'engine/src/runtime/composition-runtime/utils/preview-track-stage.test.ts',
+  'engine/src/features/settings/components/hotkey-editor-search.test.ts',
   'engine/src/features/timeline/stores/actions/edit/trim-to-playhead.test.ts',
   'engine/src/features/timeline/hooks/shortcuts/trim-to-playhead-shortcuts.test.tsx',
   'engine/src/shared/timeline/chapter-text.test.ts',
