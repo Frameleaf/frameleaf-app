@@ -60,6 +60,8 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
     const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
     const guardQuery = transport.unsafe.mock.calls.find(([sql]) => sql.includes('rolsuper'))![0];
     expect(guardQuery).toContain("pg_catalog.pg_has_role(current_user,writer.oid,'SET')");
+    expect(guardQuery).toContain("pg_catalog.has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE')");
+    expect(guardQuery).toContain("pg_catalog.has_any_column_privilege(writer.oid,c.oid,'INSERT,UPDATE')");
     expect(guardQuery).toContain(
       "pg_catalog.has_table_privilege(writer.oid,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')",
     );
