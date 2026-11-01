@@ -6,6 +6,7 @@
   import LibraryLockedGate from '$lib/components/frameleaf/LibraryLockedGate.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import LockedReasonFilter from '$lib/components/frameleaf/LockedReasonFilter.svelte';
+  import LockedKeyCheck from '$lib/components/frameleaf/settings/security/locked-encryption/LockedKeyCheck.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
@@ -76,6 +77,8 @@
 
 <UserPageLayout scrollbar={false}>
   {#if data.unlocked}
+    <!-- FL-721: after a restart, encrypted Locked files need the passphrase before they open -->
+    <LockedKeyCheck />
     <LibraryView
       bind:timelineManager
       {options}

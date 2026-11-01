@@ -73,6 +73,7 @@ import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { HDR_RENDITION_RENDERER_VERSION, imageRenditionIdentity } from 'src/utils/image-rendition.js';
+import { isLockedKeyUnavailable, withPlainCopy } from 'src/utils/locked-read.js';
 import {
   type DecodeQualification,
   DecodeSupport,
@@ -354,6 +355,25 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy; the new files are sealed after
+    const status = await withPlainCopy(asset.originalPath, (originalPath) =>
+      this.renderEditThumbnailsFrom(
+        originalPath === asset.originalPath ? asset : { ...asset, originalPath },
+        config,
+        run,
+      ),
+    );
+    if (status === JobStatus.Success) {
+      await this.queueLockedSeal([asset.id]);
+    }
+    return status;
+  }
+
+  private async renderEditThumbnailsFrom(
+    asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>,
+    config: SystemConfig,
+    run?: EditOperationRun,
+  ): Promise<JobStatus> {
     const generated = await this.generateEditedThumbnails(asset, config, run);
     // FL-43: the asset's files change only under the job's claim; a stale or cancelled run stops here.
     if (run && !(await run.validate())) {
@@ -412,6 +432,21 @@ export class MediaService extends BaseService {
       }
     });
 
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy; the new files are sealed after
+    const status = await withPlainCopy(asset.originalPath, (originalPath) =>
+      this.generateThumbnailsFrom(originalPath === asset.originalPath ? asset : { ...asset, originalPath }, config),
+    );
+    if (status === JobStatus.Success) {
+      await this.queueLockedSeal([asset.id]);
+    }
+    return status;
+  }
+
+  private async generateThumbnailsFrom(
+    asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>,
+    config: SystemConfig,
+  ): Promise<JobStatus> {
+    const id = asset.id;
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
     if (asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif')) {
       this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
@@ -751,26 +786,30 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { x1, y1, x2, y2, oldWidth, oldHeight, exifOrientation, previewPath, originalPath } = data;
-    let inputImage: string | Buffer;
-    if (data.type === AssetType.Video) {
-      if (!previewPath) {
-        this.logger.error(`Could not generate person thumbnail for video ${personGroupId}: missing preview path`);
-        return JobStatus.Failed;
-      }
-      inputImage = previewPath;
-    } else if (image.extractEmbedded && mimeTypes.isRaw(originalPath)) {
-      const extracted = await this.extractImage(originalPath, image.preview.size);
-      inputImage = extracted ? extracted.buffer : originalPath;
-    } else {
-      inputImage = originalPath;
+    const { x1, y1, x2, y2, oldWidth, oldHeight, exifOrientation, previewPath } = data;
+    if (data.type === AssetType.Video && !previewPath) {
+      this.logger.error(`Could not generate person thumbnail for video ${personGroupId}: missing preview path`);
+      return JobStatus.Failed;
     }
+    // FL-721 (spec §8.2): a sealed source is decoded from a plain copy
+    const source = data.type === AssetType.Video ? previewPath! : data.originalPath;
+    const { data: decodedImage, info } = await withPlainCopy(source, async (originalPath) => {
+      let inputImage: string | Buffer;
+      if (data.type === AssetType.Video) {
+        inputImage = originalPath;
+      } else if (image.extractEmbedded && mimeTypes.isRaw(originalPath)) {
+        const extracted = await this.extractImage(originalPath, image.preview.size);
+        inputImage = extracted ? extracted.buffer : originalPath;
+      } else {
+        inputImage = originalPath;
+      }
 
-    const { data: decodedImage, info } = await this.mediaRepository.decodeImage(inputImage, {
-      colorspace: image.colorspace,
-      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
-      // if this is an extracted image, it may not have orientation metadata
-      orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
+      return this.mediaRepository.decodeImage(inputImage, {
+        colorspace: image.colorspace,
+        processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
+        // if this is an extracted image, it may not have orientation metadata
+        orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
+      });
     });
 
     const thumbnailPath = attemptOutputPath(StorageCore.getPersonThumbnailPath({ ownerId, personGroupId }));
@@ -1179,13 +1218,20 @@ export class MediaService extends BaseService {
     const discard = () => this.storageRepository.unlink(output).catch(() => {});
     this.storageCore.ensureFolders(output);
     try {
-      await this.mediaRepository.transcode(
-        asset.originalPath,
-        output,
-        getStudioHdrProxyCommand(videoStream, plan.transfer, ffmpeg.threads),
+      // FL-721 (spec §8.2): a sealed original is read from a plain copy
+      await withPlainCopy(asset.originalPath, (input) =>
+        this.mediaRepository.transcode(
+          input,
+          output,
+          getStudioHdrProxyCommand(videoStream, plan.transfer, ffmpeg.threads),
+        ),
       );
     } catch (error: any) {
       await discard();
+      // FL-721: waiting for the Locked key is not a failed transcode
+      if (isLockedKeyUnavailable(error)) {
+        throw error;
+      }
       // Recorded, so the next project read does not start the same failing transcode again.
       await refuse('failed', `the transcode failed: ${error.message}`);
       return JobStatus.Failed;
@@ -1203,6 +1249,7 @@ export class MediaService extends BaseService {
     }
     await releaseFiles(replacedPath);
     this.logger.log(`Made the Studio HDR intermediate of asset ${asset.id}`);
+    await this.queueLockedSeal([asset.id]);
     return JobStatus.Success;
   }
 
@@ -1221,7 +1268,6 @@ export class MediaService extends BaseService {
       }
     });
 
-    const input = asset.originalPath;
     const output = attemptOutputPath(StorageCore.getEncodedVideoPath(asset));
 
     const { videoStream } = asset;
@@ -1281,40 +1327,51 @@ export class MediaService extends BaseService {
     }
 
     const accel = ffmpeg.accel;
-    try {
-      await this.mediaRepository.transcode(input, output, command);
-      if (accel !== TranscodeHardwareAcceleration.Disabled) {
-        await this.noteVideoCard(true, accel);
-      }
-    } catch (error: any) {
-      this.logger.error(`Error occurred during transcoding: ${error.message}`);
-      if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
-        return JobStatus.Failed;
-      }
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy for the whole encode
+    const encoded = await withPlainCopy(asset.originalPath, async (input) => {
+      try {
+        await this.mediaRepository.transcode(input, output, command);
+        if (accel !== TranscodeHardwareAcceleration.Disabled) {
+          await this.noteVideoCard(true, accel);
+        }
+      } catch (error: any) {
+        this.logger.error(`Error occurred during transcoding: ${error.message}`);
+        if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+          return false;
+        }
 
-      let isPartialFallbackSuccess = false;
-      if (ffmpeg.accelDecode) {
-        try {
-          this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
-          ffmpeg = { ...ffmpeg, accelDecode: false };
+        let isPartialFallbackSuccess = false;
+        if (ffmpeg.accelDecode) {
+          try {
+            this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
+            ffmpeg = { ...ffmpeg, accelDecode: false };
+            const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(
+              target,
+              videoStream,
+              audioStream,
+            );
+            await this.mediaRepository.transcode(input, output, command);
+            isPartialFallbackSuccess = true;
+          } catch (error: any) {
+            this.logger.error(`Error occurred during transcoding: ${error.message}`);
+          }
+        }
+
+        if (isPartialFallbackSuccess) {
+          await this.noteVideoCard(true, accel);
+        } else {
+          this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
+          ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
           const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
           await this.mediaRepository.transcode(input, output, command);
-          isPartialFallbackSuccess = true;
-        } catch (error: any) {
-          this.logger.error(`Error occurred during transcoding: ${error.message}`);
+          // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
+          await this.noteVideoCard(false, accel);
         }
       }
-
-      if (isPartialFallbackSuccess) {
-        await this.noteVideoCard(true, accel);
-      } else {
-        this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
-        ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
-        const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-        await this.mediaRepository.transcode(input, output, command);
-        // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
-        await this.noteVideoCard(false, accel);
-      }
+      return true;
+    });
+    if (!encoded) {
+      return JobStatus.Failed;
     }
 
     this.logger.log(`Successfully encoded ${asset.id}`);
@@ -1335,6 +1392,7 @@ export class MediaService extends BaseService {
           },
         ],
       );
+      await this.queueLockedSeal([asset.id]);
       return JobStatus.Success;
     }
 
@@ -1350,6 +1408,7 @@ export class MediaService extends BaseService {
     if (pathToDelete) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [pathToDelete] } });
     }
+    await this.queueLockedSeal([asset.id]);
 
     return JobStatus.Success;
   }
@@ -1361,7 +1420,12 @@ export class MediaService extends BaseService {
     operationId,
   }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
     // FL-43: a video edit or export runs under its Activity job, when it was queued with one.
-    return this.editOperations.execute(operationId, (run) => this.renderVideoEdit(id, versionId, run));
+    const status = await this.editOperations.execute(operationId, (run) => this.renderVideoEdit(id, versionId, run));
+    if (status === JobStatus.Success) {
+      // FL-721 (spec §7.2): the new master, proxy and thumbnails of a Locked item are sealed
+      await this.queueLockedSeal([id]);
+    }
+    return status;
   }
 
   private async renderVideoEdit(id: string, versionId: string | undefined, run?: EditOperationRun): Promise<JobStatus> {
@@ -1393,10 +1457,40 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    // FL-721 (spec §8.2): tools read a sealed original from a plain copy; what is recorded (the
+    // lineage's original path) stays the real path
+    return withPlainCopy(asset.originalPath, (plainOriginal) =>
+      this.renderVideoEditFrom(
+        asset,
+        plainOriginal,
+        { videoStream, format, audioStream },
+        id,
+        versionId,
+        version,
+        versionError,
+        run,
+      ),
+    );
+  }
+
+  private async renderVideoEditFrom(
+    asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>,
+    plainOriginal: string,
+    {
+      videoStream,
+      format,
+      audioStream,
+    }: { videoStream: VideoStreamInfo; format: VideoFormat; audioStream?: AudioStreamInfo },
+    id: string,
+    versionId: string | undefined,
+    version: VideoEditVersion | undefined,
+    versionError: any,
+    run?: EditOperationRun,
+  ): Promise<JobStatus> {
     const thumbnailAsset = {
       id: asset.id,
       ownerId: asset.ownerId,
-      originalPath: asset.originalPath,
+      originalPath: plainOriginal,
       checksum: asset.checksum,
       videoStream,
       format,
@@ -1416,7 +1510,13 @@ export class MediaService extends BaseService {
       if (version.status === 'ready') {
         return JobStatus.Skipped;
       }
-      return this.renderVideoVersion(version, { ...thumbnailAsset, files: asset.files }, config, run);
+      return this.renderVideoVersion(
+        version,
+        { ...thumbnailAsset, files: asset.files },
+        config,
+        run,
+        asset.originalPath,
+      );
     }
 
     const edits = (await this.assetEditRepository.getAll(id)) as AssetEditActionItem[];
@@ -1467,6 +1567,7 @@ export class MediaService extends BaseService {
         videoStream,
         config: config.ffmpeg,
         originalPath: asset.originalPath,
+        // provenance is checked on the stored path; only the tools get the plain copy (FL-721)
         sourcePath: asset.originalPath,
         outputPaths: [output],
         derivedPaths: asset.files.map((file) => file.path),
@@ -1483,7 +1584,7 @@ export class MediaService extends BaseService {
 
     const rendered = await this.transcodeEditedMaster({
       assetId: asset.id,
-      input: asset.originalPath,
+      input: plainOriginal,
       output,
       config: config.ffmpeg,
       edits,
@@ -1698,6 +1799,24 @@ export class MediaService extends BaseService {
     asset: VideoThumbnailAsset & { files: Array<{ path: string; type: AssetFileType; isEdited: boolean }> },
     config: SystemConfig,
     run?: EditOperationRun,
+    currentOriginalPath?: string,
+  ): Promise<JobStatus> {
+    // FL-721 (spec §8.2): the version's source is the original it was saved against; when that is
+    // the current original, its plain copy (asset.originalPath here) is already open
+    if (currentOriginalPath && version.sourcePath === currentOriginalPath) {
+      return this.renderVideoVersionFrom(version, asset, config, asset.originalPath, run);
+    }
+    return withPlainCopy(version.sourcePath, (sourcePath) =>
+      this.renderVideoVersionFrom(version, asset, config, sourcePath, run),
+    );
+  }
+
+  private async renderVideoVersionFrom(
+    version: VideoEditVersion,
+    asset: VideoThumbnailAsset & { files: Array<{ path: string; type: AssetFileType; isEdited: boolean }> },
+    config: SystemConfig,
+    sourcePath: string,
+    run?: EditOperationRun,
   ): Promise<JobStatus> {
     const suffix = `${version.id}_${randomUUID()}`;
     // FL-43: a version is published only under its job's claim. A run that lost its claim, or whose
@@ -1712,7 +1831,7 @@ export class MediaService extends BaseService {
     try {
       // Bounds, orientation and audio come from the original this version was saved against,
       // never from the current (possibly edited) asset metadata.
-      const original = await this.mediaRepository.probe(version.sourcePath);
+      const original = await this.mediaRepository.probe(sourcePath);
       const videoStream = original.videoStreams[0];
       if (!videoStream) {
         throw new Error('Original video metadata is unavailable');
@@ -1767,7 +1886,7 @@ export class MediaService extends BaseService {
       this.storageCore.ensureFolders(master);
       const rendered = await this.transcodeEditedMaster({
         assetId: asset.id,
-        input: version.sourcePath,
+        input: sourcePath,
         output: master,
         config: config.ffmpeg,
         edits,
@@ -1807,7 +1926,7 @@ export class MediaService extends BaseService {
       });
       // Only full-clip timing-preserving recipes: trim/speed retain their separate semantics.
       if (edits.every((edit) => !(edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed))) {
-        const sourcePackets = await this.mediaRepository.probePackets(version.sourcePath, videoStream.index);
+        const sourcePackets = await this.mediaRepository.probePackets(sourcePath, videoStream.index);
         const masterPackets = await this.mediaRepository.probePackets(master, masterVideo.index);
         validateFullClipMasterTiming(videoStream, masterVideo, sourcePackets, masterPackets);
       }

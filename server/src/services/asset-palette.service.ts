@@ -23,6 +23,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { requireAccess } from 'src/utils/access.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
+import { isLockedKeyUnavailable, withPlainCopy } from 'src/utils/locked-read.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 type Source = NonNullable<Awaited<ReturnType<AssetPaletteRepository['source']>>>;
@@ -126,8 +127,11 @@ export class AssetPaletteService {
     const state = this.state(source, 'unavailable');
     const input = this.input(source);
     try {
-      if (input)
-        Object.assign(state, await this.media.extractAssetPalette(input.path, input.options), { status: 'ready' });
+      if (input) {
+        // FL-721: an encrypted Locked file is read through a plain copy; without the key the job waits
+        const palette = await withPlainCopy(input.path, (path) => this.media.extractAssetPalette(path, input.options));
+        Object.assign(state, palette, { status: 'ready' });
+      }
       if (
         deferJobAdoption(async (tx) => {
           if (!(await this.palettes.publish(id, sourceRevision, state, tx)))
@@ -138,6 +142,10 @@ export class AssetPaletteService {
       return (await this.palettes.publish(id, sourceRevision, state)) ? JobStatus.Success : JobStatus.Skipped;
     } catch (error) {
       executionSignal()?.throwIfAborted();
+      if (isLockedKeyUnavailable(error)) {
+        // waiting for the owner's key is not a failure: the job is deferred and runs again
+        throw error;
+      }
       const failed = this.state(source, 'failed');
       if (
         !deferJobFailure(async (tx) => {

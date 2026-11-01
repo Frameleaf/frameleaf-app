@@ -86,6 +86,11 @@ const IntegrityCheckHistoryEntrySchema = z
       .meta({ id: 'IntegrityCheckOutcome' }),
     found: z.int().nonnegative().describe('Findings in its list when it ended'),
     checked: z.int().nonnegative().nullable().describe('Files it looked at, when counted'),
+    encrypted: z
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Encrypted Locked files the damage check passed over: encrypted, not checked (not counted in checked)'),
   })
   .meta({ id: 'IntegrityCheckHistoryEntryDto' });
 

@@ -114,6 +114,7 @@ import {
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { INSTANCE_KEY_FILE, InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -143,6 +144,7 @@ import {
   CloudBackupRestorer,
   IN_PLACE_SCOPES,
   RESTORE_REPLACED_FOLDER,
+  countEncryptedWithOlderKey,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
@@ -249,6 +251,18 @@ import {
   cloudBackupActivationProgress,
   pushJobData,
 } from 'src/utils/frameleaf-push.js';
+import {
+  LOCKED_KEY_BACKUP_ROLE,
+  lockedKeyBackupFiles,
+  lockedKeyFileKeyId,
+  lockedKeyFilePath,
+  lockedKeyGaps,
+  lockedKeyOwners,
+  matchLockedEncryptionRow,
+  pathsBeingReplaced,
+  readLockedKeyFile,
+  sealedFileOwnerKeyId,
+} from 'src/utils/locked-backup.js';
 import {
   ManagedBackupAuthorizationError,
   managedBackupReadSession,
@@ -473,6 +487,7 @@ export class CloudBackupService {
     private jobRepository: JobRepository,
     private details: CloudBackupDetailsService,
     private selection: CloudBackupSelectionRepository,
+    private lockedEncryptionRepository: LockedEncryptionRepository,
   ) {
     this.logger.setContext(CloudBackupService.name);
     this.keyChannel = new CloudBackupKeyChannel(this.workerId, () =>
@@ -2300,6 +2315,7 @@ export class CloudBackupService {
     if (!database && saved?.kind === 'upload' && saved.key.startsWith(CLOUD_BACKUP_DB_PREFIX))
       throw new Error('The encrypted database upload has no pinned dump identity.');
     if (!database) {
+      await this.backUpLockedKeys(run);
       await this.removeLeftoverDumps();
       const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
         signal: executionSignal(),
@@ -2337,6 +2353,39 @@ export class CloudBackupService {
       await this.storageRepository.unlink(path);
     }
     return proceed;
+  }
+
+  /**
+   * FL-721: every Locked key file as it is (wrapped; no secret opens anything without it), first, before the
+   * dump and any media: turning encryption off deletes the key file once its files are plain, so a copy
+   * taken later could miss the key this backup's ciphertext needs. Who had one is kept with the run.
+   */
+  private async backUpLockedKeys(run: Run) {
+    const keys = (await lockedKeyBackupFiles(StorageCore.getMediaLocation())).filter(({ userId }) =>
+      this.mayUpload(run, userId),
+    );
+    const before = run.progress.result.missing;
+    const recorded = await this.backUpFiles(
+      run,
+      keys.map(({ userId, path }) => ({
+        fileKey: `locked-key:${userId}`,
+        assetId: null,
+        ownerId: userId,
+        role: LOCKED_KEY_BACKUP_ROLE,
+        path,
+        recorded: null,
+      })),
+    );
+    // one removed since it was listed (encryption finished turning off) is not counted as missing media
+    const lockedKeyOwners = recorded.map(({ ownerId }) => ownerId).filter((ownerId): ownerId is string => !!ownerId);
+    const lockedKeyIds: string[] = [];
+    for (const { ownerId, path } of recorded) {
+      const id = ownerId ? await lockedKeyFileKeyId(path, ownerId) : null;
+      if (id) {
+        lockedKeyIds.push(id);
+      }
+    }
+    run.progress.result = { ...run.progress.result, missing: before, lockedKeyOwners, lockedKeyIds };
   }
 
   /**
@@ -2428,6 +2477,7 @@ export class CloudBackupService {
         const files = [
           ...Object.values(manifest.assets).flatMap((asset) => asset.files),
           ...Object.values(manifest.profiles),
+          ...Object.values(manifest.lockedKeys ?? {}),
         ];
         adopted.push({
           key,
@@ -2543,6 +2593,30 @@ export class CloudBackupService {
           recorded: null,
         })),
     );
+    // FL-721: encrypted files whose owner had no key file when the run started (encryption turned on, or
+    // off and on, during the run) would make a backup no secret can open. Never hidden: the run fails
+    // before its manifest, and the earlier backups, with their key files, stay as they are. The owner is
+    // the file's first recipient, so a partner copy needs the owner's key file, never the partner's.
+    // A key id that matches no live key file is an item restored under an older key (spec §9): reported,
+    // never a failure, since no backup could ever capture its key file.
+    const { keyless, older } = await lockedKeyGaps(
+      run.progress.result.sealedKeyIds,
+      new Set(run.progress.result.lockedKeyIds),
+      StorageCore.getMediaLocation(),
+    );
+    if (older.length > 0) {
+      this.logger.warn(
+        `Cloud backup run ${run.id}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are backed up as they are`,
+      );
+    }
+    if (keyless.length > 0) {
+      this.logger.warn(
+        `Cloud backup run ${run.id}: encrypted Locked files of ${keyless.length} person(s) had no key file when the run started`,
+      );
+      throw new Error(
+        `This backup found encrypted Locked files for ${keyless.length} person(s) whose key file was not there when it started. Their encryption changed during the backup; the next backup includes it.`,
+      );
+    }
     run.progress.result = { ...run.progress.result, phase: 'manifest' };
     return this.checkpoint(run);
   }
@@ -2553,9 +2627,27 @@ export class CloudBackupService {
    * gone is counted and left out; one that changes while it uploads is hashed again and uploaded once
    * more, then left for the next run.
    */
-  private async backUpFiles(run: Run, files: FileToBackUp[]) {
+  private async backUpFiles(run: Run, files: FileToBackUp[]): Promise<CloudBackupEntry[]> {
+    // FL-721 pre-flight: a file a seal, unseal or rewrap is replacing now (a `.fllk.tmp` sibling) is left
+    // for the next run. Only people with a Locked key file can have one.
+    const lockedOwners = await lockedKeyOwners(StorageCore.getMediaLocation());
+    const busy =
+      lockedOwners.size > 0
+        ? await pathsBeingReplaced(
+            files.filter(({ ownerId }) => ownerId && lockedOwners.has(ownerId)).map(({ path }) => path),
+          )
+        : new Set<string>();
+    if (busy.size > 0) {
+      this.logger.log(
+        `Cloud backup run ${run.id}: ${busy.size} Locked files are being encrypted now; the next run backs them up`,
+      );
+      run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + busy.size };
+    }
     const hashed: HashedFile[] = [];
     for (const file of files) {
+      if (busy.has(file.path)) {
+        continue;
+      }
       const found = await this.hashed(run, file);
       if (found) {
         hashed.push(found);
@@ -2616,6 +2708,7 @@ export class CloudBackupService {
     }
 
     await this.index.upsertEntries(run.progress.result.manifestId!, recorded);
+    return recorded;
   }
 
   private async hashed(run: Run, file: FileToBackUp): Promise<HashedFile | null> {
@@ -2630,6 +2723,19 @@ export class CloudBackupService {
       return null;
     }
 
+    // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's, so a
+    // mismatch is not a change; its owner (the first recipient, whoever's asset row lists the path) must
+    // have a key file in this backup (see `backUpProfiles`). Checked before the verified fast path too.
+    // A file that is encrypted but whose header cannot be read counts as keyless (fail safe), never as plain.
+    const ownerKeyId = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
+    const sealed = ownerKeyId !== null;
+    if (ownerKeyId && !run.progress.result.sealedKeyIds.includes(ownerKeyId)) {
+      run.progress.result = {
+        ...run.progress.result,
+        sealedKeyIds: [...run.progress.result.sealedKeyIds, ownerKeyId],
+      };
+    }
+
     // The checksum on record stands for the file only while its size is the same and it has not been
     // written since the checksum was taken; anything else is hashed now.
     const { recorded } = file;
@@ -2642,7 +2748,7 @@ export class CloudBackupService {
     }
 
     const sha256 = (await this.cryptoRepository.hashFile(file.path, 'sha256')).toString('hex');
-    if (recorded && recorded.sha256 !== sha256) {
+    if (recorded && recorded.sha256 !== sha256 && !sealed) {
       run.progress.result = { ...run.progress.result, changed: run.progress.result.changed + 1 };
     }
     return { ...file, sha256, size: stats.size, mtime: stats.mtime };
@@ -2782,6 +2888,7 @@ export class CloudBackupService {
     yield `${JSON.stringify(header).slice(0, -1)},"assets":{`;
 
     const profiles: string[] = [];
+    const lockedKeys: string[] = [];
     type ManifestAsset = { id: string; owner: string | null; files: CloudBackupManifestFile[] };
     // held in an object: the asset in hand changes inside the loop, which narrowing a local cannot follow
     const pending: { asset: ManifestAsset | null } = { asset: null };
@@ -2841,7 +2948,9 @@ export class CloudBackupService {
         };
         if (!entry.assetId) {
           if (entry.ownerId) {
-            profiles.push(`${JSON.stringify(entry.ownerId)}:${JSON.stringify(file)}`);
+            (entry.role === LOCKED_KEY_BACKUP_ROLE ? lockedKeys : profiles).push(
+              `${JSON.stringify(entry.ownerId)}:${JSON.stringify(file)}`,
+            );
           }
           continue;
         }
@@ -2863,7 +2972,9 @@ export class CloudBackupService {
     }
     const albums = await this.index.getAlbumRecords([...albumIds]);
     const persons = await this.index.getPersonRecords(people.values().toArray());
-    yield `},"profiles":{${profiles.join(',')}},"albums":${JSON.stringify(Object.fromEntries(albums))},"people":${JSON.stringify(Object.fromEntries(persons))}}`;
+    // FL-721: only when someone has a key file, so a manifest without one reads as it always did
+    const keys = lockedKeys.length > 0 ? `,"lockedKeys":{${lockedKeys.join(',')}}` : '';
+    yield `},"profiles":{${profiles.join(',')}}${keys},"albums":${JSON.stringify(Object.fromEntries(albums))},"people":${JSON.stringify(Object.fromEntries(persons))}}`;
   }
 
   private async finish(run: Run) {
@@ -3386,7 +3497,19 @@ export class CloudBackupService {
           snapshot.owner
             ? this.restoreOwnerLibrary(operation, claimToken, manifest, snapshot, plan.files, current)
             : this.restoreLibrary(manifest, snapshot, plan.files, library, current),
+        // FL-721: a key file that became live has a row to match, and no stale key loaded anywhere
+        completedFile: (file, outcome) => this.onLockedKeyRestored(file, outcome, mediaLocation),
       });
+      if (done && inPlace) {
+        // FL-721: an encrypted item this server's key file for its owner does not open is said so, never left
+        // silent; saved with the last checkpoint, so the owner's Activity entry carries it too
+        done.encryptedWithOlderKey = await countEncryptedWithOlderKey(plan.files, mediaLocation);
+        if (done.encryptedWithOlderKey > 0) {
+          this.logger.warn(
+            `Cloud backup restore ${operation.id}: ${done.encryptedWithOlderKey} restored items are encrypted with an older key that this server's Locked key file does not open`,
+          );
+        }
+      }
       if (done) {
         result = done;
         stop = await this.checkpointTask(operation, claimToken, done, { ...restoreUnits(done), progress: 100 });
@@ -3528,6 +3651,36 @@ export class CloudBackupService {
     return state;
   }
 
+  /**
+   * FL-721: a backed-up key file that a restore made live (no live one was there). The person's
+   * `locked_encryption` row is made to agree with it, and any key loaded for them, with the grants that
+   * hang on it, is dropped everywhere (`LockedKeyChanged`), so nothing reads with a key that is not on
+   * disk any more. A key file kept in the replaced folder changes nothing live.
+   */
+  private async onLockedKeyRestored(
+    file: CloudBackupRestoreFile,
+    outcome: 'written' | 'skipped' | 'replaced',
+    mediaLocation: string,
+  ) {
+    if (file.role !== LOCKED_KEY_BACKUP_ROLE || !file.inPlace || outcome === 'skipped') {
+      return;
+    }
+    const userId = basename(file.target, '.json');
+    if (lockedKeyFilePath(mediaLocation, userId) !== file.target) {
+      return;
+    }
+    const restored = await readLockedKeyFile(file.target, userId);
+    if (restored) {
+      try {
+        await matchLockedEncryptionRow(this.lockedEncryptionRepository, restored, { create: true });
+      } catch (error) {
+        // an account that is gone has no row to match; its key file still serves the recovery CLI
+        this.logger.warn(`Could not match a restored Locked key file to its account: ${errorMessage(error)}`);
+      }
+    }
+    this.websocketRepository.serverSend('LockedKeyChanged', { userId });
+  }
+
   private async recordRestore(
     operation: MediaOperation,
     snapshot: CloudBackupRestoreSnapshot,
@@ -3552,6 +3705,8 @@ export class CloudBackupService {
         ...(result.databaseFile && { databaseFile: result.databaseFile }),
         ...(result.recreated > 0 && { recreated: result.recreated }),
         ...(result.detailsRestored > 0 && { detailsRestored: result.detailsRestored }),
+        ...(result.encryptedWithOlderKey > 0 && { encryptedWithOlderKey: result.encryptedWithOlderKey }),
+        ...(result.lockedKeysKept > 0 && { lockedKeysKept: result.lockedKeysKept }),
         ...(error && { error }),
       },
     }));
@@ -4463,6 +4618,7 @@ export class CloudBackupService {
     for (const file of [
       ...Object.values(manifest.assets).flatMap((asset) => asset.files),
       ...Object.values(manifest.profiles),
+      ...Object.values(manifest.lockedKeys ?? {}),
     ]) {
       const object = manifestFileObjectKey(file);
       const prior = expected.get(object);
@@ -5158,6 +5314,8 @@ export class CloudBackupService {
       databaseFile: restore.databaseFile ?? null,
       recreated: restore.recreated ?? 0,
       detailsRestored: restore.detailsRestored ?? 0,
+      encryptedWithOlderKey: restore.encryptedWithOlderKey ?? 0,
+      lockedKeysKept: restore.lockedKeysKept ?? 0,
       error: restore.error ?? null,
     };
   }

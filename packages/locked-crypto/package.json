@@ -1,0 +1,32 @@
+{
+  "name": "@frameleaf/locked-crypto",
+  "description": "Encrypted file format and key files for Frameleaf Locked encryption",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GNU Affero General Public License version 3",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Frameleaf/frameleaf-app.git",
+    "directory": "packages/locked-crypto"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc6 -p tsconfig.json",
+    "check": "tsc6 -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.4"
+  }
+}

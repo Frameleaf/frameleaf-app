@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { AssetLockReason, AssetVisibility, StudioExportVersionState } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { isMotionOfLockedStill } from 'src/utils/database.js';
+import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
 import { isLocked } from 'src/utils/locked.js';
 
 /**
@@ -173,9 +174,18 @@ export const releaseDerivedResults = async (db: Kysely<DB>, assetIds: string[]):
     if (results.length === 0) {
       return released;
     }
+    // FL-721 (spec §7.3): a result whose files its owner's Locked encryption covers is decrypted
+    // before it leaves Locked; its lock is marked and removed by the unseal job, which then releases
+    // the results made from it in turn
+    await sql`
+      UPDATE asset_lock SET "pendingUnlockAt" = coalesce("pendingUnlockAt", now())
+      WHERE "assetId" = ANY(${results}::uuid[]) AND inherited = true
+        AND EXISTS (SELECT 1 FROM asset WHERE asset.id = asset_lock."assetId" AND ${encryptsFilesOf('asset')})
+    `.execute(db);
     const unlocked = await sql<{ assetId: string }>`
       DELETE FROM asset_lock
       WHERE "assetId" = ANY(${results}::uuid[]) AND inherited = true
+        AND NOT EXISTS (SELECT 1 FROM asset WHERE asset.id = asset_lock."assetId" AND ${encryptsFilesOf('asset')})
       RETURNING "assetId"
     `.execute(db);
     const next = unlocked.rows.map((row) => row.assetId);

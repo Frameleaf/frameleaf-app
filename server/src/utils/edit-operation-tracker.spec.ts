@@ -4,6 +4,7 @@ import { publicationTransaction } from 'src/queue/transaction.js';
 import { QueueExecution } from 'src/queue/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EDIT_OPERATION_REDISPATCH_MS, EditOperationEdit } from 'src/utils/edit-operation.js';
+import { LOCKED_DEFERRAL_DELAY_MS, LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 
 const LEASE_MS = 30_000;
 
@@ -171,6 +172,36 @@ describe(EditOperationTracker.name, () => {
         { retry: true },
       );
       expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('hands the row back for an hour, without failing it, while the Locked key is not loaded (FL-721)', async () => {
+      operations.beginJobQueueRun.mockResolvedValue({
+        ...claimed,
+        operation: { ...claimed.operation, createdAt: new Date() },
+      });
+
+      await expect(sut.execute('op-1', () => Promise.reject(new LockedKeyUnavailableError(['owner-1'])))).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(operations.requeue).toHaveBeenCalledWith('op-1', 'token-1', {
+        delayMs: LOCKED_DEFERRAL_DELAY_MS,
+        returnAttempt: true,
+      });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('fails as usual once an edit has waited 72 hours for the Locked key (FL-721)', async () => {
+      operations.beginJobQueueRun.mockResolvedValue({
+        ...claimed,
+        operation: { ...claimed.operation, createdAt: new Date(Date.now() - 73 * 60 * 60 * 1000) },
+      });
+      const error = new LockedKeyUnavailableError(['owner-1']);
+
+      await expect(sut.execute('op-1', () => Promise.reject(error))).rejects.toBe(error);
+
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalled();
     });
 
     it('fails the row and rethrows when the executor throws', async () => {

@@ -10,7 +10,7 @@ import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
 import { ImageEncodingSchema, unknownImageEncoding } from 'src/dtos/image-encoding.dto.js';
 import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
-import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
+import { PartnerLockedEncryptionSchema, PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
 import { LocationInsightSchema } from 'src/dtos/photo-locations.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
@@ -100,6 +100,10 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own asset when partner sharing copied it from another library (GET /assets/{id})',
+    ),
+    // FL-721
+    lockedEncryption: PartnerLockedEncryptionSchema.optional().describe(
+      "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})",
     ),
     libraryId: z
       .uuidv4()

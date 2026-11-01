@@ -211,6 +211,10 @@ export class MediaRecoveryService {
               expected: staged,
               deep: true,
             });
+        if (current.status === 'encrypted') {
+          // FL-721 (spec §8.3): an encrypted Locked original is never repaired or replaced from here
+          return { outcome: 'needs-review', reason: current.reason };
+        }
         if (['timeout', 'transient', 'unsupported'].includes(current.status)) {
           return { outcome: current.status === 'unsupported' ? 'needs-review' : 'retry', reason: current.reason };
         }

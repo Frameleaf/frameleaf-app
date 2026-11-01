@@ -53,6 +53,7 @@ import {
   type CloudBackupRestoreFile,
   type CloudBackupRestoreSnapshot,
   CloudBackupRestorer,
+  countEncryptedWithOlderKey,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
@@ -171,17 +172,25 @@ export class BuddyBackupRestoreService {
       operation.status === MediaOperationStatus.Completed && Array.isArray(operation.result?.preservedVersionAssetIds)
         ? operation.result.preservedVersionAssetIds.length
         : 0;
+    const olderKey = operation.result?.encryptedWithOlderKey;
+    const encryptedWithOlderKey = Number.isSafeInteger(olderKey) && (olderKey as number) > 0 ? (olderKey as number) : 0;
+    const notes = [
+      preserved
+        ? `Existing originals and their current saved versions were kept for ${preserved} item(s). Choose replace to restore their backed-up versions.`
+        : null,
+      // FL-721 (spec §9): said, never left silent
+      encryptedWithOlderKey
+        ? `${encryptedWithOlderKey} restored Locked item(s) are encrypted with an older key that this server's key file does not open.`
+        : null,
+    ].filter((note): note is string => !!note);
     return {
       id,
       state: operation.status,
       progress: operation.progress,
       phase: String(operation.result?.phase ?? operation.status),
       recoveryId: typeof operation.result?.recoveryId === 'string' ? operation.result.recoveryId : null,
-      error:
-        operation.error ??
-        (preserved
-          ? `Existing originals and their current saved versions were kept for ${preserved} item(s). Choose replace to restore their backed-up versions.`
-          : null),
+      encryptedWithOlderKey,
+      error: operation.error ?? (notes.length > 0 ? notes.join(' ') : null),
     };
   }
 
@@ -457,6 +466,7 @@ export class BuddyBackupRestoreService {
     if (request.scope === 'server')
       selectedFiles.push(
         ...Object.values(manifest.library.profiles),
+        ...Object.values(manifest.library.lockedKeys ?? {}),
         ...manifest.dependencies,
         ...manifest.configurationFiles,
         ...(manifest.library.database ? [manifest.library.database] : []),
@@ -1700,9 +1710,15 @@ export class BuddyBackupRestoreService {
         });
         if (!done) throw new RestoreStopped();
         await this.verifyFiles(operation.id, plan.files);
+        // FL-721: an encrypted item no key file on this server opens for its owner is said so
+        const encryptedWithOlderKey = await countEncryptedWithOlderKey(plan.files, StorageCore.getMediaLocation());
+        if (encryptedWithOlderKey > 0)
+          this.logger.warn(
+            `Buddy restore ${operation.id}: ${encryptedWithOlderKey} restored items are encrypted with an older key that this server's Locked key file does not open`,
+          );
         if (
           !(await this.operations.setBulkResult(operation.id, token, {
-            result: done,
+            result: { ...done, encryptedWithOlderKey },
             processedUnits: done.files,
             totalUnits: done.filesTotal,
             progress: 100,
@@ -1863,6 +1879,8 @@ export class BuddyBackupRestoreService {
         : [
             ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
             ...Object.values(manifest.library.profiles),
+            // FL-721: published with mode 0600 like every recovered file, next to the database they match
+            ...Object.values(manifest.library.lockedKeys ?? {}),
             ...manifest.dependencies,
             ...manifest.configurationFiles,
           ];

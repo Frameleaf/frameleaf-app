@@ -32,6 +32,27 @@ describe('Locked PIN (FL-517)', () => {
     expect(screen.getByText('After you unlock, Locked photos hide again after 15 minutes.')).toBeInTheDocument();
   });
 
+  it('with Locked encryption on, offers no Clear PIN and opens the encryption page (FL-721)', async () => {
+    sdkMock.getLockedEncryption.mockResolvedValue({ enabled: true, mode: 'pin' } as never);
+    render(PinSection);
+
+    expect(
+      await screen.findByText(
+        'Frameleaf can’t show it to you. Your Locked files are encrypted with it, so if you forget it, only your recovery key can reset it.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear PIN' })).toBeNull();
+    expect(screen.getByText('On. Your Locked files are encrypted with your PIN.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+  });
+
+  it('keeps Clear PIN disabled while it can’t tell whether Locked encryption is on (FL-721)', async () => {
+    sdkMock.getLockedEncryption.mockRejectedValue(new Error('offline'));
+    render(PinSection);
+
+    expect(await screen.findByRole('button', { name: 'Clear PIN' })).toBeDisabled();
+  });
+
   it('does not offer the choice before a PIN is set', async () => {
     sdkMock.getAuthStatus.mockResolvedValue({ pinCode: false } as never);
     render(PinSection);

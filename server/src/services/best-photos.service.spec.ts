@@ -2,6 +2,8 @@ import { vitest } from 'vitest';
 import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { factory } from 'test/small.factory.js';
@@ -61,6 +63,44 @@ describe(BestPhotosService.name, () => {
     expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
     expect(mediaRepository.transcode).not.toHaveBeenCalled();
     expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+  });
+
+  it('reads an encrypted Locked preview through a plain copy, and waits for the key without failing', async () => {
+    const locked = await lockedFixture('user-1');
+    try {
+      const plain = Buffer.from('a plain preview');
+      const previewFile = await locked.seal('preview.jpg', plain, 'image/jpeg');
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue({
+        id: 'asset-1',
+        ownerId: 'user-1',
+        type: AssetType.Image,
+        status: AssetStatus.Active,
+        deletedAt: null,
+        visibility: AssetVisibility.Timeline,
+        originalFileName: 'vacation.jpg',
+        width: 4000,
+        height: 3000,
+        previewFile,
+        faceCount: 1,
+      });
+
+      await expect(sut.handleScore({ id: 'asset-1' })).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+      expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+
+      locked.loadKey();
+      let read: Buffer | undefined;
+      mediaRepository.scoreThumbnailCandidate.mockImplementation(async (path: string) => {
+        expect(path).not.toBe(previewFile);
+        read = await import('node:fs/promises').then((fs) => fs.readFile(path));
+        return 100;
+      });
+      await expect(sut.handleScore({ id: 'asset-1' })).resolves.toBe(JobStatus.Success);
+      expect(read).toEqual(plain);
+      expect(await locked.copiesLeft()).toBe(0);
+    } finally {
+      await locked.cleanup();
+    }
   });
 
   it('should score good images higher than low-quality images', async () => {

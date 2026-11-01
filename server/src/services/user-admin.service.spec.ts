@@ -32,6 +32,23 @@ describe(UserAdminService.name, () => {
     mocks.session.delete.mockResolvedValue();
   });
 
+  it('admin user response includes lockedEncryption', async () => {
+    mocks.lockedEncryption.get.mockResolvedValueOnce({ userId: userStub.user1.id, mode: 'pin', status: 'on' } as never);
+    await expect(sut.get(authStub.admin, userStub.user1.id)).resolves.toMatchObject({ lockedEncryption: true });
+    await expect(sut.get(authStub.admin, userStub.user1.id)).resolves.toMatchObject({ lockedEncryption: false });
+  });
+
+  it('admin user list says who has Locked encryption on, in one query', async () => {
+    mocks.user.getList.mockResolvedValue([userStub.admin, userStub.user1]);
+    mocks.lockedEncryption.getUserIds.mockResolvedValue(new Set([userStub.user1.id]));
+    const users = await sut.search(authStub.admin, {});
+    expect(users.map(({ id, lockedEncryption }) => ({ id, lockedEncryption }))).toEqual([
+      { id: userStub.admin.id, lockedEncryption: false },
+      { id: userStub.user1.id, lockedEncryption: true },
+    ]);
+    expect(mocks.lockedEncryption.getUserIds).toHaveBeenCalledTimes(1);
+  });
+
   describe('create', () => {
     it('should not create a user if there is no local admin account', async () => {
       mocks.user.getAdmin.mockResolvedValueOnce(void 0);
@@ -293,6 +310,24 @@ describe(UserAdminService.name, () => {
   });
 
   describe('update', () => {
+    // FL-721 (spec §10, owner): clearing or changing the PIN would leave the files unopenable
+    it.each([{ pinCode: null }, { pinCode: '654321' }])(
+      'admin update with %j returns 409 while encryption is on',
+      async (dto) => {
+        mocks.lockedEncryption.get.mockResolvedValue({ userId: userStub.user1.id, mode: 'pin', status: 'on' } as never);
+
+        await expect(sut.update(authStub.admin, userStub.user1.id, dto)).rejects.toBeInstanceOf(ConflictException);
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.lockAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it('admin update leaves other fields editable while encryption is on', async () => {
+      mocks.lockedEncryption.get.mockResolvedValue({ userId: userStub.user1.id, mode: 'pin', status: 'on' } as never);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      await expect(sut.update(authStub.admin, userStub.user1.id, { name: 'New name' })).resolves.toBeDefined();
+    });
+
     // FL-34 (ported from PR131 bb70ad841f): a credential reset revokes the target's elevation everywhere
     it.each([{ pinCode: null }, { pinCode: '654321' }, { password: 'new-password' }])(
       'revokes only the target user elevation after a credential update: %j',

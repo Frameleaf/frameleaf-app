@@ -15,8 +15,9 @@ import { BaseService } from 'src/services/base.service.js';
 import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
-import { nextArchiveName } from 'src/utils/file.js';
+import { lockedViewerOf, nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
+import { lockedArchiveInput } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
@@ -169,13 +170,14 @@ export class DownloadService extends BaseService {
       // As shown: the owner's current develop version takes the place of any other edited file.
       const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
       const name = manifestNames.get(assetId) ?? nextArchiveName(paths, archiveFileName(asset, dto));
-      zip.addFile(await this.resolveArchivePath(asset, dto), name);
+      // FL-721 (spec §8.1): an encrypted file goes in decrypted, as a stream for this viewer
+      zip.addFile(await lockedArchiveInput(await this.resolveArchivePath(asset, dto), lockedViewerOf(auth)), name);
 
       // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
       const sidecar = sidecars.get(assetId);
       const generated = details.get(assetId);
       if (sidecar) {
-        zip.addFile(sidecar, nextArchiveName(paths, `${name}.xmp`));
+        zip.addFile(await lockedArchiveInput(sidecar, lockedViewerOf(auth)), nextArchiveName(paths, `${name}.xmp`));
       } else if (generated) {
         // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
         const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });

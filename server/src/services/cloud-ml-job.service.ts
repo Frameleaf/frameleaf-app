@@ -63,6 +63,7 @@ import {
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -115,6 +116,7 @@ import {
   plannedWorkers,
 } from 'src/utils/cloud-ml-job.js';
 import { getConfig } from 'src/utils/config.js';
+import { lockedViewerOf } from 'src/utils/file.js';
 import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
@@ -139,6 +141,8 @@ import {
   pausedException,
   upscaleResultSchema,
 } from 'src/utils/frameleaf-cloud.js';
+import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
   audioReattachOffsetSeconds,
@@ -326,6 +330,8 @@ export class CloudMlJobService {
     private restorationRepository: AssetRestorationRepository,
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    /** FL-721: a restoration of a Locked item is sealed once published. */
+    private lockedFileRepository?: LockedFileRepository,
   ) {
     this.logger.setContext(CloudMlJobService.name);
   }
@@ -487,17 +493,23 @@ export class CloudMlJobService {
     try {
       prepared = copy
         ? this.fromPreparedCopy(copy, workload, sizes, durationSeconds, smooth ? 1 : settings.upscale)
-        : await this.prepareInput(source, {
-            workDir,
-            stage: dto.stage,
-            workload,
-            sourceType,
-            sizes,
-            durationSeconds,
-            region: settings.region,
-            crop: !smooth,
-            upscale: smooth ? 1 : settings.upscale,
-          });
+        : // FL-721 (spec §8.2): a sealed original is read from a plain copy, for a viewer allowed its key
+          await withPlainCopy(
+            source.originalPath,
+            (originalPath) =>
+              this.prepareInput(originalPath === source.originalPath ? source : { ...source, originalPath }, {
+                workDir,
+                stage: dto.stage,
+                workload,
+                sourceType,
+                sizes,
+                durationSeconds,
+                region: settings.region,
+                crop: !smooth,
+                upscale: smooth ? 1 : settings.upscale,
+              }),
+            { viewerId: lockedViewerOf(auth) },
+          );
     } catch (error) {
       await this.removeWorkDir(workDir);
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
@@ -1846,7 +1858,10 @@ export class CloudMlJobService {
     const original = snapshot.stage === 'preview' ? null : source.originalPath;
     const output =
       snapshot.sourceType === 'video'
-        ? await this.assembleVideo(run, outputs, original)
+        ? original
+          ? // FL-721: the audio is put back from a plain copy of a sealed original
+            await withPlainCopy(original, (plain) => this.assembleVideo(run, outputs, plain))
+          : await this.assembleVideo(run, outputs, null)
         : await this.assembleImage(run, outputs[0]);
 
     const files: PublishedFile[] = [];
@@ -1938,6 +1953,10 @@ export class CloudMlJobService {
     if (outcome === 'completed') {
       await this.removeJobFiles(snapshot);
       this.logger.log(`Frameleaf Cloud job ${operation.id} published ${snapshot.purpose} ${snapshot.stage} ${row.id}`);
+      // FL-721 (spec §7.2): the restoration files of a Locked item are sealed
+      await queueLockedSealOf({ lockedFile: this.lockedFileRepository, job: this.jobRepository, logger: this.logger }, [
+        snapshot.assetId,
+      ]);
     }
     return outcome;
   }
@@ -2858,6 +2877,14 @@ export class CloudMlJobService {
     if (source.type !== AssetType.Image && source.type !== AssetType.Video) {
       throw new BadRequestException('Only photos and videos can be sent to Frameleaf Cloud');
     }
+    // FL-721 (spec §8): a job's prepared inputs and results are kept on disk beside the thumbnails, up
+    // to a day for a whole video, so an encrypted Locked item is refused before anything is prepared,
+    // as Cloud ML batches refuse it; restoring it on this server keeps its work in the Locked folder
+    if (await isLockedPath(source.originalPath)) {
+      throw new BadRequestException(
+        'Frameleaf Cloud can’t work on an encrypted Locked item; restore it on this server instead',
+      );
+    }
     return source;
   }
 
@@ -3189,7 +3216,13 @@ export class CloudMlJobService {
       await this.removeWorkDir(dir);
       this.storageRepository.mkdirSync(dir);
       await this.notePrepared(dir, source.ownerId);
-      const { file, contentType } = await this.prepareFullVideo(source, dir);
+      // FL-721 (spec §8.2): a sealed original is read from a plain copy
+      const { file, contentType } = await withPlainCopy(
+        source.originalPath,
+        (originalPath) =>
+          this.prepareFullVideo(originalPath === source.originalPath ? source : { ...source, originalPath }, dir),
+        { viewerId: userId },
+      );
       const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(file);
       const copy: PreparedCopy = { file, contentType, bytes: sizeInBytes, sha256: sha256.toString('hex') };
       // written last: a copy without its record is never used

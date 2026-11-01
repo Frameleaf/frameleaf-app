@@ -1,5 +1,10 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { encryptFile, generateKeyPair } from '@frameleaf/locked-crypto';
+import { BadRequestException, HttpStatus, NotFoundException } from '@nestjs/common';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { OnThisDayData } from 'src/types.js';
 import {
   JobName,
@@ -12,8 +17,17 @@ import {
   PushEventType,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import {
+  LockedKeyUnavailableError,
+  clearLockedDeferrals,
+  clearLockedPathCache,
+  deferForLockedKey,
+  resetLockedTmpCheck,
+} from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { MemoryFactory } from 'test/factories/memory.factory.js';
 import { getForMemory } from 'test/mappers.js';
@@ -1135,7 +1149,7 @@ describe(MemoryService.name, () => {
         finalize: vitest.fn().mockImplementation(() => Promise.resolve(stream.end())),
       } as never);
       mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
-      return { addFile };
+      return { addFile, stream };
     };
 
     it('should skip a run it cannot claim', async () => {
@@ -1233,6 +1247,42 @@ describe(MemoryService.name, () => {
       expect(partial).toBe(`${target}.partial`);
     });
 
+    it('puts the run back to pending, not failed, while the job waits for the Locked key (FL-721)', async () => {
+      const ownerId = newUuid();
+      const asset = AssetFactory.create({ ownerId });
+      const run = exportRun({ ownerId, assetIds: [asset.id], assetCount: 1 });
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.asset.getByIds.mockResolvedValue([asset] as never);
+      const { addFile, stream } = givenZip();
+      addFile.mockImplementation(() => {
+        const error = new LockedKeyUnavailableError([ownerId]);
+        deferForLockedKey(error);
+        throw error;
+      });
+      const execution = {
+        claim: { id: 'job-1', attempt: 1, data: {} },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+
+      try {
+        await expect(
+          queueExecution.run(execution, () => sut.handleMemoryExport({ id: run.id })),
+        ).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+      } finally {
+        clearLockedDeferrals();
+      }
+
+      expect(execution.dependencyReason).toBe('locked-key-unavailable');
+      // the open archive and its file are closed, not left behind on every deferral
+      expect(stream.destroyed).toBe(true);
+      expect(mocks.storage.unlink).toHaveBeenCalled();
+      expect(mocks.memory.updateExport).toHaveBeenCalledWith(run.id, { status: MemoryExportStatus.Pending });
+      expect(mocks.memory.updateExport).not.toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({ status: MemoryExportStatus.Failed }),
+      );
+    });
+
     it('should fail the run and remove the partial file when writing throws', async () => {
       const ownerId = newUuid();
       const run = exportRun({ ownerId, assetIds: [newUuid()], assetCount: 1 });
@@ -1246,6 +1296,121 @@ describe(MemoryService.name, () => {
         run.id,
         expect.objectContaining({ status: MemoryExportStatus.Failed, error: 'database is gone' }),
       );
+    });
+
+    describe('Locked encryption (FL-721)', () => {
+      const ownerId = newUuid();
+      let dir: string;
+      let owner: ReturnType<typeof generateKeyPair>;
+
+      const sealFile = async (name: string, bytes: Buffer) => {
+        const path = join(dir, name);
+        await fs.writeFile(`${path}.src`, bytes);
+        await encryptFile(`${path}.src`, path, [{ publicKey: owner.publicKey }], {
+          assetId: newUuid(),
+          kind: 'other',
+          originalFileName: name,
+          mime: 'application/octet-stream',
+        });
+        return path;
+      };
+
+      beforeEach(async () => {
+        dir = await fs.mkdtemp(join(tmpdir(), 'memory-locked-'));
+        vi.stubEnv('FRAMELEAF_LOCKED_TMP', join(dir, 'shm'));
+        vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'true');
+        resetLockedTmpCheck();
+        clearLockedPathCache();
+        owner = generateKeyPair();
+        lockedKeys.load(ownerId, owner.publicKey, Buffer.from(owner.privateKey), null);
+        mocks.memory.updateExport.mockResolvedValue(void 0);
+      });
+
+      afterEach(async () => {
+        lockedKeys.clear();
+        vi.unstubAllEnvs();
+        resetLockedTmpCheck();
+        await fs.rm(dir, { recursive: true, force: true });
+      });
+
+      it('builds an export of encrypted originals in the Locked folder and stores it encrypted', async () => {
+        const asset = AssetFactory.create({
+          ownerId,
+          originalPath: await sealFile('IMG_1.jpg', Buffer.from('pixels')),
+        });
+        const run = exportRun({ ownerId, assetIds: [asset.id], assetCount: 1 });
+        mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+        mocks.memory.getExportForJob.mockResolvedValue({ ...run, cancelRequestedAt: null } as never);
+        mocks.asset.getByIds.mockResolvedValue([asset] as never);
+        mocks.storage.realpath.mockImplementation((path: string) => Promise.resolve(path));
+        mocks.storage.stat.mockResolvedValue({ size: 1 } as never);
+        givenZip();
+        const encrypt = vi.spyOn(sut['lockedEncryption'], 'encryptForOwner').mockResolvedValue();
+
+        await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
+
+        const [plain] = mocks.storage.createWriteStream.mock.calls[0];
+        expect(plain.startsWith(join(dir, 'shm'))).toBe(true);
+        const [partial] = mocks.storage.rename.mock.calls[0];
+        expect(encrypt).toHaveBeenCalledWith(
+          plain,
+          partial,
+          ownerId,
+          expect.objectContaining({ mime: 'application/zip' }),
+        );
+        expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(dirname(plain), { recursive: true, force: true });
+      });
+
+      it('fails rather than write decrypted bytes to disk when an item is sealed after the scan', async () => {
+        const path = join(dir, 'IMG_2.jpg');
+        await fs.writeFile(path, 'pixels');
+        const asset = AssetFactory.create({ ownerId, originalPath: path });
+        const run = exportRun({ ownerId, assetIds: [asset.id], assetCount: 1 });
+        mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+        mocks.asset.getByIds.mockResolvedValue([asset] as never);
+        // the seal job replaces the original between the scan and the read
+        mocks.storage.realpath.mockImplementation(async () => {
+          await fs.rm(path);
+          const sealed = await sealFile('IMG_2.jpg', Buffer.from('pixels'));
+          clearLockedPathCache();
+          return sealed;
+        });
+        const { addFile } = givenZip();
+
+        await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Failed);
+
+        expect(addFile).not.toHaveBeenCalled();
+        expect(mocks.memory.updateExport).toHaveBeenCalledWith(
+          run.id,
+          expect.objectContaining({ error: expect.stringContaining('encrypted while the export ran') }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.zip\.partial$/));
+      });
+
+      it('serves an encrypted export only while the owner key is loaded', async () => {
+        const path = await sealFile('export.zip', Buffer.from('zip bytes'));
+        mocks.memory.getExport.mockResolvedValue(
+          exportRun({
+            ownerId,
+            status: MemoryExportStatus.Ready,
+            path,
+            expiresAt: new Date(Date.now() + 60_000),
+          }) as never,
+        );
+        const auth = factory.auth({ user: { id: ownerId } });
+
+        const { stream } = await sut.downloadExport(auth, newUuid());
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) {
+          chunks.push(chunk as Buffer);
+        }
+        expect(Buffer.concat(chunks).toString()).toBe('zip bytes');
+        expect(mocks.storage.createReadStream).not.toHaveBeenCalled();
+
+        // Lock now: the archive asks for the PIN or passphrase again
+        lockedKeys.clear();
+        await expect(sut.downloadExport(auth, newUuid())).rejects.toMatchObject({ status: HttpStatus.LOCKED });
+      });
     });
   });
 

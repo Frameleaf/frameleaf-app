@@ -13,6 +13,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { type DB } from 'src/schema/index.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { LockedKeyMessage, LockedKeyRelay, isLockedKeyMessage, isLockedKeyReady } from 'src/utils/locked-key-ipc.js';
 import {
   API_STARTUP_RETRY_EXIT_CODE,
   SERVER_OWNER_READY_MESSAGE,
@@ -40,6 +41,12 @@ const setEdgeSecret = () => {
 };
 
 /**
+ * FL-721 (spec §4.3): the workers that receive the Locked keys the API process loads: the job worker only.
+ * The edge worker faces the internet and only proxies to the API over loopback, so it never holds a key.
+ */
+const LOCKED_KEY_WORKERS: ReadonlySet<FrameleafWorker> = new Set([FrameleafWorker.Microservices]);
+
+/**
  * Manages worker lifecycle
  */
 export class Workers {
@@ -47,8 +54,18 @@ export class Workers {
    * Currently running workers
    */
   workers: Partial<
-    Record<FrameleafWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void; stop: () => void }>
+    Record<
+      FrameleafWorker,
+      {
+        kill: (signal: NodeJS.Signals) => Promise<void> | void;
+        stop: () => void;
+        send: (message: LockedKeyMessage) => void;
+      }
+    >
   > = {};
+
+  /** FL-721: the Locked keys loaded in the API process, replayed to a worker that (re)starts. */
+  private lockedKeys = new LockedKeyRelay();
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
   private databaseRestarts = new Set<FrameleafWorker>();
@@ -225,6 +242,7 @@ export class Workers {
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
     let stop: () => void;
+    let send: (message: LockedKeyMessage) => void;
     let stopped: Promise<void> | undefined;
 
     // FL-165: the edge worker is a process of its own like the API: it holds the remote access
@@ -256,6 +274,10 @@ export class Workers {
           failed();
         }
       };
+      send = (message) => {
+        // a channel closing under a send is the worker exiting; the replay covers its restart
+        if (worker.connected) worker.send(message, () => {});
+      };
       // eslint-disable-next-line unicorn/prefer-hoisting-branch-code
       anyWorker = worker;
     } else {
@@ -269,10 +291,25 @@ export class Workers {
 
       kill = async () => void (await worker.terminate());
       stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
+      send = (message) => worker.postMessage(message);
       anyWorker = worker;
     }
 
+    if (name === FrameleafWorker.Api) {
+      // a new API process holds no keys, so neither may anything it handed keys to before
+      for (const message of this.lockedKeys.clear()) this.relayLockedKey(message);
+    }
+
     anyWorker.on('message', (message: { type?: string }) => {
+      if (name === FrameleafWorker.Api && isLockedKeyMessage(message)) {
+        if (this.lockedKeys.record(message)) this.relayLockedKey(message);
+        return;
+      }
+      // the worker listens now: hand it the keys loaded so far (a restarted worker holds none)
+      if (LOCKED_KEY_WORKERS.has(name) && isLockedKeyReady(message)) {
+        for (const locked of this.lockedKeys.replay()) send(locked);
+        return;
+      }
       if (message?.type !== 'database-unusable') return;
       this.databaseRestarts.add(name);
       void kill('SIGKILL');
@@ -284,12 +321,16 @@ export class Workers {
       else this.onExit(name, exitCode);
     });
 
-    this.workers[name] = { kill, stop };
+    this.workers[name] = { kill, stop, send };
     this.workerStartedAt.set(name, Date.now());
     if (name === FrameleafWorker.Edge) {
       this.edgeStartedAt = Date.now();
       this.edgeStopRequested = false;
     }
+  }
+
+  private relayLockedKey(message: LockedKeyMessage) {
+    for (const name of LOCKED_KEY_WORKERS) this.workers[name]?.send(message);
   }
 
   onError(name: FrameleafWorker, error: Error) {

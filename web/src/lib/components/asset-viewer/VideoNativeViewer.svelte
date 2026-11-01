@@ -1,3 +1,13 @@
+<script lang="ts" module>
+  import { SvelteSet } from 'svelte/reactivity';
+
+  /**
+   * FL-721 (spec §8.1): videos the server refused to stream over HLS (400 on the manifest, as it
+   * answers for an encrypted Locked video). They play the video file directly from then on.
+   */
+  const hlsRefused = new SvelteSet<string>();
+</script>
+
 <script lang="ts">
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
@@ -107,7 +117,13 @@
   let playbackFailure = $state<VideoFailure>('load');
   let retryCount = $state(0);
   let playbackController: AbortController | undefined;
-  const useHls = $derived(featureFlagsManager.value.realtimeTranscoding && !playOriginalVideo);
+  // FL-721: an encrypted Locked video is never transcoded on the fly (HLS writes segments to disk);
+  // a partner's copy says so on the asset, and the owner's own is learnt from the server's refusal.
+  const directPlayOnly = $derived(
+    hlsRefused.has(assetId) ||
+      (assetId === asset.id && asset.visibility === AssetVisibility.Locked && !!asset.lockedEncryption),
+  );
+  const useHls = $derived(featureFlagsManager.value.realtimeTranscoding && !playOriginalVideo && !directPlayOnly);
   let assetFileUrl = $derived.by(() => {
     if (useHls) {
       return getAssetHlsUrl(assetId);
@@ -356,6 +372,15 @@
     const onFragmentLoaded = () => (rebuildCount = 0);
     const onError = (_: Events.ERROR, data: ErrorData) => {
       if (disposed) {
+        return;
+      }
+      // FL-721: the server plays this video only as a file (an encrypted Locked video); switch to it.
+      // ponytail: any fatal 400 on the manifest falls back to direct play, not only an encrypted video,
+      // and `hlsRefused` keeps it for the whole session (even if encryption is turned off later). That is
+      // deliberate: direct play always works, and asking HLS again per open would 400 every time.
+      if (data.fatal && data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR && data.response?.code === 400) {
+        dispose();
+        hlsRefused.add(assetId);
         return;
       }
       // 404 on a fragment can mean the server-side session has expired. Refetch

@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -32,6 +32,14 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetDevelopService, developImportStagingFolder } from 'src/services/asset-develop.service.js';
 import { checkAccess, requireAccess } from 'src/utils/access.js';
 import { batchExportName, matchBatchReturns } from 'src/utils/develop-batch.js';
+import { lockedViewerOf } from 'src/utils/file.js';
+import {
+  LockedKeyUnavailableError,
+  assertLockedReadable,
+  isLockedPath,
+  lockedKeyHttpException,
+  openLockedRead,
+} from 'src/utils/locked-read.js';
 
 export const batchStagingFolder = (ownerId: string, batchId: string) =>
   path.join(developImportStagingFolder(ownerId), 'batches', batchId);
@@ -157,6 +165,12 @@ export class DevelopBatchService {
       throw new ConflictException('Prepare the available originals before downloading this batch');
     const manifest = this.batchManifest(batch);
     if (manifest.items.length === 0) throw new ConflictException('This batch has no available prepared originals');
+    // FL-721: a sealed original needs the downloader's key; refused (423) before the archive starts
+    for (const item of batch.items) {
+      if (!item.available || item.preparationStatus !== 'prepared') continue;
+      const asset = await this.requireAsset(auth, item.assetId!);
+      await this.assertPlainReadable(asset.originalPath, auth);
+    }
     const zip = this.storage.createZipStream();
     const streams: Readable[] = [];
     zip.addFile(Buffer.from(JSON.stringify(manifest, null, 2)), 'frameleaf-roundtrip.json');
@@ -212,7 +226,7 @@ export class DevelopBatchService {
     auth = await this.liveAuth(auth, Permission.AssetDownload);
     const asset = await this.requireAsset(auth, item.assetId!);
     await requireAccess(this.access, { auth, permission: Permission.AssetDownload, ids: [asset.id] });
-    if ((await this.crypto.hashFile(asset.originalPath, 'sha256')).toString('hex') !== item.sourceChecksum)
+    if ((await this.plainChecksum(asset.originalPath, auth)).toString('hex') !== item.sourceChecksum)
       throw new ConflictException('An original changed after export preparation');
     let source = asset.originalPath;
     if (sidecar) {
@@ -220,7 +234,7 @@ export class DevelopBatchService {
       if (!associated[0]) throw new ConflictException('The associated sidecar is no longer available');
       source = associated[0].path;
     }
-    const stream = this.storage.createPlainReadStream(source);
+    const stream = await this.openPlain(source, auth);
     let nextCheck = Date.now() + 500;
     try {
       for await (const bytes of stream) {
@@ -237,6 +251,53 @@ export class DevelopBatchService {
       stream.destroy();
     }
   }
+  /**
+   * FL-721 (spec §8.1): the bytes of a file that may be a sealed Locked file, decrypted for the person
+   * downloading it (their own key, or one they were granted). A plain file is read as it is.
+   */
+  private async openPlain(file: string, auth: AuthDto): Promise<Readable> {
+    if (!(await isLockedPath(file))) {
+      return this.storage.createPlainReadStream(file);
+    }
+    const viewerId = lockedViewerOf(auth);
+    if (viewerId === undefined) {
+      throw new LockedKeyUnavailableError([]);
+    }
+    return (await openLockedRead(file, viewerId)).stream as Readable;
+  }
+
+  /** The SHA-256 of the plaintext: what the export recorded, also when the original is sealed since. */
+  private async plainChecksum(file: string, auth: AuthDto): Promise<Buffer> {
+    if (!(await isLockedPath(file))) {
+      return this.crypto.hashFile(file, 'sha256');
+    }
+    const hash = createHash('sha256');
+    const stream = await this.openPlain(file, auth);
+    try {
+      for await (const chunk of stream as AsyncIterable<Buffer>) {
+        hash.update(chunk);
+      }
+    } finally {
+      stream.destroy();
+    }
+    return hash.digest();
+  }
+
+  private async assertPlainReadable(file: string, auth: AuthDto): Promise<void> {
+    if (!(await isLockedPath(file))) {
+      return;
+    }
+    const viewerId = lockedViewerOf(auth);
+    try {
+      if (viewerId === undefined) {
+        throw new LockedKeyUnavailableError([]);
+      }
+      await assertLockedReadable(file, viewerId);
+    } catch (error) {
+      throw error instanceof LockedKeyUnavailableError ? lockedKeyHttpException(error) : error;
+    }
+  }
+
   private async liveAuth(auth: AuthDto, permission: Permission): Promise<AuthDto> {
     const elevated = await this.repository.liveGrant(
       auth.user.id,

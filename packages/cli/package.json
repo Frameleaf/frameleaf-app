@@ -20,6 +20,7 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@frameleaf/locked-crypto": "workspace:*",
     "@frameleaf/sdk": "workspace:*",
     "@types/byte-size": "^8.1.2",
     "@types/cli-progress": "^3.11.6",

@@ -1,5 +1,7 @@
+import { SEGMENT_SIZE, encryptFile, generateKeyPair } from '@frameleaf/locked-crypto';
 import { NotFoundException } from '@nestjs/common';
 import express, { type NextFunction, type Response } from 'express';
+import { randomBytes } from 'node:crypto';
 import { access, constants, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +16,7 @@ import {
   getLivePhotoMotionFilename,
   sendFile,
 } from 'src/utils/file.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),
@@ -230,4 +233,119 @@ it('retains extension and paired-motion filename rules', () => {
   expect(getFilenameExtension('/media/.hidden')).toBe('');
   expect(getFileNameWithoutExtension('/media/Photo.DNG')).toBe('Photo');
   expect(getLivePhotoMotionFilename('Photo.HEIC', 'motion.MOV')).toBe('Photo.MOV');
+});
+
+describe('sending an encrypted Locked file (FL-721)', () => {
+  const OWNER = '00000000-0000-4000-8000-000000000001';
+  let directory: string;
+  let path: string;
+  let plain: Buffer;
+  let owner: ReturnType<typeof generateKeyPair>;
+
+  const app = (...args: [viewerId?: string | null]) => {
+    const viewerId = args.length > 0 ? args[0] : OWNER;
+    const logger = { debug: vi.fn(), error: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository;
+    const server = express();
+    server.get('/file', (_req, res, next) =>
+      sendFile(
+        res,
+        next,
+        () =>
+          new FileDownloadResponse({
+            path,
+            contentType: 'image/jpeg',
+            cacheControl: CacheControl.PrivateWithoutCache,
+            viewerId,
+          }),
+        logger,
+      ),
+    );
+    // the error handler Nest would install: HttpExceptions answer with their status and body
+    server.use((error: any, _req: any, res: any, _next: any) =>
+      res.status(error.getStatus?.() ?? 500).json(error.getResponse?.() ?? {}),
+    );
+    return server;
+  };
+
+  beforeEach(async () => {
+    accessMock.mockImplementation(async (...args) => (await vi.importActual<any>('node:fs/promises')).access(...args));
+    directory = await mkdtemp(join(tmpdir(), 'send-locked-'));
+    owner = generateKeyPair();
+    plain = randomBytes(SEGMENT_SIZE + 4000);
+    await writeFile(join(directory, 'plain.jpg'), plain);
+    path = join(directory, 'sealed.jpg');
+    await encryptFile(join(directory, 'plain.jpg'), path, [{ publicKey: owner.publicKey }], {
+      assetId: '00000000-0000-4000-8000-0000000000a1',
+      kind: 'original',
+      originalFileName: 'sealed.jpg',
+      mime: 'image/jpeg',
+    });
+    lockedKeys.load(OWNER, owner.publicKey, Buffer.from(owner.privateKey), null);
+  });
+
+  afterEach(async () => {
+    lockedKeys.clear();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it('Range: bytes=100-199 gives 206, Content-Range and exactly those bytes', async () => {
+    const result = await request(app())
+      .get('/file')
+      .set('Range', 'bytes=100-199')
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(206);
+    expect(result.headers['content-range']).toBe(`bytes 100-199/${plain.length}`);
+    expect(result.headers['content-length']).toBe('100');
+    expect(result.headers['accept-ranges']).toBe('bytes');
+    expect(result.headers['content-type']).toMatch(/^image\/jpeg/);
+    expect((result.body as Buffer).equals(plain.subarray(100, 200))).toBe(true);
+  });
+
+  it('sends the whole decrypted file with 200 without a range, and bytes=-500 as the last 500', async () => {
+    const binary = (res: any, done: any) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      res.on('end', () => done(null, Buffer.concat(chunks)));
+    };
+    const whole = await request(app()).get('/file').buffer(true).parse(binary).expect(200);
+    expect(whole.headers['content-length']).toBe(String(plain.length));
+    expect((whole.body as Buffer).equals(plain)).toBe(true);
+    const tail = await request(app()).get('/file').set('Range', 'bytes=-500').buffer(true).parse(binary).expect(206);
+    expect(tail.headers['content-range']).toBe(`bytes ${plain.length - 500}-${plain.length - 1}/${plain.length}`);
+    expect((tail.body as Buffer).equals(plain.subarray(-500))).toBe(true);
+  });
+
+  it('answers 416 for a range past the end', async () => {
+    const result = await request(app()).get('/file').set('Range', `bytes=${plain.length}-`).expect(416);
+    expect(result.headers['content-range']).toBe(`bytes */${plain.length}`);
+  });
+
+  it('answers 423 locked_key_unavailable without a key, and for a viewer without a grant', async () => {
+    const other = await request(app('00000000-0000-4000-8000-000000000002')).get('/file').expect(423);
+    expect(other.body.code).toBe('locked_key_unavailable');
+    lockedKeys.clear();
+    const none = await request(app()).get('/file').expect(423);
+    expect(none.body.code).toBe('locked_key_unavailable');
+  });
+
+  it('refuses an encrypted file when no viewer is known', async () => {
+    const result = await request(app(undefined)).get('/file').expect(423);
+    expect(result.body.code).toBe('locked_key_unavailable');
+  });
+
+  it('a plain file still goes through res.sendFile', async () => {
+    const f = fixture();
+    const file = new FileDownloadResponse({ ...f.file, path: join(directory, 'plain.jpg') });
+    await sendFile(f.res, f.next, () => file, f.log);
+    expect(f.response.sendFile).toHaveBeenCalledWith(file.path, { dotfiles: 'allow' }, expect.any(Function));
+  });
 });

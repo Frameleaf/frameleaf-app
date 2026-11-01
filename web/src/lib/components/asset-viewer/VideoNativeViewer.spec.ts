@@ -484,6 +484,64 @@ describe('VideoNativeViewer component', () => {
     play.mockRestore();
   });
 
+  describe('encrypted Locked videos (FL-721)', () => {
+    it('plays a partner’s encrypted Locked video directly instead of over HLS', () => {
+      featureFlagsManager.value.realtimeTranscoding = true;
+      const props = videoProps();
+      props.asset = {
+        ...props.asset,
+        visibility: AssetVisibility.Locked,
+        lockedEncryption: { openable: true, ownerName: 'Taylor' },
+      };
+      const viewer = renderViewer(props);
+      expect(viewer.container.querySelector('hls-video')).not.toBeInTheDocument();
+      expect(viewer.container.querySelector('video')).toHaveAttribute(
+        'src',
+        getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
+      );
+    });
+
+    it('falls back to direct play when the server refuses HLS with a 400, without an error', async () => {
+      featureFlagsManager.value.realtimeTranscoding = true;
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const props = videoProps();
+      props.asset = { ...props.asset, visibility: AssetVisibility.Locked };
+      const viewer = renderViewer(props);
+      await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+      const errorHandler = hlsMocks.instances[0].on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
+      errorHandler(Hls.Events.ERROR, {
+        fatal: true,
+        details: Hls.ErrorDetails.MANIFEST_LOAD_ERROR,
+        response: { code: 400 },
+      });
+      await waitFor(() =>
+        expect(viewer.container.querySelector('video')).toHaveAttribute(
+          'src',
+          getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
+        ),
+      );
+      expect(viewer.container.querySelector('hls-video')).not.toBeInTheDocument();
+      expect(viewer.queryByRole('alert')).not.toBeInTheDocument();
+      errorLog.mockRestore();
+    });
+  });
+
+  it('keeps HLS after a non-fatal 400 on the manifest (FL-721)', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const props = videoProps();
+    const viewer = renderViewer(props);
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const errorHandler = hlsMocks.instances[0].on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
+    errorHandler(Hls.Events.ERROR, {
+      fatal: false,
+      details: Hls.ErrorDetails.MANIFEST_LOAD_ERROR,
+      response: { code: 400 },
+    });
+    expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.assetId));
+    errorLog.mockRestore();
+  });
+
   it('reports fatal HLS failure and retries HLS without selecting original playback', async () => {
     featureFlagsManager.value.realtimeTranscoding = true;
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});

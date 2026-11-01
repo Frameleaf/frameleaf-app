@@ -17,7 +17,8 @@ import { AssetVisibility, CacheControl, JobName, JobStatus, Permission, QueueNam
 import { publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
-import { FileDownloadResponse } from 'src/utils/file.js';
+import { FileDownloadResponse, lockedViewerOf } from 'src/utils/file.js';
+import { isLockedPath, readPlainFile, withPlainCopy } from 'src/utils/locked-read.js';
 import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 import {
   FILMSTRIP_COUNT,
@@ -54,6 +55,8 @@ type StudioMediaSource = {
   path: string;
   version: string;
   folder: string;
+  /** FL-721: who the cache is made for (null: a job). A sealed video is read for them only. */
+  viewerId: string | null | undefined;
 };
 
 /**
@@ -104,8 +107,7 @@ export class StudioMediaService extends BaseService {
     const source = await this.resolveSource(auth, id);
     const mode: WaveformChannelMode = dto.channels ?? 'mono';
     const cachePath = join(source.folder, `waveform-${source.version}-${mode}.bin`);
-    const cached = await this.storageRepository
-      .readFile(cachePath)
+    const cached = await this.readCache(cachePath, source.viewerId)
       .then((buffer) => decodeWaveformPeaks(buffer))
       .catch(() => null);
     const peaks = cached ?? (await this.once(cachePath, () => this.generateWaveform(source, mode, cachePath)));
@@ -156,7 +158,12 @@ export class StudioMediaService extends BaseService {
 
     let filmstrip: Awaited<ReturnType<StudioMediaService['ensureFilmstrip']>>;
     try {
-      filmstrip = await this.ensureFilmstrip(await this.getSource(id), PLAYER_FILMSTRIP);
+      const source = await this.getSource(id);
+      if (await isLockedPath(source.path)) {
+        // FL-721 (spec §8.3): duplicate fingerprinting never decodes a sealed Locked video
+        return JobStatus.Skipped;
+      }
+      filmstrip = await this.ensureFilmstrip(source, PLAYER_FILMSTRIP);
     } catch (error) {
       if (error instanceof NotFoundException) {
         return JobStatus.Skipped; // file missing or nothing decodable
@@ -164,9 +171,12 @@ export class StudioMediaService extends BaseService {
       throw error;
     }
     const { index, spritePath } = filmstrip;
-    const grids = await this.mediaRepository.filmstripFrameGrids(
-      spritePath,
-      index.frames.map(({ x, y }) => ({ left: x, top: y, width: index.frameWidth, height: index.frameHeight })),
+    // FL-721: a sealed sprite is read from a plain copy
+    const grids = await withPlainCopy(spritePath, (path) =>
+      this.mediaRepository.filmstripFrameGrids(
+        path,
+        index.frames.map(({ x, y }) => ({ left: x, top: y, width: index.frameWidth, height: index.frameHeight })),
+      ),
     );
     await publishJobResult(() =>
       this.duplicateRepository.upsertVideoFingerprint({
@@ -224,7 +234,7 @@ export class StudioMediaService extends BaseService {
 
   private async resolveSource(auth: AuthDto, id: string): Promise<StudioMediaSource> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
-    return this.getSource(id);
+    return { ...(await this.getSource(id)), viewerId: lockedViewerOf(auth) };
   }
 
   private async getSource(id: string): Promise<StudioMediaSource> {
@@ -244,6 +254,7 @@ export class StudioMediaService extends BaseService {
       path,
       version: studioMediaFingerprint({ path, size: stats.size, mtimeMs: stats.mtimeMs }),
       folder: getStudioMediaFolder(asset.ownerId, id),
+      viewerId: null,
     };
   }
 
@@ -260,7 +271,7 @@ export class StudioMediaService extends BaseService {
     const spritePath = `${base}.${format === 'webp' ? 'webp' : 'jpg'}`;
     const indexPath = `${base}.${format}.json`;
 
-    const cached = await this.readFilmstripIndex(indexPath, spritePath);
+    const cached = await this.readFilmstripIndex(indexPath, spritePath, source.viewerId);
     if (cached) {
       return { index: cached, spritePath };
     }
@@ -270,10 +281,16 @@ export class StudioMediaService extends BaseService {
     return { index, spritePath };
   }
 
-  private async readFilmstripIndex(indexPath: string, spritePath: string) {
+  /** FL-721: a cache file, decrypted for the viewer it is made for once the item's files are sealed. */
+  private async readCache(path: string, viewerId: string | null | undefined): Promise<Buffer> {
+    return (await isLockedPath(path)) ? readPlainFile(path, { viewerId }) : this.storageRepository.readFile(path);
+  }
+
+  private async readFilmstripIndex(indexPath: string, spritePath: string, viewerId: string | null | undefined) {
     try {
       const [buffer, hasSprite] = await Promise.all([
-        this.storageRepository.readFile(indexPath),
+        // FL-721: a sealed cache file is read for the viewer it is made for
+        this.readCache(indexPath, viewerId),
         this.storageRepository.checkFileExists(spritePath),
       ]);
       return hasSprite ? (JSON.parse(buffer.toString('utf8')) as AssetFilmstripResponseDto) : null;
@@ -282,7 +299,21 @@ export class StudioMediaService extends BaseService {
     }
   }
 
-  private generateFilmstrip(
+  private async generateFilmstrip(
+    sealedSource: StudioMediaSource,
+    options: { count: number; height: number; format: FilmstripFormat; spritePath: string; indexPath: string },
+  ): Promise<AssetFilmstripResponseDto> {
+    // FL-721 (spec §8.2): a sealed video is cut from a plain copy; the new files are sealed after
+    const index = await withPlainCopy(
+      sealedSource.path,
+      (path) => this.generateFilmstripFrom({ ...sealedSource, path }, options),
+      { viewerId: sealedSource.viewerId },
+    );
+    await this.queueLockedSeal([sealedSource.assetId]);
+    return index;
+  }
+
+  private generateFilmstripFrom(
     source: StudioMediaSource,
     options: { count: number; height: number; format: FilmstripFormat; spritePath: string; indexPath: string },
   ): Promise<AssetFilmstripResponseDto> {
@@ -374,7 +405,22 @@ export class StudioMediaService extends BaseService {
     });
   }
 
-  private generateWaveform(
+  private async generateWaveform(
+    sealedSource: StudioMediaSource,
+    mode: WaveformChannelMode,
+    cachePath: string,
+  ): Promise<WaveformPeaks> {
+    // FL-721 (spec §8.2): a sealed video is read from a plain copy; the new file is sealed after
+    const peaks = await withPlainCopy(
+      sealedSource.path,
+      (path) => this.generateWaveformFrom({ ...sealedSource, path }, mode, cachePath),
+      { viewerId: sealedSource.viewerId },
+    );
+    await this.queueLockedSeal([sealedSource.assetId]);
+    return peaks;
+  }
+
+  private generateWaveformFrom(
     source: StudioMediaSource,
     mode: WaveformChannelMode,
     cachePath: string,

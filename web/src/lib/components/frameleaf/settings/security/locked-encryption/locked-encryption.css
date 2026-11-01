@@ -1,0 +1,318 @@
+/*
+ * FL-721: the pieces the Locked encryption page and its dialogs need beyond the kit, after the
+ * prototype's `locked-encryption.css` and the dialog form of `cloud.css` (`.dialog .cl2-form`).
+ * Every class is prefixed `le-` so this unscoped file reaches nothing else.
+ */
+
+/* A dialog body: 16px between its parts (cl2-form). */
+.le-form {
+  display: grid;
+  /* A column that can narrow: six PIN cells or a long word never push a phone-width sheet wider. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--fl-space-4);
+  min-width: min(26rem, 100%);
+  color: var(--fl-text);
+}
+.le-form > p,
+.le-form .le-muted {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+/* `:not(.le-check)`: a tick box with its sentence stays on one line (cl2-check), not a field label. */
+.le-form > label:not(.le-check),
+.le-form > .le-label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+}
+.le-form ul {
+  display: grid;
+  list-style: disc;
+  gap: var(--fl-space-2);
+  margin: 0;
+  padding-inline-start: 18px;
+  font-size: var(--fl-font-callout);
+  line-height: 1.5;
+}
+.le-form .le-error {
+  margin: 0;
+  color: var(--fl-danger);
+  font-size: var(--fl-font-small);
+}
+.le-form .le-note {
+  display: flex;
+  gap: var(--fl-space-2);
+  align-items: flex-start;
+}
+
+/* A text box (cl2-text): full width in a dialog, 40px tall, 44px on touch. */
+.le-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--fl-space-3);
+  color: var(--fl-text);
+  font: inherit;
+  font-weight: 400;
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.le-text[aria-invalid='true'] {
+  border-color: var(--fl-danger);
+}
+@media (pointer: coarse) {
+  .le-text {
+    min-height: 44px;
+  }
+}
+
+/* A tick box with its sentence (cl2-check). */
+.le-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fl-space-2);
+  min-height: 2.25rem;
+  font-size: var(--fl-font-callout);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.le-check input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--fl-accent);
+}
+
+/* The recovery key with Download, Copy and Print. */
+.le-key {
+  display: grid;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-4);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: color-mix(in srgb, var(--fl-accent) 6%, var(--fl-panel));
+}
+.le-key code {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+}
+.le-key small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.le-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+}
+
+/* The passphrase strength bar. */
+.le-strength {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+.le-strength > span {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  background: var(--fl-border);
+  border-radius: 3px;
+}
+.le-strength > span::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--fl-warning);
+  border-radius: 3px;
+}
+.le-strength[data-strength='weak'] > span::after {
+  width: 33%;
+}
+.le-strength[data-strength='good'] > span::after {
+  width: 70%;
+  background: var(--fl-accent);
+}
+.le-strength[data-strength='great'] > span::after {
+  width: 100%;
+  background: var(--fl-accent);
+}
+.le-strength small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+}
+
+/* Under a hero: the progress bar, and the passphrase form. */
+.le-progress {
+  padding: 0 var(--fl-space-6) var(--fl-space-6);
+}
+.le-progress meter {
+  display: block;
+  width: 100%;
+  height: 8px;
+  appearance: none;
+  background: var(--fl-border);
+  border: 0;
+  border-radius: 4px;
+}
+/* The track and what's done, drawn with the tokens instead of the browser's own meter colours. */
+.le-progress meter::-webkit-meter-bar {
+  height: 8px;
+  background: var(--fl-border);
+  border: 0;
+  border-radius: 4px;
+}
+.le-progress meter::-webkit-meter-optimum-value,
+.le-progress meter::-webkit-meter-suboptimum-value,
+.le-progress meter::-webkit-meter-even-less-good-value {
+  background: var(--fl-accent);
+  border-radius: 4px;
+}
+.le-progress meter::-moz-meter-bar {
+  background: var(--fl-accent);
+  border-radius: 4px;
+}
+.le-unlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-4) var(--fl-space-6) var(--fl-space-6);
+  border-top: 1px solid var(--fl-border);
+}
+.le-unlock .le-text {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+.le-unlock .fl-control {
+  min-height: 40px;
+}
+/* The PIN that finishes turning off: the cells narrow to the card on a phone instead of overflowing. */
+.le-unlock .pin-cells {
+  flex: 0 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+}
+.le-unlock .le-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--fl-danger);
+  font-size: var(--fl-font-small);
+}
+
+/* A section that ends in a note or a list keeps 20px under it. */
+.le-hint {
+  max-width: 720px;
+  margin: 0;
+  padding: var(--fl-space-4) 0 20px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.le-section-notice {
+  padding-bottom: 20px;
+}
+/* "If this server stops working" (prototype cl2-steps): a plain numbered list, the command under step 2. */
+.le-steps {
+  display: grid;
+  gap: var(--fl-space-4);
+  margin: 0;
+  padding: 0 0 var(--fl-space-2);
+  list-style: none;
+}
+.le-steps > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--fl-space-3);
+}
+.le-steps .le-step-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--fl-accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--fl-accent);
+  border-radius: 50%;
+}
+.le-steps strong {
+  display: block;
+  font-size: var(--fl-font-callout);
+  font-weight: 600;
+  line-height: 24px;
+}
+.le-steps p {
+  max-width: 560px;
+  margin: 4px 0 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+.le-command {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-2) var(--fl-space-3);
+  min-width: 0;
+  margin-top: 4px;
+}
+.le-command code {
+  color: var(--fl-text);
+  font-family: inherit;
+  font-size: var(--fl-font-callout);
+  overflow-wrap: anywhere;
+}
+.le-steps + .le-hint {
+  padding-top: var(--fl-space-2);
+}
+
+/* "Ask for my passphrase again after": four choices wrap inside the track on a narrow page. */
+.le-again {
+  min-width: 0;
+  max-width: 100%;
+}
+.le-again > .segments[role='group'] {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+/* The page's first card sits 24px under "‹ Your sign-in & privacy", as in the prototype. */
+.cc-back-to-area:has(+ #setting-locked-encryption) {
+  margin-bottom: var(--fl-space-6);
+}
+
+/* These dialogs keep the prototype's 16px side gutter on a phone (the shared medium sheet uses 8px). */
+@media (max-width: 700px) {
+  dialog.dialog.medium:has(.le-form) {
+    max-width: calc(100vw - 32px);
+  }
+}
+
+@container kit (max-width: 620px) {
+  .le-progress {
+    padding: 0 var(--fl-space-4) var(--fl-space-4);
+  }
+  .le-unlock {
+    padding: var(--fl-space-4);
+  }
+  .le-unlock .le-text,
+  .le-unlock .fl-control {
+    min-height: 44px;
+  }
+  .le-again > .segments[role='group'] > button:last-child {
+    flex-basis: 100%;
+  }
+}

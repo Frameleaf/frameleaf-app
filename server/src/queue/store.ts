@@ -62,7 +62,10 @@ const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
 const deferralDelay = (reason: JobDependencyReason) =>
   reason === 'local-capacity' || reason === 'destination-capacity'
     ? sql`interval '30 seconds'`
-    : sql`least(interval '30 seconds' * power(2, least(attempt - 1, 5)), interval '10 minutes')`;
+    : reason === 'locked-key-unavailable'
+      ? // FL-721: an hour per wait (LOCKED_DEFERRAL_DELAY_MS); a key load wakes it sooner (`wakeDeferred`)
+        sql`interval '1 hour'`
+      : sql`least(interval '30 seconds' * power(2, least(attempt - 1, 5)), interval '10 minutes')`;
 
 /** Shared with the plan gate so the complete entitlement predicate remains measured even when
  * an admitted-live preflight can avoid executing it during ordinary publication.
@@ -506,6 +509,18 @@ export class SqlQueueStore {
       },
       publication,
     );
+  }
+
+  /**
+   * FL-721: runs these deferred jobs now instead of at the end of their wait, when they still wait for
+   * the reason they were deferred for (a key that has just been loaded). Returns how many it woke.
+   */
+  async wakeDeferred(ids: string[], reason: JobDependencyReason) {
+    if (ids.length === 0) return 0;
+    const { rows } = await sql`update job set "availableAt" = now()
+      where id = any(${ids}::uuid[]) and state = 'pending' and "dependencyReason" = ${reason}
+        and "availableAt" > now() returning id`.execute(this.db);
+    return rows.length;
   }
 
   /** A dependency refusal is not an execution failure. Keep the item and audit, refund its retry credit. */

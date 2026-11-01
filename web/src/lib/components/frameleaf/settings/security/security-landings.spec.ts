@@ -10,6 +10,7 @@ const sdk = vi.hoisted(() => ({
   getAuthStatus: vi.fn(),
   getSessions: vi.fn(),
   getApiKeys: vi.fn(),
+  getLockedEncryption: vi.fn(),
 }));
 const cloud = vi.hoisted(() => ({ status: null as unknown }));
 const user = vi.hoisted(() => ({ isAdmin: true, email: 'taylor@example.test', name: 'Taylor' }));
@@ -35,6 +36,7 @@ const sections = [
   { key: 'api-keys', title: 'API keys', subtitle: 'For apps', icon: ICON },
   { key: 'user-pin-code-settings', title: 'Locked PIN', subtitle: 'Opens Locked photos', icon: ICON },
   { key: 'suppressed-content', title: 'Always Locked', subtitle: 'People, pets and tags', icon: ICON },
+  { key: 'locked-encryption', title: 'Locked encryption', subtitle: 'Encrypts the files', icon: ICON },
 ];
 const now = Date.now();
 const session = (id: string, daysAgo: number, current = false) => ({
@@ -82,6 +84,14 @@ describe('Your sign-in & privacy (FL-367)', () => {
     expect(await screen.findByRole('heading', { name: 'Your account is protected' })).toBeInTheDocument();
     expect(await screen.findByText('taylor@example.test · password set')).toBeInTheDocument();
     expect(screen.getByText('Who can sign in')).toBeInTheDocument();
+  });
+
+  it('lists Locked encryption with its state (FL-721)', async () => {
+    sdk.getSessions.mockResolvedValue([session('a', 0, true)]);
+    sdk.getLockedEncryption.mockResolvedValue({ enabled: false, status: null, mode: null, keyLoaded: false });
+    render(YourSignInLanding, { sections });
+    expect(await screen.findByText('Off · Optional, only you can turn it on')).toBeInTheDocument();
+    expect(screen.getByText('Locked encryption')).toBeInTheDocument();
   });
 
   it('raises a device not used for a while', async () => {

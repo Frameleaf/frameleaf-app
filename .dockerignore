@@ -13,6 +13,9 @@
 # SQL-tools is a frozen owned runtime/type payload, not a local build output.
 !packages/sql-tools/dist/
 !packages/sql-tools/dist/**
+# locked-crypto ships its committed build the same way (CI checks it matches src).
+!packages/locked-crypto/dist/
+!packages/locked-crypto/dist/**
 !packages/ui/dist/
 !packages/ui/dist/**
 **/coverage/

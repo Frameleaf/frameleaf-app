@@ -41,11 +41,16 @@ services:
       DB_DATABASE_NAME: frameleaf
       FRAMELEAF_MACHINE_LEARNING_ENABLED: 'false'
       FRAMELEAF_ENV: testing
+      # FL-721: an ask-again "hour" of 500 ms, so the Locked encryption suite sees an 8-hour key expire
+      FRAMELEAF_LOCKED_TEST_HOUR_MS: '500'
       FRAMELEAF_CLOUD_URL: https://cloud.frameleaf.test
       FRAMELEAF_PORT: '2285'
       FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: 'true'
     volumes:
       - ./test-assets:/test-assets
+    # FL-721: plain copies of encrypted Locked files go to /dev/shm (FRAMELEAF_LOCKED_TMP), several at
+    # once (a 14 MB test video, a 7 MB RAW, ...); Docker's 64 MB default is too tight
+    shm_size: 512mb
     depends_on:
       database:
         condition: service_healthy

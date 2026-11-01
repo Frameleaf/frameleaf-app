@@ -60868,6 +60868,442 @@
         "x-immich-permission": "asset.update"
       }
     },
+    "/users/me/locked-encryption": {
+      "delete": {
+        "description": "FL-721: with your PIN (PIN mode) or passphrase (Advanced Security). Your Locked items are decrypted back to ordinary files in the background; then your key and recovery key are deleted.",
+        "operationId": "disableLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionDisableDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn off Locked encryption",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "FL-721: whether it is on and how, whether your key is open on this server now and until when, progress while encrypting or decrypting, and how many Locked items are encrypted or in a folder Frameleaf can’t change.",
+        "operationId": "getLockedEncryption",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedEncryptionStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your Locked encryption status",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "FL-721: with your Locked PIN, and a passphrase for Advanced Security. Creates your key and returns your recovery key, once; it is never shown again. Your Locked items are then encrypted in the background.",
+        "operationId": "enableLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionEnableDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedEncryptionRecoveryKeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn on Locked encryption",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "FL-721: switch between PIN and Advanced Security, change your passphrase, or when the passphrase is asked for again. Switching or a new passphrase needs your current PIN or passphrase.",
+        "operationId": "updateLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change your Locked encryption",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/lock": {
+      "post": {
+        "description": "FL-721: closes your key on this server, so Locked asks for your passphrase (or PIN) again. Not available while encryption is being turned off.",
+        "operationId": "lockLockedEncryption",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Lock now",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/partner-unlock": {
+      "post": {
+        "description": "FL-721: for a partner who shares their library with you and uses Advanced Security. Their passphrase, typed after your own PIN (or your own passphrase), opens their shared Locked items for you only, until their key is asked for again or they lock it. Tries are limited as for the Locked PIN.",
+        "operationId": "unlockPartnerLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionPartnerUnlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Open a partner’s encrypted Locked items",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/recover": {
+      "post": {
+        "description": "FL-721: your recovery key opens your key, and the new PIN or passphrase replaces the old one. Tries are limited as for the Locked PIN.",
+        "operationId": "recoverLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionRecoverDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reset a forgotten Locked PIN or passphrase",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/recovery-key": {
+      "post": {
+        "description": "FL-721: with your PIN or passphrase. The old recovery key stops working; the new one is returned once and never shown again.",
+        "operationId": "createLockedEncryptionRecoveryKey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionRecoveryKeyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedEncryptionRecoveryKeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Make a new Locked encryption recovery key",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/locked-encryption/unlock": {
+      "post": {
+        "description": "FL-721, Advanced Security: your passphrase opens your key on this server until it is asked for again or the server restarts. Tries are limited as for the Locked PIN.",
+        "operationId": "unlockLockedEncryption",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedEncryptionUnlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Open your Locked encryption key",
+        "tags": [
+          "Locked encryption"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/onboarding": {
       "delete": {
         "description": "Delete the onboarding status of the current user.",
@@ -62792,6 +63228,10 @@
     {
       "name": "Live Photo",
       "description": "Endpoints for finding and reassembling separated live photos (a still image and its paired motion video)."
+    },
+    {
+      "name": "Locked encryption",
+      "description": "Optional encryption of your Locked items’ files with your Locked PIN or a passphrase. Keys stay wrapped on this server’s disk and open only in its memory; the recovery key is shown once, when it is made."
     },
     {
       "name": "Maintenance (admin)",
@@ -73303,6 +73743,10 @@
           "locationInsight": {
             "$ref": "#/components/schemas/LocationInsightDto"
           },
+          "lockedEncryption": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
+            "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
             "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
@@ -75449,6 +75893,10 @@
           "locationInsight": {
             "$ref": "#/components/schemas/LocationInsightDto"
           },
+          "lockedEncryption": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
+            "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
             "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
@@ -76784,6 +77232,12 @@
           "operation": {
             "nullable": true,
             "properties": {
+              "encryptedWithOlderKey": {
+                "description": "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
               "error": {
                 "nullable": true,
                 "type": "string"
@@ -76815,6 +77269,7 @@
               "progress",
               "phase",
               "recoveryId",
+              "encryptedWithOlderKey",
               "error"
             ],
             "type": "object"
@@ -76923,6 +77378,12 @@
       },
       "BuddyRestoreStatusDto": {
         "properties": {
+          "encryptedWithOlderKey": {
+            "description": "FL-721: restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -76949,6 +77410,7 @@
           }
         },
         "required": [
+          "encryptedWithOlderKey",
           "error",
           "id",
           "phase",
@@ -79987,6 +80449,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "encryptedWithOlderKey": {
+            "description": "Restored Locked items encrypted with an older key, which this server's key file for their owner does not open",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -79994,6 +80462,12 @@
           "files": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lockedKeysKept": {
+            "description": "Backed-up Locked key files kept in the restore folder because a live key file was already there; the live one is never replaced",
+            "maximum": 9007199254740991,
+            "minimum": 0,
             "type": "integer"
           },
           "manifestKey": {
@@ -80031,6 +80505,7 @@
           "databaseFile",
           "destination",
           "detailsRestored",
+          "encryptedWithOlderKey",
           "error",
           "files",
           "manifestKey",
@@ -89156,6 +89631,16 @@
             "description": "Whether the Frameleaf account is now linked (false for a preview)",
             "type": "boolean"
           },
+          "lockedEncryption": {
+            "description": "Whether this person has Locked encryption on; their PIN can’t be cleared or changed then",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -89226,6 +89711,7 @@
           "isAdmin",
           "license",
           "linked",
+          "lockedEncryption",
           "name",
           "oauthId",
           "profileChangedAt",
@@ -94688,6 +95174,12 @@
             "nullable": true,
             "type": "integer"
           },
+          "encrypted": {
+            "description": "Encrypted Locked files the damage check passed over: encrypted, not checked (not counted in checked)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "finishedAt": {
             "format": "date-time",
             "type": "string"
@@ -99041,6 +99533,304 @@
         ],
         "type": "object"
       },
+      "LockedEncryptionCountsDto": {
+        "properties": {
+          "encrypted": {
+            "description": "Locked items whose files are encrypted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Locked items that turning off, or taking an item out of Locked, is waiting on because their file is missing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notEncryptable": {
+            "description": "Locked items in a folder Frameleaf can’t change, which stay unencrypted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sharedNotEncrypted": {
+            "description": "Locked items shared with you by a partner whose files stay unencrypted: your setting doesn’t encrypt them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "encrypted",
+          "notEncryptable"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionDisableDto": {
+        "properties": {
+          "passphrase": {
+            "description": "Advanced Security: your passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "PIN mode: your Locked PIN",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LockedEncryptionEnableDto": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/LockedEncryptionMode"
+          },
+          "passphrase": {
+            "description": "Advanced Security only: at least 12 characters",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "Your Locked PIN",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "pinCode"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionMode": {
+        "description": "`pin`: the Locked PIN opens the files. `advanced`: a passphrase typed after every restart opens them.",
+        "enum": [
+          "pin",
+          "advanced"
+        ],
+        "type": "string"
+      },
+      "LockedEncryptionPartnerUnlockDto": {
+        "properties": {
+          "ownerId": {
+            "description": "The partner who shares their library with you and uses Advanced Security",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "passphrase": {
+            "description": "That partner's passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId",
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Items whose files are done",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items to do",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionRecoverDto": {
+        "properties": {
+          "newPassphrase": {
+            "description": "Advanced Security: a new passphrase",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "newPinCode": {
+            "description": "A new Locked PIN",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "recoveryKey": {
+            "description": "Your recovery key, FLRK- and 8 groups of 4 characters",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "recoveryKey"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionRecoveryKeyDto": {
+        "properties": {
+          "secret": {
+            "description": "Your PIN (PIN mode) or passphrase (Advanced Security)",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionRecoveryKeyResponseDto": {
+        "properties": {
+          "recoveryKey": {
+            "description": "Shown this once: FLRK- and 8 groups of 4 characters. It is never shown again.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recoveryKey"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionState": {
+        "description": "`encrypting` while turning on, `on` once every file is encrypted, `decrypting` while turning off",
+        "enum": [
+          "encrypting",
+          "on",
+          "decrypting"
+        ],
+        "type": "string"
+      },
+      "LockedEncryptionStatusResponseDto": {
+        "properties": {
+          "askAgainHours": {
+            "description": "Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/LockedEncryptionCountsDto"
+          },
+          "enabled": {
+            "description": "Whether Locked encryption is on (or turning on or off) for you",
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "description": "When the open key is asked for again; null while it stays open",
+            "nullable": true,
+            "type": "string"
+          },
+          "keyLoaded": {
+            "description": "Whether your key is open on this server now",
+            "type": "boolean"
+          },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LockedEncryptionMode"
+              }
+            ],
+            "nullable": true
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LockedEncryptionProgressDto"
+              }
+            ],
+            "description": "Progress while encrypting or decrypting",
+            "nullable": true
+          },
+          "recoveryKeyCreatedAt": {
+            "description": "When the current recovery key was made",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LockedEncryptionState"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "askAgainHours",
+          "counts",
+          "enabled",
+          "expiresAt",
+          "keyLoaded",
+          "mode",
+          "progress",
+          "recoveryKeyCreatedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionUnlockDto": {
+        "properties": {
+          "passphrase": {
+            "description": "Your passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "LockedEncryptionUpdateDto": {
+        "properties": {
+          "askAgainHours": {
+            "description": "Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "currentSecret": {
+            "description": "Your PIN (PIN mode) or passphrase (Advanced Security); required to switch mode or passphrase",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LockedEncryptionMode",
+            "description": "Switch between PIN and Advanced Security"
+          },
+          "newPassphrase": {
+            "description": "The new passphrase, when switching to or within Advanced Security",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "Your Locked PIN, when switching to PIN mode",
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LockedPinResponse": {
         "properties": {
           "relockMinutes": {
@@ -101420,6 +102210,13 @@
             "nullable": true,
             "type": "string"
           },
+          "encryptedWithOlderKey": {
+            "description": "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "error": {
             "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
             "nullable": true,
@@ -101654,6 +102451,13 @@
             "description": "Which worker or endpoint the destination resolved to",
             "nullable": true,
             "type": "string"
+          },
+          "encryptedWithOlderKey": {
+            "description": "A Cloud or Buddy restore: restored Locked items encrypted with an older key, which this server's key file for their owner does not open; null for every other kind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
           },
           "error": {
             "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
@@ -105985,6 +106789,34 @@
         "enum": [
           "shared-by",
           "shared-with"
+        ],
+        "type": "string"
+      },
+      "PartnerLockedEncryptionDto": {
+        "properties": {
+          "openable": {
+            "description": "Whether the item opens for you (with your own PIN, or a passphrase you typed)",
+            "type": "boolean"
+          },
+          "ownerName": {
+            "description": "The partner's name",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PartnerLockedEncryptionReason"
+          }
+        },
+        "required": [
+          "openable",
+          "ownerName"
+        ],
+        "type": "object"
+      },
+      "PartnerLockedEncryptionReason": {
+        "description": "Why it doesn't open: `not-ready` until the partner next opens Locked; `owner-passphrase` until you type the partner's passphrase",
+        "enum": [
+          "not-ready",
+          "owner-passphrase"
         ],
         "type": "string"
       },
@@ -149409,6 +150241,16 @@
             ],
             "nullable": true
           },
+          "lockedEncryption": {
+            "description": "Whether this person has Locked encryption on; their PIN can’t be cleared or changed then",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -149473,6 +150315,7 @@
           "id",
           "isAdmin",
           "license",
+          "lockedEncryption",
           "name",
           "oauthId",
           "profileChangedAt",
@@ -150137,6 +150980,16 @@
             ],
             "nullable": true
           },
+          "lockedEncryption": {
+            "description": "Whether this person has Locked encryption on; their PIN can’t be cleared or changed then",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -150211,6 +151064,7 @@
           "id",
           "isAdmin",
           "license",
+          "lockedEncryption",
           "name",
           "oauthId",
           "profileChangedAt",

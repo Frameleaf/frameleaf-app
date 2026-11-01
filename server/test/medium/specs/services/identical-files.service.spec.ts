@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ChecksumAlgorithm, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { AssetLockReason, ChecksumAlgorithm, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -225,6 +225,60 @@ describe(IdenticalFilesService.name, () => {
     expect((await sut.getStatus()).problems).toContainEqual(
       expect.objectContaining({ kind: 'changed', assetId: asset.id }),
     );
+  });
+
+  describe('encrypted Locked files (FL-721, spec §6.1)', () => {
+    /** The photo is in Alice's Locked with encryption on: its file is sealed, or about to be. */
+    const encrypt = async (assetId: string, ownerId: string) => {
+      await database
+        .insertInto('locked_encryption')
+        .values({ userId: ownerId, mode: 'pin', status: 'on', recoveryKeyCreatedAt: new Date() })
+        .onConflict((oc) => oc.doNothing())
+        .execute();
+      await database
+        .insertInto('asset_lock')
+        .values({ assetId, reason: AssetLockReason.Marked, lockedBy: ownerId })
+        .execute();
+    };
+
+    it.each([
+      ['into', 'the encrypted photo is the oldest'],
+      ['out of', 'the encrypted photo is the newer one'],
+    ])('identical-files merge never merges %s an encrypted physical_file (%s)', async (direction) => {
+      const { photo, user, row, unused, run } = setup();
+      const alice = await user('alice');
+      const bob = await user('bob');
+      const bytes = Buffer.from('a photo alice keeps in Locked');
+      const alicePath = join(media, 'library', alice.storageLabel!, 'IMG_1.jpg');
+      const bobPath = join(media, 'library', bob.storageLabel!, 'IMG_1.jpg');
+      const encryptedFirst = direction === 'into';
+      const locked = await photo(alice.id, alicePath, bytes, new Date(encryptedFirst ? '2020-01-01' : '2021-01-01'));
+      const plain = await photo(bob.id, bobPath, bytes, new Date(encryptedFirst ? '2021-01-01' : '2020-01-01'));
+      await encrypt(locked.id, alice.id);
+
+      await run();
+
+      expect(await row(locked.id)).toMatchObject({ originalPath: alicePath });
+      expect(await row(plain.id)).toMatchObject({ originalPath: bobPath });
+      expect(await readFile(alicePath)).toEqual(bytes);
+      expect(await readFile(bobPath)).toEqual(bytes);
+      expect(await unused()).toEqual([]);
+    });
+
+    it('passes over a sealed file without calling it changed', async () => {
+      const { photo, user, row, run, sut } = setup();
+      const alice = await user('alice');
+      const path = join(media, 'library', alice.storageLabel!, 'sealed.jpg');
+      const locked = await photo(alice.id, path, Buffer.from('the plain photo'), old);
+      await encrypt(locked.id, alice.id);
+      // sealed: the file now holds the FLLK container, not the bytes the photo recorded
+      await write(path, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64, 1)]));
+
+      await run();
+
+      expect(await row(locked.id)).toMatchObject({ originalPath: path, checksumAlgorithm: ChecksumAlgorithm.sha1File });
+      expect((await sut.getStatus()).problems).not.toContainEqual(expect.objectContaining({ assetId: locked.id }));
+    });
   });
 
   it('shares the oldest file across people and moves the other copy to Unused files, never removing bytes', async () => {

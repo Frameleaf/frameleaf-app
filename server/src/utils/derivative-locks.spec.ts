@@ -59,6 +59,30 @@ describe('derivative locks (FL-106, FL-195 follow-up)', () => {
     expect(queries.filter(({ sql }) => sql.includes('SELECT DISTINCT version.id'))).toHaveLength(2);
   });
 
+  it('releaseDerivedResults on an encrypted asset sets pendingUnlockAt and does not delete the lock (FL-721)', async () => {
+    const { db, queries } = scriptedKysely(({ sql, parameters }) => {
+      if (sql.includes('to_regclass')) {
+        return { rows: [{ present: true }] };
+      }
+      if (sql.includes('SELECT DISTINCT version.id') && JSON.stringify(parameters).includes(SOURCE)) {
+        return { rows: [{ versionId: VERSION, resultAssetId: RESULT }] };
+      }
+      // the result's owner has Locked encryption on: nothing is deleted, the lock is only marked
+      return { rows: [] };
+    });
+
+    await expect(releaseDerivedResults(db, [SOURCE])).resolves.toEqual([]);
+
+    const markIndex = queries.findIndex(({ sql }) => sql.includes('"pendingUnlockAt" = coalesce'));
+    const removeIndex = queries.findIndex(({ sql }) => sql.includes('DELETE FROM asset_lock'));
+    expect(markIndex).toBeGreaterThan(-1);
+    expect(markIndex).toBeLessThan(removeIndex);
+    expect(queries[markIndex].sql).toContain('locked_encryption');
+    // the delete leaves every result whose files are encrypted alone
+    expect(queries[removeIndex].sql).toContain('NOT EXISTS');
+    expect(queries[removeIndex].sql).toContain('locked_encryption');
+  });
+
   it('releases nothing while every version made from the source has another locked source', async () => {
     const { db, queries } = scriptedKysely(({ sql }) =>
       sql.includes('to_regclass') ? { rows: [{ present: true }] } : { rows: [] },
