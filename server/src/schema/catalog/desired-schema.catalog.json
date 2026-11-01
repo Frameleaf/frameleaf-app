@@ -37456,6 +37456,24 @@
           "isArray": false,
           "length": 20,
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "inference",
+          "tableName": "asset_landmark",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceAssetIds",
+          "tableName": "asset_landmark",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -37498,6 +37516,14 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_landmark_inference_check",
+          "definition": "CHECK (((((inference IS NULL) AND (\"sourceAssetIds\" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality(\"sourceAssetIds\") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality(\"sourceAssetIds\") >= 2) AND (cardinality(\"sourceAssetIds\") <= 3)))) IS TRUE))",
+          "tableName": "asset_landmark",
+          "expression": "(((((inference IS NULL) AND (\"sourceAssetIds\" IS NULL)) OR (((inference)::text = 'temporal'::text) AND (cardinality(\"sourceAssetIds\") = 1)) OR (((inference)::text = 'visual'::text) AND ((cardinality(\"sourceAssetIds\") >= 2) AND (cardinality(\"sourceAssetIds\") <= 3)))) IS TRUE))",
           "synchronize": true
         }
       ],

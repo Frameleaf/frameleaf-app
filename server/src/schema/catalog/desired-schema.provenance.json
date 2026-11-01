@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "f954cbe872b5395df9b8a589944577b6d13bd05c",
+  "sourceCommit": "7c635be0a178fe5bfc9b7e57d6c0400b8a5ff191",
   "sourceHashes": {
-    "src/enum.ts": "9219d65a4c67cb4b3c3cc65f3fe73b150a0c923336549b9f1223e58e39391e08",
+    "src/enum.ts": "0317c389c0a1a85232e5062236c88d0fecef4893fa55c45e0caaaa37c22bf36c",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
@@ -71,7 +71,7 @@
     "src/schema/tables/icloud-edit-authority.table.ts": "ba14f25a37c620555ca64a52d2568b08cd23353d8c88ff8c033b028749b312e5",
     "src/schema/tables/identical-file-change.table.ts": "64566fb0024838fda28c4554cbc64f3b826872c1203e830f931a4b19a03ce739",
     "src/schema/tables/integrity-report.table.ts": "8dbdb2fb24d919983fade4571fe85e6d20d632e315f0a769cc13f32c46bf56a5",
-    "src/schema/tables/landmark.table.ts": "55d54e55fd8687e74ae5c4a85a74d2b556f3fa431cd45b856731c988dd0c0596",
+    "src/schema/tables/landmark.table.ts": "6af5cfdc87cb98808070399734733648f5d7c01ddc5b3f56a5978b7caca1046a",
     "src/schema/tables/library.table.ts": "dbc20caa6eaddef3bbf1a1c5e598fc914886ccae40d7026e5d84df7a3a2304c6",
     "src/schema/tables/media-operation.table.ts": "9934aeb4c2ab6c303c88bf66ea465d56c49efb9b00c17635a2ad9de0aef7e66c",
     "src/schema/tables/memory-asset-audit.table.ts": "5f4914dd96def13ddaaf55a3dd89ace3354e7381482f1ee8e1244a86b403e9ec",
@@ -154,6 +154,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "4d27401d147665e24050719c0976c500c9bf61eb3e2ae4ef8f4b3a156e0f1399",
-  "rawMetadataSha256": "69653768908eecfa7292b2f66534cb0e008826c6ef7c1657dd8b8f221908adc8"
+  "dumpSha256": "180b0cd6ef46f9bd4ff15c17b4da0e24f2ac36e7b1dc6b9bbd47c99e648ac4f7",
+  "rawMetadataSha256": "a190161882ad07f9374a754933d6f389e2451582f7946c270d81f843bd38dab6"
 }

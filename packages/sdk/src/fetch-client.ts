@@ -4467,6 +4467,8 @@ export type LandmarkSummaryDto = {
     icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
+    /** Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
+    inference?: Inference;
     /** Kind of place, for example theme_park, museum or national_park */
     kind: string;
     /** Landmark name */
@@ -4555,7 +4557,7 @@ export type AssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
-    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    /** Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response. */
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
@@ -6332,7 +6334,7 @@ export type BestPhotoAssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
-    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    /** Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response. */
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
@@ -14355,6 +14357,8 @@ export type SearchLandmarkResponseDto = {
     icon?: LandmarkIconDto;
     /** Landmark ID (its Wikidata ID, for example Q243) */
     id: string;
+    /** Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged. */
+    inference?: Inference;
     /** Kind of place, for example theme_park, museum or national_park */
     kind: string;
     /** Local capture time of the latest photo or video here */
@@ -36335,6 +36339,10 @@ export enum InspectionStatus {
     Identified = "identified",
     Failed = "failed"
 }
+export enum Inference {
+    Temporal = "temporal",
+    Visual = "visual"
+}
 export enum LibraryBookmarkItemKind {
     Bookmark = "bookmark"
 }
@@ -38639,6 +38647,7 @@ export enum JobName {
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",
     LandmarkMatchAll = "LandmarkMatchAll",
+    LandmarkInfer = "LandmarkInfer",
     MemoryExport = "MemoryExport",
     NotificationsCleanup = "NotificationsCleanup",
     NotifyUserSignup = "NotifyUserSignup",

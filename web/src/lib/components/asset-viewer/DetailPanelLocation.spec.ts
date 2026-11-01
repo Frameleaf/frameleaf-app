@@ -1,3 +1,4 @@
+import { Inference } from '@frameleaf/sdk';
 import { render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
@@ -33,8 +34,8 @@ describe('DetailPanelLocation', () => {
   });
 
   it.each([
-    ['temporal', 'Inferred at Disneyland Park'],
-    ['visual', 'Likely showing Disneyland Park'],
+    [Inference.Temporal, 'Inferred at Disneyland Park'],
+    [Inference.Visual, 'Likely showing Disneyland Park'],
   ] as const)('labels %s evidence on a photo without GPS', (inference, label) => {
     const asset = assetFactory.build({
       exifInfo: { latitude: null, longitude: null } as never,
@@ -46,7 +47,10 @@ describe('DetailPanelLocation', () => {
   });
 
   it('keeps the recorded place first and labels a recognised distant landmark alongside it', () => {
-    const asset = assetFactory.build({ exifInfo: at as never, landmarks: [park, { ...resort, inference: 'visual' }] });
+    const asset = assetFactory.build({
+      exifInfo: at as never,
+      landmarks: [park, { ...resort, inference: Inference.Visual }],
+    });
     render(DetailPanelLocation, { asset, isOwner: true });
     expect(screen.getByText('At Disneyland Park')).toBeInTheDocument();
     expect(screen.getByText('Likely showing Disneyland Resort')).toBeInTheDocument();

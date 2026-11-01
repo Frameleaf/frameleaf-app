@@ -73037,7 +73037,7 @@
             "type": "boolean"
           },
           "landmarks": {
-            "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+            "description": "Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response.",
             "items": {
               "$ref": "#/components/schemas/LandmarkSummaryDto"
             },
@@ -75180,7 +75180,7 @@
             "type": "boolean"
           },
           "landmarks": {
-            "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+            "description": "Recorded and inferred landmarks, with recorded locations first. Only on the single-asset response.",
             "items": {
               "$ref": "#/components/schemas/LandmarkSummaryDto"
             },
@@ -95031,6 +95031,7 @@
           "MemoryCleanup",
           "MemoryGenerate",
           "LandmarkMatchAll",
+          "LandmarkInfer",
           "MemoryExport",
           "NotificationsCleanup",
           "NotifyUserSignup",
@@ -95838,6 +95839,14 @@
           },
           "id": {
             "description": "Landmark ID (its Wikidata ID, for example Q243)",
+            "type": "string"
+          },
+          "inference": {
+            "description": "Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.",
+            "enum": [
+              "temporal",
+              "visual"
+            ],
             "type": "string"
           },
           "kind": {
@@ -132306,6 +132315,14 @@
           },
           "id": {
             "description": "Landmark ID (its Wikidata ID, for example Q243)",
+            "type": "string"
+          },
+          "inference": {
+            "description": "Present for an estimated match: temporal borrows nearby same-camera GPS; visual recognises the scene from existing local image embeddings. Recorded GPS is unchanged.",
+            "enum": [
+              "temporal",
+              "visual"
+            ],
             "type": "string"
           },
           "kind": {
