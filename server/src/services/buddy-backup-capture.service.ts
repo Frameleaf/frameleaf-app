@@ -25,6 +25,7 @@ import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/budd
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import {
@@ -54,8 +55,10 @@ import {
   lockedFileOwnerKeyId,
   lockedKeyBackupFiles,
   lockedKeyFileKeyId,
+  lockedKeyGaps,
   lockedKeyOwners,
   pathsBeingReplaced,
+  unreadableLockedKeyId,
 } from 'src/utils/locked-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -135,6 +138,8 @@ const dependencyPaths = sql<{ path: string }>`SELECT path FROM public.studio_pro
 
 @Injectable()
 export class BuddyBackupCaptureService {
+  private logger = LoggingRepository.create('BuddyBackupCaptureService');
+
   constructor(
     private repository: BuddyBackupRepository,
     private backups: DatabaseBackupService,
@@ -590,7 +595,7 @@ export class BuddyBackupCaptureService {
                   for (const file of files)
                     if (sealedPaths.has(file.path))
                       sealedKeyIds.add(
-                        (await lockedFileOwnerKeyId(file.path).catch(() => null)) ?? `unreadable:${file.path}`,
+                        (await lockedFileOwnerKeyId(file.path).catch(() => null)) ?? unreadableLockedKeyId(file.path),
                       );
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
@@ -631,7 +636,17 @@ export class BuddyBackupCaptureService {
               // A key file that appeared or went during the capture (encryption turned on or off) would leave
               // ciphertext no key in this snapshot opens. Never hidden: the snapshot fails, and the previous
               // snapshots, with their key files, stay as they are. The next run captures a consistent pair.
-              const keyless = [...sealedKeyIds].filter((id) => !lockedKeyIds.has(id));
+              // A key id that matches no live key file is an item restored under an older key (spec §9):
+              // reported, never a failure, since no snapshot could ever capture its key file.
+              const { keyless, older } = await lockedKeyGaps(
+                sealedKeyIds,
+                lockedKeyIds,
+                StorageCore.getMediaLocation(),
+              );
+              if (older.length > 0)
+                this.logger.warn(
+                  `Buddy capture ${options.runId}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are captured as they are`,
+                );
               if (keyless.length > 0)
                 throw new Error(
                   `This backup found encrypted Locked files for ${keyless.length} person(s) whose key file was not there when it started. Their encryption changed during the backup; the next backup includes it.`,

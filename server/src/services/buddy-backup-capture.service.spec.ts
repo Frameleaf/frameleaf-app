@@ -263,7 +263,10 @@ describe('Buddy effective configuration file capture', () => {
     });
 
     /** An Advanced-mode key file for OWNER and an original sealed to it, with its plaintext SHA-1 on record. */
-    const sealedLibrary = async (partnerCopy?: { id: string; ownerId: string }) => {
+    const sealedLibrary = async (
+      partnerCopy?: { id: string; ownerId: string },
+      options: { recipient?: Buffer; beforeList?: () => Promise<void> } = {},
+    ) => {
       const recoveryKey = generateRecoveryKey();
       const pair = generateKeyPair();
       const now = new Date().toISOString();
@@ -288,7 +291,7 @@ describe('Buddy effective configuration file capture', () => {
       const plainPath = join(directory, 'plain.jpg');
       await writeFile(plainPath, plain);
       const original = join(folder, 'IMG_1.jpg');
-      await encryptFile(plainPath, original, [{ publicKey: pair.publicKey }], {
+      await encryptFile(plainPath, original, [{ publicKey: options.recipient ?? pair.publicKey }], {
         assetId,
         kind: 'original',
         originalFileName: 'IMG_1.jpg',
@@ -318,19 +321,21 @@ describe('Buddy effective configuration file capture', () => {
       // a partner copy points at the owner's file (FL-721 C1)
       const assets = [{ id: assetId, ownerId: OWNER }, ...(partnerCopy ? [partnerCopy] : [])];
       const ids = assets.map(({ id }) => id);
+      const listed = assets.map(({ id, ownerId }) => ({
+        id,
+        ownerId,
+        originalPath: original,
+        sha256: null,
+        checksumSize: null,
+        verifiedAt: null,
+        checksumPathVerified: false,
+        files: [],
+      }));
       vi.spyOn(CloudBackupIndexRepository.prototype, 'listAssets')
-        .mockResolvedValueOnce(
-          assets.map(({ id, ownerId }) => ({
-            id,
-            ownerId,
-            originalPath: original,
-            sha256: null,
-            checksumSize: null,
-            verifiedAt: null,
-            checksumPathVerified: false,
-            files: [],
-          })) as never,
-        )
+        .mockImplementationOnce(async () => {
+          await options.beforeList?.();
+          return listed as never;
+        })
         .mockResolvedValue([]);
       vi.spyOn(CloudBackupIndexRepository.prototype, 'getAssetDetails').mockResolvedValue(
         new Map(ids.map((id) => [id, { record: {}, details: EMPTY_DETAILS }])) as never,
@@ -380,11 +385,23 @@ describe('Buddy effective configuration file capture', () => {
     });
 
     it('refuses a snapshot whose encrypted files have no key file from its start', async () => {
-      await sealedLibrary();
-      // encryption changed during the run: no key file when the capture started
+      // encryption changed during the run: no key file when the capture started, the live one by the check
+      let keyText = '';
+      await sealedLibrary(undefined, { beforeList: () => writeFile(keyPath, keyText, { mode: 0o600 }) });
+      keyText = await readFile(keyPath, 'utf8');
       await rm(keyPath);
 
       await expect(capture(randomUUID())).rejects.toThrow('whose key file was not there when it started');
+    });
+
+    it('an item restored under an older key, which no key file opens, never fails the snapshot', async () => {
+      // single-item restore after encryption was turned off and on again: its key is no live key
+      const { assetId } = await sealedLibrary(undefined, { recipient: generateKeyPair().publicKey });
+
+      const captured = await capture(randomUUID());
+
+      expect(captured.manifest.library.assets[assetId]).toBeDefined();
+      expect(Object.keys(captured.manifest.library.lockedKeys ?? {})).toEqual([OWNER]);
     });
 
     it('a partner copy of an encrypted item needs the owner’s key file, never the partner’s', async () => {

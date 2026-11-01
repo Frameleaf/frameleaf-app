@@ -100,6 +100,44 @@ export async function lockedFileOwnerKeyId(path: string): Promise<string | null>
   return keyIds[0]?.toString('hex') ?? null;
 }
 
+/**
+ * The owner key id a backup records for an encrypted file whose header cannot be read: no key file can be
+ * shown to open it, so the run treats it as keyless and fails safe, never as a plain file.
+ */
+export const unreadableLockedKeyId = (path: string) => `unreadable:${path}`;
+
+/**
+ * FL-721: the owner key id (hex) of an encrypted file, as a backup records it; null only for a file that is
+ * not encrypted. An encrypted file whose header cannot be read gets `unreadableLockedKeyId`.
+ */
+export async function sealedFileOwnerKeyId(path: string): Promise<string | null> {
+  if (!(await isLockedFile(path).catch(() => false))) {
+    return null;
+  }
+  return (await lockedFileOwnerKeyId(path).catch(() => null)) ?? unreadableLockedKeyId(path);
+}
+
+/**
+ * FL-721: which of the owner key ids a backup's encrypted files need have no key file in that backup.
+ * `keyless` fails the run: a key file that is live now but was not captured when the run started (the
+ * encryption changed during it), or a file whose header cannot be read. `older` is only reported: a key
+ * id that matches no live key file belongs to an item restored under an older key (spec §9), which no
+ * backup could ever capture a key file for. Live key files are read only when some id is missing.
+ */
+export async function lockedKeyGaps(
+  sealedKeyIds: Iterable<string>,
+  capturedKeyIds: ReadonlySet<string>,
+  mediaLocation: string,
+): Promise<{ keyless: string[]; older: string[] }> {
+  const missing = [...new Set(sealedKeyIds)].filter((id) => !capturedKeyIds.has(id));
+  if (missing.length === 0) {
+    return { keyless: [], older: [] };
+  }
+  const live = await liveLockedKeyIds(mediaLocation);
+  const keyless = missing.filter((id) => live.has(id) || id.startsWith(unreadableLockedKeyId('')));
+  return { keyless, older: missing.filter((id) => !keyless.includes(id)) };
+}
+
 /** The key id (hex) of this person's key file at `path`; null when it is missing, unreadable or someone else's. */
 export async function lockedKeyFileKeyId(path: string, userId: string): Promise<string | null> {
   const file = await readLockedKeyFile(path, userId);

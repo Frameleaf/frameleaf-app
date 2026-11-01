@@ -257,6 +257,7 @@ import {
   lockedKeyBackupFiles,
   lockedKeyFileKeyId,
   lockedKeyFilePath,
+  lockedKeyGaps,
   lockedKeyOwners,
   matchLockedEncryptionRow,
   pathsBeingReplaced,
@@ -2596,8 +2597,18 @@ export class CloudBackupService {
     // off and on, during the run) would make a backup no secret can open. Never hidden: the run fails
     // before its manifest, and the earlier backups, with their key files, stay as they are. The owner is
     // the file's first recipient, so a partner copy needs the owner's key file, never the partner's.
-    const keyed = new Set(run.progress.result.lockedKeyIds);
-    const keyless = run.progress.result.sealedKeyIds.filter((id) => !keyed.has(id));
+    // A key id that matches no live key file is an item restored under an older key (spec §9): reported,
+    // never a failure, since no backup could ever capture its key file.
+    const { keyless, older } = await lockedKeyGaps(
+      run.progress.result.sealedKeyIds,
+      new Set(run.progress.result.lockedKeyIds),
+      StorageCore.getMediaLocation(),
+    );
+    if (older.length > 0) {
+      this.logger.warn(
+        `Cloud backup run ${run.id}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are backed up as they are`,
+      );
+    }
     if (keyless.length > 0) {
       this.logger.warn(
         `Cloud backup run ${run.id}: encrypted Locked files of ${keyless.length} person(s) had no key file when the run started`,
