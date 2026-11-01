@@ -1,0 +1,3997 @@
+{
+  "source": {
+    "version": "v7.12.0",
+    "commit": "8794fe0b5616830c63fda1fbf700b286211963b6",
+    "archiveSha256": "b616cb43676cbce92eae3f2065ed373318544bb23fcd9be33e702cdd1f178eb9"
+  },
+  "runtime": {
+    "image": "lycheeorg/lychee@sha256:712e8da972c037e6c8d4addb0bc26f43f05eebfd4b909ce97a3345aca88dad2f",
+    "phpVersion": "8.5.12",
+    "sqliteVersion": "3.46.1"
+  },
+  "schemaSha256": "73fb240f5b51192b7d29ea0a72da6660680295f5e577ad1e77fa6ef0dc227c5d",
+  "applicationId": {
+    "application_id": 0
+  },
+  "userVersion": {
+    "user_version": 0
+  },
+  "objects": [
+    {
+      "type": "index",
+      "name": "access_permissions_base_album_id_index",
+      "tbl_name": "access_permissions",
+      "sql": "CREATE INDEX \"access_permissions_base_album_id_index\" on \"access_permissions\" (\"base_album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "access_permissions_dedup_unique",
+      "tbl_name": "access_permissions",
+      "sql": "CREATE UNIQUE INDEX \"access_permissions_dedup_unique\" on \"access_permissions\" (\"base_album_id\", \"user_id_unique_key\", \"user_group_id_unique_key\")"
+    },
+    {
+      "type": "index",
+      "name": "access_permissions_is_link_required_index",
+      "tbl_name": "access_permissions",
+      "sql": "CREATE INDEX \"access_permissions_is_link_required_index\" on \"access_permissions\" (\"is_link_required\")"
+    },
+    {
+      "type": "index",
+      "name": "access_permissions_is_link_required_password_index",
+      "tbl_name": "access_permissions",
+      "sql": "CREATE INDEX \"access_permissions_is_link_required_password_index\" on \"access_permissions\" (\"is_link_required\", \"password\")"
+    },
+    {
+      "type": "index",
+      "name": "access_permissions_user_id_index",
+      "tbl_name": "access_permissions",
+      "sql": "CREATE INDEX \"access_permissions_user_id_index\" on \"access_permissions\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "album_user_thumbs_album_id_index",
+      "tbl_name": "album_user_thumbs",
+      "sql": "CREATE INDEX \"album_user_thumbs_album_id_index\" on \"album_user_thumbs\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "album_user_thumbs_album_id_user_id_unique_key_unique",
+      "tbl_name": "album_user_thumbs",
+      "sql": "CREATE UNIQUE INDEX \"album_user_thumbs_album_id_user_id_unique_key_unique\" on \"album_user_thumbs\" (\"album_id\", \"user_id_unique_key\")"
+    },
+    {
+      "type": "index",
+      "name": "albums__lft__rgt__index",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX \"albums__lft__rgt__index\" on \"albums\" (\"_lft\", \"_rgt\")"
+    },
+    {
+      "type": "index",
+      "name": "albums_parent_id_bucket_key_index",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX \"albums_parent_id_bucket_key_index\" on \"albums\" (\"parent_id\", \"bucket_key\")"
+    },
+    {
+      "type": "index",
+      "name": "albums_parent_id_index",
+      "tbl_name": "albums",
+      "sql": "CREATE INDEX \"albums_parent_id_index\" on \"albums\" (\"parent_id\")"
+    },
+    {
+      "type": "index",
+      "name": "albums_tags_album_id_index",
+      "tbl_name": "albums_tags",
+      "sql": "CREATE INDEX \"albums_tags_album_id_index\" on \"albums_tags\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "albums_tags_tag_id_album_id_index",
+      "tbl_name": "albums_tags",
+      "sql": "CREATE INDEX \"albums_tags_tag_id_album_id_index\" on \"albums_tags\" (\"tag_id\", \"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "albums_tags_tag_id_album_id_unique",
+      "tbl_name": "albums_tags",
+      "sql": "CREATE UNIQUE INDEX \"albums_tags_tag_id_album_id_unique\" on \"albums_tags\" (\"tag_id\", \"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "albums_tags_tag_id_index",
+      "tbl_name": "albums_tags",
+      "sql": "CREATE INDEX \"albums_tags_tag_id_index\" on \"albums_tags\" (\"tag_id\")"
+    },
+    {
+      "type": "index",
+      "name": "base_albums_owner_id_index",
+      "tbl_name": "base_albums",
+      "sql": "CREATE INDEX \"base_albums_owner_id_index\" on \"base_albums\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "base_albums_published_at_index",
+      "tbl_name": "base_albums",
+      "sql": "CREATE INDEX \"base_albums_published_at_index\" on \"base_albums\" (\"published_at\")"
+    },
+    {
+      "type": "index",
+      "name": "base_albums_slug_unique",
+      "tbl_name": "base_albums",
+      "sql": "CREATE UNIQUE INDEX \"base_albums_slug_unique\" on \"base_albums\" (\"slug\")"
+    },
+    {
+      "type": "index",
+      "name": "base_albums_title_base_title_index_index",
+      "tbl_name": "base_albums",
+      "sql": "CREATE INDEX \"base_albums_title_base_title_index_index\" on \"base_albums\" (\"title_base\", \"title_index\")"
+    },
+    {
+      "type": "index",
+      "name": "cache_expiration_index",
+      "tbl_name": "cache",
+      "sql": "CREATE INDEX \"cache_expiration_index\" on \"cache\" (\"expiration\")"
+    },
+    {
+      "type": "index",
+      "name": "cache_locks_expiration_index",
+      "tbl_name": "cache_locks",
+      "sql": "CREATE INDEX \"cache_locks_expiration_index\" on \"cache_locks\" (\"expiration\")"
+    },
+    {
+      "type": "index",
+      "name": "colours_r_g_b_unique",
+      "tbl_name": "colours",
+      "sql": "CREATE UNIQUE INDEX \"colours_r_g_b_unique\" on \"colours\" (\"R\", \"G\", \"B\")"
+    },
+    {
+      "type": "index",
+      "name": "config_categories_cat_index",
+      "tbl_name": "config_categories",
+      "sql": "CREATE INDEX \"config_categories_cat_index\" on \"config_categories\" (\"cat\")"
+    },
+    {
+      "type": "index",
+      "name": "config_categories_name_unique",
+      "tbl_name": "config_categories",
+      "sql": "CREATE UNIQUE INDEX \"config_categories_name_unique\" on \"config_categories\" (\"name\")"
+    },
+    {
+      "type": "index",
+      "name": "configs_key_unique",
+      "tbl_name": "configs",
+      "sql": "CREATE UNIQUE INDEX \"configs_key_unique\" on \"configs\" (\"key\")"
+    },
+    {
+      "type": "index",
+      "name": "contact_messages_created_at_index",
+      "tbl_name": "contact_messages",
+      "sql": "CREATE INDEX \"contact_messages_created_at_index\" on \"contact_messages\" (\"created_at\")"
+    },
+    {
+      "type": "index",
+      "name": "contact_messages_is_read_index",
+      "tbl_name": "contact_messages",
+      "sql": "CREATE INDEX \"contact_messages_is_read_index\" on \"contact_messages\" (\"is_read\")"
+    },
+    {
+      "type": "index",
+      "name": "face_suggestions_face_id_suggested_face_id_unique",
+      "tbl_name": "face_suggestions",
+      "sql": "CREATE UNIQUE INDEX \"face_suggestions_face_id_suggested_face_id_unique\" on \"face_suggestions\" (\"face_id\", \"suggested_face_id\")"
+    },
+    {
+      "type": "index",
+      "name": "faces_cluster_label_person_id_is_dismissed_index",
+      "tbl_name": "faces",
+      "sql": "CREATE INDEX \"faces_cluster_label_person_id_is_dismissed_index\" on \"faces\" (\"cluster_label\", \"person_id\", \"is_dismissed\")"
+    },
+    {
+      "type": "index",
+      "name": "faces_person_id_index",
+      "tbl_name": "faces",
+      "sql": "CREATE INDEX \"faces_person_id_index\" on \"faces\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "faces_photo_id_index",
+      "tbl_name": "faces",
+      "sql": "CREATE INDEX \"faces_photo_id_index\" on \"faces\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "failed_jobs_uuid_unique",
+      "tbl_name": "failed_jobs",
+      "sql": "CREATE UNIQUE INDEX \"failed_jobs_uuid_unique\" on \"failed_jobs\" (\"uuid\")"
+    },
+    {
+      "type": "index",
+      "name": "jobs_history_owner_id_status_index",
+      "tbl_name": "jobs_history",
+      "sql": "CREATE INDEX \"jobs_history_owner_id_status_index\" on \"jobs_history\" (\"owner_id\", \"status\")"
+    },
+    {
+      "type": "index",
+      "name": "jobs_queue_index",
+      "tbl_name": "jobs",
+      "sql": "CREATE INDEX \"jobs_queue_index\" on \"jobs\" (\"queue\")"
+    },
+    {
+      "type": "index",
+      "name": "landing_featured_items_enabled_index",
+      "tbl_name": "landing_featured_items",
+      "sql": "CREATE INDEX \"landing_featured_items_enabled_index\" on \"landing_featured_items\" (\"enabled\")"
+    },
+    {
+      "type": "index",
+      "name": "landing_featured_items_item_type_index",
+      "tbl_name": "landing_featured_items",
+      "sql": "CREATE INDEX \"landing_featured_items_item_type_index\" on \"landing_featured_items\" (\"item_type\")"
+    },
+    {
+      "type": "index",
+      "name": "landing_links_enabled_index",
+      "tbl_name": "landing_links",
+      "sql": "CREATE INDEX \"landing_links_enabled_index\" on \"landing_links\" (\"enabled\")"
+    },
+    {
+      "type": "index",
+      "name": "landing_links_placement_index",
+      "tbl_name": "landing_links",
+      "sql": "CREATE INDEX \"landing_links_placement_index\" on \"landing_links\" (\"placement\")"
+    },
+    {
+      "type": "index",
+      "name": "live_metrics_action_index",
+      "tbl_name": "live_metrics",
+      "sql": "CREATE INDEX \"live_metrics_action_index\" on \"live_metrics\" (\"action\")"
+    },
+    {
+      "type": "index",
+      "name": "live_metrics_created_at_index",
+      "tbl_name": "live_metrics",
+      "sql": "CREATE INDEX \"live_metrics_created_at_index\" on \"live_metrics\" (\"created_at\")"
+    },
+    {
+      "type": "index",
+      "name": "live_metrics_visitor_id_index",
+      "tbl_name": "live_metrics",
+      "sql": "CREATE INDEX \"live_metrics_visitor_id_index\" on \"live_metrics\" (\"visitor_id\")"
+    },
+    {
+      "type": "index",
+      "name": "notifications_notifiable_type_notifiable_id_index",
+      "tbl_name": "notifications",
+      "sql": "CREATE INDEX \"notifications_notifiable_type_notifiable_id_index\" on \"notifications\" (\"notifiable_type\", \"notifiable_id\")"
+    },
+    {
+      "type": "index",
+      "name": "oauth_credentials_provider_user_id_unique",
+      "tbl_name": "oauth_credentials",
+      "sql": "CREATE UNIQUE INDEX \"oauth_credentials_provider_user_id_unique\" on \"oauth_credentials\" (\"provider\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "oauth_credentials_token_id_index",
+      "tbl_name": "oauth_credentials",
+      "sql": "CREATE INDEX \"oauth_credentials_token_id_index\" on \"oauth_credentials\" (\"token_id\")"
+    },
+    {
+      "type": "index",
+      "name": "oauth_credentials_token_id_provider_index",
+      "tbl_name": "oauth_credentials",
+      "sql": "CREATE INDEX \"oauth_credentials_token_id_provider_index\" on \"oauth_credentials\" (\"token_id\", \"provider\")"
+    },
+    {
+      "type": "index",
+      "name": "oauth_credentials_token_id_unique",
+      "tbl_name": "oauth_credentials",
+      "sql": "CREATE UNIQUE INDEX \"oauth_credentials_token_id_unique\" on \"oauth_credentials\" (\"token_id\")"
+    },
+    {
+      "type": "index",
+      "name": "oauth_credentials_user_id_index",
+      "tbl_name": "oauth_credentials",
+      "sql": "CREATE INDEX \"oauth_credentials_user_id_index\" on \"oauth_credentials\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "orders_transaction_id_unique",
+      "tbl_name": "orders",
+      "sql": "CREATE UNIQUE INDEX \"orders_transaction_id_unique\" on \"orders\" (\"transaction_id\")"
+    },
+    {
+      "type": "index",
+      "name": "palettes_id_index",
+      "tbl_name": "palettes",
+      "sql": "CREATE INDEX \"palettes_id_index\" on \"palettes\" (\"id\")"
+    },
+    {
+      "type": "index",
+      "name": "palettes_photo_id_index",
+      "tbl_name": "palettes",
+      "sql": "CREATE INDEX \"palettes_photo_id_index\" on \"palettes\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "person_albums_persons_album_id_index",
+      "tbl_name": "person_albums_persons",
+      "sql": "CREATE INDEX \"person_albums_persons_album_id_index\" on \"person_albums_persons\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "person_albums_persons_person_id_album_id_unique",
+      "tbl_name": "person_albums_persons",
+      "sql": "CREATE UNIQUE INDEX \"person_albums_persons_person_id_album_id_unique\" on \"person_albums_persons\" (\"person_id\", \"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "person_albums_persons_person_id_index",
+      "tbl_name": "person_albums_persons",
+      "sql": "CREATE INDEX \"person_albums_persons_person_id_index\" on \"person_albums_persons\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "persons_user_id_index",
+      "tbl_name": "persons",
+      "sql": "CREATE INDEX \"persons_user_id_index\" on \"persons\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "persons_user_id_unique",
+      "tbl_name": "persons",
+      "sql": "CREATE UNIQUE INDEX \"persons_user_id_unique\" on \"persons\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_album_album_id_bucket_key_index",
+      "tbl_name": "photo_album",
+      "sql": "CREATE INDEX \"photo_album_album_id_bucket_key_index\" on \"photo_album\" (\"album_id\", \"bucket_key\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_album_album_id_index",
+      "tbl_name": "photo_album",
+      "sql": "CREATE INDEX \"photo_album_album_id_index\" on \"photo_album\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_album_album_id_photo_id_index",
+      "tbl_name": "photo_album",
+      "sql": "CREATE INDEX \"photo_album_album_id_photo_id_index\" on \"photo_album\" (\"album_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_album_photo_id_index",
+      "tbl_name": "photo_album",
+      "sql": "CREATE INDEX \"photo_album_photo_id_index\" on \"photo_album\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_moderation_events_photo_id_index",
+      "tbl_name": "photo_moderation_events",
+      "sql": "CREATE INDEX \"photo_moderation_events_photo_id_index\" on \"photo_moderation_events\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_ratings_photo_id_index",
+      "tbl_name": "photo_ratings",
+      "sql": "CREATE INDEX \"photo_ratings_photo_id_index\" on \"photo_ratings\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_ratings_photo_id_user_id_unique",
+      "tbl_name": "photo_ratings",
+      "sql": "CREATE UNIQUE INDEX \"photo_ratings_photo_id_user_id_unique\" on \"photo_ratings\" (\"photo_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_ratings_user_id_index",
+      "tbl_name": "photo_ratings",
+      "sql": "CREATE INDEX \"photo_ratings_user_id_index\" on \"photo_ratings\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_album_id_is_highlighted_created_at_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_album_id_is_highlighted_created_at_index\" on \"photos\" (\"is_highlighted\", \"created_at\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_album_id_is_highlighted_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_album_id_is_highlighted_index\" on \"photos\" (\"is_highlighted\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_album_id_is_highlighted_taken_at_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_album_id_is_highlighted_taken_at_index\" on \"photos\" (\"is_highlighted\", \"taken_at\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_album_id_is_highlighted_type_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_album_id_is_highlighted_type_index\" on \"photos\" (\"is_highlighted\", \"type\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_checksum_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_checksum_index\" on \"photos\" (\"checksum\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_is_highlighted_title_taken_created_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_is_highlighted_title_taken_created_index\" on \"photos\" (\"is_highlighted\", \"title\", \"taken_at\", \"created_at\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_is_validated_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_is_validated_index\" on \"photos\" (\"is_validated\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_latitude_longitude_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_latitude_longitude_index\" on \"photos\" (\"latitude\", \"longitude\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_live_photo_checksum_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_live_photo_checksum_index\" on \"photos\" (\"live_photo_checksum\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_live_photo_content_id_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_live_photo_content_id_index\" on \"photos\" (\"live_photo_content_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_original_checksum_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_original_checksum_index\" on \"photos\" (\"original_checksum\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_rating_avg_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_rating_avg_index\" on \"photos\" (\"rating_avg\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_tags_photo_id_index",
+      "tbl_name": "photos_tags",
+      "sql": "CREATE INDEX \"photos_tags_photo_id_index\" on \"photos_tags\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_tags_tag_id_index",
+      "tbl_name": "photos_tags",
+      "sql": "CREATE INDEX \"photos_tags_tag_id_index\" on \"photos_tags\" (\"tag_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_tags_tag_id_photo_id_index",
+      "tbl_name": "photos_tags",
+      "sql": "CREATE INDEX \"photos_tags_tag_id_photo_id_index\" on \"photos_tags\" (\"tag_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_tags_tag_id_photo_id_unique",
+      "tbl_name": "photos_tags",
+      "sql": "CREATE UNIQUE INDEX \"photos_tags_tag_id_photo_id_unique\" on \"photos_tags\" (\"tag_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_taken_key_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_taken_key_index\" on \"photos\" (\"taken_key\")"
+    },
+    {
+      "type": "index",
+      "name": "photos_title_base_title_index_index",
+      "tbl_name": "photos",
+      "sql": "CREATE INDEX \"photos_title_base_title_index_index\" on \"photos\" (\"title_base\", \"title_index\")"
+    },
+    {
+      "type": "index",
+      "name": "size_variants_photo_id_type_ratio_index",
+      "tbl_name": "size_variants",
+      "sql": "CREATE INDEX \"size_variants_photo_id_type_ratio_index\" on \"size_variants\" (\"photo_id\", \"type\", \"ratio\")"
+    },
+    {
+      "type": "index",
+      "name": "size_variants_photo_id_type_unique",
+      "tbl_name": "size_variants",
+      "sql": "CREATE UNIQUE INDEX \"size_variants_photo_id_type_unique\" on \"size_variants\" (\"photo_id\", \"type\")"
+    },
+    {
+      "type": "index",
+      "name": "size_variants_short_path_index",
+      "tbl_name": "size_variants",
+      "sql": "CREATE INDEX \"size_variants_short_path_index\" on \"size_variants\" (\"short_path\")"
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_album_size_statistics_1",
+      "tbl_name": "album_size_statistics",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_albums_1",
+      "tbl_name": "albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_base_albums_1",
+      "tbl_name": "base_albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_cache_1",
+      "tbl_name": "cache",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_cache_locks_1",
+      "tbl_name": "cache_locks",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_faces_1",
+      "tbl_name": "faces",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_landing_featured_items_1",
+      "tbl_name": "landing_featured_items",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_landing_links_1",
+      "tbl_name": "landing_links",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_notifications_1",
+      "tbl_name": "notifications",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_person_albums_1",
+      "tbl_name": "person_albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_persons_1",
+      "tbl_name": "persons",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_photo_album_1",
+      "tbl_name": "photo_album",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_photos_1",
+      "tbl_name": "photos",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_tag_albums_1",
+      "tbl_name": "tag_albums",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_webauthn_credentials_1",
+      "tbl_name": "webauthn_credentials",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_webhooks_1",
+      "tbl_name": "webhooks",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "statistics_album_id_unique",
+      "tbl_name": "statistics",
+      "sql": "CREATE UNIQUE INDEX \"statistics_album_id_unique\" on \"statistics\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "statistics_photo_id_unique",
+      "tbl_name": "statistics",
+      "sql": "CREATE UNIQUE INDEX \"statistics_photo_id_unique\" on \"statistics\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "tag_albums_tags_album_id_index",
+      "tbl_name": "tag_albums_tags",
+      "sql": "CREATE INDEX \"tag_albums_tags_album_id_index\" on \"tag_albums_tags\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "tag_albums_tags_tag_id_album_id_index",
+      "tbl_name": "tag_albums_tags",
+      "sql": "CREATE INDEX \"tag_albums_tags_tag_id_album_id_index\" on \"tag_albums_tags\" (\"tag_id\", \"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "tag_albums_tags_tag_id_album_id_unique",
+      "tbl_name": "tag_albums_tags",
+      "sql": "CREATE UNIQUE INDEX \"tag_albums_tags_tag_id_album_id_unique\" on \"tag_albums_tags\" (\"tag_id\", \"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "tag_albums_tags_tag_id_index",
+      "tbl_name": "tag_albums_tags",
+      "sql": "CREATE INDEX \"tag_albums_tags_tag_id_index\" on \"tag_albums_tags\" (\"tag_id\")"
+    },
+    {
+      "type": "index",
+      "name": "tags_name_index",
+      "tbl_name": "tags",
+      "sql": "CREATE INDEX \"tags_name_index\" on \"tags\" (\"name\")"
+    },
+    {
+      "type": "index",
+      "name": "tags_name_unique",
+      "tbl_name": "tags",
+      "sql": "CREATE UNIQUE INDEX \"tags_name_unique\" on \"tags\" (\"name\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_pricing",
+      "tbl_name": "purchasable_prices",
+      "sql": "CREATE UNIQUE INDEX \"unique_pricing\" on \"purchasable_prices\" (\"purchasable_id\", \"size_variant\", \"license_type\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_purchasable",
+      "tbl_name": "purchasables",
+      "sql": "CREATE UNIQUE INDEX \"unique_purchasable\" on \"purchasables\" (\"album_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_purchasable_pixel_size",
+      "tbl_name": "purchasable_pixel_sizes",
+      "sql": "CREATE UNIQUE INDEX \"unique_purchasable_pixel_size\" on \"purchasable_pixel_sizes\" (\"purchasable_id\", \"pixel_size_id\", \"license_type\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_purchasable_print_size",
+      "tbl_name": "purchasable_print_sizes",
+      "sql": "CREATE UNIQUE INDEX \"unique_purchasable_print_size\" on \"purchasable_print_sizes\" (\"purchasable_id\", \"print_size_id\")"
+    },
+    {
+      "type": "index",
+      "name": "user_groups_id_index",
+      "tbl_name": "user_groups",
+      "sql": "CREATE INDEX \"user_groups_id_index\" on \"user_groups\" (\"id\")"
+    },
+    {
+      "type": "index",
+      "name": "user_groups_name_unique",
+      "tbl_name": "user_groups",
+      "sql": "CREATE UNIQUE INDEX \"user_groups_name_unique\" on \"user_groups\" (\"name\")"
+    },
+    {
+      "type": "index",
+      "name": "users_email_unique",
+      "tbl_name": "users",
+      "sql": "CREATE UNIQUE INDEX \"users_email_unique\" on \"users\" (\"email\")"
+    },
+    {
+      "type": "index",
+      "name": "users_token_unique",
+      "tbl_name": "users",
+      "sql": "CREATE UNIQUE INDEX \"users_token_unique\" on \"users\" (\"token\")"
+    },
+    {
+      "type": "index",
+      "name": "users_user_groups_user_group_id_index",
+      "tbl_name": "users_user_groups",
+      "sql": "CREATE INDEX \"users_user_groups_user_group_id_index\" on \"users_user_groups\" (\"user_group_id\")"
+    },
+    {
+      "type": "index",
+      "name": "users_user_groups_user_id_index",
+      "tbl_name": "users_user_groups",
+      "sql": "CREATE INDEX \"users_user_groups_user_id_index\" on \"users_user_groups\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "users_user_groups_user_id_user_group_id_index",
+      "tbl_name": "users_user_groups",
+      "sql": "CREATE INDEX \"users_user_groups_user_id_user_group_id_index\" on \"users_user_groups\" (\"user_id\", \"user_group_id\")"
+    },
+    {
+      "type": "index",
+      "name": "users_user_groups_user_id_user_group_id_unique",
+      "tbl_name": "users_user_groups",
+      "sql": "CREATE UNIQUE INDEX \"users_user_groups_user_id_user_group_id_unique\" on \"users_user_groups\" (\"user_id\", \"user_group_id\")"
+    },
+    {
+      "type": "index",
+      "name": "users_username_unique",
+      "tbl_name": "users",
+      "sql": "CREATE UNIQUE INDEX \"users_username_unique\" on \"users\" (\"username\")"
+    },
+    {
+      "type": "index",
+      "name": "webauthn_user_index",
+      "tbl_name": "webauthn_credentials",
+      "sql": "CREATE INDEX \"webauthn_user_index\" on \"webauthn_credentials\" (\"authenticatable_type\", \"authenticatable_id\")"
+    },
+    {
+      "type": "index",
+      "name": "webhooks_enabled_index",
+      "tbl_name": "webhooks",
+      "sql": "CREATE INDEX \"webhooks_enabled_index\" on \"webhooks\" (\"enabled\")"
+    },
+    {
+      "type": "index",
+      "name": "webhooks_event_index",
+      "tbl_name": "webhooks",
+      "sql": "CREATE INDEX \"webhooks_event_index\" on \"webhooks\" (\"event\")"
+    },
+    {
+      "type": "table",
+      "name": "access_permissions",
+      "tbl_name": "access_permissions",
+      "sql": "CREATE TABLE \"access_permissions\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer, \"base_album_id\" varchar, \"is_link_required\" tinyint(1) not null default ('0'), \"password\" varchar, \"grants_full_photo_access\" tinyint(1) not null default ('0'), \"grants_download\" tinyint(1) not null default ('0'), \"grants_upload\" tinyint(1) not null default ('0'), \"grants_edit\" tinyint(1) not null default ('0'), \"grants_delete\" tinyint(1) not null default ('0'), \"created_at\" datetime, \"updated_at\" datetime, \"user_group_id\" integer, \"user_id_unique_key\" integer as (COALESCE(user_id, 0)), \"user_group_id_unique_key\" integer as (COALESCE(user_group_id, 0)), \"grants_move\" tinyint(1) not null default '0', foreign key(\"user_id\") references users(\"id\") on delete cascade on update cascade, foreign key(\"user_id\") references \"users\"(\"id\") on delete restrict on update restrict)"
+    },
+    {
+      "type": "table",
+      "name": "album_size_statistics",
+      "tbl_name": "album_size_statistics",
+      "sql": "CREATE TABLE \"album_size_statistics\" (\"album_id\" varchar not null, \"size_thumb\" integer not null default '0', \"size_thumb2x\" integer not null default '0', \"size_small\" integer not null default '0', \"size_small2x\" integer not null default '0', \"size_medium\" integer not null default '0', \"size_medium2x\" integer not null default '0', \"size_original\" integer not null default '0', \"size_raw\" integer not null default '0', foreign key(\"album_id\") references \"albums\"(\"id\") on delete cascade, primary key (\"album_id\"))"
+    },
+    {
+      "type": "table",
+      "name": "album_user_thumbs",
+      "tbl_name": "album_user_thumbs",
+      "sql": "CREATE TABLE \"album_user_thumbs\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer, \"album_id\" varchar not null, \"photo_id\" varchar not null, \"user_id_unique_key\" integer as (COALESCE(user_id, 0)), foreign key(\"photo_id\") references photos(\"id\") on delete cascade on update cascade, foreign key(\"user_id\") references users(\"id\") on delete restrict on update restrict)"
+    },
+    {
+      "type": "table",
+      "name": "albums",
+      "tbl_name": "albums",
+      "sql": "CREATE TABLE \"albums\" (\"id\" varchar not null, \"parent_id\" varchar, \"license\" varchar not null default ('none'), \"cover_id\" varchar, \"_lft\" integer not null default ('0'), \"_rgt\" integer not null default ('0'), \"album_sorting_col\" varchar, \"album_sorting_order\" varchar, \"album_thumb_aspect_ratio\" varchar, \"header_id\" varchar, \"album_timeline\" varchar, \"max_taken_at\" datetime, \"min_taken_at\" datetime, \"num_children\" integer not null default '0', \"num_photos\" integer not null default '0', \"auto_cover_id_max_privilege\" varchar, \"auto_cover_id_least_privilege\" varchar, \"title_color\" varchar not null default 'white', \"title_position\" varchar not null default 'top_left', \"header_photo_focus\" text, \"bucket_key\" varchar, foreign key(\"cover_id\") references photos(\"id\") on delete set null on update cascade, foreign key(\"id\") references base_albums(\"id\") on delete no action on update no action, foreign key(\"parent_id\") references albums(\"id\") on delete no action on update no action, foreign key(\"auto_cover_id_max_privilege\") references \"photos\"(\"id\") on delete set null, foreign key(\"auto_cover_id_least_privilege\") references \"photos\"(\"id\") on delete set null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "albums_tags",
+      "tbl_name": "albums_tags",
+      "sql": "CREATE TABLE \"albums_tags\" (\"id\" integer primary key autoincrement not null, \"tag_id\" integer not null, \"album_id\" varchar not null, foreign key(\"tag_id\") references \"tags\"(\"id\") on delete cascade on update cascade, foreign key(\"album_id\") references \"albums\"(\"id\") on delete cascade on update cascade)"
+    },
+    {
+      "type": "table",
+      "name": "base_albums",
+      "tbl_name": "base_albums",
+      "sql": "CREATE TABLE \"base_albums\" (\"id\" varchar not null, \"legacy_id\" integer, \"created_at\" datetime not null, \"updated_at\" datetime not null, \"title\" varchar not null, \"description\" text, \"owner_id\" integer not null default ('0'), \"is_nsfw\" tinyint(1) not null default ('0'), \"sorting_col\" varchar, \"sorting_order\" varchar, \"copyright\" varchar, \"photo_layout\" varchar, \"photo_timeline\" varchar, \"published_at\" datetime, \"is_pinned\" tinyint(1) not null default '0', \"slug\" varchar, \"title_base\" varchar not null default '', \"title_index\" integer not null default '0', \"published_at_orig_tz\" varchar, \"is_date_scrubber_enabled\" tinyint(1), foreign key(\"owner_id\") references users(\"id\") on delete no action on update no action, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "cache",
+      "tbl_name": "cache",
+      "sql": "CREATE TABLE \"cache\" (\"key\" varchar not null, \"value\" text not null, \"expiration\" integer not null, primary key (\"key\"))"
+    },
+    {
+      "type": "table",
+      "name": "cache_locks",
+      "tbl_name": "cache_locks",
+      "sql": "CREATE TABLE \"cache_locks\" (\"key\" varchar not null, \"owner\" varchar not null, \"expiration\" integer not null, primary key (\"key\"))"
+    },
+    {
+      "type": "table",
+      "name": "colours",
+      "tbl_name": "colours",
+      "sql": "CREATE TABLE \"colours\" (\"id\" integer not null, \"R\" integer not null default '0', \"G\" integer not null default '0', \"B\" integer not null default '0', primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "config_categories",
+      "tbl_name": "config_categories",
+      "sql": "CREATE TABLE \"config_categories\" (\"id\" integer primary key autoincrement not null, \"cat\" varchar not null, \"name\" varchar not null, \"description\" text not null, \"order\" integer not null default '255')"
+    },
+    {
+      "type": "table",
+      "name": "configs",
+      "tbl_name": "configs",
+      "sql": "CREATE TABLE \"configs\" (\"id\" integer primary key autoincrement not null, \"key\" varchar not null, \"value\" varchar, \"cat\" varchar not null default 'Config', \"type_range\" varchar not null default '0|1', \"description\" varchar not null default '', \"is_secret\" tinyint(1) not null default '0', \"level\" integer not null default '0', \"not_on_docker\" tinyint(1) not null default '0', \"order\" integer not null default '32767', \"is_expert\" tinyint(1) not null default '0', \"details\" text, \"required_keys\" varchar)"
+    },
+    {
+      "type": "table",
+      "name": "contact_messages",
+      "tbl_name": "contact_messages",
+      "sql": "CREATE TABLE \"contact_messages\" (\"id\" integer primary key autoincrement not null, \"name\" varchar not null, \"email\" varchar not null, \"message\" text not null, \"is_read\" tinyint(1) not null default '0', \"ip_address\" varchar, \"user_agent\" varchar, \"created_at\" datetime not null, \"updated_at\" datetime not null)"
+    },
+    {
+      "type": "table",
+      "name": "face_suggestions",
+      "tbl_name": "face_suggestions",
+      "sql": "CREATE TABLE \"face_suggestions\" (\"face_id\" varchar not null, \"suggested_face_id\" varchar not null, \"confidence\" float not null, foreign key(\"face_id\") references \"faces\"(\"id\") on delete cascade, foreign key(\"suggested_face_id\") references \"faces\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "faces",
+      "tbl_name": "faces",
+      "sql": "CREATE TABLE \"faces\" (\"id\" varchar not null, \"photo_id\" varchar not null, \"person_id\" varchar, \"x\" float not null, \"y\" float not null, \"width\" float not null, \"height\" float not null, \"confidence\" float not null, \"laplacian_variance\" float not null default '0', \"crop_token\" varchar, \"is_dismissed\" tinyint(1) not null default '0', \"created_at\" datetime, \"updated_at\" datetime, \"cluster_label\" integer, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete cascade, foreign key(\"person_id\") references \"persons\"(\"id\") on delete set null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "failed_jobs",
+      "tbl_name": "failed_jobs",
+      "sql": "CREATE TABLE \"failed_jobs\" (\"id\" integer primary key autoincrement not null, \"uuid\" varchar not null, \"connection\" text not null, \"queue\" text not null, \"payload\" text not null, \"exception\" text not null, \"failed_at\" datetime not null default CURRENT_TIMESTAMP)"
+    },
+    {
+      "type": "table",
+      "name": "jobs",
+      "tbl_name": "jobs",
+      "sql": "CREATE TABLE \"jobs\" (\"id\" integer primary key autoincrement not null, \"queue\" varchar not null, \"payload\" text not null, \"attempts\" integer not null, \"reserved_at\" integer, \"available_at\" integer not null, \"created_at\" integer not null)"
+    },
+    {
+      "type": "table",
+      "name": "jobs_history",
+      "tbl_name": "jobs_history",
+      "sql": "CREATE TABLE \"jobs_history\" (\"id\" integer primary key autoincrement not null, \"owner_id\" integer not null, \"job\" varchar not null, \"status\" integer not null default '0', \"created_at\" datetime, \"updated_at\" datetime, foreign key(\"owner_id\") references \"users\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "landing_featured_items",
+      "tbl_name": "landing_featured_items",
+      "sql": "CREATE TABLE \"landing_featured_items\" (\"id\" varchar not null, \"item_type\" varchar not null, \"item_id\" varchar not null, \"sort_order\" integer not null default '0', \"enabled\" tinyint(1) not null default '1', \"created_at\" datetime not null, \"updated_at\" datetime not null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "landing_links",
+      "tbl_name": "landing_links",
+      "sql": "CREATE TABLE \"landing_links\" (\"id\" varchar not null, \"label\" varchar not null, \"url\" varchar not null, \"placement\" varchar not null, \"open_in_new_tab\" tinyint(1) not null default '1', \"sort_order\" integer not null default '0', \"enabled\" tinyint(1) not null default '1', \"is_built_in\" tinyint(1) not null default '0', \"created_at\" datetime not null, \"updated_at\" datetime not null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "live_metrics",
+      "tbl_name": "live_metrics",
+      "sql": "CREATE TABLE \"live_metrics\" (\"id\" integer primary key autoincrement not null, \"created_at\" datetime, \"visitor_id\" varchar not null, \"action\" varchar not null, \"album_id\" varchar, \"photo_id\" varchar)"
+    },
+    {
+      "type": "table",
+      "name": "logs",
+      "tbl_name": "logs",
+      "sql": "CREATE TABLE \"logs\" (\"id\" integer primary key autoincrement not null, \"created_at\" datetime not null, \"updated_at\" datetime not null, \"type\" varchar not null, \"function\" varchar not null, \"line\" integer not null, \"text\" text not null)"
+    },
+    {
+      "type": "table",
+      "name": "migrations",
+      "tbl_name": "migrations",
+      "sql": "CREATE TABLE \"migrations\" (\"id\" integer primary key autoincrement not null, \"migration\" varchar not null, \"batch\" integer not null)"
+    },
+    {
+      "type": "table",
+      "name": "notifications",
+      "tbl_name": "notifications",
+      "sql": "CREATE TABLE \"notifications\" (\"id\" varchar not null, \"type\" varchar not null, \"notifiable_type\" varchar not null, \"notifiable_id\" integer not null, \"data\" text not null, \"read_at\" datetime, \"created_at\" datetime, \"updated_at\" datetime, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "nsfw_detections",
+      "tbl_name": "nsfw_detections",
+      "sql": "CREATE TABLE \"nsfw_detections\" (\"id\" integer primary key autoincrement not null, \"photo_id\" varchar not null, \"label\" varchar not null, \"confidence\" float not null, \"bbox_x\" integer not null, \"bbox_y\" integer not null, \"bbox_width\" integer not null, \"bbox_height\" integer not null, \"area_pixels\" integer, \"area_ratio\" float, \"is_block\" tinyint(1) not null default '0', \"is_review\" tinyint(1) not null default '0', \"is_sensitive\" tinyint(1) not null default '0', \"created_at\" datetime, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "oauth_credentials",
+      "tbl_name": "oauth_credentials",
+      "sql": "CREATE TABLE \"oauth_credentials\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer, \"provider\" varchar not null, \"token_id\" varchar not null, \"created_at\" datetime, \"updated_at\" datetime, foreign key(\"user_id\") references \"users\"(\"id\") on delete cascade on update cascade)"
+    },
+    {
+      "type": "table",
+      "name": "order_items",
+      "tbl_name": "order_items",
+      "sql": "CREATE TABLE \"order_items\" (\"id\" integer primary key autoincrement not null, \"order_id\" integer not null, \"purchasable_id\" integer, \"album_id\" varchar, \"photo_id\" varchar, \"title\" varchar not null, \"license_type\" varchar not null, \"price_cents\" integer not null, \"size_variant_type\" varchar, \"item_notes\" text, \"size_variant_id\" integer, \"download_link\" varchar, \"is_print\" tinyint(1) not null default '0', \"print_size_id\" integer, \"pixel_size_id\" integer, \"print_width\" integer, \"print_height\" integer, \"print_unit\" varchar, \"print_paper_type\" varchar, \"pixel_width\" integer, \"pixel_height\" integer, foreign key(\"size_variant_id\") references size_variants(\"id\") on delete no action on update no action, foreign key(\"order_id\") references orders(\"id\") on delete cascade on update no action, foreign key(\"purchasable_id\") references purchasables(\"id\") on delete set null on update no action, foreign key(\"album_id\") references albums(\"id\") on delete set null on update no action, foreign key(\"photo_id\") references photos(\"id\") on delete set null on update no action, foreign key(\"print_size_id\") references \"print_sizes\"(\"id\") on delete set null, foreign key(\"pixel_size_id\") references \"pixel_sizes\"(\"id\") on delete set null)"
+    },
+    {
+      "type": "table",
+      "name": "orders",
+      "tbl_name": "orders",
+      "sql": "CREATE TABLE \"orders\" (\"id\" integer primary key autoincrement not null, \"transaction_id\" varchar not null, \"provider\" varchar, \"user_id\" integer, \"email\" varchar, \"status\" varchar not null, \"amount_cents\" integer not null default '0', \"created_at\" datetime not null, \"updated_at\" datetime, \"paid_at\" datetime, \"comment\" text, \"shipping_street_name\" varchar, \"shipping_street_number\" varchar, \"shipping_additional_info\" varchar, \"shipping_city\" varchar, \"shipping_post_code\" varchar, \"shipping_country\" varchar, foreign key(\"user_id\") references \"users\"(\"id\") on delete set null)"
+    },
+    {
+      "type": "table",
+      "name": "palettes",
+      "tbl_name": "palettes",
+      "sql": "CREATE TABLE \"palettes\" (\"id\" integer primary key autoincrement not null, \"photo_id\" varchar not null, \"colour_1\" integer not null, \"colour_2\" integer not null, \"colour_3\" integer not null, \"colour_4\" integer not null, \"colour_5\" integer not null)"
+    },
+    {
+      "type": "table",
+      "name": "person_albums",
+      "tbl_name": "person_albums",
+      "sql": "CREATE TABLE \"person_albums\" (\"id\" varchar not null, \"is_and\" tinyint(1) not null default '0', foreign key(\"id\") references \"base_albums\"(\"id\") on delete cascade on update cascade, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "person_albums_persons",
+      "tbl_name": "person_albums_persons",
+      "sql": "CREATE TABLE \"person_albums_persons\" (\"id\" integer primary key autoincrement not null, \"person_id\" varchar not null, \"album_id\" varchar not null, foreign key(\"person_id\") references \"persons\"(\"id\") on delete cascade, foreign key(\"album_id\") references \"person_albums\"(\"id\") on delete cascade on update cascade)"
+    },
+    {
+      "type": "table",
+      "name": "persons",
+      "tbl_name": "persons",
+      "sql": "CREATE TABLE \"persons\" (\"id\" varchar not null, \"name\" varchar not null, \"user_id\" integer, \"is_searchable\" tinyint(1) not null default ('1'), \"face_count\" integer not null default ('0'), \"photo_count\" integer not null default ('0'), \"created_at\" datetime, \"updated_at\" datetime, \"representative_face_id\" varchar, foreign key(\"user_id\") references users(\"id\") on delete set null on update no action, foreign key(\"representative_face_id\") references \"faces\"(\"id\") on delete set null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "photo_album",
+      "tbl_name": "photo_album",
+      "sql": "CREATE TABLE \"photo_album\" (\"album_id\" varchar not null, \"photo_id\" varchar not null, \"bucket_key\" varchar, foreign key(\"photo_id\") references \"photos\"(\"id\"), foreign key(\"album_id\") references \"albums\"(\"id\"), primary key (\"photo_id\", \"album_id\"))"
+    },
+    {
+      "type": "table",
+      "name": "photo_moderation_events",
+      "tbl_name": "photo_moderation_events",
+      "sql": "CREATE TABLE \"photo_moderation_events\" (\"id\" integer primary key autoincrement not null, \"photo_id\" varchar not null, \"event\" varchar not null, \"source\" varchar not null, \"user_id\" integer, \"created_at\" datetime not null, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete cascade, foreign key(\"user_id\") references \"users\"(\"id\") on delete set null)"
+    },
+    {
+      "type": "table",
+      "name": "photo_ratings",
+      "tbl_name": "photo_ratings",
+      "sql": "CREATE TABLE \"photo_ratings\" (\"id\" integer primary key autoincrement not null, \"photo_id\" varchar not null, \"user_id\" integer not null, \"rating\" integer not null, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete cascade, foreign key(\"user_id\") references \"users\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "photos",
+      "tbl_name": "photos",
+      "sql": "CREATE TABLE \"photos\" (\"id\" varchar not null, \"created_at\" datetime not null, \"updated_at\" datetime not null, \"owner_id\" integer not null default ('0'), \"title\" varchar, \"description\" text, \"license\" varchar not null default ('none'), \"is_highlighted\" tinyint(1) not null default ('0'), \"iso\" varchar, \"make\" varchar, \"model\" varchar, \"lens\" varchar, \"aperture\" varchar, \"shutter\" varchar, \"focal\" varchar, \"latitude\" numeric, \"longitude\" numeric, \"altitude\" numeric, \"img_direction\" numeric, \"location\" varchar, \"taken_at\" datetime, \"taken_at_orig_tz\" varchar, \"type\" varchar not null, \"filesize\" integer not null default ('0'), \"checksum\" varchar not null, \"original_checksum\" varchar not null, \"live_photo_short_path\" varchar, \"live_photo_content_id\" varchar, \"live_photo_checksum\" varchar, \"initial_taken_at\" datetime, \"initial_taken_at_orig_tz\" varchar, \"rating_avg\" numeric, \"duration\" varchar, \"fps\" varchar, \"face_scan_status\" varchar, \"face_count\" integer not null default ('0'), \"is_validated\" tinyint(1) not null default ('1'), \"nsfw_status\" varchar, \"upload_trust_level\" varchar, \"title_base\" varchar, \"title_index\" integer not null default ('0'), \"is_360\" tinyint(1), \"pano_full_width\" integer, \"pano_full_height\" integer, \"pano_crop_left\" integer, \"pano_crop_top\" integer, \"taken_key\" varchar, \"title_date_key\" varchar, foreign key(\"owner_id\") references users(\"id\") on delete no action on update no action, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "photos_tags",
+      "tbl_name": "photos_tags",
+      "sql": "CREATE TABLE \"photos_tags\" (\"id\" integer primary key autoincrement not null, \"tag_id\" integer not null, \"photo_id\" varchar not null, foreign key(\"tag_id\") references \"tags\"(\"id\") on delete cascade on update cascade, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete cascade on update cascade)"
+    },
+    {
+      "type": "table",
+      "name": "pixel_sizes",
+      "tbl_name": "pixel_sizes",
+      "sql": "CREATE TABLE \"pixel_sizes\" (\"id\" integer primary key autoincrement not null, \"label\" varchar not null, \"width\" integer not null, \"height\" integer not null, \"is_active\" tinyint(1) not null default '1')"
+    },
+    {
+      "type": "table",
+      "name": "print_sizes",
+      "tbl_name": "print_sizes",
+      "sql": "CREATE TABLE \"print_sizes\" (\"id\" integer primary key autoincrement not null, \"label\" varchar not null, \"width\" integer not null, \"height\" integer not null, \"unit\" varchar check (\"unit\" in ('cm', 'inch')) not null, \"paper_type\" varchar, \"is_active\" tinyint(1) not null default '1')"
+    },
+    {
+      "type": "table",
+      "name": "purchasable_pixel_sizes",
+      "tbl_name": "purchasable_pixel_sizes",
+      "sql": "CREATE TABLE \"purchasable_pixel_sizes\" (\"id\" integer primary key autoincrement not null, \"purchasable_id\" integer not null, \"pixel_size_id\" integer not null, \"price_cents\" integer not null, \"license_type\" varchar not null, foreign key(\"purchasable_id\") references \"purchasables\"(\"id\") on delete cascade, foreign key(\"pixel_size_id\") references \"pixel_sizes\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "purchasable_prices",
+      "tbl_name": "purchasable_prices",
+      "sql": "CREATE TABLE \"purchasable_prices\" (\"id\" integer primary key autoincrement not null, \"purchasable_id\" integer not null, \"size_variant\" varchar not null, \"license_type\" varchar not null, \"price_cents\" integer not null, foreign key(\"purchasable_id\") references \"purchasables\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "purchasable_print_sizes",
+      "tbl_name": "purchasable_print_sizes",
+      "sql": "CREATE TABLE \"purchasable_print_sizes\" (\"id\" integer primary key autoincrement not null, \"purchasable_id\" integer not null, \"print_size_id\" integer not null, \"price_cents\" integer not null, foreign key(\"purchasable_id\") references \"purchasables\"(\"id\") on delete cascade, foreign key(\"print_size_id\") references \"print_sizes\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "purchasables",
+      "tbl_name": "purchasables",
+      "sql": "CREATE TABLE \"purchasables\" (\"id\" integer primary key autoincrement not null, \"album_id\" varchar not null, \"photo_id\" varchar, \"description\" text, \"owner_notes\" text, \"is_active\" tinyint(1) not null default '1', foreign key(\"album_id\") references \"albums\"(\"id\") on delete cascade, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "renamer_rules",
+      "tbl_name": "renamer_rules",
+      "sql": "CREATE TABLE \"renamer_rules\" (\"id\" integer primary key autoincrement not null, \"order\" integer not null, \"owner_id\" integer not null, \"rule\" varchar not null, \"description\" text not null, \"needle\" text not null, \"replacement\" text not null, \"mode\" varchar not null, \"is_enabled\" tinyint(1) not null default '1', \"is_photo_rule\" tinyint(1) not null default '1', \"is_album_rule\" tinyint(1) not null default '1', foreign key(\"owner_id\") references \"users\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "size_variants",
+      "tbl_name": "size_variants",
+      "sql": "CREATE TABLE \"size_variants\" (\"id\" integer primary key autoincrement not null, \"photo_id\" varchar, \"type\" integer not null default ('0'), \"short_path\" varchar not null, \"width\" integer not null, \"height\" integer not null, \"filesize\" integer not null default ('0'), \"ratio\" float not null default ('1'), \"storage_disk\" varchar not null default ('images'), \"short_path_watermarked\" varchar, foreign key(\"photo_id\") references \"photos\"(\"id\") on delete set null)"
+    },
+    {
+      "type": "table",
+      "name": "sqlite_sequence",
+      "tbl_name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    },
+    {
+      "type": "table",
+      "name": "sqlite_stat1",
+      "tbl_name": "sqlite_stat1",
+      "sql": "CREATE TABLE sqlite_stat1(tbl,idx,stat)"
+    },
+    {
+      "type": "table",
+      "name": "statistics",
+      "tbl_name": "statistics",
+      "sql": "CREATE TABLE \"statistics\" (\"id\" integer primary key autoincrement not null, \"album_id\" varchar, \"photo_id\" varchar, \"visit_count\" integer not null default '0', \"download_count\" integer not null default '0', \"favourite_count\" integer not null default '0', \"shared_count\" integer not null default '0', \"rating_sum\" integer not null default '0', \"rating_count\" integer not null default '0')"
+    },
+    {
+      "type": "table",
+      "name": "tag_albums",
+      "tbl_name": "tag_albums",
+      "sql": "CREATE TABLE \"tag_albums\" (\"id\" varchar not null, \"is_and\" tinyint(1) not null default ('1'), \"cover_id\" varchar, foreign key(\"id\") references base_albums(\"id\") on delete no action on update no action, foreign key(\"cover_id\") references \"photos\"(\"id\") on delete set null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "tag_albums_tags",
+      "tbl_name": "tag_albums_tags",
+      "sql": "CREATE TABLE \"tag_albums_tags\" (\"id\" integer primary key autoincrement not null, \"tag_id\" integer not null, \"album_id\" varchar not null, foreign key(\"tag_id\") references \"tags\"(\"id\") on delete cascade on update cascade, foreign key(\"album_id\") references \"tag_albums\"(\"id\") on delete cascade on update cascade)"
+    },
+    {
+      "type": "table",
+      "name": "tags",
+      "tbl_name": "tags",
+      "sql": "CREATE TABLE \"tags\" (\"id\" integer primary key autoincrement not null, \"name\" varchar not null, \"description\" varchar)"
+    },
+    {
+      "type": "table",
+      "name": "tracks",
+      "tbl_name": "tracks",
+      "sql": "CREATE TABLE \"tracks\" (\"id\" integer primary key autoincrement not null, \"album_id\" varchar not null, \"name\" varchar not null, \"file_name\" varchar not null, \"disk\" varchar not null default 'images', \"is_primary\" tinyint(1) not null default '0', \"created_at\" datetime, \"updated_at\" datetime, foreign key(\"album_id\") references \"albums\"(\"id\") on delete cascade)"
+    },
+    {
+      "type": "table",
+      "name": "user_groups",
+      "tbl_name": "user_groups",
+      "sql": "CREATE TABLE \"user_groups\" (\"id\" integer primary key autoincrement not null, \"name\" varchar not null, \"description\" varchar, \"created_at\" datetime not null default CURRENT_TIMESTAMP, \"updated_at\" datetime not null)"
+    },
+    {
+      "type": "table",
+      "name": "users",
+      "tbl_name": "users",
+      "sql": "CREATE TABLE \"users\" (\"id\" integer primary key autoincrement not null, \"created_at\" datetime not null, \"updated_at\" datetime not null, \"username\" varchar not null, \"password\" varchar, \"email\" varchar, \"may_upload\" tinyint(1) not null default '0', \"may_edit_own_settings\" tinyint(1) not null default '0', \"remember_token\" varchar, \"token\" varchar, \"may_administrate\" tinyint(1) not null default '0', \"quota_kb\" integer, \"description\" text, \"note\" text, \"shared_albums_visibility\" varchar not null default 'default', \"display_name\" varchar, \"is_ldap\" tinyint(1) not null default '0', \"upload_trust_level\" varchar not null default 'trusted')"
+    },
+    {
+      "type": "table",
+      "name": "users_user_groups",
+      "tbl_name": "users_user_groups",
+      "sql": "CREATE TABLE \"users_user_groups\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer not null, \"user_group_id\" integer not null, \"role\" varchar not null default 'member', \"created_at\" datetime default CURRENT_TIMESTAMP, foreign key(\"user_id\") references \"users\"(\"id\") on delete cascade on update cascade, foreign key(\"user_group_id\") references \"user_groups\"(\"id\") on delete cascade on update cascade)"
+    },
+    {
+      "type": "table",
+      "name": "webauthn_credentials",
+      "tbl_name": "webauthn_credentials",
+      "sql": "CREATE TABLE \"webauthn_credentials\" (\"id\" varchar not null, \"authenticatable_type\" varchar not null, \"authenticatable_id\" integer not null, \"user_id\" varchar not null, \"alias\" varchar, \"counter\" integer, \"rp_id\" varchar not null, \"origin\" varchar not null, \"transports\" text, \"aaguid\" varchar, \"public_key\" text not null, \"attestation_format\" varchar not null default 'none', \"certificates\" text, \"disabled_at\" datetime, \"created_at\" datetime not null, \"updated_at\" datetime not null, primary key (\"id\"))"
+    },
+    {
+      "type": "table",
+      "name": "webhooks",
+      "tbl_name": "webhooks",
+      "sql": "CREATE TABLE \"webhooks\" (\"id\" varchar not null, \"name\" varchar not null, \"event\" varchar not null, \"method\" varchar not null, \"url\" varchar not null, \"payload_format\" varchar not null default 'json', \"secret\" text, \"secret_header\" varchar, \"enabled\" tinyint(1) not null default '1', \"send_photo_id\" tinyint(1) not null default '1', \"send_album_id\" tinyint(1) not null default '1', \"send_title\" tinyint(1) not null default '1', \"send_size_variants\" tinyint(1) not null default '0', \"size_variant_types\" text, \"created_at\" datetime not null, \"updated_at\" datetime not null, primary key (\"id\"))"
+    }
+  ],
+  "migrations": [
+    {
+      "id": 1,
+      "migration": "2014_10_12_000000_create_users_table",
+      "batch": 1
+    },
+    {
+      "id": 2,
+      "migration": "2018_08_03_110935_create_albums_table",
+      "batch": 1
+    },
+    {
+      "id": 3,
+      "migration": "2018_08_03_110936_create_photos_table",
+      "batch": 1
+    },
+    {
+      "id": 4,
+      "migration": "2018_08_03_110942_create_configs_table",
+      "batch": 1
+    },
+    {
+      "id": 5,
+      "migration": "2018_08_03_111324_create_logs_table",
+      "batch": 1
+    },
+    {
+      "id": 6,
+      "migration": "2018_08_10_134924_move_settings",
+      "batch": 1
+    },
+    {
+      "id": 7,
+      "migration": "2018_08_15_102039_move_albums",
+      "batch": 1
+    },
+    {
+      "id": 8,
+      "migration": "2018_08_15_103716_move_photos",
+      "batch": 1
+    },
+    {
+      "id": 9,
+      "migration": "2018_10_30_135411_sharing",
+      "batch": 1
+    },
+    {
+      "id": 10,
+      "migration": "2019_02_21_114356_create_pages_table",
+      "batch": 1
+    },
+    {
+      "id": 11,
+      "migration": "2019_02_21_114408_create_page_contents_table",
+      "batch": 1
+    },
+    {
+      "id": 12,
+      "migration": "2019_06_21_180451_create_sym_links_table",
+      "batch": 1
+    },
+    {
+      "id": 13,
+      "migration": "2019_09_28_171753_config_fix",
+      "batch": 1
+    },
+    {
+      "id": 14,
+      "migration": "2019_09_28_190822_photos_fix",
+      "batch": 1
+    },
+    {
+      "id": 15,
+      "migration": "2019_10_01_add_livephoto_cols",
+      "batch": 1
+    },
+    {
+      "id": 16,
+      "migration": "2019_10_02_1400_config_map_display_public",
+      "batch": 1
+    },
+    {
+      "id": 17,
+      "migration": "2019_10_03_214750_frame_refresh_in_sec",
+      "batch": 1
+    },
+    {
+      "id": 18,
+      "migration": "2019_10_06_1400_config_map_providers",
+      "batch": 1
+    },
+    {
+      "id": 19,
+      "migration": "2019_10_06_152017_add_force_32bit_ids",
+      "batch": 1
+    },
+    {
+      "id": 20,
+      "migration": "2019_10_07_0900_config_map_include_sub_albums",
+      "batch": 1
+    },
+    {
+      "id": 21,
+      "migration": "2019_10_09_233402_config_map_mod",
+      "batch": 1
+    },
+    {
+      "id": 22,
+      "migration": "2019_10_11_093442_config_check_update_every",
+      "batch": 1
+    },
+    {
+      "id": 23,
+      "migration": "2019_12_02_2100_config_exiftool",
+      "batch": 1
+    },
+    {
+      "id": 24,
+      "migration": "2019_12_15_0700_add_share_button_visible_option",
+      "batch": 1
+    },
+    {
+      "id": 25,
+      "migration": "2019_12_15_1000_config_check_update_every_cat_fix",
+      "batch": 1
+    },
+    {
+      "id": 26,
+      "migration": "2019_12_25_0600_config_exiftool_ternary",
+      "batch": 1
+    },
+    {
+      "id": 27,
+      "migration": "2020_01_018_2300_config_import_via_symlink",
+      "batch": 1
+    },
+    {
+      "id": 28,
+      "migration": "2020_01_04_1200_config_has_ffmpeg",
+      "batch": 1
+    },
+    {
+      "id": 29,
+      "migration": "2020_01_26_1200_config_public_sorting",
+      "batch": 1
+    },
+    {
+      "id": 30,
+      "migration": "2020_01_28_133201_composer_update",
+      "batch": 1
+    },
+    {
+      "id": 31,
+      "migration": "2020_02_14_0600_location_decoding",
+      "batch": 1
+    },
+    {
+      "id": 32,
+      "migration": "2020_03_11_124417_increase_length_photo_type",
+      "batch": 1
+    },
+    {
+      "id": 33,
+      "migration": "2020_03_17_200000_unhide_configs",
+      "batch": 1
+    },
+    {
+      "id": 34,
+      "migration": "2020_04_19_122905_bump_version",
+      "batch": 1
+    },
+    {
+      "id": 35,
+      "migration": "2020_04_22_155712_bump_version040002",
+      "batch": 1
+    },
+    {
+      "id": 36,
+      "migration": "2020_04_29_000250_bump_version040003",
+      "batch": 1
+    },
+    {
+      "id": 37,
+      "migration": "2020_05_12_114228_rss",
+      "batch": 1
+    },
+    {
+      "id": 38,
+      "migration": "2020_05_12_161427_bump_version040005",
+      "batch": 1
+    },
+    {
+      "id": 39,
+      "migration": "2020_05_19_174233_config_prefer_available_xmp_metadata",
+      "batch": 1
+    },
+    {
+      "id": 40,
+      "migration": "2020_05_26_135052_bump_version040006",
+      "batch": 1
+    },
+    {
+      "id": 41,
+      "migration": "2020_06_04_104605_config_editor_enabled",
+      "batch": 1
+    },
+    {
+      "id": 42,
+      "migration": "2020_07_11_104605_config_lossless_optimization",
+      "batch": 1
+    },
+    {
+      "id": 43,
+      "migration": "2020_07_11_184605_update_licences",
+      "batch": 1
+    },
+    {
+      "id": 44,
+      "migration": "2020_07_26_085322_config_swipe_tolerance",
+      "batch": 1
+    },
+    {
+      "id": 45,
+      "migration": "2020_07_29_132731_config_local_takestamp",
+      "batch": 1
+    },
+    {
+      "id": 46,
+      "migration": "2020_08_21_123622_add_smart_tag_album_cols",
+      "batch": 1
+    },
+    {
+      "id": 47,
+      "migration": "2020_10_09_130043_bump_version040007",
+      "batch": 1
+    },
+    {
+      "id": 48,
+      "migration": "2020_10_15_104504_add_log_max_num_line",
+      "batch": 1
+    },
+    {
+      "id": 49,
+      "migration": "2020_10_15_161346_sort_image_per_album",
+      "batch": 1
+    },
+    {
+      "id": 50,
+      "migration": "2020_11_12_183345_config_password_url_param_for_smart_album",
+      "batch": 1
+    },
+    {
+      "id": 51,
+      "migration": "2020_11_19_231553_bump_version040008",
+      "batch": 1
+    },
+    {
+      "id": 52,
+      "migration": "2020_12_12_203153_migrate_admin_user",
+      "batch": 1
+    },
+    {
+      "id": 53,
+      "migration": "2020_12_12_203831_create_web_authn_tables",
+      "batch": 1
+    },
+    {
+      "id": 54,
+      "migration": "2020_12_18_162100_bump_version040009",
+      "batch": 1
+    },
+    {
+      "id": 55,
+      "migration": "2020_12_18_162155_add_nsfw_album",
+      "batch": 1
+    },
+    {
+      "id": 56,
+      "migration": "2020_12_18_163800_bump_version040010",
+      "batch": 1
+    },
+    {
+      "id": 57,
+      "migration": "2020_12_24_022307_bump_version040100",
+      "batch": 1
+    },
+    {
+      "id": 58,
+      "migration": "2020_12_26_153220_nested_set_for_albums",
+      "batch": 1
+    },
+    {
+      "id": 59,
+      "migration": "2021_01_09_163715_remove_max_min_takestamps",
+      "batch": 1
+    },
+    {
+      "id": 60,
+      "migration": "2021_01_12_122546_bump_version040200",
+      "batch": 1
+    },
+    {
+      "id": 61,
+      "migration": "2021_01_18_103729_add_album_cover",
+      "batch": 1
+    },
+    {
+      "id": 62,
+      "migration": "2021_01_20_113912_bump_version040201",
+      "batch": 1
+    },
+    {
+      "id": 63,
+      "migration": "2021_01_24_231904_fix-rotation",
+      "batch": 1
+    },
+    {
+      "id": 64,
+      "migration": "2021_01_27_085903_config_map_display_direction",
+      "batch": 1
+    },
+    {
+      "id": 65,
+      "migration": "2021_01_30_111736_display_takedate",
+      "batch": 1
+    },
+    {
+      "id": 66,
+      "migration": "2021_02_12_222948_config_upload_processing_limit",
+      "batch": 1
+    },
+    {
+      "id": 67,
+      "migration": "2021_02_13_132245_bump_version040202",
+      "batch": 1
+    },
+    {
+      "id": 68,
+      "migration": "2021_02_18_232639_config_public_photos_hidden",
+      "batch": 1
+    },
+    {
+      "id": 69,
+      "migration": "2021_03_03_175555_config_remove_image_overlay",
+      "batch": 1
+    },
+    {
+      "id": 70,
+      "migration": "2021_04_17_135924_bump_version040300",
+      "batch": 1
+    },
+    {
+      "id": 71,
+      "migration": "2021_05_02_174300_add_filesize_raw_col",
+      "batch": 1
+    },
+    {
+      "id": 72,
+      "migration": "2021_05_12_185726_bump_version040301",
+      "batch": 1
+    },
+    {
+      "id": 73,
+      "migration": "2021_05_13_140700_refactor_size_variants",
+      "batch": 1
+    },
+    {
+      "id": 74,
+      "migration": "2021_05_16_171615_bump_version040302",
+      "batch": 1
+    },
+    {
+      "id": 75,
+      "migration": "2021_05_25_160600_post_revert_fixes",
+      "batch": 1
+    },
+    {
+      "id": 76,
+      "migration": "2021_05_31_201000_convert_filesize_to_bigint",
+      "batch": 1
+    },
+    {
+      "id": 77,
+      "migration": "2021_06_01_181900_refactor_timestamps_anew",
+      "batch": 1
+    },
+    {
+      "id": 78,
+      "migration": "2021_06_01_182000_bump_version040304",
+      "batch": 1
+    },
+    {
+      "id": 79,
+      "migration": "2021_06_06_151613_fix-takedate",
+      "batch": 1
+    },
+    {
+      "id": 80,
+      "migration": "2021_06_23_105939_create_notifications_table",
+      "batch": 1
+    },
+    {
+      "id": 81,
+      "migration": "2021_06_30_121651_add_email_to_users_table",
+      "batch": 1
+    },
+    {
+      "id": 82,
+      "migration": "2021_06_30_122229_config_new_photos_notification",
+      "batch": 1
+    },
+    {
+      "id": 83,
+      "migration": "2021_07_19_134617_bump_version040305",
+      "batch": 1
+    },
+    {
+      "id": 84,
+      "migration": "2021_10_27_133121_fix_confidentiality",
+      "batch": 1
+    },
+    {
+      "id": 85,
+      "migration": "2021_11_16_162058_bump_version040306",
+      "batch": 1
+    },
+    {
+      "id": 86,
+      "migration": "2021_12_03_201242_bump_version040400",
+      "batch": 1
+    },
+    {
+      "id": 87,
+      "migration": "2021_12_04_181200_refactor_models",
+      "batch": 1
+    },
+    {
+      "id": 88,
+      "migration": "2022_01_13_183131_bump_version040500",
+      "batch": 1
+    },
+    {
+      "id": 89,
+      "migration": "2022_01_16_181337_optimize_tables",
+      "batch": 1
+    },
+    {
+      "id": 90,
+      "migration": "2022_02_02_203008_filesize_size_variants",
+      "batch": 1
+    },
+    {
+      "id": 91,
+      "migration": "2022_02_22_194700_fix_sorting_config",
+      "batch": 1
+    },
+    {
+      "id": 92,
+      "migration": "2022_04_06_091900_drop_objectionable_indices",
+      "batch": 1
+    },
+    {
+      "id": 93,
+      "migration": "2022_04_13_094611_add_track_short_path_to_album_table",
+      "batch": 1
+    },
+    {
+      "id": 94,
+      "migration": "2022_04_16_170724_add_missing_indices",
+      "batch": 1
+    },
+    {
+      "id": 95,
+      "migration": "2022_04_16_174503_bump_version040501",
+      "batch": 1
+    },
+    {
+      "id": 96,
+      "migration": "2022_04_18_150400_add_index_for_delete",
+      "batch": 1
+    },
+    {
+      "id": 97,
+      "migration": "2022_04_18_174417_fix_live_photo_short_path",
+      "batch": 1
+    },
+    {
+      "id": 98,
+      "migration": "2022_06_12_075709_add_token_to_user_table",
+      "batch": 1
+    },
+    {
+      "id": 99,
+      "migration": "2022_07_09_130303_create_webauthn_credentials",
+      "batch": 1
+    },
+    {
+      "id": 100,
+      "migration": "2022_07_13_174800_permission_test",
+      "batch": 1
+    },
+    {
+      "id": 101,
+      "migration": "2022_07_24_102214_bump_version040502",
+      "batch": 1
+    },
+    {
+      "id": 102,
+      "migration": "2022_08_03_184746_add_zip_options",
+      "batch": 1
+    },
+    {
+      "id": 103,
+      "migration": "2022_08_06_205701_bump_version040503",
+      "batch": 1
+    },
+    {
+      "id": 104,
+      "migration": "2022_08_06_210757_bump_version040600",
+      "batch": 1
+    },
+    {
+      "id": 105,
+      "migration": "2022_08_27_103010_drop_page_support",
+      "batch": 1
+    },
+    {
+      "id": 106,
+      "migration": "2022_08_27_110209_drop_admin_user_config",
+      "batch": 1
+    },
+    {
+      "id": 107,
+      "migration": "2022_09_27_103710_bump_version040601",
+      "batch": 1
+    },
+    {
+      "id": 108,
+      "migration": "2022_10_23_143201_make_wui_settings_public",
+      "batch": 1
+    },
+    {
+      "id": 109,
+      "migration": "2022_10_28_232159_bump_version040602",
+      "batch": 1
+    },
+    {
+      "id": 110,
+      "migration": "2022_11_07_171403_add_config_descriptions",
+      "batch": 1
+    },
+    {
+      "id": 111,
+      "migration": "2022_11_27_143608_bump_version040603",
+      "batch": 1
+    },
+    {
+      "id": 112,
+      "migration": "2022_12_05_195600_enable_disable_smart_albums",
+      "batch": 1
+    },
+    {
+      "id": 113,
+      "migration": "2022_12_07_141854_rename_capabilities",
+      "batch": 1
+    },
+    {
+      "id": 114,
+      "migration": "2022_12_07_143755_add_default_protection_option",
+      "batch": 1
+    },
+    {
+      "id": 115,
+      "migration": "2022_12_07_164417_config_uniformize_rights",
+      "batch": 1
+    },
+    {
+      "id": 116,
+      "migration": "2022_12_07_175257_rename_attributes_grants",
+      "batch": 1
+    },
+    {
+      "id": 117,
+      "migration": "2022_12_10_183251_increment_user_i_ds",
+      "batch": 1
+    },
+    {
+      "id": 118,
+      "migration": "2022_12_12_100000_enable_disable_album_photo_counters",
+      "batch": 1
+    },
+    {
+      "id": 119,
+      "migration": "2022_12_21_212143_use_webp_for_example",
+      "batch": 1
+    },
+    {
+      "id": 120,
+      "migration": "2022_12_25_103052_bump_version040604",
+      "batch": 1
+    },
+    {
+      "id": 121,
+      "migration": "2022_12_26_101639_allow_username_change",
+      "batch": 1
+    },
+    {
+      "id": 122,
+      "migration": "2022_12_26_111139_bump_version040605",
+      "batch": 1
+    },
+    {
+      "id": 123,
+      "migration": "2022_12_28_164844_remove-demo",
+      "batch": 1
+    },
+    {
+      "id": 124,
+      "migration": "2022_12_31_103416_bump_version040700",
+      "batch": 1
+    },
+    {
+      "id": 125,
+      "migration": "2023_01_09_133603_public_on_this_day",
+      "batch": 1
+    },
+    {
+      "id": 126,
+      "migration": "2023_01_25_140614_change-locale",
+      "batch": 1
+    },
+    {
+      "id": 127,
+      "migration": "2023_02_05_155552_bump_version040701",
+      "batch": 1
+    },
+    {
+      "id": 128,
+      "migration": "2023_02_23_192505_add_auto_fix_orientation_setting",
+      "batch": 1
+    },
+    {
+      "id": 129,
+      "migration": "2023_03_08_103109_bump_version040702",
+      "batch": 1
+    },
+    {
+      "id": 130,
+      "migration": "2023_04_05_150337_create_jobs_table",
+      "batch": 1
+    },
+    {
+      "id": 131,
+      "migration": "2023_04_05_150625_queue-processing",
+      "batch": 1
+    },
+    {
+      "id": 132,
+      "migration": "2023_04_05_220214_create_failed_jobs_table",
+      "batch": 1
+    },
+    {
+      "id": 133,
+      "migration": "2023_04_09_142907_create_job_history_table",
+      "batch": 1
+    },
+    {
+      "id": 134,
+      "migration": "2023_04_18_065457_bump_version040703",
+      "batch": 1
+    },
+    {
+      "id": 135,
+      "migration": "2023_05_01_165730_add_random_photo_settings",
+      "batch": 1
+    },
+    {
+      "id": 136,
+      "migration": "2023_05_04_070132_bump_version040704",
+      "batch": 1
+    },
+    {
+      "id": 137,
+      "migration": "2023_05_04_193000_add_use_last_modified_date_when_no_exit_date_setting",
+      "batch": 1
+    },
+    {
+      "id": 138,
+      "migration": "2023_05_05_052254_create_access_permissions",
+      "batch": 1
+    },
+    {
+      "id": 139,
+      "migration": "2023_05_05_052255_simplify_user_base_album",
+      "batch": 1
+    },
+    {
+      "id": 140,
+      "migration": "2023_05_05_052256_simplify_base_album",
+      "batch": 1
+    },
+    {
+      "id": 141,
+      "migration": "2023_05_05_052257_create_access_permissions_for_smart_albums",
+      "batch": 1
+    },
+    {
+      "id": 142,
+      "migration": "2023_05_05_123230_bump_version040800",
+      "batch": 1
+    },
+    {
+      "id": 143,
+      "migration": "2023_05_15_081406_bump_version040801",
+      "batch": 1
+    },
+    {
+      "id": 144,
+      "migration": "2023_05_15_211448_remove_is_public_album_sorting",
+      "batch": 1
+    },
+    {
+      "id": 145,
+      "migration": "2023_05_18_103903_bump_version040900",
+      "batch": 1
+    },
+    {
+      "id": 146,
+      "migration": "2023_05_19_131139_bump_version040901",
+      "batch": 1
+    },
+    {
+      "id": 147,
+      "migration": "2023_05_21_225616_bump_version040902",
+      "batch": 1
+    },
+    {
+      "id": 148,
+      "migration": "2023_06_20_174639_bump_version040903",
+      "batch": 1
+    },
+    {
+      "id": 149,
+      "migration": "2023_06_24_161541_add_indexes",
+      "batch": 1
+    },
+    {
+      "id": 150,
+      "migration": "2023_06_28_144440_bump_version040904",
+      "batch": 1
+    },
+    {
+      "id": 151,
+      "migration": "2023_07_07_143908_add_ratio_size_variants",
+      "batch": 1
+    },
+    {
+      "id": 152,
+      "migration": "2023_07_16_110146_bump_version041000",
+      "batch": 1
+    },
+    {
+      "id": 153,
+      "migration": "2023_08_07_182802_add_config_ffmpeg_path",
+      "batch": 1
+    },
+    {
+      "id": 154,
+      "migration": "2023_08_11_134652_bump_version041100",
+      "batch": 1
+    },
+    {
+      "id": 155,
+      "migration": "2023_09_03_124836_bump_version041101",
+      "batch": 1
+    },
+    {
+      "id": 156,
+      "migration": "2023_09_16_070405_refactor_type_layout",
+      "batch": 1
+    },
+    {
+      "id": 157,
+      "migration": "2023_09_16_074731_bump_version041200",
+      "batch": 1
+    },
+    {
+      "id": 158,
+      "migration": "2023_09_16_234050_require_single_key_in_config",
+      "batch": 1
+    },
+    {
+      "id": 159,
+      "migration": "2023_09_23_204910_bump_version041300",
+      "batch": 1
+    },
+    {
+      "id": 160,
+      "migration": "2023_09_24_110932_add_date_display_configurations",
+      "batch": 1
+    },
+    {
+      "id": 161,
+      "migration": "2023_09_24_223901_add_config_livewire_chunk_size",
+      "batch": 1
+    },
+    {
+      "id": 162,
+      "migration": "2023_09_24_233717_refactor_type_layout_livewire",
+      "batch": 1
+    },
+    {
+      "id": 163,
+      "migration": "2023_09_25_123925_config_blur_nsfw",
+      "batch": 1
+    },
+    {
+      "id": 164,
+      "migration": "2023_10_01_143159_config_map_provider",
+      "batch": 1
+    },
+    {
+      "id": 165,
+      "migration": "2023_12_18_191723_config_public_search",
+      "batch": 1
+    },
+    {
+      "id": 166,
+      "migration": "2023_12_18_232500_config_pagination_search_limit",
+      "batch": 1
+    },
+    {
+      "id": 167,
+      "migration": "2023_12_19_115547_search_characters_limit",
+      "batch": 1
+    },
+    {
+      "id": 168,
+      "migration": "2023_12_19_122408_add_positive_requirements",
+      "batch": 1
+    },
+    {
+      "id": 169,
+      "migration": "2023_12_20_180854_add_setting_height_width_gallery",
+      "batch": 1
+    },
+    {
+      "id": 170,
+      "migration": "2023_12_23_160356_bump_version050000",
+      "batch": 1
+    },
+    {
+      "id": 171,
+      "migration": "2023_12_25_115454_add_setting_display_thumb_overlay",
+      "batch": 1
+    },
+    {
+      "id": 172,
+      "migration": "2023_12_27_163004_bump_version050001",
+      "batch": 1
+    },
+    {
+      "id": 173,
+      "migration": "2023_12_28_144906_bump_version050002",
+      "batch": 1
+    },
+    {
+      "id": 174,
+      "migration": "2023_12_28_165358_add_subalbum_sorting_per_album",
+      "batch": 1
+    },
+    {
+      "id": 175,
+      "migration": "2023_12_30_220515_add_thumbs_albums_aspect_ratio",
+      "batch": 1
+    },
+    {
+      "id": 176,
+      "migration": "2023_12_30_221215_add_thumbs_albums_aspect_ratio_per_album",
+      "batch": 1
+    },
+    {
+      "id": 177,
+      "migration": "2024_01_03_154055_add_album_no_header_setting",
+      "batch": 1
+    },
+    {
+      "id": 178,
+      "migration": "2024_01_08_155917_bump_version050003",
+      "batch": 1
+    },
+    {
+      "id": 179,
+      "migration": "2024_01_08_163328_left_right_login_and_back",
+      "batch": 1
+    },
+    {
+      "id": 180,
+      "migration": "2024_01_13_124937_create_oauth_credentials_table",
+      "batch": 1
+    },
+    {
+      "id": 181,
+      "migration": "2024_01_17_101240_bump_version050100",
+      "batch": 1
+    },
+    {
+      "id": 182,
+      "migration": "2024_01_22_121406_bump_version050101",
+      "batch": 1
+    },
+    {
+      "id": 183,
+      "migration": "2024_01_23_190637_bump_version050102",
+      "batch": 1
+    },
+    {
+      "id": 184,
+      "migration": "2024_01_23_192800_remove_is_public_photo_sorting",
+      "batch": 1
+    },
+    {
+      "id": 185,
+      "migration": "2024_01_23_192814_remove_keys_and_column",
+      "batch": 1
+    },
+    {
+      "id": 186,
+      "migration": "2024_01_23_232103_remove_album_id_from_jobhistory",
+      "batch": 1
+    },
+    {
+      "id": 187,
+      "migration": "2024_01_24_063519_job_feedback_options",
+      "batch": 1
+    },
+    {
+      "id": 188,
+      "migration": "2024_02_28_004535_add_header_id_col",
+      "batch": 1
+    },
+    {
+      "id": 189,
+      "migration": "2024_04_06_165355_bump_version050200",
+      "batch": 1
+    },
+    {
+      "id": 190,
+      "migration": "2024_04_09_121410_decrease_noise_diagnostics",
+      "batch": 1
+    },
+    {
+      "id": 191,
+      "migration": "2024_04_14_103639_bump_version050201",
+      "batch": 1
+    },
+    {
+      "id": 192,
+      "migration": "2024_04_19_141432_fix_license",
+      "batch": 1
+    },
+    {
+      "id": 193,
+      "migration": "2024_04_20_132955_bump_version050202",
+      "batch": 1
+    },
+    {
+      "id": 194,
+      "migration": "2024_04_26_201931_add_storate_disk_to_size_variants",
+      "batch": 1
+    },
+    {
+      "id": 195,
+      "migration": "2024_04_28_135546_fix_license_again",
+      "batch": 1
+    },
+    {
+      "id": 196,
+      "migration": "2024_04_28_172241_add_album_copyright",
+      "batch": 1
+    },
+    {
+      "id": 197,
+      "migration": "2024_04_28_191004_bump_version050300",
+      "batch": 1
+    },
+    {
+      "id": 198,
+      "migration": "2024_05_13_175529_config_random_thumb_smart_album",
+      "batch": 1
+    },
+    {
+      "id": 199,
+      "migration": "2024_06_08_093403_primary_key_job_history",
+      "batch": 1
+    },
+    {
+      "id": 200,
+      "migration": "2024_06_08_103842_add_config_display_processing_queue",
+      "batch": 1
+    },
+    {
+      "id": 201,
+      "migration": "2024_06_08_183427_bump_version050301",
+      "batch": 1
+    },
+    {
+      "id": 202,
+      "migration": "2024_06_10_103843_add_login_required_option",
+      "batch": 1
+    },
+    {
+      "id": 203,
+      "migration": "2024_06_11_204410_bump_version050400",
+      "batch": 1
+    },
+    {
+      "id": 204,
+      "migration": "2024_06_17_171051_disable_per_smart_album_config",
+      "batch": 1
+    },
+    {
+      "id": 205,
+      "migration": "2024_06_17_172448_remove_global_disable_smart_albums",
+      "batch": 1
+    },
+    {
+      "id": 206,
+      "migration": "2024_06_21_154247_create_user_if_not_exists_on_oauth",
+      "batch": 1
+    },
+    {
+      "id": 207,
+      "migration": "2024_06_23_201042_enforce_login_on_gallery_only",
+      "batch": 1
+    },
+    {
+      "id": 208,
+      "migration": "2024_06_25_153527_bump_version050500",
+      "batch": 1
+    },
+    {
+      "id": 209,
+      "migration": "2024_07_01_231053_path_for_exiftool",
+      "batch": 1
+    },
+    {
+      "id": 210,
+      "migration": "2024_07_03_170506_bump_version050501",
+      "batch": 1
+    },
+    {
+      "id": 211,
+      "migration": "2024_07_06_214241_thumb_min_max_take_date_order",
+      "batch": 1
+    },
+    {
+      "id": 212,
+      "migration": "2024_07_12_183751_add_auto_play_config",
+      "batch": 1
+    },
+    {
+      "id": 213,
+      "migration": "2024_07_26_120007_simplify_config",
+      "batch": 1
+    },
+    {
+      "id": 214,
+      "migration": "2024_07_29_172018_fix_settings",
+      "batch": 1
+    },
+    {
+      "id": 215,
+      "migration": "2024_08_09_205532_white_theme",
+      "batch": 1
+    },
+    {
+      "id": 216,
+      "migration": "2024_08_15_163203_config_low_quality_image_placeholder",
+      "batch": 1
+    },
+    {
+      "id": 217,
+      "migration": "2024_08_31_090626_config_help_popup",
+      "batch": 1
+    },
+    {
+      "id": 218,
+      "migration": "2024_08_31_090740_fix_description_always_hover_hidden_photo",
+      "batch": 1
+    },
+    {
+      "id": 219,
+      "migration": "2024_09_14_143949_add_settings_level",
+      "batch": 1
+    },
+    {
+      "id": 220,
+      "migration": "2024_09_14_153948_fix_more_descriptions",
+      "batch": 1
+    },
+    {
+      "id": 221,
+      "migration": "2024_09_27_144741_add_supporter_fields",
+      "batch": 1
+    },
+    {
+      "id": 222,
+      "migration": "2024_10_05_125328_add_slideshow_timeout",
+      "batch": 1
+    },
+    {
+      "id": 223,
+      "migration": "2024_10_05_125833_lang_is_admin_setting",
+      "batch": 1
+    },
+    {
+      "id": 224,
+      "migration": "2024_10_05_184315_bump_version060000",
+      "batch": 1
+    },
+    {
+      "id": 225,
+      "migration": "2024_10_09_191528_image_processing_backup",
+      "batch": 1
+    },
+    {
+      "id": 226,
+      "migration": "2024_10_09_194010_image_processing_details_and_others",
+      "batch": 1
+    },
+    {
+      "id": 227,
+      "migration": "2024_10_10_101333_set_dropbox_disabled",
+      "batch": 1
+    },
+    {
+      "id": 228,
+      "migration": "2024_10_11_173054_add_space_quota_per_user",
+      "batch": 1
+    },
+    {
+      "id": 229,
+      "migration": "2024_10_11_173106_add_space_quota_configuration",
+      "batch": 1
+    },
+    {
+      "id": 230,
+      "migration": "2024_10_13_134419_oath_group_to_users",
+      "batch": 1
+    },
+    {
+      "id": 231,
+      "migration": "2024_10_14_104644_show_nsfw_in_smart_albums",
+      "batch": 1
+    },
+    {
+      "id": 232,
+      "migration": "2024_10_14_104823_refine_text_enable_unsorted_smart_album",
+      "batch": 1
+    },
+    {
+      "id": 233,
+      "migration": "2024_10_20_125449_move-socials-to-footer",
+      "batch": 1
+    },
+    {
+      "id": 234,
+      "migration": "2024_10_20_173904_add_photo_layout_per_album",
+      "batch": 1
+    },
+    {
+      "id": 235,
+      "migration": "2024_10_23_222857_change_header",
+      "batch": 1
+    },
+    {
+      "id": 236,
+      "migration": "2024_10_23_225332_warning_html_content",
+      "batch": 1
+    },
+    {
+      "id": 237,
+      "migration": "2024_10_29_184020_bump_version060001",
+      "batch": 1
+    },
+    {
+      "id": 238,
+      "migration": "2024_10_30_064336_timeline_options",
+      "batch": 1
+    },
+    {
+      "id": 239,
+      "migration": "2024_11_10_171126_timeline_in_albums",
+      "batch": 1
+    },
+    {
+      "id": 240,
+      "migration": "2024_11_11_141241_remove_config_hide_nsfw_in_smart_albums_and_search",
+      "batch": 1
+    },
+    {
+      "id": 241,
+      "migration": "2024_11_11_141334_add_hide_nsfw_smart_search_config",
+      "batch": 1
+    },
+    {
+      "id": 242,
+      "migration": "2024_11_25_211912_bump_version060100",
+      "batch": 1
+    },
+    {
+      "id": 243,
+      "migration": "2024_11_26_125145_improve_info_timeline",
+      "batch": 1
+    },
+    {
+      "id": 244,
+      "migration": "2024_11_26_131136_bump_version060101",
+      "batch": 1
+    },
+    {
+      "id": 245,
+      "migration": "2024_11_27_085119_bump_version060102",
+      "batch": 1
+    },
+    {
+      "id": 246,
+      "migration": "2024_12_03_221445_set_number_icons_mobile",
+      "batch": 1
+    },
+    {
+      "id": 247,
+      "migration": "2024_12_16_132422_bump_version060200",
+      "batch": 1
+    },
+    {
+      "id": 248,
+      "migration": "2024_12_28_190150_caching_config",
+      "batch": 1
+    },
+    {
+      "id": 249,
+      "migration": "2025_01_24_200235_add_initial_taken_at",
+      "batch": 1
+    },
+    {
+      "id": 250,
+      "migration": "2025_01_25_210255_update_access_permissions_with_groups",
+      "batch": 1
+    },
+    {
+      "id": 251,
+      "migration": "2025_02_02_220404_config_punch_card",
+      "batch": 1
+    },
+    {
+      "id": 252,
+      "migration": "2025_02_06_181434_bump_version060300",
+      "batch": 1
+    },
+    {
+      "id": 253,
+      "migration": "2025_02_15_090409_bump_version060301",
+      "batch": 1
+    },
+    {
+      "id": 254,
+      "migration": "2025_02_16_214804_bump_version060302",
+      "batch": 1
+    },
+    {
+      "id": 255,
+      "migration": "2025_02_17_073346_add_config_generation_bounds",
+      "batch": 1
+    },
+    {
+      "id": 256,
+      "migration": "2025_02_17_075553_add_disable_recursive_permission_check",
+      "batch": 1
+    },
+    {
+      "id": 257,
+      "migration": "2025_02_17_080713_more_privacy_options",
+      "batch": 1
+    },
+    {
+      "id": 258,
+      "migration": "2025_02_21_105541_bump_version060303",
+      "batch": 1
+    },
+    {
+      "id": 259,
+      "migration": "2025_02_27_172817_bump_version060304",
+      "batch": 1
+    },
+    {
+      "id": 260,
+      "migration": "2025_03_01_154728_search_pagination_limit_reduction",
+      "batch": 1
+    },
+    {
+      "id": 261,
+      "migration": "2025_03_16_100923_add-note-mod-frame",
+      "batch": 1
+    },
+    {
+      "id": 262,
+      "migration": "2025_03_19_122649_bump_version060305",
+      "batch": 1
+    },
+    {
+      "id": 263,
+      "migration": "2025_03_20_173343_create_config_categories_table",
+      "batch": 1
+    },
+    {
+      "id": 264,
+      "migration": "2025_03_20_194811_set_expert_option",
+      "batch": 1
+    },
+    {
+      "id": 265,
+      "migration": "2025_03_20_200832_expert_all_settings_options",
+      "batch": 1
+    },
+    {
+      "id": 266,
+      "migration": "2025_03_20_214811_move_configs",
+      "batch": 1
+    },
+    {
+      "id": 267,
+      "migration": "2025_03_23_105010_config_favourite",
+      "batch": 1
+    },
+    {
+      "id": 268,
+      "migration": "2025_03_23_154340_bump_version060400",
+      "batch": 1
+    },
+    {
+      "id": 269,
+      "migration": "2025_03_23_185517_bump_version060401",
+      "batch": 1
+    },
+    {
+      "id": 270,
+      "migration": "2025_03_31_151648_create_new_category",
+      "batch": 1
+    },
+    {
+      "id": 271,
+      "migration": "2025_03_31_160547_limit_download_options",
+      "batch": 1
+    },
+    {
+      "id": 272,
+      "migration": "2025_04_04_075837_bump_version060402",
+      "batch": 1
+    },
+    {
+      "id": 273,
+      "migration": "2025_04_05_121647_drop-symbolic-links",
+      "batch": 1
+    },
+    {
+      "id": 274,
+      "migration": "2025_04_05_153533_add_secure_link_options",
+      "batch": 1
+    },
+    {
+      "id": 275,
+      "migration": "2025_04_06_200147_portrait_landscape_landing_background",
+      "batch": 1
+    },
+    {
+      "id": 276,
+      "migration": "2025_04_06_200737_remove_landing_background",
+      "batch": 1
+    },
+    {
+      "id": 277,
+      "migration": "2025_04_07_211142_create_live_metrics_table",
+      "batch": 1
+    },
+    {
+      "id": 278,
+      "migration": "2025_04_07_211144_add_stats_columns",
+      "batch": 1
+    },
+    {
+      "id": 279,
+      "migration": "2025_04_07_211147_metrics_config",
+      "batch": 1
+    },
+    {
+      "id": 280,
+      "migration": "2025_04_20_143503_bump_version060500",
+      "batch": 1
+    },
+    {
+      "id": 281,
+      "migration": "2025_04_21_150310_bump_version060501",
+      "batch": 1
+    },
+    {
+      "id": 282,
+      "migration": "2025_04_21_185527_config_description_thumbs",
+      "batch": 1
+    },
+    {
+      "id": 283,
+      "migration": "2025_04_24_082940_bump_version060502",
+      "batch": 1
+    },
+    {
+      "id": 284,
+      "migration": "2025_04_27_153213_fix-stats-missing",
+      "batch": 1
+    },
+    {
+      "id": 285,
+      "migration": "2025_04_27_154319_bump_version060503",
+      "batch": 1
+    },
+    {
+      "id": 286,
+      "migration": "2025_04_30_211901_bump_version060600",
+      "batch": 1
+    },
+    {
+      "id": 287,
+      "migration": "2025_05_12_092724_bump_version060601",
+      "batch": 1
+    },
+    {
+      "id": 288,
+      "migration": "2025_05_15_090030_bump_version060602",
+      "batch": 1
+    },
+    {
+      "id": 289,
+      "migration": "2025_05_15_205936_bump_version060603",
+      "batch": 1
+    },
+    {
+      "id": 290,
+      "migration": "2025_05_17_075632_optional-bigger-left-right-icons",
+      "batch": 1
+    },
+    {
+      "id": 291,
+      "migration": "2025_05_25_100158_bump_version060604",
+      "batch": 1
+    },
+    {
+      "id": 292,
+      "migration": "2025_05_26_221704_bump_version060605",
+      "batch": 1
+    },
+    {
+      "id": 293,
+      "migration": "2025_05_27_081037_drop_legacy_id",
+      "batch": 1
+    },
+    {
+      "id": 294,
+      "migration": "2025_05_27_081505_drop_unjustified_from_config",
+      "batch": 1
+    },
+    {
+      "id": 295,
+      "migration": "2025_05_28_174009_add_visibility_override_smart_album",
+      "batch": 1
+    },
+    {
+      "id": 296,
+      "migration": "2025_05_28_194147_fix_livemetrics_album_id",
+      "batch": 1
+    },
+    {
+      "id": 297,
+      "migration": "2025_05_28_201707_create_photo_album_pivot",
+      "batch": 1
+    },
+    {
+      "id": 298,
+      "migration": "2025_05_29_174832_add_slideshow_enabled",
+      "batch": 1
+    },
+    {
+      "id": 299,
+      "migration": "2025_05_29_231404_user_registration_enabled",
+      "batch": 1
+    },
+    {
+      "id": 300,
+      "migration": "2025_05_29_231905_rename_oauth_user_create_settings",
+      "batch": 1
+    },
+    {
+      "id": 301,
+      "migration": "2025_05_30_205853_create_user_groups_table",
+      "batch": 1
+    },
+    {
+      "id": 302,
+      "migration": "2025_05_30_210236_create_users_user_groups",
+      "batch": 1
+    },
+    {
+      "id": 303,
+      "migration": "2025_06_03_201052_create_colours_table",
+      "batch": 1
+    },
+    {
+      "id": 304,
+      "migration": "2025_06_03_201058_create_palettes_table",
+      "batch": 1
+    },
+    {
+      "id": 305,
+      "migration": "2025_06_04_193132_optional_color_extraction",
+      "batch": 1
+    },
+    {
+      "id": 306,
+      "migration": "2025_06_07_142046_create_tags_table",
+      "batch": 1
+    },
+    {
+      "id": 307,
+      "migration": "2025_06_07_144157_photo_tags_to_table",
+      "batch": 1
+    },
+    {
+      "id": 308,
+      "migration": "2025_06_07_150253_remove_tag_column_from_photos",
+      "batch": 1
+    },
+    {
+      "id": 309,
+      "migration": "2025_06_10_220804_user_invitation_ttl",
+      "batch": 1
+    },
+    {
+      "id": 310,
+      "migration": "2025_06_11_122155_bump_version060606",
+      "batch": 1
+    },
+    {
+      "id": 311,
+      "migration": "2025_06_12_115312_remove_unused_config",
+      "batch": 1
+    },
+    {
+      "id": 312,
+      "migration": "2025_06_12_223205_bump_version060607",
+      "batch": 1
+    },
+    {
+      "id": 313,
+      "migration": "2025_06_13_102340_home_page",
+      "batch": 1
+    },
+    {
+      "id": 314,
+      "migration": "2025_06_13_121811_default_view_gallery_timeline",
+      "batch": 1
+    },
+    {
+      "id": 315,
+      "migration": "2025_06_13_122020_reorder_timeline_config",
+      "batch": 1
+    },
+    {
+      "id": 316,
+      "migration": "2025_06_13_162123_bump_version060608",
+      "batch": 1
+    },
+    {
+      "id": 317,
+      "migration": "2025_06_14_101958_config_details_column_type",
+      "batch": 1
+    },
+    {
+      "id": 318,
+      "migration": "2025_06_14_121958_add_flow_config",
+      "batch": 1
+    },
+    {
+      "id": 319,
+      "migration": "2025_06_16_234348_bump_version060609",
+      "batch": 1
+    },
+    {
+      "id": 320,
+      "migration": "2025_06_17_204426_bump_version060610",
+      "batch": 1
+    },
+    {
+      "id": 321,
+      "migration": "2025_06_21_213119_update_sync_duplicates",
+      "batch": 1
+    },
+    {
+      "id": 322,
+      "migration": "2025_06_23_054050_bump_version060611",
+      "batch": 1
+    },
+    {
+      "id": 323,
+      "migration": "2025_06_24_180548_gallery_header",
+      "batch": 1
+    },
+    {
+      "id": 324,
+      "migration": "2025_06_26_070132_bump_version060612",
+      "batch": 1
+    },
+    {
+      "id": 325,
+      "migration": "2025_06_26_102340_parse_url_options",
+      "batch": 1
+    },
+    {
+      "id": 326,
+      "migration": "2025_06_26_115949_bump_version060613",
+      "batch": 1
+    },
+    {
+      "id": 327,
+      "migration": "2025_06_27_085029_bump_version060614",
+      "batch": 1
+    },
+    {
+      "id": 328,
+      "migration": "2025_06_29_080951_create_owner",
+      "batch": 1
+    },
+    {
+      "id": 329,
+      "migration": "2025_07_01_105450_bump_version060700",
+      "batch": 1
+    },
+    {
+      "id": 330,
+      "migration": "2025_07_02_221616_remove_prod_check",
+      "batch": 1
+    },
+    {
+      "id": 331,
+      "migration": "2025_07_04_054244_links_config",
+      "batch": 1
+    },
+    {
+      "id": 332,
+      "migration": "2025_07_21_004233_add_gestures_settings",
+      "batch": 1
+    },
+    {
+      "id": 333,
+      "migration": "2025_07_24_200417_bump_version060701",
+      "batch": 1
+    },
+    {
+      "id": 334,
+      "migration": "2025_08_03_141744_add_option_display_tag_on_album_view",
+      "batch": 1
+    },
+    {
+      "id": 335,
+      "migration": "2025_08_06_115051_bump_version060702",
+      "batch": 1
+    },
+    {
+      "id": 336,
+      "migration": "2025_08_07_224208_add_config_sensitive_tags",
+      "batch": 1
+    },
+    {
+      "id": 337,
+      "migration": "2025_08_08_000000_add_is_pinned_to_base_albums_table",
+      "batch": 1
+    },
+    {
+      "id": 338,
+      "migration": "2025_08_08_100833_add_pinned_albums_config",
+      "batch": 1
+    },
+    {
+      "id": 339,
+      "migration": "2025_08_12_114738_add_copyright_text_setting",
+      "batch": 1
+    },
+    {
+      "id": 340,
+      "migration": "2025_08_14_135253_refactor_tag_album",
+      "batch": 1
+    },
+    {
+      "id": 341,
+      "migration": "2025_08_15_135705_bump_version060800",
+      "batch": 1
+    },
+    {
+      "id": 342,
+      "migration": "2025_08_16_224208_add_config_watermarker",
+      "batch": 1
+    },
+    {
+      "id": 343,
+      "migration": "2025_08_16_224208_add_watermarked_column",
+      "batch": 1
+    },
+    {
+      "id": 344,
+      "migration": "2025_08_17_214223_and_or_tag_album",
+      "batch": 1
+    },
+    {
+      "id": 345,
+      "migration": "2025_08_18_102609_bump_version060801",
+      "batch": 1
+    },
+    {
+      "id": 346,
+      "migration": "2025_08_19_160144_create_renamer_rules_table",
+      "batch": 1
+    },
+    {
+      "id": 347,
+      "migration": "2025_08_23_204700_extract_zip_on_upload",
+      "batch": 1
+    },
+    {
+      "id": 348,
+      "migration": "2025_08_24_122020_fix_timeline_config",
+      "batch": 1
+    },
+    {
+      "id": 349,
+      "migration": "2025_08_24_153735_remove_job_queue_option",
+      "batch": 1
+    },
+    {
+      "id": 350,
+      "migration": "2025_08_26_060147_bump_version060900",
+      "batch": 1
+    },
+    {
+      "id": 351,
+      "migration": "2025_08_27_203030_create_orders_table",
+      "batch": 1
+    },
+    {
+      "id": 352,
+      "migration": "2025_08_27_203030_create_purchasable",
+      "batch": 1
+    },
+    {
+      "id": 353,
+      "migration": "2025_08_27_203040_create_order_items_table",
+      "batch": 1
+    },
+    {
+      "id": 354,
+      "migration": "2025_08_31_122020_add_display_num_photos_option_album_view",
+      "batch": 1
+    },
+    {
+      "id": 355,
+      "migration": "2025_08_31_131024_bump_version060901",
+      "batch": 1
+    },
+    {
+      "id": 356,
+      "migration": "2025_09_18_064708_bump_version060902",
+      "batch": 1
+    },
+    {
+      "id": 357,
+      "migration": "2025_09_20_113900_webshop_options",
+      "batch": 1
+    },
+    {
+      "id": 358,
+      "migration": "2025_09_23_151303_add_untagged_smart_albums",
+      "batch": 1
+    },
+    {
+      "id": 359,
+      "migration": "2025_10_05_071052_add_album_photo_renamer",
+      "batch": 1
+    },
+    {
+      "id": 360,
+      "migration": "2025_10_25_113900_deduplicate_featured_albums",
+      "batch": 1
+    },
+    {
+      "id": 361,
+      "migration": "2025_10_26_185806_bump_version060903",
+      "batch": 1
+    },
+    {
+      "id": 362,
+      "migration": "2025_10_28_214205_bump_version060904",
+      "batch": 1
+    },
+    {
+      "id": 363,
+      "migration": "2025_11_09_140246_bump_version061000",
+      "batch": 1
+    },
+    {
+      "id": 364,
+      "migration": "2025_11_15_092400_optional_dock_transparency",
+      "batch": 1
+    },
+    {
+      "id": 365,
+      "migration": "2025_11_15_170741_bump_version061001",
+      "batch": 1
+    },
+    {
+      "id": 366,
+      "migration": "2025_11_17_182225_bump_version061002",
+      "batch": 1
+    },
+    {
+      "id": 367,
+      "migration": "2025_11_22_193900_more_webshop_options",
+      "batch": 1
+    },
+    {
+      "id": 368,
+      "migration": "2025_11_23_111052_add_item_download_link",
+      "batch": 1
+    },
+    {
+      "id": 369,
+      "migration": "2025_12_03_170434_bump_version061003",
+      "batch": 1
+    },
+    {
+      "id": 370,
+      "migration": "2025_12_10_171646_add_setting_follow_link_redirection",
+      "batch": 1
+    },
+    {
+      "id": 371,
+      "migration": "2025_12_11_181029_bump_version061004",
+      "batch": 1
+    },
+    {
+      "id": 372,
+      "migration": "2025_12_15_161819_webshop_level_2",
+      "batch": 1
+    },
+    {
+      "id": 373,
+      "migration": "2025_12_18_101617_preserve_size_variants_for_orders",
+      "batch": 1
+    },
+    {
+      "id": 374,
+      "migration": "2025_12_19_161600_star_album_option",
+      "batch": 1
+    },
+    {
+      "id": 375,
+      "migration": "2025_12_22_163233_create_xhprof_table",
+      "batch": 1
+    },
+    {
+      "id": 376,
+      "migration": "2025_12_22_163234_add_index_to_xhprof_table",
+      "batch": 1
+    },
+    {
+      "id": 377,
+      "migration": "2025_12_27_034137_create_photo_ratings_table",
+      "batch": 1
+    },
+    {
+      "id": 378,
+      "migration": "2025_12_27_034141_add_rating_columns_to_photo_statistics",
+      "batch": 1
+    },
+    {
+      "id": 379,
+      "migration": "2025_12_27_130512_add_photo_rating_config_settings",
+      "batch": 1
+    },
+    {
+      "id": 380,
+      "migration": "2025_12_28_232626_add_computed_fields_to_albums",
+      "batch": 1
+    },
+    {
+      "id": 381,
+      "migration": "2025_12_31_010000_create_webshop_category",
+      "batch": 1
+    },
+    {
+      "id": 382,
+      "migration": "2025_12_31_020000_bump_version070000",
+      "batch": 1
+    },
+    {
+      "id": 383,
+      "migration": "2026_01_01_162100_change_header",
+      "batch": 1
+    },
+    {
+      "id": 384,
+      "migration": "2026_01_01_163534_bump_version070001",
+      "batch": 1
+    },
+    {
+      "id": 385,
+      "migration": "2026_01_02_203124_create_album_size_statistics_table",
+      "batch": 1
+    },
+    {
+      "id": 386,
+      "migration": "2026_01_04_000000_add_album_layout_config",
+      "batch": 1
+    },
+    {
+      "id": 387,
+      "migration": "2026_01_07_add_pagination_config_keys",
+      "batch": 1
+    },
+    {
+      "id": 388,
+      "migration": "2026_01_10_212900_add_strict_ordering",
+      "batch": 1
+    },
+    {
+      "id": 389,
+      "migration": "2026_01_11_004154_bump_version070100",
+      "batch": 1
+    },
+    {
+      "id": 390,
+      "migration": "2026_01_13_085020_bump_version070101",
+      "batch": 1
+    },
+    {
+      "id": 391,
+      "migration": "2026_01_14_105523_change_title_to_text_on_photos_table",
+      "batch": 1
+    },
+    {
+      "id": 392,
+      "migration": "2026_01_14_172803_bump_version070102",
+      "batch": 1
+    },
+    {
+      "id": 393,
+      "migration": "2026_01_15_100000_add_shared_albums_visibility_config",
+      "batch": 1
+    },
+    {
+      "id": 394,
+      "migration": "2026_01_15_100001_add_shared_albums_visibility_to_users",
+      "batch": 1
+    },
+    {
+      "id": 395,
+      "migration": "2026_01_16_100000_add_rating_avg_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 396,
+      "migration": "2026_01_16_110000_add_rating_smart_album_configs",
+      "batch": 1
+    },
+    {
+      "id": 397,
+      "migration": "2026_01_17_130854_hide_exif_data",
+      "batch": 1
+    },
+    {
+      "id": 398,
+      "migration": "2026_01_18_212133_refactor_photo_structure",
+      "batch": 1
+    },
+    {
+      "id": 399,
+      "migration": "2026_01_19_193315_refactor_photo_avoid_duplicates",
+      "batch": 1
+    },
+    {
+      "id": 400,
+      "migration": "2026_01_21_094017_bump_version070200",
+      "batch": 1
+    },
+    {
+      "id": 401,
+      "migration": "2026_01_22_000000_propagate_unlock_option",
+      "batch": 1
+    },
+    {
+      "id": 402,
+      "migration": "2026_01_23_220539_bump_version070201",
+      "batch": 1
+    },
+    {
+      "id": 403,
+      "migration": "2026_01_25_120000_refactor_default_album_protection_to_string",
+      "batch": 1
+    },
+    {
+      "id": 404,
+      "migration": "2026_01_25_220640_add_display_name_to_users_table",
+      "batch": 1
+    },
+    {
+      "id": 405,
+      "migration": "2026_01_26_211955_add_is_ldap_to_users_table",
+      "batch": 1
+    },
+    {
+      "id": 406,
+      "migration": "2026_01_27_170000_photo_details_always_open",
+      "batch": 1
+    },
+    {
+      "id": 407,
+      "migration": "2026_01_27_172926_bump_version070300",
+      "batch": 1
+    },
+    {
+      "id": 408,
+      "migration": "2026_01_28_075019_bump_version070301",
+      "batch": 1
+    },
+    {
+      "id": 409,
+      "migration": "2026_01_28_163552_add_my_rated_pictures_config_keys",
+      "batch": 1
+    },
+    {
+      "id": 410,
+      "migration": "2026_01_29_125116_bump_version070302",
+      "batch": 1
+    },
+    {
+      "id": 411,
+      "migration": "2026_01_29_170000_hide_gps_coordinates",
+      "batch": 1
+    },
+    {
+      "id": 412,
+      "migration": "2026_02_11_170000_add_star_photo_visibility_config",
+      "batch": 1
+    },
+    {
+      "id": 413,
+      "migration": "2026_02_15_201329_bump_version070303",
+      "batch": 1
+    },
+    {
+      "id": 414,
+      "migration": "2026_02_16_165731_add_enhanced_album_display_configs",
+      "batch": 1
+    },
+    {
+      "id": 415,
+      "migration": "2026_02_16_165731_add_enhanced_display_fields_to_albums",
+      "batch": 1
+    },
+    {
+      "id": 416,
+      "migration": "2026_02_17_001007_add_header_focus_to_albums_table",
+      "batch": 1
+    },
+    {
+      "id": 417,
+      "migration": "2026_02_22_090000_drop_old_album_id_from_photos",
+      "batch": 1
+    },
+    {
+      "id": 418,
+      "migration": "2026_02_22_100000_rename_starred_to_highlighted",
+      "batch": 1
+    },
+    {
+      "id": 419,
+      "migration": "2026_02_24_000001_add_watermark_optout_disabled_config",
+      "batch": 1
+    },
+    {
+      "id": 420,
+      "migration": "2026_02_27_000001_add_slug_to_base_albums",
+      "batch": 1
+    },
+    {
+      "id": 421,
+      "migration": "2026_02_28_000001_shift_size_variant_type_for_raw",
+      "batch": 1
+    },
+    {
+      "id": 422,
+      "migration": "2026_02_28_000002_add_raw_download_enabled_config",
+      "batch": 1
+    },
+    {
+      "id": 423,
+      "migration": "2026_02_28_000003_reclassify_existing_raw_format_files",
+      "batch": 1
+    },
+    {
+      "id": 424,
+      "migration": "2026_02_28_000004_add_size_raw_to_album_size_statistics",
+      "batch": 1
+    },
+    {
+      "id": 425,
+      "migration": "2026_02_28_000005_create_contact_category",
+      "batch": 1
+    },
+    {
+      "id": 426,
+      "migration": "2026_02_28_000005_create_contact_messages_table",
+      "batch": 1
+    },
+    {
+      "id": 427,
+      "migration": "2026_02_28_000006_add_contact_form_configs",
+      "batch": 1
+    },
+    {
+      "id": 428,
+      "migration": "2026_03_01_123228_bump_version070400",
+      "batch": 1
+    },
+    {
+      "id": 429,
+      "migration": "2026_03_03_120000_add_dynamic_landing_background_modes",
+      "batch": 1
+    },
+    {
+      "id": 430,
+      "migration": "2026_03_08_132649_bump_version070401",
+      "batch": 1
+    },
+    {
+      "id": 431,
+      "migration": "2026_03_11_114312_bump_version070402",
+      "batch": 1
+    },
+    {
+      "id": 432,
+      "migration": "2026_03_12_000000_add_search_colour_distance_config",
+      "batch": 1
+    },
+    {
+      "id": 433,
+      "migration": "2026_03_15_000005_fix_is_starred_remaining_values",
+      "batch": 1
+    },
+    {
+      "id": 434,
+      "migration": "2026_03_16_164002_bump_version070500",
+      "batch": 1
+    },
+    {
+      "id": 435,
+      "migration": "2026_03_20_175331_bump_version070501",
+      "batch": 1
+    },
+    {
+      "id": 436,
+      "migration": "2026_03_21_000001_create_persons_table",
+      "batch": 1
+    },
+    {
+      "id": 437,
+      "migration": "2026_03_21_000002_create_faces_table",
+      "batch": 1
+    },
+    {
+      "id": 438,
+      "migration": "2026_03_21_000003_ai_vision_config",
+      "batch": 1
+    },
+    {
+      "id": 439,
+      "migration": "2026_03_21_000004_create_ai_vision_category",
+      "batch": 1
+    },
+    {
+      "id": 440,
+      "migration": "2026_03_21_000005_add_representative_face_id_to_persons",
+      "batch": 1
+    },
+    {
+      "id": 441,
+      "migration": "2026_03_21_000006_add_cluster_label_to_faces",
+      "batch": 1
+    },
+    {
+      "id": 442,
+      "migration": "2026_03_22_094636_bump_version070502",
+      "batch": 1
+    },
+    {
+      "id": 443,
+      "migration": "2026_03_23_162424_bump_version070503",
+      "batch": 1
+    },
+    {
+      "id": 444,
+      "migration": "2026_03_25_000001_create_webhooks_table",
+      "batch": 1
+    },
+    {
+      "id": 445,
+      "migration": "2026_04_07_203125_bump_version070504",
+      "batch": 1
+    },
+    {
+      "id": 446,
+      "migration": "2026_04_09_000001_add_upload_trust_level_to_users",
+      "batch": 1
+    },
+    {
+      "id": 447,
+      "migration": "2026_04_09_000001_remove_wikimedia_map_provider",
+      "batch": 1
+    },
+    {
+      "id": 448,
+      "migration": "2026_04_09_000002_add_is_upload_validated_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 449,
+      "migration": "2026_04_09_000003_add_upload_trust_level_configs",
+      "batch": 1
+    },
+    {
+      "id": 450,
+      "migration": "2026_04_12_000001_add_chunked_download_configs",
+      "batch": 1
+    },
+    {
+      "id": 451,
+      "migration": "2026_04_22_000001_add_embed_enabled_config",
+      "batch": 1
+    },
+    {
+      "id": 452,
+      "migration": "2026_04_22_000001_add_use_admin_dashboard_config",
+      "batch": 1
+    },
+    {
+      "id": 453,
+      "migration": "2026_05_18_000001_disable_request_caching",
+      "batch": 1
+    },
+    {
+      "id": 454,
+      "migration": "2026_05_30_000001_add_timeline_albums_root_enabled",
+      "batch": 1
+    },
+    {
+      "id": 455,
+      "migration": "2026_05_31_000001_create_print_sizes_table",
+      "batch": 1
+    },
+    {
+      "id": 456,
+      "migration": "2026_05_31_000002_create_pixel_sizes_table",
+      "batch": 1
+    },
+    {
+      "id": 457,
+      "migration": "2026_05_31_000003_create_purchasable_print_sizes_table",
+      "batch": 1
+    },
+    {
+      "id": 458,
+      "migration": "2026_05_31_000004_create_purchasable_pixel_sizes_table",
+      "batch": 1
+    },
+    {
+      "id": 459,
+      "migration": "2026_05_31_000005_extend_order_items_for_print",
+      "batch": 1
+    },
+    {
+      "id": 460,
+      "migration": "2026_05_31_000006_extend_orders_for_shipping",
+      "batch": 1
+    },
+    {
+      "id": 461,
+      "migration": "2026_06_10_000001_disable_swipe_effect_photo_viewer",
+      "batch": 1
+    },
+    {
+      "id": 462,
+      "migration": "2026_06_13_000001_add_close_upload_on_success_config",
+      "batch": 1
+    },
+    {
+      "id": 463,
+      "migration": "2026_06_13_000002_add_folder_upload_config",
+      "batch": 1
+    },
+    {
+      "id": 464,
+      "migration": "2026_06_13_000002_add_logo_configs",
+      "batch": 1
+    },
+    {
+      "id": 465,
+      "migration": "2026_06_17_190527_bump_version070600",
+      "batch": 1
+    },
+    {
+      "id": 466,
+      "migration": "2026_06_21_000001_add_face_recognition_warning_config",
+      "batch": 1
+    },
+    {
+      "id": 467,
+      "migration": "2026_06_22_000001_add_nsfw_columns_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 468,
+      "migration": "2026_06_22_000002_create_nsfw_detections_table",
+      "batch": 1
+    },
+    {
+      "id": 469,
+      "migration": "2026_06_22_000003_add_nsfw_config",
+      "batch": 1
+    },
+    {
+      "id": 470,
+      "migration": "2026_06_22_165556_bump_version070601",
+      "batch": 1
+    },
+    {
+      "id": 471,
+      "migration": "2026_06_22_203910_bump_version070602",
+      "batch": 1
+    },
+    {
+      "id": 472,
+      "migration": "2026_06_24_135746_bump_version070603",
+      "batch": 1
+    },
+    {
+      "id": 473,
+      "migration": "2026_06_24_200000_add_og_image_settings",
+      "batch": 1
+    },
+    {
+      "id": 474,
+      "migration": "2026_06_26_173103_bump_version070604",
+      "batch": 1
+    },
+    {
+      "id": 475,
+      "migration": "2026_06_28_000000_add_cover_id_to_tag_albums",
+      "batch": 1
+    },
+    {
+      "id": 476,
+      "migration": "2026_06_28_000000_add_disabled_album_subtitle_type",
+      "batch": 1
+    },
+    {
+      "id": 477,
+      "migration": "2026_06_28_000001_create_person_albums",
+      "batch": 1
+    },
+    {
+      "id": 478,
+      "migration": "2026_06_28_000002_add_person_albums_config",
+      "batch": 1
+    },
+    {
+      "id": 479,
+      "migration": "2026_06_30_140000_add_breadcrumb_config_setting",
+      "batch": 1
+    },
+    {
+      "id": 480,
+      "migration": "2026_07_01_120000_deduplicate_and_constrain_access_permissions",
+      "batch": 1
+    },
+    {
+      "id": 481,
+      "migration": "2026_07_07_000000_add_rss_feed_title_description_configs",
+      "batch": 1
+    },
+    {
+      "id": 482,
+      "migration": "2026_07_09_000000_add_thumbnail_appearance_config",
+      "batch": 1
+    },
+    {
+      "id": 483,
+      "migration": "2026_07_12_000000_create_albums_tags_table",
+      "batch": 1
+    },
+    {
+      "id": 484,
+      "migration": "2026_07_13_112341_bump_version070700",
+      "batch": 1
+    },
+    {
+      "id": 485,
+      "migration": "2026_07_13_155713_bump_version070701",
+      "batch": 1
+    },
+    {
+      "id": 486,
+      "migration": "2026_07_15_000000_add_photo_selection_appearance_config",
+      "batch": 1
+    },
+    {
+      "id": 487,
+      "migration": "2026_07_18_000000_add_nfc_qr_share_enabled_config",
+      "batch": 1
+    },
+    {
+      "id": 488,
+      "migration": "2026_07_18_000000_add_zip_bomb_protection_configs",
+      "batch": 1
+    },
+    {
+      "id": 489,
+      "migration": "2026_07_18_010000_convert_existing_configs_to_file_size_format",
+      "batch": 1
+    },
+    {
+      "id": 490,
+      "migration": "2026_07_18_020000_add_zip_bomb_delete_rejected_file_config",
+      "batch": 1
+    },
+    {
+      "id": 491,
+      "migration": "2026_07_20_000000_add_flags_visibility_config",
+      "batch": 1
+    },
+    {
+      "id": 492,
+      "migration": "2026_07_21_000000_create_album_user_thumbs_table",
+      "batch": 1
+    },
+    {
+      "id": 493,
+      "migration": "2026_07_23_000000_add_accent_color",
+      "batch": 1
+    },
+    {
+      "id": 494,
+      "migration": "2026_07_26_093326_add_expert_album_settings_config",
+      "batch": 1
+    },
+    {
+      "id": 495,
+      "migration": "2026_07_28_000001_managed_cache_config",
+      "batch": 1
+    },
+    {
+      "id": 496,
+      "migration": "2026_08_01_000000_add_theme_colors",
+      "batch": 1
+    },
+    {
+      "id": 497,
+      "migration": "2026_08_05_000000_add_sorting_description",
+      "batch": 1
+    },
+    {
+      "id": 498,
+      "migration": "2026_08_05_215650_bump_version070702",
+      "batch": 1
+    },
+    {
+      "id": 499,
+      "migration": "2026_08_07_000000_add_photo_hover_effects_config",
+      "batch": 1
+    },
+    {
+      "id": 500,
+      "migration": "2026_08_09_000000_managed_cache_albums_config",
+      "batch": 1
+    },
+    {
+      "id": 501,
+      "migration": "2026_08_14_000000_add_contact_form_context_configs",
+      "batch": 1
+    },
+    {
+      "id": 502,
+      "migration": "2026_08_15_163545_bump_version070703",
+      "batch": 1
+    },
+    {
+      "id": 503,
+      "migration": "2026_08_16_000001_add_social_media_urls_config",
+      "batch": 1
+    },
+    {
+      "id": 504,
+      "migration": "2026_08_16_000002_add_landing_page_configs",
+      "batch": 1
+    },
+    {
+      "id": 505,
+      "migration": "2026_08_16_000003_create_landing_links_table",
+      "batch": 1
+    },
+    {
+      "id": 506,
+      "migration": "2026_08_16_000004_create_landing_featured_items_table",
+      "batch": 1
+    },
+    {
+      "id": 507,
+      "migration": "2026_08_16_000005_add_matching_albums_listing_config",
+      "batch": 1
+    },
+    {
+      "id": 508,
+      "migration": "2026_08_16_000005_add_video_thumbnail_frame_config",
+      "batch": 1
+    },
+    {
+      "id": 509,
+      "migration": "2026_08_17_000001_create_tracks_table",
+      "batch": 1
+    },
+    {
+      "id": 510,
+      "migration": "2026_08_18_000000_remove_photo_hover_effects_config",
+      "batch": 1
+    },
+    {
+      "id": 511,
+      "migration": "2026_08_18_000001_add_photo_ken_burns_on_hover_config",
+      "batch": 1
+    },
+    {
+      "id": 512,
+      "migration": "2026_08_18_221142_bump_version070704",
+      "batch": 1
+    },
+    {
+      "id": 513,
+      "migration": "2026_08_19_000001_add_photo_ken_burns_on_hover_scale_duration_config",
+      "batch": 1
+    },
+    {
+      "id": 514,
+      "migration": "2026_08_23_180002_bump_version070705",
+      "batch": 1
+    },
+    {
+      "id": 515,
+      "migration": "2026_08_28_000001_add_embed_metadata_config",
+      "batch": 1
+    },
+    {
+      "id": 516,
+      "migration": "2026_08_28_000001_add_title_sorting_columns_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 517,
+      "migration": "2026_08_28_000002_add_title_sorting_columns_to_base_albums",
+      "batch": 1
+    },
+    {
+      "id": 518,
+      "migration": "2026_08_28_000003_backfill_title_sorting_columns_for_photos",
+      "batch": 1
+    },
+    {
+      "id": 519,
+      "migration": "2026_08_28_000004_backfill_title_sorting_columns_for_base_albums",
+      "batch": 1
+    },
+    {
+      "id": 520,
+      "migration": "2026_08_28_000005_migrate_sorting_config_to_unified_title",
+      "batch": 1
+    },
+    {
+      "id": 521,
+      "migration": "2026_08_29_124837_bump_version070800",
+      "batch": 1
+    },
+    {
+      "id": 522,
+      "migration": "2026_08_30_093447_fix_sorting_albums",
+      "batch": 1
+    },
+    {
+      "id": 523,
+      "migration": "2026_08_30_093526_bump_version070801",
+      "batch": 1
+    },
+    {
+      "id": 524,
+      "migration": "2026_08_30_150156_fix_sorting_photos",
+      "batch": 1
+    },
+    {
+      "id": 525,
+      "migration": "2026_08_30_150404_bump_version070802",
+      "batch": 1
+    },
+    {
+      "id": 526,
+      "migration": "2026_09_01_160530_bump_version070803",
+      "batch": 1
+    },
+    {
+      "id": 527,
+      "migration": "2026_09_05_120001_add_bucket_id_to_albums",
+      "batch": 1
+    },
+    {
+      "id": 528,
+      "migration": "2026_09_05_120002_add_title_bucket_configs",
+      "batch": 1
+    },
+    {
+      "id": 529,
+      "migration": "2026_09_05_120003_fix_album_user_thumbs_album_id_type",
+      "batch": 1
+    },
+    {
+      "id": 530,
+      "migration": "2026_09_05_120004_remove_owner_id_album_sorting",
+      "batch": 1
+    },
+    {
+      "id": 531,
+      "migration": "2026_09_05_150001_add_bucket_id_to_photo_album",
+      "batch": 1
+    },
+    {
+      "id": 532,
+      "migration": "2026_09_05_150002_add_photo_title_bucket_configs",
+      "batch": 1
+    },
+    {
+      "id": 533,
+      "migration": "2026_09_06_000000_add_locked_album_cover_configs",
+      "batch": 1
+    },
+    {
+      "id": 534,
+      "migration": "2026_09_07_000000_fix_initial_taken_at_precision",
+      "batch": 1
+    },
+    {
+      "id": 535,
+      "migration": "2026_09_13_000001_add_timeline_lens_config",
+      "batch": 1
+    },
+    {
+      "id": 536,
+      "migration": "2026_09_15_000001_add_latitude_longitude_index_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 537,
+      "migration": "2026_09_17_000001_add_published_at_orig_tz_to_base_albums",
+      "batch": 1
+    },
+    {
+      "id": 538,
+      "migration": "2026_09_17_134327_bump_version070804",
+      "batch": 1
+    },
+    {
+      "id": 539,
+      "migration": "2026_09_17_210916_bump_version070805",
+      "batch": 1
+    },
+    {
+      "id": 540,
+      "migration": "2026_09_22_000001_rename_search_pagination_limit_to_search_result_limit",
+      "batch": 1
+    },
+    {
+      "id": 541,
+      "migration": "2026_09_23_000000_add_photo_viewer_highest_quality_config",
+      "batch": 1
+    },
+    {
+      "id": 542,
+      "migration": "2026_09_24_000001_add_album_date_scrubber_config",
+      "batch": 1
+    },
+    {
+      "id": 543,
+      "migration": "2026_09_24_000002_add_is_date_scrubber_enabled_to_base_albums",
+      "batch": 1
+    },
+    {
+      "id": 544,
+      "migration": "2026_09_24_212329_bump_version070900",
+      "batch": 1
+    },
+    {
+      "id": 545,
+      "migration": "2026_09_25_000000_add_grants_move_to_access_permissions",
+      "batch": 1
+    },
+    {
+      "id": 546,
+      "migration": "2026_09_26_000001_add_size_variant_format_config",
+      "batch": 1
+    },
+    {
+      "id": 547,
+      "migration": "2026_09_26_000002_bound_compression_quality",
+      "batch": 1
+    },
+    {
+      "id": 548,
+      "migration": "2026_09_27_000001_add_gallery_password_config",
+      "batch": 1
+    },
+    {
+      "id": 549,
+      "migration": "2026_09_27_211959_bump_version071000",
+      "batch": 1
+    },
+    {
+      "id": 550,
+      "migration": "2026_09_28_000001_add_video_loop_config",
+      "batch": 1
+    },
+    {
+      "id": 551,
+      "migration": "2026_09_28_000001_reorder_processing_settings",
+      "batch": 1
+    },
+    {
+      "id": 552,
+      "migration": "2026_09_28_000002_allow_cross_user_same_upload",
+      "batch": 1
+    },
+    {
+      "id": 553,
+      "migration": "2026_09_30_202837_add_landing_background_include_sensitive",
+      "batch": 1
+    },
+    {
+      "id": 554,
+      "migration": "2026_10_02_214703_fix_thumbs",
+      "batch": 1
+    },
+    {
+      "id": 555,
+      "migration": "2026_10_03_000001_add_pan_zoom_configs",
+      "batch": 1
+    },
+    {
+      "id": 556,
+      "migration": "2026_10_03_000002_add_live_metrics_created_at_index",
+      "batch": 1
+    },
+    {
+      "id": 557,
+      "migration": "2026_10_03_000002_remove_online_update_configs",
+      "batch": 1
+    },
+    {
+      "id": 558,
+      "migration": "2026_10_03_000003_add_live_metrics_listing_configs",
+      "batch": 1
+    },
+    {
+      "id": 559,
+      "migration": "2026_10_03_000004_add_config_required_keys",
+      "batch": 1
+    },
+    {
+      "id": 560,
+      "migration": "2026_10_03_000005_add_360_columns_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 561,
+      "migration": "2026_10_04_000000_add_pdf_mediabox_max_matches_config",
+      "batch": 1
+    },
+    {
+      "id": 562,
+      "migration": "2026_10_04_124212_fix_missing_statistics_values",
+      "batch": 1
+    },
+    {
+      "id": 563,
+      "migration": "2026_10_12_000000_create_cache_tables",
+      "batch": 1
+    },
+    {
+      "id": 564,
+      "migration": "2026_10_12_000001_add_bucket_keys_to_photos",
+      "batch": 1
+    },
+    {
+      "id": 565,
+      "migration": "2026_10_12_000002_backfill_photo_taken_and_title_date_keys",
+      "batch": 1
+    },
+    {
+      "id": 566,
+      "migration": "2026_10_12_000003_rename_bucket_id_to_bucket_key",
+      "batch": 1
+    },
+    {
+      "id": 567,
+      "migration": "2026_10_12_000004_backfill_bucket_keys",
+      "batch": 1
+    },
+    {
+      "id": 568,
+      "migration": "2026_10_13_000000_add_frame_overlay_configs",
+      "batch": 1
+    },
+    {
+      "id": 569,
+      "migration": "2026_10_13_000001_create_photo_moderation_events_table",
+      "batch": 1
+    },
+    {
+      "id": 570,
+      "migration": "2026_10_13_000002_add_moderation_history_configs",
+      "batch": 1
+    },
+    {
+      "id": 571,
+      "migration": "2026_10_13_114623_bump_version071100",
+      "batch": 1
+    },
+    {
+      "id": 572,
+      "migration": "2026_10_13_114626_bump_version071101",
+      "batch": 1
+    },
+    {
+      "id": 573,
+      "migration": "2026_10_13_150000_add_email_login_config",
+      "batch": 1
+    },
+    {
+      "id": 574,
+      "migration": "2026_10_15_000000_add_face_queue_limit_config",
+      "batch": 1
+    },
+    {
+      "id": 575,
+      "migration": "2026_10_16_000001_add_date_scrubber_format_configs",
+      "batch": 1
+    },
+    {
+      "id": 576,
+      "migration": "2026_10_16_000002_fix_timeline_date_format_defaults",
+      "batch": 1
+    },
+    {
+      "id": 577,
+      "migration": "2026_10_16_000003_add_timeline_hour_multi_day_format",
+      "batch": 1
+    },
+    {
+      "id": 578,
+      "migration": "2026_10_17_000001_add_tag_person_albums_separate_category_configs",
+      "batch": 1
+    },
+    {
+      "id": 579,
+      "migration": "2026_10_18_000001_add_jxl_size_variant_format",
+      "batch": 1
+    },
+    {
+      "id": 580,
+      "migration": "2026_10_22_203450_bump_version071200",
+      "batch": 1
+    }
+  ]
+}
