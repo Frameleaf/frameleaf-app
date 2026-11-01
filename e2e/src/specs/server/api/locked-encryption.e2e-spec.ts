@@ -461,7 +461,37 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
     for (const dir of workDirs) {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+    // Encrypted files are never deleted by the integrity checks (spec §8.3), so once a later spec
+    // resets the database they would stay behind as untracked files. Turn encryption off for anyone
+    // who still has it on, and wait until every one of their files is plain again.
+    const owners = [
+      [pinOwner, pinCodes.pinOwner],
+      [advOwner, pinCodes.advOwner],
+      [late, pinCodes.late],
+    ] as const;
+    for (const [owner, pinCode] of owners) {
+      const current = await status(owner.accessToken);
+      if (!current.enabled) {
+        continue;
+      }
+      await unlockSession(owner.accessToken, pinCode);
+      await request(app)
+        .delete('/users/me/locked-encryption')
+        .set(bearer(owner.accessToken))
+        .send(current.mode === 'advanced' ? { passphrase: passphrases.adv } : { pinCode })
+        .expect(204);
+    }
+    for (const [owner] of owners) {
+      await waitFor(
+        'Locked encryption to be off',
+        async () => {
+          const current = await status(owner.accessToken);
+          return !current.enabled;
+        },
+        180_000,
+      );
+    }
+  }, 400_000);
 
   describe('PIN mode: turning on, reading, turning off', () => {
     it('encrypts every file of a photo, a video, a live photo, a RAW and an edited item', async () => {
@@ -1006,9 +1036,27 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
     }, 120_000);
 
     it('owner in Advanced Security: the partner types the owner passphrase; switching mode adds or removes access', async () => {
-      await unlockSession(advOwner.accessToken, pinCodes.advOwner);
-      await utils.createPartner(advOwner.accessToken, partner.userId);
       const source = advItems[0];
+      await unlockSession(advOwner.accessToken, pinCodes.advOwner);
+      // a retry starts where an earlier attempt stopped: already sharing, or the owner left in PIN mode
+      const { body: sharing } = await request(app)
+        .get('/partners')
+        .query({ direction: 'shared-by' })
+        .set(bearer(advOwner.accessToken))
+        .expect(200);
+      if ((sharing as { id: string }[]).every(({ id }) => id !== partner.userId)) {
+        await utils.createPartner(advOwner.accessToken, partner.userId);
+      }
+      const sourceFile = await originalOf(source.id);
+      const before = await status(advOwner.accessToken);
+      if (before.mode === 'pin') {
+        await request(app)
+          .put('/users/me/locked-encryption')
+          .set(bearer(advOwner.accessToken))
+          .send({ mode: 'advanced', currentSecret: pinCodes.advOwner, newPassphrase: passphrases.adv })
+          .expect(204);
+        await waitFor('the partner entry to be removed', async () => (await recipientCount(sourceFile.path)) === 1);
+      }
       const copyId = await utils.waitForPartnerCopy(partner.userId, source.id);
       // the owner's key closed: the partner is asked for the owner's passphrase
       await request(app).post('/users/me/locked-encryption/lock').set(bearer(advOwner.accessToken)).expect(204);
@@ -1026,15 +1074,16 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
       expect(opened.status).toBe(200);
       expect(sha256(opened.body)).toBe(sha256(source.bytes));
 
-      // switching the owner to PIN adds the partner's own entry: no passphrase needed any more
+      // switching the owner to PIN adds the partner's own entry: no passphrase needed any more. The
+      // re-wrap is a queued job that can finish before the switch's response is read, so the owner-only
+      // header is checked before the switch.
+      expect(await recipientCount(sourceFile.path)).toBe(1);
       await unlockSession(advOwner.accessToken, pinCodes.advOwner);
       await request(app)
         .put('/users/me/locked-encryption')
         .set(bearer(advOwner.accessToken))
         .send({ mode: 'pin', currentSecret: passphrases.adv, pinCode: pinCodes.advOwner })
         .expect(204);
-      const sourceFile = await originalOf(source.id);
-      expect(await recipientCount(sourceFile.path)).toBe(1);
       await waitFor('the partner entry to be added', async () => (await recipientCount(sourceFile.path)) === 2);
       await request(app).post('/users/me/locked-encryption/lock').set(bearer(advOwner.accessToken)).expect(204);
       await unlockSession(partner.accessToken, pinCodes.partner);
@@ -1051,8 +1100,8 @@ describe('Locked encryption acceptance (FL-721, spec §15)', () => {
         .set(bearer(advOwner.accessToken))
         .send({ mode: 'advanced', currentSecret: pinCodes.advOwner, newPassphrase: SWITCHED_PASSPHRASE })
         .expect(204);
-      await waitFor('the partner entry to be removed', async () => (await recipientCount(sourceFile.path)) === 1);
       passphrases.adv = SWITCHED_PASSPHRASE;
+      await waitFor('the partner entry to be removed', async () => (await recipientCount(sourceFile.path)) === 1);
       await request(app).post('/users/me/locked-encryption/lock').set(bearer(advOwner.accessToken)).expect(204);
       const { body: after } = await request(app).get(`/assets/${copyId}`).set(bearer(partner.accessToken));
       expect(after.lockedEncryption).toMatchObject({ openable: false, reason: 'owner-passphrase' });
