@@ -62,12 +62,24 @@
     }
   };
   const goBack = () => {
-    if (step === 'passphrase') {
-      step = 'how';
-    } else if (step === 'check') {
-      step = advanced ? 'passphrase' : 'how';
-    } else if (step === 'confirm') {
-      step = 'check';
+    switch (step) {
+      case 'passphrase': {
+        step = 'how';
+        break;
+      }
+      case 'check': {
+        step = advanced ? 'passphrase' : 'how';
+        break;
+      }
+      case 'confirm': {
+        step = 'check';
+        break;
+      }
+      case 'how':
+      case 'recovery': {
+        // The first step has no Back, and the recovery key step can't go back.
+        break;
+      }
     }
   };
 
