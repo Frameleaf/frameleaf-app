@@ -32,12 +32,7 @@ export const captureSqliteSnapshot = async (
         ) {
           throw new Error('Invalid SQLite snapshot');
         }
-        const structure = {
-          applicationId: snapshot.prepare('PRAGMA application_id').get(),
-          userVersion: snapshot.prepare('PRAGMA user_version').get(),
-          objects: snapshot.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all(),
-        };
-        return { path, schemaSha256: createHash('sha256').update(JSON.stringify(structure)).digest('hex') };
+        return { path, schemaSha256: sqliteSchemaFingerprint(snapshot) };
       } finally {
         snapshot.close();
       }
@@ -54,4 +49,14 @@ export const captureSqliteSnapshot = async (
     }
     throw new Error('SQLite snapshot refused: SQLITE_SNAPSHOT_FAILED');
   }
+};
+
+/** Schema identity only: source content and source application identity are verified separately. */
+export const sqliteSchemaFingerprint = (database: DatabaseSync): string => {
+  const structure = {
+    applicationId: database.prepare('PRAGMA application_id').get(),
+    userVersion: database.prepare('PRAGMA user_version').get(),
+    objects: database.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').all(),
+  };
+  return createHash('sha256').update(JSON.stringify(structure)).digest('hex');
 };
