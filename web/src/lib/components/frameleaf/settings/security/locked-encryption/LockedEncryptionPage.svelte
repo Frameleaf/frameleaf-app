@@ -14,6 +14,7 @@
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
@@ -28,6 +29,7 @@
   import ChangeProtectionModal from '$lib/components/frameleaf/settings/security/locked-encryption/ChangeProtectionModal.svelte';
   import NewRecoveryKeyModal from '$lib/components/frameleaf/settings/security/locked-encryption/NewRecoveryKeyModal.svelte';
   import RecoverModal from '$lib/components/frameleaf/settings/security/locked-encryption/RecoverModal.svelte';
+  import SecretField from '$lib/components/frameleaf/settings/security/locked-encryption/SecretField.svelte';
   import TurnOffModal from '$lib/components/frameleaf/settings/security/locked-encryption/TurnOffModal.svelte';
   import TurnOnModal from '$lib/components/frameleaf/settings/security/locked-encryption/TurnOnModal.svelte';
   import { lockedEncryptionView, untilParts, type AskAgain } from '$lib/frameleaf/locked-encryption';
@@ -72,6 +74,12 @@
   let unlocking = $state(false);
   let unlockError = $state('');
   let savingAgain = $state(false);
+  /** N2: the longer ask-again time waiting on the passphrase, and what has been typed for it. */
+  let longerAgain = $state<{ askAgainHours: AskAgain } | undefined>();
+  let longerOpen = $state(false);
+  let longerSecret = $state('');
+  /** Bumped to redraw the ask-again choice from the stored value after a cancel or a refusal. */
+  let againResets = $state(0);
 
   const view = $derived(status ? lockedEncryptionView(status) : undefined);
   const mode = $derived(status?.mode ?? LockedEncryptionMode.Pin);
@@ -189,16 +197,62 @@
       said = getServerErrorMessage(error) ?? $t('frameleaf_le_lock_failed');
     }
   };
-  const saveAgain = async (value: string) => {
-    const askAgainHours = value === 'restart' ? null : Number(value);
+  /** Reads the stored ask-again time again and redraws the choice, which otherwise keeps the refused one. */
+  const snapBackAgain = async () => {
+    await refresh();
+    againResets += 1;
+  };
+  const sendAgain = async (askAgainHours: AskAgain, currentSecret?: string) => {
+    const before = again;
     savingAgain = true;
     try {
-      await updateLockedEncryption({ lockedEncryptionUpdateDto: { askAgainHours } });
+      await updateLockedEncryption({
+        lockedEncryptionUpdateDto: currentSecret === undefined ? { askAgainHours } : { askAgainHours, currentSecret },
+      });
       await refresh();
     } catch (error) {
-      said = getServerErrorMessage(error) ?? $t('frameleaf_le_change_failed');
+      const refused = [401, 403].includes((error as { status?: number } | undefined)?.status ?? 0);
+      said = refused
+        ? $t('frameleaf_le_again_refused', { values: { time: againWords(before) } })
+        : $t('frameleaf_le_change_failed');
+      await snapBackAgain();
     } finally {
       savingAgain = false;
+    }
+  };
+  /**
+   * Shortening the time is sent as it is. Keeping Locked open longer (or until a restart) needs the
+   * passphrase first (M3): the page asks for it, and the server checks it.
+   */
+  const saveAgain = async (value: string) => {
+    const askAgainHours = (value === 'restart' ? null : Number(value)) as AskAgain;
+    const longer = again !== null && (askAgainHours === null || askAgainHours > again);
+    if (!longer) {
+      await sendAgain(askAgainHours);
+      return;
+    }
+    longerSecret = '';
+    longerAgain = { askAgainHours };
+    longerOpen = true;
+  };
+  const confirmLonger = async (event?: Event) => {
+    event?.preventDefault();
+    if (!longerAgain || longerSecret.length === 0 || savingAgain) {
+      return;
+    }
+    const { askAgainHours } = longerAgain;
+    const currentSecret = longerSecret;
+    longerAgain = undefined;
+    longerSecret = '';
+    longerOpen = false;
+    await sendAgain(askAgainHours, currentSecret);
+  };
+  /** Closed without sending (Cancel, X or Escape): nothing changes, and the choice goes back. */
+  const longerClosed = () => {
+    longerSecret = '';
+    if (longerAgain) {
+      longerAgain = undefined;
+      void snapBackAgain();
     }
   };
 
@@ -397,16 +451,18 @@
               : $t('frameleaf_le_again_help_hours', { values: { time: againWords(again) } })}
           >
             <div class="le-again">
-              <SegmentedControl
-                label={$t('frameleaf_le_again_label')}
-                value={again === null ? 'restart' : String(again)}
-                disabled={savingAgain}
-                options={AGAIN_OPTIONS.map((value) => ({
-                  value,
-                  label: againWords(value === 'restart' ? null : (Number(value) as AskAgain)),
-                }))}
-                onChange={(value) => void saveAgain(value)}
-              />
+              {#key againResets}
+                <SegmentedControl
+                  label={$t('frameleaf_le_again_label')}
+                  value={again === null ? 'restart' : String(again)}
+                  disabled={savingAgain || longerOpen}
+                  options={AGAIN_OPTIONS.map((value) => ({
+                    value,
+                    label: againWords(value === 'restart' ? null : (Number(value) as AskAgain)),
+                  }))}
+                  onChange={(value) => void saveAgain(value)}
+                />
+              {/key}
             </div>
           </Row>
           <Row label={$t('frameleaf_le_passphrase')} help={$t('frameleaf_le_passphrase_help')}>
@@ -497,3 +553,27 @@
     {/if}
   {/if}
 </KitPage>
+
+{#if longerAgain}
+  <Dialog
+    title={$t('frameleaf_le_again_secret_title')}
+    closeLabel={$t('close')}
+    bind:open={longerOpen}
+    onClosed={longerClosed}
+  >
+    <form class="le-form" autocomplete="off" onsubmit={confirmLonger}>
+      <p>
+        {longerAgain.askAgainHours === null
+          ? $t('frameleaf_le_again_secret_body_restart')
+          : $t('frameleaf_le_again_secret_body_hours', { values: { time: againWords(longerAgain.askAgainHours) } })}
+      </p>
+      <SecretField kind="passphrase" bind:value={longerSecret} autofocus />
+    </form>
+    {#snippet actions()}
+      <Button onclick={() => (longerOpen = false)}>{$t('frameleaf_le_cancel')}</Button>
+      <Button variant="primary" disabled={longerSecret.length === 0} onclick={() => void confirmLonger()}>
+        {$t('frameleaf_le_again_secret_confirm')}
+      </Button>
+    {/snippet}
+  </Dialog>
+{/if}

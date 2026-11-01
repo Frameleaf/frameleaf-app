@@ -150,6 +150,80 @@ describe('Locked encryption (FL-721)', () => {
     });
   });
 
+  describe('the ask-again time (N2)', () => {
+    const advancedOn = () =>
+      on({ mode: LockedEncryptionMode.Advanced, askAgainHours: 8, expiresAt: '2026-11-01T20:00:00.000Z' });
+    const pressed = (name: string) => expect(button(name)).toHaveAttribute('aria-pressed', 'true');
+
+    it('keeping Locked open longer asks for the passphrase first and sends it', async () => {
+      sdkMock.getLockedEncryption.mockResolvedValue(advancedOn());
+      sdkMock.updateLockedEncryption.mockResolvedValue(undefined as never);
+      render(LockedEncryptionPage);
+
+      await fireEvent.click(await screen.findByRole('button', { name: '72 hours' }));
+      expect(
+        await screen.findByRole('heading', { name: 'Type your passphrase to keep Locked open longer' }),
+      ).toBeInTheDocument();
+      expect(sdkMock.updateLockedEncryption).not.toHaveBeenCalled();
+
+      await typeInto(screen.getByLabelText('Passphrase'), 'correct horse battery');
+      await fireEvent.click(button('Keep open longer'));
+
+      await waitFor(() =>
+        expect(sdkMock.updateLockedEncryption).toHaveBeenCalledWith({
+          lockedEncryptionUpdateDto: { askAgainHours: 72, currentSecret: 'correct horse battery' },
+        }),
+      );
+    });
+
+    it('cancelling the passphrase changes nothing and the choice snaps back', async () => {
+      sdkMock.getLockedEncryption.mockResolvedValue(advancedOn());
+      render(LockedEncryptionPage);
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Only after a restart' }));
+      await screen.findByRole('heading', { name: 'Type your passphrase to keep Locked open longer' });
+      await fireEvent.click(button('Cancel'));
+
+      await waitFor(() => pressed('8 hours'));
+      expect(button('Only after a restart')).toHaveAttribute('aria-pressed', 'false');
+      expect(sdkMock.updateLockedEncryption).not.toHaveBeenCalled();
+      expect(sdkMock.getLockedEncryption).toHaveBeenCalledTimes(2);
+    });
+
+    it('a wrong passphrase says so in plain words and the choice snaps back', async () => {
+      sdkMock.getLockedEncryption.mockResolvedValue(advancedOn());
+      sdkMock.updateLockedEncryption.mockRejectedValue(
+        Object.assign(new Error('Unauthorized'), { status: 401, data: { message: 'Wrong passphrase' } }),
+      );
+      render(LockedEncryptionPage);
+
+      await fireEvent.click(await screen.findByRole('button', { name: '24 hours' }));
+      await typeInto(await screen.findByLabelText('Passphrase'), 'not it');
+      await fireEvent.click(button('Keep open longer'));
+
+      expect(
+        await screen.findByText('That passphrase didn’t work, so Locked still asks for it again after 8 hours.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Wrong passphrase')).not.toBeInTheDocument();
+      await waitFor(() => pressed('8 hours'));
+    });
+
+    it('a shorter time needs no passphrase', async () => {
+      sdkMock.getLockedEncryption.mockResolvedValue({ ...advancedOn(), askAgainHours: 72 });
+      sdkMock.updateLockedEncryption.mockResolvedValue(undefined as never);
+      render(LockedEncryptionPage);
+
+      await fireEvent.click(await screen.findByRole('button', { name: '8 hours' }));
+
+      await waitFor(() =>
+        expect(sdkMock.updateLockedEncryption).toHaveBeenCalledWith({
+          lockedEncryptionUpdateDto: { askAgainHours: 8 },
+        }),
+      );
+      expect(screen.queryByRole('heading', { name: 'Type your passphrase to keep Locked open longer' })).toBeNull();
+    });
+  });
+
   describe('turning on', () => {
     const renderTurnOn = () => {
       const onClose = vi.fn();
