@@ -643,6 +643,29 @@ describe(LockedEncryptionService.name, () => {
     });
   });
 
+  describe('onUserDelete (M8)', () => {
+    it('deletes the removed person’s key file, drops their key and checks every encrypting owner', async () => {
+      await enablePin();
+      expect(lockedKeys.has(userId)).toBe(true);
+      mocks.job.queue.mockClear();
+
+      await sut.onUserDelete({ id: userId } as never);
+
+      expect(mocks.lockedKey.delete).toHaveBeenCalledWith(userId);
+      expect(files.has(userId)).toBe(false);
+      expect(lockedKeys.has(userId)).toBe(false);
+      // their key may be on others' files as a partner's: every owner's sweep re-wraps without it
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: {} });
+    });
+
+    it('never throws when the key file can’t be removed', async () => {
+      await enablePin();
+      mocks.lockedKey.delete.mockRejectedValueOnce(new Error('EACCES'));
+      await expect(sut.onUserDelete({ id: userId } as never)).resolves.toBeUndefined();
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('key file'));
+    });
+  });
+
   describe('PIN hooks', () => {
     it('onPinSet creates a PIN-only key pair when there is no key file (spec §4.1), with no row', async () => {
       await sut.onPinSet(userId, PIN);

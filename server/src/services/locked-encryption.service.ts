@@ -909,6 +909,31 @@ export class LockedEncryptionService {
     this.drop(userId);
   }
 
+  /**
+   * Spec §10 (M8): a removed account's key file goes with it, overwritten before it is unlinked, so no
+   * later backup carries a PIN wrap that could be attacked offline. Their loaded key is dropped, and
+   * every encrypting owner gets a sweep: the removed person may be a partner on their files, and the
+   * partnership rows are already gone. Never throws; the account is removed either way.
+   */
+  @OnEvent({ name: 'UserDelete' })
+  async onUserDelete({ id }: ArgOf<'UserDelete'>): Promise<void> {
+    lockedKeys.pin(id, false);
+    publishLockedKey({ type: 'locked-key', action: 'unpin', userId: id });
+    this.drop(id);
+    try {
+      await this.withKeyFileLock(id, () => this.lockedKeyRepository.delete(id));
+    } catch (error) {
+      this.logger.error(`Could not delete the Locked key file of removed user ${id}: ${(error as Error).name}`);
+    }
+    try {
+      await this.jobRepository.queue({ name: JobName.LockedSweep, data: {} });
+    } catch (error) {
+      this.logger.warn(
+        `Could not queue the Locked sweep after removing user ${id}; the hourly sweep runs it: ${error}`,
+      );
+    }
+  }
+
   // ---- Helpers ----
 
   private async requireRow(userId: string) {
