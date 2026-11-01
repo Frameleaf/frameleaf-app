@@ -21,6 +21,8 @@ export function superviseQueueWorker(
   let identityConflict = false;
   let lastSeen = performance.now();
   let terminating = false;
+  let termination: Promise<number> | undefined;
+  let stopDeadline: number | undefined;
   const children = new Set<number>();
   const diagnostic = options.diagnostic ?? ((message: string) => console.error(message));
   const absent = (pid: number) => {
@@ -41,25 +43,34 @@ export function superviseQueueWorker(
     }
   };
   const terminate = () => {
-    if (terminating) {
-      return;
-    }
+    if (termination) return termination;
     terminating = true;
+    const deadline = performance.now() + (options.stopWaitMs ?? 5000);
+    stopDeadline = deadline;
     killChildren();
-    void worker.terminate();
+    termination = (async () => {
+      // Keep the owning libuv loop alive until its children are reaped; early closure strands zombies.
+      while (children.size > 0 && performance.now() < deadline) {
+        for (const pid of children) if (absent(pid)) children.delete(pid);
+        if (children.size === 0) break;
+        await delay(Math.min(options.childScanMs ?? 50, Math.max(1, deadline - performance.now())));
+      }
+      return worker.terminate();
+    })();
+    return termination;
   };
   const timer = setInterval(() => {
     // Database migrations run before port registration and need a longer startup allowance.
     const deadlineMs = watchdog ? silenceMs : (options.startupMs ?? 30 * 60_000);
     if (performance.now() - lastSeen > deadlineMs) {
-      terminate();
+      void terminate();
     }
   }, scanMs);
   worker.on(
     'message',
     (message: { type?: string; port?: MessagePort; pid?: number; active?: boolean; workerId?: string }) => {
       if (message.type === 'database-unusable') {
-        terminate();
+        void terminate();
       }
       if (message.type === 'queue-child' && Number.isSafeInteger(message.pid) && message.pid! > 0) {
         if (message.active) {
@@ -80,7 +91,7 @@ export function superviseQueueWorker(
             diagnostic('Queue worker identity changed; durable stop proof refused');
             identityConflict = true;
             workerId = undefined;
-            terminate();
+            void terminate();
             return;
           }
         }
@@ -90,7 +101,7 @@ export function superviseQueueWorker(
         watchdog.on('message', (event: { type?: string }) => {
           lastSeen = performance.now();
           if (event.type === 'terminate') {
-            terminate();
+            void terminate();
           }
         });
       }
@@ -102,7 +113,7 @@ export function superviseQueueWorker(
       killChildren();
       watchdog?.close();
       const confirm = async () => {
-        const deadline = performance.now() + (options.stopWaitMs ?? 5000);
+        const deadline = stopDeadline ?? performance.now() + (options.stopWaitMs ?? 5000);
         let waitingReported = false;
         while (true) {
           for (const pid of children) if (absent(pid)) children.delete(pid);
@@ -135,5 +146,5 @@ export function superviseQueueWorker(
         .finally(resolve);
     });
   });
-  return { stopped };
+  return { stopped, terminate };
 }

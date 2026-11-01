@@ -121,6 +121,76 @@ describe('queue execution supervisor', () => {
     }
   }, 10_000);
 
+  it('reaps a child in its owning worker loop before terminating that worker', async () => {
+    const workerId = randomUUID();
+    const worker = new Worker(
+      `const {parentPort,MessageChannel,workerData}=require('node:worker_threads');
+      const {spawn}=require('node:child_process');
+      (async()=>{
+        const {trackQueueChild}=await import(workerData.tracker);
+        const {port1,port2}=new MessageChannel();
+        parentPort.postMessage({type:'queue-watchdog-port',workerId:workerData.id,port:port1},[port1]);
+        const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+        trackQueueChild(child);
+        child.once('spawn',()=>parentPort.postMessage({type:'ready',pid:child.pid}));
+        parentPort.on('message',()=>parentPort.postMessage({type:'database-unusable'}));
+        setInterval(()=>port2.postMessage({type:'alive'}),50);
+      })();`,
+      {
+        eval: true,
+        execArgv: ['--import', 'tsx'],
+        workerData: { id: workerId, tracker: new URL('child-process.ts', import.meta.url).href },
+      },
+    );
+    const recordStopped = vi.fn();
+    const { stopped } = superviseQueueWorker(worker, undefined, undefined, {
+      recordStopped,
+      stopWaitMs: 1000,
+      childScanMs: 10,
+    });
+    try {
+      const pid = await new Promise<number>((resolve) =>
+        worker.on('message', (message) => {
+          if (message.type === 'ready') resolve(message.pid);
+        }),
+      );
+      worker.postMessage('fail-database');
+      await stopped;
+      expect(recordStopped).toHaveBeenCalledExactlyOnceWith({ workerId, stoppedAt: expect.any(Number) });
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+    } finally {
+      await worker.terminate();
+      await stopped;
+    }
+  }, 10_000);
+
+  it('still forces a worker to stop within the budget when its child cannot be confirmed absent', async () => {
+    const worker = Object.assign(new EventEmitter(), { terminate: vi.fn() });
+    worker.terminate.mockImplementation(() => {
+      worker.emit('exit', 1);
+      return Promise.resolve(1);
+    });
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+    const recordStopped = vi.fn();
+    const diagnostic = vi.fn();
+    try {
+      const { stopped } = superviseQueueWorker(worker as unknown as Worker, undefined, undefined, {
+        recordStopped,
+        diagnostic,
+        stopWaitMs: 20,
+        childScanMs: 5,
+      });
+      worker.emit('message', { type: 'queue-child', pid: 99_999_999, active: true });
+      worker.emit('message', { type: 'database-unusable' });
+      await stopped;
+      expect(worker.terminate).toHaveBeenCalledOnce();
+      expect(recordStopped).not.toHaveBeenCalled();
+      expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('native children remain unconfirmed'));
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
   it('refuses proof when kill requests and a reported close cannot establish child absence', async () => {
     const worker = Object.assign(new EventEmitter(), { terminate: vi.fn().mockResolvedValue(0) });
     const recordStopped = vi.fn();

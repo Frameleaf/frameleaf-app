@@ -6,7 +6,12 @@ import { API_STARTUP_RETRY_EXIT_CODE } from 'src/utils/shutdown.js';
 const fixture = vi.hoisted(() => ({
   maintenance: false,
   starts: [] as string[],
-  workers: [] as (EventEmitter & { name: string; stopped: Promise<void> })[],
+  workers: [] as (EventEmitter & {
+    name: string;
+    stopped: Promise<void>;
+    terminate?: ReturnType<typeof vi.fn>;
+    ownedTerminate?: ReturnType<typeof vi.fn>;
+  })[],
   signals: new Map<string, () => void>(),
   nextStopped: undefined as Promise<void> | undefined,
   clients: [] as { destroy: ReturnType<typeof vi.fn> }[],
@@ -47,6 +52,7 @@ vi.mock('node:worker_threads', async () => {
       name: string;
       stopped = fixture.nextStopped ?? Promise.resolve();
       terminate = vi.fn().mockResolvedValue(0);
+      ownedTerminate = vi.fn().mockResolvedValue(0);
       postMessage = vi.fn();
       constructor(file: string) {
         super();
@@ -109,7 +115,10 @@ vi.mock('src/queue/worker-stop-proof.js', () => ({
   },
 }));
 vi.mock('src/queue/supervisor.js', () => ({
-  superviseQueueWorker: (worker: { stopped: Promise<void> }) => ({ stopped: worker.stopped }),
+  superviseQueueWorker: (worker: { stopped: Promise<void>; ownedTerminate: () => Promise<number> }) => ({
+    stopped: worker.stopped,
+    terminate: worker.ownedTerminate,
+  }),
 }));
 
 const latest = (name: FrameleafWorker) => fixture.workers.findLast((worker) => worker.name === name)!;
@@ -454,6 +463,13 @@ describe('supervisor worker-local restart lifecycle', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
+  });
+
+  it('routes a poisoned microservices pool through its child-owning supervisor', () => {
+    const worker = latest(FrameleafWorker.Microservices);
+    worker.emit('message', { type: 'database-unusable' });
+    expect(worker.ownedTerminate).toHaveBeenCalledOnce();
+    expect(worker.terminate).not.toHaveBeenCalled();
   });
 
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {
