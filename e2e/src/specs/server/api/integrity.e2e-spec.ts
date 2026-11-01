@@ -765,6 +765,7 @@ describe('/admin/integrity', () => {
             assetId: null,
             fileAssetId: null,
             createdAt: expect.any(String),
+            originalFileName: null,
           },
         ]),
       });
@@ -795,6 +796,7 @@ describe('/admin/integrity', () => {
             assetId: asset.id,
             fileAssetId: null,
             createdAt: expect.any(String),
+            originalFileName: expect.any(String),
           },
         ]),
       });
@@ -825,6 +827,7 @@ describe('/admin/integrity', () => {
             assetId: asset.id,
             fileAssetId: null,
             createdAt: expect.any(String),
+            originalFileName: expect.any(String),
           },
         ]),
       });
