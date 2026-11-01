@@ -47,6 +47,7 @@ export async function* readPiwigoRestore(input: Config): AsyncGenerator<{ table:
   if (!parsed.success) refuse('PIWIGO_SOURCE_CONFIG_INVALID');
   const config = parsed.data!;
   if (config.version !== fixture.source.version) refuse('PIWIGO_VERSION_UNQUALIFIED');
+  if (!config.tls && !['127.0.0.1', '::1'].includes(config.host)) refuse('PIWIGO_SOURCE_TLS_REQUIRED');
   let connection: Connection | undefined;
   let failed = false;
   let bodyFailed = false;

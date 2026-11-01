@@ -101,6 +101,26 @@ beforeEach(() => {
   } as never);
 });
 describe('Piwigo restored database transport', () => {
+  it.each(['restore.example.invalid', 'localhost', '10.0.0.1'])(
+    'refuses unencrypted nonliteral-loopback host %s before connecting',
+    async (host) => {
+      await expect(readPiwigoRestore({ ...config, host }).next()).rejects.toThrow('PIWIGO_SOURCE_TLS_REQUIRED');
+      expect(createConnection).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses certificate verification for an encrypted remote restore', async () => {
+    const reader = readPiwigoRestore({ ...config, host: 'restore.example.invalid', tls: { ca: 'fixture-public-ca' } });
+    await reader.next();
+    expect(createConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ssl: { ca: 'fixture-public-ca', rejectUnauthorized: true },
+      }),
+    );
+    await reader.return(undefined);
+    expect(destroy).toHaveBeenCalledExactlyOnceWith();
+  });
+
   it('reads every allowlisted source table in bounded batches while locking all 34 native tables', async () => {
     const batches = await collect();
     expect(batches.reduce((sum, b) => sum + b.rows.length, 0)).toBe(
