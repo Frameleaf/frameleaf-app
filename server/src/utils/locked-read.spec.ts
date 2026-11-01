@@ -259,6 +259,18 @@ describe('locked-read', () => {
       expect(fn).not.toHaveBeenCalled();
       expect(await fs.readdir(tmp)).toEqual([]);
     });
+
+    it('checks the temporary folder again after a failed check, so a repaired folder is used without a restart', async () => {
+      // a file where the folder should be: it can't be prepared
+      const blocker = join(dir, 'not-a-folder');
+      await fs.writeFile(blocker, '');
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP', join(blocker, 'frameleaf-locked'));
+      resetLockedTmpCheck();
+      await expect(assertLockedTmpIsTmpfs()).rejects.toThrow(LockedTmpUnavailableError);
+
+      vi.stubEnv('FRAMELEAF_LOCKED_TMP', tmp);
+      await expect(assertLockedTmpIsTmpfs()).resolves.toBeUndefined();
+    });
   });
 
   it('rewriteThroughPlainCopy runs the tool on a plain copy and leaves the result plain at the path', async () => {
@@ -365,9 +377,14 @@ describe('locked-read', () => {
       vi.stubEnv('FRAMELEAF_LOCKED_TMP_ALLOW_DISK', 'false');
       resetLockedTmpCheck();
       try {
-        if (process.platform !== 'linux') {
-          await expect(makeWorkDir('darktable', true)).rejects.toBeInstanceOf(LockedTmpUnavailableError);
+        // skipped only where the OS temp folder really is tmpfs
+        if (process.platform === 'linux') {
+          const mounts = await fs.readFile('/proc/mounts', 'utf8');
+          if (mounts.split('\n').some((line) => line.split(' ', 2)[1] === '/tmp' && line.split(' ', 3)[2] === 'tmpfs')) {
+            return;
+          }
         }
+        await expect(makeWorkDir('darktable', true)).rejects.toBeInstanceOf(LockedTmpUnavailableError);
       } finally {
         vi.unstubAllEnvs();
         resetLockedTmpCheck();
