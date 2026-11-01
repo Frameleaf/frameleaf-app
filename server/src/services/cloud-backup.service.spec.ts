@@ -3102,6 +3102,22 @@ describe(CloudBackupService.name, () => {
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('older key(s) that no key file opens'));
       });
 
+      it('an encrypted file whose header cannot be read is never backed up as plain', async () => {
+        await sealedToOwner();
+        const folder = join(media, 'library', OWNER);
+        const broken = join(folder, 'IMG_2.jpg');
+        await writeFile(broken, Buffer.concat([Buffer.from('FLLK', 'ascii'), Buffer.from('not a header')]));
+        index.listAssets
+          .mockResolvedValueOnce([{ ...asset('asset-2', null), ownerId: OWNER, originalPath: broken }])
+          .mockResolvedValueOnce([]);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        // fail safe, as Buddy does: no key file can be shown to open it
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('had no key file when the run started'));
+      });
+
       it('a partner copy of an encrypted item needs the owner’s key file, never the partner’s', async () => {
         const PARTNER = '00000000-0000-4000-8000-000000000002';
         const sealed = await sealedToOwner();

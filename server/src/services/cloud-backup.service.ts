@@ -253,7 +253,6 @@ import {
 } from 'src/utils/frameleaf-push.js';
 import {
   LOCKED_KEY_BACKUP_ROLE,
-  lockedFileOwnerKeyId,
   lockedKeyBackupFiles,
   lockedKeyFileKeyId,
   lockedKeyFilePath,
@@ -262,6 +261,7 @@ import {
   matchLockedEncryptionRow,
   pathsBeingReplaced,
   readLockedKeyFile,
+  sealedFileOwnerKeyId,
 } from 'src/utils/locked-backup.js';
 import {
   ManagedBackupAuthorizationError,
@@ -2726,8 +2726,8 @@ export class CloudBackupService {
     // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's, so a
     // mismatch is not a change; its owner (the first recipient, whoever's asset row lists the path) must
     // have a key file in this backup (see `backUpProfiles`). Checked before the verified fast path too.
-    const ownerKeyId =
-      file.role === LOCKED_KEY_BACKUP_ROLE ? null : await lockedFileOwnerKeyId(file.path).catch(() => null);
+    // A file that is encrypted but whose header cannot be read counts as keyless (fail safe), never as plain.
+    const ownerKeyId = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
     const sealed = ownerKeyId !== null;
     if (ownerKeyId && !run.progress.result.sealedKeyIds.includes(ownerKeyId)) {
       run.progress.result = {
