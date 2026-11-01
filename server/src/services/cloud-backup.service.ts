@@ -168,7 +168,6 @@ import {
   checkOwnerRestoreItems,
   ownerRestoreHash,
   readBackupAssetRecord as readRecord,
-  restoredChecksum,
 } from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import {
@@ -206,6 +205,7 @@ import {
   CloudBackupManifestFile,
   CloudBackupRunResult,
   backupKeyFile,
+  backupRecordFor,
   bucketRef,
   compactIso,
   emptyRunResult,
@@ -216,6 +216,7 @@ import {
   parseBackupKey,
   parseRunResult,
   recoveryCode,
+  restoredChecksum,
   runProgress,
   s3SettingsProblem,
   signingRegion,
@@ -2901,7 +2902,7 @@ export class CloudBackupService {
     const details = new Map<string, { record: CloudBackupAssetRecord; details: CloudBackupAssetDetails }>();
     const albumIds = new Set<string>();
     const people = new Map<string, { ownerId: string; personId: string }>();
-    const assetJson = (current: ManifestAsset) => {
+    const assetJson = async (current: ManifestAsset) => {
       const known = details.get(current.id);
       details.delete(current.id);
       if (known) {
@@ -2914,10 +2915,15 @@ export class CloudBackupService {
           }
         }
       }
+      // FL-738: the item's checksum is kept only for an encrypted original (see `backupRecordFor`)
+      const original = known?.record.checksum ? current.files.find((file) => file.role === 'original') : undefined;
       const body = JSON.stringify({
         owner: current.owner,
         files: current.files,
-        ...(known && { ...known.record, details: known.details }),
+        ...(known && {
+          ...backupRecordFor(known.record, !!original && (await sealedFileOwnerKeyId(original.path)) !== null),
+          details: known.details,
+        }),
       });
       const text = `${counts.assets > 0 ? ',' : ''}${JSON.stringify(current.id)}:${body}`;
       counts.assets += 1;
@@ -2961,7 +2967,7 @@ export class CloudBackupService {
         let asset = pending.asset;
         if (asset?.id !== entry.assetId) {
           if (asset) {
-            yield assetJson(asset);
+            yield await assetJson(asset);
           }
           asset = { id: entry.assetId, owner: entry.ownerId, files: [] };
           pending.asset = asset;
@@ -2972,7 +2978,7 @@ export class CloudBackupService {
       after = page.at(-1)?.fileKey ?? after;
     }
     if (pending.asset) {
-      yield assetJson(pending.asset);
+      yield await assetJson(pending.asset);
     }
     const albums = await this.index.getAlbumRecords([...albumIds]);
     const persons = await this.index.getPersonRecords(people.values().toArray());

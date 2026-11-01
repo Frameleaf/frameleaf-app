@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { ChecksumAlgorithm } from 'src/enum.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
 import { readBackupAssetRecord } from 'src/utils/cloud-backup-owner-restore.js';
-import { type CloudBackupManifestAsset, readManifestAsset } from 'src/utils/cloud-backup.js';
+import { type CloudBackupManifestAsset, backupRecordFor, readManifestAsset } from 'src/utils/cloud-backup.js';
 import { type ServiceMocks, newTestService } from 'test/utils.js';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -63,6 +63,14 @@ describe('a restored original keeps its item’s checksum (FL-738)', () => {
       expect(record).toMatchObject({ originalFileName: 'a.jpg' });
       expect(record.checksum).toBeUndefined();
     }
+  });
+
+  it('keeps the checksum in a backup only for an encrypted original, so a changed plain file restores as itself', () => {
+    const record = recordOf(backedUp({ checksum: PLAIN, checksumAlgorithm: 'sha256' }));
+    expect(backupRecordFor(record, true)).toBe(record);
+    const plain = backupRecordFor(record, false);
+    expect(plain).toEqual({ ...record, checksum: undefined, checksumAlgorithm: undefined });
+    expect(Object.keys(plain)).not.toContain('checksum');
   });
 
   it('gives an encrypted original the plaintext checksum the backup recorded, and finds a duplicate by it', async () => {

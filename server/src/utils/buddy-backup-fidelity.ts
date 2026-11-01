@@ -228,10 +228,12 @@ export const buddyRestoreChecksum = (
   current: { checksum: Buffer; checksumAlgorithm: ChecksumAlgorithm },
   sha256: string,
 ) =>
-  state?.source.sha256 === sha256 &&
-  state.source.checksum === current.checksum.toString('hex') &&
-  state.source.checksumAlgorithm === current.checksumAlgorithm
-    ? current
+  state?.source.sha256 === sha256
+    ? state.source.checksum === current.checksum.toString('hex') &&
+      state.source.checksumAlgorithm === current.checksumAlgorithm
+      ? current
+      : // FL-738: the snapshot's checksum for this very file (an encrypted original's is the plaintext's)
+        { checksum: Buffer.from(state.source.checksum, 'hex'), checksumAlgorithm: state.source.checksumAlgorithm }
     : { checksum: Buffer.from(sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
 
 /** Copy retained versions privately; a scoped restore never overwrites a live version's shared path. */

@@ -1,7 +1,12 @@
 import { basename } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { OwnerBackupHistoryResponseDto, OwnerBackupPageDto } from 'src/dtos/cloud-backup-owner.dto.js';
-import type { CloudBackupManifest, CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
+import {
+  type CloudBackupManifest,
+  type CloudBackupManifestFile,
+  recordedChecksum,
+  restoredChecksum,
+} from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 
@@ -61,15 +66,18 @@ export const ownerBackupHistoryPage = (
       // v2 records don't preserve the modern classification/rule evidence required to evaluate a filter.
       const deletion = current?.deletion;
       const original = item.files.find((file) => file.role === 'original');
+      // FL-738: an encrypted original's item had the plaintext checksum the backup recorded
+      const expected =
+        original && /^[a-f\d]{64}$/.test(original.sha256)
+          ? restoredChecksum(recordedChecksum(item), original.sha256)
+          : null;
       if (
         !deletion ||
         deletion.ownerId !== auth.user.id ||
         deletion.evidenceVersion !== 1 ||
-        deletion.checksumAlgorithm !== 'sha256' ||
-        !original ||
-        !/^[a-f\d]{64}$/.test(original.sha256) ||
-        deletion.checksum?.length !== 32 ||
-        deletion.checksum?.toString('hex') !== original.sha256
+        !expected ||
+        deletion.checksumAlgorithm !== expected.checksumAlgorithm ||
+        !deletion.checksum?.equals(expected.checksum)
       )
         return false;
       if (deletion.visibility === 'hidden' || !['timeline', 'archive'].includes(deletion.visibility)) return false;

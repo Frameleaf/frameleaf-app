@@ -30,7 +30,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 
 import { BaseService } from 'src/services/base.service.js';
 import { DetailChanges, EMPTY_DETAILS, RestoreDetailsMode, detailChanges } from 'src/utils/cloud-backup-details.js';
-import { restoredChecksum } from 'src/utils/cloud-backup-owner-restore.js';
+import { restoredChecksum } from 'src/utils/cloud-backup.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { upsertTags } from 'src/utils/tag.js';
 

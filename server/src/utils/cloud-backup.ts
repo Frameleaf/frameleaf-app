@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { CloudBackupKeyMode } from 'src/types.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
 
 /**
  * Cloud backup (FL-160): the bucket layout, the bucket key's formats and the checks every part of the
@@ -351,6 +352,41 @@ const cloudBackupAssetRecordSchema = z.object({
   checksumAlgorithm: z.enum(['sha1', 'sha256']).optional().catch(undefined),
 });
 export type CloudBackupAssetRecord = z.infer<typeof cloudBackupAssetRecordSchema>;
+
+const RECORDED_CHECKSUM = new Map<unknown, RegExp>([
+  ['sha1', /^[0-9a-f]{40}$/],
+  ['sha256', /^[0-9a-f]{64}$/],
+]);
+
+/** FL-738: an item's recorded checksum as a raw manifest holds it: hex of its algorithm's length, else none. */
+export const recordedChecksum = (asset: { checksum?: unknown; checksumAlgorithm?: unknown }) =>
+  typeof asset.checksum === 'string' && RECORDED_CHECKSUM.get(asset.checksumAlgorithm)?.test(asset.checksum)
+    ? { checksum: asset.checksum, checksumAlgorithm: asset.checksumAlgorithm as 'sha1' | 'sha256' }
+    : {};
+
+/**
+ * FL-738: a record keeps the item's checksum only for an encrypted Locked original, whose file hash is the
+ * ciphertext's. A plain original restores with its own SHA-256, so a stale checksum never comes back.
+ */
+export const backupRecordFor = (record: CloudBackupAssetRecord, sealed: boolean): CloudBackupAssetRecord => {
+  if (sealed) {
+    return record;
+  }
+  const { checksum: _checksum, checksumAlgorithm: _algorithm, ...plain } = record;
+  return plain;
+};
+
+/**
+ * FL-738: the checksum a restored original gives its item: the one the backup recorded for it (an
+ * encrypted original), else the file's SHA-256.
+ */
+export const restoredChecksum = (record: { checksum?: string; checksumAlgorithm?: string } | null, sha256: string) =>
+  record?.checksum && record.checksumAlgorithm
+    ? {
+        checksum: Buffer.from(record.checksum, 'hex'),
+        checksumAlgorithm: record.checksumAlgorithm as ChecksumAlgorithm,
+      }
+    : { checksum: Buffer.from(sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
 
 /** An album as the manifest lists it (v2), so a deleted album can be made again. */
 export const cloudBackupAlbumSchema = z.object({

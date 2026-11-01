@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
-import { readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
+import { buddyRestoreChecksum, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 const PLAIN = sha256('plaintext');
@@ -51,5 +52,20 @@ describe('Buddy fidelity of an encrypted Locked original (FL-738)', () => {
     expect(() =>
       readBuddyAssetFidelity(manifestOf({ checksum: sha256('other'), checksumAlgorithm: 'sha256' }), ASSET),
     ).toThrow('Buddy version checksum binding changed');
+  });
+
+  it('gives an existing item the snapshot’s checksum for the restored file, else the file’s SHA-256', () => {
+    const state = readBuddyAssetFidelity(manifestOf({ checksum: PLAIN, checksumAlgorithm: 'sha256' }), ASSET);
+    const current = { checksum: Buffer.from(CIPHER, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
+    expect(buddyRestoreChecksum(state, current, CIPHER)).toEqual({
+      checksum: Buffer.from(PLAIN, 'hex'),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const unchanged = { checksum: Buffer.from(PLAIN, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
+    expect(buddyRestoreChecksum(state, unchanged, CIPHER)).toBe(unchanged);
+    expect(buddyRestoreChecksum(null, current, sha256('other'))).toEqual({
+      checksum: Buffer.from(sha256('other'), 'hex'),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
   });
 });
