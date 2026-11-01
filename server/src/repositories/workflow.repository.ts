@@ -16,6 +16,40 @@ import { anyUuid, nsfwAssetIdExists, searchAssetBuilder, withTags } from 'src/ut
 import { effectiveVisibility } from 'src/utils/locked.js';
 import { type WorkflowSource, workflowDefinitionHash } from 'src/utils/workflow-source.js';
 
+/** The EXIF fields a workflow plugin receives with an asset (AssetV1). */
+const workflowExif = [
+  'asset_exif.make',
+  'asset_exif.model',
+  'asset_exif.orientation',
+  'asset_exif.dateTimeOriginal',
+  'asset_exif.modifyDate',
+  'asset_exif.exifImageWidth',
+  'asset_exif.exifImageHeight',
+  'asset_exif.fileSizeInByte',
+  'asset_exif.lensModel',
+  'asset_exif.fNumber',
+  'asset_exif.focalLength',
+  'asset_exif.iso',
+  'asset_exif.latitude',
+  'asset_exif.longitude',
+  'asset_exif.city',
+  'asset_exif.state',
+  'asset_exif.country',
+  'asset_exif.description',
+  'asset_exif.fps',
+  'asset_exif.exposureTime',
+  'asset_exif.livePhotoCID',
+  'asset_exif.timeZone',
+  'asset_exif.projectionType',
+  'asset_exif.profileDescription',
+  'asset_exif.colorspace',
+  'asset_exif.bitsPerSample',
+  'asset_exif.autoStackId',
+  'asset_exif.rating',
+  'asset_exif.tags',
+  'asset_exif.updatedAt',
+] as const;
+
 export type WorkflowBatch = Omit<WorkflowBatchResponseDto, 'createdAt' | 'updatedAt' | 'finishedAt' | 'snapshotAt'> & {
   ownerId: string;
   definition: WorkflowDefinitionDocument;
@@ -111,6 +145,30 @@ export class WorkflowRepository {
       query.select('asset.id').orderBy('asset.id').limit(12).execute(),
     ]);
     return { count: count.count, exampleAssetIds: examples.map(({ id }) => id) };
+  }
+  /** FL-729: the matching assets in id order, read as a run's plugins would see them, for the preview's filters. */
+  previewAssets(
+    ownerId: string,
+    source: WorkflowSource,
+    embedding: string | null | undefined,
+    requireEnrichment: boolean,
+    limit: number,
+  ) {
+    return this.sourceQuery(ownerId, source, embedding, this.db, requireEnrichment)
+      .select((eb) => [
+        'asset.id',
+        'asset.type',
+        'asset.localDateTime',
+        'asset.originalPath',
+        'asset.originalFileName',
+        withTags(eb),
+        jsonObjectFrom(
+          eb.selectFrom('asset_exif').select(workflowExif).whereRef('asset_exif.assetId', '=', 'asset.id'),
+        ).as('exifInfo'),
+      ])
+      .orderBy('asset.id')
+      .limit(limit)
+      .execute();
   }
   async getAssetIdForFace(id: string) {
     return (await this.db.selectFrom('asset_face').select('assetId').where('id', '=', id).executeTakeFirst())?.assetId;
@@ -674,41 +732,7 @@ export class WorkflowRepository {
         ...columns.workflowAssetV1,
         withTags,
         jsonObjectFrom(
-          eb
-            .selectFrom('asset_exif')
-            .select([
-              'asset_exif.make',
-              'asset_exif.model',
-              'asset_exif.orientation',
-              'asset_exif.dateTimeOriginal',
-              'asset_exif.modifyDate',
-              'asset_exif.exifImageWidth',
-              'asset_exif.exifImageHeight',
-              'asset_exif.fileSizeInByte',
-              'asset_exif.lensModel',
-              'asset_exif.fNumber',
-              'asset_exif.focalLength',
-              'asset_exif.iso',
-              'asset_exif.latitude',
-              'asset_exif.longitude',
-              'asset_exif.city',
-              'asset_exif.state',
-              'asset_exif.country',
-              'asset_exif.description',
-              'asset_exif.fps',
-              'asset_exif.exposureTime',
-              'asset_exif.livePhotoCID',
-              'asset_exif.timeZone',
-              'asset_exif.projectionType',
-              'asset_exif.profileDescription',
-              'asset_exif.colorspace',
-              'asset_exif.bitsPerSample',
-              'asset_exif.autoStackId',
-              'asset_exif.rating',
-              'asset_exif.tags',
-              'asset_exif.updatedAt',
-            ])
-            .whereRef('asset_exif.assetId', '=', 'asset.id'),
+          eb.selectFrom('asset_exif').select(workflowExif).whereRef('asset_exif.assetId', '=', 'asset.id'),
         ).as('exifInfo'),
       ])
       .where('id', '=', assetId)

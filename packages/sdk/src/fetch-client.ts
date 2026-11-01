@@ -18036,6 +18036,12 @@ export type WorkflowPreviewResponseDto = {
     evaluatedAt: string;
     exampleAssetIds: string[];
     issues: WorkflowIssueDto[];
+    partial: boolean;
+    steps: {
+        method: string;
+        remaining: number | null;
+        result: WorkflowPreviewStepResult;
+    }[];
 };
 export type LegacyWorkflowTriggerResponseDto = {
     trigger: Trigger;
@@ -39686,6 +39692,12 @@ export enum Field {
     LocalDateTime = "localDateTime",
     CreatedAt = "createdAt",
     UpdatedAt = "updatedAt"
+}
+export enum WorkflowPreviewStepResult {
+    Filtered = "filtered",
+    Skipped = "skipped",
+    Unchecked = "unchecked",
+    Disabled = "disabled"
 }
 export enum WorkflowBatchReason {
     Manual = "manual",
