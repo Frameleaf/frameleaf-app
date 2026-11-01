@@ -194,6 +194,11 @@ export type ActivityItem = {
    */
   bulk?: { requested: number; succeeded: number; failed: number; skipped: number; retried: number };
   /**
+   * FL-721: a Cloud or Buddy restore brought back Locked items encrypted with an older key, which this
+   * server's key doesn't open. A count only, shown when above 0.
+   */
+  encryptedWithOlderKey?: number;
+  /**
    * Set on a completed portable Studio bundle job (FL-91): an export offers its file, an import the
    * project it created; both are looked up through the owner-scoped bundle routes when asked for.
    */
@@ -585,6 +590,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
     ...(operation.projectId && STUDIO_RENDER_KINDS.has(operation.kind) && { projectId: operation.projectId }),
     ...estimateOf(operation),
+    ...((operation.encryptedWithOlderKey ?? 0) > 0 && { encryptedWithOlderKey: operation.encryptedWithOlderKey! }),
     ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
     stage: mediaOperationStage(operation),
     // FL-162: a Frameleaf Cloud job reads its stage, progress and money from the cloud job itself

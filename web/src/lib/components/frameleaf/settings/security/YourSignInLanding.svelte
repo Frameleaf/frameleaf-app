@@ -4,7 +4,7 @@
    * what belongs to the person signed in. It opens on "is my account safe" (protected, or the one
    * thing to look at: a device not used for a while, or no Locked PIN yet), then two short groups,
    * each row with its state: Signing in (how you sign in, signed-in devices, and API keys under
-   * Advanced) and Locked photos (Locked PIN, Always Locked). An administrator also sees where the
+   * Advanced) and Locked photos (Locked PIN, Always Locked, and FL-721 Locked encryption). An administrator also sees where the
    * rules for everyone are set.
    */
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
@@ -15,12 +15,15 @@
   import { idleDevices } from '$lib/components/frameleaf/settings/security/sign-in';
   import { commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { lockedEncryptionView } from '$lib/frameleaf/locked-encryption';
   import {
     getApiKeys,
     getAuthStatus,
+    getLockedEncryption,
     getSessions,
     type ApiKeyResponseDto,
     type AuthStatusResponseDto,
+    type LockedEncryptionStatusResponseDto,
     type SessionResponseDto,
   } from '@frameleaf/sdk';
   import { mdiAlertCircleOutline, mdiShieldCheckOutline, mdiShieldLockOutline } from '@mdi/js';
@@ -32,7 +35,15 @@
   let auth = $state<AuthStatusResponseDto | null>(null);
   let sessions = $state<SessionResponseDto[] | null>(null);
   let keys = $state<ApiKeyResponseDto[] | null>(null);
+  let encryption = $state<LockedEncryptionStatusResponseDto | null>(null);
   onMount(() => {
+    void (async () => {
+      try {
+        encryption = await getLockedEncryption();
+      } catch {
+        // the row says what the page holds instead
+      }
+    })();
     void getAuthStatus()
       .then((value) => (auth = value))
       .catch(() => {});
@@ -93,6 +104,25 @@
       case 'user-pin-code-settings': {
         return auth ? $t(auth.pinCode ? 'frameleaf_privacy_pin_set' : 'frameleaf_privacy_pin_none') : fallback;
       }
+      case 'locked-encryption': {
+        if (!encryption) {
+          return fallback;
+        }
+        const view = lockedEncryptionView(encryption);
+        return $t(
+          view === 'off'
+            ? 'frameleaf_le_privacy_off'
+            : view === 'working'
+              ? 'frameleaf_le_privacy_working'
+              : view === 'decrypting' || view === 'finish'
+                ? 'frameleaf_le_privacy_decrypting'
+                : view === 'needs'
+                  ? 'frameleaf_le_privacy_needs'
+                  : view === 'advanced'
+                    ? 'frameleaf_le_privacy_on_advanced'
+                    : 'frameleaf_le_privacy_on_pin',
+        );
+      }
       default: {
         return fallback;
       }
@@ -124,7 +154,10 @@
   </Section>
 
   <Section title={$t('frameleaf_privacy_locked')} description={$t('frameleaf_privacy_locked_description')}>
-    <Links stacked rows={[...row('user-pin-code-settings'), ...row('suppressed-content')]} />
+    <Links
+      stacked
+      rows={[...row('user-pin-code-settings'), ...row('suppressed-content'), ...row('locked-encryption')]}
+    />
   </Section>
 
   {#if authManager.user.isAdmin}

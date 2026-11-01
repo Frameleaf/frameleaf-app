@@ -1,0 +1,224 @@
+/*
+ * FL-721: the pieces the Locked encryption page and its dialogs need beyond the kit, after the
+ * prototype's `locked-encryption.css` and the dialog form of `cloud.css` (`.dialog .cl2-form`).
+ * Every class is prefixed `le-` so this unscoped file reaches nothing else.
+ */
+
+/* A dialog body: 16px between its parts (cl2-form). */
+.le-form {
+  display: grid;
+  gap: var(--fl-space-4);
+  min-width: min(26rem, 100%);
+  color: var(--fl-text);
+}
+.le-form > p,
+.le-form .le-muted {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
+}
+.le-form > label,
+.le-form > .le-label {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+}
+.le-form ul {
+  display: grid;
+  gap: var(--fl-space-2);
+  margin: 0;
+  padding-inline-start: 18px;
+  font-size: var(--fl-font-callout);
+  line-height: 1.5;
+}
+.le-form .le-error {
+  margin: 0;
+  color: var(--fl-danger);
+  font-size: var(--fl-font-small);
+}
+.le-form .le-note {
+  display: flex;
+  gap: var(--fl-space-2);
+  align-items: flex-start;
+}
+
+/* A text box (cl2-text): full width in a dialog, 40px tall, 44px on touch. */
+.le-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--fl-space-3);
+  color: var(--fl-text);
+  font: inherit;
+  font-weight: 400;
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.le-text[aria-invalid='true'] {
+  border-color: var(--fl-danger);
+}
+@media (pointer: coarse) {
+  .le-text {
+    min-height: 44px;
+  }
+}
+
+/* A tick box with its sentence (cl2-check). */
+.le-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fl-space-2);
+  min-height: 2.25rem;
+  font-size: var(--fl-font-callout);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.le-check input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--fl-accent);
+}
+
+/* The recovery key with Download, Copy and Print. */
+.le-key {
+  display: grid;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-4);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: color-mix(in srgb, var(--fl-accent) 6%, var(--fl-panel));
+}
+.le-key code {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  overflow-wrap: anywhere;
+}
+.le-key small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.le-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+}
+
+/* The passphrase strength bar. */
+.le-strength {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+.le-strength > span {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  background: var(--fl-border);
+  border-radius: 3px;
+}
+.le-strength > span::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--fl-warning);
+  border-radius: 3px;
+}
+.le-strength[data-strength='weak'] > span::after {
+  width: 33%;
+}
+.le-strength[data-strength='good'] > span::after {
+  width: 70%;
+  background: var(--fl-accent);
+}
+.le-strength[data-strength='great'] > span::after {
+  width: 100%;
+  background: var(--fl-accent);
+}
+.le-strength small {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  font-weight: 400;
+}
+
+/* Under a hero: the progress bar, and the passphrase form. */
+.le-progress {
+  padding: 0 var(--fl-space-6) var(--fl-space-6);
+}
+.le-progress meter {
+  display: block;
+  width: 100%;
+  height: 8px;
+}
+.le-unlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-3);
+  padding: var(--fl-space-4) var(--fl-space-6) var(--fl-space-6);
+  border-top: 1px solid var(--fl-border);
+}
+.le-unlock .le-text {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+.le-unlock .fl-control {
+  min-height: 40px;
+}
+.le-unlock .le-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--fl-danger);
+  font-size: var(--fl-font-small);
+}
+
+/* A section that ends in a note or a list keeps 20px under it. */
+.le-hint {
+  max-width: 720px;
+  margin: 0;
+  padding: var(--fl-space-4) 0 20px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.le-section-notice {
+  padding-bottom: 20px;
+}
+.le-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-2);
+  margin-top: var(--fl-space-2);
+}
+.le-command code {
+  padding: var(--fl-space-1) var(--fl-space-2);
+  font-size: var(--fl-font-small);
+  overflow-wrap: anywhere;
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm, 6px);
+}
+.le-steps {
+  padding-bottom: 0;
+}
+
+@container kit (max-width: 620px) {
+  .le-progress {
+    padding: 0 var(--fl-space-4) var(--fl-space-4);
+  }
+  .le-unlock {
+    padding: var(--fl-space-4);
+  }
+  .le-unlock .le-text,
+  .le-unlock .fl-control {
+    min-height: 44px;
+  }
+}

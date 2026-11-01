@@ -86,6 +86,7 @@ describe('Frameleaf settings areas', () => {
       'user-pin-code-settings',
       'oauth',
       'suppressed-content',
+      'locked-encryption',
       'api-keys',
       'authorized-devices',
     ]) {

@@ -40,6 +40,7 @@ import {
   mdiPaletteOutline,
   mdiRobotOutline,
   mdiServerOutline,
+  mdiShieldKeyOutline,
   mdiShieldLockOutline,
   mdiSync,
   mdiTrashCanOutline,
@@ -267,6 +268,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_locked_rules_section_title',
     descriptionKey: 'frameleaf_locked_rules_section_description',
     icon: mdiShieldLockOutline,
+  },
+  // FL-721: optional per-person encryption of Locked files (prototype PR 20).
+  {
+    key: 'locked-encryption',
+    titleKey: 'frameleaf_le_title',
+    descriptionKey: 'frameleaf_le_subtitle',
+    icon: mdiShieldKeyOutline,
   },
   // FL-158: Your preferences → Frameleaf account (settings-catalog.mjs:1815-1828).
   {

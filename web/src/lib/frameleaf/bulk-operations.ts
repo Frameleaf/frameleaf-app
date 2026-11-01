@@ -48,6 +48,7 @@ import {
 } from '$lib/components/discovery/query';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
+import { handledLockedKeyError } from '$lib/frameleaf/locked-key-prompt';
 
 /**
  * Execution of the Frameleaf selection bar's bulk actions (FL-32).
@@ -886,7 +887,15 @@ export const runBulkAction = async (
     }
     case 'unmark-sensitive': {
       return finish(
-        await runInChunks(runner, (batch) => gateway.unlockAssets({ bulkIdsDto: { ids: batch } })),
+        await runInChunks(runner, async (batch) => {
+          try {
+            return await gateway.unlockAssets({ bulkIdsDto: { ids: batch } });
+          } catch (error) {
+            // FL-721: Advanced Security without the passphrase typed: ask for it (once), and report the items
+            handledLockedKeyError(error);
+            throw error;
+          }
+        }),
         (succeeded) => ({ action: 'mark-sensitive', ids: succeeded }),
       );
     }

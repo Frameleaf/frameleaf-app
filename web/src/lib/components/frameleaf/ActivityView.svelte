@@ -511,6 +511,11 @@
         {#if item.bulk && item.bulk.retried > 0}
           <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
         {/if}
+        {#if item.encryptedWithOlderKey}
+          <p class="fla-status">
+            {$t('frameleaf_le_activity_older_key', { values: { count: item.encryptedWithOlderKey } })}
+          </p>
+        {/if}
       </div>
 
       <div class="fla-actions">

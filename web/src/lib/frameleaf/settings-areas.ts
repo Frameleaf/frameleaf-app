@@ -184,12 +184,20 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     ],
   },
   // FL-367: "Your sign-in & privacy", what belongs to the person signed in: how they sign in, their
-  // devices and API keys, and their Locked PIN and Always Locked rules.
+  // devices and API keys, and their Locked PIN and Always Locked rules. FL-721: Locked encryption.
   {
     id: 'privacy',
     group: 'personal',
     sections: [],
-    personal: ['password', 'oauth', 'authorized-devices', 'api-keys', 'user-pin-code-settings', 'suppressed-content'],
+    personal: [
+      'password',
+      'oauth',
+      'authorized-devices',
+      'api-keys',
+      'user-pin-code-settings',
+      'suppressed-content',
+      'locked-encryption',
+    ],
   },
   // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
   { id: 'users', group: 'server', sections: ['accounts'] },
@@ -328,6 +336,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   server: 'frameleaf_page_identity_description',
   logging: 'frameleaf_page_diagnostics_description',
   theme: 'frameleaf_page_branding_description',
+  'locked-encryption': 'frameleaf_le_page_description',
 });
 
 /** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
@@ -749,6 +758,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     oauth: 'sign_in',
     'user-pin-code-settings': 'locked_content',
     'suppressed-content': 'locked_content',
+    'locked-encryption': 'locked_content',
     'authorized-devices': 'devices',
     'api-keys': 'devices',
   },
