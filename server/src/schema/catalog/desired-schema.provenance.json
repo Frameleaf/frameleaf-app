@@ -1,13 +1,13 @@
 {
-  "sourceCommit": "7f1bf33c62d096a1b77e1e8fb139c8ab76abc9af",
+  "sourceCommit": "34d107d8d89019cf475615cbfc4659c94e54d261",
   "sourceHashes": {
-    "src/enum.ts": "de869b67f250f1758c5ad53f99ee8cfc390533cc43ba87604faa9a1a02adf242",
+    "src/enum.ts": "ca52eacbfa1dab1a4ded8b04742cec4904bb86ff65db7a9318d24e9d55bd95e2",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "73ec605fc1a3a7ab270e6ad8183b0c76a56f5d1c28c1b637b30ee1d084887db5",
-    "src/schema/index.ts": "9fde50e39e3772d4bfb073e9e164e3087f9c4fde50b469dac4f4533967bf4016",
+    "src/schema/index.ts": "0656196930134b413813fa024c201dd4e9fc2962bb7b330164ab017733b832d9",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -16,6 +16,7 @@
     "src/schema/tables/album-audit.table.ts": "46c028db038cfe5c1d4ad1d3deb5763097512a38635036f2d89aed56da21fd25",
     "src/schema/tables/album-bookmark.table.ts": "d8014bc5359ff9857209f9242bcdcabc62837388f49250e852f974e070d00b11",
     "src/schema/tables/album-closure.table.ts": "63d2d80854745a6343f6472c872b8bf42fd14974d17a1dff4b4c826257744291",
+    "src/schema/tables/album-suggestion.table.ts": "556a78807c2116f9877cfd2e37c46caad4a691ddb3e8c972235b3d87cce15750",
     "src/schema/tables/album-user-audit.table.ts": "976d8cd2665af72b47fc07442e7b222633ea1d40e56045796a061f5cee16782e",
     "src/schema/tables/album-user.table.ts": "ab8f99553f854f0f63ee0c0de597281f7226bb28e772d1e928333369fc8e3513",
     "src/schema/tables/album.table.ts": "417f1ecbd009818fd7b2de515c2ecc6a88210b9b2c09bb79bfaa30153dbea07b",
@@ -156,6 +157,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "50a98843c3578c04fb49e722c14dae723cb9781d0e127adf8d11778fb75470a2",
-  "rawMetadataSha256": "1f7bfcf4688564ff70793106526b48b44d4972cfb6378fcb45c0c5ef475c68d2"
+  "dumpSha256": "4a5b4f3d95e94f30fa327678106e11ab4be146618b9a3381d5c4d9ea1812e942",
+  "rawMetadataSha256": "910329edade4ba0d7c9f6c56bd90344a07e63b1fb13783092e1289dcfc0adbb0"
 }
