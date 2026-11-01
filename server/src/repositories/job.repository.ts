@@ -922,6 +922,10 @@ export class JobRepository {
     }
   }
 
+  /**
+   * List jobs with sensitive payloads redacted. Public listings filter internal names before the
+   * result limit so background work cannot hide public jobs; internal observers keep all names.
+   */
   async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000, publicOnly = false): Promise<QueueJobRow[]> {
     const statuses = dto.status ?? Object.values(QueueJobStatus);
     const { rows } = await sql<QueueJobRow>`select * from (
