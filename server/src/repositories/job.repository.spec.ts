@@ -1,3 +1,4 @@
+import { generateKeyPair } from '@frameleaf/locked-crypto';
 import { ModuleRef } from '@nestjs/core';
 import { Kysely } from 'kysely';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
@@ -9,6 +10,8 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import * as attemptEvidence from 'src/utils/attempt-evidence.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
 
 /** Facade behavior; actual locking, retries, accounting and rollback are tested with PostgreSQL. */
 describe(JobRepository.name, () => {
@@ -346,6 +349,69 @@ describe(JobRepository.name, () => {
       expect(sut['logger'].warn).toHaveBeenCalledExactlyOnceWith(
         expect.stringContaining(`${QueueName.BackgroundTask} queue are waiting (destination-unavailable)`),
       );
+    });
+
+    describe('a job waiting for a Locked key whose key loads while it runs (FL-721)', () => {
+      const OWNER = '00000000-0000-4000-8000-0000000000f1';
+      const pair = generateKeyPair();
+      const loadKey = () => lockedKeys.load(OWNER, pair.publicKey, Buffer.from(pair.privateKey), null);
+      const order: string[] = [];
+
+      beforeEach(() => {
+        lockedKeys.clear();
+        clearLockedDeferrals();
+        order.length = 0;
+        sut['store'].defer = vi.fn().mockImplementation(() => {
+          order.push('defer');
+          return Promise.resolve(true);
+        });
+        sut['store'].wakeDeferred = vi.fn().mockImplementation((ids: string[]) => {
+          order.push(`wake ${ids.join(',')}`);
+          return Promise.resolve(ids.length);
+        });
+      });
+
+      afterEach(() => {
+        lockedKeys.clear();
+        clearLockedDeferrals();
+      });
+
+      const run = (steps: Array<'defer' | 'load'>) => {
+        sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+          for (const step of steps) {
+            if (step === 'load') {
+              loadKey();
+            } else {
+              deferForLockedKey(new LockedKeyUnavailableError([OWNER]));
+            }
+          }
+          return Promise.reject(new LockedKeyUnavailableError([OWNER]));
+        });
+      };
+
+      it('wakes it once its deferral is written when the key loaded before the wait was recorded', async () => {
+        run(['load', 'defer']);
+        await sut['execute'](claim(21), new AbortController());
+        expect(order).toEqual(['defer', 'wake 21']);
+      });
+
+      it('wakes it once its deferral is written when the key loaded after the wait was recorded', async () => {
+        run(['defer', 'load']);
+        await sut['execute'](claim(22), new AbortController());
+        expect(order).toEqual(['defer', 'wake 22']);
+      });
+
+      it('leaves it waiting while the key stays closed', async () => {
+        run(['defer']);
+        await sut['execute'](claim(23), new AbortController());
+        expect(order).toEqual(['defer']);
+        // and a later run of the same id is not woken by the stale record
+        loadKey();
+        lockedKeys.clear();
+        run(['defer']);
+        await sut['execute'](claim(23), new AbortController());
+        expect(order).toEqual(['defer', 'defer']);
+      });
     });
 
     it('releases local admission and settles execution while committed observers are pending', async () => {

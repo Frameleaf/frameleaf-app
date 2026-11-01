@@ -487,6 +487,23 @@ describe(LockedSealService.name, () => {
       }
     });
 
+    it('drops the backstop wake-ups when the listener is set up again', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        await sut.onBootstrap();
+        const execution = { claim: { id: 'job-old', attempt: 1, data: {} } } as unknown as QueueExecution;
+        queueExecution.run(execution, () => deferForLockedKey(new LockedKeyUnavailableError([OWNER])));
+        loadOwnerKey();
+        expect(mocks.job.wakeLockedDeferrals).toHaveBeenCalledTimes(1);
+
+        await sut.onBootstrap();
+        await vi.advanceTimersByTimeAsync(LATE_WAKE_DELAYS_MS.at(-1)! + 1);
+        expect(mocks.job.wakeLockedDeferrals).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('leaves an item that is still meant to be encrypted alone', async () => {
       await write('original.jpg', 'original', 'asset');
       await sealAll();

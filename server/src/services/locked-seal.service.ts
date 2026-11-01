@@ -54,7 +54,7 @@ export const LOCKED_TEMP_SUFFIX = '.fllk.tmp';
 const STALE_TEMP = LOCKED_TEMP_NAME;
 /** How long after a seal or unseal the sweep checks whether turning on or off has finished. */
 export const FINISH_CHECK_DELAY_MS = 2 * 60 * 1000;
-/** After a key load, when the jobs deferred for it are woken again (Task 12: a job still running at the load). */
+/** After a key load, when its deferred jobs are woken again: a backstop to the queue's own re-check. */
 export const LATE_WAKE_DELAYS_MS = [5000, 30_000, 120_000];
 /** The least time between two sweeps a key load queues for one person. */
 const WAKE_INTERVAL_MS = 5 * 60 * 1000;
@@ -131,6 +131,8 @@ export class LockedSealService {
   private wokenAt = new Map<string, number>();
   /** People whose files need a re-wrap their key wasn't loaded for: their next key load sweeps at once. */
   private rewrapWaiting = new Set<string>();
+  /** The backstop wake-ups still to come (cleared when the listener is set up again or stops). */
+  private lateWakes = new Set<NodeJS.Timeout>();
 
   constructor(
     private logger: LoggingRepository,
@@ -149,19 +151,22 @@ export class LockedSealService {
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     this.unsubscribe?.();
+    this.clearLateWakes();
     this.unsubscribe = lockedKeys.onLoad((userId) => {
       // jobs this worker deferred for this person's key run now, not at the end of their hour
       const deferred = takeLockedDeferrals(userId);
       if (deferred.length > 0) {
         handlePromiseError(this.jobRepository.wakeLockedDeferrals(deferred), this.logger);
-        // a job that hit the missing key just before this load is still running, and is only deferred
-        // (for an hour) after this wake; waking the same ids again a little later catches it. A job
-        // already woken or finished is left alone (the wake only moves jobs still waiting for a key).
+        // a job still running at this load is woken by the queue once its deferral is written
+        // (`lockedKeyLoadedSinceDeferral`); these later wake-ups are only a backstop. A job already
+        // woken or finished is left alone (the wake only moves jobs still waiting for a key).
         for (const delay of LATE_WAKE_DELAYS_MS) {
-          setTimeout(
-            () => handlePromiseError(this.jobRepository.wakeLockedDeferrals(deferred), this.logger),
-            delay,
-          ).unref();
+          const timer = setTimeout(() => {
+            this.lateWakes.delete(timer);
+            handlePromiseError(this.jobRepository.wakeLockedDeferrals(deferred), this.logger);
+          }, delay);
+          timer.unref();
+          this.lateWakes.add(timer);
         }
       }
       // a PIN unlock that is extended loads the key again on every extension; one wake-up every few
@@ -205,6 +210,14 @@ export class LockedSealService {
   onShutdown(): void {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
+    this.clearLateWakes();
+  }
+
+  private clearLateWakes() {
+    for (const timer of this.lateWakes) {
+      clearTimeout(timer);
+    }
+    this.lateWakes.clear();
   }
 
   /**

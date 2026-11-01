@@ -654,6 +654,8 @@ export async function rewriteThroughPlainCopy(
 const MAX_DEFERRED = 10_000;
 const deferred = new Map<string, Set<string>>();
 let deferredCount = 0;
+/** Job id → the owners whose key it waits for, until the queue has written its deferral. */
+const claimOwners = new Map<string, string[]>();
 
 /**
  * Inside a job, records that it waits for a Locked key: the queue defers it (one hour, at most 72
@@ -670,6 +672,9 @@ export function deferForLockedKey(error: unknown): void {
     return;
   }
   context.dependencyReason ??= 'locked-key-unavailable';
+  if (claimOwners.has(context.claim.id) || claimOwners.size < MAX_DEFERRED) {
+    claimOwners.set(context.claim.id, [...new Set([...(claimOwners.get(context.claim.id) ?? []), ...error.ownerIds])]);
+  }
   for (const ownerId of error.ownerIds) {
     let ids = deferred.get(ownerId);
     if (!ids) {
@@ -694,10 +699,22 @@ export function takeLockedDeferrals(ownerId: string): string[] {
   return [...ids];
 }
 
+/**
+ * Once the queue has written a job's Locked-key deferral: whether one of the owners it waits for has a
+ * key loaded now. Then the key loaded while the job ran, and that load's wake-up missed it (the job
+ * wasn't waiting yet), so the queue wakes it at once. Forgets the job either way.
+ */
+export function lockedKeyLoadedSinceDeferral(claimId: string): boolean {
+  const owners = claimOwners.get(claimId);
+  claimOwners.delete(claimId);
+  return !!owners && owners.some((ownerId) => lockedKeys.has(ownerId));
+}
+
 /** For tests. */
 export const clearLockedDeferrals = () => {
   deferred.clear();
   deferredCount = 0;
+  claimOwners.clear();
 };
 
 /** Whether `error` means "wait for a Locked key" (or for a RAM-backed temporary folder). */
