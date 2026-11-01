@@ -2535,6 +2535,8 @@ export type IntegrityReportResponseDto = {
     items: {
         /** Integrity report item id */
         id: string;
+        /** The photo's own file name (FL-737); null for a file that belongs to no photo */
+        originalFileName: string | null;
         /** Integrity report item path */
         path: string;
         "type": IntegrityReport;
@@ -9533,6 +9535,10 @@ export type MediaHealthRecoverDto = {
     choices: MediaHealthCandidateChoiceDto[];
     /** Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source */
     confirmed: boolean;
+};
+export type MediaHealthScanDto = {
+    /** Scan only these photos, and bring back no untracked media; every photo when omitted */
+    assetIds?: string[];
 };
 export type MediaHealthScanResponseDto = {
     /** The durable job doing the work, in Activity */
@@ -27337,14 +27343,17 @@ export function recoverDamaged({ mediaHealthRecoverDto }: {
 /**
  * Start corrupt media scan
  */
-export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
+export function startCorruptScan({ mediaHealthScanDto }: {
+    mediaHealthScanDto?: MediaHealthScanDto;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: MediaHealthScanResponseDto;
-    }>("/media-health/corrupt/scan", {
+    }>("/media-health/corrupt/scan", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: mediaHealthScanDto
+    })));
 }
 /**
  * Dismiss media health findings
@@ -27391,14 +27400,17 @@ export function relinkMissing({ mediaHealthBulkActionDto }: {
 /**
  * Start missing media scan
  */
-export function startMissingScan(opts?: Oazapfts.RequestOpts) {
+export function startMissingScan({ mediaHealthScanDto }: {
+    mediaHealthScanDto?: MediaHealthScanDto;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: MediaHealthScanResponseDto;
-    }>("/media-health/missing/scan", {
+    }>("/media-health/missing/scan", oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: mediaHealthScanDto
+    })));
 }
 /**
  * Get RAW support status

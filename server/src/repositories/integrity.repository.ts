@@ -256,10 +256,20 @@ export class IntegrityRepository {
   async getIntegrityReport(pagination: ReportPaginationOptions, type: IntegrityReport) {
     const items = await this.db
       .selectFrom('integrity_report')
-      .select(['id', 'type', 'path', 'assetId', 'fileAssetId', 'createdAt'])
-      .where('type', '=', type)
-      .$if(pagination.cursor !== undefined, (eb) => eb.where('id', '<=', pagination.cursor!))
-      .orderBy('id', 'desc')
+      // FL-737: a finding is named by its photo's own file name, as Missing files and Damaged files name it
+      .leftJoin('asset', 'asset.id', 'integrity_report.assetId')
+      .select([
+        'integrity_report.id',
+        'integrity_report.type',
+        'integrity_report.path',
+        'integrity_report.assetId',
+        'integrity_report.fileAssetId',
+        'integrity_report.createdAt',
+        'asset.originalFileName',
+      ])
+      .where('integrity_report.type', '=', type)
+      .$if(pagination.cursor !== undefined, (eb) => eb.where('integrity_report.id', '<=', pagination.cursor!))
+      .orderBy('integrity_report.id', 'desc')
       .limit(pagination.limit + 1)
       .execute();
     return {

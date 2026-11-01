@@ -30,6 +30,14 @@ describe('media-health-operation (FL-69)', () => {
       expect(mediaHealthOperationLabel({ ...base, scheduled: true })).toBe('Scheduled library health scan');
     });
 
+    it('reads a scan of chosen photos (FL-737)', () => {
+      const base = { mode: 'scan', userId: 'u', missingRunId: 'm', corruptRunId: 'c' } as const;
+      expect(parseMediaHealthSnapshot({ ...base, assetIds: ['a', 'a', 'b', 3] })).toEqual({
+        ...base,
+        assetIds: ['a', 'b'],
+      });
+    });
+
     it('refuses anything it cannot run safely', () => {
       expect(() => parseMediaHealthSnapshot(null)).toThrow();
       expect(() => parseMediaHealthSnapshot({ mode: 'scan', userId: 'u' })).toThrow('runs');

@@ -73,7 +73,7 @@ test.describe('Library Care', () => {
 
     // An external original's own checksum is its path; Library Care records the digests of its bytes the
     // first time a scan reads it intact, which is what a search later matches a moved copy against.
-    await startMissingScan({ headers: asBearerAuth(admin.accessToken) });
+    await startMissingScan({}, { headers: asBearerAuth(admin.accessToken) });
     await expect
       .poll(
         async () => {

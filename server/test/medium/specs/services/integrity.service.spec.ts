@@ -92,6 +92,31 @@ describe(IntegrityService.name, () => {
         nextCursor: undefined,
       });
     });
+
+    it("names a photo's finding by the file name it came with, and a stray file by nothing (FL-737)", async () => {
+      const { sut, ctx } = setup();
+      const {
+        result: { id: ownerId },
+      } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId,
+        originalPath: '/upload/0b/fb/0bfb.jpg',
+        originalFileName: 'beach.jpg',
+      });
+      await ctx.get(IntegrityRepository).create([
+        { type: IntegrityReport.MissingFile, path: '/upload/0b/fb/0bfb.jpg', assetId: asset.id },
+        { type: IntegrityReport.UntrackedFile, path: '/upload/ab/cd/extra.jpg' },
+      ]);
+
+      await expect(sut.getIntegrityReport({ type: IntegrityReport.MissingFile })).resolves.toEqual({
+        items: [expect.objectContaining({ path: '/upload/0b/fb/0bfb.jpg', originalFileName: 'beach.jpg' })],
+        nextCursor: undefined,
+      });
+      await expect(sut.getIntegrityReport({ type: IntegrityReport.UntrackedFile })).resolves.toEqual({
+        items: [expect.objectContaining({ path: '/upload/ab/cd/extra.jpg', originalFileName: null })],
+        nextCursor: undefined,
+      });
+    });
   });
 
   describe('getIntegrityReportCsv', () => {

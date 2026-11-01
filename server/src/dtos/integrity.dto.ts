@@ -35,6 +35,10 @@ const IntegrityReportResponseItemSchema = z.object({
   id: z.uuidv4().describe('Integrity report item id'),
   type: IntegrityReportSchema,
   path: z.string().describe('Integrity report item path'),
+  originalFileName: z
+    .string()
+    .nullable()
+    .describe("The photo's own file name (FL-737); null for a file that belongs to no photo"),
 });
 
 const IntegrityReportResponseSchema = z

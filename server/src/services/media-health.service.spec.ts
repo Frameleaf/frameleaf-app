@@ -605,6 +605,41 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('scans only the chosen photos this person may see (FL-737)', async () => {
+      vi.mocked(mediaHealthRepository.createRun)
+        .mockResolvedValueOnce({ id: 'missing-run' } as never)
+        .mockResolvedValueOnce({ id: 'corrupt-run' } as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([{ id: 'asset-1' }] as never);
+
+      await sut.startMissingScan(authStub.user1, { assetIds: ['asset-1', 'asset-1', 'asset-other'] });
+
+      expect(mediaHealthRepository.getAssets).toHaveBeenCalledWith(
+        ['asset-1', 'asset-other'],
+        authStub.user1.user.id,
+        expect.anything(),
+      );
+      expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: {
+            mode: 'scan',
+            userId: authStub.user1.user.id,
+            missingRunId: 'missing-run',
+            corruptRunId: 'corrupt-run',
+            assetIds: ['asset-1'],
+          },
+        }),
+      );
+    });
+
+    it('refuses a scan of photos this person cannot see (FL-737)', async () => {
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+
+      await expect(sut.startCorruptScan(authStub.user1, { assetIds: ['asset-other'] })).rejects.toThrow(
+        'None of these photos can be scanned',
+      );
+      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+    });
+
     it('answers a second scan request with the scan already under way', async () => {
       vi.mocked(mediaOperationRepository.list).mockResolvedValue({
         items: [
@@ -2653,8 +2688,13 @@ describe(MediaHealthService.name, () => {
           scan('recent', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
           scan('recent', '2026-09-22T02:00:00.000Z'),
         ],
-        // Last full scan eight days ago: full, whatever the incremental ones since.
+        // Last full scan eight days ago: full, whatever the incremental ones since, and a scan of
+        // chosen photos (FL-737) is no full scan.
         stale: [
+          {
+            ...scan('stale', '2026-09-24T09:00:00.000Z'),
+            snapshot: { mode: 'scan', userId: 'stale', missingRunId: 'm', corruptRunId: 'c', assetIds: ['a'] },
+          },
           scan('stale', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
           scan('stale', '2026-09-17T02:00:00.000Z'),
         ],

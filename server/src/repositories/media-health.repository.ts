@@ -829,8 +829,10 @@ export class MediaHealthRepository {
     limit: number;
     /** An incremental scan (FL-69): only assets changed since then. */
     changedSince?: Date;
+    /** FL-737: a scan of chosen photos, whoever owns them (the service checked they may be scanned). */
+    assetIds?: string[];
   }): Promise<MediaHealthAsset[]> {
-    return this.scanAssetQuery({ ownerId: options.ownerId })
+    return this.scanAssetQuery(options.assetIds ? { assetIds: options.assetIds } : { ownerId: options.ownerId })
       .$if(!!options.afterId, (qb) => qb.where('asset.id', '>', asUuid(options.afterId!)))
       .$if(!!options.changedSince, (qb) => qb.where('asset.updatedAt', '>', options.changedSince!))
       .orderBy('asset.id', 'asc')

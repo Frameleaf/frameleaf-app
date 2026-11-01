@@ -30205,9 +30205,19 @@
     },
     "/media-health/corrupt/scan": {
       "post": {
-        "description": "Queue an explicit scan that validates source media integrity.",
+        "description": "Queue an explicit scan that validates source media integrity, of every photo or of chosen photos only.",
         "operationId": "startCorruptScan",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthScanDto"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "201": {
             "content": {
@@ -30408,9 +30418,19 @@
     },
     "/media-health/missing/scan": {
       "post": {
-        "description": "Queue an owner-scoped scan that identifies missing files and restores supported untracked media.",
+        "description": "Queue an owner-scoped scan that identifies missing files and restores supported untracked media, or a scan of chosen photos only.",
         "operationId": "startMissingScan",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthScanDto"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "201": {
             "content": {
@@ -94711,6 +94731,11 @@
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                   "type": "string"
                 },
+                "originalFileName": {
+                  "description": "The photo's own file name (FL-737); null for a file that belongs to no photo",
+                  "nullable": true,
+                  "type": "string"
+                },
                 "path": {
                   "description": "Integrity report item path",
                   "type": "string"
@@ -94722,7 +94747,8 @@
               "required": [
                 "id",
                 "type",
-                "path"
+                "path",
+                "originalFileName"
               ],
               "type": "object"
             },
@@ -100221,6 +100247,22 @@
           "corrupt",
           "missing"
         ],
+        "type": "object"
+      },
+      "MediaHealthScanDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Scan only these photos, and bring back no untracked media; every photo when omitted",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "MediaHealthScanResponseDto": {

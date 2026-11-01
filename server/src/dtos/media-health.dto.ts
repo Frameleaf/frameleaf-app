@@ -176,6 +176,18 @@ const MediaHealthRecoverSchema = z
   })
   .meta({ id: 'MediaHealthRecoverDto' });
 
+/** FL-737: a scan of chosen photos only, such as the ones File checks found. */
+const MediaHealthScanSchema = z
+  .object({
+    assetIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(10_000)
+      .optional()
+      .describe('Scan only these photos, and bring back no untracked media; every photo when omitted'),
+  })
+  .meta({ id: 'MediaHealthScanDto' });
+
 const MediaHealthScanResponseSchema = z
   .object({
     runId: z.uuidv4(),
@@ -306,6 +318,7 @@ export class MediaHealthDeleteCorruptDto extends createZodDto(MediaHealthDeleteC
 export class MediaHealthLocateDto extends createZodDto(MediaHealthLocateSchema) {}
 export class MediaHealthChooseCandidatesDto extends createZodDto(MediaHealthChooseCandidatesSchema) {}
 export class MediaHealthRecoverDto extends createZodDto(MediaHealthRecoverSchema) {}
+export class MediaHealthScanDto extends createZodDto(MediaHealthScanSchema) {}
 export class MediaHealthScanResponseDto extends createZodDto(MediaHealthScanResponseSchema) {}
 export class MediaHealthBulkResponseDto extends createZodDto(MediaHealthBulkResponseSchema) {}
 export class MediaHealthRootsResponseDto extends createZodDto(MediaHealthRootsResponseSchema) {}

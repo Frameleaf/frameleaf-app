@@ -341,7 +341,7 @@
 
   const startScan = () =>
     run(async () => {
-      const { operationId } = await (isMissing ? startMissingScan() : startCorruptScan());
+      const { operationId } = await (isMissing ? startMissingScan : startCorruptScan)({});
       announce(
         $t('library_care_scan_queued'),
         operationId

@@ -9,7 +9,12 @@ import IntegrityReportSection from './IntegrityReportSection.svelte';
 const handleCreateJob = vi.fn();
 vi.mock('$lib/services/job.service', () => ({ handleCreateJob: (...args: unknown[]) => handleCreateJob(...args) }));
 
-const finding = (id: string) => ({ id, path: `/data/upload/${id}.png`, type: IntegrityReport.UntrackedFile });
+const finding = (id: string) => ({
+  id,
+  path: `/data/upload/${id}.png`,
+  type: IntegrityReport.UntrackedFile,
+  originalFileName: null,
+});
 
 const queue = (waiting = 0) =>
   ({

@@ -34,6 +34,14 @@ export const splitPath = (path: string) => {
 };
 
 /**
+ * FL-737: how a finding is named. A photo's is the file name it came with (`beach-29868698.jpg`), as
+ * Missing files and Damaged files name it, not the name it is stored under; a stray file belongs to no
+ * photo, so it keeps its folder and name.
+ */
+export const findingWhere = ({ path, originalFileName }: { path: string; originalFileName?: string | null }) =>
+  originalFileName ? { folder: '', name: originalFileName } : splitPath(path);
+
+/**
  * FL-520: the folder to name when originals cannot be reached: the one holding the most missing files.
  * The server looks at each folder's drive (`IntegrityService.getUnreachableFolders`) instead of guessing
  * from many missing files in one folder. A folder that cannot be reached but holds no missing finding
