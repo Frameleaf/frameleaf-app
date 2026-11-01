@@ -1019,13 +1019,12 @@ describe(IntegrityService.name, () => {
       const error = new Error('ENOENT') as NodeJS.ErrnoException;
       error.code = 'ENOENT';
 
-      storage.createPlainReadStream
-        .mockImplementationOnce(() => Readable.from(fileContent))
-        .mockImplementationOnce(() => {
+      storage.createPlainReadStream.mockImplementation((path) => {
+        if (path === '/path/to/missing') {
           throw error;
-        })
-        .mockImplementationOnce(() => Readable.from(fileContent))
-        .mockImplementationOnce(() => Readable.from(fileContent));
+        }
+        return Readable.from(fileContent);
+      });
 
       await sut.handleChecksumRefresh({
         items: [
