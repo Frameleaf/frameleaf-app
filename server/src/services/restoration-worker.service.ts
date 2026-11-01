@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import path from 'node:path';
@@ -1103,7 +1104,16 @@ export class RestorationWorkerService {
       if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
         throw error;
       }
-      await this.storageRepository.copyFile(from, to);
+      // copied under a name beside `to` and renamed into place, so a copy that fails part-way never
+      // leaves a partial result at the final path (which `publish` doesn't know to discard)
+      const staged = `${to}.${randomUUID()}.tmp`;
+      try {
+        await this.storageRepository.copyFile(from, staged);
+        await this.storageRepository.rename(staged, to);
+      } catch (copyError) {
+        await this.storageRepository.unlink(staged).catch(() => {});
+        throw copyError;
+      }
       await this.storageRepository.unlink(from);
     }
   }
