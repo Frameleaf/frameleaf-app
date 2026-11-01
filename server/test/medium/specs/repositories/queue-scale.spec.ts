@@ -101,7 +101,7 @@ describe('large durable queue query work', () => {
             ? 'claim-page'
             : text.startsWith('update job_run_item i set state = j.state from job j')
               ? 'item-state-sync'
-              : text.startsWith('update job_run_item shadow') && text.includes('join job_selection_lineage origin')
+              : text.includes('update job_run_item shadow') && text.includes('join job_selection_lineage origin')
                 ? 'lineage-mirror'
                 : undefined;
           if (!probe || !label || probe.seen.has(label)) return execute<R>(query);

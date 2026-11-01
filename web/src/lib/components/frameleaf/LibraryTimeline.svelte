@@ -336,11 +336,13 @@
       ) {
         return;
       }
-      if (event.key !== 'PageDown' && event.key !== 'PageUp') {
+      const space = event.key === ' ' && event.target === element;
+      if (event.key !== 'PageDown' && event.key !== 'PageUp' && !space) {
         return;
       }
       event.preventDefault();
-      timelineManager.scrollBy(timelineManager.viewportHeight * 0.9 * (event.key === 'PageDown' ? 1 : -1));
+      const forward = event.key === 'PageDown' || (space && !event.shiftKey);
+      timelineManager.scrollBy(timelineManager.viewportHeight * 0.9 * (forward ? 1 : -1));
     };
     element.addEventListener('wheel', wheel, { passive: false });
     element.addEventListener('keydown', keydown);

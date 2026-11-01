@@ -134,8 +134,16 @@ const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
     .max(TIMELINE_CALENDAR_MAX_TAKE)
     .optional()
     .describe('Return bounded calendar-page summaries instead of whole-month counts'),
-  locateAssetId: z.uuid().optional().describe('Return only the page containing this accessible asset'),
-  sort: z.enum(['filename', 'rating', 'quality']).optional().describe('Locate an asset in this flat timeline order'),
+  locateAssetId: z
+    .uuid()
+    .optional()
+    .describe('Return only the page containing this accessible asset; requires pageSize'),
+  sort: z
+    .enum(['filename', 'rating', 'quality'])
+    .optional()
+    .describe(
+      'Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize',
+    ),
 })
   .refine((value) => value.pageSize !== undefined || !value.locateAssetId, 'Asset lookup requires pageSize')
   .refine((value) => !value.sort || !!value.locateAssetId, 'Sorted lookup requires locateAssetId')
@@ -148,11 +156,30 @@ const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
     .max(TIMELINE_CALENDAR_MAX_TAKE)
     .optional()
     .describe('Maximum assets in a calendar page; omit for the legacy complete bucket'),
-  after: z.uuid().optional().describe('Read after this calendar-page asset ID'),
-  before: z.uuid().optional().describe('Read before this calendar-page asset ID'),
-  firstAssetId: z.uuid().optional().describe('Expected first asset from the page summary; changed pages return 409'),
-  lastAssetId: z.uuid().optional().describe('Expected last asset from the page summary; changed pages return 409'),
-  membershipAlbumId: z.uuid().optional().describe('Include membership in this readable album for each page asset'),
+  after: z
+    .uuid()
+    .optional()
+    .describe('Read after this calendar-page asset ID; requires take and cannot be combined with before'),
+  before: z
+    .uuid()
+    .optional()
+    .describe('Read before this calendar-page asset ID; requires take and cannot be combined with after'),
+  firstAssetId: z
+    .uuid()
+    .optional()
+    .describe(
+      'Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected',
+    ),
+  lastAssetId: z
+    .uuid()
+    .optional()
+    .describe(
+      'Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected',
+    ),
+  membershipAlbumId: z
+    .uuid()
+    .optional()
+    .describe('Include membership in this readable album for each page asset; requires take'),
   timeBucket: z
     .string()
     .refine(
@@ -292,10 +319,23 @@ const TimeBucketsResponseSchema = z
   .object({
     timeBucket: z
       .string()
-      .describe('Time bucket identifier in YYYY-MM-DD format representing the start of the time period')
+      .describe(
+        'Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01',
+      )
       .meta({ example: '2024-01-01' }),
-    count: z.int().describe('Number of assets in this time bucket').meta({ example: 42 }),
-    page: z.int().min(0).optional().describe('Zero-based page within this calendar month'),
+    count: z
+      .int()
+      .describe(
+        'Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the total matching asset count',
+      )
+      .meta({ example: 42 }),
+    page: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize',
+      ),
     after: z.uuid().nullable().optional().describe('Opaque anchor immediately before this page'),
     firstAssetId: z.uuid().optional().describe('First asset in the page snapshot'),
     lastAssetId: z.uuid().optional().describe('Last asset in the page snapshot'),

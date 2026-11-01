@@ -61,14 +61,19 @@ it.each(['current', 'replace', 'close', 'session'])(
   'keeps album select-all with its original viewer: %s',
   async (change) => {
     const pending = deferredPromise<void>();
-    const load = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
-    publicViewState.timeline = {
-      months: [
-        { yearMonth: '2025-01', isLoaded: false, timelineDays: [{ viewerAssets: [{ id: 'original' }] }] },
-        { yearMonth: '2025-02', isLoaded: false, timelineDays: [] },
-      ],
-      loadTimelineMonth: load,
-    };
+    const months = [
+      { yearMonth: '2025-01', isLoaded: false, assetsIterator: () => [{ id: 'original' }].values() },
+      { yearMonth: '2025-02', isLoaded: false, assetsIterator: () => [].values() },
+    ];
+    const load = vi.fn(async (yearMonth: string) => {
+      if (yearMonth === '2025-01') await pending.promise;
+      months.find((month) => month.yearMonth === yearMonth)!.isLoaded = true;
+    });
+    // Like TimelineManager, a class instance keeps the test state outside Svelte's deep proxy.
+    publicViewState.timeline = new (class {
+      months = months;
+      loadTimelineMonth = load;
+    })();
     const select = vi.spyOn(librarySession, 'selectAll');
     const view = render(AlbumViewer, { sharedLink: albumLink() });
     await fireEvent.click(screen.getByRole('button', { name: 'Select all' }));

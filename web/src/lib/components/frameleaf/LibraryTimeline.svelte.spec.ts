@@ -81,6 +81,16 @@ describe('LibraryTimeline "all" grouping', () => {
     const scrollBy = vi.spyOn(manager, 'scrollBy');
     await fireEvent.keyDown(scroller(container), { key: 'PageDown' });
     expect(scrollBy).toHaveBeenCalledWith(manager.viewportHeight * 0.9);
+    scrollBy.mockClear();
+    await fireEvent.keyDown(scroller(container), { key: ' ' });
+    expect(scrollBy).toHaveBeenLastCalledWith(manager.viewportHeight * 0.9);
+    await fireEvent.keyDown(scroller(container), { key: ' ', shiftKey: true });
+    expect(scrollBy).toHaveBeenLastCalledWith(-manager.viewportHeight * 0.9);
+    const button = document.createElement('button');
+    scroller(container).append(button);
+    scrollBy.mockClear();
+    await fireEvent.keyDown(button, { key: ' ' });
+    expect(scrollBy).not.toHaveBeenCalled();
     for (const band of container.querySelectorAll<HTMLElement>('.fl-group-band')) {
       // eslint-disable-next-line unicorn/prefer-number-coercion -- CSS lengths include px.
       expect(Number.parseFloat(band.style.height)).toBeLessThanOrEqual(8_000_000);

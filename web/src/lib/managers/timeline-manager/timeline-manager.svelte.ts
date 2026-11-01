@@ -1070,13 +1070,26 @@ export class TimelineManager extends VirtualScrollManager {
     if (ids.size === 0) {
       return { updated: new Set<string>(), notUpdated: ids, changedGeometry: false };
     }
-    this.#summaryGeneration++;
     if (this.calendarPaged) {
-      const result = this.#runAssetCallbackInPlace(ids, callback);
+      let changedPage = this.#narrowedByServer || this.#options.visibility === AssetVisibility.Locked;
+      const result = this.#runAssetCallbackInPlace(ids, (asset) => {
+        // Favorite/rating edits cannot reorder calendar pages; other edits remain conservative.
+        const before = JSON.stringify({ ...asset, isFavorite: undefined, rating: undefined });
+        const outcome = callback(asset);
+        changedPage ||=
+          !!outcome?.remove ||
+          !this.canInsertAssetFromLiveEvent(asset) ||
+          before !== JSON.stringify({ ...asset, isFavorite: undefined, rating: undefined });
+        return outcome;
+      });
       this.invalidateLiveProjection();
-      void this.refresh();
+      if (changedPage || result.notUpdated.size > 0) {
+        this.#summaryGeneration++;
+        void this.refresh();
+      }
       return result;
     }
+    this.#summaryGeneration++;
     clearOrderedPageCursors(this.months);
     if (this.#options.orderedBy === 'rating') {
       // Ordered by rating, a new rating moves the item: the pages are read again in the new order.

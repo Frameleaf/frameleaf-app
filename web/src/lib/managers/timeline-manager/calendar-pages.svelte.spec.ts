@@ -354,3 +354,77 @@ it('refreshes a cached ordered page when the located photo moved into it', async
     manager.destroy();
   }
 });
+
+it.each(['favorite', 'rating', 'timestamp', 'filename', 'filtered', 'remove', 'unloaded'] as const)(
+  'refreshes calendar boundaries only when needed for a %s edit',
+  async (kind) => {
+    sdkMock.getTimeBuckets.mockResolvedValue(pages);
+    sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(assets[0]));
+    const manager = new TimelineManager();
+    try {
+      await manager.updateOptions(kind === 'filtered' ? { filter: JSON.stringify({ rating: { gte: 3 } }) } : {});
+      await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
+      const months = manager.months;
+      const refresh = vi.spyOn(manager, 'refresh').mockResolvedValue();
+      if (kind === 'remove') {
+        manager.removeAssets([assets[0].id]);
+      } else {
+        manager.update([kind === 'unloaded' ? assets[1].id : assets[0].id], (asset) => {
+          switch (kind) {
+            case 'favorite': {
+              asset.isFavorite = !asset.isFavorite;
+              break;
+            }
+            case 'timestamp': {
+              asset.fileCreatedAt = { ...asset.fileCreatedAt, second: 30 };
+              break;
+            }
+            case 'filename': {
+              asset.originalFileName = 'changed.jpg';
+              break;
+            }
+            default: {
+              asset.rating = 4;
+            }
+          }
+        });
+      }
+      if (kind === 'favorite' || kind === 'rating') {
+        expect(refresh).not.toHaveBeenCalled();
+        expect(manager.months).toBe(months);
+        expect(manager.months[0].isLoaded).toBe(true);
+      } else {
+        expect(refresh).toHaveBeenCalledOnce();
+      }
+    } finally {
+      manager.destroy();
+    }
+  },
+);
+
+it('publishes an in-flight upload summary after a harmless favorite edit', async () => {
+  sdkMock.getTimeBuckets.mockResolvedValueOnce(pages);
+  sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(assets[0]));
+  const manager = new TimelineManager();
+  try {
+    await manager.updateOptions({});
+    await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
+    let resolve!: (value: typeof pages) => void;
+    sdkMock.getTimeBuckets.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const refreshing = manager.refresh();
+    await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+    manager.update([assets[0].id], (asset) => {
+      asset.isFavorite = !asset.isFavorite;
+    });
+    resolve([{ ...pages[0], count: 501 }, pages[1]]);
+    await refreshing;
+    expect(manager.assetCount).toBe(1001);
+    expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2);
+  } finally {
+    manager.destroy();
+  }
+});

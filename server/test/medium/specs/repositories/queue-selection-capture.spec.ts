@@ -1,13 +1,16 @@
-import { Kysely, sql } from 'kysely';
+import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { queueAdmission } from 'src/queue/admission.js';
 import { freezeSelection, shareSelectionPage } from 'src/queue/manifest.js';
+import { mirrorSelectionLineage } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
 import * as selectionHeaders from 'src/schema/migrations/1791101300000-SelectionOutcomeHeaders.js';
 import * as selectionLineage from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
 import * as librarySources from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('selection capture isolation', () => {
@@ -131,6 +134,104 @@ describe('selection capture isolation', () => {
     expect(await store.feedManifest(queue)).toBe(0);
     expect(await store.complete(claim, [])).toBe(true);
     expect(await store.feedManifest(queue)).toBe(6);
+  });
+
+  it.each([false, true])(
+    'renews other leases without waiting for a producer publication fence (expired: %s)',
+    async (expired) => {
+      await store.enqueue([producer(), intent({ queue: otherQueue, name: 'other' })]);
+      const [claim] = await store.claim(queue, worker);
+      const [other] = await store.claim(otherQueue, worker);
+      const { rows: before } = await sql<{ id: string; lease: Date }>`update job
+      set "leaseExpiresAt" = now() + interval '20 seconds'
+      where id in (${claim.id}::uuid, ${other.id}::uuid)
+      returning id, "leaseExpiresAt" as lease`.execute(db);
+      const leases = new Map(before.map((row) => [row.id, row.lease]));
+      const locked = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const fence = db.transaction().execute(async (tx) => {
+        await sql`select id from job where id = ${claim.id}::uuid for no key update`.execute(tx);
+        if (expired) {
+          await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
+          where id = ${claim.id}::uuid`.execute(tx);
+        }
+        locked.resolve();
+        await release.promise;
+      });
+      await locked.promise;
+      const heartbeat = store.heartbeat(worker, [claim, other]);
+      try {
+        await within(heartbeat);
+        const { rows } = await sql<{ id: string; lease: Date }>`select id, "leaseExpiresAt" as lease
+        from job where id in (${claim.id}::uuid, ${other.id}::uuid)`.execute(db);
+        expect(rows.find(({ id }) => id === claim.id)?.lease).toEqual(leases.get(claim.id));
+        expect(rows.find(({ id }) => id === other.id)!.lease.getTime()).toBeGreaterThan(
+          leases.get(other.id)!.getTime(),
+        );
+      } finally {
+        release.resolve();
+        await fence;
+        await heartbeat;
+      }
+      await store.heartbeat(worker, [claim]);
+      const {
+        rows: [renewed],
+      } = await sql<{ lease: Date }>`select "leaseExpiresAt" as lease
+      from job where id = ${claim.id}::uuid`.execute(db);
+      if (expired) {
+        expect(renewed.lease.getTime()).toBeLessThan(leases.get(claim.id)!.getTime());
+        expect(await store.complete(claim, [])).toBe(false);
+      } else {
+        expect(renewed.lease.getTime()).toBeGreaterThan(leases.get(claim.id)!.getTime());
+      }
+    },
+  );
+
+  it('does not scan an uncommitted manifest for an unrelated job with no lineage', async () => {
+    const runId = randomUUID();
+    await sql`insert into job_run(id, kind, selection) values (${runId}::uuid, 'fixture', '{}')`.execute(db);
+    await sql`analyze job_run_item`.execute(db);
+    const inserted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const growing = db.transaction().execute(async (tx) => {
+      await sql`insert into job_run_item("runId", "itemKey", stage, queue, selection)
+        select ${runId}::uuid, n::text, 'fixture', ${queue}, '{}'::jsonb
+        from generate_series(1,25000) n`.execute(tx);
+      inserted.resolve();
+      await release.promise;
+    });
+    await inserted.promise;
+    const {
+      rows: [database],
+    } = await sql<{ name: string }>`select current_database() name`.execute(db);
+    let captured: CompiledQuery | undefined;
+    const observed = new Kysely<any>({
+      ...getKyselyConfig({
+        connectionType: 'url',
+        url: canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, database.name),
+      }),
+      log: (event) => {
+        if (event.level === 'query' && event.query.sql.includes('update job_run_item shadow')) captured = event.query;
+      },
+    });
+    try {
+      expect(await mirrorSelectionLineage(observed, { jobIds: [randomUUID()] })).toEqual([]);
+      expect(captured).toBeDefined();
+      type Plan = { Alias?: string; 'Actual Loops': number; Plans?: Plan[] };
+      const { rows } = await observed.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
+        CompiledQuery.raw(`explain (analyze, buffers, format json) ${captured!.sql}`, [...captured!.parameters]),
+      );
+      const nodes = (node: Plan): Plan[] => [node, ...(node.Plans ?? []).flatMap((child) => nodes(child))];
+      const scans = nodes(rows[0]['QUERY PLAN'][0].Plan)
+        .slice(1)
+        .filter((node) => node.Alias === 'shadow');
+      expect(scans.length).toBeGreaterThan(0);
+      expect(scans.every((node) => node['Actual Loops'] === 0)).toBe(true);
+    } finally {
+      release.resolve();
+      await growing;
+      await observed.destroy();
+    }
   });
 
   it('rolls back partial materialization on cancellation and never publishes it', async () => {

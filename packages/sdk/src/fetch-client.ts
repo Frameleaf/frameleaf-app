@@ -17417,7 +17417,7 @@ export type TimeBucketAssetResponseDto = {
 export type TimeBucketsResponseDto = {
     /** Opaque anchor immediately before this page */
     after?: string | null;
-    /** Number of assets in this time bucket */
+    /** Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the total matching asset count */
     count: number;
     /** Whole-day counts for the calendar days represented in this page */
     days?: {
@@ -17428,9 +17428,9 @@ export type TimeBucketsResponseDto = {
     firstAssetId?: string;
     /** Last asset in the page snapshot */
     lastAssetId?: string;
-    /** Zero-based page within this calendar month */
+    /** Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize */
     page?: number;
-    /** Time bucket identifier in YYYY-MM-DD format representing the start of the time period */
+    /** Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01 */
     timeBucket: string;
 };
 export type TimelineHighlightResponseDto = {
@@ -19941,7 +19941,7 @@ export type TagSearchDto = {
     take?: number;
 };
 export type TimeBucketAssetDto = {
-    /** Read after this calendar-page asset ID */
+    /** Read after this calendar-page asset ID; requires take and cannot be combined with before */
     after?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
@@ -19949,7 +19949,7 @@ export type TimeBucketAssetDto = {
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
     bbox?: string;
-    /** Read before this calendar-page asset ID */
+    /** Read before this calendar-page asset ID; requires take and cannot be combined with after */
     before?: string;
     /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
     bestPhotos?: boolean;
@@ -19957,7 +19957,7 @@ export type TimeBucketAssetDto = {
     dateType?: TimeBucketDateType;
     /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Its top-level personIds, like personId, also include those people in albums shared with the viewer. Neither it nor imageEnrichment is available through a shared link */
     filter?: string;
-    /** Expected first asset from the page summary; changed pages return 409 */
+    /** Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected */
     firstAssetId?: string;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -19965,12 +19965,12 @@ export type TimeBucketAssetDto = {
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
-    /** Expected last asset from the page summary; changed pages return 409 */
+    /** Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected */
     lastAssetId?: string;
     libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
-    /** Include membership in this readable album for each page asset */
+    /** Include membership in this readable album for each page asset; requires take */
     membershipAlbumId?: string;
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
     order?: AssetOrder;
@@ -20020,7 +20020,7 @@ export type TimeBucketDto = {
     isTrashed?: boolean;
     key?: string;
     libraryScope?: LibraryViewScope;
-    /** Return only the page containing this accessible asset */
+    /** Return only the page containing this accessible asset; requires pageSize */
     locateAssetId?: string;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
@@ -20035,7 +20035,7 @@ export type TimeBucketDto = {
     /** Filter assets in which the caller confirmed one of their own pets */
     petId?: string;
     slug?: string;
-    /** Locate an asset in this flat timeline order */
+    /** Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize */
     sort?: Sort;
     /** Return only suppressed content. Requires an elevated session. */
     suppressedOnly?: boolean;

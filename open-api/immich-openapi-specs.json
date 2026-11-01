@@ -57556,7 +57556,7 @@
             "name": "after",
             "required": false,
             "in": "query",
-            "description": "Read after this calendar-page asset ID",
+            "description": "Read after this calendar-page asset ID; requires take and cannot be combined with before",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -57597,7 +57597,7 @@
             "name": "before",
             "required": false,
             "in": "query",
-            "description": "Read before this calendar-page asset ID",
+            "description": "Read before this calendar-page asset ID; requires take and cannot be combined with after",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -57637,7 +57637,7 @@
             "name": "firstAssetId",
             "required": false,
             "in": "query",
-            "description": "Expected first asset from the page summary; changed pages return 409",
+            "description": "Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -57682,7 +57682,7 @@
             "name": "lastAssetId",
             "required": false,
             "in": "query",
-            "description": "Expected last asset from the page summary; changed pages return 409",
+            "description": "Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -57720,7 +57720,7 @@
             "name": "membershipAlbumId",
             "required": false,
             "in": "query",
-            "description": "Include membership in this readable album for each page asset",
+            "description": "Include membership in this readable album for each page asset; requires take",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -58015,7 +58015,7 @@
             "name": "locateAssetId",
             "required": false,
             "in": "query",
-            "description": "Return only the page containing this accessible asset",
+            "description": "Return only the page containing this accessible asset; requires pageSize",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -58104,7 +58104,7 @@
             "name": "sort",
             "required": false,
             "in": "query",
-            "description": "Locate an asset in this flat timeline order",
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize",
             "schema": {
               "type": "string",
               "enum": [
@@ -148652,7 +148652,7 @@
       "TimeBucketAssetDto": {
         "properties": {
           "after": {
-            "description": "Read after this calendar-page asset ID",
+            "description": "Read after this calendar-page asset ID; requires take and cannot be combined with before",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -148673,7 +148673,7 @@
             "type": "string"
           },
           "before": {
-            "description": "Read before this calendar-page asset ID",
+            "description": "Read before this calendar-page asset ID; requires take and cannot be combined with after",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -148693,7 +148693,7 @@
             "type": "string"
           },
           "firstAssetId": {
-            "description": "Expected first asset from the page summary; changed pages return 409",
+            "description": "Expected first asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -148713,7 +148713,7 @@
             "type": "string"
           },
           "lastAssetId": {
-            "description": "Expected last asset from the page summary; changed pages return 409",
+            "description": "Expected last asset from the page summary; requires take. A boundary or page-length mismatch returns 409; interior replacements with unchanged boundaries and length are not detected",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -148736,7 +148736,7 @@
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
           },
           "membershipAlbumId": {
-            "description": "Include membership in this readable album for each page asset",
+            "description": "Include membership in this readable album for each page asset; requires take",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -149127,7 +149127,7 @@
             "$ref": "#/components/schemas/LibraryViewScope"
           },
           "locateAssetId": {
-            "description": "Return only the page containing this accessible asset",
+            "description": "Return only the page containing this accessible asset; requires pageSize",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -149176,7 +149176,7 @@
             "type": "string"
           },
           "sort": {
-            "description": "Locate an asset in this flat timeline order",
+            "description": "Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize",
             "enum": [
               "filename",
               "rating",
@@ -149229,7 +149229,7 @@
             "type": "string"
           },
           "count": {
-            "description": "Number of assets in this time bucket",
+            "description": "Number of assets in this calendar page when pageSize is supplied, or in the whole bucket otherwise. Sorted asset lookups return the total matching asset count",
             "example": 42,
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -149271,13 +149271,13 @@
             "type": "string"
           },
           "page": {
-            "description": "Zero-based page within this calendar month",
+            "description": "Zero-based page within this calendar month; for sorted asset lookups, the page in the flat sorted timeline, retrieved through GET /timeline/ordered with skip = page * pageSize",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           },
           "timeBucket": {
-            "description": "Time bucket identifier in YYYY-MM-DD format representing the start of the time period",
+            "description": "Start of the calendar period in YYYY-MM-DD format; sorted asset lookups return the synthetic value 1970-01-01",
             "example": "2024-01-01",
             "type": "string"
           }

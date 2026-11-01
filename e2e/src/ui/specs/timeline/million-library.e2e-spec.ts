@@ -105,6 +105,14 @@ for (const { count, width } of [1_000_000, 2_000_000].flatMap((count) =>
     await page.keyboard.press('PageDown');
     await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(beforeKey);
     expect((await scroll.evaluate((element) => element.scrollTop)) - beforeKey).toBeLessThan(350);
+    const beforeSpace = await scroll.evaluate((element) => element.scrollTop);
+    await page.keyboard.press('Space');
+    await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(beforeSpace);
+    const afterSpace = await scroll.evaluate((element) => element.scrollTop);
+    expect(afterSpace - beforeSpace).toBeLessThan(350);
+    await page.keyboard.press('Shift+Space');
+    await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeLessThan(afterSpace);
+
     await expect.poll(() => socket.connected()).toBe(1);
     const requestsBeforeUpload = summaryRequests;
     const pagesBeforeUpload = requestedPages.length;
