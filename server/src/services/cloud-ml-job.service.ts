@@ -141,7 +141,7 @@ import {
   pausedException,
   upscaleResultSchema,
 } from 'src/utils/frameleaf-cloud.js';
-import { withPlainCopy } from 'src/utils/locked-read.js';
+import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
@@ -2868,6 +2868,14 @@ export class CloudMlJobService {
     }
     if (source.type !== AssetType.Image && source.type !== AssetType.Video) {
       throw new BadRequestException('Only photos and videos can be sent to Frameleaf Cloud');
+    }
+    // FL-721 (spec §8): a job's prepared inputs and results are kept on disk beside the thumbnails, up
+    // to a day for a whole video, so an encrypted Locked item is refused before anything is prepared,
+    // as Cloud ML batches refuse it; restoring it on this server keeps its work in the Locked folder
+    if (await isLockedPath(source.originalPath)) {
+      throw new BadRequestException(
+        'Frameleaf Cloud can’t work on an encrypted Locked item; restore it on this server instead',
+      );
     }
     return source;
   }
