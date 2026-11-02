@@ -146,6 +146,9 @@ describe('explicit primary originals', () => {
     const value = manifest();
     expect(parseImportManifest(value)).toEqual(value);
     expect(manifestFingerprint(parseImportManifest(value))).toBe(
+      'f180dd72c7d61b692591dadee15c97e919a9d31694ef7fd02aa4e3b78cfa921c',
+    );
+    expect(manifestFingerprint(parseImportManifest(value))).toBe(
       manifestFingerprint(parseImportManifest(JSON.parse(JSON.stringify(value)))),
     );
   });
