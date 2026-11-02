@@ -4,30 +4,20 @@ import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { DestinationImportPlan, bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
-import { ImportManifest, parseImportManifest } from 'src/library-import/manifest.js';
+import {
+  ImportManifest,
+  importOriginalFileNameSchema,
+  importTimestampSchema as timestamp,
+  parseImportManifest,
+} from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
 import { BUDDY_CAPTURE_LOCK, filePathLockKey } from 'src/repositories/physical-file.repository.js';
 
-const timestamp = z.iso.datetime({ offset: true }).refine((value) => !/\.\d{7}/.test(value));
 const itemSchema = z.strictObject({
   sourceAssetId: z.string().min(1).max(1024),
   type: z.enum(['IMAGE', 'VIDEO']),
   fileModifiedAt: timestamp,
-  originalFileNames: z.record(
-    z.string(),
-    z
-      .string()
-      .min(1)
-      .max(1024)
-      .refine(
-        (value) =>
-          !value.includes('/') &&
-          !value.includes('\\') &&
-          [...value].every((character) => character >= ' ') &&
-          value !== '.' &&
-          value !== '..',
-      ),
-  ),
+  originalFileNames: z.record(z.string(), importOriginalFileNameSchema),
 });
 const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
@@ -64,6 +54,13 @@ export class CanonicalAssetWriter {
     const item = parsed.data;
     const asset = this.assets.get(item.sourceAssetId);
     if (!asset) return refuse('ASSET_SOURCE_MISSING');
+    if (
+      'type' in asset &&
+      (asset.type !== item.type ||
+        asset.fileModifiedAt !== item.fileModifiedAt ||
+        asset.fileIds.some((id) => asset.originalFileNames[id] !== item.originalFileNames[id]))
+    )
+      return refuse('ASSET_PREPARED_INTENT_CHANGED');
     const metadata = asset.metadata;
     const sourceFiles = asset.fileIds.map((id) => this.sourceFiles.get(id)!);
     // shortcut: richer relationships require dedicated writers before this internal path can accept them.

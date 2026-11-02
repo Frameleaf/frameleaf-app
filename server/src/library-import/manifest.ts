@@ -29,6 +29,19 @@ export const importFilePathSchema = z
       value.split('/').every((part) => part !== '' && part !== '.' && part !== '..'),
     'Unsafe bundle path',
   );
+export const importTimestampSchema = z.iso.datetime({ offset: true }).refine((value) => !/\.\d{7}/.test(value));
+export const importOriginalFileNameSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine(
+    (value) =>
+      !value.includes('/') &&
+      !value.includes('\\') &&
+      [...value].every((character) => character >= ' ') &&
+      value !== '.' &&
+      value !== '..',
+  );
 const metadata = z.strictObject({
   title: z.string().optional(),
   description: z.string().optional(),
@@ -91,6 +104,21 @@ const manifestSchema = z.discriminatedUnion('version', [
     version: z.literal(2),
     assets: z.array(legacyManifestSchema.shape.assets.element.extend({ primaryFileId: id })),
   }),
+  legacyManifestSchema.extend({
+    version: z.literal(3),
+    assets: z.array(
+      legacyManifestSchema.shape.assets.element.extend({
+        primaryFileId: id,
+        type: z.enum(['IMAGE', 'VIDEO']),
+        fileModifiedAt: importTimestampSchema,
+        originalFileNames: z
+          .record(id, importOriginalFileNameSchema)
+          .transform((names) =>
+            Object.fromEntries(Object.entries(names).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+          ),
+      }),
+    ),
+  }),
 ]);
 export type ImportManifest = z.infer<typeof manifestSchema>;
 
@@ -131,6 +159,12 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
     if (asset.fileIds.some((fileId) => !files.has(fileId))) fail('UNKNOWN_FILE');
     const originals = asset.fileIds.filter((fileId) => files.get(fileId)?.role === 'original');
     if (originals.length === 0) fail('MISSING_ORIGINAL');
+    if (
+      'originalFileNames' in asset &&
+      (Object.keys(asset.originalFileNames).length !== originals.length ||
+        originals.some((id) => !Object.hasOwn(asset.originalFileNames, id)))
+    )
+      fail('ASSET_ORIGINAL_NAMES_INVALID');
     if ('primaryFileId' in asset) {
       if (!asset.fileIds.includes(asset.primaryFileId) || files.get(asset.primaryFileId)?.role !== 'original')
         fail('PRIMARY_ORIGINAL_INVALID');

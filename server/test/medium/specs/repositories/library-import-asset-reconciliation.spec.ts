@@ -22,7 +22,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', empty = false) => {
+const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', empty = false, sealed = false) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
@@ -47,7 +47,7 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
   if (empty) plan.files = [];
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
-    version: 2,
+    version: sealed ? 3 : 2,
     source: plan.source,
     inventory: {
       complete: true,
@@ -69,6 +69,13 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
       ? []
       : [
           {
+            ...(sealed
+              ? {
+                  type: 'IMAGE',
+                  fileModifiedAt: '2020-07-02T01:02:03.456789Z',
+                  originalFileNames: { jpeg: 'camera.jpg', raw: 'camera.raw' },
+                }
+              : {}),
             id: 'photo',
             ownerId: 'owner',
             fileIds: ['jpeg', 'raw'],
@@ -376,4 +383,23 @@ it('reconciles an owner with no photos and refuses unexpected quota usage', asyn
   expect(await reconcileImportedAssets(wrap(db), context, [])).toMatchObject({ assets: 0, originals: 0, bytes: '0' });
   await db.updateTable('user').set({ quotaUsageInBytes: 1 }).where('id', '=', ownerId).execute();
   await expect(reconcileImportedAssets(wrap(db), context, [])).rejects.toThrow('ASSET_RECONCILIATION_MISMATCH');
+});
+
+it('writes and reconciles only the sealed version-three photo intent', async () => {
+  const { context, item } = await setup('archive', false, true);
+  const id = await new CanonicalAssetWriter(wrap(db), context).write(item);
+  const asset = context.manifest.assets[0];
+  if (!('originalFileNames' in asset)) throw new Error('Expected sealed photo intent');
+  asset.originalFileNames = Object.fromEntries(Object.entries(asset.originalFileNames).toReversed());
+  expect(manifestFingerprint(context.manifest)).toBe(context.binding.manifestSha256);
+  expect(await new CanonicalAssetWriter(wrap(db), context).write(item)).toBe(id);
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  expect(await reconcileImportedAssets(wrap(db), context, [item])).toMatchObject({
+    assets: 1,
+    originals: 2,
+    bytes: '17',
+  });
+  await expect(reconcileImportedAssets(wrap(db), context, [{ ...item, type: 'VIDEO' }])).rejects.toThrow(
+    'ASSET_PREPARED_INTENT_CHANGED',
+  );
 });
