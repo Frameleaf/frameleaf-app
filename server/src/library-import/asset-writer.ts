@@ -11,7 +11,9 @@ import {
   parseImportManifest,
 } from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
+import { writeImportedTags } from 'src/library-import/tags.js';
 import { BUDDY_CAPTURE_LOCK, filePathLockKey } from 'src/repositories/physical-file.repository.js';
+import { normalizeTagValue } from 'src/utils/tag.js';
 
 const itemSchema = z.strictObject({
   sourceAssetId: z.string().min(1).max(1024),
@@ -67,10 +69,15 @@ export class CanonicalAssetWriter {
     if (
       asset.visibility === 'locked' ||
       metadata.title !== undefined ||
-      metadata.tags !== undefined ||
       sourceFiles.some((file) => file.role !== 'original')
     )
       return refuse('ASSET_UNSUPPORTED_FIELDS');
+    if (
+      metadata.tags !== undefined &&
+      (new Set(metadata.tags).size !== metadata.tags.length ||
+        metadata.tags.some((tag) => !tag || tag.includes('\0') || normalizeTagValue(tag) !== tag))
+    )
+      return refuse('ASSET_TAGS_INVALID');
     if (!timestamp.safeParse(metadata.takenAt).success || !metadata.timeZone)
       return refuse('ASSET_CAPTURE_CLOCK_REQUIRED');
     if (
@@ -186,13 +193,13 @@ export class CanonicalAssetWriter {
           const locks = [
             'dateTimeOriginal',
             'timeZone',
-            ...(['description', 'rating', 'latitude', 'longitude'] as const).filter(
+            ...(['description', 'rating', 'latitude', 'longitude', 'tags'] as const).filter(
               (key) => metadata[key] !== undefined,
             ),
           ];
           await tx.query(
-            `INSERT INTO public.asset_exif("assetId","fileSizeInByte","dateTimeOriginal","timeZone",description,rating,latitude,longitude,"lockedProperties")
-          VALUES($1::uuid,$2::bigint,$3::timestamptz,$4,$5,$6,$7,$8,$9::text[])`,
+            `INSERT INTO public.asset_exif("assetId","fileSizeInByte","dateTimeOriginal","timeZone",description,rating,latitude,longitude,tags,"lockedProperties")
+          VALUES($1::uuid,$2::bigint,$3::timestamptz,$4,$5,$6,$7,$8,$9::text[],$10::text[])`,
             [
               destinationId,
               primary.bytes,
@@ -202,9 +209,11 @@ export class CanonicalAssetWriter {
               metadata.rating ?? null,
               metadata.latitude ?? null,
               metadata.longitude ?? null,
+              metadata.tags ?? null,
               locks,
             ],
           );
+          if (metadata.tags !== undefined) await writeImportedTags(tx, ownerId, destinationId, metadata.tags);
           const charged = await tx.query(
             `UPDATE public."user" SET "quotaUsageInBytes"="quotaUsageInBytes"+$2::bigint WHERE id=$1::uuid
           AND ("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes"+$2::bigint<="quotaSizeInBytes") RETURNING id`,

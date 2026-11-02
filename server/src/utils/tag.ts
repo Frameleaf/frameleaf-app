@@ -6,13 +6,16 @@ type UpsertRequest = { userId: string; tags: string[] };
 /** The value `upsertTags` stores for a tag path: empty segments dropped, so `a//b/` is `a/b`. */
 export const normalizeTagValue = (tag: string) => tag.split('/').filter(Boolean).join('/');
 
-export const upsertTags = async (repository: Pick<TagRepository, 'upsertValue'>, { userId, tags }: UpsertRequest) => {
-  const results: Tag[] = [];
-  const paths = new Map<string, Tag>();
+export const upsertTags = async <T extends Pick<Tag, 'id' | 'value'>>(
+  repository: { upsertValue: (...args: Parameters<TagRepository['upsertValue']>) => Promise<T> },
+  { userId, tags }: UpsertRequest,
+) => {
+  const results: T[] = [];
+  const paths = new Map<string, T>();
 
   for (const tag of new Set(tags)) {
     const parts = tag.split('/').filter(Boolean);
-    let parent: Tag | undefined;
+    let parent: T | undefined;
 
     for (const part of parts) {
       const value = parent ? `${parent.value}/${part}` : part;
