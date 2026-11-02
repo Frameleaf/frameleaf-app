@@ -190,6 +190,19 @@ describe('AlbumSuggestions', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it('keeps the suggestions to try again when reading them again also fails', async () => {
+    sdkMock.addAssetsToAlbum.mockRejectedValueOnce(new Error('timeout'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    sdkMock.getAlbumSuggestions.mockRejectedValueOnce(new Error('offline'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
+    const alert = await screen.findByRole('alert');
+    await waitFor(() => expect(sdkMock.getAlbumSuggestions).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('IMG_4821.HEIC')).toBeTruthy();
+    await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledTimes(2));
+  });
+
   it('labels the button for dates alone, and moves between tabs with the arrow keys', async () => {
     sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });

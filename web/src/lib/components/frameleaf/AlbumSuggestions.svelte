@@ -72,7 +72,11 @@
     }
   };
 
-  const load = async (id: string) => {
+  /**
+   * `afterFailure`: a refresh after a failed save keeps the person's choices for what is still
+   * suggested, and keeps what is shown if the refresh fails too, so Try again still has it.
+   */
+  const load = async (id: string, afterFailure = false) => {
     try {
       const result = await getAlbumSuggestions({ id });
       if (id !== albumId) {
@@ -80,13 +84,16 @@
       }
       suggestions = result;
       autoAdd = result.autoAdd;
-      picked = new Set([...result.fromTrip, ...result.needDate].map(({ assetId }) => assetId));
-      fixDate = new Set();
-      dismissed = new Set();
+      const ids = [...result.fromTrip, ...result.needDate].map(({ assetId }) => assetId);
+      picked = new Set(afterFailure ? ids.filter((assetId) => picked.has(assetId)) : ids);
+      fixDate = new Set(afterFailure ? ids.filter((assetId) => fixDate.has(assetId)) : []);
+      dismissed = afterFailure ? dismissed : new Set();
       turnOffFailed = false;
     } catch {
       // Suggestions are optional: an album that can't be read for them simply shows none.
-      suggestions = null;
+      if (!afterFailure) {
+        suggestions = null;
+      }
     }
   };
 
@@ -234,16 +241,21 @@
     let failed = 0;
     /** Which request failed decides the message: adding the photos, or saving a date or the choice. */
     let addingStarted = false;
+    /** Any write sent: its outcome is uncertain once a request fails, so the result is read again. */
+    let wrote = false;
     try {
       if (autoAddChanged) {
+        wrote = true;
         await setAlbumSuggestionAutoAdd({ id: albumId, albumSuggestionAutoAddDto: { enabled: autoAdd } });
       }
       for (const item of fixing) {
+        wrote = true;
         await updateAsset({ id: item.assetId, updateAssetDto: { dateTimeOriginal: item.dateTimeOriginal } });
         fixed++;
       }
       if (adding.length > 0) {
         addingStarted = true;
+        wrote = true;
         const results = await addAssetsToAlbum({
           id: albumId,
           bulkIdsDto: { ids: adding.map(({ assetId }) => assetId) },
@@ -280,9 +292,9 @@
       );
       // Some of it may have been saved before the failure (an add can commit and still reject), so
       // the album and the suggestions are read again rather than trusted as they were.
-      if (addingStarted || fixed > 0 || autoAddChanged) {
+      if (wrote) {
         onChanged();
-        await load(albumId);
+        await load(albumId, true);
       }
     } finally {
       saving = false;

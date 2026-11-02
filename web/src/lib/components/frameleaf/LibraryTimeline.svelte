@@ -1662,6 +1662,11 @@
   }
   .fl-timeline-body {
     position: relative;
+    /*
+     * At least the scroller's height: the header's menus hang over the photos and are clipped by
+     * this box, so a short album (one row) must not cut the "…" menu off under its last photo.
+     */
+    min-height: 100%;
     overflow: clip;
   }
   .fl-timeline-cards {
