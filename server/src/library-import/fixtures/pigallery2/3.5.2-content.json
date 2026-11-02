@@ -292,5 +292,31 @@
       "shared/original.jpg"
     ],
     "passed": true
-  }
+  },
+  "directoryPaths": [
+    {
+      "input": "",
+      "path": "./",
+      "name": ".",
+      "relativePath": "original.jpg"
+    },
+    {
+      "input": "alice-private",
+      "path": "./",
+      "name": "alice-private",
+      "relativePath": "alice-private/original.jpg"
+    },
+    {
+      "input": "parent/child",
+      "path": "parent/",
+      "name": "child",
+      "relativePath": "parent/child/original.jpg"
+    },
+    {
+      "input": "space album/été",
+      "path": "space album/",
+      "name": "été",
+      "relativePath": "space album/été/original.jpg"
+    }
+  ]
 }

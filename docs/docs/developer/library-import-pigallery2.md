@@ -16,6 +16,12 @@ The installer does not have a conventional migration inventory: [SQLConnection](
 
 This reader preserves source records; it does not interpret access predicates or establish ownership. Global authentication, guest-role and allow/block settings require a separately verified configuration inventory. Database rows alone are insufficient privacy evidence. Username, directory names, sharing creators and content hashes must never become inferred owners. The destination requires explicit library/owner mappings and equivalent or stricter access before activation.
 
+## Original and metadata-file paths
+
+`resolvePigallery2File` joins each native directory path/name and file name relative to the independently verified `Media.folder` root. It does not use generated thumbnails, best-fit videos or public URLs. Root, nested and Unicode directory cases match the pinned native `DiskManager`; the actual Server reader/resolver also matches the four native original paths, lengths and independent SHA256 values. Unsafe paths, mismatched directory identities, unknown table/discriminator combinations and invalid media lengths refuse resolution.
+
+Media and metadata-file identities have separate table namespaces. Metadata files retain their directory association and sidecar role; their byte count remains unknown until independently read. Native metadata-file and video cases remain unqualified. The caller still must reconcile the directory graph, cross-record collisions, configured originals/cache roots, filesystem containment and symlink/hardlink policy, source fencing, explicit owners and privacy before transfer or activation.
+
 ## Preservation requirements
 
 | Source information                    | Captured evidence                                                                      | Required destination behavior                                                                                                             |
