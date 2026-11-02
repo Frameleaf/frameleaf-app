@@ -1,5 +1,7 @@
 import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/lychee/7.12.0-sqlite.json' with { type: 'json' };
+import { ImportedPasswordContext } from 'src/library-import/passwords.js';
+import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 const projections = {
@@ -68,6 +70,13 @@ export const openLycheeSnapshot = (path: string, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
+    password: (context: ImportedPasswordContext) =>
+      readSqlitePassword(
+        database,
+        context,
+        'php-password',
+        'SELECT CASE WHEN is_ldap=0 THEN password ELSE NULL END AS password FROM users WHERE id=?',
+      ),
     *rows(table: LycheeTable): Generator<LycheeRow[]> {
       if (!Object.hasOwn(projections, table)) throw new LycheeReadError('LYCHEE_TABLE_NOT_ALLOWED');
       try {

@@ -6,7 +6,9 @@ import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import content from 'src/library-import/fixtures/lychee/7.12.0-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/lychee/7.12.0-sqlite.json' with { type: 'json' };
+import vectors from 'src/library-import/fixtures/password-vectors.json' with { type: 'json' };
 import { LycheeTable, openLycheeSnapshot } from 'src/library-import/lychee.js';
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 
 describe('Lychee pinned SQLite extraction', () => {
   let root: string;
@@ -56,6 +58,27 @@ describe('Lychee pinned SQLite extraction', () => {
       source.close();
     }
   };
+  it.each([0, 1])('preserves portable local passwords while retaining LDAP claim fallback: %s', async (ldap) => {
+    const vector = vectors.php.vectors[0];
+    database.prepare('UPDATE users SET password=?,is_ldap=? WHERE id=2').run(vector.hash, ldap);
+    const source = openLycheeSnapshot(path, 'v7.12.0');
+    try {
+      const credential = await source.password({
+        operationId: '11111111-1111-4111-8111-111111111111',
+        sourceUserId: '2',
+        destinationUserId: '22222222-2222-4222-8222-222222222222',
+      });
+      if (ldap) expect(credential).toBeUndefined();
+      else {
+        expect(await verifyImportedPassword(vector.password, credential!.forImport())).toBe(true);
+        expect(await verifyImportedPassword('wrong', credential!.forImport())).toBe(false);
+        expect(JSON.stringify(credential)).not.toContain(vector.hash);
+      }
+      expect([...source.rows('users')].flat()[0]).not.toHaveProperty('password');
+    } finally {
+      source.close();
+    }
+  });
   it('reconciles every captured field without authentication material', () => {
     for (const [table, expected] of Object.entries(content.rows))
       expect(

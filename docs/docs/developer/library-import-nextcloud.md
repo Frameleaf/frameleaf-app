@@ -94,3 +94,5 @@ Inherited AGPL terms accompany the sanitized fixture.
 Full source inventory, account/privacy conversion, destination reconciliation,
 transfer/recovery, Manager journeys, every advertised engine and combined ten-source
 acceptance remain outstanding. No source-compatibility, release or deployment claim.
+
+Local account password verifiers are available through a separate protected channel. Qualified version-prefixed bcrypt/Argon2 formats retain the password; unprefixed legacy formats remain unsupported. This does not transfer sessions, app passwords or external identity bindings. Multi-factor requirements, disabled accounts and global authentication policy still block activation until equivalent destination handling is proven. See [account authentication](./library-import-adapters.md#php-account-password-formats).
