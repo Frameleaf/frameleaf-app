@@ -264,6 +264,12 @@ describe(AlbumSuggestionService.name, () => {
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
+    it('still suggests dates when outfit crops cannot be queued', async () => {
+      suggestions.getOutfits.mockResolvedValue([outfit('wa', null, false), outfit('a4', [1, 0, 0])]);
+      mocks.job.queueAll.mockRejectedValue(new Error('queue down'));
+      await expect(sut.getSuggestions(auth, albumId)).resolves.toMatchObject({ needDate: [{ precision: 'trip' }] });
+    });
+
     it('queues outfit crops for photos that have none yet', async () => {
       suggestions.getOutfits.mockResolvedValue([outfit('wa', null, false), outfit('a4', [1, 0, 0])]);
       const { needDate } = await sut.getSuggestions(auth, albumId);
@@ -282,7 +288,11 @@ describe(AlbumSuggestionService.name, () => {
         id: 'wa',
         ownerId: auth.user.id,
         visibility: AssetVisibility.Timeline,
-        files: [{ id: 'f', path: '/preview.jpeg', type: AssetFileType.Preview, isEdited: false, isProgressive: false }],
+        // Faces were detected on the edited preview, so that is the one cropped.
+        files: [
+          { id: 'f', path: '/preview.jpeg', type: AssetFileType.Preview, isEdited: false, isProgressive: false },
+          { id: 'e', path: '/edited.jpeg', type: AssetFileType.Preview, isEdited: true, isProgressive: false },
+        ],
       } as never);
       suggestions.getFacesWithoutOutfit.mockResolvedValue([
         // Detected on a 1000x750 image; the preview is 500x375.
@@ -296,6 +306,7 @@ describe(AlbumSuggestionService.name, () => {
       mocks.machineLearning.encodeImage.mockResolvedValue('[0.1,0.2]');
 
       await expect(sut.handleOutfit({ id: 'wa' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith('/edited.jpeg', expect.anything());
       expect(mocks.media.generateThumbnail).toHaveBeenCalledOnce();
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         expect.anything(),

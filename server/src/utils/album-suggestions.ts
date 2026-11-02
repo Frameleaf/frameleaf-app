@@ -286,10 +286,13 @@ export const estimateDate = (
     .sort((a, b) => a.distance - b.distance || a.assetId.localeCompare(b.assetId));
   const best = neighbours[0];
   const outfit = candidate.outfit;
-  const segment = best ? segmentAt(trip, best.takenAt) : outfit ? segmentAt(trip, outfit.takenAt) : trip.segments[0];
+  const scene = best && best.distance <= SAME_SCENE_DISTANCE ? best : undefined;
+  // The trip segment of whatever dates it: a scene match, then an outfit, then the closest look-alike.
+  const datedBy = scene ?? outfit ?? best;
+  const segment = datedBy ? segmentAt(trip, datedBy.takenAt) : trip.segments[0];
   if (!segment) return;
-  // It can't have been taken after it was saved or received: before a dated match, before the trip otherwise.
-  const anchoredBy = best && best.distance <= SAME_SCENE_DISTANCE ? best.takenAt : segment.from;
+  // It can't have been taken after it was saved or received: before a scene match, before its segment otherwise.
+  const anchoredBy = scene ? scene.takenAt : segment.from;
   if (candidate.savedAt && candidate.savedAt < anchoredBy) return;
 
   const reasons: SuggestionReason[] = [];

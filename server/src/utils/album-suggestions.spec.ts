@@ -249,6 +249,32 @@ describe('outfits', () => {
     // An outfit alone is one signal.
     expect(estimateDate(trip, { neighbours: [], people: [], place: null, outfit })).toBeUndefined();
   });
+
+  it("checks the save date against the outfit's trip, not a later look-alike's", () => {
+    const twoTrips = describeTrip([
+      ...rockies,
+      photo('b1', '2027-02-01T12:00:00'),
+      photo('b2', '2027-02-01T13:00:00'),
+      photo('b3', '2027-02-02T09:00:00'),
+    ])!;
+    const outfit = matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket)])!;
+    const lookAlike = {
+      assetId: 'b2',
+      distance: 0.2,
+      takenAt: at('2027-02-01T13:00:00Z'),
+      localDateTime: at('2027-02-01T07:00:00Z'),
+    };
+    // Saved between the two trips: it can be from August, not February.
+    expect(
+      estimateDate(twoTrips, {
+        neighbours: [lookAlike],
+        people: [],
+        place: null,
+        outfit,
+        savedAt: at('2026-12-01T00:00:00Z'),
+      }),
+    ).toMatchObject({ precision: 'day', localDateTime: '2026-08-14T12:00:00' });
+  });
 });
 
 describe('utcOffset', () => {

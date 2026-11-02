@@ -46,6 +46,7 @@ import {
   torsoBox,
   utcOffset,
 } from 'src/utils/album-suggestions.js';
+import { getAssetFiles } from 'src/utils/asset.util.js';
 import { clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -164,12 +165,16 @@ export class AlbumSuggestionService extends BaseService {
     if (!isSmartSearchEnabled(machineLearning)) return JobStatus.Skipped;
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
-    if (!asset || asset.files.length !== 1 || asset.visibility === AssetVisibility.Hidden) return JobStatus.Skipped;
+    if (!asset || asset.visibility === AssetVisibility.Hidden) return JobStatus.Skipped;
+    // The preview faces were detected on: the edited one when the photo was edited.
+    const { editedPreviewFile, previewFile } = getAssetFiles(asset.files);
+    const preview = editedPreviewFile ?? previewFile;
+    if (!preview) return JobStatus.Skipped;
     const { modelName } = machineLearning.clip;
     const faces = await this.albumRepository.suggestions.getFacesWithoutOutfit(id, modelName);
     if (faces.length === 0) return JobStatus.Skipped;
 
-    const { data, info } = await this.mediaRepository.decodeImage(asset.files[0].path, {
+    const { data, info } = await this.mediaRepository.decodeImage(preview.path, {
       colorspace: image.colorspace,
       processInvalidImages: false,
     });
@@ -351,8 +356,14 @@ export class AlbumSuggestionService extends BaseService {
       machineLearning.clip.modelName,
     );
     const missing = [...new Set(rows.filter(({ encoded }) => !encoded).map(({ assetId }) => assetId))];
-    if (missing.length > 0)
-      await this.jobRepository.queueAll(missing.map((id) => ({ name: JobName.AlbumSuggestionOutfit, data: { id } })));
+    if (missing.length > 0) {
+      try {
+        await this.jobRepository.queueAll(missing.map((id) => ({ name: JobName.AlbumSuggestionOutfit, data: { id } })));
+      } catch (error) {
+        // Outfits are an extra signal: the date suggestions still load without them.
+        this.logger.warn(`Could not queue outfit crops: ${error instanceof Error ? error.message : error}`);
+      }
+    }
 
     const tripSet = new Set(tripIds);
     for (const { assetId, personId, name, embedding } of rows) {
