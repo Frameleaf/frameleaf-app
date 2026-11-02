@@ -63,6 +63,15 @@
   let turnOffFailed = $state(false);
   const tabsId = $props.id();
 
+  /** Said in the review while it is open; a toast once it has been closed, so it isn't lost. */
+  const report = (message: string, retry = false) => {
+    if (open) {
+      alert = { message, retry };
+    } else {
+      toastManager.danger(message);
+    }
+  };
+
   const load = async (id: string) => {
     try {
       const result = await getAlbumSuggestions({ id });
@@ -209,7 +218,7 @@
     } catch (error) {
       console.error(error);
       dismissed = toggle(dismissed, id);
-      alert = { message: $t('frameleaf_album_suggestions_dismiss_failed', { values: { name } }) };
+      report($t('frameleaf_album_suggestions_dismiss_failed', { values: { name } }));
     }
   };
 
@@ -252,7 +261,7 @@
         toastManager.primary(message);
       }
       if (failed > 0) {
-        alert = { message: $t('frameleaf_album_suggestions_add_failed', { values: { count: failed } }) };
+        report($t('frameleaf_album_suggestions_add_failed', { values: { count: failed } }));
       } else {
         open = false;
         hidden = true;
@@ -261,7 +270,13 @@
       await load(albumId);
     } catch (error) {
       console.error(error);
-      alert = { message: $t('frameleaf_album_suggestions_apply_failed'), retry: true };
+      // Name the photos only when adding them was part of it; a date or the auto-add choice is a save.
+      report(
+        adding.length > 0
+          ? $t('frameleaf_album_suggestions_apply_failed')
+          : $t('frameleaf_album_suggestions_save_failed'),
+        true,
+      );
       if (added > 0 || fixed > 0) {
         onChanged();
       }

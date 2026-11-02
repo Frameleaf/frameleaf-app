@@ -829,11 +829,11 @@
   }
   /*
    * The photo the Work panel describes: a neutral ring, so it never reads as selected; selection
-   * wins when both. An inset outline, since the photo would cover an inset shadow.
+   * wins when both. Drawn on the ring layer, since an outline on the button paints under the photo.
    */
-  .fl-tile.is-in-panel:not(.is-selected) .fl-tile-open {
-    outline: 2px solid color-mix(in srgb, var(--fl-text) 85%, transparent);
-    outline-offset: -2px;
+  .fl-tile:where(.is-in-panel):not(.is-selected) .fl-tile-ring {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--fl-text) 85%, transparent);
   }
   .fl-tile.is-pressing:not([data-layout='list']) .fl-tile-media {
     scale: 0.96;

@@ -164,6 +164,20 @@ describe('AlbumSuggestions', () => {
     expect(screen.getByText('IMG_4821.HEIC')).toBeTruthy();
   });
 
+  it('names a save, not an add, when only a date change fails, and offers to try again', async () => {
+    sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
+    sdkMock.updateAsset.mockRejectedValueOnce(new Error('offline'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByLabelText(/Add to Summer/));
+    await fireEvent.click(screen.getByLabelText(/Change the date to/));
+    await fireEvent.click(screen.getByRole('button', { name: 'Fix 1 date' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("Couldn't save the changes.");
+    await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(sdkMock.updateAsset).toHaveBeenCalledTimes(2));
+  });
+
   it('labels the button for dates alone, and moves between tabs with the arrow keys', async () => {
     sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });

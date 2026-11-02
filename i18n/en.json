@@ -2788,6 +2788,7 @@
   "frameleaf_album_suggestions_reason_same_outfit": "{names} is wearing the same clothes as in photos from {date}",
   "frameleaf_album_suggestions_reason_same_scene": "Same scene as {name}, taken {date}",
   "frameleaf_album_suggestions_review": "Review",
+  "frameleaf_album_suggestions_save_failed": "Couldn't save the changes.",
   "frameleaf_album_suggestions_saving": "Saving…",
   "frameleaf_album_suggestions_set_date": "Change the date to {date}",
   "frameleaf_album_suggestions_set_date_approximate": "Set the date to {date} (approximate)",
