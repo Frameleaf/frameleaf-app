@@ -161,9 +161,15 @@ for (const automatic of [false, true]) test(`verified import retires source serv
       all.find((c) => c.Id === id)!.State.Running = true;
     },
   } as unknown as Docker;
-  const access = automatic ? new HostAutostart(docker, directory, async (_binary, args, options) =>
-    command('docker', ['-e', args[args.indexOf('-e') + 1], autostart], { ...options, executable: process.execPath }),
-  ) : autostart;
+  let script = '';
+  const access = automatic ? new HostAutostart(docker, directory, async (_binary, args, options) => {
+    if (args[0] === 'create') {
+      script = args[args.indexOf('-e') + 1];
+      return 'f'.repeat(64);
+    }
+    return args[0] === 'start'
+      ? command('docker', ['-e', script, autostart], { ...options, executable: process.execPath }) : '';
+  }) : autostart;
   const fencing = new Fencing(docker, store, access);
   try {
     await fencing.stop(source);
@@ -190,6 +196,12 @@ for (const automatic of [false, true]) test(`verified import retires source serv
     await assert.rejects(fencing.verify(source), /source_changed_review_again/);
     database.HostConfig.RestartPolicy.Name = 'no';
 
+    if (automatic) {
+      // Crash during source-service retirement, before truncate; recovery repairs the durable write first.
+      const text = 'immich_redis\nimmich_postgres 10\nfilebrowser\n';
+      store.set('autostart-write', { text, modified: 'filebrowser\n' });
+      await writeFile(autostart, 'filebrowser\n' + text.slice('filebrowser\n'.length));
+    }
     await fencing.recover(source, { mayHaveWrittenMedia: false } as Installation);
     assert.deepEqual(database.HostConfig.RestartPolicy, { Name: 'always', MaximumRetryCount: 0 });
     assert.deepEqual(redis.HostConfig.RestartPolicy, { Name: 'on-failure', MaximumRetryCount: 3 });

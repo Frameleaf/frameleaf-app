@@ -54,6 +54,7 @@ export class Fencing {
     private autostartFile?: string | AutostartFile,
   ) {}
   async stopInstallation(installation: Installation): Promise<void> {
+    await this.reconcileAutostart();
     await this.assertMedia(installation.mounts, installation);
     const owned = (await this.docker.inventory()).filter(
       (c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id,
@@ -95,11 +96,24 @@ export class Fencing {
     await this.rewriteAutostart((text) => removeAutostart(text, names));
   }
   private async rewriteAutostart(change: (text: string) => string): Promise<void> {
+    await this.reconcileAutostart();
     const text = await this.readAutostart(),
       modified = change(text);
     if (modified === text) return;
+    this.store.set('autostart-write', { text, modified });
+    try {
+      await this.writeAutostart(text, modified);
+    } catch (error) {
+      // A refused comparison made no write; allow a later retry against the new host list.
+      if (error instanceof Refusal && error.code === 'autostart_changed') this.store.set('autostart-write', null);
+      throw error;
+    }
+    this.store.set('autostart-write', null);
+  }
+  private async writeAutostart(text: string, modified: string): Promise<void> {
     if (typeof this.autostartFile !== 'string') {
       await this.autostartFile!.write(text, modified);
+      if ((await this.readAutostart(true)) !== modified) throw new Refusal('autostart_write_failed');
       return;
     }
     const file = await open(this.autostartFile, 'r+');
@@ -112,6 +126,21 @@ export class Fencing {
       await file.close();
     }
     if ((await this.readAutostart()) !== modified) throw new Refusal('autostart_write_failed');
+  }
+  private async reconcileAutostart(): Promise<void> {
+    const pending = this.store.get<{ text: string; modified: string }>('autostart-write');
+    if (!pending) return;
+    const current = await this.readAutostart(true);
+    if (current !== pending.modified) {
+      const before = Buffer.from(pending.text), after = Buffer.from(pending.modified), actual = Buffer.from(current);
+      let prefix = 0;
+      while (prefix < Math.min(actual.length, after.length) && actual[prefix] === after[prefix]) prefix++;
+      // Interrupted in-place writes are a new prefix followed by the old tail, until truncate completes.
+      if (current !== pending.text && !actual.equals(Buffer.concat([after.subarray(0, prefix), before.subarray(prefix)])))
+        throw new Refusal('autostart_changed');
+      await this.writeAutostart(current, pending.modified);
+    }
+    this.store.set('autostart-write', null);
   }
   async assertMedia(media: Mount[], installation?: Installation, workers: string[] = []): Promise<void> {
     const all = await this.docker.inventory();
@@ -142,6 +171,7 @@ export class Fencing {
     const intent = this.store.get<string>(`fence:${source.id}`);
     if (intent && intent !== source.fingerprint) throw new Refusal('source_changed_review_again');
     await new Discovery(this.docker).revalidate(this.pinned(source), !!intent);
+    await this.reconcileAutostart();
     await this.assertMedia(source.mounts, undefined, source.workers);
     this.store.createOnce(`fence:${source.id}`, source.fingerprint);
     const all = await this.docker.inventory();
@@ -259,7 +289,8 @@ export class Fencing {
   }
   async recover(source: Source, installation: Installation | null): Promise<void> {
     if (installation?.mayHaveWrittenMedia) throw new Refusal('media_recovery_required_no_automatic_source_restart');
-    // Complete a partial fence before restoring the original restart policies.
+    // Repair a journalled partial write before retrying the fence or restoring any service.
+    await this.reconcileAutostart();
     await this.stop(source);
     await this.verify(source, installation ?? undefined);
     for (const id of source.workers) await this.docker.restartPolicy(id, restartFlag(source.restart[id]));

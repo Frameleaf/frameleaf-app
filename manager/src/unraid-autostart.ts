@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { command, environment, type Docker } from './docker.js';
-import { Refusal } from './contracts.js';
+import { Refusal, containerId } from './contracts.js';
 
 export interface AutostartFile {
   read(required?: boolean): Promise<string>;
@@ -38,24 +38,42 @@ const fs = require('node:fs/promises');
 
 /** Docker resolves the host path; Manager needs neither a data-root mount nor a container recreation. */
 export class HostAutostart implements AutostartFile {
+  private pending: Promise<unknown> = Promise.resolve();
   constructor(private docker: Docker, private directory: string, private execute: typeof command = command) {}
 
-  private async access(request: { expected?: string; modified?: string }, required = true): Promise<string> {
-    const controllers = (await this.docker.inventory()).filter((c) =>
+  private access(request: { expected?: string; modified?: string }, required = true): Promise<string> {
+    const result = this.pending.then(() => this.performAccess(request, required));
+    this.pending = result.catch(() => {});
+    return result;
+  }
+  private async performAccess(request: { expected?: string; modified?: string }, required: boolean): Promise<string> {
+    const containers = await this.docker.inventory();
+    const controllers = containers.filter((c) =>
       c.State.Running && c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
       environment(c).MANAGER_DATA === this.directory,
     );
     if (controllers.length !== 1 || !/^sha256:[a-f0-9]{64}$/.test(controllers[0].Image))
       throw new Refusal('unraid_autostart_unavailable');
+    // A Manager restart or a failed cleanup must not leave an earlier helper able to write later.
+    for (const helper of containers.filter((c) => c.Config.Labels?.['app.frameleaf.manager.autostart'] === this.directory))
+      await this.execute('docker', ['rm', '--force', containerId.parse(helper.Id)]);
     const { dataRoot } = await this.docker.compatibility();
     if (!dataRoot.startsWith('/') || dataRoot === '/' || resolve(dataRoot) !== dataRoot || /[\x00-\x1f\x7f,]/.test(dataRoot))
       throw new Refusal('unraid_autostart_unavailable');
-    const run = (mount: string, script: string) => this.execute('docker', [
-      'run', '--rm', '--interactive', '--pull', 'never', '--network', 'none', '--read-only',
-      '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL', '--cap-add', 'DAC_OVERRIDE',
-      '--pids-limit', '32', '--memory', '128m', '--mount', mount,
-      '--entrypoint', 'node', controllers[0].Image, '-e', script, '/autostart',
-    ], { input: JSON.stringify(request) });
+    const run = async (mount: string, script: string) => {
+      const id = containerId.parse((await this.execute('docker', [
+        'create', '--interactive', '--pull', 'never', '--network', 'none', '--read-only',
+        '--label', `app.frameleaf.manager.autostart=${this.directory}`,
+        '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL', '--cap-add', 'DAC_OVERRIDE',
+        '--pids-limit', '32', '--memory', '128m', '--mount', mount,
+        '--entrypoint', 'node', controllers[0].Image, '-e', script, '/autostart',
+      ])).trim());
+      try {
+        return await this.execute('docker', ['start', '--attach', '--interactive', id], { input: JSON.stringify(request) });
+      } finally {
+        await this.execute('docker', ['rm', '--force', id]);
+      }
+    };
     let result: { text?: string; error?: string };
     try {
       result = JSON.parse(await run(
