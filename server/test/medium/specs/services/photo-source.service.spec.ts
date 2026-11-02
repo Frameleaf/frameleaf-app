@@ -192,19 +192,27 @@ it('an external-only result can never satisfy a managed copy', async () => {
   ).rejects.toThrow('photo_source_managed_original_unavailable');
   expect(await readFile(f.path)).toEqual(f.bytes);
 });
-it('the hidden motion half of a Live Photo is verified unless its still is Locked', async () => {
+it('the hidden motion half of a Live Photo is verified unless it or a linked still is Locked', async () => {
   // The phone backed this Live Photo up first: the desktop's copy of its video is a duplicate of the hidden half.
-  for (const still of ['open', 'locked', 'none'] as const) {
+  const lock = (assetId: string) =>
+    db.insertInto('asset_lock').values({ assetId, reason: AssetLockReason.Marked }).execute();
+  // `stills`: whether each still linked to the motion half is Locked
+  for (const { stills, motionLocked, verified } of [
+    { stills: [false], motionLocked: false, verified: true },
+    { stills: [true], motionLocked: false, verified: false },
+    { stills: [], motionLocked: false, verified: false },
+    { stills: [false], motionLocked: true, verified: false },
+    { stills: [false, true], motionLocked: false, verified: false },
+  ]) {
     const f = await setup();
     await db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', f.asset.id).execute();
-    if (still !== 'none') {
+    for (const locked of stills) {
       const { asset } = await f.ctx.newAsset({ ownerId: f.auth.user.id, livePhotoVideoId: f.asset.id });
-      if (still === 'locked') {
-        await db.insertInto('asset_lock').values({ assetId: asset.id, reason: AssetLockReason.Marked }).execute();
-      }
+      if (locked) await lock(asset.id);
     }
+    if (motionLocked) await lock(f.asset.id);
     const verify = f.service.verify(f.auth, f.source.id, f.run.id, f.item.id, { uploadResourceId: f.upload.id });
-    await (still === 'open'
+    await (verified
       ? expect(verify).resolves.toMatchObject({ assetId: f.asset.id })
       : expect(verify).rejects.toThrow('photo_source_managed_original_unavailable'));
   }
