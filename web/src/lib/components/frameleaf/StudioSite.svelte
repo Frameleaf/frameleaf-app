@@ -360,7 +360,9 @@
     <h2>{$t('frameleaf_studio_site_client_galleries')}</h2>
     <p>{$t('frameleaf_studio_site_client_galleries_body')}</p>
     {#if galleryAsked}
-      <p role="status">{$t('frameleaf_studio_site_gallery_asked')}</p>
+      <p role="status">
+        {onInquiry ? $t('frameleaf_studio_site_gallery_asked') : $t('frameleaf_studio_site_preview_not_sent')}
+      </p>
     {:else}
       <form onsubmit={askForGallery}>
         <input

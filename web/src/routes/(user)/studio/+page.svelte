@@ -12,13 +12,16 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
-  import { locale, t } from 'svelte-i18n';
+  import { locale, t, type Translations } from 'svelte-i18n';
   import { toastManager } from '@frameleaf/ui';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import StudioBundleExportDialog from '$lib/components/frameleaf/StudioBundleExportDialog.svelte';
   import { deliverySubmission, type DeliverySubmission } from '$lib/frameleaf/studio/export-batch';
-  import StudioExportDialog, { type StudioExportChoice } from '$lib/components/frameleaf/StudioExportDialog.svelte';
+  import StudioExportDialog, {
+    type StudioDeliveryChoice,
+    type StudioExportChoice,
+  } from '$lib/components/frameleaf/StudioExportDialog.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -112,6 +115,7 @@
     createStudioExportBatch,
     StudioDeliveryDestination,
     StudioDeliveryShape,
+    StudioExportShape,
     getStudioCutout,
     getStudioCutoutSubjects,
     getMediaOperation,
@@ -1290,6 +1294,24 @@
     }
     videoExportOpen = true;
   };
+  const shapeLabels: Record<string, Translations> = {
+    original: 'frameleaf_studio_export_shape_original',
+    landscape: 'frameleaf_studio_export_shape_landscape',
+    vertical: 'frameleaf_studio_export_shape_vertical',
+    square: 'frameleaf_studio_export_shape_square',
+  };
+  /** Shape names in words ("Vertical 9:16 and Square 1:1"), never the server's ids. */
+  const listShapes = (shapes: string[]) => {
+    const names = shapes.map((shape) => {
+      const label = shapeLabels[shape] as Translations | undefined;
+      return label ? $t(label) : shape;
+    });
+    try {
+      return new Intl.ListFormat($locale ?? undefined, { style: 'long', type: 'conjunction' }).format(names);
+    } catch {
+      return names.join(', ');
+    }
+  };
   /** Keep a reviewed batch's key until admission is acknowledged so retries reuse accepted jobs. */
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
@@ -1317,49 +1339,99 @@
           toastManager.danger($t('frameleaf_studio_export_revision_changed'));
           return;
         }
+        const reviewedRevision = choice.reviewedRevision;
+        const originalSettings = (delivery: StudioDeliveryChoice) => {
+          const settings: Partial<StudioDeliveryChoice> = { ...delivery };
+          delete settings.shape;
+          delete settings.framing;
+          return { ...(settings as Omit<StudioDeliveryChoice, 'shape' | 'framing'>), destination: choice.destination };
+        };
+        const original = choice.deliveries.find((delivery) => delivery.shape === StudioExportShape.Original);
+        const framed = choice.deliveries.filter((delivery) => delivery.shape !== StudioExportShape.Original);
         pendingDeliveries = deliverySubmission(
           project.id,
           {
-            expectedRevision: choice.reviewedRevision,
-            destination:
-              choice.destination === MediaOperationDestination.Local
-                ? StudioDeliveryDestination.Local
-                : StudioDeliveryDestination.Lan,
-            variants: choice.deliveries.map((delivery) => ({
-              ...delivery,
-              shape:
-                delivery.shape === 'landscape'
-                  ? StudioDeliveryShape.Landscape
-                  : delivery.shape === 'vertical'
-                    ? StudioDeliveryShape.Vertical
-                    : StudioDeliveryShape.Square,
-            })),
+            batch:
+              framed.length > 0
+                ? {
+                    expectedRevision: reviewedRevision,
+                    destination:
+                      choice.destination === MediaOperationDestination.Local
+                        ? StudioDeliveryDestination.Local
+                        : StudioDeliveryDestination.Lan,
+                    variants: framed.map((delivery) => ({
+                      ...delivery,
+                      shape:
+                        delivery.shape === 'landscape'
+                          ? StudioDeliveryShape.Landscape
+                          : delivery.shape === 'vertical'
+                            ? StudioDeliveryShape.Vertical
+                            : StudioDeliveryShape.Square,
+                    })),
+                  }
+                : null,
+            // The batch API takes reframed shapes only; Original is an ordinary export beside it.
+            original: original ? { ...originalSettings(original), expectedRevision: reviewedRevision } : null,
           },
           pendingDeliveries,
         );
-        const batch = await createStudioExportBatch({
-          id: project.id,
-          studioExportBatchCreateDto: pendingDeliveries.body,
-        });
-        deliveryResults = batch.items.map((item) => ({ shape: item.shape, queued: !!item.result, error: item.error }));
-        const admitted = batch.items.flatMap((item) => (item.result ? [item.result] : []));
+        const items: { shape: string; operation: StudioExportJob | null; error: string | null }[] = [];
+        if (pendingDeliveries.batch) {
+          const batch = await createStudioExportBatch({
+            id: project.id,
+            studioExportBatchCreateDto: pendingDeliveries.batch,
+          });
+          items.push(
+            ...batch.items.map((item) => ({
+              shape: item.shape as string,
+              operation: item.result?.operation ?? null,
+              error: item.error,
+            })),
+          );
+        }
+        if (pendingDeliveries.original) {
+          try {
+            const { operation } = await createStudioExport({
+              id: project.id,
+              studioExportCreateDto: pendingDeliveries.original,
+            });
+            items.unshift({ shape: StudioExportShape.Original, operation, error: null });
+          } catch (error) {
+            if (!isHttpError(error)) {
+              // A lost response: keep the keys so trying again answers with the same export.
+              throw error;
+            }
+            const refusal = studioRenderRefusalFromError(error.data);
+            items.unshift({
+              shape: StudioExportShape.Original,
+              operation: null,
+              error: $t(refusal ? studioRenderRefusalKey(refusal) : 'frameleaf_studio_export_failed'),
+            });
+          }
+        }
+        deliveryResults = items.map((item) => ({ shape: item.shape, queued: !!item.operation, error: item.error }));
+        const admitted = items.flatMap((item) => (item.operation ? [item.operation] : []));
         const last = admitted.at(-1);
         if (last) {
-          exportJob = last.operation;
-          followExport(last.operation.id);
-          toastManager.primary($t('frameleaf_studio_export_batch_queued', { values: { count: admitted.length } }));
+          exportJob = last;
+          followExport(last.id);
         }
         if (admitted.length > 0) {
           saveCaptionSidecars(choice);
         }
-        const refused = batch.items.filter((item) => item.result === null);
+        const refused = items.filter((item) => !item.operation);
         if (refused.length > 0) {
           toastManager.danger(
             $t('frameleaf_studio_export_batch_partial', {
-              values: { shapes: refused.map((item) => item.shape).join(', ') },
+              values: {
+                started: admitted.length,
+                total: items.length,
+                shapes: listShapes(refused.map((item) => item.shape)),
+              },
             }),
           );
         } else {
+          toastManager.primary($t('frameleaf_studio_export_batch_queued', { values: { count: admitted.length } }));
           videoExportOpen = false;
           pendingDeliveries = null;
         }

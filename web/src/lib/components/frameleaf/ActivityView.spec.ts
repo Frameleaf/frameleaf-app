@@ -102,7 +102,7 @@ describe('Frameleaf Activity page', () => {
   });
 
   it.each([MediaOperationStatus.Queued, MediaOperationStatus.Preparing])(
-    'warns about stale Studio workers only after a claim (%s)',
+    'shows render time and a stuck warning only after a worker claims the export (%s)',
     async (status) => {
       await mount([
         operation({
@@ -116,12 +116,14 @@ describe('Frameleaf Activity page', () => {
           },
         }),
       ]);
-      await screen.findByText(/Preparing export/);
-      const warning = screen.queryByText(/No measured progress for at least a minute/);
       if (status === MediaOperationStatus.Queued) {
-        expect(warning).not.toBeInTheDocument();
+        // Waiting for its turn isn't work: no elapsed time and no stuck warning.
+        await vi.waitFor(() => expect(document.querySelector('.fla-status')).not.toBeNull());
+        expect(screen.queryByText(/Elapsed:/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/No progress for/)).not.toBeInTheDocument();
       } else {
-        expect(warning).toBeInTheDocument();
+        await screen.findByText(/Elapsed:/);
+        expect(screen.getByText(/No progress for/)).toBeInTheDocument();
       }
     },
   );

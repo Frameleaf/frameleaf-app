@@ -73,6 +73,7 @@
   import { mdiAlertOutline, mdiExportVariant } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
   import {
@@ -372,7 +373,7 @@
     advancedOpen = false;
     shape = StudioExportShape.Original;
     multiDelivery = false;
-    selectedShapes = ['landscape'];
+    selectedShapes = [StudioExportShape.Original];
     reviewed = {};
     shapeNudges = {};
     nudges = {};
@@ -400,13 +401,28 @@
     { value: StudioExportShape.Square, label: 'frameleaf_studio_export_shape_square' },
   ];
   let multiDelivery = $state(false);
-  let selectedShapes = $state<StudioExportRequestShape[]>(['landscape']);
+  let selectedShapes = $state<StudioExportRequestShape[]>([StudioExportShape.Original]);
   let reviewed = $state<Partial<Record<StudioExportRequestShape, string>>>({});
   let shapeNudges = $state<Partial<Record<StudioExportRequestShape, Record<string, number>>>>({});
-  const deliveryShapes: typeof shapes = [
-    { value: 'landscape', label: 'frameleaf_studio_export_shape_landscape' },
-    ...shapes.filter((entry) => entry.value !== StudioExportShape.Original),
-  ];
+  /** Exporting more than one shape always keeps Original; each shape is its own export in Activity. */
+  const deliveryShapes = shapes;
+  /** "Vertical 9:16 and Square 1:1", in the person's language. */
+  const joinShapeNames = (values: readonly string[]) => {
+    const names = values.map((value) => shapeName(value));
+    try {
+      return new Intl.ListFormat($locale === 'default' ? undefined : $locale, {
+        style: 'long',
+        type: 'conjunction',
+      }).format(names);
+    } catch {
+      return names.join(', ');
+    }
+  };
+  const shapeName = (value: string) =>
+    $t(
+      deliveryShapes.find((item) => item.value === value)?.label ??
+        (value === 'landscape' ? 'frameleaf_studio_export_shape_landscape' : 'unknown'),
+    );
   let shape = $state<StudioExportRequestShape>(StudioExportShape.Original);
   const reshaped = $derived(isReshaped(shape));
   /** The person's move of each shot, as a share of the frame width; applied to the whole shot. */
@@ -484,14 +500,42 @@
       ...picture,
       shape: value,
     });
+  /** Original keeps the whole picture; every other shape needs its framing checked against these settings. */
+  const framingChecked = (value: StudioExportRequestShape) =>
+    !isReshaped(value) ||
+    (framingState === 'ready' && framing?.revision === revision && reviewed[value] === reviewSignature(value));
+  const deliveryStatus = (value: StudioExportRequestShape) => {
+    if (!isReshaped(value)) {
+      return 'ready';
+    }
+    if (reviewed[value] === undefined) {
+      return 'needs';
+    }
+    return framingChecked(value) ? 'checked' : 'again';
+  };
+  const deliveryStatusText = {
+    ready: 'frameleaf_studio_export_shape_ready',
+    needs: 'frameleaf_studio_export_review_required',
+    checked: 'frameleaf_studio_export_reviewed',
+    again: 'frameleaf_studio_export_review_again',
+  } as const;
+  const uncheckedShapes = $derived(selectedShapes.filter((value) => !framingChecked(value)));
   const batchReady = $derived(
     !multiDelivery ||
       (selectedShapes.length > 0 &&
-        framingState === 'ready' &&
-        framing?.revision === revision &&
-        selectedShapes.every(
-          (value) => reviewed[value] === reviewSignature(value) && deliveryVerdict(value).supported,
-        )),
+        selectedShapes.every((value) => framingChecked(value) && deliveryVerdict(value).supported)),
+  );
+  /** The visible reason Export is off in multi-shape mode. */
+  const batchBlocker = $derived(
+    !multiDelivery
+      ? null
+      : selectedShapes.length === 0
+        ? $t('frameleaf_studio_export_choose_shape')
+        : uncheckedShapes.length > 0
+          ? $t('frameleaf_studio_export_check_before', {
+              values: { shapes: joinShapeNames(uncheckedShapes) },
+            })
+          : null,
   );
   const projectFrame = $derived(framing ? { width: framing.width, height: framing.height } : undefined);
   const shapedOutput = $derived(reshaped ? shapedSize(shape, resolution, projectFrame) : null);
@@ -654,11 +698,12 @@
     }),
   );
 
+  const failedResults = $derived(deliveryResults.filter((result) => !result.queued).map((result) => result.shape));
   const batchSummary = $derived(
     selectedShapes
       .map((value) => {
-        const output = shapedSize(value, resolution);
-        const label = $t(deliveryShapes.find((item) => item.value === value)?.label ?? 'unknown');
+        const output = isReshaped(value) ? shapedSize(value, resolution) : null;
+        const label = shapeName(value);
         return `${label}${output ? ` ${sizeLabel(output)}` : ''}`;
       })
       .join(' · ') + ` · ${$t(destinations.find((item) => item.value === destination)?.label ?? 'unknown')}`,
@@ -689,7 +734,7 @@
               subtitleMode,
               shape: value,
               ...(selectedRange && { range: selectedRange }),
-              framing: variantFraming(value),
+              ...(isReshaped(value) && { framing: variantFraming(value) }),
             })),
           }),
       });
@@ -714,7 +759,8 @@
               multiDelivery = event.currentTarget.checked;
               reviewed = {};
               smoothFactor = null;
-              chooseShape(multiDelivery ? 'landscape' : StudioExportShape.Original);
+              selectedShapes = [StudioExportShape.Original];
+              chooseShape(StudioExportShape.Original);
             }}
           />
           {$t('frameleaf_studio_export_multiple')}
@@ -725,33 +771,50 @@
           <legend>{$t('frameleaf_studio_export_deliveries')}</legend>
           <p class="note">{$t('frameleaf_studio_export_batch_hint')}</p>
           {#each deliveryShapes as item (item.value)}
-            <div class="delivery-row">
-              <label
+            {@const included = selectedShapes.includes(item.value)}
+            {@const status = deliveryStatus(item.value)}
+            <div class="delivery-row" class:off={!included} data-testid="studio-export-delivery-{item.value}">
+              <label class="delivery-pick"
                 ><input
                   type="checkbox"
-                  checked={selectedShapes.includes(item.value)}
+                  checked={included}
                   onchange={(event) => {
                     selectedShapes = event.currentTarget.checked
-                      ? [...selectedShapes, item.value]
+                      ? deliveryShapes
+                          .map((entry) => entry.value)
+                          .filter((value) => value === item.value || selectedShapes.includes(value))
                       : selectedShapes.filter((value) => value !== item.value);
                   }}
                 />
+                <span class="shape-icon {item.value}" aria-hidden="true"></span>
                 {$t(item.label)}</label
               >
-              <Button onclick={() => chooseShape(item.value)}>{$t('frameleaf_studio_export_review')}</Button>
-              <span
-                >{reviewed[item.value] === reviewSignature(item.value)
-                  ? $t('frameleaf_studio_export_reviewed')
-                  : $t('frameleaf_studio_export_review_required')}</span
-              >
+              {#if included}
+                <span class="delivery-status {status}">{$t(deliveryStatusText[status])}</span>
+                {#if isReshaped(item.value)}
+                  {#if shape === item.value}
+                    <span class="delivery-here">{$t('frameleaf_studio_export_checking_below')}</span>
+                  {:else}
+                    <Button
+                      label={$t('frameleaf_studio_export_review_shape', { values: { shape: $t(item.label) } })}
+                      onclick={() => chooseShape(item.value)}
+                      >{status === 'checked'
+                        ? $t('frameleaf_studio_export_review_look_again')
+                        : $t('frameleaf_studio_export_review')}</Button
+                    >
+                  {/if}
+                {/if}
+              {:else}
+                <span class="delivery-status">{$t('frameleaf_studio_export_shape_not_included')}</span>
+              {/if}
             </div>
           {/each}
         </fieldset>
       {/if}
-      <div class="shape-choice">
+      <div class="shape-choice" hidden={multiDelivery}>
         <span id="{fieldId}-shape">{$t('frameleaf_studio_export_shape')}</span>
         <div class="shapes" role="radiogroup" use:rovingFocus aria-labelledby="{fieldId}-shape">
-          {#each multiDelivery ? deliveryShapes : shapes as item (item.value)}
+          {#each shapes as item (item.value)}
             <button
               type="button"
               role="radio"
@@ -774,7 +837,7 @@
           <p class="note reframe-status" aria-busy="true">{$t('frameleaf_studio_reframe_loading')}</p>
         {/if}
       {/if}
-      {#if multiDelivery}
+      {#if multiDelivery && reshaped}
         <label class="note">
           <input
             type="checkbox"
@@ -784,10 +847,10 @@
               reviewed = { ...reviewed, [shape]: event.currentTarget.checked ? reviewSignature(shape) : undefined };
             }}
           />
-          {$t('frameleaf_studio_export_review_confirm', {
-            values: { shape: $t(deliveryShapes.find((item) => item.value === shape)?.label ?? 'unknown') },
-          })}
+          {$t('frameleaf_studio_export_review_confirm', { values: { shape: shapeName(shape) } })}
         </label>
+      {/if}
+      {#if multiDelivery}
         {#if framing && framing.revision !== revision}
           <p class="note warning" role="status">{$t('frameleaf_studio_export_revision_changed')}</p>
         {/if}
@@ -1050,25 +1113,42 @@
     {/if}
 
     {#if deliveryResults.length > 0}
-      <ul class="note delivery-results" aria-label={$t('frameleaf_studio_export_deliveries')}>
+      <ul class="delivery-results" aria-label={$t('frameleaf_studio_export_deliveries')}>
         {#each deliveryResults as result (result.shape)}
-          <li>
-            {$t(deliveryShapes.find((item) => item.value === result.shape)?.label ?? 'unknown')}: {result.queued
-              ? $t('frameleaf_studio_export_review_queued')
-              : result.error}
+          <li class="delivery-result" class:failed={!result.queued} data-testid="studio-export-result-{result.shape}">
+            <span class="shape-icon {result.shape}" aria-hidden="true"></span>
+            <strong>{shapeName(result.shape)}</strong>
+            <span class="delivery-status {result.queued ? 'checked' : 'failed'}"
+              >{result.queued
+                ? $t('frameleaf_studio_export_review_queued')
+                : $t('frameleaf_studio_export_result_failed')}</span
+            >
+            {#if !result.queued && result.error}
+              <p class="delivery-error">{result.error}</p>
+            {/if}
           </li>
         {/each}
       </ul>
+      {#if failedResults.length > 0}
+        <p class="note">
+          {$t('frameleaf_studio_export_retry_hint', { values: { shapes: joinShapeNames(failedResults) } })}
+        </p>
+      {/if}
     {/if}
     <p class="summary" data-testid="studio-export-summary">
       <span class="sr-only">{$t('frameleaf_studio_export_summary_label')}:</span>
       {multiDelivery ? batchSummary : summary}
     </p>
     <footer>
+      {#if batchBlocker && !busy}
+        <p class="note blocker" role="status" data-testid="studio-export-blocker">{batchBlocker}</p>
+      {/if}
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
       <Button variant="primary" disabled={!canExport} onclick={submit}>
         <Icon icon={mdiExportVariant} size="16" aria-hidden={true} />
-        {$t('frameleaf_studio_export_start')}
+        {failedResults.length > 0 && retryPending
+          ? $t('frameleaf_studio_export_retry', { values: { shapes: joinShapeNames(failedResults) } })
+          : $t('frameleaf_studio_export_start')}
       </Button>
     </footer>
   </div>
@@ -1115,14 +1195,66 @@
     color: var(--fl-warning);
   }
   /* studio-upgrades.css `.flu-export-shape`, `.flu-shapes`, `.flu-shape` */
-  .delivery-results {
-    display: block;
+  /* studio-delivery.css `.flx-shape`, `.flx-status`, `.flx-result` (FL-1116 UI audit). */
+  .delivery-row,
+  .delivery-result {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px 12px;
+    min-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    font-size: 13px;
+    color: var(--fl-text);
   }
-  .delivery-row {
+  .delivery-row.off {
+    color: var(--fl-muted);
+  }
+  .delivery-pick {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .delivery-status,
+  .delivery-here {
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .delivery-status.checked,
+  .delivery-status.ready {
+    color: var(--fl-success);
+  }
+  .delivery-status.needs,
+  .delivery-status.again {
+    color: var(--fl-warning);
+  }
+  .delivery-status.failed {
+    color: var(--fl-danger);
+  }
+  .delivery-results {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .delivery-result {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .delivery-result.failed {
+    border-color: color-mix(in srgb, var(--fl-danger) 55%, var(--fl-border));
+  }
+  .delivery-error {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+  }
+  .blocker {
+    flex: 1 1 12rem;
+    justify-content: flex-end;
   }
   .shape-choice {
     display: flex;

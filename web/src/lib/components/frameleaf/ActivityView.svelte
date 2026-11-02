@@ -504,12 +504,11 @@
             · <span class="fla-error">{item.error}</span>
           {/if}
         </p>
-        {#if item.renderProgress}
+        <!-- Only while it works: a queued, done or failed export shows its outcome in the status line (FL-1120). -->
+        {#if item.renderProgress && item.running && (item.stage === 'starting' || item.stage === 'running')}
           <StudioRenderProgress
             progress={item.renderProgress}
-            startedAt={item.startedAt}
-            finishedAt={item.finishedAt}
-            active={item.running && (item.stage === 'starting' || item.stage === 'running')}
+            startedAt={item.renderStartedAt}
             online={!activitySession.unreachable}
           />
         {/if}

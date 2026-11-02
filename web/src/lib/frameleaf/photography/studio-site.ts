@@ -77,8 +77,11 @@ export function validDomain(domain: string) {
   return !value || /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(value);
 }
 
-export const siteAddress = (site: Pick<Site, 'slug' | 'domain'>, origin: string) =>
-  site.domain.trim() ? `https://${site.domain.trim().toLowerCase()}` : `${origin}/studio/${site.slug}`;
+/**
+ * The address the website works at today. An own domain is saved for later and isn't served yet
+ * (FL-1120), so the editor never shows it as the address visitors use.
+ */
+export const siteAddress = (site: Pick<Site, 'slug'>, origin: string) => `${origin}/studio/${site.slug}`;
 
 /** Search results cut titles near 60 characters and descriptions near 160. */
 export function seoPreview(site: Site, fallbackDescription: string) {

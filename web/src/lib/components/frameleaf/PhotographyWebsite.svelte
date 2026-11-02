@@ -36,8 +36,11 @@
   import { Icon } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import {
+    mdiAlertCircleOutline,
     mdiArrowDown,
+    mdiArrowExpand,
     mdiArrowUp,
+    mdiCheckCircleOutline,
     mdiCellphone,
     mdiDragVertical,
     mdiLockOutline,
@@ -95,6 +98,34 @@
   const domainOk = $derived(!!draft && validDomain(draft.domain));
   const seo = $derived(draft ? seoPreview(draft, brand?.tagline || draft.about.slice(0, 160)) : null);
   const origin = typeof location === 'undefined' ? '' : location.origin;
+  /** Why Save is off, in words beside it (FL-1120): what to fix, or whether anything is unsaved. */
+  const saveState = $derived(
+    !draft || !stored || busy
+      ? null
+      : !slugOk
+        ? { tone: 'problem', text: $t('frameleaf_studio_site_save_fix_address') }
+        : !domainOk
+          ? { tone: 'problem', text: $t('frameleaf_studio_site_save_fix_domain') }
+          : dirty
+            ? { tone: 'dirty', text: $t('frameleaf_studio_site_unsaved') }
+            : { tone: 'saved', text: $t('frameleaf_studio_site_all_saved') },
+  );
+  let frame = $state<HTMLDivElement>();
+  const canFullScreen = typeof document !== 'undefined' && !!document.fullscreenEnabled;
+  /** The preview on its own, filling the screen; Esc brings the editor back. */
+  function fullScreen() {
+    void frame?.requestFullscreen?.().catch(() => {});
+  }
+  /** "Use Lake 12.jpg as cover", so each cover button says which photograph it is. */
+  function coverLabel(item: SiteItem) {
+    const capture = captures.get(siteItemKey(item));
+    const name =
+      capture?.fileName ||
+      (capture ? $t('frameleaf_studio_site_photo_number', { values: { number: capture.number } }) : '');
+    return name
+      ? $t('frameleaf_studio_site_use_photo_as_cover', { values: { name } })
+      : $t('frameleaf_studio_site_use_as_cover');
+  }
 
   function photo(item: SiteItem, alt: string): SitePhoto | null {
     const assetId = captures.get(siteItemKey(item))?.assetId;
@@ -295,6 +326,19 @@
       {#if stored?.site.enabled}<a class="fl-control" href={stored.url} target="_blank" rel="noopener"
           >{$t('frameleaf_photography_site_open')} ↗</a
         >{/if}
+      {#if saveState}
+        <span
+          class="sse-save-state"
+          class:is-problem={saveState.tone === 'problem'}
+          class:is-dirty={saveState.tone === 'dirty'}
+          data-testid="site-save-state"
+          ><Icon
+            icon={saveState.tone === 'problem' ? mdiAlertCircleOutline : mdiCheckCircleOutline}
+            size="14"
+            aria-hidden={true}
+          />{saveState.text}</span
+        >
+      {/if}
       <Button variant="primary" disabled={busy || !draft || !dirty || !slugOk || !domainOk} onclick={save}
         >{$t('frameleaf_photography_site_save')}</Button
       >
@@ -320,8 +364,15 @@
           <Button pressed={phone} label={$t('frameleaf_studio_site_phone')} onclick={() => (phone = true)}
             ><Icon icon={mdiCellphone} size="18" aria-hidden={true} /></Button
           >
+          {#if canFullScreen}
+            <Button onclick={fullScreen}
+              ><Icon icon={mdiArrowExpand} size="18" aria-hidden={true} />{$t(
+                'frameleaf_studio_site_full_screen',
+              )}</Button
+            >
+          {/if}
         </div>
-        <div class="sse-frame" class:is-phone={phone}>
+        <div class="sse-frame" class:is-phone={phone} bind:this={frame}>
           <StudioSite site={preview} />
         </div>
       </section>
@@ -383,7 +434,7 @@
                   <button
                     type="button"
                     aria-pressed={!!draft.cover && siteItemKey(draft.cover) === siteItemKey(item)}
-                    aria-label={$t('frameleaf_studio_site_use_as_cover')}
+                    aria-label={coverLabel(item)}
                     onclick={() => (draft!.cover = item)}
                   >
                     {#if assetId}<img
@@ -729,9 +780,14 @@
       </aside>
     </div>
   {:else}
-    <p role="status">
-      {busy ? $t('frameleaf_photography_site_loading') : $t('frameleaf_photography_reload_to_retry')}
-    </p>
-    {#if !busy}<Button onclick={reload}>{$t('frameleaf_photography_reload')}</Button>{/if}
+    {#if busy}
+      <p role="status">{$t('frameleaf_photography_site_loading')}</p>
+    {:else}
+      <div class="sse-state" role="status">
+        <strong>{$t('frameleaf_studio_site_load_failed')}</strong>
+        <p>{$t('frameleaf_studio_site_load_failed_body')}</p>
+        <Button onclick={reload}>{$t('frameleaf_studio_site_try_again')}</Button>
+      </div>
+    {/if}
   {/if}
 </div>

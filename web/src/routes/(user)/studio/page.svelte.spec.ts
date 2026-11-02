@@ -5,6 +5,7 @@ import {
   MediaOperationDestination,
   StudioExportSubtitleMode,
 } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { studioCaptionExportSidecars } from '$lib/frameleaf/studio/caption-languages';
@@ -315,6 +316,36 @@ describe('delivery batch recovery', () => {
     expect(harness.exportDialog!.retryPending).toBe(false);
     await harness.exportDialog!.onExport(single);
     expect(createStudioExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues Original as an ordinary export beside the reframed shapes and names refused shapes in words', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [refused] } as never);
+    vi.mocked(createStudioExport).mockResolvedValue({ operation: { id: 'original-op', status: 'rendering' } } as never);
+    const danger = vi.spyOn(toastManager, 'danger');
+    const both = {
+      ...choice,
+      deliveries: [
+        { shape: 'original', format: 'mp4-h264', color: 'preserve', resolution: '1080p' },
+        { shape: 'square', format: 'mp4-h264', color: 'preserve', resolution: '1080p', framing: [] },
+      ],
+    };
+    await harness.exportDialog!.onExport(both);
+    const single = vi.mocked(createStudioExport).mock.calls[0]![0].studioExportCreateDto;
+    expect(single).not.toHaveProperty('shape');
+    expect(single).not.toHaveProperty('framing');
+    expect(single).toMatchObject({ expectedRevision: 3, format: 'mp4-h264', destination: 'local' });
+    expect(vi.mocked(createStudioExportBatch).mock.calls[0]![0].studioExportBatchCreateDto.variants).toEqual([
+      expect.objectContaining({ shape: 'square' }),
+    ]);
+    await tick();
+    expect(harness.exportDialog!.deliveryResults).toEqual([
+      { shape: 'original', queued: true, error: null },
+      { shape: 'square', queued: false, error: 'Unsupported' },
+    ]);
+    expect(danger).toHaveBeenCalledTimes(1);
+    // Trying again reuses Original's key, so the server answers with the same export.
+    await harness.exportDialog!.onExport(both);
+    expect(vi.mocked(createStudioExport).mock.calls[1]![0].studioExportCreateDto.requestKey).toBe(single.requestKey);
   });
 
   it.each([false, true])(
