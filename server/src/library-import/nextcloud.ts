@@ -1,5 +1,7 @@
 import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/nextcloud/35-8-10.2-sqlite.json' with { type: 'json' };
+import { ImportedPasswordContext } from 'src/library-import/passwords.js';
+import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 // Wildcards cover content-only tables in this exact fingerprinted app installation.
@@ -67,6 +69,8 @@ export const openNextcloudSnapshot = (path: string, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
+    password: (context: ImportedPasswordContext) =>
+      readSqlitePassword(database, context, 'nextcloud-password', 'SELECT password FROM oc_users WHERE uid=?'),
     *rows(table: NextcloudTable): Generator<NextcloudRow[]> {
       if (!Object.hasOwn(projections, table)) throw new NextcloudReadError('NEXTCLOUD_TABLE_NOT_ALLOWED');
       try {

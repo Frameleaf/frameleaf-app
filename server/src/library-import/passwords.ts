@@ -1,3 +1,5 @@
+import { hashRaw as hashArgonRaw, parseOptions as parseArgonOptions } from '@node-rs/argon2';
+import AsyncLock from 'async-lock';
 import { compare, hash } from 'bcrypt';
 import { createHash, pbkdf2 } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -6,9 +8,15 @@ import { SALT_ROUNDS } from 'src/constants.js';
 
 const prefix = '$flimport$1$';
 const derivePbkdf2 = promisify(pbkdf2);
+// The binding declares const enums; value maps also work with isolated TypeScript compilation.
+const argonAlgorithms = { argon2i: 1, argon2id: 2 } as const;
+const argonVersions = { 16: 0, 19: 1 } as const;
+// Keep memory-hard verification independent of the server's general worker-pool size.
+const argonLock = new AsyncLock({ maxPending: 8, timeout: 10_000 });
 const bcryptPattern = /^\$2[ab]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$/;
 const saltPattern = /^\$2[ab]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{22}$/;
-export type ImportedPasswordFormat = 'bcrypt' | 'photoprism-bcrypt' | 'django-pbkdf2-sha256';
+export type ImportedPasswordFormat =
+  'bcrypt' | 'photoprism-bcrypt' | 'django-pbkdf2-sha256' | 'php-password' | 'nextcloud-password';
 const contextSchema = z.strictObject({
   operationId: z.uuid().transform((value) => value.toLowerCase()),
   sourceUserId: z.string().min(1).max(1024),
@@ -23,15 +31,67 @@ const djangoSettings = z.strictObject({
   format: z.literal('django-pbkdf2-sha256'),
   settings: z.tuple([z.number().int().min(1).max(5_000_000), z.string().min(1).max(256)]),
 });
+const phcBase64 = (bytes: Buffer) => bytes.toString('base64').replaceAll('=', '');
+const argonSettings = z.strictObject({
+  format: z.enum(['argon2i', 'argon2id']),
+  settings: z
+    .strictObject({
+      version: z.union([z.literal(16), z.literal(19)]),
+      memoryCost: z.number().int().min(8).max(65_536),
+      timeCost: z.number().int().min(1).max(10),
+      parallelism: z.number().int().min(1).max(16),
+      outputLen: z.number().int().min(16).max(64),
+      salt: z
+        .string()
+        .regex(/^[A-Za-z0-9+/]{11,86}$/)
+        .refine((salt) => {
+          const bytes = Buffer.from(salt, 'base64');
+          return bytes.length >= 8 && bytes.length <= 64 && phcBase64(bytes) === salt;
+        }),
+    })
+    .refine((value) => value.memoryCost >= 8 * value.parallelism),
+});
+type ArgonSettings = z.infer<typeof argonSettings>;
 const envelope = z.discriminatedUnion('format', [
   bcryptSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
   djangoSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
+  argonSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
 ]);
-type Settings = z.infer<typeof bcryptSettings> | z.infer<typeof djangoSettings>;
+type Settings = z.infer<typeof bcryptSettings> | z.infer<typeof djangoSettings> | ArgonSettings;
 const refused = (): never => {
   throw new Error('Imported password refused: SOURCE_PASSWORD_UNSUPPORTED');
 };
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const argonPrefix = ({ format, settings }: ArgonSettings) =>
+  `$${format}$v=${settings.version}$m=${settings.memoryCost},t=${settings.timeCost},p=${settings.parallelism}$${settings.salt}$`;
+const argonSourceSettings = (encoded: string): { settings: ArgonSettings; canonical: string } => {
+  try {
+    const parts = encoded.split('$');
+    if (parts.length !== 6 || !/^v=(16|19)$/.test(parts[2])) return refused();
+    const options = parseArgonOptions(encoded);
+    if (options.algorithm !== argonAlgorithms.argon2i && options.algorithm !== argonAlgorithms.argon2id)
+      return refused();
+    const parsed = argonSettings.safeParse({
+      format: parts[1],
+      settings: {
+        version: options.version === argonVersions[16] ? 16 : 19,
+        memoryCost: options.memoryCost,
+        timeCost: options.timeCost,
+        parallelism: options.parallelism,
+        outputLen: options.outputLen,
+        salt: parts[4],
+      },
+    });
+    const hashBytes = Buffer.from(parts[5], 'base64');
+    if (!parsed.success || hashBytes.length !== options.outputLen || phcBase64(hashBytes) !== parts[5])
+      return refused();
+    const canonical = argonPrefix(parsed.data) + parts[5];
+    if (canonical !== encoded) return refused();
+    return { settings: parsed.data, canonical };
+  } catch {
+    return refused();
+  }
+};
 const targetSalt = (context: ImportedPasswordContext, format: ImportedPasswordFormat): string => {
   const bytes = createHash('sha256')
     .update(
@@ -55,6 +115,12 @@ const targetSalt = (context: ImportedPasswordContext, format: ImportedPasswordFo
 
 const sourceSettings = (format: ImportedPasswordFormat, encoded: string): { settings: Settings; canonical: string } => {
   if (typeof encoded !== 'string' || encoded.length > 2048) return refused();
+  if (format === 'nextcloud-password') {
+    if (!/^[123]\|/.test(encoded)) return refused();
+    return sourceSettings('php-password', encoded.slice(2));
+  }
+  if (format === 'php-password')
+    return encoded.startsWith('$argon2') ? argonSourceSettings(encoded) : sourceSettings('bcrypt', encoded);
   if (format === 'bcrypt' || format === 'photoprism-bcrypt') {
     // Modern PHP's $2y$ format uses the corrected bcrypt semantics represented by $2b$ in Node.
     const canonical = encoded.replace(/^\$2y\$/, '$2b$');
@@ -91,15 +157,30 @@ const trimSourceSpace = (value: string): string => {
 };
 
 const sourceHash = async (password: string, settings: Settings): Promise<string> => {
+  if (settings.format === 'argon2i' || settings.format === 'argon2id') {
+    const { salt, version, ...options } = settings.settings;
+    const bytes = await argonLock.acquire('imported-password', () =>
+      hashArgonRaw(password, {
+        ...options,
+        salt: Buffer.from(salt, 'base64'),
+        algorithm: argonAlgorithms[settings.format],
+        version: argonVersions[version],
+      }),
+    );
+    return argonPrefix(settings) + phcBase64(bytes);
+  }
   if (settings.format === 'django-pbkdf2-sha256') {
     const [iterations, salt] = settings.settings;
     const bytes = await derivePbkdf2(password, salt, iterations, 32, 'sha256');
     return `pbkdf2_sha256$${iterations}$${salt}$${bytes.toString('base64')}`;
   }
-  // Go's strings.TrimSpace includes NEL and excludes BOM, unlike JavaScript trim().
-  const input = settings.format === 'photoprism-bcrypt' ? trimSourceSpace(password) : password;
-  if (settings.format === 'photoprism-bcrypt' && input.length === 0) return refused();
-  return hash(input, settings.settings);
+  if (settings.format === 'bcrypt' || settings.format === 'photoprism-bcrypt') {
+    // Go's strings.TrimSpace includes NEL and excludes BOM, unlike JavaScript trim().
+    const input = settings.format === 'photoprism-bcrypt' ? trimSourceSpace(password) : password;
+    if (settings.format === 'photoprism-bcrypt' && input.length === 0) return refused();
+    return hash(input, settings.settings);
+  }
+  return refused();
 };
 
 /** A private credential capability: serialization and inspection never reveal its stored verifier. */
