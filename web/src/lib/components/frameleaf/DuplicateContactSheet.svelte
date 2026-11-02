@@ -64,7 +64,7 @@
     if (offset !== null) {
       return $t('frameleaf_duplicates_frame_offset', { values: { seconds: offset.toFixed(1) } });
     }
-    const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
+    const value = asset.localDateTime ?? asset.exifInfo?.dateTimeOriginal;
     const date = value ? new Date(value) : null;
     return date && Number.isFinite(date.getTime())
       ? date.toLocaleString($locale, { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' })

@@ -27,6 +27,14 @@ The application was stopped with restart disabled before capturing its database 
 
 `Media.PathHash` and album path hashes are MD5 hashes of paths, not content. `Media.Path` is the original; `MediaURL` entries can point to previews or transcoded video. Source albums have a many-to-many user relationship rather than one authoritative owner. A shared source photo therefore requires an explicit destination owner decision and independently preserved access; matching email or taking the first user is insufficient. See the pinned [media model](https://github.com/photoview/photoview/blob/f79d379e38241c687c55e9f899e30661fd9f115a/api/graphql/models/media.go) and [user/album access model](https://github.com/photoview/photoview/blob/f79d379e38241c687c55e9f899e30661fd9f115a/api/graphql/models/user.go).
 
+## Inherited access inventory
+
+`normalizePhotoviewAccess` accepts complete credential-free users, albums, media, directory grants and favourite records from the same admitted snapshot. It expands each directory grant through the actual album parent relationships, including overlapping grants, and retains each media record even when no account currently has access. Duplicate records, dangling references and directory cycles refuse the inventory. Traversal is iterative rather than using the application's recursive SQL.
+
+The resulting reader IDs are source access evidence, never destination owners. Administrative status does not add an implicit grant. Per-user true and false favourite records remain separate; a stale preference after access changes does not grant access. Public bearer links are outside this account-access inventory and must remain restricted until their protection and expiry can be represented equivalently. The captured native Alice/Bob/Mallory counts and private-photo denial provide independent expectations for the generated fixture; the shared source photo retains Alice's favourite separately from Bob's state.
+
+This inventory does not assert complete pagination, source fencing, public sharing equivalence, destination permission enforcement or ownership mapping. Missing preference records retain the source's default false state rather than assigning another user's favourite.
+
 ## Outstanding acceptance
 
 MariaDB/MySQL and PostgreSQL, source media beyond the generated PNG fixture, named-face geometry, manual metadata, sidecars, complete public/inherited access paths, destination ownership/privacy, byte transfer, archive persistence, recovery, Manager integration and end-to-end migration remain unqualified. The source image reports a Darktable version-check warning; RAW handling needs separate native acceptance. No source compatibility or release claim follows from this reader stage. Protected Unraid shares remain entirely outside qualification and agent access.

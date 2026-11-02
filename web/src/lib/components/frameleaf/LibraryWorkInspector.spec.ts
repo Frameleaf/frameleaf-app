@@ -70,6 +70,19 @@ describe('LibraryWorkInspector', () => {
     sdkMock.getAssetSources.mockResolvedValue([]);
   });
 
+  it('shows the stored capture clock when the EXIF zone is a fixed offset', async () => {
+    const asset = timelineAssetFactory.build();
+    sdkMock.getAssetInfo.mockResolvedValue(
+      detailOf(asset.id, {
+        localDateTime: '2026-01-15T16:20:00.000Z',
+        exifInfo: { dateTimeOriginal: '2026-01-15T21:20:00.000Z', timeZone: 'UTC-5' },
+      }),
+    );
+    render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn() });
+    expect(await screen.findByText(/4:20 PM/)).toBeInTheDocument();
+    expect(screen.queryByText(/9:20 PM/)).toBeNull();
+  });
+
   it('exposes shared palette selection through its own inspector', async () => {
     const asset = timelineAssetFactory.build();
     sdkMock.getAssetInfo.mockResolvedValue(detailOf(asset.id));

@@ -1,6 +1,7 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
+import { AlbumSuggestionController } from 'src/controllers/album-suggestion.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
@@ -189,6 +190,7 @@ export const controllers = [
   ApiKeyController,
   ActivityController,
   AlbumController,
+  AlbumSuggestionController,
   AppController,
   ArchiveOperationController,
   AssetController,

@@ -19,6 +19,7 @@ import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { AlbumSuggestionRepository } from 'src/repositories/album-suggestion.repository.js';
 import { visible as bookmarkVisible } from 'src/repositories/bookmark.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -149,12 +150,15 @@ export type DirectoryItem = {
 @Injectable()
 export class AlbumRepository {
   private readonly smartAlbums: SmartAlbumRepository;
+  /** FL-1092 / FL-1093: photos that look like they belong to an album's trip. */
+  readonly suggestions: AlbumSuggestionRepository;
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
   ) {
     this.db = publicationDatabase(this.db);
     this.smartAlbums = new SmartAlbumRepository(this.db);
+    this.suggestions = new AlbumSuggestionRepository(this.db);
   }
 
   /** Serialize album membership decisions with source sync, while preserving transaction ownership. */

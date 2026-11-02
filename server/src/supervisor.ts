@@ -19,6 +19,7 @@ import {
   SERVER_OWNER_READY_MESSAGE,
   SupervisorStop,
   WORKER_STOP_MESSAGE,
+  getWorkerDeadlineMs,
   onStopRequest,
 } from 'src/utils/shutdown.js';
 
@@ -282,15 +283,36 @@ export class Workers {
       anyWorker = worker;
     } else {
       const worker = new Worker(workerFile);
+      let terminate = () => worker.terminate();
+      stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
       if (name === FrameleafWorker.Microservices) {
-        stopped = superviseQueueWorker(worker, undefined, undefined, {
+        const queue = superviseQueueWorker(worker, undefined, undefined, {
           recordStopped: (proof) => this.workerStopProofs.record(proof),
           diagnostic: (message) => console.error(message),
-        }).stopped;
+        });
+        stopped = queue.stopped;
+        terminate = queue.terminate;
+        const { graceMs, workerDeadlineMs } = new ConfigRepository().getEnv().shutdown;
+        const terminateAt = getWorkerDeadlineMs(graceMs, workerDeadlineMs);
+        let forceTimer: NodeJS.Timeout | undefined;
+        let exited = false;
+        worker.once('exit', () => {
+          exited = true;
+          clearTimeout(forceTimer);
+        });
+        stop = () => {
+          if (!exited) {
+            // Preserve grace and reserve the existing worker/supervisor deadline gap for stop proof.
+            forceTimer ??= setTimeout(() => {
+              if (process.env.FRAMELEAF_NATIVE_OWNER === '1') this.exitCode = 1;
+              void queue.terminate(workerDeadlineMs - terminateAt);
+            }, terminateAt);
+          }
+          worker.postMessage(WORKER_STOP_MESSAGE);
+        };
       }
 
-      kill = async () => void (await worker.terminate());
-      stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
+      kill = async () => void (await terminate());
       send = (message) => worker.postMessage(message);
       anyWorker = worker;
     }

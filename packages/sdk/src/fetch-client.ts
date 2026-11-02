@@ -4729,6 +4729,64 @@ export type MapMarkerResponseDto = {
     state: string | null;
     "type"?: AssetTypeEnum;
 };
+export type AlbumSuggestionReasonDto = {
+    /** The album photo it matches, for same-scene and near-identical */
+    assetId?: string;
+    /** Local date (YYYY-MM-DD) for during-trip, same-scene and near-identical */
+    date?: string;
+    /** File name of that album photo */
+    fileName?: string;
+    /** Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical or people. Unknown kinds may be added; show nothing for them. */
+    kind: string;
+    /** Names of the people in it who are also in the album, for people */
+    names?: string[];
+    /** Place name for place */
+    place?: string;
+};
+export type AlbumTripSuggestionDto = {
+    /** Suggested photo */
+    assetId: string;
+    /** Its file name */
+    fileName: string;
+    /** Very likely (taken during the trip at its places) rather than possibly */
+    likely: boolean;
+    reasons: AlbumSuggestionReasonDto[];
+};
+export type AlbumDateSuggestionDto = {
+    /** Suggested photo */
+    assetId: string;
+    /** The suggested date, ready for an asset update (local time with offset, e.g. 2026-08-14T20:41:00-06:00) */
+    dateTimeOriginal: string;
+    /** The local date it has now (YYYY-MM-DD) */
+    fileDate: string;
+    /** Its file name */
+    fileName: string;
+    /** How precise the suggested date is: moment, day or trip */
+    precision: string;
+    reasons: AlbumSuggestionReasonDto[];
+    /** When its name says it was saved or received, if it says */
+    savedAt: string | null;
+    /** Why its date can't be trusted: facebook (saved from Facebook), whatsapp, messenger (received), or none (no capture date in the file) */
+    source: string;
+};
+export type AlbumSuggestionsResponseDto = {
+    /** Whether new photos from this trip are added for you automatically */
+    autoAdd: boolean;
+    /** Photos taken during the trip that are not in the album */
+    fromTrip: AlbumTripSuggestionDto[];
+    /** Photos with no trustworthy date that look like they are from the trip */
+    needDate: AlbumDateSuggestionDto[];
+    /** The places the album was photographed, most photographed first */
+    places: string[];
+    /** Last local day of the trip (YYYY-MM-DD) */
+    tripEnd: string | null;
+    /** First local day of the trip (YYYY-MM-DD); null when the album is not a trip */
+    tripStart: string | null;
+};
+export type AlbumSuggestionAutoAddDto = {
+    /** Add new very likely photos from this trip automatically */
+    enabled: boolean;
+};
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
 };
@@ -23286,6 +23344,45 @@ export function getAlbumMapMarkers({ fileCreatedAfter, fileCreatedBefore, id, is
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Suggest photos for an album
+ */
+export function getAlbumSuggestions({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumSuggestionsResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/suggestions`, {
+        ...opts
+    }));
+}
+/**
+ * Keep adding photos from this trip
+ */
+export function setAlbumSuggestionAutoAdd({ id, albumSuggestionAutoAddDto }: {
+    id: string;
+    albumSuggestionAutoAddDto: AlbumSuggestionAutoAddDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/suggestions/auto-add`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumSuggestionAutoAddDto
+    })));
+}
+/**
+ * Dismiss album suggestions
+ */
+export function dismissAlbumSuggestions({ id, bulkIdsDto }: {
+    id: string;
+    bulkIdsDto: BulkIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/suggestions/dismiss`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bulkIdsDto
+    })));
 }
 /**
  * Remove user from album

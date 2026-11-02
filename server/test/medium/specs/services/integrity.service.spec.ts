@@ -1003,7 +1003,7 @@ describe(IntegrityService.name, () => {
 
       const {
         result: { id: badAssetId },
-      } = await ctx.newAsset({ ownerId, originalPath: '/path/to/missing', checksum: Buffer.from('2') });
+      } = await ctx.newAsset({ ownerId, originalPath: '/path/to/bad', checksum: Buffer.from('2') });
 
       const { id: badReportId } = await integrity.create({
         type: IntegrityReport.ChecksumFail,
@@ -1019,13 +1019,12 @@ describe(IntegrityService.name, () => {
       const error = new Error('ENOENT') as NodeJS.ErrnoException;
       error.code = 'ENOENT';
 
-      storage.createPlainReadStream
-        .mockImplementationOnce(() => Readable.from(fileContent))
-        .mockImplementationOnce(() => {
+      storage.createPlainReadStream.mockImplementation((path) => {
+        if (path === '/path/to/missing') {
           throw error;
-        })
-        .mockImplementationOnce(() => Readable.from(fileContent))
-        .mockImplementationOnce(() => Readable.from(fileContent));
+        }
+        return Readable.from(fileContent);
+      });
 
       await sut.handleChecksumRefresh({
         items: [

@@ -32,6 +32,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.AssetVideoFingerprint,
       JobName.DescriptionFillerTagCleanup,
       JobName.LandmarkInfer,
+      JobName.AlbumSuggestionAutoAdd,
       JobName.LockedSeal,
       JobName.LockedUnseal,
       JobName.LockedRewrap,

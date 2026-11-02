@@ -5,6 +5,7 @@
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
+  import AlbumSuggestions from '$lib/components/frameleaf/AlbumSuggestions.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
@@ -688,6 +689,14 @@
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
     />
+    {#if !isCollection && !isSpace && canChangeAlbum}
+      <!-- FL-1092 / FL-1093: photos that look like they're from this album's trip. -->
+      <AlbumSuggestions
+        {albumId}
+        albumName={album.albumName || $t('unnamed_album')}
+        onChanged={() => refreshEverything(view)}
+      />
+    {/if}
   {/key}
 {/snippet}
 
