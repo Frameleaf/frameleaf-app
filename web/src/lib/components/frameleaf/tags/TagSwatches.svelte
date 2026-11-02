@@ -106,4 +106,11 @@
       height: 36px;
     }
   }
+  /* Eight 36px dots don't fit a phone's dialog in one row: two even rows of four, never seven and one. */
+  @media (pointer: coarse) and (max-width: 420px) {
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(4, max-content);
+    }
+  }
 </style>

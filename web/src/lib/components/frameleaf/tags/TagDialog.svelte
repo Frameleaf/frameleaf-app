@@ -404,6 +404,10 @@
     margin: 0;
     line-height: 1.55;
   }
+  /* The colour dots have no field box, so they keep the prototype's room above the footer line (.dv-swatches). */
+  .form > :global(.swatches) {
+    margin-block-end: var(--fl-space-5);
+  }
   /* With nothing chosen the region keeps no row (or gap) of its own; it stays in the form to be announced. */
   .outcome:empty {
     margin-block-start: calc(var(--fl-space-4) * -1);

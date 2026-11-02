@@ -50,7 +50,7 @@ describe('Utilities area', () => {
     await userEvent.click(screen.getByRole('button', { name: /Duplicate review/ }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=duplicates', expect.any(Object));
   });
-  it('opens on what needs a look, with those tools first and the rare ones under Advanced (FL-519)', async () => {
+  it('opens on what needs a look, with those tools first, and offers no Android direct updates (FL-519, FL-1116)', async () => {
     state.user = { id: 'me', isAdmin: true };
     sdkMock.getUtilitiesSummary.mockResolvedValue({
       duplicateGroups: 12,
@@ -68,7 +68,7 @@ describe('Utilities area', () => {
     expect(first).toHaveTextContent('12 groups to look at');
     expect(first).toHaveTextContent('3 files missing');
     expect(screen.getByRole('button', { name: /Fix locations/ })).toHaveTextContent('214 photos have no place');
-    expect(screen.getByText('Advanced: Android direct updates').closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText(/Android direct updates/)).toBeNull();
   });
 
   it('says each other tool’s state and "Checked last night" (FL-539)', async () => {

@@ -29,7 +29,7 @@ include committed WAL contents. The reader opens a read transaction and emits bo
 
 | Data                   | Reader behavior                                                                                               | Required before activation                                                                         |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Users and groups       | IDs, display names and memberships; no account password hashes                                                | Explicit owner mapping and secure inactive-account claim                                           |
+| Users and groups       | IDs, display names and memberships; no account password hashes                                                | Explicit owner mapping; preserve qualified authentication separately; secure claims are fallback   |
 | Originals              | File IDs, storage IDs, mounts, internal paths, size, encryption flag and source checksums                     | Storage-aware resolution, containment and independent original-byte hashes                         |
 | Albums                 | Owner, location, filters, membership and contributing file owner                                              | Resolve smart filters, dangling records and cross-owner relationships                              |
 | Album access           | Distinct user/group/public-link collaborator types; public-link token omitted                                 | Native effective-access and download oracle; equivalent or stricter destination permissions        |

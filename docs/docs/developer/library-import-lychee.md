@@ -16,7 +16,7 @@ Source services were stopped with restart disabled before copying the owned test
 
 The allowlist captures photos, size variants, regular/tag/person albums, memberships, tags, ratings, user/group records, explicit permissions and selected person/face records. User password hashes, bearer/remember tokens, OAuth/WebAuthn credentials and face crop tokens are excluded. Sharing retains only the presence of a password, never its hash. Configuration is not dumped wholesale because it can contain credentials. Global configuration defaults and their permission effects still require a separately qualified allowlist before a complete privacy inventory can be claimed.
 
-Schema admission and declared foreign-key checks do not establish semantic completeness. The controller must reconcile owners, album types, every relationship, required original variants, group/inherited permissions and source configuration before activating any destination. New accounts require explicit mappings and remain inactive until claimed; source administrative flags do not grant destination administration.
+Schema admission and declared foreign-key checks do not establish semantic completeness. The controller must reconcile owners, album types, every relationship, required original variants, group/inherited permissions and source configuration before activating any destination. New accounts require explicit mappings and preservation of qualified password authentication; secure claims are fallback for unavailable or unsafe credential transfer. Source administrative flags do not grant destination administration.
 
 ## Preservation requirements
 

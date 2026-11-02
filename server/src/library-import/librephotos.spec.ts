@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import content from 'src/library-import/fixtures/librephotos/1.5.1-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' with { type: 'json' };
 import { LibrephotosTable, openLibrephotosSnapshot } from 'src/library-import/librephotos.js';
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 
 describe('LibrePhotos pinned SQLite extraction', () => {
   let root: string;
@@ -60,6 +61,23 @@ describe('LibrePhotos pinned SQLite extraction', () => {
   afterEach(async () => {
     database.close();
     await rm(root, { recursive: true, force: true });
+  });
+  it('preserves a mapped Django account password through the protected channel', async () => {
+    const encoded = 'pbkdf2_sha256$10000$synthetic-salt$VdKESgIicWV9gR3+m0G8t+NmiavllPA0ghPzkbOv3sE=';
+    const owner = database.prepare('SELECT id FROM api_user ORDER BY id LIMIT 1').get()!;
+    database.prepare('UPDATE api_user SET password=? WHERE id=?').run(encoded, owner.id);
+    const source = openLibrephotosSnapshot(path, fixture.source.version);
+    try {
+      const credential = await source.password({
+        operationId: '11111111-1111-4111-8111-111111111111',
+        sourceUserId: String(owner.id),
+        destinationUserId: '22222222-2222-4222-8222-222222222222',
+      });
+      expect(await verifyImportedPassword('Frameleaf migration ✓ 123', credential!.forImport())).toBe(true);
+      expect([...source.rows('api_user')].flat()[0]).not.toHaveProperty('password');
+    } finally {
+      source.close();
+    }
   });
 
   const rows = (table: LibrephotosTable) => {

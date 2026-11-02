@@ -7,6 +7,7 @@ import { link, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 
@@ -137,7 +138,11 @@ export class CryptoRepository {
     return hash(data, saltOrRounds);
   }
 
-  compareBcrypt(data: string | Buffer, encrypted: string) {
+  async compareBcrypt(data: string | Buffer, encrypted: string) {
+    if (typeof data === 'string') {
+      const imported = await verifyImportedPassword(data, encrypted);
+      if (imported !== undefined) return imported;
+    }
     return compare(data, encrypted);
   }
 
