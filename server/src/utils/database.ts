@@ -119,8 +119,9 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
-      // Credentials, desktop inference rows and queued job payloads must never be logged.
+      // Credentials, import recovery inputs, inference rows and queued job payloads must never be logged.
       const privateData =
+        /\bframeleaf_library_import\b/iu.test(event.query.sql) ||
         /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(event.query.sql) ||
         /\b(?:insert\s+into|update)\s+(?:public\.)?"?job(?:_run_item)?"?(?![\w"])/iu.test(event.query.sql) ||
         /\b(?:password|pinCode|passwordLinkHash)\b/iu.test(event.query.sql);
