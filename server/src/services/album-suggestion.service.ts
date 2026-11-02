@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AlbumSuggestionReason as ReasonDto } from 'src/dtos/album-suggestion.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { TripPhotoRow } from 'src/repositories/album-suggestion.repository.js';
@@ -13,24 +16,45 @@ import {
   AlbumTripSuggestion,
 } from 'src/dtos/album-suggestion.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
-import { FrameleafWorker, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import {
+  AssetVisibility,
+  FrameleafWorker,
+  ImageFormat,
+  JobName,
+  JobStatus,
+  MlWorkload,
+  Permission,
+  QueueName,
+} from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
+  type Outfit,
   type SuggestionReason,
   TRIP_PADDING_MS,
   type Trip,
+  type TripOutfit,
   describeTrip,
   estimateDate,
   isAtTripPlaces,
   localDay,
+  matchOutfit,
   matchTripCandidate,
+  sample,
   suspiciousDate,
+  torsoBox,
   utcOffset,
 } from 'src/utils/album-suggestions.js';
+import { clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isSmartSearchEnabled } from 'src/utils/misc.js';
 
 const MAX_PLACES = 3;
+/** ponytail: a trip person's photos sampled for outfits; a person photographed more than this is sampled evenly. */
+const MAX_OUTFIT_PHOTOS = 300;
+/** Torso crops are scaled to this before CLIP, which reads 224-384 pixel images. */
+const OUTFIT_CROP_SIZE = 384;
 
 /**
  * FL-1092 / FL-1093 magic albums. Suggests the viewer's own photos (partner copies included) for an album
@@ -129,6 +153,71 @@ export class AlbumSuggestionService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * FL-1094: what each named person in a photo is wearing, as a CLIP embedding of the torso under their face,
+   * made on the routed CLIP destination (Local, then Desktops, then Cloud). Queued only for album trip photos
+   * and photos that need a date.
+   */
+  @OnJob({ name: JobName.AlbumSuggestionOutfit, queue: QueueName.SmartSearch })
+  async handleOutfit({ id }: JobOf<JobName.AlbumSuggestionOutfit>): Promise<JobStatus> {
+    const { machineLearning, image } = await this.getConfig({ withCache: true });
+    if (!isSmartSearchEnabled(machineLearning)) return JobStatus.Skipped;
+    await this.jobRepository.guardAssetSource(id);
+    const asset = await this.assetJobRepository.getForClipEncoding(id);
+    if (!asset || asset.files.length !== 1 || asset.visibility === AssetVisibility.Hidden) return JobStatus.Skipped;
+    const { modelName } = machineLearning.clip;
+    const faces = await this.albumRepository.suggestions.getFacesWithoutOutfit(id, modelName);
+    if (faces.length === 0) return JobStatus.Skipped;
+
+    const { data, info } = await this.mediaRepository.decodeImage(asset.files[0].path, {
+      colorspace: image.colorspace,
+      processInvalidImages: false,
+    });
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Clip,
+      jobId: id,
+      jobName: JobName.AlbumSuggestionOutfit,
+    });
+    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-outfit-'));
+    try {
+      const rows = [];
+      for (const face of faces) {
+        // Face boxes are in the detection image's pixels; the preview may be another size.
+        const scaleX = face.imageWidth > 0 ? info.width / face.imageWidth : 1;
+        const scaleY = face.imageHeight > 0 ? info.height / face.imageHeight : 1;
+        const box = torsoBox(
+          { x1: face.x1 * scaleX, y1: face.y1 * scaleY, x2: face.x2 * scaleX, y2: face.y2 * scaleY },
+          info,
+        );
+        if (!box) {
+          rows.push({ faceId: face.id, modelName, embedding: null });
+          continue;
+        }
+        const path = join(folder, `${face.id}.jpg`);
+        await this.mediaRepository.generateThumbnail(
+          data,
+          {
+            colorspace: image.colorspace,
+            format: ImageFormat.Jpeg,
+            raw: info,
+            quality: 90,
+            progressive: false,
+            processInvalidImages: false,
+            size: OUTFIT_CROP_SIZE,
+            edits: [{ action: AssetEditAction.Crop, parameters: box }],
+          },
+          path,
+        );
+        const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
+        rows.push({ faceId: face.id, modelName, embedding: clipEmbeddingForStorage(embedding).embedding });
+      }
+      await this.albumRepository.suggestions.saveOutfits(rows);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+    return JobStatus.Success;
+  }
+
   private async fromTrip(ownerId: string, albumId: string, trip: Trip): Promise<AlbumTripSuggestion[]> {
     const suggestions = this.albumRepository.suggestions;
     const candidates = await suggestions.getTripCandidates(ownerId, albumId, trip.segments);
@@ -162,8 +251,9 @@ export class AlbumSuggestionService extends BaseService {
     const candidateIds = [...new Set(neighbours.map(({ assetId }) => assetId))];
     const candidates = await suggestions.getCandidates(ownerId, albumId, candidateIds);
     if (candidates.length === 0) return [];
+    const tripPeople = await suggestions.getPeople(ownerId, trip.photoIds);
     const albumPeople = new Set(
-      (await suggestions.getPeople(ownerId, trip.photoIds))
+      tripPeople
         .values()
         .toArray()
         .flat()
@@ -173,7 +263,10 @@ export class AlbumSuggestionService extends BaseService {
       ownerId,
       candidates.map(({ id }) => id),
     );
-    const fileNames = await suggestions.getFileNames([...new Set(neighbours.map(({ referenceId }) => referenceId))]);
+    const outfits = await this.getOutfits(ownerId, trip, candidates, people, tripPeople, albumPeople, references);
+    const fileNames = await suggestions.getFileNames([
+      ...new Set([...neighbours.map(({ referenceId }) => referenceId), ...outfits.trip.map(({ assetId }) => assetId)]),
+    ]);
 
     const results: AlbumDateSuggestion[] = [];
     for (const candidate of candidates) {
@@ -200,9 +293,10 @@ export class AlbumSuggestionService extends BaseService {
             ? candidate.place
             : null,
         savedAt: doubt.savedAt,
+        outfit: matchOutfit(outfits.byAsset.get(candidate.id) ?? [], outfits.trip),
       });
       if (!estimate) continue;
-      const anchor = near.sort((a, b) => a.distance - b.distance)[0];
+      const anchor = estimate.datedBy ?? near.sort((a, b) => a.distance - b.distance)[0];
       const dateTimeOriginal = `${estimate.localDateTime}${utcOffset(anchor.takenAt, anchor.localDateTime)}`;
       // The final instant, offset applied, must not be after it was saved or received.
       if (doubt.savedAt && new Date(dateTimeOriginal) > doubt.savedAt) continue;
@@ -220,7 +314,71 @@ export class AlbumSuggestionService extends BaseService {
     const order = { moment: 0, day: 1, trip: 2 } as Record<string, number>;
     return results.sort((a, b) => order[a.precision] - order[b.precision]);
   }
+
+  /**
+   * FL-1094: the outfits of the album's people in candidates that need a date, and in the trip photos of the
+   * same people. Photos with faces not yet cropped are queued; their outfits count the next time.
+   */
+  private async getOutfits(
+    ownerId: string,
+    trip: Trip,
+    candidates: { id: string; originalFileName: string; hasCameraDetails: boolean }[],
+    people: Map<string, { id: string }[]>,
+    tripPeople: Map<string, { id: string }[]>,
+    albumPeople: Set<string>,
+    references: Map<string, TripPhotoRow>,
+  ): Promise<{ byAsset: Map<string, Outfit[]>; trip: TripOutfit[] }> {
+    const byAsset = new Map<string, Outfit[]>();
+    const worn: TripOutfit[] = [];
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isSmartSearchEnabled(machineLearning)) return { byAsset, trip: worn };
+    const candidateIds = candidates
+      .filter(
+        ({ id, originalFileName, hasCameraDetails }) =>
+          suspiciousDate(originalFileName, hasCameraDetails) && people.get(id)?.some(({ id }) => albumPeople.has(id)),
+      )
+      .map(({ id }) => id);
+    const wanted = new Set(candidateIds.flatMap((id) => people.get(id)!.map(({ id }) => id)));
+    if (wanted.size === 0) return { byAsset, trip: worn };
+    const tripIds = sample(
+      trip.photoIds.filter((id) => tripPeople.get(id)?.some(({ id }) => wanted.has(id))),
+      MAX_OUTFIT_PHOTOS,
+    );
+
+    const rows = await this.albumRepository.suggestions.getOutfits(
+      ownerId,
+      [...candidateIds, ...tripIds],
+      machineLearning.clip.modelName,
+    );
+    const missing = [...new Set(rows.filter(({ encoded }) => !encoded).map(({ assetId }) => assetId))];
+    if (missing.length > 0)
+      await this.jobRepository.queueAll(missing.map((id) => ({ name: JobName.AlbumSuggestionOutfit, data: { id } })));
+
+    const tripSet = new Set(tripIds);
+    for (const { assetId, personId, name, embedding } of rows) {
+      const vector = parseOutfit(embedding);
+      if (!vector || !wanted.has(personId)) continue;
+      const outfit = { personId, name, embedding: vector };
+      if (!tripSet.has(assetId)) byAsset.set(assetId, [...(byAsset.get(assetId) ?? []), outfit]);
+      else {
+        const { takenAt, localDateTime } = references.get(assetId)!;
+        worn.push({ ...outfit, assetId, takenAt, localDateTime });
+      }
+    }
+    return { byAsset, trip: worn };
+  }
 }
+
+/** ponytail: `embedding` is the JSON array the CLIP producers return; a malformed one is no outfit. */
+const parseOutfit = (embedding: string | null) => {
+  if (!embedding) return;
+  try {
+    const parsed: unknown = JSON.parse(embedding);
+    return Array.isArray(parsed) && parsed.every((value) => typeof value === 'number') ? parsed : undefined;
+  } catch {
+    return;
+  }
+};
 
 const countBy = (values: (string | null)[]) => {
   const counts = new Map<string, number>();

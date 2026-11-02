@@ -8,13 +8,24 @@ const AlbumSuggestionReasonSchema = z
     kind: z
       .string()
       .describe(
-        'Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical or people. Unknown kinds may be added; show nothing for them.',
+        'Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical, people or same-outfit. Unknown kinds may be added; show nothing for them.',
       ),
-    date: z.string().optional().describe('Local date (YYYY-MM-DD) for during-trip, same-scene and near-identical'),
+    date: z
+      .string()
+      .optional()
+      .describe('Local date (YYYY-MM-DD) for during-trip, same-scene, near-identical and same-outfit'),
     place: z.string().optional().describe('Place name for place'),
-    assetId: z.uuidv4().optional().describe('The album photo it matches, for same-scene and near-identical'),
+    assetId: z
+      .uuidv4()
+      .optional()
+      .describe('The album photo it matches, for same-scene, near-identical and same-outfit'),
     fileName: z.string().optional().describe('File name of that album photo'),
-    names: z.array(z.string()).optional().describe('Names of the people in it who are also in the album, for people'),
+    names: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Names of the people in it who are also in the album, for people; the person wearing the same clothes, for same-outfit',
+      ),
   })
   .meta({ id: 'AlbumSuggestionReasonDto' });
 
