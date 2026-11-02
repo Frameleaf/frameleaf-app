@@ -27,6 +27,7 @@ const studio = path.resolve(here, '../..')
 const repository = path.resolve(studio, '..')
 const engine = path.join(studio, 'engine')
 const engineRequire = createRequire(path.join(engine, 'package.json'))
+const vitePath = (file) => file.split(path.sep).join('/')
 const outDir = path.join(repository, 'web/static/studio-engine')
 const build = JSON.parse(readFileSync(path.join(studio, 'engine-build.json'), 'utf8'))
 
@@ -79,7 +80,7 @@ const resolveFromEngine = () => ({
     if (!importer || source.startsWith('.') || source.startsWith('/') || source.startsWith('\0'))
       return null
     if (source.startsWith('@/') || source.startsWith('@frameleaf/')) return null
-    if (!importer.startsWith(here) || importer.startsWith(engine)) return null
+    if (!importer.startsWith(vitePath(here) + '/') || importer.startsWith(vitePath(engine) + '/')) return null
     return this.resolve(source, path.join(engine, 'src/main.tsx'), { ...options, skipSelf: true })
   },
 })
@@ -95,10 +96,10 @@ const gateTimelinePersistence = () => ({
   name: 'frameleaf-gate-timeline-persistence',
   enforce: 'pre',
   async resolveId(source, importer, options) {
-    if (!importer || importer === persistenceShim || !source.includes('timeline-persistence'))
+    if (!importer || importer === vitePath(persistenceShim) || !source.includes('timeline-persistence'))
       return null
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-    return resolved?.id === persistenceModule ? persistenceShim : null
+    return resolved?.id === vitePath(persistenceModule) ? vitePath(persistenceShim) : null
   },
 })
 
@@ -120,7 +121,7 @@ const useAdapterWorkspace = () => ({
   async resolveId(source, importer, options) {
     if (!importer || !source.includes('in-memory-handle')) return null
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-    return resolved?.id === upstreamWorkspaceDouble ? adapterWorkspaceDouble : null
+    return resolved?.id === vitePath(upstreamWorkspaceDouble) ? vitePath(adapterWorkspaceDouble) : null
   },
 })
 

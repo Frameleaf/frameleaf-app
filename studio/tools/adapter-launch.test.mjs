@@ -42,7 +42,7 @@ test('adapter launches the locked JavaScript CLI with its own Node and propagate
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('adapter config imports its engine plugin from a path containing URL metacharacters', async () => {
+test('adapter config loads private engine plugins and preserves resolver boundaries', async () => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'studio config # % é ')));
   try {
     const files = {
@@ -69,5 +69,31 @@ test('adapter config imports its engine plugin from a path containing URL metach
     await cp(new URL('stable-file-url-sourcemaps.mjs', import.meta.url), path.join(root, 'studio/tools/stable-file-url-sourcemaps.mjs'));
     const result = await (await import(pathToFileURL(configuration).href)).default();
     assert.ok(result.plugins.some((plugin) => plugin.name === 'tailwind-fixture'));
+    const vitePath = (file) => file.split(path.sep).join('/');
+    const adapter = path.join(root, 'studio/adapters/web');
+    const engine = path.join(root, 'studio/engine');
+    const dependency = result.plugins.find((plugin) => plugin.name === 'frameleaf-resolve-from-engine');
+    const resolver = { async resolve(source, importer, options) {
+      assert.equal(source, 'mediabunny');
+      assert.equal(importer, path.join(engine, 'src/main.tsx'));
+      assert.equal(options.skipSelf, true);
+      return { id: 'engine-dependency-fixture' };
+    } };
+    assert.deepEqual(await dependency.resolveId.call(resolver, 'mediabunny',
+      vitePath(path.join(adapter, 'src/library-media.ts')), {}), { id: 'engine-dependency-fixture' });
+    assert.equal(await dependency.resolveId.call(resolver, 'mediabunny',
+      vitePath(adapter + '-other/src/file.ts'), {}), null);
+    const persistence = result.plugins.find((plugin) => plugin.name === 'frameleaf-gate-timeline-persistence');
+    const shim = vitePath(path.join(adapter, 'src/shims/timeline-persistence.ts'));
+    assert.equal(await persistence.resolveId.call({ async resolve() {
+      return { id: vitePath(path.join(engine, 'src/features/timeline/stores/timeline-persistence.ts')) };
+    } }, './timeline-persistence', vitePath(path.join(engine, 'src/features/timeline/stores/store.ts')), {}), shim);
+    assert.equal(await persistence.resolveId.call({ resolve() { throw new Error('shim must retain its upstream import'); } },
+      './timeline-persistence', shim, {}), null);
+    const workspace = result.plugins.find((plugin) => plugin.name === 'frameleaf-upstream-tests-on-virtual-workspace');
+    assert.equal(await workspace.resolveId.call({ async resolve() {
+      return { id: vitePath(path.join(engine, 'src/infrastructure/storage/workspace-fs/__tests__/in-memory-handle.ts')) };
+    } }, './in-memory-handle', vitePath(path.join(engine, 'src/test.ts')), {}),
+    vitePath(path.join(adapter, 'test/upstream/in-memory-handle.ts')));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
