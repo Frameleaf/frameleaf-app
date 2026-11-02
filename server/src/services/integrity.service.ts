@@ -734,9 +734,10 @@ export class IntegrityService extends BaseService {
 
   /**
    * The fork writes sha256 checksums for new server uploads and keeps sha1 for
-   * legacy rows (see ChecksumAlgorithm), so integrity verification must hash
-   * with the algorithm the row was written under. `sha1Path` checksums cover a
-   * path string rather than file contents and cannot be verified from disk.
+   * legacy rows until a check verifies them (see ChecksumAlgorithm), so
+   * integrity verification must hash with the algorithm the row was written
+   * under. `sha1Path` checksums cover a path string rather than file contents
+   * and cannot be verified from disk.
    */
   private hashForAlgorithm(checksumAlgorithm?: string | null) {
     switch (checksumAlgorithm) {
@@ -822,6 +823,22 @@ export class IntegrityService extends BaseService {
         path: originalPath,
         source: 'integrity',
       });
+      // A legacy upload moves to the SHA-256 just read, so the apps' uploads and duplicate checks, which send
+      // SHA-256, find it. The check just made holds for that checksum too: recorded under it, the file stays
+      // verified for Library care and the safety lookup. A real duplicate keeps its SHA-1 (`promoteToSha256`).
+      if (
+        checksumAlgorithm === ChecksumAlgorithm.sha1File &&
+        (await this.forkSchemaRepository.promoteToSha256({ assetId, sha1: sha1!, sha256: sha256! }))
+      ) {
+        await this.integrityRepository.recordVerification({
+          assetId,
+          originalPath,
+          expectedChecksum: sha256!,
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          actualSha256,
+          result: 'passed',
+        });
+      }
     }
     if (result === 'passed' || result === 'missing') {
       if (reportId) {

@@ -2243,9 +2243,9 @@ describe(AssetMediaService.name, () => {
     });
 
     it('should detect a duplicate when the client sends sha1 and the asset is stored as sha256', async () => {
-      // Clients pre-check with sha1; this fork persists sha256, so without the
-      // translation every already-uploaded file is re-sent and only rejected
-      // at the unique constraint.
+      // Upstream Immich clients pre-check with sha1; this fork persists sha256,
+      // so without the translation every already-uploaded file is re-sent and
+      // only rejected at the unique constraint.
       const sha1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
       const sha256 = Buffer.from('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', 'hex');
 

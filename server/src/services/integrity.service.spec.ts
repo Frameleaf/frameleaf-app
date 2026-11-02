@@ -72,8 +72,8 @@ describe(IntegrityService.name, () => {
     };
 
     it('should backfill a sha1 for a verified sha256 asset', async () => {
-      // Clients pre-check duplicates with sha1; assets uploaded before that
-      // digest was recorded get one here, off the verification read.
+      // Upstream Immich clients pre-check duplicates with sha1; assets uploaded
+      // before that digest was recorded get one here, off the verification read.
       streamAsset(sha256, ChecksumAlgorithm.sha256File);
 
       await sut.handleChecksumFiles({});
@@ -101,6 +101,71 @@ describe(IntegrityService.name, () => {
         path: '/data/library/asset-1.jpg',
         source: 'integrity',
       });
+    });
+
+    it('moves a verified sha1 upload to its sha256 and keeps it verified under that checksum', async () => {
+      streamAsset(sha1, ChecksumAlgorithm.sha1File);
+      mocks.forkSchema.promoteToSha256.mockResolvedValue(true);
+
+      await expect(sut.handleChecksumFiles({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.forkSchema.promoteToSha256).toHaveBeenCalledWith({ assetId: 'asset-1', sha1, sha256 });
+      // the sha1 is recorded first, so upstream clients' sha1 pre-checks still translate once it moved
+      expect(mocks.forkSchema.recordAssetChecksums.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.forkSchema.promoteToSha256.mock.invocationCallOrder[0],
+      );
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledTimes(2);
+      expect(mocks.integrityReport.recordVerification).toHaveBeenLastCalledWith({
+        assetId: 'asset-1',
+        originalPath: '/data/library/asset-1.jpg',
+        expectedChecksum: sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        actualSha256: sha256.toString('hex'),
+        result: 'passed',
+      });
+    });
+
+    it.each([ChecksumAlgorithm.sha256File, ChecksumAlgorithm.sha1Path])('leaves a %s asset', async (algorithm) => {
+      streamAsset(algorithm === ChecksumAlgorithm.sha256File ? sha256 : sha1, algorithm);
+
+      await expect(sut.handleChecksumFiles({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.forkSchema.promoteToSha256).not.toHaveBeenCalled();
+    });
+
+    it('does not move a sha1 asset whose file fails verification', async () => {
+      streamAsset(createHash('sha1').update('different').digest(), ChecksumAlgorithm.sha1File);
+
+      await sut.handleChecksumFiles({});
+
+      expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+      expect(mocks.forkSchema.promoteToSha256).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.create).toHaveBeenCalledWith(
+        expect.objectContaining({ type: IntegrityReport.ChecksumFail, assetId: 'asset-1' }),
+      );
+    });
+
+    it('keeps a sha1 asset when another upload of its owner holds that sha256, and still succeeds', async () => {
+      streamAsset(sha1, ChecksumAlgorithm.sha1File);
+      // what the repository answers on UQ_assets_owner_checksum: a real duplicate, left for duplicate review
+      mocks.forkSchema.promoteToSha256.mockResolvedValue(false);
+
+      await expect(sut.handleChecksumFiles({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.forkSchema.recordAssetChecksums).toHaveBeenCalledWith({
+        assetId: 'asset-1',
+        sha1,
+        sha256,
+        sizeInBytes: contents.length,
+        path: '/data/library/asset-1.jpg',
+        source: 'integrity',
+      });
+      expect(mocks.forkSchema.promoteToSha256).toHaveBeenCalledWith({ assetId: 'asset-1', sha1, sha256 });
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledTimes(1);
+      expect(mocks.integrityReport.recordVerification).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedChecksum: sha1, checksumAlgorithm: ChecksumAlgorithm.sha1File }),
+      );
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
     });
 
     it('should not record digests when the file fails verification', async () => {
@@ -151,6 +216,13 @@ describe(IntegrityService.name, () => {
       await sut.handleChecksumFiles({});
       expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
       expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+    });
+
+    it('does not move a sha1 asset whose check went stale', async () => {
+      streamAsset(sha1, ChecksumAlgorithm.sha1File);
+      mocks.integrityReport.recordVerification.mockResolvedValue(false);
+      await sut.handleChecksumFiles({});
+      expect(mocks.forkSchema.promoteToSha256).not.toHaveBeenCalled();
     });
 
     it('counts an encrypted Locked original as encrypted and never reads or reports it (FL-721)', async () => {

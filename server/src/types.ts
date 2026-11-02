@@ -798,7 +798,7 @@ export interface FrameleafFile extends Express.Multer.File {
   uuid: string;
   /** sha256 hash of file */
   checksum: Buffer;
-  /** sha1 hash of the same bytes, for clients that pre-check with sha1 */
+  /** sha1 hash of the same bytes, for upstream Immich clients that pre-check with sha1 */
   legacyChecksum?: Buffer;
 }
 
