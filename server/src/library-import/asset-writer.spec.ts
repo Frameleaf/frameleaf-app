@@ -11,13 +11,13 @@ vi.mock('src/library-import/files.js', async (importOriginal) => ({
   verifyImportFiles: vi.fn(),
 }));
 
-const setup = () => {
+const setup = (sealed = false) => {
   const plan = parseDestinationImportPlan(fixture.plan),
     file = plan.files[0],
     owner = plan.owners[0];
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
-    version: 2,
+    version: sealed ? 3 : 2,
     source: plan.source,
     inventory: {
       complete: true,
@@ -31,6 +31,9 @@ const setup = () => {
     files: [{ id: file.id, path: file.sourcePath, bytes: file.bytes, sha256: file.sha256, role: 'original' }],
     assets: [
       {
+        ...(sealed
+          ? { type: 'IMAGE', fileModifiedAt: '2020-01-02T03:04:05Z', originalFileNames: { [file.id]: 'photo.jpg' } }
+          : {}),
         id: 'photo',
         ownerId: owner.sourceId,
         fileIds: [file.id],
@@ -88,4 +91,42 @@ it('redacts unexpected filesystem diagnostics instead of exposing private paths'
     code: 'ASSET_WRITE_FAILED',
     message: 'Library import refused: ASSET_WRITE_FAILED',
   });
+});
+
+it('keeps the bound writer intent isolated from mutations of a prepared result', async () => {
+  const { writer, item } = setup();
+  const original = writer.prepare(item);
+  const changed = writer.prepare(item);
+  changed.metadata.description = 'changed';
+  changed.files[0].root.path = '/changed';
+  changed.files[0].root.device = '999';
+  changed.files[0].root.inode = '999';
+  expect(writer.prepare(item)).toEqual(original);
+  vi.mocked(verifyImportFiles).mockRejectedValue(new BundleVerificationError('BUNDLE_FILE_MISMATCH'));
+  await expect(writer.write(item)).rejects.toThrow('BUNDLE_FILE_MISMATCH');
+  expect(verifyImportFiles).toHaveBeenCalledWith(original.files[0].root.path, expect.any(Array), {
+    device: original.files[0].root.device,
+    inode: original.files[0].root.inode,
+  });
+});
+
+it.each(['type', 'clock', 'name'])('refuses changed sealed %s before touching the destination', (field) => {
+  const { writer, item, query } = setup(true);
+  switch (field) {
+    case 'type': {
+      item.type = 'VIDEO';
+      break;
+    }
+    case 'clock': {
+      item.fileModifiedAt = '2021-01-02T03:04:05Z';
+      break;
+    }
+    case 'name': {
+      item.originalFileNames[Object.keys(item.originalFileNames)[0]] = 'changed.jpg';
+      break;
+    }
+    // No default
+  }
+  expect(() => writer.prepare(item)).toThrow('ASSET_PREPARED_INTENT_CHANGED');
+  expect(query).not.toHaveBeenCalled();
 });

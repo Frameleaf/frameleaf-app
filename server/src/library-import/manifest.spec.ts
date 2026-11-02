@@ -190,3 +190,72 @@ describe('explicit primary originals', () => {
     expect(manifestFingerprint(parseImportManifest(value))).not.toBe(original);
   });
 });
+
+describe('sealed photo preparation in manifest version three', () => {
+  const prepared = () => {
+    const value = manifest();
+    return {
+      ...value,
+      version: 3,
+      assets: value.assets.map((asset) => ({
+        ...asset,
+        primaryFileId: 'f1',
+        type: 'IMAGE',
+        fileModifiedAt: '2020-01-02T03:04:05.123456Z',
+        originalFileNames: { f1: 'Camera original.jpg' },
+      })),
+    };
+  };
+  it('retains the qualified media type, microsecond modified time and original names', () => {
+    const value = prepared();
+    expect(parseImportManifest(value)).toEqual(value);
+    expect(manifestFingerprint(parseImportManifest(value))).toBe(
+      manifestFingerprint(parseImportManifest(JSON.parse(JSON.stringify(value)))),
+    );
+  });
+  it.each(['type', 'fileModifiedAt', 'originalFileNames'])('requires sealed %s', (key) => {
+    const value = prepared();
+    Reflect.deleteProperty(value.assets[0], key);
+    expect(() => parseImportManifest(value)).toThrow();
+  });
+  it.each([
+    '',
+    '../outside.jpg',
+    'dir/photo.jpg',
+    String.raw`dir\photo.jpg`,
+    '.',
+    '..',
+    'bad\nname.jpg',
+    'bad\0name.jpg',
+  ])('refuses unsafe original name %j', (name) => {
+    const value = prepared();
+    value.assets[0].originalFileNames.f1 = name;
+    expect(() => parseImportManifest(value)).toThrow();
+  });
+  it.each([{}, { missing: 'other.jpg' }, { f1: 'original.jpg', extra: 'other.jpg' }])(
+    'requires exactly the original file IDs: %j',
+    (names) => {
+      const value = prepared();
+      Object.assign(value.assets[0], { originalFileNames: names });
+      expect(() => parseImportManifest(value)).toThrow();
+    },
+  );
+  it('fingerprints every sealed field and refuses unsupported precision or media types', () => {
+    const value = prepared();
+    const before = manifestFingerprint(parseImportManifest(value));
+    for (const change of [
+      { type: 'VIDEO' },
+      { fileModifiedAt: '2021-01-02T03:04:05Z' },
+      { originalFileNames: { f1: 'changed.jpg' } },
+    ]) {
+      const changed = structuredClone(value);
+      Object.assign(changed.assets[0], change);
+      expect(manifestFingerprint(parseImportManifest(changed))).not.toBe(before);
+    }
+    for (const change of [{ type: 'AUDIO' }, { fileModifiedAt: '2020-01-02T03:04:05.1234567Z' }]) {
+      const changed = structuredClone(value);
+      Object.assign(changed.assets[0], change);
+      expect(() => parseImportManifest(changed)).toThrow();
+    }
+  });
+});
