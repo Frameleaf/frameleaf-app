@@ -121,8 +121,9 @@ Frameleaf folder at its host path. The `ix-app` chart keeps Docker's default
 capabilities and turns off `no-new-privileges`, so Manager's entrypoint drops its
 bounding set to CHOWN, DAC_OVERRIDE and FOWNER and sets `no-new-privs` itself.
 
-- **Custom Install:** `manager/hexos/frameleaf-manager.hexos.json` is the signed
-  installer attached to every Manager release, image `:latest`. In HexOS, turn on
+- **Custom Install:** every Manager release attaches the signed installer as
+  `frameleaf-manager.hexos.json`, image `:latest`; the NAS packages artifact carries
+  the same file at `manager/hexos/frameleaf-manager.hexos.json`. In HexOS, turn on
   Dev Mode in Preferences, choose **Custom Install** in Apps and paste it.
 - **App catalog:** `manager/hexos/frameleaf.json` is the same script with only the
   image tag set to that Manager release (`manager-vX.Y.Z`). The catalog validator
