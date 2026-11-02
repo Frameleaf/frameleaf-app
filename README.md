@@ -47,7 +47,7 @@ One library, every screen:
 - **iPhone and iPad** — native app with backup, a built-in editor, widgets, Siri and Live Activities.
 - **iPhone Duo** — fold-aware layouts, Compare, Frame mode and multiple windows.
 - **Android** — native app with backup, offline library, editor and Google Cast.
-- **Apple TV** — browse, play memories as shows, and turn your TV into a photo frame.
+- **Apple TV and Android TV** — browse, play memories as shows, and turn your TV into a photo frame.
 - **Frameleaf Cloud** *(optional)* — encrypted remote access, off-site backup and cloud GPU processing.
 
 ➡️ Read more in [What is Frameleaf?](https://frameleaf.app/docs/start/introduction/), browse [every feature](https://frameleaf.app/platform/), or [try the demo](https://frameleaf.app/demo/) in your browser.
@@ -168,7 +168,7 @@ Give each person their own library, then share exactly as much as you mean to.
 - **Albums & shared spaces** — nested albums with custom icons, and shared spaces with roles. [Docs](https://frameleaf.app/docs/using/albums/)
 - **Links** — with passwords, expiry and download control.
 - **A library for everyone** — separate accounts with their own albums, favourites and storage limits; family copies of the same file are stored once.
-- **Casting** — Google Cast from web and Android, and Play on Apple TV from iPhone. [Docs](https://frameleaf.app/docs/using/casting/)
+- **Casting** — Google Cast from web and Android, and Play on TV from iPhone or Android to Apple TV and Android TV. [Docs](https://frameleaf.app/docs/using/casting/)
 
 ## Keep it safe and tidy
 
@@ -255,6 +255,23 @@ Your memories on the biggest screen in the house. Browse Home, Memories, Places,
 
 [Apple TV](https://frameleaf.app/docs/apps/apple-tv/) (tvOS 26+, uses Frameleaf Cloud remote access)
 
+### Android TV
+
+The same couch experience on Android TV and Google TV. Sign in by scanning a code with your phone, browse from the side rail, play memories as shows with music, or leave a slideshow running with the clock. Frameleaf shows up as a channel on the home screen, and **Play on TV** works from both iPhone and Android.
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/readme/android-tv/home.webp" alt="Frameleaf Home on Android TV"><br><sub><b>Home</b> — favourites, best photos, memories and places</sub></td>
+    <td width="50%"><img src=".github/readme/android-tv/memories.webp" alt="Memories on Android TV"><br><sub><b>Memories</b> — on this day, trips and years in review</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src=".github/readme/android-tv/people.webp" alt="People on Android TV"><br><sub><b>People</b> — everyone, and every pet, on the big screen</sub></td>
+    <td width="50%"><img src=".github/readme/android-tv/slideshow.webp" alt="Slideshow on Android TV"><br><sub><b>Slideshow</b> — your TV as a photo frame</sub></td>
+  </tr>
+</table>
+
+[Android TV](https://frameleaf.app/apps/android-tv/) (Android TV 11+), uses Frameleaf Cloud sign-in and connects to your server at home first, then directly or through Frameleaf Cloud remote access.
+
 ## Get started
 
 1. **Check the [requirements](https://frameleaf.app/docs/start/requirements/)** — Linux with Docker and Docker Compose v2. Not sure what your GPU can run? [Ask Frameleaf](https://frameleaf.app/ask/) or see [Choose processing for your hardware](https://frameleaf.app/docs/help/choose-processing/).
@@ -289,7 +306,7 @@ Edit `.env` first if you want your photos (`UPLOAD_LOCATION`) or database (`DB_D
 
 Self-hosting is free. [Frameleaf Cloud](https://frameleaf.app/docs/cloud/overview/) adds:
 
-- 🌐 [Remote access](https://frameleaf.app/docs/cloud/remote-access/) — encrypted access from anywhere, for the apps and Apple TV
+- 🌐 [Remote access](https://frameleaf.app/docs/cloud/remote-access/) — encrypted access from anywhere, for the apps, Apple TV and Android TV
 - ☁️ [Cloud backup](https://frameleaf.app/docs/cloud/cloud-backup/) — off-site backup
 - ⚡ [Cloud GPU](https://frameleaf.app/docs/cloud/cloud-gpu/) — run heavy AI jobs without local hardware
 
@@ -302,7 +319,7 @@ The [Frameleaf docs and help center](https://frameleaf.app/docs/start/introducti
 | Topic | Where |
 |---|---|
 | Using Frameleaf | [Library, search, sharing, editing…](https://frameleaf.app/docs/using/library/) |
-| Apps | [iPhone and iPad](https://frameleaf.app/docs/apps/iphone/) · [iPhone Duo](https://frameleaf.app/docs/apps/iphone-duo/) · [Android](https://frameleaf.app/docs/apps/android/) · [Apple TV](https://frameleaf.app/docs/apps/apple-tv/) |
+| Apps | [iPhone and iPad](https://frameleaf.app/docs/apps/iphone/) · [iPhone Duo](https://frameleaf.app/docs/apps/iphone-duo/) · [Android](https://frameleaf.app/docs/apps/android/) · [Apple TV](https://frameleaf.app/docs/apps/apple-tv/) · [Android TV](https://frameleaf.app/apps/android-tv/) |
 | Studio | [Video editing guide](https://frameleaf.app/docs/studio/overview/) |
 | Boards and Clients | [Boards](https://frameleaf.app/boards/) · [Frameleaf for photographers](https://frameleaf.app/photographers/) |
 | Running your server | [Command Center, settings, upgrades…](https://frameleaf.app/docs/admin/command-center/) |
