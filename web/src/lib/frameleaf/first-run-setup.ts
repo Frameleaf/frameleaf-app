@@ -182,6 +182,18 @@ export const recommendedTier = (check: TierHardware | null | undefined): ModelTi
   return ml.vramGb >= 6 ? 'balanced' : 'light';
 };
 
+/** Who trained a search model, as the part after `__` in its id names it. */
+const MODEL_SOURCES: Readonly<Record<string, string>> = { openai: 'OpenAI', webli: 'WebLI' };
+
+/**
+ * A search model's id in words for "Keep current model": `ViT-B-32__openai` reads "OpenAI ViT-B-32".
+ * An id without a source is shown as it is.
+ */
+export const readableModelName = (id: string) => {
+  const [model, source] = id.split('__', 2);
+  return source ? `${MODEL_SOURCES[source.toLowerCase()] ?? source} ${model}` : id;
+};
+
 /** Whether an existing library's search model is one outside the tiers, offered as "keep current model". */
 export const keepsUnlistedModel = (flow: SetupFlow, currentModel: string | null | undefined) =>
   flow === 'existing' && !!currentModel && tierForModel(currentModel) === null;

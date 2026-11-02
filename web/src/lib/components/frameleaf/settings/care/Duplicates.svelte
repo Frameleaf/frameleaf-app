@@ -603,7 +603,9 @@
           <input
             type="range"
             aria-label={$t('frameleaf_dupes_video_difference')}
-            aria-valuetext={lookWord}
+            aria-valuetext={$t('frameleaf_dupes_look_valuetext', {
+              values: { choice: lookWord, value: dupes.enhancedVideo.maxHashDistance ?? 8 },
+            })}
             min={0}
             max={16}
             step={1}

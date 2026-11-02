@@ -204,6 +204,16 @@ describe('scans', () => {
     ).toEqual([{ key: 'frameleaf_libraries_found_added', values: { count: 21 } }]);
   });
 
+  it('counts changed items too', () => {
+    expect(
+      scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 4, offlined: 0, added: 0, updated: 2 }))
+        .parts,
+    ).toEqual([
+      { key: 'frameleaf_libraries_found_matched', values: { count: 4 } },
+      { key: 'frameleaf_libraries_found_changed', values: { count: 2 } },
+    ]);
+  });
+
   it('says nothing new when a check found nothing', () => {
     expect(checkFound({})).toEqual([{ key: 'frameleaf_libraries_found_nothing' }]);
   });

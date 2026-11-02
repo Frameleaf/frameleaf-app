@@ -46,6 +46,8 @@
   const PAUSES = [
     [/request allowance/i, 'frameleaf_location_scan_pause_busy'],
     [/temporarily unavailable/i, 'frameleaf_location_scan_pause_unavailable'],
+    // waits for a fix on Frameleaf Cloud's side and never restarts by itself
+    [/provider-rejected/i, 'frameleaf_location_scan_pause_rejected'],
   ] as const;
   const pauseReason = (serverText: string) =>
     PAUSES.find(([pattern]) => pattern.test(serverText))?.[1] ?? 'frameleaf_location_scan_pause_other';

@@ -148,7 +148,8 @@
     {#if error}
       <p class="le-error" role="alert">{error}</p>
     {/if}
-    {#if kind === 'own' && !pin}
+    {#if kind === 'own'}
+      <!-- with encryption on, only the recovery key replaces a forgotten PIN or passphrase -->
       <p class="le-note">
         <Icon icon={mdiInformationOutline} size="14" aria-hidden />
         <span>{$t('frameleaf_le_restart_forgot')}</span>

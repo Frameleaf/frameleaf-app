@@ -62,6 +62,7 @@
     settleLoadedTier,
     type SetupChoices,
     type SetupState,
+    readableModelName,
   } from '$lib/frameleaf/first-run-setup';
   import { renderStorageTemplate } from '$lib/frameleaf/onboarding';
   import '$lib/frameleaf/auth.css';
@@ -539,7 +540,9 @@
   const currentModelName = $derived(config?.machineLearning.clip.modelName ?? '');
   const keepModel = $derived(choices.model === KEEP_MODEL);
   const offerKeepModel = $derived(keepsUnlistedModel(setup.flow, currentModelName) || keepModel);
-  const keepModelTitle = $derived($t('frameleaf_setup_tier_keep', { values: { model: currentModelName } }));
+  const keepModelTitle = $derived(
+    $t('frameleaf_setup_tier_keep', { values: { model: readableModelName(currentModelName) } }),
+  );
   /** The tier this hardware is recommended (A2); shown as such on the tier step whatever is chosen. */
   const recommendedTierId = $derived(recommendedTier(hardware));
   const gpu = $derived(!!hardware && hardware.ml.backend !== HardwareBackend.Cpu && hardware.ml.reachable);
@@ -1262,6 +1265,7 @@
                         checked={keepModel}
                         onchange={() => choose({ model: KEEP_MODEL, modelChosen: true, keptModel: currentModelName })}
                         title={keepModelTitle}
+                        detail={$t('frameleaf_setup_tier_keep_detail')}
                       />
                     {/if}
                     {#each modelTiers as entry (entry.id)}

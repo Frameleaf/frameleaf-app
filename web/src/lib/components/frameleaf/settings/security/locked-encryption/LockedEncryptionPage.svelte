@@ -314,6 +314,7 @@
 
   {#if failed && !status}
     <Notice tone="warn" title={$t('frameleaf_le_load_failed')}>
+      {$t('frameleaf_le_load_failed_body')}
       {#snippet action()}<Button onclick={() => void refresh()}>{$t('frameleaf_le_try_again')}</Button>{/snippet}
     </Notice>
   {:else if status && view}
@@ -322,7 +323,9 @@
         tone="quiet"
         icon={mdiShieldLockOutline}
         title={$t('frameleaf_le_off_title')}
-        body={$t('frameleaf_le_off_body')}
+        body={hasPin
+          ? $t('frameleaf_le_off_body')
+          : `${$t('frameleaf_le_off_body')} ${$t('frameleaf_le_off_body_no_pin')}`}
         label={$t('frameleaf_le_title')}
       >
         {#snippet actions()}
@@ -434,7 +437,9 @@
       <Section title={$t('frameleaf_le_how_title')}>
         <Row
           label={$t(advanced ? 'frameleaf_le_how_advanced' : 'frameleaf_le_how_pin')}
-          help={$t(advanced ? 'frameleaf_le_how_advanced_help' : 'frameleaf_le_how_pin_help')}
+          help={view === 'working'
+            ? `${$t(advanced ? 'frameleaf_le_how_advanced_help' : 'frameleaf_le_how_pin_help')} ${$t('frameleaf_le_wait_encrypting_change')}`
+            : $t(advanced ? 'frameleaf_le_how_advanced_help' : 'frameleaf_le_how_pin_help')}
         >
           <Button
             disabled={view === 'working' || view === 'needs'}
@@ -465,7 +470,12 @@
               {/key}
             </div>
           </Row>
-          <Row label={$t('frameleaf_le_passphrase')} help={$t('frameleaf_le_passphrase_help')}>
+          <Row
+            label={$t('frameleaf_le_passphrase')}
+            help={view === 'working'
+              ? `${$t('frameleaf_le_passphrase_help')} ${$t('frameleaf_le_wait_encrypting_change')}`
+              : $t('frameleaf_le_passphrase_help')}
+          >
             <div class="le-inline">
               <Button disabled={view === 'working'} onclick={() => void changeProtection('change-passphrase')}>
                 {$t('frameleaf_le_change_passphrase')}
@@ -483,7 +493,9 @@
           label={recoverySaved
             ? $t('frameleaf_le_recovery_saved', { values: { date: recoverySaved } })
             : $t('frameleaf_le_recovery_key')}
-          help={$t('frameleaf_le_recovery_help')}
+          help={view === 'needs'
+            ? `${$t('frameleaf_le_recovery_help')} ${$t('frameleaf_le_new_key_needs')}`
+            : $t('frameleaf_le_recovery_help')}
         >
           <Button disabled={view === 'needs'} onclick={() => void newKey()}>{$t('frameleaf_le_new_key')}</Button>
         </Row>
@@ -543,7 +555,9 @@
           label={$t('frameleaf_le_turn_off_label')}
           help={view === 'needs'
             ? $t('frameleaf_le_turn_off_needs')
-            : $t('frameleaf_le_turn_off_help', { values: { items: itemsWords } })}
+            : view === 'working'
+              ? $t('frameleaf_le_turn_off_wait_encrypting')
+              : $t('frameleaf_le_turn_off_help', { values: { items: itemsWords } })}
         >
           <Button variant="danger" disabled={view === 'needs' || view === 'working'} onclick={() => void turnOff()}>
             {$t('frameleaf_le_turn_off')}

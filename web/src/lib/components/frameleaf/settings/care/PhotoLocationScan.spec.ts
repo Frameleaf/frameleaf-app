@@ -453,10 +453,18 @@ describe('paid manual photo location scan', () => {
     expect(api.start).not.toHaveBeenCalled();
   });
 
+  it('never promises that a scan Frameleaf Cloud turned down carries on by itself', async () => {
+    api.status.mockResolvedValue(status({ ...scan('paused'), reason: 'provider-rejected' }));
+    render(PhotoLocationScan);
+    expect(await screen.findByText(/won’t carry on by itself\. Cancel it/)).toBeInTheDocument();
+    expect(screen.queryByText('provider-rejected')).not.toBeInTheDocument();
+  });
+
   it('shows a pause reason and requires a new estimate to retry a failed job', async () => {
     api.status.mockResolvedValue(status({ ...scan('paused'), reason: 'Waiting for Cloud capacity' }));
     const view = render(PhotoLocationScan);
-    expect(await screen.findByText('The scan stopped for a moment and carries on by itself.')).toBeInTheDocument();
+    // an unknown reason promises nothing
+    expect(await screen.findByText(/^The scan is paused\. If it doesn’t carry on soon/)).toBeInTheDocument();
     expect(screen.queryByText('Waiting for Cloud capacity')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel scan' })).toBeEnabled();
     view.unmount();

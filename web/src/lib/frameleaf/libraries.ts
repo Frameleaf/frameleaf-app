@@ -359,6 +359,7 @@ export const scanMessage = (scan: LibraryScanResponseDto | null | undefined): Sc
         // the check phase also looks at the items this scan just added; they were not there to match
         matched: Math.max(0, scan.checked - scan.added - scan.offlined),
         added: scan.added,
+        changed: scan.updated,
         missing: scan.offlined,
       });
       return { key: parts[0].key, values: parts[0].values, parts };
