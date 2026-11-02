@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { SALT_ROUNDS } from 'src/constants.js';
 
 const prefix = '$flimport$1$';
+// Version 1's qualified storage floor stays stable when the default password cost increases.
+const retainedMinimumRounds = 10;
 const derivePbkdf2 = promisify(pbkdf2);
 // The binding declares const enums; value maps also work with isolated TypeScript compilation.
 const argonAlgorithms = { argon2i: 1, argon2id: 2 } as const;
@@ -229,6 +231,14 @@ const sourceHash = async (password: string, settings: Settings): Promise<string>
   return refused();
 };
 
+const decodeImportedPassword = (encoded: string) => {
+  const payload = encoded.slice(prefix.length);
+  if (payload.length > 4096 || !/^[A-Za-z0-9_-]+$/.test(payload)) return refused();
+  const bytes = Buffer.from(payload, 'base64url');
+  if (bytes.toString('base64url') !== payload) return refused();
+  return envelope.parse(JSON.parse(bytes.toString('utf8')));
+};
+
 /** A private credential capability: serialization and inspection never reveal its stored verifier. */
 export class ImportedPassword {
   readonly operationId: string;
@@ -253,6 +263,28 @@ export class ImportedPassword {
     const value = envelope.parse({ ...settings, verifier });
     return new ImportedPassword(context, prefix + Buffer.from(JSON.stringify(value)).toString('base64url'));
   }
+  /** Private recovery only: the archive must independently establish retained-record integrity and source qualification. */
+  static fromRetained(input: unknown, encoded: unknown): ImportedPassword {
+    try {
+      const context = contextSchema.parse(input);
+      if (typeof encoded !== 'string' || !encoded.startsWith(prefix)) return refused();
+      const value = decodeImportedPassword(encoded);
+      if (Number(value.verifier.slice(4, 6)) < retainedMinimumRounds) return refused();
+      const formats: ImportedPasswordFormat[] =
+        value.format === 'bcrypt'
+          ? ['bcrypt', 'php-password', 'nextcloud-password']
+          : value.format === 'argon2i' || value.format === 'argon2id'
+            ? ['php-password', 'nextcloud-password']
+            : value.format === 'piwigo-md5' || value.format === 'piwigo-phpass'
+              ? ['piwigo-password']
+              : [value.format];
+      if (formats.every((format) => value.verifier.slice(7, 29) !== targetSalt(context, format).slice(7)))
+        return refused();
+      return new ImportedPassword(context, encoded);
+    } catch {
+      return refused();
+    }
+  }
   forImport(): string {
     return this.#encoded;
   }
@@ -268,11 +300,7 @@ export class ImportedPassword {
 export async function verifyImportedPassword(password: string, encoded: string): Promise<boolean | undefined> {
   if (!encoded.startsWith(prefix)) return;
   try {
-    const payload = encoded.slice(prefix.length);
-    if (payload.length > 4096 || !/^[A-Za-z0-9_-]+$/.test(payload)) return false;
-    const bytes = Buffer.from(payload, 'base64url');
-    if (bytes.toString('base64url') !== payload) return false;
-    const settings = envelope.parse(JSON.parse(bytes.toString('utf8')));
+    const settings = decodeImportedPassword(encoded);
     const candidate = await sourceHash(password, settings);
     return await compare(digest(candidate), settings.verifier);
   } catch {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { canonicalJson } from 'src/utils/object.js';
 
 const rows = z.array(z.record(z.string(), z.union([z.string(), z.number().int().safe(), z.null()])));
-const schema = z.strictObject({
+const baseSchema = z.strictObject({
   tables: rows,
   columns: rows,
   indexes: rows,
@@ -13,6 +13,7 @@ const schema = z.strictObject({
   routines: rows,
   events: rows,
 });
+const schema = z.union([baseSchema, baseSchema.extend({ foreignKeys: rows, checks: rows })]);
 const tableNames = new Set(['TABLE_NAME', 'REFERENCED_TABLE_NAME', 'EVENT_OBJECT_TABLE']);
 const refuse = (): never => {
   throw new Error('MySQL schema refused: MYSQL_SCHEMA_INVALID');

@@ -9,6 +9,7 @@ import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
+import type { AutostartFile } from './unraid-autostart.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
@@ -137,7 +138,7 @@ export class Operations {
     readonly backups: Backups,
     private roots: string[],
     private databaseStorage: PostgresStorage,
-    private autostartFile?: string,
+    private autostartFile?: string | AutostartFile,
   ) {
     this.discovery = new Discovery(docker);
     this.fencing = new Fencing(docker, store, autostartFile);
@@ -281,7 +282,10 @@ export class Operations {
     const source = this.editedSource(stored);
     // Review still opens so the administrator can see and edit the settings; cutover cannot start.
     if (requireCompatible && source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
-    if (source.platform === 'unraid' && !this.autostartFile) throw new Refusal('unraid_autostart_file_required');
+    if (source.platform === 'unraid') {
+      if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
+      await this.fencing.readAutostart(true);
+    }
     return { source, backup: recentBackup(await sourceBackups(this.docker, source), source) ?? null };
   }
   async sourceReview(id: string) {

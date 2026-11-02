@@ -21,7 +21,7 @@ sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest "$STATE_FOLDER" "$LIBRAR
 
 `auto` detects Unraid's configured appdata location. On other Linux hosts, pass the desired appdata folder instead of `auto`. An explicit folder overrides the detected default. The launcher binds that folder into Manager at the same absolute host path and passes it as `MANAGER_DATABASE_ROOTS`. To offer more disks in the wizard, bind each approved folder at its identical host path and add it to this colon-separated environment variable. Do not mount the whole host filesystem to make a path picker work.
 
-The launcher mounts `/proc/1/mountinfo` read only so Manager can compare the host filesystem identities of appdata and Docker storage, including bind aliases. It also mounts Unraid's Docker configuration read only and, when present, its exact autostart file for source cutover. It never sources the configuration as shell code. The first administrator is created from the home network while Manager has no administrator; no claim key is needed.
+The launcher mounts `/proc/1/mountinfo` read only so Manager can compare the host filesystem identities of appdata and Docker storage, including bind aliases. It also mounts Unraid's Docker configuration read only and, when present, its exact autostart file for source cutover. Without an explicit autostart mount, Manager automatically discovers Docker's data root and accesses the existing list through an isolated helper using its exact running image; no manual container edit is needed. It never sources the configuration as shell code. The first administrator is created from the home network while Manager has no administrator; no claim key is needed.
 
 When machine learning is on, Manager picks the hardware variant on amd64 hosts: CUDA when Docker has the `nvidia` runtime, ROCm for an AMD render node with `/sys/class/kfd`, OpenVINO for an Intel render node, otherwise CPU. It reads the host's read-only sysfs, so Manager itself needs no `/dev` mappings; the device passthrough from `docker/hwaccel.ml.yml` goes on the machine learning container only. Set `MANAGER_ML_ACCELERATION` to `cpu`, `cuda`, `rocm` or `openvino` to override detection. The setup screen names the detected GPU and turns machine learning on by default when one is found.
 
@@ -135,6 +135,93 @@ For Manager replacement, retain its state folder, exact bind mappings, Manager o
 Import, restore, update, backup and lifecycle operations all have a retry action. A failed database backup can be cancelled without stopping Frameleaf. If an update fails before applying its release, cancellation restarts the prior release. Once release application may have changed the database or media, retry moves forward on that release; Manager does not attempt an image-only downgrade. Restore refuses media paths used by another running or automatically restarting application. Recovery retains the imported media-location environment and file settings while generating fresh target database credentials.
 
 If Manager cannot start, its private `stack/compose.json` can be used with the host's Compose v2 command and its recorded project name. The protected configuration export includes that project identity and the database host path. Store exports privately: they contain recovery secrets. A database-only export is not a media recovery checkpoint.
+
+## Recover an interrupted Unraid autostart update
+
+Use this procedure only when Manager reports `autostart_changed` after an
+interrupted write and refuses to resume or cancel. It exports the two recorded
+versions without editing Manager's database. Keep the source and Frameleaf
+services in the state Manager left them; do not start them or change their
+restart policies while resolving this conflict. Keep other container-management
+tools and autostart editing idle until recovery finishes.
+
+Run these commands in Unraid's root terminal. Replace `frameleaf-manager` if the
+container has a different name. First stop Manager and its autostart helpers,
+then preserve the current host list in a private recovery folder:
+
+```bash
+set -euo pipefail
+manager_name=frameleaf-manager
+manager_state=$(docker exec "$manager_name" node -p 'process.env.MANAGER_DATA')
+manager_image=$(docker inspect --format '{{.Image}}' "$manager_name")
+docker_root=$(docker info --format '{{.DockerRootDir}}')
+test -n "$manager_state" && test -f "$docker_root/unraid-autostart" || exit 1
+recovery=$(mktemp -d /root/frameleaf-autostart-recovery.XXXXXX)
+chmod 700 "$recovery"
+docker stop "$manager_name"
+helper_ids_text=$(docker ps -aq --filter "label=app.frameleaf.manager.autostart=$manager_state")
+if [[ -n "$helper_ids_text" ]]; then
+  mapfile -t helper_ids <<< "$helper_ids_text"
+  docker rm --force "${helper_ids[@]}"
+fi
+cp -p -- "$docker_root/unraid-autostart" "$recovery/current.txt"
+```
+
+Export only the pending journal through the Node/SQLite runtime already in the
+Manager image. The database connection is read-only; its state mapping permits
+SQLite's WAL bookkeeping. Do not modify `manager.sqlite` or delete journal rows.
+If there is no pending record, stop here and investigate the operation's error
+rather than changing the host list.
+
+```bash
+docker run --rm --pull never --network none --read-only \
+  --mount "type=bind,source=$manager_state,target=/state" \
+  --entrypoint node "$manager_image" --input-type=module -e '
+import { DatabaseSync } from "node:sqlite";
+const db = new DatabaseSync("/state/manager.sqlite", { readOnly: true });
+const row = db.prepare("SELECT value FROM settings WHERE key=?").get("autostart-write");
+const pending = row && JSON.parse(row.value);
+if (!pending || typeof pending.text !== "string" || typeof pending.modified !== "string")
+  throw new Error("No pending autostart write; leave the host list unchanged");
+process.stdout.write(JSON.stringify(pending));
+db.close();
+' > "$recovery/journal.json" || exit 1
+for version in text modified; do
+  docker run --rm -i --pull never --network none --read-only \
+    --entrypoint node "$manager_image" -e '
+let input = "";
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => process.stdout.write(JSON.parse(input)[process.argv[1]]));
+' "$version" < "$recovery/journal.json" > "$recovery/$version.txt" || exit 1
+done
+```
+
+`text.txt` is the original list immediately before the interrupted write;
+`modified.txt` is Manager's intended result. Compare both with `current.txt` and
+record any unrelated changes made since then. Retain all three files. Restore
+the intended version **in place**, then start Manager and use **Resume** or
+**Cancel safely** for the interrupted operation:
+
+```bash
+if ! cmp -s -- "$docker_root/unraid-autostart" "$recovery/current.txt"; then
+  printf '%s\n' 'The host autostart list changed during recovery; keep the recovery files and stop.' >&2
+  exit 1
+fi
+cat "$recovery/modified.txt" > "$docker_root/unraid-autostart"
+sync "$docker_root/unraid-autostart"
+docker start "$manager_name"
+```
+
+The comparison detects edits since the saved copy; it does not make the
+in-place write atomic. If it refuses the restore, retain the recovery files and
+review the new host edits before repeating the procedure.
+
+Manager verifies the restored content and advances or clears its pending journal
+through the normal recovery flow. If it refuses recovery, leave the saved files
+and journal intact. Once the operation has safely completed or been cancelled,
+reapply only the unrelated changes you recorded, using Unraid's Docker page.
+Do not copy the old list back wholesale or re-enable services that Manager kept
+fenced; source-service restoration belongs to Manager's recovery action.
 
 ## Validation and distribution status
 
