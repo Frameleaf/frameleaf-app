@@ -74,6 +74,9 @@ describe('desktop inference database diagnostics', () => {
     'insert into job(id, queue, name, data) values ($1::uuid, $2, $3, $4::text::jsonb)',
     'update job set data = $1::text::jsonb where id = $2::uuid',
     'update job set "latestPending" = $1::text::jsonb where id = $2::uuid',
+    'insert into "user" (id, password) values ($1, $2)',
+    'update "user" set "pinCode" = $1 where id = $2',
+    'select id from "user" where password = $1',
     'insert into job_run_item("runId", "itemKey", selection) values ($1::uuid, $2, $3::text::jsonb)',
   ])('redacts private inputs, output and error details for %s', async (statement) => {
     const config = getKyselyConfig({

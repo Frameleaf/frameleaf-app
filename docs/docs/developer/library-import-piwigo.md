@@ -47,7 +47,7 @@ The complete format inventory for each image must come from the same admitted sn
 | Users, groups and privacy             | Accounts, user/group memberships, grants and privacy levels  | Require explicit owner mapping and equivalent or stricter access, including original-download restrictions                            |
 | Manual metadata                       | Current title, comment, displayed author, date and locations | Preserve manual values; retain wall-clock dates separately when no timezone evidence establishes an instant                           |
 | Tags and favourites                   | Separate tag relationships and per-user favourite records    | Preserve identities and each user's state without treating a favourite as an access grant                                             |
-| Credentials, sessions and access keys | Excluded from content fixtures and future extraction         | Never migrate authentication material; new imported accounts remain inactive until securely claimed                                   |
+| Credentials, sessions and access keys | Excluded from content fixtures and future extraction         | Preserve qualified account password verifiers separately; do not transfer sessions or access keys; secure claims are fallback         |
 
 Piwigo's native upload duplicate detection can reuse an image ID for identical MD5 bytes and add album relationships. Do not infer independent photo ownership from album membership, displayed author or a byte hash. `added_by` records the uploading account; the destination still requires explicit ownership decisions. Byte deduplication must respect destination owner/library boundaries.
 
