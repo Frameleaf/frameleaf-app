@@ -11,7 +11,7 @@
  *
  *   node studio/tools/adapter.mjs build     # or: test
  */
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
@@ -146,7 +146,7 @@ const upstreamSuites = [
 
 const plugins = async () => {
   const react = engineRequire('@vitejs/plugin-react')
-  const tailwind = await import(engineRequire.resolve('@tailwindcss/vite'))
+  const tailwind = await import(pathToFileURL(engineRequire.resolve('@tailwindcss/vite')).href)
   return [
     resolveFromEngine(),
     gateTimelinePersistence(),
