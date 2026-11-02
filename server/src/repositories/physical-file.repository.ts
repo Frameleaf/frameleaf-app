@@ -86,6 +86,17 @@ export const countPathReferences = async (
       ]),
     )
     .executeTakeFirstOrThrow();
+  const originalRefs = await trx
+    .selectFrom('asset_original')
+    .innerJoin('physical_file', 'physical_file.id', 'asset_original.physicalFileId')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where((eb) =>
+      eb.or([
+        eb('physical_file.path', '=', path),
+        ...(physicalFileId ? [eb('asset_original.physicalFileId', '=', asUuid(physicalFileId))] : []),
+      ]),
+    )
+    .executeTakeFirstOrThrow();
   // Saved versions remain owners of their rendered files (and a master's lineage sidecar) even
   // after they leave the current asset projection. A version's source is its asset's original,
   // which the asset row already protects, so the recorded source path is not a reference.
@@ -151,6 +162,7 @@ export const countPathReferences = async (
   return (
     Number(assetRefs.count) +
     Number(fileRefs.count) +
+    Number(originalRefs.count) +
     Number(historyRefs.rows[0].count) +
     Number(retainedRefs.rows[0].count)
   );

@@ -79,6 +79,7 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
@@ -357,6 +358,7 @@ export class ImmichDatabase {
     AssetRestorationTable,
     AssetTable,
     AssetFileTable,
+    AssetOriginalTable,
     AssetHealthRunTable,
     AssetHealthTable,
     AssetHealthCandidateTable,
@@ -586,6 +588,7 @@ export interface DB extends QueueDatabase {
   asset_face: AssetFaceTable;
   asset_face_audit: AssetFaceAuditTable;
   asset_file: AssetFileTable;
+  asset_original: AssetOriginalTable;
   asset_health_run: AssetHealthRunTable;
   asset_health: AssetHealthTable;
   asset_health_candidate: AssetHealthCandidateTable;
