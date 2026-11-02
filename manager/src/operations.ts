@@ -1039,9 +1039,11 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
   }
-  /** Retry withdrawn targets with a newer compatible release, keeping the checkpoint and any already applied release. */
+  /** Retry withdrawn targets with a newer compatible release, retaining any target already selected for startup. */
   private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
-    if (operation.completed.includes('apply-release')) return review;
+    // Installation is saved before compose up, so this target may have written even without a completion receipt.
+    if (operation.completed.includes('apply-release') || this.installation()?.release === review.release.nas.tag)
+      return review;
     const withdrawn = await this.releases.eligible(review.release.nas.tag).then(
       () => false,
       (error) => {
