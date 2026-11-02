@@ -78,7 +78,7 @@ Before submission, retain exact release/image digests and platform versions with
 Manager component releases include `frameleaf-manager.xml`, `frameleaf-manager.compose.yaml` and the HexOS
 Custom Install script `frameleaf-manager.hexos.json`; see [HexOS](SUBMISSION.md#hexos).
 Their exact SHA256 digests, image, tag and source commit are part of the signed Manager predicate.
-After downloading the manifest and both installers into a directory, verify the authenticated bytes
+After downloading the manifest and all three installers into a directory, verify the authenticated bytes
 with `node .github/verify-manager-installers.cjs manager-manifest.json <directory>` before installation.
 `SHA256SUMS` alone does not authenticate an installer. The catalog builder also refuses templates
 that differ from the authenticated binding, before creating its output directory.
