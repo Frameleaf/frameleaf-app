@@ -6,7 +6,12 @@ import { API_STARTUP_RETRY_EXIT_CODE } from 'src/utils/shutdown.js';
 const fixture = vi.hoisted(() => ({
   maintenance: false,
   starts: [] as string[],
-  workers: [] as (EventEmitter & { name: string; stopped: Promise<void> })[],
+  workers: [] as (EventEmitter & {
+    name: string;
+    stopped: Promise<void>;
+    terminate?: ReturnType<typeof vi.fn>;
+    ownedTerminate?: ReturnType<typeof vi.fn>;
+  })[],
   signals: new Map<string, () => void>(),
   nextStopped: undefined as Promise<void> | undefined,
   clients: [] as { destroy: ReturnType<typeof vi.fn> }[],
@@ -47,6 +52,7 @@ vi.mock('node:worker_threads', async () => {
       name: string;
       stopped = fixture.nextStopped ?? Promise.resolve();
       terminate = vi.fn().mockResolvedValue(0);
+      ownedTerminate = vi.fn().mockResolvedValue(0);
       postMessage = vi.fn();
       constructor(file: string) {
         super();
@@ -87,7 +93,7 @@ vi.mock('src/repositories/config.repository.js', () => ({
       return {
         workers: ['api', 'microservices', 'edge'],
         database: { config: {} },
-        shutdown: { deadlineMs: 9000 },
+        shutdown: { graceMs: 5000, workerDeadlineMs: 8000, deadlineMs: 9000 },
       };
     }
   },
@@ -109,7 +115,10 @@ vi.mock('src/queue/worker-stop-proof.js', () => ({
   },
 }));
 vi.mock('src/queue/supervisor.js', () => ({
-  superviseQueueWorker: (worker: { stopped: Promise<void> }) => ({ stopped: worker.stopped }),
+  superviseQueueWorker: (worker: { stopped: Promise<void>; ownedTerminate: () => Promise<number> }) => ({
+    stopped: worker.stopped,
+    terminate: worker.ownedTerminate,
+  }),
 }));
 
 const latest = (name: FrameleafWorker) => fixture.workers.findLast((worker) => worker.name === name)!;
@@ -454,6 +463,60 @@ describe('supervisor worker-local restart lifecycle', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
+  });
+
+  it('reserves child-reaping and proof time before the existing shutdown deadlines', async () => {
+    const persisted = Promise.withResolvers<void>();
+    fixture.nextStopped = persisted.promise;
+    const workers = new Workers();
+    await workers.bootstrap();
+    const microservices = latest(FrameleafWorker.Microservices);
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(6999);
+    expect(microservices.ownedTerminate).not.toHaveBeenCalled();
+    expect(process.exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(microservices.ownedTerminate).toHaveBeenCalledExactlyOnceWith(1000);
+    expect(process.exit).not.toHaveBeenCalled();
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).not.toHaveBeenCalled();
+    persisted.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('cancels the reserved queue termination when the worker finishes its graceful stop', async () => {
+    const workers = new Workers();
+    await workers.bootstrap();
+    const microservices = latest(FrameleafWorker.Microservices);
+    workers.stop('SIGTERM');
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(microservices.ownedTerminate).not.toHaveBeenCalled();
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('reports a native queue force before the deadline even if every worker then exits zero', async () => {
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    const workers = new Workers();
+    await workers.bootstrap();
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(latest(FrameleafWorker.Microservices).ownedTerminate).toHaveBeenCalledExactlyOnceWith(1000);
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('routes a poisoned microservices pool through its child-owning supervisor', () => {
+    const worker = latest(FrameleafWorker.Microservices);
+    worker.emit('message', { type: 'database-unusable' });
+    expect(worker.ownedTerminate).toHaveBeenCalledOnce();
+    expect(worker.terminate).not.toHaveBeenCalled();
   });
 
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {

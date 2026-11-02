@@ -858,10 +858,11 @@ export class AssetMediaService extends BaseService {
 
   async bulkUploadCheck(auth: AuthDto, dto: AssetBulkUploadCheckDto): Promise<AssetBulkUploadCheckResponseDto> {
     const checksums: Buffer[] = dto.assets.map((asset) => fromChecksum(asset.checksum));
-    // Clients hash with SHA-1 while this fork persists SHA-256, so resolve the
-    // sent digests through the SHA-1 recorded at upload. Translating to the
-    // stored digest (rather than matching separately) keeps the duplicate
-    // lookup on the single filtered query, hidden-content rules included.
+    // Frameleaf's apps send SHA-256, matched as stored. Upstream Immich clients
+    // hash with SHA-1, so resolve those digests through the SHA-1 recorded at
+    // upload or by the checksum check. Translating to the stored digest
+    // (rather than matching separately) keeps the duplicate lookup on the
+    // single filtered query, hidden-content rules included.
     const translations = await this.forkSchemaRepository.getChecksumTranslations(auth.user.id, checksums);
     const lookups = [...checksums, ...translations.map(({ checksum }) => checksum)];
     const duplicateOptions = this.getDuplicateCheckOptions(auth);

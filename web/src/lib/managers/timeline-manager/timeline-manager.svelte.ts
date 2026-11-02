@@ -172,12 +172,13 @@ export class TimelineManager extends VirtualScrollManager {
     return !this.ordered && this.#calendarPaged;
   }
 
-  #releaseDistantPages() {
+  #releaseDistantPages(keep?: TimelineMonth) {
     for (const month of this.#loadedPages) {
       if (this.#loadedPages.size <= 8) {
         break;
       }
       if (
+        month === keep ||
         month.isInOrNearViewport ||
         month.loader?.loading ||
         this.#pinnedPages.has(month) ||
@@ -761,7 +762,7 @@ export class TimelineManager extends VirtualScrollManager {
         if (timelineMonth.calendarPage || this.ordered) {
           this.#loadedPages.delete(timelineMonth);
           this.#loadedPages.add(timelineMonth);
-          this.#releaseDistantPages();
+          this.#releaseDistantPages(timelineMonth);
         }
         return;
       }
@@ -1181,6 +1182,7 @@ export class TimelineManager extends VirtualScrollManager {
     const revision = sessionAccess.revision;
     const options = this.#requestedOptions;
     const pinned: TimelineMonth[] = [];
+    let missingStart = false;
     const overtaken = () =>
       projection !== this.#projectionGeneration ||
       revision !== sessionAccess.revision ||
@@ -1188,7 +1190,14 @@ export class TimelineManager extends VirtualScrollManager {
     try {
       for (const asset of [start, end]) {
         const month = await this.findTimelineMonthForAsset(asset);
-        if (!month || overtaken()) {
+        if (overtaken()) {
+          return [];
+        }
+        if (!month) {
+          if (asset === start) {
+            missingStart = true;
+            continue;
+          }
           return [];
         }
         this.#pinnedPages.set(month, (this.#pinnedPages.get(month) ?? 0) + 1);
@@ -1197,7 +1206,7 @@ export class TimelineManager extends VirtualScrollManager {
       const months = this.months;
       const range = await retrieveRangeUtil(
         this,
-        start,
+        missingStart ? end : start,
         end,
         this.ordered || this.calendarPaged ? this.#orderedPositions() : undefined,
       );

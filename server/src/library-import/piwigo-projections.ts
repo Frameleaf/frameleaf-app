@@ -1,0 +1,100 @@
+export const piwigoProjections = {
+  images: {
+    columns: [
+      'id',
+      'file',
+      'date_available',
+      'date_creation',
+      'name',
+      'comment',
+      'author',
+      'hit',
+      'filesize',
+      'width',
+      'height',
+      'representative_ext',
+      'date_metadata_update',
+      'rating_score',
+      'path',
+      'md5sum',
+      'level',
+      'added_by',
+      'rotation',
+      'latitude',
+      'longitude',
+    ],
+    keys: ['id'],
+  },
+  categories: {
+    columns: [
+      'id',
+      'name',
+      'id_uppercat',
+      'comment',
+      'dir',
+      'rank',
+      'status',
+      'site_id',
+      'visible',
+      'representative_picture_id',
+      'uppercats',
+      'commentable',
+      'global_rank',
+      'image_order',
+      'permalink',
+    ],
+    keys: ['id'],
+  },
+  image_category: {
+    columns: ['image_id', 'category_id', 'rank'],
+    keys: ['image_id', 'category_id'],
+  },
+  users: {
+    columns: ['id', 'username', 'mail_address'],
+    keys: ['id'],
+  },
+  user_infos: {
+    columns: ['user_id', 'status', 'level', 'enabled_high'],
+    keys: ['user_id'],
+  },
+  groups: {
+    columns: ['id', 'name', 'is_default'],
+    keys: ['id'],
+  },
+  user_group: {
+    columns: ['user_id', 'group_id'],
+    keys: ['user_id', 'group_id'],
+  },
+  user_access: {
+    columns: ['user_id', 'cat_id'],
+    keys: ['user_id', 'cat_id'],
+  },
+  group_access: {
+    columns: ['group_id', 'cat_id'],
+    keys: ['group_id', 'cat_id'],
+  },
+  favorites: {
+    columns: ['user_id', 'image_id'],
+    keys: ['user_id', 'image_id'],
+  },
+  tags: {
+    columns: ['id', 'name', 'url_name'],
+    keys: ['id'],
+  },
+  image_tag: {
+    columns: ['image_id', 'tag_id'],
+    keys: ['image_id', 'tag_id'],
+  },
+  image_format: {
+    columns: ['format_id', 'image_id', 'ext', 'filesize'],
+    keys: ['format_id'],
+  },
+  sites: {
+    columns: ['id', 'galleries_url'],
+    keys: ['id'],
+  },
+  lounge: {
+    columns: ['image_id', 'category_id'],
+    keys: ['image_id', 'category_id'],
+  },
+} as const;

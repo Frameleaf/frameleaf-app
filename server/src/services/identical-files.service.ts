@@ -89,8 +89,8 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
  *
  * 1. **scan**: every managed original is read once: SHA-1, SHA-256 and size. The stored checksum must
  *    match (a mismatch or an unreadable file is a problem and the photo is left alone). The digests are
- *    recorded, SHA-1 records are upgraded to SHA-256 (devices keep seeing the SHA-1), and a file with no
- *    storage record gets one.
+ *    recorded, SHA-1 records are upgraded to SHA-256 (as the nightly checksum check also does), and a file
+ *    with no storage record gets one.
  * 2. **link**: files with the same SHA-256 and size across people share the oldest (the photo added
  *    first whose file is still there and unchanged). Each other person keeps their own photo, pointed at
  *    that file; their own copy moves to Unused files once nothing uses it. Both files are proved from disk

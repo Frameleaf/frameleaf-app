@@ -143,9 +143,11 @@
   };
 
   const captured = $derived(
-    detail?.exifInfo?.dateTimeOriginal
-      ? formatCaptured(detail.exifInfo.dateTimeOriginal, detail.exifInfo.timeZone)
-      : null,
+    detail?.localDateTime
+      ? formatCaptured(detail.localDateTime, 'UTC')
+      : detail?.exifInfo?.dateTimeOriginal
+        ? formatCaptured(detail.exifInfo.dateTimeOriginal, detail.exifInfo.timeZone)
+        : null,
   );
   const location = $derived(locationLabel(detail?.exifInfo));
   const people = $derived((detail?.people ?? []).filter((person) => !person.isHidden && person.name));

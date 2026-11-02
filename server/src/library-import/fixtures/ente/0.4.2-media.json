@@ -1,0 +1,1622 @@
+{
+  "provenance": {
+    "sourceCommit": "d536e8e913443b9d88c1e60e3a5463cb78ba5592",
+    "exporter": "ente-cli-v0.4.2",
+    "exporterBinarySha256": "6c8de9ce9570a93d4d0212b22f978960de51e4ab08240c9a69ba9719d9d0c356",
+    "museumBinarySha256": "75864c9c27f0dda4ddff017a6640540c4eba0ba4c07d892db8952af7ff6f13eb",
+    "postgres": "18.6",
+    "qualificationImage": "sha256:bda9e3c7d209cc18bb608485ea60f00d259b2bd1e24e6af73377907844165d72",
+    "media": "generated JPEG and H264 MOV; Ente-recognized ZIP Live Photo pair, not Apple-device acceptance",
+    "inventoryStability": "complete --all file and album inventories compared equal before and after each export",
+    "exporterPageSize": 128,
+    "privacy": "two synthetic accounts, VIEWER sharing, account-specific album visibility; no complete destination permission claim"
+  },
+  "users": {
+    "alice": "1580559962386438",
+    "bob": "1580559962386439"
+  },
+  "ids": {
+    "primary": "1580559962386438",
+    "secondary": "1580559962386439",
+    "favorites": "1580559962386440",
+    "bobAlbum": "1580559962386441",
+    "first": "10000000",
+    "video": "10000129",
+    "live": "10000130",
+    "bobFile": "10000131"
+  },
+  "media": {
+    "photo.jpg": {
+      "bytes": 982,
+      "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314",
+      "blake2b512": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg=="
+    },
+    "video.mov": {
+      "bytes": 1745,
+      "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d",
+      "blake2b512": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ=="
+    }
+  },
+  "accounts": {
+    "alice": {
+      "fileIds": [
+        "10000000",
+        "10000001",
+        "10000002",
+        "10000003",
+        "10000004",
+        "10000005",
+        "10000006",
+        "10000007",
+        "10000008",
+        "10000009",
+        "10000010",
+        "10000011",
+        "10000012",
+        "10000013",
+        "10000014",
+        "10000015",
+        "10000016",
+        "10000017",
+        "10000018",
+        "10000019",
+        "10000020",
+        "10000021",
+        "10000022",
+        "10000023",
+        "10000024",
+        "10000025",
+        "10000026",
+        "10000027",
+        "10000028",
+        "10000029",
+        "10000030",
+        "10000031",
+        "10000032",
+        "10000033",
+        "10000034",
+        "10000035",
+        "10000036",
+        "10000037",
+        "10000038",
+        "10000039",
+        "10000040",
+        "10000041",
+        "10000042",
+        "10000043",
+        "10000044",
+        "10000045",
+        "10000046",
+        "10000047",
+        "10000048",
+        "10000049",
+        "10000050",
+        "10000051",
+        "10000052",
+        "10000053",
+        "10000054",
+        "10000055",
+        "10000056",
+        "10000057",
+        "10000058",
+        "10000059",
+        "10000060",
+        "10000061",
+        "10000062",
+        "10000063",
+        "10000064",
+        "10000065",
+        "10000066",
+        "10000067",
+        "10000068",
+        "10000069",
+        "10000070",
+        "10000071",
+        "10000072",
+        "10000073",
+        "10000074",
+        "10000075",
+        "10000076",
+        "10000077",
+        "10000078",
+        "10000079",
+        "10000080",
+        "10000081",
+        "10000082",
+        "10000083",
+        "10000084",
+        "10000085",
+        "10000086",
+        "10000087",
+        "10000088",
+        "10000089",
+        "10000090",
+        "10000091",
+        "10000092",
+        "10000093",
+        "10000094",
+        "10000095",
+        "10000096",
+        "10000097",
+        "10000098",
+        "10000099",
+        "10000100",
+        "10000101",
+        "10000102",
+        "10000103",
+        "10000104",
+        "10000105",
+        "10000106",
+        "10000107",
+        "10000108",
+        "10000109",
+        "10000110",
+        "10000111",
+        "10000112",
+        "10000113",
+        "10000114",
+        "10000115",
+        "10000116",
+        "10000117",
+        "10000118",
+        "10000119",
+        "10000120",
+        "10000121",
+        "10000122",
+        "10000123",
+        "10000124",
+        "10000125",
+        "10000126",
+        "10000127",
+        "10000128",
+        "10000129",
+        "10000130"
+      ],
+      "logicalFiles": 131,
+      "physicalCopies": 134,
+      "sidecars": 134,
+      "inventorySha256": "d04085784b8e3e8bb04b0688b5a372df27f48491e49afb7101092e5481dd920c"
+    },
+    "bob": {
+      "fileIds": [
+        "10000000",
+        "10000001",
+        "10000002",
+        "10000003",
+        "10000004",
+        "10000005",
+        "10000006",
+        "10000007",
+        "10000008",
+        "10000009",
+        "10000010",
+        "10000011",
+        "10000012",
+        "10000013",
+        "10000014",
+        "10000015",
+        "10000016",
+        "10000017",
+        "10000018",
+        "10000019",
+        "10000020",
+        "10000021",
+        "10000022",
+        "10000023",
+        "10000024",
+        "10000025",
+        "10000026",
+        "10000027",
+        "10000028",
+        "10000029",
+        "10000030",
+        "10000031",
+        "10000032",
+        "10000033",
+        "10000034",
+        "10000035",
+        "10000036",
+        "10000037",
+        "10000038",
+        "10000039",
+        "10000040",
+        "10000041",
+        "10000042",
+        "10000043",
+        "10000044",
+        "10000045",
+        "10000046",
+        "10000047",
+        "10000048",
+        "10000049",
+        "10000050",
+        "10000051",
+        "10000052",
+        "10000053",
+        "10000054",
+        "10000055",
+        "10000056",
+        "10000057",
+        "10000058",
+        "10000059",
+        "10000060",
+        "10000061",
+        "10000062",
+        "10000063",
+        "10000064",
+        "10000065",
+        "10000066",
+        "10000067",
+        "10000068",
+        "10000069",
+        "10000070",
+        "10000071",
+        "10000072",
+        "10000073",
+        "10000074",
+        "10000075",
+        "10000076",
+        "10000077",
+        "10000078",
+        "10000079",
+        "10000080",
+        "10000081",
+        "10000082",
+        "10000083",
+        "10000084",
+        "10000085",
+        "10000086",
+        "10000087",
+        "10000088",
+        "10000089",
+        "10000090",
+        "10000091",
+        "10000092",
+        "10000093",
+        "10000094",
+        "10000095",
+        "10000096",
+        "10000097",
+        "10000098",
+        "10000099",
+        "10000100",
+        "10000101",
+        "10000102",
+        "10000103",
+        "10000104",
+        "10000105",
+        "10000106",
+        "10000107",
+        "10000108",
+        "10000109",
+        "10000110",
+        "10000111",
+        "10000112",
+        "10000113",
+        "10000114",
+        "10000115",
+        "10000116",
+        "10000117",
+        "10000118",
+        "10000119",
+        "10000120",
+        "10000121",
+        "10000122",
+        "10000123",
+        "10000124",
+        "10000125",
+        "10000126",
+        "10000127",
+        "10000128",
+        "10000129",
+        "10000130",
+        "10000131"
+      ],
+      "logicalFiles": 132,
+      "physicalCopies": 133,
+      "sidecars": 133,
+      "inventorySha256": "de827e3d608064f1f5864ca31f661c061c23c4d4b8f448b7cf6d0cad401928ef"
+    }
+  },
+  "cases": [
+    {
+      "account": "alice",
+      "folder": "Favorites",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386440",
+          "ownerID": "1580559962386438",
+          "type": "favorites"
+        },
+        "title": "Favorites"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "description": "Frameleaf synthetic caption",
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Manual cover.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000000",
+          "magicMetadata": {
+            "visibility": 1
+          },
+          "metadata": {
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000
+          },
+          "pubMagicMetadata": {
+            "caption": "Frameleaf synthetic caption",
+            "dateTime": "2025:01:01 05:30:00",
+            "editedName": "Manual cover.jpg",
+            "editedTime": 1735689600000000,
+            "h": 32,
+            "lat": -33.25,
+            "long": 151.2,
+            "offsetTime": "+05:30",
+            "w": 48
+          },
+          "type": "image"
+        },
+        "favorited": true,
+        "geoData": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "title": "Manual cover.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438",
+          "1580559962386439",
+          "1580559962386440"
+        ],
+        "caption": "Frameleaf synthetic caption",
+        "createdAt": "2025-01-01T00:00:00.000000Z",
+        "dateTime": "2025:01:01 05:30:00",
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": 32,
+        "id": "10000000",
+        "location": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Manual cover.jpg",
+        "offsetTime": "+05:30",
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.737668Z",
+        "visibility": "archived",
+        "width": 48
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386440",
+          "fileId": "10000000",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "Manual cover.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "alice",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "magicMetadata": {
+            "visibility": 2
+          },
+          "ownerID": "1580559962386438",
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "description": "Frameleaf synthetic caption",
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Manual cover.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000000",
+          "magicMetadata": {
+            "visibility": 1
+          },
+          "metadata": {
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000
+          },
+          "pubMagicMetadata": {
+            "caption": "Frameleaf synthetic caption",
+            "dateTime": "2025:01:01 05:30:00",
+            "editedName": "Manual cover.jpg",
+            "editedTime": 1735689600000000,
+            "h": 32,
+            "lat": -33.25,
+            "long": 151.2,
+            "offsetTime": "+05:30",
+            "w": 48
+          },
+          "type": "image"
+        },
+        "favorited": true,
+        "geoData": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "title": "Manual cover.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438",
+          "1580559962386439",
+          "1580559962386440"
+        ],
+        "caption": "Frameleaf synthetic caption",
+        "createdAt": "2025-01-01T00:00:00.000000Z",
+        "dateTime": "2025:01:01 05:30:00",
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": 32,
+        "id": "10000000",
+        "location": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Manual cover.jpg",
+        "offsetTime": "+05:30",
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.737668Z",
+        "visibility": "archived",
+        "width": 48
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000000",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "Manual cover.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "alice",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "magicMetadata": {
+            "visibility": 2
+          },
+          "ownerID": "1580559962386438",
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "image",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Motion.jpg",
+              "role": "image",
+              "size": 982
+            },
+            {
+              "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+              "path": "Motion.mov",
+              "role": "video",
+              "size": 1745
+            }
+          ],
+          "fileID": "10000130",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 2,
+            "imageHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000,
+            "title": "Motion.jpg",
+            "videoHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ=="
+          },
+          "type": "livePhoto"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "Motion.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==:PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+        "height": null,
+        "id": "10000130",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Motion.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "livephoto",
+        "updatedAt": "2026-11-02T00:46:48.815123Z",
+        "visibility": "visible",
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "image",
+          "path": "Motion.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        },
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "video",
+          "path": "Motion.mov",
+          "bytes": "1745",
+          "sourceHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+          "input": "video.mov",
+          "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d"
+        }
+      ]
+    },
+    {
+      "account": "alice",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "magicMetadata": {
+            "visibility": 2
+          },
+          "ownerID": "1580559962386438",
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "video",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Motion.jpg",
+              "role": "image",
+              "size": 982
+            },
+            {
+              "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+              "path": "Motion.mov",
+              "role": "video",
+              "size": 1745
+            }
+          ],
+          "fileID": "10000130",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 2,
+            "imageHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000,
+            "title": "Motion.jpg",
+            "videoHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ=="
+          },
+          "type": "livePhoto"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "Motion.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==:PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+        "height": null,
+        "id": "10000130",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Motion.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "livephoto",
+        "updatedAt": "2026-11-02T00:46:48.815123Z",
+        "visibility": "visible",
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "image",
+          "path": "Motion.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        },
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "video",
+          "path": "Motion.mov",
+          "bytes": "1745",
+          "sourceHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+          "input": "video.mov",
+          "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d"
+        }
+      ]
+    },
+    {
+      "account": "alice",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "magicMetadata": {
+            "visibility": 2
+          },
+          "ownerID": "1580559962386438",
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 15, 2023, 12:21:20 AM UTC",
+          "timestamp": "1700007680"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "frame-128.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000128",
+          "metadata": {
+            "creationTime": 1700007680000000,
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "latitude": 12.3,
+            "longitude": 45.6,
+            "modificationTime": 1700000000000000,
+            "title": "frame-128.jpg"
+          },
+          "type": "image"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 12.3,
+          "longitude": 45.6
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 15, 2023, 12:21:20 AM UTC",
+          "timestamp": "1700007680"
+        },
+        "title": "frame-128.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-15T00:21:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": null,
+        "id": "10000128",
+        "location": {
+          "latitude": 12.3,
+          "longitude": 45.6
+        },
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "frame-128.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.597840Z",
+        "visibility": "visible",
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000128",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "frame-128.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "alice",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "magicMetadata": {
+            "visibility": 2
+          },
+          "ownerID": "1580559962386438",
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+              "path": "movie.mov",
+              "role": "original",
+              "size": 1745
+            }
+          ],
+          "fileID": "10000129",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "duration": 1,
+            "fileType": 1,
+            "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+            "modificationTime": 1700000000000000,
+            "title": "movie.mov"
+          },
+          "type": "video"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "movie.mov"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": 1,
+        "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+        "height": null,
+        "id": "10000129",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "movie.mov",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "video",
+        "updatedAt": "2026-11-02T00:46:48.776029Z",
+        "visibility": "visible",
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000129",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "movie.mov",
+          "bytes": "1745",
+          "sourceHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+          "input": "video.mov",
+          "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d"
+        }
+      ]
+    },
+    {
+      "account": "alice",
+      "folder": "Second collection",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386439",
+          "ownerID": "1580559962386438",
+          "type": "album"
+        },
+        "title": "Second collection"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "description": "Frameleaf synthetic caption",
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Manual cover.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000000",
+          "magicMetadata": {
+            "visibility": 1
+          },
+          "metadata": {
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000
+          },
+          "pubMagicMetadata": {
+            "caption": "Frameleaf synthetic caption",
+            "dateTime": "2025:01:01 05:30:00",
+            "editedName": "Manual cover.jpg",
+            "editedTime": 1735689600000000,
+            "h": 32,
+            "lat": -33.25,
+            "long": 151.2,
+            "offsetTime": "+05:30",
+            "w": 48
+          },
+          "type": "image"
+        },
+        "favorited": true,
+        "geoData": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "title": "Manual cover.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438",
+          "1580559962386439",
+          "1580559962386440"
+        ],
+        "caption": "Frameleaf synthetic caption",
+        "createdAt": "2025-01-01T00:00:00.000000Z",
+        "dateTime": "2025:01:01 05:30:00",
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": 32,
+        "id": "10000000",
+        "location": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Manual cover.jpg",
+        "offsetTime": "+05:30",
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.737668Z",
+        "visibility": "archived",
+        "width": 48
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386439",
+          "fileId": "10000000",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "Manual cover.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "bob",
+      "folder": "Bob private",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386441",
+          "ownerID": "1580559962386439",
+          "type": "album"
+        },
+        "title": "Bob private"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Same bytes different owner.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000131",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000,
+            "title": "Same bytes different owner.jpg"
+          },
+          "type": "image"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "Same bytes different owner.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386441"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": null,
+        "id": "10000131",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Same bytes different owner.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386439",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.856491Z",
+        "visibility": "visible",
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386441",
+          "fileId": "10000131",
+          "ownerId": "1580559962386439",
+          "role": "original",
+          "path": "Same bytes different owner.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "bob",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "sharedMagicMetadata": {
+            "visibility": 1
+          },
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "description": "Frameleaf synthetic caption",
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Manual cover.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000000",
+          "metadata": {
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000
+          },
+          "pubMagicMetadata": {
+            "caption": "Frameleaf synthetic caption",
+            "dateTime": "2025:01:01 05:30:00",
+            "editedName": "Manual cover.jpg",
+            "editedTime": 1735689600000000,
+            "h": 32,
+            "lat": -33.25,
+            "long": 151.2,
+            "offsetTime": "+05:30",
+            "w": 48
+          },
+          "type": "image"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Jan 1, 2025, 12:00:00 AM UTC",
+          "timestamp": "1735689600"
+        },
+        "title": "Manual cover.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": "Frameleaf synthetic caption",
+        "createdAt": "2025-01-01T00:00:00.000000Z",
+        "dateTime": "2025:01:01 05:30:00",
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": 32,
+        "id": "10000000",
+        "location": {
+          "latitude": -33.25,
+          "longitude": 151.2
+        },
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Manual cover.jpg",
+        "offsetTime": "+05:30",
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.737668Z",
+        "visibility": null,
+        "width": 48
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000000",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "Manual cover.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "bob",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "sharedMagicMetadata": {
+            "visibility": 1
+          },
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "image",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Motion.jpg",
+              "role": "image",
+              "size": 982
+            },
+            {
+              "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+              "path": "Motion.mov",
+              "role": "video",
+              "size": 1745
+            }
+          ],
+          "fileID": "10000130",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 2,
+            "imageHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000,
+            "title": "Motion.jpg",
+            "videoHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ=="
+          },
+          "type": "livePhoto"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "Motion.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==:PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+        "height": null,
+        "id": "10000130",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Motion.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "livephoto",
+        "updatedAt": "2026-11-02T00:46:48.815123Z",
+        "visibility": null,
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "image",
+          "path": "Motion.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        },
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "video",
+          "path": "Motion.mov",
+          "bytes": "1745",
+          "sourceHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+          "input": "video.mov",
+          "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d"
+        }
+      ]
+    },
+    {
+      "account": "bob",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "sharedMagicMetadata": {
+            "visibility": 1
+          },
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "video",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "Motion.jpg",
+              "role": "image",
+              "size": 982
+            },
+            {
+              "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+              "path": "Motion.mov",
+              "role": "video",
+              "size": 1745
+            }
+          ],
+          "fileID": "10000130",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 2,
+            "imageHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "modificationTime": 1700000000000000,
+            "title": "Motion.jpg",
+            "videoHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ=="
+          },
+          "type": "livePhoto"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "Motion.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==:PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+        "height": null,
+        "id": "10000130",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "Motion.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "livephoto",
+        "updatedAt": "2026-11-02T00:46:48.815123Z",
+        "visibility": null,
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "image",
+          "path": "Motion.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        },
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000130",
+          "ownerId": "1580559962386438",
+          "role": "video",
+          "path": "Motion.mov",
+          "bytes": "1745",
+          "sourceHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+          "input": "video.mov",
+          "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d"
+        }
+      ]
+    },
+    {
+      "account": "bob",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "sharedMagicMetadata": {
+            "visibility": 1
+          },
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 15, 2023, 12:21:20 AM UTC",
+          "timestamp": "1700007680"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+              "path": "frame-128.jpg",
+              "role": "original",
+              "size": 982
+            }
+          ],
+          "fileID": "10000128",
+          "metadata": {
+            "creationTime": 1700007680000000,
+            "fileType": 0,
+            "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+            "latitude": 12.3,
+            "longitude": 45.6,
+            "modificationTime": 1700000000000000,
+            "title": "frame-128.jpg"
+          },
+          "type": "image"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 12.3,
+          "longitude": 45.6
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 15, 2023, 12:21:20 AM UTC",
+          "timestamp": "1700007680"
+        },
+        "title": "frame-128.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-15T00:21:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+        "height": null,
+        "id": "10000128",
+        "location": {
+          "latitude": 12.3,
+          "longitude": 45.6
+        },
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "frame-128.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:46:48.597840Z",
+        "visibility": null,
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000128",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "frame-128.jpg",
+          "bytes": "982",
+          "sourceHash": "KTsBEWHaflYS5oPgqSMq89mH+dQ7TTCiDtThO4ibm5IIfaq3c4krwojPbiLt4CEy4ydj6VylspTb2kzyTtrmyg==",
+          "input": "photo.jpg",
+          "sha256": "8274897d0040b0e948e3397c7a863730542ccf4741b78533a3e682ece0941314"
+        }
+      ]
+    },
+    {
+      "account": "bob",
+      "folder": "Owner hidden 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "sharedMagicMetadata": {
+            "visibility": 1
+          },
+          "type": "album"
+        },
+        "title": "Owner hidden 🌧"
+      },
+      "record": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+              "path": "movie.mov",
+              "role": "original",
+              "size": 1745
+            }
+          ],
+          "fileID": "10000129",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "duration": 1,
+            "fileType": 1,
+            "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+            "modificationTime": 1700000000000000,
+            "title": "movie.mov"
+          },
+          "type": "video"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "movie.mov"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": 1,
+        "hash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+        "height": null,
+        "id": "10000129",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "movie.mov",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "video",
+        "updatedAt": "2026-11-02T00:46:48.776029Z",
+        "visibility": null,
+        "width": null
+      },
+      "expected": [
+        {
+          "albumId": "1580559962386438",
+          "fileId": "10000129",
+          "ownerId": "1580559962386438",
+          "role": "original",
+          "path": "movie.mov",
+          "bytes": "1745",
+          "sourceHash": "PVq1UBUk+bCmur6UzQparhUPhpPok3yz3zG/ZVJ5wTtsJ5dTjIlwqS8IL7+R0wvryLgoG2gZSvviYNCSt2aROQ==",
+          "input": "video.mov",
+          "sha256": "06eea9ef060718d031693c0d8c0944df433357412aee717be946e073573c391d"
+        }
+      ]
+    }
+  ]
+}
