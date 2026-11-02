@@ -1,4 +1,4 @@
-import { AdminAuditAction } from 'src/enum.js';
+import { AdminAuditAction, UserMetadataKey } from 'src/enum.js';
 import { type ImportDatabase, ImportRefused, quote } from 'src/immich-import/types.js';
 
 const BOOTSTRAP_TABLES = new Set([
@@ -45,11 +45,18 @@ export async function assertFreshImportDestination(
           );
           break;
         }
-        case 'session':
-        case 'user_metadata': {
+        case 'session': {
           records = await destination.query(
             `SELECT 1 FROM public.${quote(table)} WHERE "userId" IS DISTINCT FROM $1::uuid LIMIT 1`,
             [admin.id],
+          );
+          break;
+        }
+        case 'user_metadata': {
+          records = await destination.query(
+            `SELECT 1 FROM public.user_metadata WHERE "userId" IS DISTINCT FROM $1::uuid
+              OR key IS DISTINCT FROM $2::text LIMIT 1`,
+            [admin.id, UserMetadataKey.Preferences],
           );
           break;
         }

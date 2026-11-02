@@ -1,7 +1,7 @@
 import { hash } from 'bcrypt';
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { AdminAuditAction } from 'src/enum.js';
+import { AdminAuditAction, UserMetadataKey } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { createImportedOwner } from 'src/library-import/owners.js';
@@ -158,6 +158,17 @@ it.each(['second-owner', 'orphan-group', 'existing-album', 'past-library', 'past
   },
 );
 
+it.each(Object.values(UserMetadataKey).filter((key) => key !== UserMetadataKey.Preferences))(
+  'refuses administrator metadata outside the preference allowance: %s',
+  async (key) => {
+    const bootstrap = await db.selectFrom('user').select('id').executeTakeFirstOrThrow();
+    await db.insertInto('user_metadata').values({ userId: bootstrap.id, key, value: {} }).execute();
+    await expect(assertFreshImportDestination(wrap(db), { allowBootstrapAdmin: true })).rejects.toThrow(
+      'DESTINATION_NOT_FRESH',
+    );
+  },
+);
+
 it('admits an unused setup administrator and journals preserved owner credentials atomically', async () => {
   const bootstrap = await db.selectFrom('user').selectAll().executeTakeFirstOrThrow();
   await db
@@ -172,6 +183,10 @@ it('admits an unused setup administrator and journals preserved owner credential
     })
     .execute();
   await new SessionRepository(db).create(SessionFactory.create({ userId: bootstrap.id }));
+  await db
+    .insertInto('user_metadata')
+    .values({ userId: bootstrap.id, key: UserMetadataKey.Preferences, value: {} })
+    .execute();
   const owner = input();
   const binding = {
     operationId: owner.operationId,
