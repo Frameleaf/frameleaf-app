@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { Readable } from 'node:stream';
+import { buffer } from 'node:stream/consumers';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -207,6 +208,80 @@ describe(StorageRepository.name, () => {
   });
 
   describe('createZipStream', () => {
+    it('fails a missing file through the archive and closes inputs that have not started', async () => {
+      const zip = sut.createZipStream();
+      const started = vi.fn();
+      const pending = Readable.from(
+        (function* () {
+          started();
+          yield Buffer.from('pending');
+        })(),
+      );
+      const bytes = buffer(zip.stream);
+      try {
+        zip.addFile(fixturePath('/missing.raw'), 'missing.raw');
+        zip.addFile(pending, 'pending.raw');
+        const finalized = zip.finalize();
+        await expect(bytes).rejects.toMatchObject({ code: 'ENOENT' });
+        await finalized;
+        await vi.waitFor(() => expect(pending.closed).toBe(true));
+        expect(started).not.toHaveBeenCalled();
+      } finally {
+        zip.stream.destroy();
+        pending.destroy();
+      }
+    });
+
+    it('closes its owned file reader when a plain-file archive is cancelled', async () => {
+      await writeFiles({ '/zip/large.raw': 'x'.repeat(8 * 1024 * 1024) });
+      const open = vi.spyOn(sut, 'createPlainReadStream');
+      const zip = sut.createZipStream();
+      try {
+        zip.addFile(fixturePath('/zip/large.raw'), 'large.raw');
+        await vi.waitFor(() => expect(open.mock.results[0]?.value.readableDidRead).toBe(true));
+        zip.stream.destroy();
+        await vi.waitFor(() => expect(open.mock.results[0]?.value.closed).toBe(true));
+      } finally {
+        zip.stream.destroy();
+        for (const result of open.mock.results) if (result.type === 'return') result.value.destroy();
+        open.mockRestore();
+      }
+    });
+
+    it('closes active and queued inputs on cancellation and never starts later inputs', async () => {
+      const zip = sut.createZipStream();
+      const started: string[] = [];
+      const lazy = (name: string) =>
+        Readable.from(
+          (function* () {
+            started.push(name);
+            for (let index = 0; index < 64; index++) yield Buffer.alloc(65_536, name);
+          })(),
+        );
+      const active = lazy('active');
+      const pending = lazy('pending');
+      const late = lazy('late');
+      try {
+        zip.addFile(active, 'active.raw');
+        zip.addFile(pending, 'pending.raw');
+        await vi.waitFor(() => expect(started).toEqual(['active']));
+        zip.stream.destroy();
+        await vi.waitFor(() => {
+          expect(active.closed).toBe(true);
+          expect(pending.closed).toBe(true);
+        });
+        zip.addFile(late, 'late.raw');
+        await vi.waitFor(() => expect(late.closed).toBe(true));
+        await expect(zip.finalize()).resolves.toBeUndefined();
+        expect(started).toEqual(['active']);
+      } finally {
+        zip.stream.destroy();
+        active.destroy();
+        pending.destroy();
+        late.destroy();
+      }
+    });
+
     it('stores a file from disk and bytes made for the archive, such as a details file (FL-423)', async () => {
       await writeFiles({ '/zip/IMG_1.JPG': 'original pixels' });
       const zip = sut.createZipStream();

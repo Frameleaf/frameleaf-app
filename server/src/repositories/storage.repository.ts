@@ -103,36 +103,59 @@ export class StorageRepository {
 
   createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
+    const inputs = new Set<Readable>();
+    const track = (input: Readable) => {
+      inputs.add(input);
+      input.once('close', () => inputs.delete(input));
+      return input;
+    };
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+      for (const input of inputs) input.destroy();
+      inputs.clear();
+    };
+    archive.once('close', cancel);
+    archive.once('error', cancel);
 
     // archiver pipes an appended stream at once, which starts it (FL-721: a decrypting stream opens
     // its file), so the entry after a stream is added only once that stream is done or the archive is
     // gone. A long list of streamed entries then holds one open at a time, in the order they were added.
     let queue = Promise.resolve();
     const addFile = (input: string | Buffer | Readable, filename: string) => {
-      queue = queue.then(() => {
-        if (typeof input === 'string') {
-          archive.file(input, { name: filename, mode: 0o644 });
-          return;
-        }
-        archive.append(input, { name: filename, mode: 0o644 });
-        if (Buffer.isBuffer(input)) {
-          return;
-        }
-        return new Promise<void>((resolve) => {
-          const done = () => {
-            input.off('close', done);
-            archive.off('close', done);
-            archive.off('error', done);
-            resolve();
-          };
-          input.once('close', done);
-          archive.once('close', done);
-          archive.once('error', done);
+      if (cancelled || archive.destroyed) {
+        if (input instanceof Readable) input.destroy();
+        return;
+      }
+      if (input instanceof Readable) {
+        track(input);
+      }
+      queue = queue
+        .then(async () => {
+          if (cancelled || archive.destroyed) return;
+          const stats = typeof input === 'string' ? await this.stat(input) : undefined;
+          if (cancelled || archive.destroyed) return;
+          const source = typeof input === 'string' ? track(this.createPlainReadStream(input)) : input;
+          archive.append(source, { name: filename, mode: 0o644, date: stats?.mtime });
+          if (Buffer.isBuffer(source)) return;
+          return new Promise<void>((resolve) => {
+            const done = () => {
+              source.off('close', done);
+              archive.off('close', done);
+              archive.off('error', done);
+              resolve();
+            };
+            source.once('close', done);
+            archive.once('close', done);
+            archive.once('error', done);
+          });
+        })
+        .catch((error: unknown) => {
+          archive.destroy(error instanceof Error ? error : new Error('Unable to read archive input'));
         });
-      });
     };
 
-    const finalize = () => queue.then(() => archive.finalize());
+    const finalize = () => queue.then(() => (cancelled || archive.destroyed ? undefined : archive.finalize()));
 
     return { stream: archive, addFile, finalize };
   }
