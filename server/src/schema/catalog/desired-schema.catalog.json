@@ -40379,6 +40379,16 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "importClaimPending",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
         }
       ],
       "indexes": [

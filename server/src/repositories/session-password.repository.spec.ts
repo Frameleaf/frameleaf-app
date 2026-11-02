@@ -12,8 +12,9 @@ it('locks the checked password through session insertion in one transaction', as
     expect(queries.map(({ sql }) => sql.split(' ', 1)[0])).toEqual(['begin', 'select', 'insert', 'commit']);
     expect(queries[1].sql).toContain('"user"."password" = $2');
     expect(queries[1].sql).toContain('"user"."deletedAt" is null');
+    expect(queries[1].sql).toContain('"user"."importClaimPending" = $3');
     expect(queries[1].sql).toMatch(/for share$/);
-    expect(queries[1].parameters).toEqual([userId, 'checked-hash']);
+    expect(queries[1].parameters).toEqual([userId, 'checked-hash', false]);
   } finally {
     await db.destroy();
   }

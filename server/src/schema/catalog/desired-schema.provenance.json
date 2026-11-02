@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "90560b076a6e91b5024238b494b8750996d6aad1",
+  "sourceCommit": "b80ada77531a12eac6fc1e2634764801700a7d94",
   "sourceHashes": {
     "src/enum.ts": "ca52eacbfa1dab1a4ded8b04742cec4904bb86ff65db7a9318d24e9d55bd95e2",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -143,7 +143,7 @@
     "src/schema/tables/user-audit.table.ts": "e77746133031ba867764186197785e51b89b684845aae299c5fb4c7c63d30c35",
     "src/schema/tables/user-metadata-audit.table.ts": "53dced62c8cd992050eea9b01fbd13ff042f97b9af9d3930bc2bb13dd2b13782",
     "src/schema/tables/user-metadata.table.ts": "fc46a9e43c9bf85e49a9e030082770ea76775add99343917389fce833910f910",
-    "src/schema/tables/user.table.ts": "39c2230395d2f8d4e6e1977d1334f27deae2a2a19ef06ca081f344eb13c53474",
+    "src/schema/tables/user.table.ts": "d628d2b6746a9ce428125f29d281a91dba9cd32f79a617dd0715166aeb918539",
     "src/schema/tables/version-history.table.ts": "b290931697aea4e4e917927e1e547d894d40a1b768dc0e51c8d9325704bdc91f",
     "src/schema/tables/video-moment.table.ts": "bb202390870bb23b50a161d0637d713335cf413e1d9e40d2df87a1a2d665a1cd",
     "src/schema/tables/video-stream.table.ts": "9b737a5664583eac3d8c657111c7e9a2bbc9f9fd7691e8f70aac841eaa59f254",
@@ -157,6 +157,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "aeb4d598b07c869575f8324907c99c1411e7f4799b01ef1b106349468821c4ec",
-  "rawMetadataSha256": "910329edade4ba0d7c9f6c56bd90344a07e63b1fb13783092e1289dcfc0adbb0"
+  "dumpSha256": "7caff51366a43e447d03e0683ae8051025699bfe7169663ce44d4830d52a680e",
+  "rawMetadataSha256": "83495d7434e3bad73fb9564ee33cc96e2258165de7ea9378b0fe119ceaf647b8"
 }
