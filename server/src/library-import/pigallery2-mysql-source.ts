@@ -4,6 +4,7 @@ import { z } from 'zod';
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-mysql84.json' with { type: 'json' };
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
 import { mysqlSchemaFingerprint } from 'src/library-import/mysql-schema.js';
+import { withPasswordCallbackDeadline } from 'src/library-import/password-callback.js';
 import { ImportedPassword, ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { admitPigallery2MysqlSchema } from 'src/library-import/pigallery2-mysql-schema.js';
 import { pigallery2Projections } from 'src/library-import/pigallery2-projections.js';
@@ -164,30 +165,39 @@ export async function* readPigallery2MysqlRestore(
     if (withPasswords) {
       let active = true;
       try {
-        await withPasswords(async (context) => {
-          try {
-            if (
-              !active ||
-              failed ||
-              !/^(?:0|-?[1-9]\d{0,9})$/.test(context.sourceUserId) ||
-              BigInt(context.sourceUserId) < -2_147_483_648n ||
-              BigInt(context.sourceUserId) > 2_147_483_647n
-            )
-              return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
-            const rows = await query(`SELECT password FROM ${table('user_entity')} WHERE id=? LIMIT 2`, [
-              context.sourceUserId,
-            ]);
-            if (!active || failed || rows.length !== 1) return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
-            const encoded = rows[0].password;
-            if (encoded === null || encoded === '') return;
-            if (typeof encoded !== 'string') return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
-            const credential = await ImportedPassword.fromSource(context, 'bcrypt', encoded);
-            if (!active || failed) return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
-            return credential;
-          } catch {
-            return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
-          }
-        });
+        await withPasswordCallbackDeadline(
+          (activity) =>
+            withPasswords(async (context) => {
+              try {
+                if (
+                  !active ||
+                  failed ||
+                  !/^(?:0|-?[1-9]\d{0,9})$/.test(context.sourceUserId) ||
+                  BigInt(context.sourceUserId) < -2_147_483_648n ||
+                  BigInt(context.sourceUserId) > 2_147_483_647n
+                )
+                  return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
+                activity();
+                const rows = await query(`SELECT password FROM ${table('user_entity')} WHERE id=? LIMIT 2`, [
+                  context.sourceUserId,
+                ]);
+                if (!active || failed || rows.length !== 1) return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
+                const encoded = rows[0].password;
+                if (encoded === null || encoded === '') {
+                  activity();
+                  return;
+                }
+                if (typeof encoded !== 'string') return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
+                const credential = await ImportedPassword.fromSource(context, 'bcrypt', encoded);
+                if (!active || failed) return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
+                activity();
+                return credential;
+              } catch {
+                return refuse('PIGALLERY2_PASSWORD_UNAVAILABLE');
+              }
+            }),
+          new Pigallery2MysqlError('PIGALLERY2_PASSWORD_CALLBACK_TIMEOUT'),
+        );
       } finally {
         active = false;
       }

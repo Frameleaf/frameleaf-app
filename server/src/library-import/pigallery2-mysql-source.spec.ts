@@ -2,7 +2,7 @@ import { hash } from 'bcrypt';
 import { createConnection } from 'mysql2/promise';
 import content from 'src/library-import/fixtures/pigallery2/3.5.2-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-mysql84.json' with { type: 'json' };
-import { ImportedPassword, verifyImportedPassword } from 'src/library-import/passwords.js';
+import { ImportedPassword, ImportedPasswordContext, verifyImportedPassword } from 'src/library-import/passwords.js';
 import { readPigallery2MysqlRestore } from 'src/library-import/pigallery2-mysql-source.js';
 
 vi.mock('mysql2/promise', () => ({ createConnection: vi.fn() }));
@@ -240,6 +240,63 @@ it('sanitizes consumer failures and releases the read lock', async () => {
     })(),
   ).rejects.toThrow(/^PiGallery2 source refused: PIGALLERY2_SOURCE_UNAVAILABLE$/);
   expect(destroy).toHaveBeenCalledOnce();
+});
+
+it('expires a stalled password callback and releases a queued cancellation', async () => {
+  vi.useFakeTimers();
+  try {
+    const entered = Promise.withResolvers<void>();
+    const stream = readPigallery2MysqlRestore(config, async () => {
+      entered.resolve();
+      await new Promise(() => {});
+    });
+    const next = stream.next().catch((error: unknown) => error);
+    await entered.promise;
+    const cancelled = stream.return(undefined);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(await next).toMatchObject({
+      message: 'PiGallery2 source refused: PIGALLERY2_PASSWORD_CALLBACK_TIMEOUT',
+    });
+    await cancelled;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('renews the password callback budget on completed account reads instead of limiting account count', async () => {
+  vi.useFakeTimers();
+  try {
+    const entered =
+      Promise.withResolvers<
+      (context: ImportedPasswordContext) => Promise<ImportedPassword | undefined>
+      >();
+    const finish = Promise.withResolvers<void>();
+    const stream = readPigallery2MysqlRestore(config, async (read) => {
+      entered.resolve(read);
+      await finish.promise;
+    });
+    const next = stream.next();
+    const read = await entered.promise;
+    await vi.advanceTimersByTimeAsync(29_000);
+    const context = {
+      operationId: '11111111-1111-4111-8111-111111111111',
+      sourceUserId: '2',
+      destinationUserId: '22222222-2222-4222-8222-222222222222',
+    };
+    expect(await read(context)).toBeInstanceOf(ImportedPassword);
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(destroy).not.toHaveBeenCalled();
+    finish.resolve();
+    await next;
+    await stream.return(undefined);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(read(context)).rejects.toThrow('PIGALLERY2_PASSWORD_UNAVAILABLE');
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('uses credential-free projections without reading password or share-token values', async () => {
