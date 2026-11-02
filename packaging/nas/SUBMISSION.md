@@ -55,8 +55,8 @@ operation and its source version is not changed by Frameleaf's release number.
    image references. The checksum file protects transport; it does not replace
    those authenticity checks. Retain the workflow URL, source SHA and manifests.
 
-The artifact contains `manager/unraid/` and
-`manager/truenas/frameleaf-manager.compose.yaml`. If requested, `application/`
+The artifact contains `manager/unraid/`,
+`manager/truenas/frameleaf-manager.compose.yaml` and `manager/hexos/`. If requested, `application/`
 contains manual Unraid templates and `truenas/ix-dev/community/frameleaf` catalog
 source. Manager's TrueNAS installer is a Custom App, not a catalog listing.
 
@@ -111,6 +111,31 @@ devbox run copy-lib
 Use disposable storage for the deployment test. Record the external PR and
 accepted listing URL separately. The Manager Custom App can be installed without
 a catalog submission.
+
+## HexOS
+
+HexOS runs TrueNAS underneath and installs apps from JSON install scripts. Manager
+is a `custom: true` script on TrueNAS's generic `ix-app` chart; it asks HexOS for the
+ApplicationsPerformance, ApplicationsCapacity and Photos locations and mounts each
+Frameleaf folder at its host path.
+
+- **Custom Install:** `manager/hexos/frameleaf-manager.hexos.json` is the signed
+  installer attached to every Manager release, image `:latest`. In HexOS, turn on
+  Dev Mode in Preferences, choose **Custom Install** in Apps and paste it.
+- **App catalog:** `manager/hexos/frameleaf.json` is the same script with only the
+  image tag set to that Manager release (`manager-vX.Y.Z`). The catalog validator
+  refuses `latest` on a public app; the owner approved this one pinned copy
+  (FL-1111). Copy it into a fork of
+  [eshtek/hexos-app-catalog](https://github.com/eshtek/hexos-app-catalog) as
+  `frameleaf.json`, run `bun _lib/validate.ts` there and open a pull request that
+  explains the Docker socket and `/proc/1/mountinfo` mounts. After it is accepted,
+  the catalog's image watcher opens its own pull requests for later `manager-v`
+  tags; submit again only when the script itself changes.
+
+Not yet qualified on a HexOS box: `$LOCATION` inside `mount_path`, the `root` owner
+on the Frameleaf folders, Custom Install accepting `latest`, and importing an Immich
+that HexOS installed. HexOS can restart its own Immich app, which Manager's
+restart-policy fence does not prevent; stop Immich in HexOS before an import.
 
 ## Synology Package Center
 

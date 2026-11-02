@@ -13,6 +13,11 @@ const INSTALLERS = [
     "truenas/manager.compose.yaml.in",
     "truenas/frameleaf-manager.compose.yaml",
   ],
+  [
+    "frameleaf-manager.hexos.json",
+    "hexos/frameleaf-manager.hexos.json.in",
+    "hexos/frameleaf-manager.hexos.json",
+  ],
 ];
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -21,11 +26,27 @@ function renderManagerInstallers(manifest) {
     manifest.image,
     /^ghcr\.io\/frameleaf\/frameleaf-manager@sha256:[a-f0-9]{64}$/,
   );
+  const [, version] = manifest.tag.match(/^manager-v(\d+\.\d+\.\d+)$/) ?? [];
+  assert(version, "Manager release tag required");
   return INSTALLERS.map(([name, template, destination]) => {
-    const body = fs.readFileSync(path.join(__dirname, template), "utf8");
+    const body = fs
+      .readFileSync(path.join(__dirname, template), "utf8")
+      .replaceAll("@MANAGER_VERSION@", version);
     assert(!/@[A-Z_]+@/.test(body), "Unresolved Manager package placeholder");
     return { name, destination, bytes: Buffer.from(body, "utf8") };
   });
+}
+
+// The HexOS catalog validator refuses a moving tag on a public app, so its listing is the signed
+// Custom Install script with only the image tag set to this release (owner exception, FL-1111).
+function renderHexosCatalog(manifest, assets) {
+  const asset = assets.find(
+    (asset) => asset.name === "frameleaf-manager.hexos.json",
+  );
+  const body = asset.bytes.toString("utf8");
+  const latest = '"tag": "latest"';
+  assert.equal(body.split(latest).length, 2, "One HexOS image tag required");
+  return Buffer.from(body.replace(latest, `"tag": "${manifest.tag}"`), "utf8");
 }
 
 function validateInstallerBinding(manifest, assets) {
@@ -47,8 +68,8 @@ function validateInstallerBinding(manifest, assets) {
     /^ghcr\.io\/frameleaf\/frameleaf-manager@sha256:[a-f0-9]{64}$/,
   );
   assert(
-    Array.isArray(binding.files) && binding.files.length === 2,
-    "Exactly two Manager installers required",
+    Array.isArray(binding.files) && binding.files.length === INSTALLERS.length,
+    "Every Manager installer must be bound",
   );
   assert.deepEqual(
     binding.files.map((file) => file.name).sort(),
@@ -100,6 +121,7 @@ function assembleManagerInstallers(file, output) {
 module.exports = {
   INSTALLERS,
   renderManagerInstallers,
+  renderHexosCatalog,
   validateInstallerBinding,
   assembleManagerInstallers,
 };
