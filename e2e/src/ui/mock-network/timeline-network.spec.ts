@@ -80,3 +80,26 @@ it('rejects changed calendar boundaries but permits a short unasserted page', as
   );
   expect(staleLength.status).toBe(409);
 });
+
+it.each(['', '&isTrashed=false', '&isTrashed=true'])(
+  'keeps trash filtering consistent across timeline routes with query %s',
+  async (filter) => {
+    const { changes, request } = await fixture();
+    for (const deletedId of ['0000', '0001']) {
+      changes.assetDeletions.push(deletedId);
+      const expectedIds = Array.from({ length: 501 }, (_, index) => String(index).padStart(4, '0')).filter(
+        (id) => changes.assetDeletions.includes(id) === (filter === '&isTrashed=true'),
+      );
+      const page = await request(`bucket?timeBucket=2025-01-01${filter}`);
+      expect(page.json.id).toEqual(expectedIds);
+      const summaries = await request(`buckets?pageSize=500${filter}`);
+      expect(summaries.json).toMatchObject([
+        { count: expectedIds.length, firstAssetId: expectedIds[0], lastAssetId: expectedIds.at(-1) },
+      ]);
+      const highlights = await request(`highlights?grouping=month&highlightCount=500${filter}`);
+      expect(highlights.json).toMatchObject([
+        { count: expectedIds.length, keyAssetId: expectedIds[0], highlightAssetIds: expectedIds.slice(1) },
+      ]);
+    }
+  },
+);

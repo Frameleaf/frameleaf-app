@@ -58,7 +58,7 @@ export const setupTimelineMockApiRoutes = async (
     const pathname = url.pathname;
     if (pathname === '/api/timeline/buckets') {
       const albumId = url.searchParams.get('albumId') || undefined;
-      const isTrashed = url.searchParams.get('isTrashed') ? url.searchParams.get('isTrashed') === 'true' : undefined;
+      const isTrashed = url.searchParams.get('isTrashed') === 'true';
       const isFavorite = url.searchParams.get('isFavorite') ? url.searchParams.get('isFavorite') === 'true' : undefined;
       const isArchived = url.searchParams.get('visibility')
         ? url.searchParams.get('visibility') === 'archive'
@@ -136,7 +136,7 @@ export const setupTimelineMockApiRoutes = async (
           timelineRestData,
           param('grouping') === 'month' ? 'month' : 'year',
           Number(param('highlightCount') ?? 0),
-          param('isTrashed') ? param('isTrashed') === 'true' : undefined,
+          param('isTrashed') === 'true',
           param('visibility') ? param('visibility') === 'archive' : undefined,
           param('isFavorite') ? param('isFavorite') === 'true' : undefined,
           param('albumId') || undefined,
@@ -160,7 +160,7 @@ export const setupTimelineMockApiRoutes = async (
       if (!timeBucket) {
         return route.continue();
       }
-      const isTrashed = url.searchParams.get('isTrashed') ? url.searchParams.get('isTrashed') === 'true' : undefined;
+      const isTrashed = url.searchParams.get('isTrashed') === 'true';
       const isArchived = url.searchParams.get('visibility')
         ? url.searchParams.get('visibility') === 'archive'
         : undefined;
