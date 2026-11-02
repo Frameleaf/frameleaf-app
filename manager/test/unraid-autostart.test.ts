@@ -150,9 +150,25 @@ test('reconciliation refuses unrelated host edits', async () => {
   const root = await mkdtemp(join(tmpdir(), 'manager-changed-autostart-'));
   const store = new Store(root);
   store.set('autostart-write', { text: 'immich\nother\n', modified: 'other\n' });
-  const file = { read: async () => 'new-neighbour\n', write: async () => assert.fail('must preserve external edit') };
+  let current = 'new-neighbour\n';
+  let writes = 0;
+  const file = { read: async () => current, write: async (expected: string, modified: string) => {
+    assert.equal(current, expected);
+    writes++;
+    current = modified;
+  } };
   try {
-    await assert.rejects((new Fencing({} as any, store, file) as any).rewriteAutostart((current: string) => current), { message: 'autostart_changed' });
+    await assert.rejects((new Fencing({} as any, store, file) as any).rewriteAutostart((current: string) => current), { message: 'autostart_changed', status: 409,
+      detail: 'The Unraid autostart list changed after an interrupted write. Restore the list to its original or intended content, then try again.' });
+    assert.equal(current, 'new-neighbour\n');
+    assert.equal(writes, 0);
+    for (const restored of ['immich\nother\n', 'other\n']) {
+      store.set('autostart-write', { text: 'immich\nother\n', modified: 'other\n' });
+      current = restored;
+      await (new Fencing({} as any, store, file) as any).rewriteAutostart((text: string) => text);
+      assert.equal(current, 'other\n');
+      assert.equal(store.get('autostart-write'), null);
+    }
   } finally { store.close(); await rm(root, { recursive: true, force: true }); }
 });
 

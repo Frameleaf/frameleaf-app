@@ -137,7 +137,11 @@ export class Fencing {
       while (prefix < Math.min(actual.length, after.length) && actual[prefix] === after[prefix]) prefix++;
       // Interrupted in-place writes are a new prefix followed by the old tail, until truncate completes.
       if (current !== pending.text && !actual.equals(Buffer.concat([after.subarray(0, prefix), before.subarray(prefix)])))
-        throw new Refusal('autostart_changed');
+        throw new Refusal(
+          'autostart_changed',
+          409,
+          'The Unraid autostart list changed after an interrupted write. Restore the list to its original or intended content, then try again.',
+        );
       await this.writeAutostart(current, pending.modified);
     }
     this.store.set('autostart-write', null);
