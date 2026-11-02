@@ -4,7 +4,7 @@ The multi-source importer is under development. A schema reader passing its test
 
 ## Imported account claims
 
-The Server has an internal `importClaimPending` account flag for newly mapped non-Immich owners. The importer must supply explicit destination identities; an email collision is rejected instead of adopting an existing account. Account creation discards source passwords, PINs, OAuth subjects, password links and administrative privileges. A destination administrator must already exist.
+The Server has an internal `importClaimPending` account flag for owners newly mapped from other applications. The importer must supply explicit destination identities; an email collision is rejected instead of adopting an existing account. Account creation discards source passwords, PINs, OAuth subjects, password links and administrative privileges. A destination administrator must already exist.
 
 Pending owners cannot sign in with a password, OAuth or Frameleaf, or authenticate through sessions, API keys or public links. An administrator uses the existing emailed, single-use password link to claim the account. This requires configured outgoing email and a public server address. Only the link hash is stored; changing the destination email invalidates the link. Redemption checks expiry after acquiring the account lock and activates the owner in the same transaction that removes stale sessions, API keys, identity links and public links. Imported sharing must be reconstructed separately after its permissions have been verified.
 
