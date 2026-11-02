@@ -49,7 +49,7 @@
   let syncing = false;
 
   const taken = (asset: Asset) => {
-    const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
+    const value = asset.localDateTime ?? asset.exifInfo?.dateTimeOriginal;
     const date = value ? new Date(value) : null;
     // local capture times are stored as UTC wall-clock time, so they are shown in UTC
     return date && Number.isFinite(date.getTime())
