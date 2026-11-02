@@ -83,7 +83,10 @@
         return;
       }
       suggestions = result;
-      autoAdd = result.autoAdd;
+      // After a failed save the person's pending auto-add choice stays, so Try again still sends it.
+      if (!afterFailure) {
+        autoAdd = result.autoAdd;
+      }
       const ids = [...result.fromTrip, ...result.needDate].map(({ assetId }) => assetId);
       picked = new Set(afterFailure ? ids.filter((assetId) => picked.has(assetId)) : ids);
       fixDate = new Set(afterFailure ? ids.filter((assetId) => fixDate.has(assetId)) : []);
