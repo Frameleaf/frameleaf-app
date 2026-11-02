@@ -11,13 +11,17 @@ import { SupervisorStop } from 'src/utils/shutdown.js';
 describe('queue execution supervisor', () => {
   it('bounds startup hangs before watchdog registration without inventing stop proof', async () => {
     const worker = new Worker('while(true) {}', { eval: true });
+    const terminate = vi.spyOn(worker, 'terminate');
     const recordStopped = vi.fn();
     const diagnostic = vi.fn();
     const { stopped } = superviseQueueWorker(worker, 40, 20, { startupMs: 100, recordStopped, diagnostic });
     const exit = once(worker, 'exit');
     try {
-      expect(await Promise.race([exit.then(([code]) => code), delay(1000, 'still-running')])).toBe(1);
+      // Node reports 0 if termination wins the race with worker startup, otherwise 1.
+      expect([0, 1]).toContain(await Promise.race([exit.then(([code]) => code), delay(1000, 'still-running')]));
+      expect(terminate).toHaveBeenCalledTimes(1);
       await stopped;
+      expect(worker.threadId).toBe(-1);
       expect(recordStopped).not.toHaveBeenCalled();
       expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('without a verified worker ID'));
     } finally {
