@@ -8,6 +8,7 @@ export const CATALOG_HELPER_SOURCES = [
   'src/schema/shared-services-schema.ts',
   'src/queue/schema.ts',
   'src/immich-import/state.ts',
+  'src/library-import/state-schema.ts',
 ] as const;
 
 export const CATALOG_FIXED_SOURCES = [
