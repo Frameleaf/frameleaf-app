@@ -1,4 +1,4 @@
-import { AlbumUserRole, LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
+import { AlbumKind, AlbumUserRole, LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -490,6 +490,23 @@ describe('AlbumHeader in Boards', () => {
     expect(screen.queryByRole('button', { name: 'New album' })).toBeNull();
     const menu = await openMore();
     expect(menu.getByRole('menuitem', { name: 'New album' })).toBeInTheDocument();
+  });
+
+  it('creates New album from a plain album next to it, in the same collection (FL-1126)', async () => {
+    const family = albumFactory.build({ id: 'family', albumName: 'Family', kind: AlbumKind.Collection });
+    const album = albumAs(AlbumUserRole.Owner, { parentId: 'family' });
+    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ id: 'new', albumName: 'Hikes' }));
+    render(AlbumHeader, { album, assetCount: 3, collections: [family], onAlbumChange: vi.fn(), onRefresh: vi.fn() });
+    const menu = await openMore();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'New album' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    await fireEvent.input(dialog.getByRole('textbox', { name: 'Name' }), { target: { value: 'Hikes' } });
+    await fireEvent.click(dialog.getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(sdkMock.createAlbum).toHaveBeenCalledWith({
+        createAlbumDto: expect.objectContaining({ albumName: 'Hikes', parentId: 'family' }),
+      }),
+    );
   });
 
   it('keeps a Boards collection compact: Boards path, no empty albums strip, extras in the menu (FL-670)', async () => {
