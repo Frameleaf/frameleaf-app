@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { parseImportManifest } from 'src/library-import/manifest.js';
 import { createImportedOwner, importedOwnerSchema } from 'src/library-import/owners.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
@@ -12,6 +11,7 @@ import {
   LibraryImportRefused,
   parseLibraryImportBinding,
 } from 'src/library-import/state.js';
+import { beginLibraryImportReadback } from 'src/library-import/verification.js';
 
 const id = z.string().min(1).max(1024);
 const intentSchema = z.strictObject({
@@ -157,9 +157,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
     return refuse('OWNER_RECONCILIATION_MISMATCH');
   try {
     return await db.transaction(async (tx) => {
-      await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-      const [lock] = await tx.query('SELECT pg_try_advisory_xact_lock($1::bigint) AS acquired', [LIBRARY_IMPORT_LOCK]);
-      if (!lock?.acquired) return refuse('IMPORT_ALREADY_RUNNING');
+      await beginLibraryImportReadback(tx);
       const { run } = await new LibraryImportJournal(tx).status();
       if (!run || JSON.stringify(run.binding) !== JSON.stringify(bound.binding))
         return refuse('IMPORT_BINDING_CHANGED');

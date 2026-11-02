@@ -7,6 +7,7 @@ import { reconcileImportedAlbums } from 'src/library-import/album-reconciliation
 import { CanonicalAlbumWriter } from 'src/library-import/album-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
+import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { CanonicalOwnerWriter, reconcileImportedOwners } from 'src/library-import/owner-reconciliation.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
@@ -471,4 +472,44 @@ it('retains imported album grants while independently refusing changed permissio
     .where('userId', '=', claimId)
     .execute();
   await expect(reconcileImportedAlbums(wrap(db), context)).rejects.toThrow('ALBUM_RECONCILIATION_MISMATCH');
+});
+
+it('refuses verification when abandonment commits across snapshot and advisory acquisition', async () => {
+  const { context, inventory } = await ready();
+  const { promise: release, resolve: releaseCommit } = Promise.withResolvers<void>();
+  const { promise: announced, resolve: announce } = Promise.withResolvers<void>();
+  const committed = db.transaction().execute(async (tx) => {
+    await sql`SELECT pg_advisory_xact_lock(${LIBRARY_IMPORT_LOCK}::bigint)`.execute(tx);
+    await sql`UPDATE frameleaf_library_import SET status='abandoned'`.execute(tx);
+    announce();
+    await release;
+  });
+  await announced;
+  const actual = wrap(db);
+  const raced: ImportDatabase = {
+    ...actual,
+    transaction: (body) =>
+      actual.transaction((tx) =>
+        body({
+          ...tx,
+          query: async (statement, parameters) => {
+            if (statement.startsWith('SELECT pg_try_advisory_xact_lock')) {
+              // Freeze the same snapshot the advisory SELECT takes before evaluating its lock function.
+              await tx.query('SELECT 1');
+              releaseCommit();
+              await committed;
+            }
+            return tx.query(statement, parameters);
+          },
+        }),
+      ),
+  };
+  try {
+    await expect(reconcileImportedOwners(raced, context, inventory)).rejects.toThrow(
+      /IMPORT_ALREADY_RUNNING|IMPORT_NOT_VERIFYING/,
+    );
+  } finally {
+    releaseCommit();
+    await committed;
+  }
 });
