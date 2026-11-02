@@ -39,9 +39,29 @@ it('reads MySQL index visibility, expressions, enforced constraints and foreign-
   ])
     expect(statements).toContain('`' + column + '`');
   expect(statements).not.toContain('`IGNORED`');
-  expect(statements).toContain('WHERE CAST(`TABLE_SCHEMA` AS BINARY)=CAST(DATABASE() AS BINARY)');
-  expect(statements).toContain('CAST(`REFERENCED_TABLE_SCHEMA` AS BINARY)=CAST(DATABASE() AS BINARY)');
-  expect(statements).toContain('CAST(`UNIQUE_CONSTRAINT_SCHEMA` AS BINARY)=CAST(DATABASE() AS BINARY)');
+  const scopes: Record<string, string> = {
+    TRIGGERS: 'TRIGGER_SCHEMA',
+    ROUTINES: 'ROUTINE_SCHEMA',
+    EVENTS: 'EVENT_SCHEMA',
+    REFERENTIAL_CONSTRAINTS: 'CONSTRAINT_SCHEMA',
+    CHECK_CONSTRAINTS: 'CONSTRAINT_SCHEMA',
+  };
+  for (const [statement] of query.mock.calls) {
+    const table = /FROM information_schema\.(\w+)/.exec(statement)![1];
+    expect(statement).toContain(
+      `WHERE CAST(\`${scopes[table] ?? 'TABLE_SCHEMA'}\` AS BINARY)=CAST(DATABASE() AS BINARY)`,
+    );
+    const reference =
+      table === 'KEY_COLUMN_USAGE'
+        ? 'REFERENCED_TABLE_SCHEMA'
+        : table === 'REFERENTIAL_CONSTRAINTS'
+          ? 'UNIQUE_CONSTRAINT_SCHEMA'
+          : undefined;
+    if (reference)
+      expect(statement).toContain(
+        `'${reference}',IF(\`${reference}\` IS NULL,NULL,IF(CAST(\`${reference}\` AS BINARY)=CAST(DATABASE() AS BINARY),'source','external'))`,
+      );
+  }
   expect(mysqlSchemaFingerprint(schema, '')).toBe(mysql.schemaSha256);
 });
 
