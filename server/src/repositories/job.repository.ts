@@ -513,12 +513,16 @@ export class JobRepository {
     if (!context) {
       return action();
     }
-    const buffering = context.buffering;
+    const collection = (context.followupCollection ??= { active: 0, buffering: context.buffering });
+    collection.active++;
     context.buffering = true;
     try {
       await action();
     } finally {
-      context.buffering = buffering;
+      if (--collection.active === 0) {
+        context.buffering = collection.buffering;
+        delete context.followupCollection;
+      }
     }
   }
 

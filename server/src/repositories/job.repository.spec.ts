@@ -167,6 +167,40 @@ describe(JobRepository.name, () => {
     expect(execution.buffering).toBe(false);
   });
 
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])('keeps overlapping follow-up collection scoped (initial=%s, throws=%s)', async (initial, throws) => {
+    const execution = context();
+    execution.buffering = initial;
+    const { promise: firstGate, resolve: finishFirst } = Promise.withResolvers<void>();
+    const { promise: secondGate, resolve: finishSecond } = Promise.withResolvers<void>();
+    await queueExecution.run(execution, async () => {
+      const first = sut.collectFollowups(() => firstGate);
+      const second = sut.collectFollowups(async () => {
+        await secondGate;
+        if (throws) throw new Error('fixture');
+      });
+      const secondOutcome = second.catch((error: unknown) => error);
+      try {
+        finishFirst();
+        await first;
+        expect(execution.buffering).toBe(true);
+        await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+        expect(execution.followups).toHaveLength(1);
+      } finally {
+        finishSecond();
+        const outcome = await secondOutcome;
+        expect(outcome instanceof Error).toBe(throws);
+      }
+      expect(execution.buffering).toBe(initial);
+      expect(execution.followupCollection).toBeUndefined();
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it('keeps metadata and embedding inference distinct within one media run', async () => {
     const execution = context();
     execution.claim.rootItemKey = 'asset';
