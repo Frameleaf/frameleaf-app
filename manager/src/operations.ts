@@ -1039,10 +1039,14 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
   }
-  // A failed update keeps the operation lock, so retrying is the only way forward. When its release was
-  // withdrawn (1.1.17, issue 626), retry with the newest offered release instead. The database checkpoint
-  // taken before the failed attempt is kept: the withdrawn release never started.
+  /** Retry withdrawn targets with a newer compatible release, retaining targets that may have started. */
   private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
+    // Older journals cannot prove a selected target never started.
+    if (
+      operation.completed.includes('apply-release') ||
+      (this.installation()?.release === review.release.nas.tag && operation.receipts['release-start-state'] !== 'prepared')
+    )
+      return review;
     const withdrawn = await this.releases.eligible(review.release.nas.tag).then(
       () => false,
       (error) => {
@@ -1072,6 +1076,7 @@ export class Operations {
     this.store.save(operation);
     return retargeted;
   }
+  /** Persist startup intent so retry cannot reuse a checkpoint after a different target may have written. */
   private async applyUpdate(operation: Operation, review: UpdateReview): Promise<void> {
     await this.step(operation, 'download-images', async () => {
       await this.releases.eligible(review.release.nas.tag);
@@ -1107,6 +1112,13 @@ export class Operations {
       const oldCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
       if (oldCompose.services.database.image !== review.release.nas.images.postgres)
         throw new Refusal('database_image_change_requires_restore');
+      if (
+        operation.receipts['release-start-state'] === undefined &&
+        this.installation()?.release === review.current.release
+      ) {
+        operation.receipts['release-start-state'] = 'prepared';
+        this.store.save(operation);
+      }
       await renderCompose(
         review.release,
         installation,
@@ -1115,6 +1127,8 @@ export class Operations {
         this.application(),
       );
       this.store.set('installation', installation);
+      operation.receipts['release-start-state'] = 'starting';
+      this.store.save(operation); // Persist intent before the target can write.
       await this.docker.compose(this.directory(), installation.project, 'up');
       return this.libraryStatus();
     });

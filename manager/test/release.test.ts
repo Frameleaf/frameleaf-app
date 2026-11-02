@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Releases } from '../src/releases.js';
+import { Refusal } from '../src/contracts.js';
 const require = createRequire(import.meta.url);
 const { verifyBundle, verifyNasManifest } = require('../../.github/verify-release-bundle.cjs');
 const {
@@ -173,4 +174,20 @@ test('Manager lists only installable releases, newest first', async (t) => {
     listed.map((item) => item.tag),
     ['frameleaf-v3.2.0-13', 'frameleaf-v3.2.0-10', 'frameleaf-v3.2.0-9'],
   );
+});
+
+test('a missing release is ineligible, while other GitHub failures retain their HTTP status', async (t) => {
+  const releases = new Releases('/nonexistent', 'seed');
+  for (const status of [404, 403, 429, 500]) {
+    t.mock.method(globalThis, 'fetch', async () => new Response('{}', { status }));
+    await assert.rejects(releases.eligible('frameleaf-v1.1.8'), (error: unknown) => {
+      assert.ok(error instanceof Refusal);
+      assert.equal(error.code, status === 404 ? 'release_not_eligible' : 'release_service_unavailable');
+      assert.match(error.detail!, new RegExp(`HTTP ${status}`));
+      return true;
+    });
+    if (status === 404)
+      await assert.rejects(releases.available(), { code: 'release_service_unavailable' });
+    t.mock.restoreAll();
+  }
 });

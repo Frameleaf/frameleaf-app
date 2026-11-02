@@ -134,7 +134,7 @@ const refusals: Record<string, string> = {
   settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
   masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
   incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',
-  release_service_unavailable: 'Manager could not reach GitHub to check Frameleaf releases. Check this server can reach github.com, then try again.',
+  release_service_unavailable: 'GitHub could not complete the Frameleaf release check. Try again shortly.',
   select_a_new_release: 'Choose a release newer than the one this server runs. To go back to an older release, restore a database recovery point taken on it from Backups.',
   release_not_eligible:'This Frameleaf release is not offered to this server. Choose another release.',
   release_bundle_missing: 'This Frameleaf release is missing installation files Manager needs. Choose a newer release.',
