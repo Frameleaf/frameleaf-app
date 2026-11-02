@@ -72,8 +72,8 @@ test.describe('Libraries (FL-78)', () => {
     const detail = libraryDetail(page, name);
     const message = detail.getByTestId('library-scan-message');
 
-    // the page polls while the scan moves, and settles on the completed summary
-    await expect(message).toHaveText(/· 1 added · 0 missing$/, { timeout: 60_000 });
+    // the page polls while the scan moves, and settles on the completed summary, without its zero parts
+    await expect(message).toHaveText('1 added', { timeout: 60_000 });
     const row = page.getByRole('region', { name: 'Library table' }).getByRole('row', { name: new RegExp(name) });
     await expect(row.getByText('Completed', { exact: true })).toBeVisible();
   });

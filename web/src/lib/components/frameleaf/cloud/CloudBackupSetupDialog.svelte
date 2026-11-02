@@ -446,6 +446,7 @@
           <input
             type="password"
             autocomplete="new-password"
+            placeholder={$t('frameleaf_cloud_backup_escrow_passphrase_placeholder')}
             value={passphrase.first}
             oninput={(event) => (passphrase = { ...passphrase, first: event.currentTarget.value })}
           />
@@ -460,7 +461,11 @@
           />
         </label>
         {#if !escrowValid && passphrase.second}
-          <small class="cc-error">{$t('frameleaf_cloud_backup_escrow_passphrase_invalid')}</small>
+          <small class="cc-error"
+            >{passphrase.first === passphrase.second
+              ? $t('frameleaf_cloud_backup_escrow_passphrase_short')
+              : $t('frameleaf_cloud_backup_escrow_passphrase_invalid')}</small
+          >
         {/if}
       </div>
     {/if}

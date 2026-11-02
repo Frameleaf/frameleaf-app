@@ -21,6 +21,7 @@
     getAuthStatus,
     getLockedEncryption,
     getSessions,
+    LockedEncryptionMode,
     type ApiKeyResponseDto,
     type AuthStatusResponseDto,
     type LockedEncryptionStatusResponseDto,
@@ -114,13 +115,17 @@
             ? 'frameleaf_le_privacy_off'
             : view === 'working'
               ? 'frameleaf_le_privacy_working'
-              : view === 'decrypting' || view === 'finish'
-                ? 'frameleaf_le_privacy_decrypting'
-                : view === 'needs'
-                  ? 'frameleaf_le_privacy_needs'
-                  : view === 'advanced'
-                    ? 'frameleaf_le_privacy_on_advanced'
-                    : 'frameleaf_le_privacy_on_pin',
+              : view === 'finish'
+                ? encryption.mode === LockedEncryptionMode.Advanced
+                  ? 'frameleaf_le_privacy_finish_passphrase'
+                  : 'frameleaf_le_privacy_finish_pin'
+                : view === 'decrypting'
+                  ? 'frameleaf_le_privacy_decrypting'
+                  : view === 'needs'
+                    ? 'frameleaf_le_privacy_needs'
+                    : view === 'advanced'
+                      ? 'frameleaf_le_privacy_on_advanced'
+                      : 'frameleaf_le_privacy_on_pin',
         );
       }
       default: {

@@ -709,6 +709,8 @@
     </Row>
     <Advanced summary={$t('frameleaf_backup_technical')}>
       <dl class="fc-facts">
+        <dt>{$t('frameleaf_cloud_backup_encryption')}</dt>
+        <dd>{$t('frameleaf_cloud_backup_encryption_value')}</dd>
         <dt>{$t('frameleaf_cloud_backup_bucket')}</dt>
         <dd><code>{status.bucket}</code></dd>
         {#if status.target !== CloudBackupTargetSetting.Managed}
@@ -820,6 +822,7 @@
       <input
         type="password"
         autocomplete="new-password"
+        placeholder={$t('frameleaf_cloud_backup_escrow_passphrase_placeholder')}
         value={escrowPassphrase.first}
         oninput={(event) => (escrowPassphrase = { ...escrowPassphrase, first: event.currentTarget.value })}
       />
@@ -834,7 +837,11 @@
       />
     </label>
     {#if escrowPassphrase.second && !isEscrowPassphraseValid(escrowPassphrase.first, escrowPassphrase.second)}
-      <small class="cc-error">{$t('frameleaf_cloud_backup_escrow_passphrase_invalid')}</small>
+      <small class="cc-error"
+        >{escrowPassphrase.first === escrowPassphrase.second
+          ? $t('frameleaf_cloud_backup_escrow_passphrase_short')
+          : $t('frameleaf_cloud_backup_escrow_passphrase_invalid')}</small
+      >
     {/if}
   </div>
   {#if escrowFailure}

@@ -159,7 +159,11 @@
       <div class="resource-scan">
         <div>
           <h3>{$t('frameleaf_libraries_scan_title')}</h3>
-          <p role="status" data-testid="library-scan-message">{$t(message.key, { values: message.values })}</p>
+          <p role="status" data-testid="library-scan-message">
+            {message.parts
+              ? message.parts.map((part) => $t(part.key, { values: part.values })).join(' · ')
+              : $t(message.key, { values: message.values })}
+          </p>
         </div>
         {#if scanning && row.scan}
           <progress max={100} value={row.scan.progress} aria-label={$t('frameleaf_libraries_scan_progress')}></progress>

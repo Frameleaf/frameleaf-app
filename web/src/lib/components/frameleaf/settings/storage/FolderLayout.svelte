@@ -83,9 +83,15 @@
   // OPS-08: the server names each person's folder by storage label, else account ID (StorageCore.getLibraryFolder)
   // read again on open: another administrator may have changed this account's label since sign-in
   let me = $state(authManager.authenticated ? authManager.user : undefined);
-  const ownFolder = $derived(me ? me.storageLabel || me.id : '');
+  const noLabel = $derived(!!me && !me.storageLabel);
+  // a preview never shows the account's long code: without a folder name it says "Your folder" and why
+  const ownFolder = $derived(me ? me.storageLabel || $t('frameleaf_layout_your_folder') : '');
   const whole = $derived([$t('frameleaf_layout_sample_root'), ownFolder, ...example.parts].filter(Boolean));
-  const long = $derived(whole.join('/').length > 80);
+  // the length warning measures the real name on the disk
+  const long = $derived(
+    [$t('frameleaf_layout_sample_root'), me ? me.storageLabel || me.id : '', ...example.parts].filter(Boolean).join('/')
+      .length > 80,
+  );
   const refiling = $derived(!!status && (status.isActive || (status.hasUnfinishedWork && !status.isPaused)));
 
   const tiles = $derived([
@@ -195,6 +201,7 @@
       <div class="example" role="status">
         <p>{$t('frameleaf_layout_example')}</p>
         <p class="path">{whole.join(' › ')}</p>
+        {#if noLabel}<p>{$t('frameleaf_layout_no_label')}</p>{/if}
       </div>
       {#if example.unknown.length > 0}
         <div class="pad">

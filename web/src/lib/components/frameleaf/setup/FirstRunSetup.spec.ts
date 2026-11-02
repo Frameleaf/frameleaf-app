@@ -374,6 +374,20 @@ describe('FirstRunSetup (FL-176)', () => {
       expect(screen.getByLabelText('Password')).toHaveValue('');
     });
 
+    it('says a breached password under the password field', async () => {
+      await cloudNow({ state: 'unlinked' });
+      sdkMock.getCloudAccountLinkConsents.mockResolvedValue(consents as never);
+      sdkMock.linkCloudWithAccount.mockResolvedValueOnce(answer('refused', { refusal: 'password-breached' }) as never);
+      render(FirstRunSetup, { initial: accountStep(), authenticated: true });
+      await fireEvent.input(await screen.findByLabelText('Frameleaf password'), {
+        target: { value: 'a long passphrase' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Create account and link' }));
+      const error = await screen.findByText(/This password has appeared in a data breach/);
+      expect(error.closest('p')).toHaveAttribute('id', 'frs-fl-password-error');
+      expect(screen.getByLabelText('Frameleaf password')).toHaveAttribute('aria-invalid', 'true');
+    });
+
     it('offers, never assumes, linking in the region the account keeps its data in (FC-18)', async () => {
       await cloudNow({ state: 'unlinked' });
       sdkMock.getCloudAccountLinkConsents.mockResolvedValue(consents as never);
@@ -384,7 +398,8 @@ describe('FirstRunSetup (FL-176)', () => {
       await fireEvent.click(await screen.findByRole('button', { name: 'I already have a Frameleaf account' }));
       await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'x' } });
       await fireEvent.click(screen.getByRole('button', { name: 'Sign in and link' }));
-      expect(await screen.findByText(/This account keeps its data in the EU/)).toBeInTheDocument();
+      // a choice, not a failure: it reads as information
+      expect((await screen.findByText(/This account keeps its data in the EU/)).closest('p')).toHaveClass('auth-info');
       expect(sdkMock.linkCloudWithAccount).toHaveBeenCalledTimes(1);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Link in the EU' }));

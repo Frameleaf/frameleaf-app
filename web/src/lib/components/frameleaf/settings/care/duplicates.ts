@@ -26,3 +26,21 @@ export const aboutDuration = (seconds: number) => {
 
 export const alikeChoiceOf = (maxDistance: number): AlikeChoice | 'custom' =>
   ALIKE_CHOICES.find((choice) => Math.abs(choice.maxDistance - maxDistance) < 1e-9)?.id ?? 'custom';
+
+/**
+ * FL-651: how different two videos' pictures may look and still match, said in words. The server
+ * keeps a number from 0 to 16 (`enhancedVideo.maxHashDistance`, 8 by default); nobody needs to see
+ * it. Each choice covers the numbers up to its `most`.
+ */
+export type VideoLook = 'very_strict' | 'strict' | 'balanced' | 'loose' | 'very_loose';
+
+const VIDEO_LOOKS: readonly { id: VideoLook; most: number }[] = [
+  { id: 'very_strict', most: 2 },
+  { id: 'strict', most: 6 },
+  { id: 'balanced', most: 9 },
+  { id: 'loose', most: 12 },
+  { id: 'very_loose', most: 16 },
+];
+
+export const videoLookOf = (maxHashDistance: number): VideoLook =>
+  (VIDEO_LOOKS.find((look) => maxHashDistance <= look.most) ?? VIDEO_LOOKS.at(-1)!).id;

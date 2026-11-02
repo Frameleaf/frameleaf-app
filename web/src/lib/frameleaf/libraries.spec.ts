@@ -10,6 +10,7 @@ import {
 import {
   buildLibraryRows,
   canScanLibrary,
+  checkFound,
   checkPathList,
   filterLibraryRows,
   foldersChanged,
@@ -187,19 +188,34 @@ describe('scans', () => {
     );
   });
 
-  it('reports a finished scan in the template’s words', () => {
-    expect(scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 10, offlined: 2, added: 3 }))).toEqual(
-      {
-        key: 'frameleaf_libraries_scan_completed',
-        values: { matched: 5, added: 3, missing: 2 },
-      },
-    );
+  it('reports a finished scan as its counts', () => {
+    expect(
+      scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 10, offlined: 2, added: 3 })).parts,
+    ).toEqual([
+      { key: 'frameleaf_libraries_found_matched', values: { count: 5 } },
+      { key: 'frameleaf_libraries_found_added', values: { count: 3 } },
+      { key: 'frameleaf_libraries_found_missing', values: { count: 2 } },
+    ]);
   });
 
-  it('matches nothing on a first scan: every item it checked, it had just added', () => {
+  it('leaves out the parts that are zero: a first scan only adds', () => {
     expect(
-      scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 21, offlined: 0, added: 21 })).values,
-    ).toEqual({ matched: 0, added: 21, missing: 0 });
+      scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 21, offlined: 0, added: 21 })).parts,
+    ).toEqual([{ key: 'frameleaf_libraries_found_added', values: { count: 21 } }]);
+  });
+
+  it('counts changed items too', () => {
+    expect(
+      scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 4, offlined: 0, added: 0, updated: 2 }))
+        .parts,
+    ).toEqual([
+      { key: 'frameleaf_libraries_found_matched', values: { count: 4 } },
+      { key: 'frameleaf_libraries_found_changed', values: { count: 2 } },
+    ]);
+  });
+
+  it('says nothing new when a check found nothing', () => {
+    expect(checkFound({})).toEqual([{ key: 'frameleaf_libraries_found_nothing' }]);
   });
 });
 

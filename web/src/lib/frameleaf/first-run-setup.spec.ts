@@ -16,6 +16,7 @@ import {
   KEEP_LAYOUT,
   KEEP_MODEL,
   keepsUnlistedModel,
+  readableModelName,
   loadAccountTool,
   loadLocalSetup,
   markSection,
@@ -345,6 +346,11 @@ describe('first-run setup state (FL-176)', () => {
       expect(keepsUnlistedModel('existing', 'ViT-B-32__openai')).toBe(false);
       expect(keepsUnlistedModel('existing', undefined)).toBe(false);
       expect(keepsUnlistedModel('new', 'custom-model')).toBe(false);
+      // the kept model is named in words, never by its raw id
+      expect(readableModelName('ViT-B-32__openai')).toBe('OpenAI ViT-B-32');
+      expect(readableModelName('ViT-B-16-SigLIP-384__webli')).toBe('WebLI ViT-B-16-SigLIP-384');
+      expect(readableModelName('custom-model')).toBe('custom-model');
+      expect(readableModelName('custom__constructor')).toBe('constructor custom');
       // a new server still starts at the hardware's tier
       expect(defaultTier('new', { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' })).toBe('best');
 

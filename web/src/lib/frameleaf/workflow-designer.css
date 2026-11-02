@@ -227,7 +227,7 @@
 .wd-matches {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin: 12px 0 6px;
   padding: 0;
   list-style: none;
