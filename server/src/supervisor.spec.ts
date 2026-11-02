@@ -93,7 +93,7 @@ vi.mock('src/repositories/config.repository.js', () => ({
       return {
         workers: ['api', 'microservices', 'edge'],
         database: { config: {} },
-        shutdown: { deadlineMs: 9000 },
+        shutdown: { graceMs: 5000, workerDeadlineMs: 8000, deadlineMs: 9000 },
       };
     }
   },
@@ -463,6 +463,53 @@ describe('supervisor worker-local restart lifecycle', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
+  });
+
+  it('reserves child-reaping and proof time before the existing shutdown deadlines', async () => {
+    const persisted = Promise.withResolvers<void>();
+    fixture.nextStopped = persisted.promise;
+    const workers = new Workers();
+    await workers.bootstrap();
+    const microservices = latest(FrameleafWorker.Microservices);
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(6999);
+    expect(microservices.ownedTerminate).not.toHaveBeenCalled();
+    expect(process.exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(microservices.ownedTerminate).toHaveBeenCalledExactlyOnceWith(1000);
+    expect(process.exit).not.toHaveBeenCalled();
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).not.toHaveBeenCalled();
+    persisted.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('cancels the reserved queue termination when the worker finishes its graceful stop', async () => {
+    const workers = new Workers();
+    await workers.bootstrap();
+    const microservices = latest(FrameleafWorker.Microservices);
+    workers.stop('SIGTERM');
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(microservices.ownedTerminate).not.toHaveBeenCalled();
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('reports a native queue force before the deadline even if every worker then exits zero', async () => {
+    vi.stubEnv('FRAMELEAF_NATIVE_OWNER', '1');
+    const workers = new Workers();
+    await workers.bootstrap();
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(latest(FrameleafWorker.Microservices).ownedTerminate).toHaveBeenCalledExactlyOnceWith(1000);
+    for (const name of [FrameleafWorker.Api, FrameleafWorker.Microservices, FrameleafWorker.Edge])
+      latest(name).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
   });
 
   it('routes a poisoned microservices pool through its child-owning supervisor', () => {

@@ -191,6 +191,31 @@ describe('queue execution supervisor', () => {
     }
   });
 
+  it('tightens an in-flight termination budget without starting a second termination', async () => {
+    const worker = Object.assign(new EventEmitter(), { terminate: vi.fn() });
+    worker.terminate.mockImplementation(() => {
+      worker.emit('exit', 1);
+      return Promise.resolve(1);
+    });
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+    const { stopped, terminate } = superviseQueueWorker(worker as unknown as Worker, undefined, undefined, {
+      diagnostic: vi.fn(),
+      stopWaitMs: 5000,
+      childScanMs: 5,
+    });
+    worker.emit('message', { type: 'queue-child', pid: 99_999_999, active: true });
+    const first = terminate(5000);
+    try {
+      expect(terminate(0)).toBe(first);
+      await delay(50);
+      expect(worker.terminate).toHaveBeenCalledOnce();
+    } finally {
+      kill.mockRestore();
+      await first;
+      await stopped;
+    }
+  });
+
   it('refuses proof when kill requests and a reported close cannot establish child absence', async () => {
     const worker = Object.assign(new EventEmitter(), { terminate: vi.fn().mockResolvedValue(0) });
     const recordStopped = vi.fn();

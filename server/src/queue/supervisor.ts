@@ -22,7 +22,7 @@ export function superviseQueueWorker(
   let lastSeen = performance.now();
   let terminating = false;
   let termination: Promise<number> | undefined;
-  let stopDeadline: number | undefined;
+  let stopDeadline = Infinity;
   const children = new Set<number>();
   const diagnostic = options.diagnostic ?? ((message: string) => console.error(message));
   const absent = (pid: number) => {
@@ -42,18 +42,17 @@ export function superviseQueueWorker(
       }
     }
   };
-  const terminate = () => {
+  const terminate = (waitMs = options.stopWaitMs ?? 5000) => {
+    stopDeadline = Math.min(stopDeadline, performance.now() + waitMs);
     if (termination) return termination;
     terminating = true;
-    const deadline = performance.now() + (options.stopWaitMs ?? 5000);
-    stopDeadline = deadline;
     killChildren();
     termination = (async () => {
       // Keep the owning libuv loop alive until its children are reaped; early closure strands zombies.
-      while (children.size > 0 && performance.now() < deadline) {
+      while (children.size > 0 && performance.now() < stopDeadline) {
         for (const pid of children) if (absent(pid)) children.delete(pid);
         if (children.size === 0) break;
-        await delay(Math.min(options.childScanMs ?? 50, Math.max(1, deadline - performance.now())));
+        await delay(Math.min(options.childScanMs ?? 50, Math.max(1, stopDeadline - performance.now())));
       }
       return worker.terminate();
     })();
@@ -113,7 +112,7 @@ export function superviseQueueWorker(
       killChildren();
       watchdog?.close();
       const confirm = async () => {
-        const deadline = stopDeadline ?? performance.now() + (options.stopWaitMs ?? 5000);
+        const deadline = performance.now() + (options.stopWaitMs ?? 5000);
         let waitingReported = false;
         while (true) {
           for (const pid of children) if (absent(pid)) children.delete(pid);
@@ -124,13 +123,15 @@ export function superviseQueueWorker(
               `Queue worker ${workerId ?? 'unknown'} exited; stop proof withheld while confirming native children (${[...children].join(', ')}). Check host processes and mounts if they cannot stop.`,
             );
           }
-          if (performance.now() >= deadline) {
+          if (performance.now() >= Math.min(deadline, stopDeadline)) {
             diagnostic(
               `Queue worker ${workerId ?? 'unknown'} exited but native children remain unconfirmed (${[...children].join(', ')}); no stop proof written. Check host processes and mounts.`,
             );
             return;
           }
-          await delay(options.childScanMs ?? 50);
+          await delay(
+            Math.min(options.childScanMs ?? 50, Math.max(1, Math.min(deadline, stopDeadline) - performance.now())),
+          );
         }
         if (!workerId || identityConflict) {
           if (options.recordStopped)
