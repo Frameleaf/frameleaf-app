@@ -1,4 +1,9 @@
 ARG NODE_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+FROM ${NODE_IMAGE} AS import-native
+RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY manager/import-rename.c /tmp/import-rename.c
+RUN cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=3 -fPIE -pie -Wl,-z,relro,-z,now -o /usr/local/bin/frameleaf-import-rename /tmp/import-rename.c
+
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app/manager
 COPY manager/package*.json ./
@@ -20,6 +25,7 @@ RUN case "$TARGETARCH" in \
     && curl --fail --location --proto '=https' --tlsv1.2 "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-${TARGETARCH}" -o /usr/local/bin/cosign \
     && printf '%s  %s\n' "$checksum" /usr/local/bin/cosign | sha256sum --check --strict \
     && chmod 755 /usr/local/bin/cosign
+COPY --from=import-native /usr/local/bin/frameleaf-import-rename /usr/local/bin/frameleaf-import-rename
 WORKDIR /app/manager
 COPY --from=build /app/manager/node_modules /app/node_modules
 COPY --from=build /app/manager/build ./build

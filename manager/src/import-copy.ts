@@ -314,3 +314,10 @@ export async function copyImportFiles(
       : new Refusal('import_copy_unavailable');
   }
 }
+
+export {
+  directory as openImportRoot,
+  parent as openImportParent,
+  fdPath as importFdPath,
+  stable as importFileStable,
+};
