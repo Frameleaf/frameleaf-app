@@ -454,6 +454,9 @@ export const setupTrashMockApiRoutes = async (
       .filter((id) => action === 'empty' || action === 'restore-all' || selected.has(id));
   };
 
+  const reviews = new Map<string, { action: string; ids: string[] }>();
+  let reviewSequence = 0;
+
   await context.route('**/api/trash/**', async (route, request) => {
     const pathname = new URL(request.url()).pathname;
     if (pathname === '/api/trash/summary') {
@@ -465,21 +468,45 @@ export const setupTrashMockApiRoutes = async (
     }
     if (pathname === '/api/trash/review') {
       const { action, ids = [] } = request.postDataJSON();
+      const affected = affectedIds(action, ids);
+      const whole = action === 'empty' || action === 'restore-all';
+      if (affected.length === 0 || (!whole && new Set(ids).size !== affected.length)) {
+        return route.fulfill({
+          status: 400,
+          json: { message: 'A chosen item changed or is no longer available. Refresh and review again.' },
+        });
+      }
+      const token = `timeline-review-${++reviewSequence}`;
+      reviews.set(token, { action, ids: affected.toSorted((a, b) => a.localeCompare(b)) });
       return route.fulfill({
         json: {
           action,
           bytes: 0,
-          count: affectedIds(action, ids).length,
+          count: affected.length,
           names: [],
           retainedBytes: 0,
           retainedOriginals: 0,
-          token: 'review',
+          token,
         },
       });
     }
     if (pathname === '/api/trash/apply') {
-      const { action, ids = [] } = request.postDataJSON();
+      const { action, ids = [], token } = request.postDataJSON();
       const affected = affectedIds(action, ids);
+      const review = reviews.get(token);
+      const whole = action === 'empty' || action === 'restore-all';
+      if (
+        (!whole && new Set(ids).size !== affected.length) ||
+        !review ||
+        review.action !== action ||
+        JSON.stringify(review.ids) !== JSON.stringify(affected.toSorted((a, b) => a.localeCompare(b)))
+      ) {
+        return route.fulfill({
+          status: 409,
+          json: { message: 'Trash changed since this review. Review the current items before continuing.' },
+        });
+      }
+      reviews.delete(token);
       if (action === 'restore' || action === 'restore-all') {
         changes.assetDeletions = changes.assetDeletions.filter((id) => !affected.includes(id));
       } else if (action === 'delete' || action === 'empty') {

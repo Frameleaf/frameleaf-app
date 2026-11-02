@@ -256,7 +256,11 @@ test.describe('Timeline', () => {
       await route.fulfill({ json: { count: requestJson.ids.length } });
     });
     await row.getByRole('button', { name: 'Restore', exact: true }).click();
-    await expect(restoreRequest).resolves.toEqual({ action: 'restore', ids: [assetId], token: 'review' });
+    await expect(restoreRequest).resolves.toEqual({
+      action: 'restore',
+      ids: [assetId],
+      token: expect.stringMatching(/^timeline-review-\d+$/),
+    });
     await expect(row).toHaveCount(0);
   };
 
