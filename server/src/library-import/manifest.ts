@@ -153,6 +153,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
     paths.add(file.path);
   }
   const assets = new Map(value.assets.map((asset) => [asset.id, asset]));
+  const referencedFiles = new Set<string>();
   for (const asset of value.assets) {
     if (!indexes.users.has(asset.ownerId)) fail('UNKNOWN_OWNER');
     if (new Set(asset.fileIds).size !== asset.fileIds.length) fail('DUPLICATE_FILE_REFERENCE');
@@ -171,7 +172,9 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
     } else if (originals.length !== 1) {
       fail('PRIMARY_ORIGINAL_REQUIRED');
     }
+    for (const fileId of asset.fileIds) referencedFiles.add(fileId);
   }
+  if (value.files.some((file) => !referencedFiles.has(file.id))) fail('FILE_OWNER_RELATIONSHIP_REQUIRED');
   for (const album of value.albums) {
     if (!indexes.users.has(album.ownerId)) fail('UNKNOWN_OWNER');
     if (new Set(album.assetIds).size !== album.assetIds.length) fail('DUPLICATE_ALBUM_MEMBERSHIP');

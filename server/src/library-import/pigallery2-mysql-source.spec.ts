@@ -269,9 +269,7 @@ it('renews the password callback budget on completed account reads instead of li
   vi.useFakeTimers();
   try {
     const entered =
-      Promise.withResolvers<
-      (context: ImportedPasswordContext) => Promise<ImportedPassword | undefined>
-      >();
+      Promise.withResolvers<(context: ImportedPasswordContext) => Promise<ImportedPassword | undefined>>();
     const finish = Promise.withResolvers<void>();
     const stream = readPigallery2MysqlRestore(config, async (read) => {
       entered.resolve(read);
