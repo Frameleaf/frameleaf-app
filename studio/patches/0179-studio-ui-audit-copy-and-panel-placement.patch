@@ -102,7 +102,7 @@ index 58f49f0..a45f353 100644
                      const item = useItemsStore.getState().itemById[warning.itemId]
                      const seconds = Number.isFinite(warning.startSeconds)
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
-index 9a1b49c..9ea594a 100644
+index 9a1b49c..049c9e2 100644
 --- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 @@ -40,6 +40,8 @@ import type { TimelineState, TimelineActions } from '@/features/editor/deps/time
@@ -130,17 +130,29 @@ index 9a1b49c..9ea594a 100644
    const showFullMotionLibrary = workspace === 'motion' && hasVisualItems
    const showMotionTab = hasVisualItems
    const showSecondTab = showAudioTab
-@@ -630,6 +639,9 @@ const ClipPanelCore = memo(function ClipPanelCore({
+@@ -629,12 +638,19 @@ const ClipPanelCore = memo(function ClipPanelCore({
+   const motionUsesFullHeight = activeTab === 'motion' && showFullMotionLibrary
  
    return (
-     <div className={cn(motionUsesFullHeight ? 'h-full min-h-0' : 'space-y-3')}>
+-    <div className={cn(motionUsesFullHeight ? 'h-full min-h-0' : 'space-y-3')}>
++    <div className={cn(motionUsesFullHeight ? 'flex h-full min-h-0 flex-col gap-3' : 'space-y-3')}>
 +      {/* Caption quality belongs with captions of every kind: subtitles, caption text and
 +          transcript captions on video or audio clips. */}
-+      {hasCaptionSelection && <CaptionQualityPanel />}
++      {hasCaptionSelection && (
++        <div className={cn(motionUsesFullHeight && 'shrink-0')}>
++          <CaptionQualityPanel />
++        </div>
++      )}
        {/* Tabbed sections */}
        <Tabs
          value={activeTab}
-@@ -738,6 +750,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+         onValueChange={handleTabChange}
+-        className={cn('w-full', motionUsesFullHeight && 'flex h-full min-h-0 flex-col')}
++        className={cn('w-full', motionUsesFullHeight && 'flex min-h-0 flex-1 flex-col')}
+       >
+         <TabsList className={cn('grid h-8 w-full shrink-0', tabGridColsClass)}>
+           {availableTabs.map((value) => {
+@@ -738,6 +754,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
                <LazyAudioSection items={audioPanelItems} />
              </Suspense>
            )}
@@ -148,7 +160,7 @@ index 9a1b49c..9ea594a 100644
          </TabsContent>
  
          {/* Effects Tab - clip effects plus text styling and animation */}
-@@ -764,6 +777,13 @@ const ClipPanelCore = memo(function ClipPanelCore({
+@@ -764,6 +781,13 @@ const ClipPanelCore = memo(function ClipPanelCore({
            )}
          </TabsContent>
        </Tabs>
