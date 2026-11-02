@@ -92,7 +92,7 @@ export function parseImportPlan(input: unknown): ImportPlan {
   const roots = new Map(plan.roots.map((root) => [root.id, root]));
   if (
     !unique(plan.owners.map((owner) => owner.sourceId)) ||
-    !unique(plan.owners.map((owner) => owner.destinationId)) ||
+    !unique(plan.owners.map((owner) => owner.destinationId.toLowerCase())) ||
     !unique(plan.roots.map((root) => root.id)) ||
     !unique(plan.roots.map((root) => root.path)) ||
     !unique(
