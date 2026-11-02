@@ -47568,6 +47568,91 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "asset_face_outfit",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "faceId",
+          "tableName": "asset_face_outfit",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "modelName",
+          "tableName": "asset_face_outfit",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "embedding",
+          "tableName": "asset_face_outfit",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_face_outfit",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_face_outfit_faceId_idx",
+          "definition": "CREATE INDEX \"asset_face_outfit_faceId_idx\" ON public.asset_face_outfit USING btree (\"faceId\")",
+          "tableName": "asset_face_outfit",
+          "columnNames": [
+            "faceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_face_outfit_pkey",
+          "definition": "PRIMARY KEY (\"faceId\")",
+          "tableName": "asset_face_outfit",
+          "columnNames": [
+            "faceId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_face_outfit_faceId_fkey",
+          "definition": "FOREIGN KEY (\"faceId\") REFERENCES asset_face(id) ON DELETE CASCADE",
+          "tableName": "asset_face_outfit",
+          "columnNames": [
+            "faceId"
+          ],
+          "referenceTableName": "asset_face",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
