@@ -1050,6 +1050,7 @@ export class AssetService extends BaseService {
     // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
     // another asset references (a deduplicated original).
     let removedOriginalPath: string | undefined;
+    let additionalOriginals: JobOf<JobName.FileDelete>['additionalOriginals'];
     // FL-412: read before the row goes. A shared original's file is the other assets' too.
     const sharedOriginal = await this.physicalFileRepository.isOriginalShared(id);
     const removedAsset = await this.assetRepository.remove(asset, {
@@ -1085,7 +1086,18 @@ export class AssetService extends BaseService {
           files.push(assetFiles.sidecarFile.path);
         }
         if (ownsOriginal) {
-          files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
+          additionalOriginals = removed.additionalOriginals.map((original) => ({
+            ...original,
+            checksum: original.checksum.toString('hex'),
+            ownerId: asset.ownerId,
+            assetId: id,
+          }));
+          files.push(
+            ...additionalOriginals.map((original) => original.path),
+            assetFiles.sidecarFile?.path,
+            removed.originalPath,
+            removed.reservationTemporaryPath ?? undefined,
+          );
           removedOriginalPath = removed.originalPath;
         }
 
@@ -1113,6 +1125,7 @@ export class AssetService extends BaseService {
             files,
             removedAssetId: id,
             ...(queued && { removedAssetOwnerId: asset.ownerId }),
+            ...(additionalOriginals?.length && { additionalOriginals }),
             // universal storage: once nothing references it, the original goes to the file trash with who held it
             ...(removedOriginalPath && {
               original: {
@@ -1136,7 +1149,11 @@ export class AssetService extends BaseService {
     // below. Each runs even when another fails, and a failure is logged rather than failing the job.
     await this.afterAssetRemoval(id, 'update the storage usage', async () => {
       if (!asset.libraryId) {
-        await this.userRepository.updateUsage(asset.ownerId, -(asset.exifInfo?.fileSizeInByte || 0));
+        const originalBytes = removedAsset.additionalOriginals.reduce(
+          (total, original) => total + original.sizeInBytes,
+          0,
+        );
+        await this.userRepository.updateUsage(asset.ownerId, -((asset.exifInfo?.fileSizeInByte || 0) + originalBytes));
       }
     });
 

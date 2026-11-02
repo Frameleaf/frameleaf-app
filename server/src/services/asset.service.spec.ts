@@ -76,6 +76,7 @@ describe(AssetService.name, () => {
         reservationTemporaryPath: null,
         files: deletion.files ?? [],
         derivedPaths: [],
+        additionalOriginals: [],
         pendingMoves: [],
         ...removedExtras,
       };
@@ -2439,6 +2440,40 @@ describe(AssetService.name, () => {
         ],
       ]);
     });
+
+    it.each(['managed', 'external', 'offline', 'keep-files'])(
+      'preserves additional-original cleanup ownership for %s assets',
+      async (policy) => {
+        const asset = AssetFactory.from({
+          libraryId: policy === 'external' ? newUuid() : null,
+          isOffline: policy === 'offline',
+        })
+          .exif({ fileSizeInByte: 5000 })
+          .build();
+        const extra = {
+          path: '/data/upload/owner/extra.raw',
+          originalFileName: 'extra.raw',
+          checksum: Buffer.alloc(20, 7),
+          sizeInBytes: 42,
+        };
+        removedExtras = { additionalOriginals: [extra] };
+        mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+        await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: policy !== 'keep-files' });
+        const cleanup = mocks.job.queue.mock.calls.find(([job]) => job.name === JobName.FileDelete)?.[0].data;
+        if (policy === 'managed') {
+          expect(cleanup).toMatchObject({
+            files: expect.arrayContaining([extra.path]),
+            additionalOriginals: [
+              { ...extra, checksum: extra.checksum.toString('hex'), ownerId: asset.ownerId, assetId: asset.id },
+            ],
+          });
+          expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5042);
+        } else {
+          expect(cleanup).not.toHaveProperty('additionalOriginals');
+          expect(cleanup).toMatchObject({ files: expect.not.arrayContaining([extra.path]) });
+        }
+      },
+    );
 
     it('should update usage', async () => {
       const asset = AssetFactory.from().exif({ fileSizeInByte: 5000 }).build();

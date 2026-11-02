@@ -385,6 +385,31 @@ describe(StorageService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith('path/to/something');
     });
 
+    it('keeps each additional original owner and checksum in file-trash cleanup', async () => {
+      const extra = {
+        path: '/data/upload/owner/extra.raw',
+        ownerId: 'owner-id',
+        assetId: 'asset-id',
+        originalFileName: 'camera-original.raw',
+        checksum: '07'.repeat(20),
+        sizeInBytes: 42,
+      };
+      await sut.handleDeleteFiles({ files: [extra.path], removedAssetId: extra.assetId, additionalOriginals: [extra] });
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(extra.path, expect.any(Function), {
+        removedAssetId: extra.assetId,
+        trash: {
+          move: expect.any(Function),
+          original: {
+            ownerId: extra.ownerId,
+            assetId: extra.assetId,
+            originalFileName: extra.originalFileName,
+            checksum: Buffer.from(extra.checksum, 'hex'),
+            sizeInBytes: extra.sizeInBytes,
+          },
+        },
+      });
+    });
+
     it('sends an unreferenced original to the file trash instead of unlinking it (universal storage)', async () => {
       const checksum = Buffer.from('a'.repeat(64), 'hex');
       mocks.physicalFile.deleteUnreferencedPath.mockImplementation((async (
