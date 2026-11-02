@@ -277,3 +277,29 @@ it('refuses missing, cross-action and consumed review tokens', async () => {
   expect(await trashResponse('apply', 'restore', ['0000'], token)).toMatchObject({ status: 409 });
   expect(changes.assetDeletions).toEqual(['0000']);
 });
+
+it.each([
+  ['delete', ['0000']],
+  ['empty', undefined],
+  ['restore', ['0000']],
+  ['restore-all', undefined],
+] as const)('refuses an earlier deletion instance when applying %s', async (action, ids) => {
+  const { deleteAssets, trashRequest, trashResponse, applyTrash, changes } = await fixture();
+  const chosen = ids ? [...ids] : undefined;
+  await deleteAssets(['0000']);
+  const { token } = await trashRequest('review', action, chosen);
+  expect(await applyTrash('restore', ['0000'])).toEqual({ count: 1 });
+  await deleteAssets(['0000']);
+  expect(await trashResponse('apply', action, chosen, token)).toMatchObject({ status: 409 });
+  expect(changes.assetDeletions).toEqual(['0000']);
+  expect(await applyTrash(action, chosen)).toEqual({ count: 1 });
+});
+
+it('keeps an unrelated selected review valid when another photo is restored', async () => {
+  const { deleteAssets, trashRequest, applyTrash, changes } = await fixture();
+  await deleteAssets(['0000', '0001']);
+  const { token } = await trashRequest('review', 'delete', ['0000']);
+  expect(await applyTrash('restore', ['0001'])).toEqual({ count: 1 });
+  expect(await trashRequest('apply', 'delete', ['0000'], token)).toEqual({ count: 1 });
+  expect(changes.assetDeletions).toEqual([]);
+});

@@ -506,7 +506,12 @@ export const setupTrashMockApiRoutes = async (
           json: { message: 'Trash changed since this review. Review the current items before continuing.' },
         });
       }
-      reviews.delete(token);
+      const changedIds = new Set(affected);
+      for (const [reviewToken, previous] of reviews) {
+        if (previous.ids.some((id) => changedIds.has(id))) {
+          reviews.delete(reviewToken);
+        }
+      }
       if (action === 'restore' || action === 'restore-all') {
         changes.assetDeletions = changes.assetDeletions.filter((id) => !affected.includes(id));
       } else if (action === 'delete' || action === 'empty') {

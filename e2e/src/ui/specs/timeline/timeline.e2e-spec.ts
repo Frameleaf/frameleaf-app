@@ -247,23 +247,6 @@ test.describe('Timeline', () => {
     await expect(deleteRequest).resolves.toEqual({ force: false, ids: [assetId] });
   };
 
-  const restoreFromTrash = async (page: Page, assetId: string) => {
-    const row = page.locator('article', { has: page.locator(`img[src*="${assetId}"]`) });
-    await expect(row).toBeVisible();
-    const restoreRequest = pageRoutePromise(page, '**/api/trash/apply', async (route, request) => {
-      const requestJson = request.postDataJSON();
-      changes.assetDeletions = changes.assetDeletions.filter((id) => !requestJson.ids.includes(id));
-      await route.fulfill({ json: { count: requestJson.ids.length } });
-    });
-    await row.getByRole('button', { name: 'Restore', exact: true }).click();
-    await expect(restoreRequest).resolves.toEqual({
-      action: 'restore',
-      ids: [assetId],
-      token: expect.stringMatching(/^timeline-review-\d+$/),
-    });
-    await expect(row).toHaveCount(0);
-  };
-
   const archiveRequest = (page: Page, visibility: 'archive' | 'timeline') =>
     pageRoutePromise(page, '**/api/assets', async (route, request) => {
       const requestJson = request.postDataJSON();
@@ -1562,4 +1545,19 @@ const captured = (assets: TimelineAssetConfig[], assetId: string) => {
 const getYearMonth = (assets: TimelineAssetConfig[], assetId: string) => {
   const dateTime = captured(assets, assetId);
   return dateTime.year + '-' + dateTime.month;
+};
+
+const restoreFromTrash = async (page: Page, assetId: string) => {
+  const row = page.locator('article', { has: page.locator(`img[src*="${assetId}"]`) });
+  await expect(row).toBeVisible();
+  const restoreRequest = pageRoutePromise(page, '**/api/trash/apply', async (route) => {
+    await route.fallback();
+  });
+  await row.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(restoreRequest).resolves.toEqual({
+    action: 'restore',
+    ids: [assetId],
+    token: expect.stringMatching(/^timeline-review-\d+$/),
+  });
+  await expect(row).toHaveCount(0);
 };
