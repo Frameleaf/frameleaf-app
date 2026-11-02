@@ -271,6 +271,17 @@
   let deleteOpen = $state(false);
   let leaveOpen = $state(false);
   let createOpen = $state(false);
+  /** Where New album lands: inside a collection, or next to a plain album in its own collection. */
+  let createParentId = $state<string | null>(null);
+  const siblingParentId = $derived(
+    collections.some(({ id, kind }) => id === album.parentId && kind === AlbumKind.Collection)
+      ? (album.parentId ?? null)
+      : null,
+  );
+  const openCreate = (parentId: string | null) => {
+    createParentId = parentId;
+    createOpen = true;
+  };
   let editOpen = $state(false);
   /** The persistent line: this person's access to the album changed while the page was open. */
   let status = $state('');
@@ -632,7 +643,7 @@
 
   <div class="actions" role="toolbar" aria-label={$t('frameleaf_album_actions', { values: { kind: kindLabel } })}>
     {#if editor && isCollection}
-      <button type="button" class="action primary" onclick={() => (createOpen = true)}>
+      <button type="button" class="action primary" onclick={() => openCreate(album.id)}>
         <Icon icon={mdiPlus} size="18" />
         <span>{$t('frameleaf_albums_create_album')}</span>
       </button>
@@ -733,7 +744,7 @@
       {/snippet}
       {#if foldedActions.size > 0}
         {#if folded && boards && editor && !isCollection}
-          <MenuItem onSelect={() => (createOpen = true)}>
+          <MenuItem onSelect={() => openCreate(album.id)}>
             <Icon icon={mdiPlus} size="18" />
             {$t('frameleaf_boards_new_collection')}
           </MenuItem>
@@ -779,7 +790,9 @@
         <div class="menu-separator" role="separator"></div>
       {/if}
       {#if canCreateChild}
-        <MenuItem onSelect={() => (createOpen = true)}>
+        <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection
+             when you can add to that collection; otherwise at the top level. -->
+        <MenuItem onSelect={() => openCreate(isCollection ? album.id : siblingParentId)}>
           <Icon icon={mdiPlus} size="18" />
           {$t('frameleaf_albums_create_album')}
         </MenuItem>
@@ -891,7 +904,7 @@
           </a>
         {/each}
         {#if editor && !boards}
-          <button type="button" class="new-tile" onclick={() => (createOpen = true)}>
+          <button type="button" class="new-tile" onclick={() => openCreate(album.id)}>
             <Icon icon={mdiPlus} size="22" />
             <span>{$t('frameleaf_albums_create_album')}</span>
           </button>
@@ -937,8 +950,8 @@
 {#if createOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
     <AlbumCreateDialog
       kind={AlbumKind.Album}
-      collections={collections.length > 0 ? collections : [album]}
-      defaultParentId={album.id}
+      collections={collections.length > 0 || createParentId !== album.id ? collections : [album]}
+      defaultParentId={createParentId}
       bind:open={createOpen}
       onCreate={createChildAlbum}
       onCreateSmart={createChildSmartAlbum}
