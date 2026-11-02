@@ -12,6 +12,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import * as attemptEvidence from 'src/utils/attempt-evidence.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
+import { queueLockedSealFor, queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 
 /** Facade behavior; actual locking, retries, accounting and rollback are tested with PostgreSQL. */
 describe(JobRepository.name, () => {
@@ -106,6 +107,98 @@ describe(JobRepository.name, () => {
     expect(execution.followups).toEqual([
       expect.objectContaining({ runId: 'run', itemKey: 'asset', parentId: 'parent' }),
     ]);
+  });
+
+  it.each(['asset', 'lockedFile'] as const)('holds %s sealing until staged files publish', async (source) => {
+    const execution = context();
+    const adopt = vi.fn();
+    execution.adoptions.push(adopt);
+    const deps = {
+      asset: { getLockedEncryptionItems: vi.fn().mockResolvedValue([{ id: 'asset', pending: false }]) },
+      lockedFile: { encryptedSetOwner: vi.fn().mockResolvedValue('owner') },
+      job: sut,
+      logger: { warn: vi.fn() },
+    };
+    await queueExecution.run(execution, () =>
+      source === 'asset' ? queueLockedSealFor(deps, ['asset']) : queueLockedSealOf(deps, ['asset']),
+    );
+    expect(deps.logger.warn).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(execution.followups).toEqual([
+      expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' }, parentId: 'parent' }),
+    ]);
+  });
+
+  it.each(['asset', 'lockedFile'] as const)(
+    'still admits %s sealing immediately outside a queued writer',
+    async (source) => {
+      const deps = {
+        asset: { getLockedEncryptionItems: vi.fn().mockResolvedValue([{ id: 'asset', pending: false }]) },
+        lockedFile: { encryptedSetOwner: vi.fn().mockResolvedValue('owner') },
+        job: sut,
+        logger: { warn: vi.fn() },
+      };
+      if (source === 'asset') await queueLockedSealFor(deps, ['asset', 'asset']);
+      else await queueLockedSealOf(deps, ['asset', 'asset']);
+      expect(deps.logger.warn).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledOnce();
+      expect(enqueue.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' } }),
+      ]);
+    },
+  );
+
+  it.each([false, true])('retains outer follow-up collection after a nested collector (throws=%s)', async (throws) => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(async () => {
+        try {
+          await sut.collectFollowups(() => (throws ? Promise.reject(new Error('fixture')) : Promise.resolve()));
+        } catch {
+          // A handled inner failure must preserve the outer collection.
+        }
+        expect(execution.buffering).toBe(true);
+        await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+      }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(execution.followups).toHaveLength(1);
+    expect(execution.buffering).toBe(false);
+  });
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])('keeps overlapping follow-up collection scoped (initial=%s, throws=%s)', async (initial, throws) => {
+    const execution = context();
+    execution.buffering = initial;
+    const { promise: firstGate, resolve: finishFirst } = Promise.withResolvers<void>();
+    const { promise: secondGate, resolve: finishSecond } = Promise.withResolvers<void>();
+    await queueExecution.run(execution, async () => {
+      const first = sut.collectFollowups(() => firstGate);
+      const second = sut.collectFollowups(async () => {
+        await secondGate;
+        if (throws) throw new Error('fixture');
+      });
+      const secondOutcome = second.catch((error: unknown) => error);
+      try {
+        finishFirst();
+        await first;
+        expect(execution.buffering).toBe(true);
+        await sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } });
+        expect(execution.followups).toHaveLength(1);
+      } finally {
+        finishSecond();
+        const outcome = await secondOutcome;
+        expect(outcome instanceof Error).toBe(throws);
+      }
+      expect(execution.buffering).toBe(initial);
+      expect(execution.followupCollection).toBeUndefined();
+    });
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it('keeps metadata and embedding inference distinct within one media run', async () => {
