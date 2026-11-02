@@ -7,6 +7,7 @@
   import { regenerationPresentation } from './regeneration';
   import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText } from './presentation';
 
+  let httpSession = '';
   let csrf = '',
     claimed = $state(false),
     signedIn = $state(false),
@@ -227,7 +228,7 @@
     const response = await fetch(`/manager-api/${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...(httpSession ? { 'X-Frameleaf-Manager-Session': httpSession } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       ...(signal ? { signal } : {}),
     });
@@ -240,12 +241,15 @@
         signedIn = false;
         dashboard = null;
         csrf = '';
+        httpSession = '';
         password = '';
         recoveryKey = '';
         dialog?.close();
       }
       throw Object.assign(new Error(value.code ?? 'request_failed'), { detail: value.detail });
     }
+    const session = response.headers.get('X-Frameleaf-Manager-Session');
+    if (location.protocol === 'http:' && session && /^[a-f0-9]{64}$/.test(session)) httpSession = session;
     if (value.csrf) csrf = value.csrf;
     return value;
   }
@@ -335,6 +339,7 @@
   }
   async function signOut() {
     await api('logout', {});
+    httpSession = '';
     signedIn = false;
     dashboard = null;
     csrf = '';
@@ -494,7 +499,7 @@
     const response = await fetch(`/manager-api/${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...(httpSession ? { 'X-Frameleaf-Manager-Session': httpSession } : {}) },
       body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error((await response.json()).code ?? 'download_failed');
@@ -678,6 +683,7 @@
             {#if !claimed}<label class="field"><span>Administrator name</span><input bind:value={name} required maxlength="120" autocomplete="name"/></label>{/if}
             <label class="field"><span>Password</span><input type="password" bind:value={password} required minlength={claimed ? 1 : 14} maxlength="256" autocomplete={claimed ? 'current-password' : 'new-password'}/><small>{claimed ? 'Your Manager account is independent of your photo account.' : 'Use at least 14 characters. No Frameleaf Cloud account is required.'}</small></label>
             {@render notice('Local management and a separate account', 'Manager stays available when the photo application is stopped.', 'good', 'lock')}
+            {#if location.protocol === 'http:'}{@render notice('Unencrypted connection', 'HTTP sends your password and management traffic without encryption. Sign in only on a network you trust.', 'warning', 'warning')}{/if}
           </div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Protected local session</span><button class="button primary" disabled={busy}>{claimed ? 'Sign in' : 'Create administrator'}</button></div></form>
         {:else if activeOperation && !['progress', 'activity'].includes(screen)}
           <div class="notice warning operation-banner"><Icon name="clock"/><div class="grow"><strong>{operationNames[activeOperation.kind]}</strong><p>{activeOperation.state === 'running' ? 'Running in the background' : 'A saved operation needs attention before another operation can begin.'}</p></div><button class="button quiet" onclick={() => { selectedOperation = activeOperation.id; void run(() => go('progress')); }}>View operation</button></div>
@@ -781,7 +787,7 @@
         {:else if screen === 'activity'}
           {@render heading('Activity', 'Recorded setup, maintenance, and recovery operations on this server.')}<section class="card"><div class="card-header"><h2>Operation history</h2></div>{#each dashboard.operations as item}<div class="list-row"><Icon name={item.state === 'complete' && !item.error ? 'check' : item.state === 'running' ? 'clock' : 'warning'}/><div><strong>{operationNames[item.kind] ?? readable(item.kind)}</strong><p>{new Date(item.createdAt).toLocaleString()} · {readable(item.step ?? item.state)}</p>{#if item.error}<p class="amber">{readable(item.error, item.detail)}</p>{/if}</div><span class="badge" class:good={item.state === 'complete' && !item.error}>{readable(item.state)}</span><button class="button quiet" onclick={() => { selectedOperation = item.id; void run(() => go('progress')); }}>Details</button></div>{:else}<div class="card-body"><p class="muted">No operations have been recorded yet.</p></div>{/each}</section>
         {:else if screen === 'settings'}
-          {@render heading('Manager settings', 'Local administration and recovery for this server.')}<section class="card"><div class="card-header"><h2>Access</h2></div><div class="list-row"><Icon name="user"/><div><strong>Local administrator</strong><p>{dashboard.administrator?.name} · Independent of photo accounts</p></div><button class="button quiet" onclick={() => showModal('administrator')}>Edit account</button></div><div class="list-row"><Icon name="lock"/><div><strong>{location.protocol === 'https:' ? 'HTTPS connection' : 'HTTP connection'}</strong><p>{dashboard.managerOrigin ?? location.origin}</p></div><span class="badge good">Enabled</span></div><div class="list-row"><Icon name="shield"/><div><strong>Protected session</strong><p>{location.protocol === 'https:' ? 'Secure cookies, CSRF protection and sign-in rate limits' : 'HTTP is unencrypted. Use a trusted network. CSRF protection and sign-in rate limits remain enabled.'}</p></div><button class="button quiet" disabled={busy} onclick={() => run(signOut)}>Sign out</button></div></section><section class="card mt16"><div class="card-header"><h2>Appearance</h2></div><div class="list-row"><Icon name="sun"/><div><strong>Theme</strong><p>Frameleaf’s approved light and dark palettes</p></div><div class="segmented">{#each ['dark', 'light'] as item}<button aria-pressed={theme === item} onclick={() => theme = item}>{item === 'dark' ? 'Dark' : 'Light'}</button>{/each}</div></div></section><section class="card mt16"><div class="card-header"><h2>Recovery & configuration</h2></div><div class="list-row"><Icon name="document"/><div><strong>Configuration export</strong><p>Export the managed project and secrets for manual recovery.</p></div><button class="button quiet" disabled={!installation} onclick={() => showModal('export')}>Export</button></div><div class="list-row"><Icon name="restore"/><div><strong>Recover Manager</strong><p>Replace only the Manager container and reconnect its persisted state.</p></div><button class="button quiet" onclick={() => showModal('recovery')}>View procedure</button></div></section>
+          {@render heading('Manager settings', 'Local administration and recovery for this server.')}<section class="card"><div class="card-header"><h2>Access</h2></div><div class="list-row"><Icon name="user"/><div><strong>Local administrator</strong><p>{dashboard.administrator?.name} · Independent of photo accounts</p></div><button class="button quiet" onclick={() => showModal('administrator')}>Edit account</button></div><div class="list-row"><Icon name="lock"/><div><strong>{location.protocol === 'https:' ? 'HTTPS connection' : 'HTTP connection'}</strong><p>{dashboard.managerOrigin ?? location.origin}</p></div><span class="badge good">Enabled</span></div><div class="list-row"><Icon name="shield"/><div><strong>Protected session</strong><p>{location.protocol === 'https:' ? 'Secure cookies, CSRF protection and sign-in rate limits' : 'HTTP is unencrypted. Your session stays in this page; reload requires sign-in. CSRF protection and sign-in rate limits remain enabled.'}</p></div><button class="button quiet" disabled={busy} onclick={() => run(signOut)}>Sign out</button></div></section><section class="card mt16"><div class="card-header"><h2>Appearance</h2></div><div class="list-row"><Icon name="sun"/><div><strong>Theme</strong><p>Frameleaf’s approved light and dark palettes</p></div><div class="segmented">{#each ['dark', 'light'] as item}<button aria-pressed={theme === item} onclick={() => theme = item}>{item === 'dark' ? 'Dark' : 'Light'}</button>{/each}</div></div></section><section class="card mt16"><div class="card-header"><h2>Recovery & configuration</h2></div><div class="list-row"><Icon name="document"/><div><strong>Configuration export</strong><p>Export the managed project and secrets for manual recovery.</p></div><button class="button quiet" disabled={!installation} onclick={() => showModal('export')}>Export</button></div><div class="list-row"><Icon name="restore"/><div><strong>Recover Manager</strong><p>Replace only the Manager container and reconnect its persisted state.</p></div><button class="button quiet" onclick={() => showModal('recovery')}>View procedure</button></div></section>
         {/if}
         {/if}
 {/snippet}

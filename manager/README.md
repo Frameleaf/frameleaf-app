@@ -96,9 +96,13 @@ configuration is regenerated with the updated Manager. Configuration alone does
 not prove Manager is reachable. Real NAS disk/ACL and installed-release qualification
 is required before treating this source feature as an accepted deployment.
 
-For home-lab HTTP access, set `MANAGER_ORIGIN` to the exact browser address, such as
-`http://tower.local:2282`, and map that host port to container port 9443. This serves
-HTTP directly and uses a host-only, HttpOnly, SameSite session cookie. HTTP sends
+For home-lab HTTP access, set the container’s `MANAGER_ORIGIN` to the exact browser
+address, such as `http://tower.local:2282`, and map that host port to container port
+9443. With `manager/launch.sh`, pass that address as the fifth argument; the launcher
+does not use `MANAGER_ORIGIN` from its environment. This serves HTTP directly.
+HTTP uses an explicit session header instead of a cookie, so other services on
+the same host do not receive Manager credentials. The browser holds this session
+only in memory; reloading the page requires sign-in. HTTP sends
 passwords and management traffic without encryption; use a trusted network.
 HTTPS origins retain certificate validation and Secure cookies. Leaving the origin
 unset retains the existing local HTTPS listener and HTTP-to-HTTPS redirect.

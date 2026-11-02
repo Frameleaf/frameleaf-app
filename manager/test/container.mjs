@@ -79,15 +79,18 @@ try {
   assert.equal((await request('dashboard')).status, 401);
   const claim = await request('claim', { name: 'Test administrator', password: 'a long disposable password' });
   assert.equal(claim.status, 201);
-  assert.match(claim.headers['set-cookie'][0], /HttpOnly/);
-  if (protocol === 'https') assert.match(claim.headers['set-cookie'][0], /Secure/);
-  else {
-    assert.doesNotMatch(claim.headers['set-cookie'][0], /Secure/);
-    assert.match(claim.headers['set-cookie'][0], /^frameleaf-manager=/);
+  if (protocol === 'https') {
+    assert.match(claim.headers['set-cookie'][0], /HttpOnly/);
+    assert.match(claim.headers['set-cookie'][0], /Secure/);
+  } else {
+    assert.equal(claim.headers['set-cookie'], undefined);
+    assert.match(claim.headers['x-frameleaf-manager-session'], /^[a-f0-9]{64}$/);
   }
-  const cookie = claim.headers['set-cookie'][0].split(';')[0],
-    csrf = claim.body.csrf;
-  const auth = { Cookie: cookie, 'X-CSRF-Token': csrf };
+  const credential = protocol === 'http'
+    ? { 'X-Frameleaf-Manager-Session': claim.headers['x-frameleaf-manager-session'] }
+    : { Cookie: claim.headers['set-cookie'][0].split(';')[0] };
+  const csrf = claim.body.csrf;
+  const auth = { ...credential, 'X-CSRF-Token': csrf };
   const dashboard = await request('dashboard', undefined, auth);
   assert.equal(dashboard.status, 200);
   assert.equal(dashboard.body.databaseStorage.detectedPath, `${directory}/custom-appdata`);
@@ -98,7 +101,7 @@ try {
       await request(
         'profile',
         { firstName: 'Test', lastName: '', email: 'test@example.test', account: 'local' },
-        { Cookie: cookie },
+        credential,
       )
     ).status,
     403,
@@ -146,7 +149,7 @@ try {
   );
   assert.equal((await request('backup-key', { password: 'wrong' }, auth)).status, 401);
   assert.equal(
-    (await request('backup-key', { password: 'a long disposable password' }, { Cookie: cookie })).status,
+    (await request('backup-key', { password: 'a long disposable password' }, credential)).status,
     403,
   );
   const recovery = await request('backup-key', { password: 'a long disposable password' }, auth);
@@ -162,16 +165,20 @@ try {
   );
   assert.equal(changed.status, 201);
   assert.equal((await request('dashboard', undefined, auth)).status, 401);
-  const replacementAuth = { Cookie: changed.headers['set-cookie'][0].split(';')[0], 'X-CSRF-Token': changed.body.csrf };
+  const replacementAuth = { ...(protocol === 'http'
+    ? { 'X-Frameleaf-Manager-Session': changed.headers['x-frameleaf-manager-session'] }
+    : { Cookie: changed.headers['set-cookie'][0].split(';')[0] }), 'X-CSRF-Token': changed.body.csrf };
   assert.equal((await request('dashboard', undefined, replacementAuth)).body.administrator.name, 'Changed owner');
   assert.equal((await request('login', { password: 'a long disposable password' })).status, 401);
   evidence.checks.storageRecoveryKeyAndAdministratorRotation = 'passed';
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ ignoreHTTPSErrors: true });
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await context.newPage();
     const failures = [];
     page.on('pageerror', (error) => failures.push(error.message));
     await gotoWithNetworkChangeRetry(page, origin);
+    if (protocol === 'http') await page.getByText('Unencrypted connection', { exact: true }).waitFor();
     await page.getByLabel(/^Password/).fill('a new disposable password');
     await page.locator('main').getByRole('button', { name: 'Sign in', exact: true }).click();
     // Nothing is installed yet, so sign-in lands in the setup shell; its rail reaches Manager settings.
@@ -184,6 +191,22 @@ try {
     await page.getByRole('navigation', { name: 'Manager' }).waitFor();
     assert.ok((await page.locator('main').innerText()).includes('Changed owner'));
     assert.equal(await page.locator('.brand-light').evaluate((image) => image.naturalWidth > 0), true);
+    if (protocol === 'http') {
+      let received;
+      const service = http.createServer((req, res) => { received = req.headers; res.end('synthetic application'); });
+      await new Promise((resolve) => service.listen(0, '127.0.0.1', resolve));
+      const other = await page.context().newPage();
+      try {
+        await gotoWithNetworkChangeRetry(other, `http://127.0.0.1:${service.address().port}/manager-api/status`);
+        assert.equal(received.cookie, undefined);
+        assert.equal(received['x-frameleaf-manager-session'], undefined);
+        assert.deepEqual(await page.context().cookies(), []);
+        evidence.checks.httpSessionPortIsolation = 'passed';
+      } finally {
+        await other.close();
+        await new Promise((resolve, reject) => service.close((error) => error ? reject(error) : resolve()));
+      }
+    }
     await page.getByRole('button', { name: 'Toggle light or dark theme' }).click();
     assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
     await page.locator('main').getByRole('button', { name: 'Sign out', exact: true }).click();

@@ -231,39 +231,40 @@ test('a signed-in session polling the dashboard never runs out of the per-addres
   }
 });
 
-test('explicit HTTP origin uses a host-only HTTP session and retains host, origin and CSRF checks', async () => {
+test('HTTP sessions require an explicit header and never issue a cross-port cookie', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-http-'));
   const store = new Store(directory);
   try {
     const security = new Security(store, 'http://tower.local:2282');
     await security.claim('Owner', 'synthetic HTTP test password', '127.0.0.1');
     const session = await security.login('synthetic HTTP test password');
-    let cookie: any[] = [];
-    const response = { cookie: (...args: any[]) => { cookie = args; } } as unknown as Response;
-    security.cookie(response, session.session);
-    assert.equal(cookie[0], 'frameleaf-manager');
-    assert.deepEqual(cookie[2], { secure: false, httpOnly: true, sameSite: 'strict', path: '/', maxAge: 28_800_000 });
+    let cookie: any[] = [], token: unknown;
+    const response = { set: (name: string, value: string) => { assert.equal(name, 'X-Frameleaf-Manager-Session'); token = value; },
+      cookie: (...args: any[]) => { cookie = args; } } as unknown as Response;
+    security.issueSession(response, session.session);
+    assert.equal(token, session.session);
+    assert.deepEqual(cookie, []);
     const req = { headers: { host: 'tower.local:2282', origin: security.origin,
-      cookie: `${cookie[0]}=${session.session}`, 'x-csrf-token': session.csrf },
+      'x-frameleaf-manager-session': session.session, 'x-csrf-token': session.csrf },
       method: 'POST', path: '/manager-api/control', socket: { remoteAddress: '127.0.0.1' }, is: () => true } as unknown as Request;
     assert.equal(security.session(req).csrf, session.csrf);
     const invoke = (patch: Record<string, string>) => {
-      let next = false, status = 0;
-      const res = { set() {}, status(value: number) { status = value; return this; }, json() {} } as unknown as Response;
+      let next = false;
+      const res = { set() {}, status() { return this; }, json() {} } as unknown as Response;
       security.guard({ ...req, headers: { ...req.headers, ...patch } } as Request, res, () => { next = true; });
-      return { next, status };
+      return next;
     };
-    assert.equal(invoke({}).next, true);
-    for (const patch of [{ host: 'evil.test' }, { origin: 'https://tower.local:2282' }, { 'x-csrf-token': 'bad' }])
-      assert.equal(invoke(patch).next, false);
+    assert.equal(invoke({}), true);
+    for (const patch of [{ host: 'evil.test' }, { origin: 'https://tower.local:2282' }, { 'x-csrf-token': 'bad' },
+      { 'x-frameleaf-manager-session': '', cookie: `frameleaf-manager=${session.session}` },
+      { 'x-frameleaf-manager-session': '', cookie: `__Host-frameleaf-manager=${session.session}` }])
+      assert.equal(invoke(patch), false);
     const https = new Security(store, 'https://tower.local:2282');
     assert.throws(() => https.session(req), /sign_in_required/);
-    https.cookie(response, session.session);
+    https.issueSession(response, session.session);
     assert.equal(cookie[0], '__Host-frameleaf-manager');
     assert.equal(cookie[2].secure, true);
-    security.logout(req, { clearCookie: (...args: any[]) => { cookie = args; } } as unknown as Response);
-    assert.equal(cookie[0], 'frameleaf-manager');
-    assert.equal(cookie[1].secure, false);
+    security.logout(req, { clearCookie: () => { throw Error('HTTP must not issue cookies'); } } as unknown as Response);
     assert.throws(() => security.session(req), /sign_in_required/);
     for (const origin of ['ftp://tower.local', 'http://u:p@tower.local', 'http://tower.local/path', 'http://tower.local?x=1', 'http://tower.local#x'])
       assert.throws(() => new Security(store, origin));

@@ -193,7 +193,7 @@ async function fixture(
     });
   const browser = {
     origin,
-    cookie: `${origin.startsWith('http://') ? 'frameleaf-manager' : '__Host-frameleaf-manager'}=${session.session}`,
+    ...(origin.startsWith('http://') ? { 'x-frameleaf-manager-session': session.session } : { cookie: `__Host-frameleaf-manager=${session.session}` }),
     'x-csrf-token': session.csrf,
   };
   const pair = async (

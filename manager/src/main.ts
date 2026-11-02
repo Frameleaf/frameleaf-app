@@ -128,7 +128,7 @@ class Api {
       .parse(input);
     await security.claim(value.name, value.password, request.socket.remoteAddress);
     const session = await security.login(value.password);
-    security.cookie(response, session.session);
+    security.issueSession(response, session.session);
     return { csrf: session.csrf };
   }
   @Post('login') async login(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
@@ -137,7 +137,7 @@ class Api {
       .strict()
       .parse(input);
     const session = await security.login(password);
-    security.cookie(response, session.session);
+    security.issueSession(response, session.session);
     return { csrf: session.csrf };
   }
   @Post('logout') logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
@@ -154,7 +154,7 @@ class Api {
       .strict()
       .parse(input);
     const session = await security.updateAdministrator(value.name, value.password, value.newPassword);
-    security.cookie(response, session.session);
+    security.issueSession(response, session.session);
     return { csrf: session.csrf };
   }
   @Get('dashboard') async dashboard(@Req() request: Request) {
