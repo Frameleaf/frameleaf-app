@@ -200,4 +200,45 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
     await sut.setAutoAdd(albumId, ownerId, false);
     await expect(sut.isAutoAdd(albumId, ownerId)).resolves.toBe(false);
   });
+
+  it('stores one outfit per face and model (FL-1094)', async () => {
+    const photo = await makeAsset();
+    const { clusterGroupId } = await db
+      .selectFrom('user')
+      .select('clusterGroupId')
+      .where('id', '=', ownerId)
+      .executeTakeFirstOrThrow();
+    const group = await db
+      .insertInto('person_group')
+      .values({ clusterGroupId })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const face = mediumFactory.assetFaceInsert({ assetId: photo, personGroupId: group.id });
+    const unnamed = mediumFactory.assetFaceInsert({ assetId: photo, personGroupId: null });
+    await db.insertInto('asset_face').values([face, unnamed]).execute();
+    await db
+      .insertInto('person')
+      .values(mediumFactory.personInsert({ ownerId, personGroupId: group.id, name: 'Emma' }))
+      .execute();
+
+    await expect(sut.getFacesWithoutOutfit(photo, 'ViT-B-32__openai')).resolves.toEqual([
+      expect.objectContaining({ id: face.id }),
+    ]);
+    await expect(sut.getOutfits(ownerId, [photo], 'ViT-B-32__openai')).resolves.toEqual([
+      { assetId: photo, personId: group.id, name: 'Emma', embedding: null, encoded: false },
+    ]);
+
+    await sut.saveOutfits([{ faceId: face.id!, modelName: 'ViT-B-32__openai', embedding: '[1,0]' }]);
+    await expect(sut.getFacesWithoutOutfit(photo, 'ViT-B-32__openai')).resolves.toEqual([]);
+    await expect(sut.getOutfits(ownerId, [photo], 'ViT-B-32__openai')).resolves.toEqual([
+      { assetId: photo, personId: group.id, name: 'Emma', embedding: '[1,0]', encoded: true },
+    ]);
+    // Another model's outfit is not this one's: the face is cropped again and the row replaced.
+    await expect(sut.getFacesWithoutOutfit(photo, 'ViT-L-14__openai')).resolves.toHaveLength(1);
+    await sut.saveOutfits([{ faceId: face.id!, modelName: 'ViT-L-14__openai', embedding: null }]);
+    await expect(sut.getOutfits(ownerId, [photo], 'ViT-B-32__openai')).resolves.toMatchObject([{ encoded: false }]);
+
+    await db.deleteFrom('asset_face').where('id', '=', face.id!).execute();
+    await expect(db.selectFrom('asset_face_outfit').selectAll().execute()).resolves.toEqual([]);
+  });
 });

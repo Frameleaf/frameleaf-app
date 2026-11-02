@@ -38,6 +38,7 @@ export class UserFactory {
       profileChangedAt: newDate(),
       updateId: newUuidV7(),
       uploadsPaused: false,
+      importClaimPending: false,
       passwordLinkHash: null,
       passwordLinkExpiresAt: null,
       ...dto,

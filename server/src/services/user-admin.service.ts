@@ -146,10 +146,13 @@ export class UserAdminService extends BaseService {
     isNew: boolean,
   ) {
     const token = this.cryptoRepository.randomBytes(32).toString('base64url');
-    await this.userRepository.update(user.id, {
-      passwordLinkHash: this.cryptoRepository.hashSha256(token),
-      passwordLinkExpiresAt: new Date(Date.now() + PASSWORD_LINK_LIFETIME_MS),
-    });
+    const issued = await this.userRepository.setPasswordLink(
+      user.id,
+      user.email,
+      this.cryptoRepository.hashSha256(token),
+      new Date(Date.now() + PASSWORD_LINK_LIFETIME_MS),
+    );
+    if (!issued) throw new ConflictException('This account changed; send a new password link');
     const { templates } = await this.getConfig({ withCache: true });
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.PASSWORD_LINK,

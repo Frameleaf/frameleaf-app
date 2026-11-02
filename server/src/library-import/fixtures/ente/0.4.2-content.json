@@ -1,0 +1,195 @@
+{
+  "provenance": {
+    "sourceCommit": "d536e8e913443b9d88c1e60e3a5463cb78ba5592",
+    "exporter": "ente-cli-v0.4.2",
+    "exporterArchiveSha256": "d1066487e13e1b0926f49c3eb44fb959455ef4b23bd7fce9732b797c751913ef",
+    "exporterBinarySha256": "6c8de9ce9570a93d4d0212b22f978960de51e4ab08240c9a69ba9719d9d0c356",
+    "museumBinarySha256": "75864c9c27f0dda4ddff017a6640540c4eba0ba4c07d892db8952af7ff6f13eb",
+    "postgres": "18.6",
+    "qualificationImage": "sha256:bda9e3c7d209cc18bb608485ea60f00d259b2bd1e24e6af73377907844165d72",
+    "scope": "one opaque original exported by its owner and a VIEWER sharee; not image-format qualification"
+  },
+  "users": {
+    "alice": "1580559962386438",
+    "bob": "1580559962386439"
+  },
+  "cases": [
+    {
+      "account": "alice",
+      "root": {
+        "format": "ente-photos-export",
+        "version": 1,
+        "userID": "1580559962386438"
+      },
+      "folder": "Monsoon 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "type": "folder"
+        },
+        "title": "Monsoon 🌧"
+      },
+      "file": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "ysXTz7FbjF0XbtyL6wJ08upGGQpU8lUJw9jcWpMmFmiqWOGs5vG75y252gbF7Jqz4qihuVILd0FwEf59JHuorg==",
+              "path": "original.jpg",
+              "role": "original",
+              "size": 32
+            }
+          ],
+          "fileID": "10000000",
+          "magicMetadata": {
+            "visibility": 0
+          },
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 0,
+            "modificationTime": 1700000000000000,
+            "title": "original.jpg"
+          },
+          "type": "image"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "original.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": null,
+        "height": null,
+        "id": "10000000",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "original.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:30:54.451532Z",
+        "visibility": "visible",
+        "width": null
+      },
+      "original": {
+        "path": "original.jpg",
+        "bytes": "32",
+        "sha256": "e0224db33f14ccf7089a97f3d7cc4ce71d0d59e9aa994deeb8bf9072418793d2"
+      }
+    },
+    {
+      "account": "bob",
+      "root": {
+        "format": "ente-photos-export",
+        "version": 1,
+        "userID": "1580559962386439"
+      },
+      "folder": "Monsoon 🌧",
+      "album": {
+        "ente": {
+          "albumID": "1580559962386438",
+          "ownerID": "1580559962386438",
+          "sharedMagicMetadata": {
+            "visibility": 2
+          },
+          "type": "folder"
+        },
+        "title": "Monsoon 🌧"
+      },
+      "file": {
+        "creationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "ente": {
+          "component": "original",
+          "components": [
+            {
+              "hash": "ysXTz7FbjF0XbtyL6wJ08upGGQpU8lUJw9jcWpMmFmiqWOGs5vG75y252gbF7Jqz4qihuVILd0FwEf59JHuorg==",
+              "path": "original.jpg",
+              "role": "original",
+              "size": 32
+            }
+          ],
+          "fileID": "10000000",
+          "metadata": {
+            "creationTime": 1700000000000000,
+            "fileType": 0,
+            "modificationTime": 1700000000000000,
+            "title": "original.jpg"
+          },
+          "type": "image"
+        },
+        "favorited": false,
+        "geoData": {
+          "latitude": 0.0,
+          "longitude": 0.0
+        },
+        "modificationTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "photoTakenTime": {
+          "formatted": "Nov 14, 2023, 10:13:20 PM UTC",
+          "timestamp": "1700000000"
+        },
+        "title": "original.jpg"
+      },
+      "inventory": {
+        "albumIds": [
+          "1580559962386438"
+        ],
+        "caption": null,
+        "createdAt": "2023-11-14T22:13:20.000000Z",
+        "dateTime": null,
+        "durationSeconds": null,
+        "hash": null,
+        "height": null,
+        "id": "10000000",
+        "location": null,
+        "modifiedAt": "2023-11-14T22:13:20.000000Z",
+        "name": "original.jpg",
+        "offsetTime": null,
+        "ownerId": "1580559962386438",
+        "type": "image",
+        "updatedAt": "2026-11-02T00:30:54.451532Z",
+        "visibility": null,
+        "width": null
+      },
+      "original": {
+        "path": "original.jpg",
+        "bytes": "32",
+        "sha256": "e0224db33f14ccf7089a97f3d7cc4ce71d0d59e9aa994deeb8bf9072418793d2"
+      }
+    }
+  ],
+  "sharing": [
+    {
+      "userId": "1580559962386439",
+      "role": "VIEWER",
+      "albumId": "1580559962386438"
+    }
+  ]
+}

@@ -34,3 +34,11 @@ The native view-only share reports download and full-original rights disabled fo
 ## Outstanding acceptance
 
 Broader restored-application cases, global configuration/privacy defaults, group/inherited access, public/password-protected albums, non-empty photo/tag-album tags, ratings/people, orientation conversion, RAW/JPEG pairs, Live Photos, video, missing files, S3/remote/encrypted storage, alternate database engines and source versions need further native qualification. File/storage resolution, protected unsupported metadata, destination accounts and relationships, durable regeneration, transfer/recovery and Manager/Server lifecycle integration remain incomplete. This reader is not exposed as a migration command or UI. Protected Unraid shares are entirely outside qualification and agent access.
+
+## Original-file resolution
+
+`resolveLycheeOriginals` retains native RAW (`0`) and ORIGINAL (`1`) size variants and omits generated previews. It selects the unwatermarked `short_path`, even when `short_path_watermarked` records a separate rendition. Only the explicit local `images` disk is admitted; null, unknown and S3 disk mappings require separately qualified staging. Paths remain relative to that configured disk, never the host root or a cached/public URL. Duplicate identities, variant types, selected paths and mismatched photo relationships are blocking failures.
+
+A recorded Live Photo video path becomes a separate companion on the original variant's disk. It requires an admitted original variant and independently verified companion bytes; the resolver does not invent a video byte count or treat the source checksum as byte proof. Native Live Photo pairing and RAW imports remain unqualified. The four existing native synthetic originals reconcile through the actual SQLite reader and resolver on pinned Server Node 22, including independent SHA256 and byte-length comparisons. Additional resolver cases are synthetic contract tests, not native media qualification.
+
+The caller must establish the storage-root mapping, path containment, mount identity, symlink/hardlink policy, source fencing, actual original bytes, explicit owners and download/privacy restrictions before transfer or activation. This helper does not expose a CLI or complete a migration.

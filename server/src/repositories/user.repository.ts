@@ -371,7 +371,7 @@ export class UserRepository {
   getByPasswordLink(hash: Buffer) {
     return this.db
       .selectFrom('user')
-      .select(['id', 'name', 'email'])
+      .select(['id', 'name', 'email', 'importClaimPending'])
       .where('passwordLinkHash', '=', hash)
       .where('passwordLinkExpiresAt', '>', sql<Date>`now()`)
       .where('deletedAt', 'is', null)
@@ -394,11 +394,67 @@ export class UserRepository {
         passwordLinkExpiresAt: null,
         updatedAt: new Date(),
       })
+      .where('importClaimPending', '=', false)
       .where('passwordLinkHash', '=', hash)
       .where('passwordLinkExpiresAt', '>', sql<Date>`now()`)
       .where('deletedAt', 'is', null)
       .where('status', '=', UserStatus.Active)
       .returning(['id', 'email'])
+      .executeTakeFirst();
+  }
+
+  /** The account lock binds the claim, activation and removal of any stale authentication material. */
+  redeemImportedAccountClaim(hash: Buffer, hashedPassword: string) {
+    return this.db.transaction().execute(async (tx) => {
+      const candidate = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('passwordLinkHash', '=', hash)
+        .where('importClaimPending', '=', true)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!candidate) return;
+      const user = await tx
+        .updateTable('user')
+        .set({
+          password: hashedPassword,
+          shouldChangePassword: false,
+          importClaimPending: false,
+          passwordLinkHash: null,
+          passwordLinkExpiresAt: null,
+          oauthId: null,
+          pinCode: null,
+          updatedAt: new Date(),
+        })
+        .where('id', '=', candidate.id)
+        .where('passwordLinkHash', '=', hash)
+        .where('passwordLinkExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where('importClaimPending', '=', true)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', UserStatus.Active)
+        .returning(['id', 'email'])
+        .executeTakeFirst();
+      if (!user) return;
+      await tx.deleteFrom('session').where('userId', '=', user.id).execute();
+      await tx.deleteFrom('api_key').where('userId', '=', user.id).execute();
+      await tx.deleteFrom('shared_link').where('userId', '=', user.id).execute();
+      await sql`DELETE FROM public.frameleaf_account_link WHERE "userId"=${user.id}`.execute(tx);
+      return user;
+    });
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.EMAIL, DummyValue.BUFFER, new Date('2027-01-01')] })
+  setPasswordLink(id: string, email: string, hash: Buffer, expiresAt: Date) {
+    return this.db
+      .updateTable('user')
+      .set({ passwordLinkHash: hash, passwordLinkExpiresAt: expiresAt })
+      .where('id', '=', asUuid(id))
+      .where('email', '=', email)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', UserStatus.Active)
+      .returning('id')
       .executeTakeFirst();
   }
 
@@ -505,7 +561,15 @@ export class UserRepository {
     const write = (db: Kysely<DB>) =>
       db
         .updateTable('user')
-        .set(dto)
+        .set({
+          ...dto,
+          ...(dto.email !== undefined && dto.passwordLinkHash === undefined
+            ? {
+                passwordLinkHash: sql<Buffer | null>`CASE WHEN email IS DISTINCT FROM ${dto.email} THEN NULL ELSE "passwordLinkHash" END`,
+                passwordLinkExpiresAt: sql<Date | null>`CASE WHEN email IS DISTINCT FROM ${dto.email} THEN NULL ELSE "passwordLinkExpiresAt" END`,
+              }
+            : {}),
+        })
         .where('user.id', '=', asUuid(id))
         .where('user.deletedAt', 'is', null)
         .returning(columns.userAdmin)

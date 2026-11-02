@@ -238,6 +238,9 @@ export class SharedLinkRepository {
       .selectFrom('shared_link')
       .leftJoin('album', 'album.id', 'shared_link.albumId')
       .where('album.deletedAt', 'is', null)
+      .where('shared_link.userId', 'in', (eb) =>
+        eb.selectFrom('user').select('user.id').where('user.importClaimPending', '=', false),
+      )
       .select((eb) => [
         'shared_link.id',
         'shared_link.userId',

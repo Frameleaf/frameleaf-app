@@ -117,6 +117,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
   JobName.LandmarkInfer,
+  // FL-1094: outfits are upserted per face, and only faces without one are encoded
+  JobName.AlbumSuggestionOutfit,
   // FL-413: every batch saves the run's cursor; a retry carries on from it
   JobName.IdenticalFilesCheck,
   // a restart mid-batch must not leave the partner card "queued" forever; copies are keyed by
@@ -513,11 +515,16 @@ export class JobRepository {
     if (!context) {
       return action();
     }
+    const collection = (context.followupCollection ??= { active: 0, buffering: context.buffering });
+    collection.active++;
     context.buffering = true;
     try {
       await action();
     } finally {
-      context.buffering = false;
+      if (--collection.active === 0) {
+        context.buffering = collection.buffering;
+        delete context.followupCollection;
+      }
     }
   }
 
@@ -1013,6 +1020,10 @@ export class JobRepository {
     switch (item.name) {
       case JobName.LandmarkInfer: {
         return item.data?.id ? null : { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } };
+      }
+      case JobName.AlbumSuggestionOutfit: {
+        // every load of an album's suggestions asks again until the crops exist; one waiting job is enough
+        return { deduplication: { id: `${JobName.AlbumSuggestionOutfit}:${item.data.id}`, keepLastIfActive: true } };
       }
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };

@@ -1,0 +1,4019 @@
+{
+  "source": {
+    "name": "Nextcloud Photos / Memories",
+    "version": "35.0.0/photos-8.0.0/memories-10.2.0",
+    "server": {
+      "version": "35.0.0",
+      "commit": "da02f41d1cc73607084cd675ee1d849fc8cd2de1"
+    },
+    "photos": {
+      "version": "8.0.0",
+      "branch": "stable35",
+      "commit": "43b7e05794301a949d7dc61666dca4ca3db3dfb0",
+      "dependency": "Nextcloud35",
+      "nativeBundledCodeVerification": {
+        "imageInfoAndAlbumMapperMatchSource": true,
+        "sha256": {
+          "appinfo/info.xml": "de3ccebf9b69e7911cac1ae49c10824ef59ec210ba6f1a7c6ccc4bbebf7df3cf",
+          "lib/Album/AlbumMapper.php": "a1fc5cf114348733f3fea19c7caa4bcb3b271cf25dc68914e6c25d81c556225d"
+        }
+      }
+    },
+    "memories": {
+      "version": "10.2.0",
+      "commit": "d59c33d94d4e9627565e2023eb3c5c798788ebe2"
+    }
+  },
+  "runtime": {
+    "php": "8.5.10",
+    "sqlite": "3.46.1",
+    "image": "nextcloud@sha256:ec43ff8fbdc0dde4797652b9217c6bef7a5b90b3450eae8a109436a69f398da2",
+    "memoriesArchiveSha256": "301635782b420cfc29b9739d04cfd850d4cae4e303a6e7c56442f16dd4afc514",
+    "tablePrefix": "oc_"
+  },
+  "schemaSha256": "9aba1c65de889c3821a273f2da39198fff6cab528c2788194301c74a1e2e8f6a",
+  "structure": {
+    "applicationId": {
+      "application_id": 0
+    },
+    "userVersion": {
+      "user_version": 0
+    },
+    "objects": [
+      {
+        "type": "index",
+        "name": "IDX_25C66A49E7A1254A",
+        "tbl_name": "oc_circles_member",
+        "sql": "CREATE INDEX IDX_25C66A49E7A1254A ON oc_circles_member (contact_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_4D5AFECA5F37A13B",
+        "tbl_name": "oc_direct_edit",
+        "sql": "CREATE INDEX IDX_4D5AFECA5F37A13B ON oc_direct_edit (token)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_67DC472793CB796C",
+        "tbl_name": "oc_previews",
+        "sql": "CREATE INDEX IDX_67DC472793CB796C ON oc_previews (file_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_71B028EA93CB796C",
+        "tbl_name": "oc_files_lock",
+        "sql": "CREATE INDEX IDX_71B028EA93CB796C ON oc_files_lock (file_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_734621B62AE63FDB",
+        "tbl_name": "oc_sharing_share_recipients",
+        "sql": "CREATE INDEX IDX_734621B62AE63FDB ON oc_sharing_share_recipients (share_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_734621B64185A14",
+        "tbl_name": "oc_sharing_share_recipients",
+        "sql": "CREATE INDEX IDX_734621B64185A14 ON oc_sharing_share_recipients (recipient_class_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_8195F5484230B1DE",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE INDEX IDX_8195F5484230B1DE ON oc_circles_circle (instance)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_8195F5485F8A7F73",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE INDEX IDX_8195F5485F8A7F73 ON oc_circles_circle (source)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_8195F548C317B362",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE INDEX IDX_8195F548C317B362 ON oc_circles_circle (sanitized_name)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_8195F548D48A2F7C",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE INDEX IDX_8195F548D48A2F7C ON oc_circles_circle (config)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_8FC816EAE7C1D92B",
+        "tbl_name": "oc_circles_membership",
+        "sql": "CREATE INDEX IDX_8FC816EAE7C1D92B ON oc_circles_membership (single_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_9381FC6C1F38DEA6",
+        "tbl_name": "oc_sharing_share_permissions",
+        "sql": "CREATE INDEX IDX_9381FC6C1F38DEA6 ON oc_sharing_share_permissions (permission_class_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_9381FC6C2AE63FDB",
+        "tbl_name": "oc_sharing_share_permissions",
+        "sql": "CREATE INDEX IDX_9381FC6C2AE63FDB ON oc_sharing_share_permissions (share_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_A03E4E222AE63FDB",
+        "tbl_name": "oc_sharing_share_user_status",
+        "sql": "CREATE INDEX IDX_A03E4E222AE63FDB ON oc_sharing_share_user_status (share_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_A8206AC61F38DEA6",
+        "tbl_name": "oc_sharing_share_recipient_permissions",
+        "sql": "CREATE INDEX IDX_A8206AC61F38DEA6 ON oc_sharing_share_recipient_permissions (permission_class_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_A8206AC6E92F8F78",
+        "tbl_name": "oc_sharing_share_recipient_permissions",
+        "sql": "CREATE INDEX IDX_A8206AC6E92F8F78 ON oc_sharing_share_recipient_permissions (recipient_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_E0E322B52AE63FDB",
+        "tbl_name": "oc_sharing_share_properties",
+        "sql": "CREATE INDEX IDX_E0E322B52AE63FDB ON oc_sharing_share_properties (share_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_E0E322B5B4873F54",
+        "tbl_name": "oc_sharing_share_properties",
+        "sql": "CREATE INDEX IDX_E0E322B5B4873F54 ON oc_sharing_share_properties (property_class_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_F94EF8334F8E741",
+        "tbl_name": "oc_circles_remote",
+        "sql": "CREATE INDEX IDX_F94EF8334F8E741 ON oc_circles_remote (href)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_F94EF83539B0606",
+        "tbl_name": "oc_circles_remote",
+        "sql": "CREATE INDEX IDX_F94EF83539B0606 ON oc_circles_remote (uid)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_FB9CB7D22AE63FDB",
+        "tbl_name": "oc_sharing_share_sources",
+        "sql": "CREATE INDEX IDX_FB9CB7D22AE63FDB ON oc_sharing_share_sources (share_id)"
+      },
+      {
+        "type": "index",
+        "name": "IDX_FB9CB7D2A9203DC2",
+        "tbl_name": "oc_sharing_share_sources",
+        "sql": "CREATE INDEX IDX_FB9CB7D2A9203DC2 ON oc_sharing_share_sources (source_class_id)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_337F52F8126F525E70EE2FF6",
+        "tbl_name": "oc_circles_share_lock",
+        "sql": "CREATE UNIQUE INDEX UNIQ_337F52F8126F525E70EE2FF6 ON oc_circles_share_lock (item_id, circle_id)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_71B028EA5F37A13B",
+        "tbl_name": "oc_files_lock",
+        "sql": "CREATE UNIQUE INDEX UNIQ_71B028EA5F37A13B ON oc_files_lock (token)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_734621B62AE63FDB4185A14495A838F",
+        "tbl_name": "oc_sharing_share_recipients",
+        "sql": "CREATE UNIQUE INDEX UNIQ_734621B62AE63FDB4185A14495A838F ON oc_sharing_share_recipients (share_id, recipient_class_id, recipient_value)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_734621B645AF3A",
+        "tbl_name": "oc_sharing_share_recipients",
+        "sql": "CREATE UNIQUE INDEX UNIQ_734621B645AF3A ON oc_sharing_share_recipients (recipient_secret)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_8195F548E3C68343",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE UNIQUE INDEX UNIQ_8195F548E3C68343 ON oc_circles_circle (unique_id)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_90E7F717EA5E4949",
+        "tbl_name": "oc_sharing_classmap",
+        "sql": "CREATE UNIQUE INDEX UNIQ_90E7F717EA5E4949 ON oc_sharing_classmap (class_name)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_F94EF834230B1DE",
+        "tbl_name": "oc_circles_remote",
+        "sql": "CREATE UNIQUE INDEX UNIQ_F94EF834230B1DE ON oc_circles_remote (instance)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_FE235BA370EE2FF6",
+        "tbl_name": "oc_circles_invitations",
+        "sql": "CREATE UNIQUE INDEX UNIQ_FE235BA370EE2FF6 ON oc_circles_invitations (circle_id)"
+      },
+      {
+        "type": "index",
+        "name": "UNIQ_FE235BA3BA14FCCC",
+        "tbl_name": "oc_circles_invitations",
+        "sql": "CREATE UNIQUE INDEX UNIQ_FE235BA3BA14FCCC ON oc_circles_invitations (invitation_code)"
+      },
+      {
+        "type": "index",
+        "name": "ac_lazy_i",
+        "tbl_name": "oc_appconfig",
+        "sql": "CREATE INDEX ac_lazy_i ON oc_appconfig (lazy)"
+      },
+      {
+        "type": "index",
+        "name": "accounts_data_name",
+        "tbl_name": "oc_accounts_data",
+        "sql": "CREATE INDEX accounts_data_name ON oc_accounts_data (name)"
+      },
+      {
+        "type": "index",
+        "name": "accounts_data_uid",
+        "tbl_name": "oc_accounts_data",
+        "sql": "CREATE INDEX accounts_data_uid ON oc_accounts_data (uid)"
+      },
+      {
+        "type": "index",
+        "name": "accounts_data_value",
+        "tbl_name": "oc_accounts_data",
+        "sql": "CREATE INDEX accounts_data_value ON oc_accounts_data (value)"
+      },
+      {
+        "type": "index",
+        "name": "activity_filter",
+        "tbl_name": "oc_activity",
+        "sql": "CREATE INDEX activity_filter ON oc_activity (affecteduser, type, app, timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "activity_filter_by",
+        "tbl_name": "oc_activity",
+        "sql": "CREATE INDEX activity_filter_by ON oc_activity (affecteduser, user, timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "activity_object",
+        "tbl_name": "oc_activity",
+        "sql": "CREATE INDEX activity_object ON oc_activity (object_type, object_id)"
+      },
+      {
+        "type": "index",
+        "name": "activity_object_user",
+        "tbl_name": "oc_activity",
+        "sql": "CREATE INDEX activity_object_user ON oc_activity (affecteduser, object_type, object_id, timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "activity_user_time",
+        "tbl_name": "oc_activity",
+        "sql": "CREATE INDEX activity_user_time ON oc_activity (affecteduser, timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "addressbook_index",
+        "tbl_name": "oc_addressbooks",
+        "sql": "CREATE UNIQUE INDEX addressbook_index ON oc_addressbooks (principaluri, uri)"
+      },
+      {
+        "type": "index",
+        "name": "addressbookid_synctoken",
+        "tbl_name": "oc_addressbookchanges",
+        "sql": "CREATE INDEX addressbookid_synctoken ON oc_addressbookchanges (addressbookid, synctoken)"
+      },
+      {
+        "type": "index",
+        "name": "admindel_groupid_idx",
+        "tbl_name": "oc_authorized_groups",
+        "sql": "CREATE INDEX admindel_groupid_idx ON oc_authorized_groups (group_id)"
+      },
+      {
+        "type": "index",
+        "name": "album_collabs_uniq_collab",
+        "tbl_name": "oc_photos_albums_collabs",
+        "sql": "CREATE UNIQUE INDEX album_collabs_uniq_collab ON oc_photos_albums_collabs (album_id, collaborator_id, collaborator_type)"
+      },
+      {
+        "type": "index",
+        "name": "amp_latest_send_time",
+        "tbl_name": "oc_activity_mq",
+        "sql": "CREATE INDEX amp_latest_send_time ON oc_activity_mq (amq_latest_send)"
+      },
+      {
+        "type": "index",
+        "name": "amp_timestamp_time",
+        "tbl_name": "oc_activity_mq",
+        "sql": "CREATE INDEX amp_timestamp_time ON oc_activity_mq (amq_timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "amp_user_send",
+        "tbl_name": "oc_activity_mq",
+        "sql": "CREATE INDEX amp_user_send ON oc_activity_mq (amq_affecteduser, amq_latest_send)"
+      },
+      {
+        "type": "index",
+        "name": "authtoken_last_activity_idx",
+        "tbl_name": "oc_authtoken",
+        "sql": "CREATE INDEX authtoken_last_activity_idx ON oc_authtoken (last_activity)"
+      },
+      {
+        "type": "index",
+        "name": "authtoken_token_index",
+        "tbl_name": "oc_authtoken",
+        "sql": "CREATE UNIQUE INDEX authtoken_token_index ON oc_authtoken (token)"
+      },
+      {
+        "type": "index",
+        "name": "authtoken_uid_index",
+        "tbl_name": "oc_authtoken",
+        "sql": "CREATE INDEX authtoken_uid_index ON oc_authtoken (uid)"
+      },
+      {
+        "type": "index",
+        "name": "bruteforce_attempts_ip",
+        "tbl_name": "oc_bruteforce_attempts",
+        "sql": "CREATE INDEX bruteforce_attempts_ip ON oc_bruteforce_attempts (ip)"
+      },
+      {
+        "type": "index",
+        "name": "bruteforce_attempts_subnet",
+        "tbl_name": "oc_bruteforce_attempts",
+        "sql": "CREATE INDEX bruteforce_attempts_subnet ON oc_bruteforce_attempts (subnet)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_invitation_tokens",
+        "tbl_name": "oc_calendar_invitations",
+        "sql": "CREATE INDEX calendar_invitation_tokens ON oc_calendar_invitations (token)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_reminder_objid",
+        "tbl_name": "oc_calendar_reminders",
+        "sql": "CREATE INDEX calendar_reminder_objid ON oc_calendar_reminders (object_id)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_reminder_uidrec",
+        "tbl_name": "oc_calendar_reminders",
+        "sql": "CREATE INDEX calendar_reminder_uidrec ON oc_calendar_reminders (uid, recurrence_id)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_resources_bkdrsc",
+        "tbl_name": "oc_calendar_resources",
+        "sql": "CREATE INDEX calendar_resources_bkdrsc ON oc_calendar_resources (backend_id, resource_id)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_resources_email",
+        "tbl_name": "oc_calendar_resources",
+        "sql": "CREATE INDEX calendar_resources_email ON oc_calendar_resources (email)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_resources_md_idk",
+        "tbl_name": "oc_calendar_resources_md",
+        "sql": "CREATE INDEX calendar_resources_md_idk ON oc_calendar_resources_md (resource_id, \"key\")"
+      },
+      {
+        "type": "index",
+        "name": "calendar_resources_name",
+        "tbl_name": "oc_calendar_resources",
+        "sql": "CREATE INDEX calendar_resources_name ON oc_calendar_resources (displayname)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_rooms_bkdrsc",
+        "tbl_name": "oc_calendar_rooms",
+        "sql": "CREATE INDEX calendar_rooms_bkdrsc ON oc_calendar_rooms (backend_id, resource_id)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_rooms_email",
+        "tbl_name": "oc_calendar_rooms",
+        "sql": "CREATE INDEX calendar_rooms_email ON oc_calendar_rooms (email)"
+      },
+      {
+        "type": "index",
+        "name": "calendar_rooms_md_idk",
+        "tbl_name": "oc_calendar_rooms_md",
+        "sql": "CREATE INDEX calendar_rooms_md_idk ON oc_calendar_rooms_md (room_id, \"key\")"
+      },
+      {
+        "type": "index",
+        "name": "calendar_rooms_name",
+        "tbl_name": "oc_calendar_rooms",
+        "sql": "CREATE INDEX calendar_rooms_name ON oc_calendar_rooms (displayname)"
+      },
+      {
+        "type": "index",
+        "name": "calendarobject_calid_index",
+        "tbl_name": "oc_calendarobjects_props",
+        "sql": "CREATE INDEX calendarobject_calid_index ON oc_calendarobjects_props (calendarid, calendartype)"
+      },
+      {
+        "type": "index",
+        "name": "calendarobject_index",
+        "tbl_name": "oc_calendarobjects_props",
+        "sql": "CREATE INDEX calendarobject_index ON oc_calendarobjects_props (objectid, calendartype)"
+      },
+      {
+        "type": "index",
+        "name": "calendarobject_name_index",
+        "tbl_name": "oc_calendarobjects_props",
+        "sql": "CREATE INDEX calendarobject_name_index ON oc_calendarobjects_props (name, calendartype)"
+      },
+      {
+        "type": "index",
+        "name": "calendarobject_value_index",
+        "tbl_name": "oc_calendarobjects_props",
+        "sql": "CREATE INDEX calendarobject_value_index ON oc_calendarobjects_props (value, calendartype)"
+      },
+      {
+        "type": "index",
+        "name": "calendars_index",
+        "tbl_name": "oc_calendars",
+        "sql": "CREATE UNIQUE INDEX calendars_index ON oc_calendars (principaluri, uri)"
+      },
+      {
+        "type": "index",
+        "name": "calid_type_synctoken",
+        "tbl_name": "oc_calendarchanges",
+        "sql": "CREATE INDEX calid_type_synctoken ON oc_calendarchanges (calendarid, calendartype, synctoken)"
+      },
+      {
+        "type": "index",
+        "name": "calobj_clssfction_index",
+        "tbl_name": "oc_calendarobjects",
+        "sql": "CREATE INDEX calobj_clssfction_index ON oc_calendarobjects (classification)"
+      },
+      {
+        "type": "index",
+        "name": "calobjects_by_uid_index",
+        "tbl_name": "oc_calendarobjects",
+        "sql": "CREATE UNIQUE INDEX calobjects_by_uid_index ON oc_calendarobjects (calendarid, calendartype, uid)"
+      },
+      {
+        "type": "index",
+        "name": "calobjects_index",
+        "tbl_name": "oc_calendarobjects",
+        "sql": "CREATE UNIQUE INDEX calobjects_index ON oc_calendarobjects (calendarid, calendartype, uri)"
+      },
+      {
+        "type": "index",
+        "name": "cals_princ_del_idx",
+        "tbl_name": "oc_calendars",
+        "sql": "CREATE INDEX cals_princ_del_idx ON oc_calendars (principaluri, deleted_at)"
+      },
+      {
+        "type": "index",
+        "name": "calsub_index",
+        "tbl_name": "oc_calendarsubscriptions",
+        "sql": "CREATE UNIQUE INDEX calsub_index ON oc_calendarsubscriptions (principaluri, uri)"
+      },
+      {
+        "type": "index",
+        "name": "card_contactid_index",
+        "tbl_name": "oc_cards_properties",
+        "sql": "CREATE INDEX card_contactid_index ON oc_cards_properties (cardid)"
+      },
+      {
+        "type": "index",
+        "name": "card_name_index",
+        "tbl_name": "oc_cards_properties",
+        "sql": "CREATE INDEX card_name_index ON oc_cards_properties (name)"
+      },
+      {
+        "type": "index",
+        "name": "card_value_index",
+        "tbl_name": "oc_cards_properties",
+        "sql": "CREATE INDEX card_value_index ON oc_cards_properties (value)"
+      },
+      {
+        "type": "index",
+        "name": "cards_abiduri",
+        "tbl_name": "oc_cards",
+        "sql": "CREATE INDEX cards_abiduri ON oc_cards (addressbookid, uri)"
+      },
+      {
+        "type": "index",
+        "name": "cards_prop_abid_name_value",
+        "tbl_name": "oc_cards_properties",
+        "sql": "CREATE INDEX cards_prop_abid_name_value ON oc_cards_properties (addressbookid, name, value)"
+      },
+      {
+        "type": "index",
+        "name": "category_index",
+        "tbl_name": "oc_vcategory",
+        "sql": "CREATE INDEX category_index ON oc_vcategory (category)"
+      },
+      {
+        "type": "index",
+        "name": "circles_member_cisi",
+        "tbl_name": "oc_circles_member",
+        "sql": "CREATE INDEX circles_member_cisi ON oc_circles_member (circle_id, single_id)"
+      },
+      {
+        "type": "index",
+        "name": "circles_member_cisiuiutil",
+        "tbl_name": "oc_circles_member",
+        "sql": "CREATE INDEX circles_member_cisiuiutil ON oc_circles_member (circle_id, single_id, user_id, user_type, instance, level)"
+      },
+      {
+        "type": "index",
+        "name": "circles_membership_ifilci",
+        "tbl_name": "oc_circles_membership",
+        "sql": "CREATE INDEX circles_membership_ifilci ON oc_circles_membership (inheritance_first, inheritance_last, circle_id)"
+      },
+      {
+        "type": "index",
+        "name": "circles_mount_cimipt",
+        "tbl_name": "oc_circles_mount",
+        "sql": "CREATE INDEX circles_mount_cimipt ON oc_circles_mount (circle_id, mount_id, parent, token)"
+      },
+      {
+        "type": "index",
+        "name": "circles_mountpoint_ms",
+        "tbl_name": "oc_circles_mountpoint",
+        "sql": "CREATE INDEX circles_mountpoint_ms ON oc_circles_mountpoint (mount_id, single_id)"
+      },
+      {
+        "type": "index",
+        "name": "collres_user_res",
+        "tbl_name": "oc_collres_accesscache",
+        "sql": "CREATE INDEX collres_user_res ON oc_collres_accesscache (user_id, resource_type, resource_id)"
+      },
+      {
+        "type": "index",
+        "name": "comment_reaction",
+        "tbl_name": "oc_reactions",
+        "sql": "CREATE INDEX comment_reaction ON oc_reactions (reaction)"
+      },
+      {
+        "type": "index",
+        "name": "comment_reaction_parent_id",
+        "tbl_name": "oc_reactions",
+        "sql": "CREATE INDEX comment_reaction_parent_id ON oc_reactions (parent_id)"
+      },
+      {
+        "type": "index",
+        "name": "comment_reaction_unique",
+        "tbl_name": "oc_reactions",
+        "sql": "CREATE UNIQUE INDEX comment_reaction_unique ON oc_reactions (parent_id, actor_type, actor_id, reaction)"
+      },
+      {
+        "type": "index",
+        "name": "comments_actor_index",
+        "tbl_name": "oc_comments",
+        "sql": "CREATE INDEX comments_actor_index ON oc_comments (actor_type, actor_id)"
+      },
+      {
+        "type": "index",
+        "name": "comments_marker_object_index",
+        "tbl_name": "oc_comments_read_markers",
+        "sql": "CREATE INDEX comments_marker_object_index ON oc_comments_read_markers (object_type, object_id)"
+      },
+      {
+        "type": "index",
+        "name": "comments_object_index",
+        "tbl_name": "oc_comments",
+        "sql": "CREATE INDEX comments_object_index ON oc_comments (object_type, object_id, creation_timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "comments_parent_id_index",
+        "tbl_name": "oc_comments",
+        "sql": "CREATE INDEX comments_parent_id_index ON oc_comments (parent_id)"
+      },
+      {
+        "type": "index",
+        "name": "comments_topmost_parent_id_idx",
+        "tbl_name": "oc_comments",
+        "sql": "CREATE INDEX comments_topmost_parent_id_idx ON oc_comments (topmost_parent_id)"
+      },
+      {
+        "type": "index",
+        "name": "dav_absence_uid_idx",
+        "tbl_name": "oc_dav_absence",
+        "sql": "CREATE UNIQUE INDEX dav_absence_uid_idx ON oc_dav_absence (user_id)"
+      },
+      {
+        "type": "index",
+        "name": "dav_cal_proxy_ipid",
+        "tbl_name": "oc_dav_cal_proxy",
+        "sql": "CREATE INDEX dav_cal_proxy_ipid ON oc_dav_cal_proxy (proxy_id)"
+      },
+      {
+        "type": "index",
+        "name": "dav_cal_proxy_uidx",
+        "tbl_name": "oc_dav_cal_proxy",
+        "sql": "CREATE UNIQUE INDEX dav_cal_proxy_uidx ON oc_dav_cal_proxy (owner_id, proxy_id, permissions)"
+      },
+      {
+        "type": "index",
+        "name": "dav_shares_index",
+        "tbl_name": "oc_dav_shares",
+        "sql": "CREATE UNIQUE INDEX dav_shares_index ON oc_dav_shares (principaluri, resourceid, type, publicuri)"
+      },
+      {
+        "type": "index",
+        "name": "dav_shares_resourceid_access",
+        "tbl_name": "oc_dav_shares",
+        "sql": "CREATE INDEX dav_shares_resourceid_access ON oc_dav_shares (resourceid, access)"
+      },
+      {
+        "type": "index",
+        "name": "dav_shares_resourceid_type",
+        "tbl_name": "oc_dav_shares",
+        "sql": "CREATE INDEX dav_shares_resourceid_type ON oc_dav_shares (resourceid, type)"
+      },
+      {
+        "type": "index",
+        "name": "deploy_options__idx",
+        "tbl_name": "oc_ex_deploy_options",
+        "sql": "CREATE UNIQUE INDEX deploy_options__idx ON oc_ex_deploy_options (appid, type)"
+      },
+      {
+        "type": "index",
+        "name": "direct_edit_timestamp",
+        "tbl_name": "oc_direct_edit",
+        "sql": "CREATE INDEX direct_edit_timestamp ON oc_direct_edit (timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "directlink_expiration_idx",
+        "tbl_name": "oc_directlink",
+        "sql": "CREATE INDEX directlink_expiration_idx ON oc_directlink (expiration)"
+      },
+      {
+        "type": "index",
+        "name": "directlink_token_idx",
+        "tbl_name": "oc_directlink",
+        "sql": "CREATE INDEX directlink_token_idx ON oc_directlink (token)"
+      },
+      {
+        "type": "index",
+        "name": "dname",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE INDEX dname ON oc_circles_circle (display_name)"
+      },
+      {
+        "type": "index",
+        "name": "ex_apps__appid",
+        "tbl_name": "oc_ex_apps",
+        "sql": "CREATE UNIQUE INDEX ex_apps__appid ON oc_ex_apps (appid)"
+      },
+      {
+        "type": "index",
+        "name": "ex_apps_c_port__idx",
+        "tbl_name": "oc_ex_apps",
+        "sql": "CREATE UNIQUE INDEX ex_apps_c_port__idx ON oc_ex_apps (daemon_config_name, port)"
+      },
+      {
+        "type": "index",
+        "name": "ex_apps_daemons__name",
+        "tbl_name": "oc_ex_apps_daemons",
+        "sql": "CREATE UNIQUE INDEX ex_apps_daemons__name ON oc_ex_apps_daemons (name)"
+      },
+      {
+        "type": "index",
+        "name": "ex_apps_routes_appid",
+        "tbl_name": "oc_ex_apps_routes",
+        "sql": "CREATE INDEX ex_apps_routes_appid ON oc_ex_apps_routes (appid)"
+      },
+      {
+        "type": "index",
+        "name": "ex_apps_talk_bots__app_route",
+        "tbl_name": "oc_ex_apps_talk_bots",
+        "sql": "CREATE UNIQUE INDEX ex_apps_talk_bots__app_route ON oc_ex_apps_talk_bots (appid, route)"
+      },
+      {
+        "type": "index",
+        "name": "ex_apps_talk_bots__appid",
+        "tbl_name": "oc_ex_apps_talk_bots",
+        "sql": "CREATE INDEX ex_apps_talk_bots__appid ON oc_ex_apps_talk_bots (appid)"
+      },
+      {
+        "type": "index",
+        "name": "ex_occ_commands__idx",
+        "tbl_name": "oc_ex_occ_commands",
+        "sql": "CREATE UNIQUE INDEX ex_occ_commands__idx ON oc_ex_occ_commands (appid, name)"
+      },
+      {
+        "type": "index",
+        "name": "ex_settings_forms__idx",
+        "tbl_name": "oc_ex_settings_forms",
+        "sql": "CREATE UNIQUE INDEX ex_settings_forms__idx ON oc_ex_settings_forms (appid, formid)"
+      },
+      {
+        "type": "index",
+        "name": "ex_ui_files_actions__idx",
+        "tbl_name": "oc_ex_ui_files_actions",
+        "sql": "CREATE UNIQUE INDEX ex_ui_files_actions__idx ON oc_ex_ui_files_actions (appid, name)"
+      },
+      {
+        "type": "index",
+        "name": "expire_date",
+        "tbl_name": "oc_comments",
+        "sql": "CREATE INDEX expire_date ON oc_comments (expire_date)"
+      },
+      {
+        "type": "index",
+        "name": "f_meta_index",
+        "tbl_name": "oc_files_metadata_index",
+        "sql": "CREATE INDEX f_meta_index ON oc_files_metadata_index (file_id, meta_key, meta_value_string)"
+      },
+      {
+        "type": "index",
+        "name": "f_meta_index_i",
+        "tbl_name": "oc_files_metadata_index",
+        "sql": "CREATE INDEX f_meta_index_i ON oc_files_metadata_index (file_id, meta_key, meta_value_int)"
+      },
+      {
+        "type": "index",
+        "name": "fce_ctime_idx",
+        "tbl_name": "oc_filecache_extended",
+        "sql": "CREATE INDEX fce_ctime_idx ON oc_filecache_extended (creation_time)"
+      },
+      {
+        "type": "index",
+        "name": "fce_utime_idx",
+        "tbl_name": "oc_filecache_extended",
+        "sql": "CREATE INDEX fce_utime_idx ON oc_filecache_extended (upload_time)"
+      },
+      {
+        "type": "index",
+        "name": "fedcals_last_sync_index",
+        "tbl_name": "oc_calendars_federated",
+        "sql": "CREATE INDEX fedcals_last_sync_index ON oc_calendars_federated (last_sync)"
+      },
+      {
+        "type": "index",
+        "name": "fedcals_uris_index",
+        "tbl_name": "oc_calendars_federated",
+        "sql": "CREATE INDEX fedcals_uris_index ON oc_calendars_federated (principaluri, uri)"
+      },
+      {
+        "type": "index",
+        "name": "file_source_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX file_source_index ON oc_share (file_source)"
+      },
+      {
+        "type": "index",
+        "name": "files_meta_fileid",
+        "tbl_name": "oc_files_metadata",
+        "sql": "CREATE UNIQUE INDEX files_meta_fileid ON oc_files_metadata (file_id)"
+      },
+      {
+        "type": "index",
+        "name": "files_versions_uniq_index",
+        "tbl_name": "oc_files_versions",
+        "sql": "CREATE UNIQUE INDEX files_versions_uniq_index ON oc_files_versions (file_id, timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "flow_unique_hash",
+        "tbl_name": "oc_flow_checks",
+        "sql": "CREATE UNIQUE INDEX flow_unique_hash ON oc_flow_checks (hash)"
+      },
+      {
+        "type": "index",
+        "name": "flow_unique_scope",
+        "tbl_name": "oc_flow_operations_scope",
+        "sql": "CREATE UNIQUE INDEX flow_unique_scope ON oc_flow_operations_scope (operation_id, type, value)"
+      },
+      {
+        "type": "index",
+        "name": "fs_mtime",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_mtime ON oc_filecache (mtime)"
+      },
+      {
+        "type": "index",
+        "name": "fs_name_hash",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_name_hash ON oc_filecache (name)"
+      },
+      {
+        "type": "index",
+        "name": "fs_parent",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_parent ON oc_filecache (parent)"
+      },
+      {
+        "type": "index",
+        "name": "fs_parent_name_hash",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_parent_name_hash ON oc_filecache (parent, name)"
+      },
+      {
+        "type": "index",
+        "name": "fs_size",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_size ON oc_filecache (size)"
+      },
+      {
+        "type": "index",
+        "name": "fs_storage_mimepart",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_storage_mimepart ON oc_filecache (storage, mimepart)"
+      },
+      {
+        "type": "index",
+        "name": "fs_storage_mimetype",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_storage_mimetype ON oc_filecache (storage, mimetype)"
+      },
+      {
+        "type": "index",
+        "name": "fs_storage_path_hash",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE UNIQUE INDEX fs_storage_path_hash ON oc_filecache (storage, path_hash)"
+      },
+      {
+        "type": "index",
+        "name": "fs_storage_path_prefix",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_storage_path_prefix ON oc_filecache (storage, path)"
+      },
+      {
+        "type": "index",
+        "name": "fs_storage_size",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX fs_storage_size ON oc_filecache (storage, size, fileid)"
+      },
+      {
+        "type": "index",
+        "name": "group_admin_uid",
+        "tbl_name": "oc_group_admin",
+        "sql": "CREATE INDEX group_admin_uid ON oc_group_admin (uid)"
+      },
+      {
+        "type": "index",
+        "name": "gu_uid_index",
+        "tbl_name": "oc_group_user",
+        "sql": "CREATE INDEX gu_uid_index ON oc_group_user (uid)"
+      },
+      {
+        "type": "index",
+        "name": "id_index",
+        "tbl_name": "oc_files_trash",
+        "sql": "CREATE INDEX id_index ON oc_files_trash (id)"
+      },
+      {
+        "type": "index",
+        "name": "initiator_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX initiator_index ON oc_share (uid_initiator)"
+      },
+      {
+        "type": "index",
+        "name": "item_share_type_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX item_share_type_index ON oc_share (item_type, share_type)"
+      },
+      {
+        "type": "index",
+        "name": "job_argument_hash",
+        "tbl_name": "oc_jobs",
+        "sql": "CREATE INDEX job_argument_hash ON oc_jobs (class, argument_hash)"
+      },
+      {
+        "type": "index",
+        "name": "job_class_index",
+        "tbl_name": "oc_jobs",
+        "sql": "CREATE INDEX job_class_index ON oc_jobs (class)"
+      },
+      {
+        "type": "index",
+        "name": "job_lastcheck_reserved",
+        "tbl_name": "oc_jobs",
+        "sql": "CREATE INDEX job_lastcheck_reserved ON oc_jobs (last_checked, reserved_at)"
+      },
+      {
+        "type": "index",
+        "name": "jobs_time_sensitive",
+        "tbl_name": "oc_jobs",
+        "sql": "CREATE INDEX jobs_time_sensitive ON oc_jobs (time_sensitive)"
+      },
+      {
+        "type": "index",
+        "name": "ku_known_to",
+        "tbl_name": "oc_known_users",
+        "sql": "CREATE INDEX ku_known_to ON oc_known_users (known_to)"
+      },
+      {
+        "type": "index",
+        "name": "ku_known_user",
+        "tbl_name": "oc_known_users",
+        "sql": "CREATE INDEX ku_known_user ON oc_known_users (known_user)"
+      },
+      {
+        "type": "index",
+        "name": "lock_key_index",
+        "tbl_name": "oc_file_locks",
+        "sql": "CREATE UNIQUE INDEX lock_key_index ON oc_file_locks (\"key\")"
+      },
+      {
+        "type": "index",
+        "name": "lock_ttl_index",
+        "tbl_name": "oc_file_locks",
+        "sql": "CREATE INDEX lock_ttl_index ON oc_file_locks (ttl)"
+      },
+      {
+        "type": "index",
+        "name": "login_token",
+        "tbl_name": "oc_login_flow_v2",
+        "sql": "CREATE UNIQUE INDEX login_token ON oc_login_flow_v2 (login_token)"
+      },
+      {
+        "type": "index",
+        "name": "m_sid_rmt_rid",
+        "tbl_name": "oc_circles_mount",
+        "sql": "CREATE INDEX m_sid_rmt_rid ON oc_circles_mount (circle_id, remote, remote_id)"
+      },
+      {
+        "type": "index",
+        "name": "memories_clst_ll_idx",
+        "tbl_name": "oc_memories_mapclusters",
+        "sql": "CREATE INDEX memories_clst_ll_idx ON oc_memories_mapclusters (lat, lon)"
+      },
+      {
+        "type": "index",
+        "name": "memories_covers_gidx",
+        "tbl_name": "oc_memories_covers",
+        "sql": "CREATE UNIQUE INDEX memories_covers_gidx ON oc_memories_covers (uid, clustertype, clusterid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_dayid_index",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_dayid_index ON oc_memories (dayid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_fail_fid_mt_idx",
+        "tbl_name": "oc_memories_failures",
+        "sql": "CREATE INDEX memories_fail_fid_mt_idx ON oc_memories_failures (fileid, mtime)"
+      },
+      {
+        "type": "index",
+        "name": "memories_fileid_index",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE UNIQUE INDEX memories_fileid_index ON oc_memories (fileid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_isvideo_idx",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_isvideo_idx ON oc_memories (isvideo)"
+      },
+      {
+        "type": "index",
+        "name": "memories_lat_lon_index",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_lat_lon_index ON oc_memories (lat, lon)"
+      },
+      {
+        "type": "index",
+        "name": "memories_lp_fid_mt_idx",
+        "tbl_name": "oc_memories_livephoto",
+        "sql": "CREATE INDEX memories_lp_fid_mt_idx ON oc_memories_livephoto (fileid, mtime)"
+      },
+      {
+        "type": "index",
+        "name": "memories_lp_fileid_index",
+        "tbl_name": "oc_memories_livephoto",
+        "sql": "CREATE UNIQUE INDEX memories_lp_fileid_index ON oc_memories_livephoto (fileid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_lp_liveid_index",
+        "tbl_name": "oc_memories_livephoto",
+        "sql": "CREATE INDEX memories_lp_liveid_index ON oc_memories_livephoto (liveid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_mapcluster_index",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_mapcluster_index ON oc_memories (mapcluster)"
+      },
+      {
+        "type": "index",
+        "name": "memories_objectid_index",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_objectid_index ON oc_memories (objectid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_pano_idx",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_pano_idx ON oc_memories (pano)"
+      },
+      {
+        "type": "index",
+        "name": "memories_parent_mc_fid_idx",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_parent_mc_fid_idx ON oc_memories (parent, mapcluster, fileid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_parent_mimetype",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE INDEX memories_parent_mimetype ON oc_filecache (parent, mimetype)"
+      },
+      {
+        "type": "index",
+        "name": "memories_parent_oid_fid_idx",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_parent_oid_fid_idx ON oc_memories (parent, objectid, fileid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_pdf_idx",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE INDEX memories_pdf_idx ON oc_memories (parent, dayid, fileid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_places_fid_mk_oid_idx",
+        "tbl_name": "oc_memories_places",
+        "sql": "CREATE INDEX memories_places_fid_mk_oid_idx ON oc_memories_places (fileid, mark, osm_id)"
+      },
+      {
+        "type": "index",
+        "name": "memories_places_fileid_index",
+        "tbl_name": "oc_memories_places",
+        "sql": "CREATE INDEX memories_places_fileid_index ON oc_memories_places (fileid)"
+      },
+      {
+        "type": "index",
+        "name": "memories_places_id_mk_idx",
+        "tbl_name": "oc_memories_places",
+        "sql": "CREATE INDEX memories_places_id_mk_idx ON oc_memories_places (osm_id, mark)"
+      },
+      {
+        "type": "index",
+        "name": "memories_places_osm_id_index",
+        "tbl_name": "oc_memories_places",
+        "sql": "CREATE INDEX memories_places_osm_id_index ON oc_memories_places (osm_id)"
+      },
+      {
+        "type": "index",
+        "name": "memories_planet_osm_id_index",
+        "tbl_name": "oc_memories_planet",
+        "sql": "CREATE INDEX memories_planet_osm_id_index ON oc_memories_planet (osm_id)"
+      },
+      {
+        "type": "index",
+        "name": "memories_type_tagid",
+        "tbl_name": "oc_systemtag_object_mapping",
+        "sql": "CREATE INDEX memories_type_tagid ON oc_systemtag_object_mapping (objecttype, systemtagid)"
+      },
+      {
+        "type": "index",
+        "name": "mimetype_id_index",
+        "tbl_name": "oc_mimetypes",
+        "sql": "CREATE UNIQUE INDEX mimetype_id_index ON oc_mimetypes (mimetype)"
+      },
+      {
+        "type": "index",
+        "name": "mount_user_storage",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE INDEX mount_user_storage ON oc_mounts (storage_id, user_id)"
+      },
+      {
+        "type": "index",
+        "name": "mounts_class_index",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE INDEX mounts_class_index ON oc_mounts (mount_provider_class)"
+      },
+      {
+        "type": "index",
+        "name": "mounts_mount_id_index",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE INDEX mounts_mount_id_index ON oc_mounts (mount_id)"
+      },
+      {
+        "type": "index",
+        "name": "mounts_root_index",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE INDEX mounts_root_index ON oc_mounts (root_id)"
+      },
+      {
+        "type": "index",
+        "name": "mounts_storage_index",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE INDEX mounts_storage_index ON oc_mounts (storage_id)"
+      },
+      {
+        "type": "index",
+        "name": "mounts_user_path_root_index",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE UNIQUE INDEX mounts_user_path_root_index ON oc_mounts (user_id, mount_point_hash, root_id)"
+      },
+      {
+        "type": "index",
+        "name": "mp_sid_hash",
+        "tbl_name": "oc_circles_mountpoint",
+        "sql": "CREATE UNIQUE INDEX mp_sid_hash ON oc_circles_mountpoint (single_id, mountpoint_hash)"
+      },
+      {
+        "type": "index",
+        "name": "notifwebpush_endpoint",
+        "tbl_name": "oc_notifications_webpush",
+        "sql": "CREATE INDEX notifwebpush_endpoint ON oc_notifications_webpush (endpoint)"
+      },
+      {
+        "type": "index",
+        "name": "notifwebpush_uid_token",
+        "tbl_name": "oc_notifications_webpush",
+        "sql": "CREATE UNIQUE INDEX notifwebpush_uid_token ON oc_notifications_webpush (uid, token)"
+      },
+      {
+        "type": "index",
+        "name": "notset_nextsend",
+        "tbl_name": "oc_notifications_settings",
+        "sql": "CREATE INDEX notset_nextsend ON oc_notifications_settings (next_send_time)"
+      },
+      {
+        "type": "index",
+        "name": "notset_user",
+        "tbl_name": "oc_notifications_settings",
+        "sql": "CREATE UNIQUE INDEX notset_user ON oc_notifications_settings (user_id)"
+      },
+      {
+        "type": "index",
+        "name": "oauth2_access_client_id_idx",
+        "tbl_name": "oc_oauth2_access_tokens",
+        "sql": "CREATE INDEX oauth2_access_client_id_idx ON oc_oauth2_access_tokens (client_id)"
+      },
+      {
+        "type": "index",
+        "name": "oauth2_access_hash_idx",
+        "tbl_name": "oc_oauth2_access_tokens",
+        "sql": "CREATE UNIQUE INDEX oauth2_access_hash_idx ON oc_oauth2_access_tokens (hashed_code)"
+      },
+      {
+        "type": "index",
+        "name": "oauth2_client_id_idx",
+        "tbl_name": "oc_oauth2_clients",
+        "sql": "CREATE UNIQUE INDEX oauth2_client_id_idx ON oc_oauth2_clients (client_identifier)"
+      },
+      {
+        "type": "index",
+        "name": "oauth2_tk_c_created_idx",
+        "tbl_name": "oc_oauth2_access_tokens",
+        "sql": "CREATE INDEX oauth2_tk_c_created_idx ON oc_oauth2_access_tokens (token_count, code_created_at)"
+      },
+      {
+        "type": "index",
+        "name": "oc_notifications_app",
+        "tbl_name": "oc_notifications",
+        "sql": "CREATE INDEX oc_notifications_app ON oc_notifications (app)"
+      },
+      {
+        "type": "index",
+        "name": "oc_notifications_object",
+        "tbl_name": "oc_notifications",
+        "sql": "CREATE INDEX oc_notifications_object ON oc_notifications (object_type, object_id)"
+      },
+      {
+        "type": "index",
+        "name": "oc_notifications_timestamp",
+        "tbl_name": "oc_notifications",
+        "sql": "CREATE INDEX oc_notifications_timestamp ON oc_notifications (timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "oc_notifications_user",
+        "tbl_name": "oc_notifications",
+        "sql": "CREATE INDEX oc_notifications_user ON oc_notifications (user)"
+      },
+      {
+        "type": "index",
+        "name": "oc_npushhash_di",
+        "tbl_name": "oc_notifications_pushhash",
+        "sql": "CREATE INDEX oc_npushhash_di ON oc_notifications_pushhash (deviceidentifier)"
+      },
+      {
+        "type": "index",
+        "name": "oc_npushhash_uid",
+        "tbl_name": "oc_notifications_pushhash",
+        "sql": "CREATE UNIQUE INDEX oc_npushhash_uid ON oc_notifications_pushhash (uid, token)"
+      },
+      {
+        "type": "index",
+        "name": "ocm_tkmap_atid",
+        "tbl_name": "oc_ocm_token_map",
+        "sql": "CREATE INDEX ocm_tkmap_atid ON oc_ocm_token_map (access_token_id)"
+      },
+      {
+        "type": "index",
+        "name": "ocm_tkmap_exp",
+        "tbl_name": "oc_ocm_token_map",
+        "sql": "CREATE INDEX ocm_tkmap_exp ON oc_ocm_token_map (expires)"
+      },
+      {
+        "type": "index",
+        "name": "openlocal_user_path_token",
+        "tbl_name": "oc_open_local_editor",
+        "sql": "CREATE UNIQUE INDEX openlocal_user_path_token ON oc_open_local_editor (user_id, path_hash, token)"
+      },
+      {
+        "type": "index",
+        "name": "owner_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX owner_index ON oc_share (uid_owner)"
+      },
+      {
+        "type": "index",
+        "name": "pa_user",
+        "tbl_name": "oc_photos_albums",
+        "sql": "CREATE INDEX pa_user ON oc_photos_albums (user)"
+      },
+      {
+        "type": "index",
+        "name": "paf_album_file",
+        "tbl_name": "oc_photos_albums_files",
+        "sql": "CREATE UNIQUE INDEX paf_album_file ON oc_photos_albums_files (album_id, file_id)"
+      },
+      {
+        "type": "index",
+        "name": "paf_folder",
+        "tbl_name": "oc_photos_albums_files",
+        "sql": "CREATE INDEX paf_folder ON oc_photos_albums_files (album_id)"
+      },
+      {
+        "type": "index",
+        "name": "parent_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX parent_index ON oc_share (parent)"
+      },
+      {
+        "type": "index",
+        "name": "poll_token",
+        "tbl_name": "oc_login_flow_v2",
+        "sql": "CREATE UNIQUE INDEX poll_token ON oc_login_flow_v2 (poll_token)"
+      },
+      {
+        "type": "index",
+        "name": "prefs_app_key_ind_fl_i",
+        "tbl_name": "oc_preferences",
+        "sql": "CREATE INDEX prefs_app_key_ind_fl_i ON oc_preferences (appid, configkey, \"indexed\", flags)"
+      },
+      {
+        "type": "index",
+        "name": "prefs_uid_lazy_i",
+        "tbl_name": "oc_preferences",
+        "sql": "CREATE INDEX prefs_uid_lazy_i ON oc_preferences (userid, lazy)"
+      },
+      {
+        "type": "index",
+        "name": "previews_file_uniq_idx",
+        "tbl_name": "oc_previews",
+        "sql": "CREATE UNIQUE INDEX previews_file_uniq_idx ON oc_previews (file_id, width, height, mimetype_id, cropped, version_id)"
+      },
+      {
+        "type": "index",
+        "name": "profile_config_user_id_idx",
+        "tbl_name": "oc_profile_config",
+        "sql": "CREATE UNIQUE INDEX profile_config_user_id_idx ON oc_profile_config (user_id)"
+      },
+      {
+        "type": "index",
+        "name": "properties_name_path_user",
+        "tbl_name": "oc_properties",
+        "sql": "CREATE INDEX properties_name_path_user ON oc_properties (propertyname, propertypath, userid)"
+      },
+      {
+        "type": "index",
+        "name": "properties_path_index",
+        "tbl_name": "oc_properties",
+        "sql": "CREATE INDEX properties_path_index ON oc_properties (userid, propertypath)"
+      },
+      {
+        "type": "index",
+        "name": "properties_pathonly_index",
+        "tbl_name": "oc_properties",
+        "sql": "CREATE INDEX properties_pathonly_index ON oc_properties (propertypath)"
+      },
+      {
+        "type": "index",
+        "name": "ratelimit_delete_after",
+        "tbl_name": "oc_ratelimit_entries",
+        "sql": "CREATE INDEX ratelimit_delete_after ON oc_ratelimit_entries (delete_after)"
+      },
+      {
+        "type": "index",
+        "name": "ratelimit_hash",
+        "tbl_name": "oc_ratelimit_entries",
+        "sql": "CREATE INDEX ratelimit_hash ON oc_ratelimit_entries (hash)"
+      },
+      {
+        "type": "index",
+        "name": "rd_session_token_idx",
+        "tbl_name": "oc_text_sessions",
+        "sql": "CREATE INDEX rd_session_token_idx ON oc_text_sessions (token)"
+      },
+      {
+        "type": "index",
+        "name": "rd_steps_did_idx",
+        "tbl_name": "oc_text_steps",
+        "sql": "CREATE INDEX rd_steps_did_idx ON oc_text_steps (document_id)"
+      },
+      {
+        "type": "index",
+        "name": "rd_steps_version_idx",
+        "tbl_name": "oc_text_steps",
+        "sql": "CREATE INDEX rd_steps_version_idx ON oc_text_steps (version)"
+      },
+      {
+        "type": "index",
+        "name": "recent_contact_actor_uid",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE INDEX recent_contact_actor_uid ON oc_recent_contact (actor_uid)"
+      },
+      {
+        "type": "index",
+        "name": "recent_contact_email",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE INDEX recent_contact_email ON oc_recent_contact (email)"
+      },
+      {
+        "type": "index",
+        "name": "recent_contact_fed_id",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE INDEX recent_contact_fed_id ON oc_recent_contact (federated_cloud_id)"
+      },
+      {
+        "type": "index",
+        "name": "recent_contact_id_uid",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE INDEX recent_contact_id_uid ON oc_recent_contact (id, actor_uid)"
+      },
+      {
+        "type": "index",
+        "name": "recent_contact_last_contact",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE INDEX recent_contact_last_contact ON oc_recent_contact (last_contact)"
+      },
+      {
+        "type": "index",
+        "name": "recent_contact_uid",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE INDEX recent_contact_uid ON oc_recent_contact (uid)"
+      },
+      {
+        "type": "index",
+        "name": "reminders_uniq_idx",
+        "tbl_name": "oc_files_reminders",
+        "sql": "CREATE UNIQUE INDEX reminders_uniq_idx ON oc_files_reminders (user_id, file_id, due_date)"
+      },
+      {
+        "type": "index",
+        "name": "schedulobj_lastmodified_idx",
+        "tbl_name": "oc_schedulingobjects",
+        "sql": "CREATE INDEX schedulobj_lastmodified_idx ON oc_schedulingobjects (lastmodified)"
+      },
+      {
+        "type": "index",
+        "name": "schedulobj_principuri_index",
+        "tbl_name": "oc_schedulingobjects",
+        "sql": "CREATE INDEX schedulobj_principuri_index ON oc_schedulingobjects (principaluri)"
+      },
+      {
+        "type": "index",
+        "name": "sec_sig_key",
+        "tbl_name": "oc_sec_signatory",
+        "sql": "CREATE INDEX sec_sig_key ON oc_sec_signatory (key_id_sum, provider_id)"
+      },
+      {
+        "type": "index",
+        "name": "sec_sig_unic",
+        "tbl_name": "oc_sec_signatory",
+        "sql": "CREATE UNIQUE INDEX sec_sig_unic ON oc_sec_signatory (provider_id, host, account)"
+      },
+      {
+        "type": "index",
+        "name": "sh_external_mp",
+        "tbl_name": "oc_share_external",
+        "sql": "CREATE UNIQUE INDEX sh_external_mp ON oc_share_external (user, mountpoint_hash)"
+      },
+      {
+        "type": "index",
+        "name": "share_with_file_target_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX share_with_file_target_index ON oc_share (share_with, file_target)"
+      },
+      {
+        "type": "index",
+        "name": "share_with_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX share_with_index ON oc_share (share_with)"
+      },
+      {
+        "type": "index",
+        "name": "sicisimit",
+        "tbl_name": "oc_circles_token",
+        "sql": "CREATE UNIQUE INDEX sicisimit ON oc_circles_token (share_id, circle_id, single_id, member_id, token)"
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_accounts_1",
+        "tbl_name": "oc_accounts",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_appconfig_1",
+        "tbl_name": "oc_appconfig",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_circles_event_1",
+        "tbl_name": "oc_circles_event",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_circles_membership_1",
+        "tbl_name": "oc_circles_membership",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_collres_accesscache_1",
+        "tbl_name": "oc_collres_accesscache",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_collres_resources_1",
+        "tbl_name": "oc_collres_resources",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_comments_read_markers_1",
+        "tbl_name": "oc_comments_read_markers",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_federated_invites_1",
+        "tbl_name": "oc_federated_invites",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_federated_reshares_1",
+        "tbl_name": "oc_federated_reshares",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_filecache_extended_1",
+        "tbl_name": "oc_filecache_extended",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_group_admin_1",
+        "tbl_name": "oc_group_admin",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_group_user_1",
+        "tbl_name": "oc_group_user",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_groups_1",
+        "tbl_name": "oc_groups",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_job_classes_registry_1",
+        "tbl_name": "oc_job_classes_registry",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_job_classes_registry_2",
+        "tbl_name": "oc_job_classes_registry",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_job_runs_1",
+        "tbl_name": "oc_job_runs",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_jobs_1",
+        "tbl_name": "oc_jobs",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_migrations_1",
+        "tbl_name": "oc_migrations",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_preferences_1",
+        "tbl_name": "oc_preferences",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_preview_locations_1",
+        "tbl_name": "oc_preview_locations",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_preview_versions_1",
+        "tbl_name": "oc_preview_versions",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_previews_1",
+        "tbl_name": "oc_previews",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_share_external_1",
+        "tbl_name": "oc_share_external",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_shares_limits_1",
+        "tbl_name": "oc_shares_limits",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_1",
+        "tbl_name": "oc_sharing_share",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_permissions_1",
+        "tbl_name": "oc_sharing_share_permissions",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_properties_1",
+        "tbl_name": "oc_sharing_share_properties",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_recipient_permissions_1",
+        "tbl_name": "oc_sharing_share_recipient_permissions",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_recipients_1",
+        "tbl_name": "oc_sharing_share_recipients",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_sources_1",
+        "tbl_name": "oc_sharing_share_sources",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_sharing_share_user_status_1",
+        "tbl_name": "oc_sharing_share_user_status",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_systemtag_group_1",
+        "tbl_name": "oc_systemtag_group",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_systemtag_object_mapping_1",
+        "tbl_name": "oc_systemtag_object_mapping",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_text_documents_1",
+        "tbl_name": "oc_text_documents",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_twofactor_providers_1",
+        "tbl_name": "oc_twofactor_providers",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_users_1",
+        "tbl_name": "oc_users",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_oc_vcategory_to_object_1",
+        "tbl_name": "oc_vcategory_to_object",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "status",
+        "tbl_name": "oc_job_runs",
+        "sql": "CREATE INDEX status ON oc_job_runs (status)"
+      },
+      {
+        "type": "index",
+        "name": "stocred_ui",
+        "tbl_name": "oc_storages_credentials",
+        "sql": "CREATE UNIQUE INDEX stocred_ui ON oc_storages_credentials (user, identifier)"
+      },
+      {
+        "type": "index",
+        "name": "stocred_user",
+        "tbl_name": "oc_storages_credentials",
+        "sql": "CREATE INDEX stocred_user ON oc_storages_credentials (user)"
+      },
+      {
+        "type": "index",
+        "name": "storages_id_index",
+        "tbl_name": "oc_storages",
+        "sql": "CREATE UNIQUE INDEX storages_id_index ON oc_storages (id)"
+      },
+      {
+        "type": "index",
+        "name": "systag_by_objectid",
+        "tbl_name": "oc_systemtag_object_mapping",
+        "sql": "CREATE INDEX systag_by_objectid ON oc_systemtag_object_mapping (objectid)"
+      },
+      {
+        "type": "index",
+        "name": "systag_by_tagid",
+        "tbl_name": "oc_systemtag_object_mapping",
+        "sql": "CREATE INDEX systag_by_tagid ON oc_systemtag_object_mapping (systemtagid, objecttype)"
+      },
+      {
+        "type": "index",
+        "name": "systag_objecttype",
+        "tbl_name": "oc_systemtag_object_mapping",
+        "sql": "CREATE INDEX systag_objecttype ON oc_systemtag_object_mapping (objecttype)"
+      },
+      {
+        "type": "index",
+        "name": "t2i_tasks_status",
+        "tbl_name": "oc_text2image_tasks",
+        "sql": "CREATE INDEX t2i_tasks_status ON oc_text2image_tasks (status)"
+      },
+      {
+        "type": "index",
+        "name": "t2i_tasks_uid_appid_ident",
+        "tbl_name": "oc_text2image_tasks",
+        "sql": "CREATE INDEX t2i_tasks_uid_appid_ident ON oc_text2image_tasks (user_id, app_id, identifier)"
+      },
+      {
+        "type": "index",
+        "name": "t2i_tasks_updated",
+        "tbl_name": "oc_text2image_tasks",
+        "sql": "CREATE INDEX t2i_tasks_updated ON oc_text2image_tasks (last_updated)"
+      },
+      {
+        "type": "index",
+        "name": "tag_ident",
+        "tbl_name": "oc_systemtag",
+        "sql": "CREATE UNIQUE INDEX tag_ident ON oc_systemtag (name, visibility, editable)"
+      },
+      {
+        "type": "index",
+        "name": "task_processing_idx",
+        "tbl_name": "oc_ex_task_processing",
+        "sql": "CREATE UNIQUE INDEX task_processing_idx ON oc_ex_task_processing (app_id, name, task_type)"
+      },
+      {
+        "type": "index",
+        "name": "taskp_status_type_upd",
+        "tbl_name": "oc_taskprocessing_tasks",
+        "sql": "CREATE INDEX taskp_status_type_upd ON oc_taskprocessing_tasks (status, type, last_updated)"
+      },
+      {
+        "type": "index",
+        "name": "taskp_tasks_status_type",
+        "tbl_name": "oc_taskprocessing_tasks",
+        "sql": "CREATE INDEX taskp_tasks_status_type ON oc_taskprocessing_tasks (status, type)"
+      },
+      {
+        "type": "index",
+        "name": "taskp_tasks_uid_appid_cid",
+        "tbl_name": "oc_taskprocessing_tasks",
+        "sql": "CREATE INDEX taskp_tasks_uid_appid_cid ON oc_taskprocessing_tasks (user_id, app_id, custom_id)"
+      },
+      {
+        "type": "index",
+        "name": "taskp_tasks_updated",
+        "tbl_name": "oc_taskprocessing_tasks",
+        "sql": "CREATE INDEX taskp_tasks_updated ON oc_taskprocessing_tasks (last_updated)"
+      },
+      {
+        "type": "index",
+        "name": "textstep_session",
+        "tbl_name": "oc_text_steps",
+        "sql": "CREATE INDEX textstep_session ON oc_text_steps (session_id)"
+      },
+      {
+        "type": "index",
+        "name": "timestamp",
+        "tbl_name": "oc_login_flow_v2",
+        "sql": "CREATE INDEX timestamp ON oc_login_flow_v2 (timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "timestamp_index",
+        "tbl_name": "oc_files_trash",
+        "sql": "CREATE INDEX timestamp_index ON oc_files_trash (timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "token_index",
+        "tbl_name": "oc_share",
+        "sql": "CREATE INDEX token_index ON oc_share (token)"
+      },
+      {
+        "type": "index",
+        "name": "totp_secrets_user_id",
+        "tbl_name": "oc_twofactor_totp_secrets",
+        "sql": "CREATE UNIQUE INDEX totp_secrets_user_id ON oc_twofactor_totp_secrets (user_id)"
+      },
+      {
+        "type": "index",
+        "name": "tp_tasks_status_type_nonunique",
+        "tbl_name": "oc_textprocessing_tasks",
+        "sql": "CREATE INDEX tp_tasks_status_type_nonunique ON oc_textprocessing_tasks (status, type)"
+      },
+      {
+        "type": "index",
+        "name": "tp_tasks_uid_appid_ident",
+        "tbl_name": "oc_textprocessing_tasks",
+        "sql": "CREATE INDEX tp_tasks_uid_appid_ident ON oc_textprocessing_tasks (user_id, app_id, identifier)"
+      },
+      {
+        "type": "index",
+        "name": "tp_tasks_updated",
+        "tbl_name": "oc_textprocessing_tasks",
+        "sql": "CREATE INDEX tp_tasks_updated ON oc_textprocessing_tasks (last_updated)"
+      },
+      {
+        "type": "index",
+        "name": "ts_docid_lastcontact",
+        "tbl_name": "oc_text_sessions",
+        "sql": "CREATE INDEX ts_docid_lastcontact ON oc_text_sessions (document_id, last_contact)"
+      },
+      {
+        "type": "index",
+        "name": "ts_lastcontact",
+        "tbl_name": "oc_text_sessions",
+        "sql": "CREATE INDEX ts_lastcontact ON oc_text_sessions (last_contact)"
+      },
+      {
+        "type": "index",
+        "name": "twofactor_backupcodes_uid",
+        "tbl_name": "oc_twofactor_backupcodes",
+        "sql": "CREATE INDEX twofactor_backupcodes_uid ON oc_twofactor_backupcodes (user_id)"
+      },
+      {
+        "type": "index",
+        "name": "twofactor_providers_uid",
+        "tbl_name": "oc_twofactor_providers",
+        "sql": "CREATE INDEX twofactor_providers_uid ON oc_twofactor_providers (uid)"
+      },
+      {
+        "type": "index",
+        "name": "type_index",
+        "tbl_name": "oc_vcategory",
+        "sql": "CREATE INDEX type_index ON oc_vcategory (type)"
+      },
+      {
+        "type": "index",
+        "name": "ui_script__idx",
+        "tbl_name": "oc_ex_ui_scripts",
+        "sql": "CREATE UNIQUE INDEX ui_script__idx ON oc_ex_ui_scripts (appid, type, name, path)"
+      },
+      {
+        "type": "index",
+        "name": "ui_state__idx",
+        "tbl_name": "oc_ex_ui_states",
+        "sql": "CREATE UNIQUE INDEX ui_state__idx ON oc_ex_ui_states (appid, type, name, \"key\")"
+      },
+      {
+        "type": "index",
+        "name": "ui_style__idx",
+        "tbl_name": "oc_ex_ui_styles",
+        "sql": "CREATE UNIQUE INDEX ui_style__idx ON oc_ex_ui_styles (appid, type, name, path)"
+      },
+      {
+        "type": "index",
+        "name": "ui_top_menu__idx",
+        "tbl_name": "oc_ex_ui_top_menu",
+        "sql": "CREATE UNIQUE INDEX ui_top_menu__idx ON oc_ex_ui_top_menu (appid, name)"
+      },
+      {
+        "type": "index",
+        "name": "uid_index",
+        "tbl_name": "oc_vcategory",
+        "sql": "CREATE INDEX uid_index ON oc_vcategory (uid)"
+      },
+      {
+        "type": "index",
+        "name": "unique_bucket_store",
+        "tbl_name": "oc_preview_locations",
+        "sql": "CREATE UNIQUE INDEX unique_bucket_store ON oc_preview_locations (bucket_name, object_store_name)"
+      },
+      {
+        "type": "index",
+        "name": "unique_category_per_user",
+        "tbl_name": "oc_vcategory",
+        "sql": "CREATE UNIQUE INDEX unique_category_per_user ON oc_vcategory (uid, type, category)"
+      },
+      {
+        "type": "index",
+        "name": "url_hash",
+        "tbl_name": "oc_trusted_servers",
+        "sql": "CREATE UNIQUE INDEX url_hash ON oc_trusted_servers (url_hash)"
+      },
+      {
+        "type": "index",
+        "name": "user_index",
+        "tbl_name": "oc_files_trash",
+        "sql": "CREATE INDEX user_index ON oc_files_trash (user)"
+      },
+      {
+        "type": "index",
+        "name": "user_mountpoint_index",
+        "tbl_name": "oc_share_external",
+        "sql": "CREATE INDEX user_mountpoint_index ON oc_share_external (user, mountpoint)"
+      },
+      {
+        "type": "index",
+        "name": "user_status_clr_ix",
+        "tbl_name": "oc_user_status",
+        "sql": "CREATE INDEX user_status_clr_ix ON oc_user_status (clear_at)"
+      },
+      {
+        "type": "index",
+        "name": "user_status_iud_ix",
+        "tbl_name": "oc_user_status",
+        "sql": "CREATE INDEX user_status_iud_ix ON oc_user_status (is_user_defined, status)"
+      },
+      {
+        "type": "index",
+        "name": "user_status_mtstmp_ix",
+        "tbl_name": "oc_user_status",
+        "sql": "CREATE INDEX user_status_mtstmp_ix ON oc_user_status (status_message_timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "user_status_tstmp_ix",
+        "tbl_name": "oc_user_status",
+        "sql": "CREATE INDEX user_status_tstmp_ix ON oc_user_status (status_timestamp)"
+      },
+      {
+        "type": "index",
+        "name": "user_status_uid_ix",
+        "tbl_name": "oc_user_status",
+        "sql": "CREATE UNIQUE INDEX user_status_uid_ix ON oc_user_status (user_id)"
+      },
+      {
+        "type": "index",
+        "name": "user_uid_lower",
+        "tbl_name": "oc_users",
+        "sql": "CREATE INDEX user_uid_lower ON oc_users (uid_lower)"
+      },
+      {
+        "type": "index",
+        "name": "vcategory_objectd_index",
+        "tbl_name": "oc_vcategory_to_object",
+        "sql": "CREATE INDEX vcategory_objectd_index ON oc_vcategory_to_object (objid, type)"
+      },
+      {
+        "type": "index",
+        "name": "webauthn_publicKeyCredentialId",
+        "tbl_name": "oc_webauthn",
+        "sql": "CREATE INDEX webauthn_publicKeyCredentialId ON oc_webauthn (public_key_credential_id)"
+      },
+      {
+        "type": "index",
+        "name": "webauthn_uid",
+        "tbl_name": "oc_webauthn",
+        "sql": "CREATE INDEX webauthn_uid ON oc_webauthn (uid)"
+      },
+      {
+        "type": "table",
+        "name": "oc_accounts",
+        "tbl_name": "oc_accounts",
+        "sql": "CREATE TABLE oc_accounts (uid VARCHAR(64) DEFAULT '' NOT NULL, data CLOB DEFAULT '' NOT NULL, PRIMARY KEY(uid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_accounts_data",
+        "tbl_name": "oc_accounts_data",
+        "sql": "CREATE TABLE oc_accounts_data (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) NOT NULL, name VARCHAR(64) NOT NULL, value VARCHAR(255) DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "oc_activity",
+        "tbl_name": "oc_activity",
+        "sql": "CREATE TABLE oc_activity (activity_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, timestamp INTEGER DEFAULT 0 NOT NULL, priority INTEGER DEFAULT 0 NOT NULL, type VARCHAR(255) DEFAULT NULL, user VARCHAR(64) DEFAULT NULL, affecteduser VARCHAR(64) NOT NULL, app VARCHAR(32) NOT NULL, subject VARCHAR(255) NOT NULL, subjectparams CLOB NOT NULL, message VARCHAR(255) DEFAULT NULL, messageparams CLOB DEFAULT NULL, file VARCHAR(4000) DEFAULT NULL, link VARCHAR(4000) DEFAULT NULL, object_type VARCHAR(255) DEFAULT NULL, object_id BIGINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_activity_mq",
+        "tbl_name": "oc_activity_mq",
+        "sql": "CREATE TABLE oc_activity_mq (mail_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, amq_timestamp INTEGER DEFAULT 0 NOT NULL, amq_latest_send INTEGER DEFAULT 0 NOT NULL, amq_type VARCHAR(255) NOT NULL, amq_affecteduser VARCHAR(64) NOT NULL, amq_appid VARCHAR(32) NOT NULL, amq_subject VARCHAR(255) NOT NULL, amq_subjectparams CLOB DEFAULT NULL, object_type VARCHAR(255) DEFAULT NULL, object_id BIGINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_addressbookchanges",
+        "tbl_name": "oc_addressbookchanges",
+        "sql": "CREATE TABLE oc_addressbookchanges (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uri VARCHAR(255) DEFAULT NULL, synctoken INTEGER UNSIGNED DEFAULT 1 NOT NULL, addressbookid BIGINT NOT NULL, operation SMALLINT NOT NULL, created_at INTEGER DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_addressbooks",
+        "tbl_name": "oc_addressbooks",
+        "sql": "CREATE TABLE oc_addressbooks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, principaluri VARCHAR(255) DEFAULT NULL, displayname VARCHAR(255) DEFAULT NULL, uri VARCHAR(255) DEFAULT NULL, description VARCHAR(255) DEFAULT NULL, synctoken INTEGER UNSIGNED DEFAULT 1 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_appconfig",
+        "tbl_name": "oc_appconfig",
+        "sql": "CREATE TABLE oc_appconfig (appid VARCHAR(32) DEFAULT '' NOT NULL, configkey VARCHAR(64) DEFAULT '' NOT NULL, configvalue CLOB DEFAULT NULL, type INTEGER UNSIGNED DEFAULT 2 NOT NULL, lazy SMALLINT UNSIGNED DEFAULT 0 NOT NULL, PRIMARY KEY(appid, configkey))"
+      },
+      {
+        "type": "table",
+        "name": "oc_authorized_groups",
+        "tbl_name": "oc_authorized_groups",
+        "sql": "CREATE TABLE oc_authorized_groups (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, group_id VARCHAR(200) NOT NULL, class VARCHAR(200) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_authtoken",
+        "tbl_name": "oc_authtoken",
+        "sql": "CREATE TABLE oc_authtoken (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) DEFAULT '' NOT NULL, login_name VARCHAR(255) DEFAULT '' NOT NULL, password CLOB DEFAULT NULL, name CLOB DEFAULT '' NOT NULL, token VARCHAR(200) DEFAULT '' NOT NULL, type SMALLINT UNSIGNED DEFAULT 0, remember SMALLINT UNSIGNED DEFAULT 0, last_activity INTEGER UNSIGNED DEFAULT 0, last_check INTEGER UNSIGNED DEFAULT 0, scope CLOB DEFAULT NULL, expires INTEGER UNSIGNED DEFAULT NULL, private_key CLOB DEFAULT NULL, public_key CLOB DEFAULT NULL, version SMALLINT UNSIGNED DEFAULT 1 NOT NULL, password_invalid BOOLEAN DEFAULT 0, password_hash VARCHAR(255) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_bruteforce_attempts",
+        "tbl_name": "oc_bruteforce_attempts",
+        "sql": "CREATE TABLE oc_bruteforce_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, \"action\" VARCHAR(64) DEFAULT '' NOT NULL, occurred INTEGER UNSIGNED DEFAULT 0 NOT NULL, ip VARCHAR(255) DEFAULT '' NOT NULL, subnet VARCHAR(255) DEFAULT '' NOT NULL, metadata VARCHAR(255) DEFAULT '' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendar_invitations",
+        "tbl_name": "oc_calendar_invitations",
+        "sql": "CREATE TABLE oc_calendar_invitations (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(512) NOT NULL, recurrenceid VARCHAR(255) DEFAULT NULL, attendee VARCHAR(255) NOT NULL, organizer VARCHAR(255) NOT NULL, sequence BIGINT UNSIGNED DEFAULT NULL, token VARCHAR(60) NOT NULL, expiration BIGINT UNSIGNED NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendar_reminders",
+        "tbl_name": "oc_calendar_reminders",
+        "sql": "CREATE TABLE oc_calendar_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, calendar_id BIGINT NOT NULL, object_id BIGINT NOT NULL, is_recurring SMALLINT DEFAULT NULL, uid VARCHAR(512) NOT NULL, recurrence_id BIGINT UNSIGNED DEFAULT NULL, is_recurrence_exception SMALLINT NOT NULL, event_hash VARCHAR(255) NOT NULL, alarm_hash VARCHAR(255) NOT NULL, type VARCHAR(255) NOT NULL, is_relative SMALLINT NOT NULL, notification_date BIGINT UNSIGNED NOT NULL, is_repeat_based SMALLINT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendar_resources",
+        "tbl_name": "oc_calendar_resources",
+        "sql": "CREATE TABLE oc_calendar_resources (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, backend_id VARCHAR(64) DEFAULT NULL, resource_id VARCHAR(64) DEFAULT NULL, email VARCHAR(255) DEFAULT NULL, displayname VARCHAR(255) DEFAULT NULL, group_restrictions VARCHAR(4000) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendar_resources_md",
+        "tbl_name": "oc_calendar_resources_md",
+        "sql": "CREATE TABLE oc_calendar_resources_md (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, resource_id BIGINT UNSIGNED NOT NULL, \"key\" VARCHAR(255) NOT NULL, value VARCHAR(4000) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendar_rooms",
+        "tbl_name": "oc_calendar_rooms",
+        "sql": "CREATE TABLE oc_calendar_rooms (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, backend_id VARCHAR(64) DEFAULT NULL, resource_id VARCHAR(64) DEFAULT NULL, email VARCHAR(255) DEFAULT NULL, displayname VARCHAR(255) DEFAULT NULL, group_restrictions VARCHAR(4000) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendar_rooms_md",
+        "tbl_name": "oc_calendar_rooms_md",
+        "sql": "CREATE TABLE oc_calendar_rooms_md (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, room_id BIGINT UNSIGNED NOT NULL, \"key\" VARCHAR(255) NOT NULL, value VARCHAR(4000) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendarchanges",
+        "tbl_name": "oc_calendarchanges",
+        "sql": "CREATE TABLE oc_calendarchanges (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uri VARCHAR(255) DEFAULT NULL, synctoken INTEGER UNSIGNED DEFAULT 1 NOT NULL, calendarid BIGINT NOT NULL, operation SMALLINT NOT NULL, calendartype INTEGER DEFAULT 0 NOT NULL, created_at INTEGER DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendarobjects",
+        "tbl_name": "oc_calendarobjects",
+        "sql": "CREATE TABLE oc_calendarobjects (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, calendardata BLOB DEFAULT NULL, uri VARCHAR(255) DEFAULT NULL, calendarid BIGINT UNSIGNED NOT NULL, lastmodified INTEGER UNSIGNED DEFAULT NULL, etag VARCHAR(32) DEFAULT NULL, size BIGINT UNSIGNED NOT NULL, componenttype VARCHAR(8) DEFAULT NULL, firstoccurence BIGINT UNSIGNED DEFAULT NULL, lastoccurence BIGINT UNSIGNED DEFAULT NULL, uid VARCHAR(512) DEFAULT NULL, classification INTEGER DEFAULT 0, calendartype INTEGER DEFAULT 0 NOT NULL, deleted_at INTEGER UNSIGNED DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendarobjects_props",
+        "tbl_name": "oc_calendarobjects_props",
+        "sql": "CREATE TABLE oc_calendarobjects_props (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, calendarid BIGINT DEFAULT 0 NOT NULL, objectid BIGINT UNSIGNED DEFAULT 0 NOT NULL, name VARCHAR(64) DEFAULT NULL, parameter VARCHAR(64) DEFAULT NULL, value VARCHAR(255) DEFAULT NULL, calendartype INTEGER DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendars",
+        "tbl_name": "oc_calendars",
+        "sql": "CREATE TABLE oc_calendars (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, principaluri VARCHAR(255) DEFAULT NULL, displayname VARCHAR(255) DEFAULT NULL, uri VARCHAR(255) DEFAULT NULL, synctoken INTEGER UNSIGNED DEFAULT 1 NOT NULL, description VARCHAR(255) DEFAULT NULL, calendarorder INTEGER UNSIGNED DEFAULT 0 NOT NULL, calendarcolor VARCHAR(255) DEFAULT NULL, timezone CLOB DEFAULT NULL, components VARCHAR(64) DEFAULT NULL, transparent SMALLINT DEFAULT 0 NOT NULL, deleted_at INTEGER UNSIGNED DEFAULT NULL, default_alarm_pday INTEGER DEFAULT NULL, default_alarm_fday INTEGER DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendars_federated",
+        "tbl_name": "oc_calendars_federated",
+        "sql": "CREATE TABLE oc_calendars_federated (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, display_name VARCHAR(255) NOT NULL, color VARCHAR(7) DEFAULT NULL, uri VARCHAR(255) NOT NULL, principaluri VARCHAR(255) NOT NULL, remote_Url VARCHAR(255) NOT NULL, token VARCHAR(255) NOT NULL, sync_token INTEGER UNSIGNED DEFAULT 0 NOT NULL, last_sync BIGINT UNSIGNED DEFAULT NULL, shared_by VARCHAR(255) NOT NULL, shared_by_display_name VARCHAR(255) NOT NULL, components VARCHAR(255) NOT NULL, permissions INTEGER NOT NULL, state INTEGER UNSIGNED DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_calendarsubscriptions",
+        "tbl_name": "oc_calendarsubscriptions",
+        "sql": "CREATE TABLE oc_calendarsubscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uri VARCHAR(255) DEFAULT NULL, principaluri VARCHAR(255) DEFAULT NULL, displayname VARCHAR(100) DEFAULT NULL, refreshrate VARCHAR(10) DEFAULT NULL, calendarorder INTEGER UNSIGNED DEFAULT 0 NOT NULL, calendarcolor VARCHAR(255) DEFAULT NULL, striptodos SMALLINT DEFAULT NULL, stripalarms SMALLINT DEFAULT NULL, stripattachments SMALLINT DEFAULT NULL, lastmodified INTEGER UNSIGNED DEFAULT NULL, synctoken INTEGER UNSIGNED DEFAULT 1 NOT NULL, source CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_cards",
+        "tbl_name": "oc_cards",
+        "sql": "CREATE TABLE oc_cards (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, addressbookid BIGINT DEFAULT 0 NOT NULL, carddata BLOB DEFAULT NULL, uri VARCHAR(255) DEFAULT NULL, lastmodified BIGINT UNSIGNED DEFAULT NULL, etag VARCHAR(32) DEFAULT NULL, size BIGINT UNSIGNED NOT NULL, uid VARCHAR(255) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_cards_properties",
+        "tbl_name": "oc_cards_properties",
+        "sql": "CREATE TABLE oc_cards_properties (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, addressbookid BIGINT DEFAULT 0 NOT NULL, cardid BIGINT UNSIGNED DEFAULT 0 NOT NULL, name VARCHAR(64) DEFAULT NULL, value VARCHAR(255) DEFAULT NULL, preferred INTEGER DEFAULT 1 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_circle",
+        "tbl_name": "oc_circles_circle",
+        "sql": "CREATE TABLE oc_circles_circle (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, unique_id VARCHAR(31) NOT NULL, name VARCHAR(127) NOT NULL, display_name VARCHAR(255) DEFAULT '', sanitized_name VARCHAR(127) DEFAULT '', instance VARCHAR(255) DEFAULT '', config INTEGER UNSIGNED DEFAULT NULL, source INTEGER UNSIGNED DEFAULT NULL, settings CLOB DEFAULT NULL, description CLOB DEFAULT NULL, creation DATETIME DEFAULT NULL, contact_addressbook INTEGER UNSIGNED DEFAULT NULL, contact_groupname VARCHAR(127) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_event",
+        "tbl_name": "oc_circles_event",
+        "sql": "CREATE TABLE oc_circles_event (token VARCHAR(63) NOT NULL, instance VARCHAR(255) NOT NULL, event CLOB DEFAULT NULL, result CLOB DEFAULT NULL, interface INTEGER DEFAULT 0 NOT NULL, severity INTEGER DEFAULT NULL, retry INTEGER DEFAULT NULL, status INTEGER DEFAULT NULL, updated DATETIME DEFAULT NULL, creation BIGINT DEFAULT NULL, PRIMARY KEY(token, instance))"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_invitations",
+        "tbl_name": "oc_circles_invitations",
+        "sql": "CREATE TABLE oc_circles_invitations (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, circle_id VARCHAR(32) NOT NULL, invitation_code VARCHAR(16) NOT NULL, created_by VARCHAR(255) NOT NULL, created DATETIME NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_member",
+        "tbl_name": "oc_circles_member",
+        "sql": "CREATE TABLE oc_circles_member (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, single_id VARCHAR(31) DEFAULT NULL, circle_id VARCHAR(31) NOT NULL, member_id VARCHAR(31) DEFAULT NULL, user_id VARCHAR(127) NOT NULL, user_type SMALLINT DEFAULT 1 NOT NULL, instance VARCHAR(255) DEFAULT '', invited_by VARCHAR(31) DEFAULT NULL, level SMALLINT NOT NULL, status VARCHAR(15) DEFAULT NULL, note CLOB DEFAULT NULL, cached_name VARCHAR(255) DEFAULT '', cached_update DATETIME DEFAULT NULL, contact_id VARCHAR(127) DEFAULT NULL, contact_meta CLOB DEFAULT NULL, joined DATETIME DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_membership",
+        "tbl_name": "oc_circles_membership",
+        "sql": "CREATE TABLE oc_circles_membership (circle_id VARCHAR(31) NOT NULL, single_id VARCHAR(31) NOT NULL, level INTEGER UNSIGNED NOT NULL, inheritance_first VARCHAR(31) NOT NULL, inheritance_last VARCHAR(31) NOT NULL, inheritance_depth INTEGER UNSIGNED NOT NULL, inheritance_path CLOB NOT NULL, PRIMARY KEY(single_id, circle_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_mount",
+        "tbl_name": "oc_circles_mount",
+        "sql": "CREATE TABLE oc_circles_mount (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, mount_id VARCHAR(31) NOT NULL, circle_id VARCHAR(31) NOT NULL, single_id VARCHAR(31) NOT NULL, token VARCHAR(63) DEFAULT NULL, parent INTEGER DEFAULT NULL, mountpoint CLOB DEFAULT NULL, mountpoint_hash VARCHAR(64) DEFAULT NULL, remote VARCHAR(255) DEFAULT '', remote_id INTEGER UNSIGNED DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_mountpoint",
+        "tbl_name": "oc_circles_mountpoint",
+        "sql": "CREATE TABLE oc_circles_mountpoint (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, mount_id VARCHAR(31) NOT NULL, single_id VARCHAR(31) NOT NULL, mountpoint CLOB DEFAULT NULL, mountpoint_hash VARCHAR(64) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_remote",
+        "tbl_name": "oc_circles_remote",
+        "sql": "CREATE TABLE oc_circles_remote (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type VARCHAR(15) DEFAULT 'Unknown' NOT NULL, interface INTEGER DEFAULT 0 NOT NULL, uid VARCHAR(20) DEFAULT NULL, instance VARCHAR(127) DEFAULT NULL, href VARCHAR(254) DEFAULT NULL, item CLOB DEFAULT NULL, creation DATETIME DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_share_lock",
+        "tbl_name": "oc_circles_share_lock",
+        "sql": "CREATE TABLE oc_circles_share_lock (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, item_id VARCHAR(31) NOT NULL, circle_id VARCHAR(31) NOT NULL, instance VARCHAR(127) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_circles_token",
+        "tbl_name": "oc_circles_token",
+        "sql": "CREATE TABLE oc_circles_token (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, share_id INTEGER DEFAULT NULL, circle_id VARCHAR(31) DEFAULT NULL, single_id VARCHAR(31) DEFAULT NULL, member_id VARCHAR(31) DEFAULT NULL, token VARCHAR(31) DEFAULT NULL, password VARCHAR(127) DEFAULT NULL, accepted INTEGER DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_collres_accesscache",
+        "tbl_name": "oc_collres_accesscache",
+        "sql": "CREATE TABLE oc_collres_accesscache (user_id VARCHAR(64) NOT NULL, collection_id BIGINT DEFAULT 0 NOT NULL, resource_type VARCHAR(64) DEFAULT '' NOT NULL, resource_id VARCHAR(64) DEFAULT '' NOT NULL, access BOOLEAN DEFAULT 0, PRIMARY KEY(user_id, collection_id, resource_type, resource_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_collres_collections",
+        "tbl_name": "oc_collres_collections",
+        "sql": "CREATE TABLE oc_collres_collections (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(64) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_collres_resources",
+        "tbl_name": "oc_collres_resources",
+        "sql": "CREATE TABLE oc_collres_resources (collection_id BIGINT NOT NULL, resource_type VARCHAR(64) NOT NULL, resource_id VARCHAR(64) NOT NULL, PRIMARY KEY(collection_id, resource_type, resource_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_comments",
+        "tbl_name": "oc_comments",
+        "sql": "CREATE TABLE oc_comments (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, parent_id BIGINT UNSIGNED DEFAULT 0 NOT NULL, topmost_parent_id BIGINT UNSIGNED DEFAULT 0 NOT NULL, children_count INTEGER UNSIGNED DEFAULT 0 NOT NULL, actor_type VARCHAR(64) DEFAULT '' NOT NULL, actor_id VARCHAR(64) DEFAULT '' NOT NULL, message CLOB DEFAULT NULL, verb VARCHAR(64) DEFAULT NULL, creation_timestamp DATETIME DEFAULT NULL, latest_child_timestamp DATETIME DEFAULT NULL, object_type VARCHAR(64) DEFAULT '' NOT NULL, object_id VARCHAR(64) DEFAULT '' NOT NULL, reference_id VARCHAR(64) DEFAULT NULL, reactions VARCHAR(4000) DEFAULT NULL, expire_date DATETIME DEFAULT NULL, meta_data CLOB DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "oc_comments_read_markers",
+        "tbl_name": "oc_comments_read_markers",
+        "sql": "CREATE TABLE oc_comments_read_markers (user_id VARCHAR(64) DEFAULT '' NOT NULL, object_type VARCHAR(64) DEFAULT '' NOT NULL, object_id VARCHAR(64) DEFAULT '' NOT NULL, marker_datetime DATETIME DEFAULT NULL, PRIMARY KEY(user_id, object_type, object_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_dav_absence",
+        "tbl_name": "oc_dav_absence",
+        "sql": "CREATE TABLE oc_dav_absence (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) NOT NULL, first_day VARCHAR(10) NOT NULL, last_day VARCHAR(10) NOT NULL, status VARCHAR(100) NOT NULL, message CLOB NOT NULL, replacement_user_id VARCHAR(64) DEFAULT '', replacement_user_display_name VARCHAR(64) DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "oc_dav_cal_proxy",
+        "tbl_name": "oc_dav_cal_proxy",
+        "sql": "CREATE TABLE oc_dav_cal_proxy (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, owner_id VARCHAR(64) NOT NULL, proxy_id VARCHAR(64) NOT NULL, permissions INTEGER UNSIGNED DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_dav_shares",
+        "tbl_name": "oc_dav_shares",
+        "sql": "CREATE TABLE oc_dav_shares (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, principaluri VARCHAR(255) DEFAULT NULL, type VARCHAR(255) DEFAULT NULL, access SMALLINT DEFAULT NULL, resourceid BIGINT UNSIGNED NOT NULL, publicuri VARCHAR(255) DEFAULT NULL, token VARCHAR(255) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_direct_edit",
+        "tbl_name": "oc_direct_edit",
+        "sql": "CREATE TABLE oc_direct_edit (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, editor_id VARCHAR(64) NOT NULL, token VARCHAR(64) NOT NULL, file_id BIGINT NOT NULL, user_id VARCHAR(64) DEFAULT NULL, share_id BIGINT DEFAULT NULL, timestamp BIGINT UNSIGNED NOT NULL, accessed BOOLEAN DEFAULT 0, file_path VARCHAR(4000) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_directlink",
+        "tbl_name": "oc_directlink",
+        "sql": "CREATE TABLE oc_directlink (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) DEFAULT NULL, file_id BIGINT UNSIGNED NOT NULL, token VARCHAR(60) DEFAULT NULL, expiration BIGINT UNSIGNED NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_apps",
+        "tbl_name": "oc_ex_apps",
+        "sql": "CREATE TABLE oc_ex_apps (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, version VARCHAR(32) NOT NULL, name VARCHAR(64) NOT NULL, daemon_config_name VARCHAR(64) DEFAULT '0' NOT NULL, port SMALLINT UNSIGNED NOT NULL, secret VARCHAR(256) NOT NULL, status CLOB NOT NULL --(DC2Type:json)\n, enabled SMALLINT DEFAULT 0 NOT NULL, created_time BIGINT UNSIGNED NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_apps_daemons",
+        "tbl_name": "oc_ex_apps_daemons",
+        "sql": "CREATE TABLE oc_ex_apps_daemons (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(64) NOT NULL, display_name VARCHAR(255) NOT NULL, accepts_deploy_id VARCHAR(64) NOT NULL, protocol VARCHAR(32) NOT NULL, host VARCHAR(255) NOT NULL, deploy_config CLOB NOT NULL --(DC2Type:json)\n)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_apps_routes",
+        "tbl_name": "oc_ex_apps_routes",
+        "sql": "CREATE TABLE oc_ex_apps_routes (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, url VARCHAR(512) NOT NULL, verb VARCHAR(64) NOT NULL, access_level INTEGER DEFAULT 0 NOT NULL, headers_to_exclude VARCHAR(512) DEFAULT NULL, bruteforce_protection VARCHAR(512) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_apps_talk_bots",
+        "tbl_name": "oc_ex_apps_talk_bots",
+        "sql": "CREATE TABLE oc_ex_apps_talk_bots (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, route VARCHAR(128) NOT NULL, secret CLOB NOT NULL, created_time BIGINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_deploy_options",
+        "tbl_name": "oc_ex_deploy_options",
+        "sql": "CREATE TABLE oc_ex_deploy_options (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, type VARCHAR(32) NOT NULL, value CLOB NOT NULL --(DC2Type:json)\n)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_occ_commands",
+        "tbl_name": "oc_ex_occ_commands",
+        "sql": "CREATE TABLE oc_ex_occ_commands (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, name VARCHAR(64) NOT NULL, description VARCHAR(255) DEFAULT NULL, hidden SMALLINT DEFAULT 0 NOT NULL, arguments CLOB NOT NULL --(DC2Type:json)\n, options CLOB NOT NULL --(DC2Type:json)\n, usages CLOB NOT NULL --(DC2Type:json)\n, execute_handler VARCHAR(410) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_settings_forms",
+        "tbl_name": "oc_ex_settings_forms",
+        "sql": "CREATE TABLE oc_ex_settings_forms (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, formid VARCHAR(64) NOT NULL, scheme CLOB NOT NULL --(DC2Type:json)\n)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_task_processing",
+        "tbl_name": "oc_ex_task_processing",
+        "sql": "CREATE TABLE oc_ex_task_processing (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, app_id VARCHAR(32) NOT NULL, name VARCHAR(255) NOT NULL, display_name VARCHAR(255) NOT NULL, task_type VARCHAR(255) NOT NULL, custom_task_type CLOB DEFAULT NULL, provider CLOB NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_ui_files_actions",
+        "tbl_name": "oc_ex_ui_files_actions",
+        "sql": "CREATE TABLE oc_ex_ui_files_actions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, name VARCHAR(64) NOT NULL, display_name VARCHAR(64) NOT NULL, mime CLOB DEFAULT 'file' NOT NULL, permissions VARCHAR(255) NOT NULL, \"order\" BIGINT DEFAULT 0 NOT NULL, icon VARCHAR(255) DEFAULT '', action_handler VARCHAR(64) NOT NULL, version VARCHAR(64) DEFAULT '1.0' NOT NULL, default_action VARCHAR(16) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_ui_scripts",
+        "tbl_name": "oc_ex_ui_scripts",
+        "sql": "CREATE TABLE oc_ex_ui_scripts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, type VARCHAR(16) NOT NULL, name VARCHAR(32) NOT NULL, path VARCHAR(410) NOT NULL, after_app_id VARCHAR(32) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_ui_states",
+        "tbl_name": "oc_ex_ui_states",
+        "sql": "CREATE TABLE oc_ex_ui_states (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, type VARCHAR(16) NOT NULL, name VARCHAR(32) NOT NULL, \"key\" VARCHAR(64) NOT NULL, value CLOB NOT NULL --(DC2Type:json)\n)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_ui_styles",
+        "tbl_name": "oc_ex_ui_styles",
+        "sql": "CREATE TABLE oc_ex_ui_styles (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, type VARCHAR(16) NOT NULL, name VARCHAR(32) NOT NULL, path VARCHAR(410) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ex_ui_top_menu",
+        "tbl_name": "oc_ex_ui_top_menu",
+        "sql": "CREATE TABLE oc_ex_ui_top_menu (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, appid VARCHAR(32) NOT NULL, name VARCHAR(32) NOT NULL, display_name VARCHAR(32) NOT NULL, icon VARCHAR(255) DEFAULT '', admin_required SMALLINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_federated_invites",
+        "tbl_name": "oc_federated_invites",
+        "sql": "CREATE TABLE oc_federated_invites (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) NOT NULL, recipient_provider VARCHAR(2083) DEFAULT NULL, recipient_user_id VARCHAR(1024) DEFAULT NULL, recipient_name VARCHAR(1024) DEFAULT NULL, recipient_email VARCHAR(320) DEFAULT NULL, token VARCHAR(60) NOT NULL, accepted BOOLEAN DEFAULT 0, created_at BIGINT NOT NULL, expired_at BIGINT DEFAULT NULL, accepted_at BIGINT DEFAULT NULL, CONSTRAINT UNIQ_A2C17D5A5F37A13B UNIQUE (token))"
+      },
+      {
+        "type": "table",
+        "name": "oc_federated_reshares",
+        "tbl_name": "oc_federated_reshares",
+        "sql": "CREATE TABLE oc_federated_reshares (share_id BIGINT NOT NULL, remote_id VARCHAR(255) DEFAULT '', PRIMARY KEY(share_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_file_locks",
+        "tbl_name": "oc_file_locks",
+        "sql": "CREATE TABLE oc_file_locks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, lock INTEGER DEFAULT 0 NOT NULL, \"key\" VARCHAR(64) NOT NULL, ttl INTEGER DEFAULT -1 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_filecache",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE TABLE oc_filecache (fileid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, storage BIGINT DEFAULT 0 NOT NULL, path VARCHAR(4000) DEFAULT NULL, path_hash VARCHAR(32) DEFAULT '' NOT NULL, parent BIGINT DEFAULT 0 NOT NULL, name VARCHAR(250) DEFAULT NULL, mimetype BIGINT DEFAULT 0 NOT NULL, mimepart BIGINT DEFAULT 0 NOT NULL, size BIGINT DEFAULT 0 NOT NULL, mtime BIGINT DEFAULT 0 NOT NULL, storage_mtime BIGINT DEFAULT 0 NOT NULL, encrypted INTEGER DEFAULT 0 NOT NULL, unencrypted_size BIGINT DEFAULT 0 NOT NULL, etag VARCHAR(40) DEFAULT NULL, permissions INTEGER DEFAULT 0, checksum VARCHAR(255) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_filecache_extended",
+        "tbl_name": "oc_filecache_extended",
+        "sql": "CREATE TABLE oc_filecache_extended (fileid BIGINT UNSIGNED NOT NULL, metadata_etag VARCHAR(40) DEFAULT NULL, creation_time BIGINT DEFAULT 0 NOT NULL, upload_time BIGINT DEFAULT 0 NOT NULL, PRIMARY KEY(fileid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_files_lock",
+        "tbl_name": "oc_files_lock",
+        "sql": "CREATE TABLE oc_files_lock (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(255) NOT NULL, file_id INTEGER UNSIGNED NOT NULL, token VARCHAR(63) NOT NULL, creation BIGINT UNSIGNED NOT NULL, type SMALLINT UNSIGNED DEFAULT 0 NOT NULL, scope SMALLINT UNSIGNED DEFAULT 0 NOT NULL, ttl INTEGER DEFAULT 0 NOT NULL, owner VARCHAR(255) DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "oc_files_metadata",
+        "tbl_name": "oc_files_metadata",
+        "sql": "CREATE TABLE oc_files_metadata (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, file_id BIGINT NOT NULL, json CLOB NOT NULL, sync_token VARCHAR(15) NOT NULL, last_update DATETIME NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_files_metadata_index",
+        "tbl_name": "oc_files_metadata_index",
+        "sql": "CREATE TABLE oc_files_metadata_index (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, file_id BIGINT NOT NULL, meta_key VARCHAR(31) DEFAULT NULL, meta_value_string VARCHAR(63) DEFAULT NULL, meta_value_int BIGINT DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_files_reminders",
+        "tbl_name": "oc_files_reminders",
+        "sql": "CREATE TABLE oc_files_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) NOT NULL, file_id BIGINT UNSIGNED NOT NULL, due_date DATETIME NOT NULL, updated_at DATETIME NOT NULL, created_at DATETIME NOT NULL, notified BOOLEAN DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "oc_files_trash",
+        "tbl_name": "oc_files_trash",
+        "sql": "CREATE TABLE oc_files_trash (auto_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, id VARCHAR(250) DEFAULT '' NOT NULL, user VARCHAR(64) DEFAULT '' NOT NULL, timestamp VARCHAR(12) DEFAULT '' NOT NULL, location VARCHAR(512) DEFAULT '' NOT NULL, type VARCHAR(4) DEFAULT NULL, mime VARCHAR(255) DEFAULT NULL, deleted_by VARCHAR(64) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_files_versions",
+        "tbl_name": "oc_files_versions",
+        "sql": "CREATE TABLE oc_files_versions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, file_id BIGINT NOT NULL, timestamp BIGINT NOT NULL, size BIGINT NOT NULL, mimetype BIGINT NOT NULL, metadata CLOB NOT NULL --(DC2Type:json)\n)"
+      },
+      {
+        "type": "table",
+        "name": "oc_flow_checks",
+        "tbl_name": "oc_flow_checks",
+        "sql": "CREATE TABLE oc_flow_checks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, class VARCHAR(256) DEFAULT '' NOT NULL, operator VARCHAR(16) DEFAULT '' NOT NULL, value CLOB DEFAULT NULL, hash VARCHAR(32) DEFAULT '' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_flow_operations",
+        "tbl_name": "oc_flow_operations",
+        "sql": "CREATE TABLE oc_flow_operations (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, class VARCHAR(256) DEFAULT '' NOT NULL, name VARCHAR(256) DEFAULT '', checks CLOB DEFAULT NULL, operation CLOB DEFAULT NULL, entity VARCHAR(256) DEFAULT 'OCA\\WorkflowEngine\\Entity\\File' NOT NULL, events CLOB DEFAULT '[]' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_flow_operations_scope",
+        "tbl_name": "oc_flow_operations_scope",
+        "sql": "CREATE TABLE oc_flow_operations_scope (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, operation_id INTEGER DEFAULT 0 NOT NULL, type INTEGER DEFAULT 0 NOT NULL, value VARCHAR(64) DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "oc_group_admin",
+        "tbl_name": "oc_group_admin",
+        "sql": "CREATE TABLE oc_group_admin (gid VARCHAR(64) DEFAULT '' NOT NULL, uid VARCHAR(64) DEFAULT '' NOT NULL, PRIMARY KEY(gid, uid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_group_user",
+        "tbl_name": "oc_group_user",
+        "sql": "CREATE TABLE oc_group_user (gid VARCHAR(64) DEFAULT '' NOT NULL, uid VARCHAR(64) DEFAULT '' NOT NULL, PRIMARY KEY(gid, uid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_groups",
+        "tbl_name": "oc_groups",
+        "sql": "CREATE TABLE oc_groups (gid VARCHAR(64) DEFAULT '' NOT NULL, displayname VARCHAR(255) DEFAULT 'name' NOT NULL, PRIMARY KEY(gid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_job_classes_registry",
+        "tbl_name": "oc_job_classes_registry",
+        "sql": "CREATE TABLE oc_job_classes_registry (class_id BIGINT UNSIGNED NOT NULL, class_name VARCHAR(255) NOT NULL, CONSTRAINT class_index UNIQUE (class_name), PRIMARY KEY(class_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_job_runs",
+        "tbl_name": "oc_job_runs",
+        "sql": "CREATE TABLE oc_job_runs (run_id BIGINT UNSIGNED NOT NULL, class_id BIGINT NOT NULL, pid INTEGER NOT NULL, status SMALLINT NOT NULL, duration INTEGER DEFAULT 0 NOT NULL, ram_peak_usage INTEGER DEFAULT 0 NOT NULL, PRIMARY KEY(run_id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_jobs",
+        "tbl_name": "oc_jobs",
+        "sql": "CREATE TABLE oc_jobs (id BIGINT UNSIGNED NOT NULL, class VARCHAR(255) DEFAULT '' NOT NULL, argument CLOB DEFAULT '' NOT NULL, last_run INTEGER DEFAULT 0, last_checked INTEGER DEFAULT 0, reserved_at INTEGER DEFAULT 0, execution_duration INTEGER DEFAULT 0, argument_hash VARCHAR(64) DEFAULT NULL, time_sensitive SMALLINT DEFAULT 1 NOT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_known_users",
+        "tbl_name": "oc_known_users",
+        "sql": "CREATE TABLE oc_known_users (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, known_to VARCHAR(255) NOT NULL, known_user VARCHAR(255) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_login_flow_v2",
+        "tbl_name": "oc_login_flow_v2",
+        "sql": "CREATE TABLE oc_login_flow_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, timestamp BIGINT UNSIGNED NOT NULL, started SMALLINT UNSIGNED DEFAULT 0 NOT NULL, poll_token VARCHAR(255) NOT NULL, login_token VARCHAR(255) NOT NULL, public_key CLOB NOT NULL, private_key CLOB NOT NULL, client_name VARCHAR(255) NOT NULL, login_name VARCHAR(255) DEFAULT NULL, server VARCHAR(255) DEFAULT NULL, app_password VARCHAR(1024) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories",
+        "tbl_name": "oc_memories",
+        "sql": "CREATE TABLE oc_memories (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, datetaken DATETIME DEFAULT NULL, fileid BIGINT NOT NULL, dayid INTEGER NOT NULL, isvideo BOOLEAN DEFAULT 0, mtime BIGINT NOT NULL, w INTEGER DEFAULT 0 NOT NULL, h INTEGER DEFAULT 0 NOT NULL, objectid VARCHAR(64) DEFAULT '0' NOT NULL, exif CLOB DEFAULT '', video_duration INTEGER DEFAULT 0 NOT NULL, liveid VARCHAR(128) DEFAULT '', orphan BOOLEAN DEFAULT 0, lat NUMERIC(8, 6) DEFAULT NULL, lon NUMERIC(9, 6) DEFAULT NULL, mapcluster INTEGER DEFAULT NULL, epoch BIGINT DEFAULT 0 NOT NULL, buid VARCHAR(32) DEFAULT '', parent BIGINT DEFAULT 0 NOT NULL, pano INTEGER DEFAULT 0 NOT NULL, indexed_at BIGINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories_covers",
+        "tbl_name": "oc_memories_covers",
+        "sql": "CREATE TABLE oc_memories_covers (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) NOT NULL, clustertype VARCHAR(64) NOT NULL, clusterid BIGINT NOT NULL, objectid BIGINT NOT NULL, fileid BIGINT NOT NULL, auto BOOLEAN DEFAULT 1, timestamp BIGINT NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories_failures",
+        "tbl_name": "oc_memories_failures",
+        "sql": "CREATE TABLE oc_memories_failures (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, fileid BIGINT NOT NULL, mtime BIGINT NOT NULL, reason CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories_livephoto",
+        "tbl_name": "oc_memories_livephoto",
+        "sql": "CREATE TABLE oc_memories_livephoto (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, liveid VARCHAR(128) NOT NULL, fileid BIGINT NOT NULL, mtime BIGINT NOT NULL, orphan BOOLEAN DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories_mapclusters",
+        "tbl_name": "oc_memories_mapclusters",
+        "sql": "CREATE TABLE oc_memories_mapclusters (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, point_count INTEGER NOT NULL, lat_sum DOUBLE PRECISION DEFAULT NULL, lon_sum DOUBLE PRECISION DEFAULT NULL, lat DOUBLE PRECISION DEFAULT NULL, lon DOUBLE PRECISION DEFAULT NULL, last_update INTEGER DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories_places",
+        "tbl_name": "oc_memories_places",
+        "sql": "CREATE TABLE oc_memories_places (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, fileid BIGINT NOT NULL, osm_id INTEGER NOT NULL, mark BOOLEAN DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "oc_memories_planet",
+        "tbl_name": "oc_memories_planet",
+        "sql": "CREATE TABLE oc_memories_planet (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, osm_id INTEGER NOT NULL, name CLOB NOT NULL, admin_level INTEGER NOT NULL, other_names CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_migrations",
+        "tbl_name": "oc_migrations",
+        "sql": "CREATE TABLE oc_migrations (app VARCHAR(255) NOT NULL, version VARCHAR(255) NOT NULL, PRIMARY KEY(app, version))"
+      },
+      {
+        "type": "table",
+        "name": "oc_mimetypes",
+        "tbl_name": "oc_mimetypes",
+        "sql": "CREATE TABLE oc_mimetypes (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, mimetype VARCHAR(255) DEFAULT '' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_mounts",
+        "tbl_name": "oc_mounts",
+        "sql": "CREATE TABLE oc_mounts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, storage_id BIGINT NOT NULL, root_id BIGINT NOT NULL, user_id VARCHAR(64) NOT NULL, mount_point VARCHAR(4000) NOT NULL, mount_id BIGINT DEFAULT NULL, mount_provider_class VARCHAR(128) DEFAULT NULL, mount_point_hash VARCHAR(32) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_notifications",
+        "tbl_name": "oc_notifications",
+        "sql": "CREATE TABLE oc_notifications (notification_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, app VARCHAR(32) NOT NULL, user VARCHAR(64) NOT NULL, timestamp INTEGER DEFAULT 0 NOT NULL, object_type VARCHAR(64) NOT NULL, object_id VARCHAR(64) NOT NULL, subject VARCHAR(64) NOT NULL, subject_parameters CLOB DEFAULT NULL, message VARCHAR(64) DEFAULT NULL, message_parameters CLOB DEFAULT NULL, link VARCHAR(4000) DEFAULT NULL, icon VARCHAR(4000) DEFAULT NULL, actions CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_notifications_pushhash",
+        "tbl_name": "oc_notifications_pushhash",
+        "sql": "CREATE TABLE oc_notifications_pushhash (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) NOT NULL, token INTEGER DEFAULT 0 NOT NULL, deviceidentifier VARCHAR(128) NOT NULL, devicepublickey VARCHAR(512) NOT NULL, devicepublickeyhash VARCHAR(128) NOT NULL, pushtokenhash VARCHAR(128) NOT NULL, proxyserver VARCHAR(256) NOT NULL, apptype VARCHAR(32) DEFAULT 'unknown' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_notifications_settings",
+        "tbl_name": "oc_notifications_settings",
+        "sql": "CREATE TABLE oc_notifications_settings (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) NOT NULL, batch_time INTEGER DEFAULT 0 NOT NULL, last_send_id BIGINT DEFAULT 0 NOT NULL, next_send_time INTEGER DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_notifications_webpush",
+        "tbl_name": "oc_notifications_webpush",
+        "sql": "CREATE TABLE oc_notifications_webpush (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) NOT NULL, token BIGINT DEFAULT 0 NOT NULL, endpoint VARCHAR(767) NOT NULL, ua_public VARCHAR(128) NOT NULL, auth VARCHAR(32) NOT NULL, app_types VARCHAR(256) NOT NULL, activated BOOLEAN DEFAULT 0, activation_token VARCHAR(36) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_oauth2_access_tokens",
+        "tbl_name": "oc_oauth2_access_tokens",
+        "sql": "CREATE TABLE oc_oauth2_access_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, token_id INTEGER NOT NULL, client_id INTEGER NOT NULL, hashed_code VARCHAR(128) NOT NULL, encrypted_token VARCHAR(786) NOT NULL, code_created_at BIGINT UNSIGNED DEFAULT 0 NOT NULL, token_count BIGINT UNSIGNED DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_oauth2_clients",
+        "tbl_name": "oc_oauth2_clients",
+        "sql": "CREATE TABLE oc_oauth2_clients (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(64) NOT NULL, redirect_uri VARCHAR(2000) NOT NULL, client_identifier VARCHAR(64) NOT NULL, secret VARCHAR(512) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ocm_token_map",
+        "tbl_name": "oc_ocm_token_map",
+        "sql": "CREATE TABLE oc_ocm_token_map (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, access_token_id INTEGER UNSIGNED NOT NULL, refresh_token VARCHAR(512) NOT NULL, expires INTEGER NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_open_local_editor",
+        "tbl_name": "oc_open_local_editor",
+        "sql": "CREATE TABLE oc_open_local_editor (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) NOT NULL, path_hash VARCHAR(64) NOT NULL, expiration_time BIGINT UNSIGNED NOT NULL, token VARCHAR(128) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_photos_albums",
+        "tbl_name": "oc_photos_albums",
+        "sql": "CREATE TABLE oc_photos_albums (album_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(255) NOT NULL, user VARCHAR(255) NOT NULL, created BIGINT NOT NULL, location VARCHAR(255) NOT NULL, last_added_photo BIGINT NOT NULL, filters CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_photos_albums_collabs",
+        "tbl_name": "oc_photos_albums_collabs",
+        "sql": "CREATE TABLE oc_photos_albums_collabs (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, album_id BIGINT NOT NULL, collaborator_id VARCHAR(64) NOT NULL, collaborator_type INTEGER NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_photos_albums_files",
+        "tbl_name": "oc_photos_albums_files",
+        "sql": "CREATE TABLE oc_photos_albums_files (album_file_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, album_id BIGINT NOT NULL, file_id BIGINT NOT NULL, added BIGINT NOT NULL, owner VARCHAR(64) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_preferences",
+        "tbl_name": "oc_preferences",
+        "sql": "CREATE TABLE oc_preferences (userid VARCHAR(64) DEFAULT '' NOT NULL, appid VARCHAR(32) DEFAULT '' NOT NULL, configkey VARCHAR(64) DEFAULT '' NOT NULL, configvalue CLOB DEFAULT NULL, lazy SMALLINT UNSIGNED DEFAULT 0 NOT NULL, type SMALLINT UNSIGNED DEFAULT 0 NOT NULL, flags INTEGER UNSIGNED DEFAULT 0 NOT NULL, \"indexed\" VARCHAR(64) DEFAULT '', PRIMARY KEY(userid, appid, configkey))"
+      },
+      {
+        "type": "table",
+        "name": "oc_preview_locations",
+        "tbl_name": "oc_preview_locations",
+        "sql": "CREATE TABLE oc_preview_locations (id BIGINT UNSIGNED NOT NULL, bucket_name VARCHAR(40) NOT NULL, object_store_name VARCHAR(40) NOT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_preview_versions",
+        "tbl_name": "oc_preview_versions",
+        "sql": "CREATE TABLE oc_preview_versions (id BIGINT UNSIGNED NOT NULL, file_id BIGINT UNSIGNED NOT NULL, version VARCHAR(1024) DEFAULT '' NOT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_previews",
+        "tbl_name": "oc_previews",
+        "sql": "CREATE TABLE oc_previews (id BIGINT UNSIGNED NOT NULL, file_id BIGINT UNSIGNED NOT NULL, storage_id BIGINT UNSIGNED NOT NULL, old_file_id BIGINT UNSIGNED DEFAULT NULL, location_id BIGINT UNSIGNED DEFAULT NULL, width INTEGER UNSIGNED NOT NULL, height INTEGER UNSIGNED NOT NULL, mimetype_id INTEGER NOT NULL, source_mimetype_id INTEGER NOT NULL, max BOOLEAN DEFAULT 0 NOT NULL, cropped BOOLEAN DEFAULT 0 NOT NULL, encrypted BOOLEAN DEFAULT 0 NOT NULL, etag CHAR(40) NOT NULL, mtime INTEGER UNSIGNED NOT NULL, size INTEGER UNSIGNED NOT NULL, version_id BIGINT DEFAULT -1 NOT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_privacy_admins",
+        "tbl_name": "oc_privacy_admins",
+        "sql": "CREATE TABLE oc_privacy_admins (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, displayname VARCHAR(64) DEFAULT '' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_profile_config",
+        "tbl_name": "oc_profile_config",
+        "sql": "CREATE TABLE oc_profile_config (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) NOT NULL, config CLOB NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_properties",
+        "tbl_name": "oc_properties",
+        "sql": "CREATE TABLE oc_properties (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, userid VARCHAR(64) DEFAULT '' NOT NULL, propertypath VARCHAR(255) DEFAULT '' NOT NULL, propertyname VARCHAR(255) DEFAULT '' NOT NULL, propertyvalue CLOB NOT NULL, valuetype SMALLINT DEFAULT 1)"
+      },
+      {
+        "type": "table",
+        "name": "oc_ratelimit_entries",
+        "tbl_name": "oc_ratelimit_entries",
+        "sql": "CREATE TABLE oc_ratelimit_entries (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, hash VARCHAR(128) NOT NULL, delete_after DATETIME NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_reactions",
+        "tbl_name": "oc_reactions",
+        "sql": "CREATE TABLE oc_reactions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, parent_id BIGINT UNSIGNED NOT NULL, message_id BIGINT UNSIGNED NOT NULL, actor_type VARCHAR(64) DEFAULT '' NOT NULL, actor_id VARCHAR(64) DEFAULT '' NOT NULL, reaction VARCHAR(32) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_recent_contact",
+        "tbl_name": "oc_recent_contact",
+        "sql": "CREATE TABLE oc_recent_contact (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, actor_uid VARCHAR(64) NOT NULL, uid VARCHAR(64) DEFAULT NULL, email VARCHAR(255) DEFAULT NULL, federated_cloud_id VARCHAR(255) DEFAULT NULL, card BLOB NOT NULL, last_contact INTEGER NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_schedulingobjects",
+        "tbl_name": "oc_schedulingobjects",
+        "sql": "CREATE TABLE oc_schedulingobjects (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, principaluri VARCHAR(255) DEFAULT NULL, calendardata BLOB DEFAULT NULL, uri VARCHAR(255) DEFAULT NULL, lastmodified INTEGER UNSIGNED DEFAULT NULL, etag VARCHAR(32) DEFAULT NULL, size BIGINT UNSIGNED NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sec_signatory",
+        "tbl_name": "oc_sec_signatory",
+        "sql": "CREATE TABLE oc_sec_signatory (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, key_id_sum VARCHAR(127) NOT NULL, key_id VARCHAR(512) NOT NULL, host VARCHAR(512) NOT NULL, provider_id VARCHAR(31) NOT NULL, account VARCHAR(127) DEFAULT '', public_key CLOB DEFAULT '' NOT NULL, metadata CLOB DEFAULT '[]' NOT NULL, type SMALLINT DEFAULT 9 NOT NULL, status SMALLINT DEFAULT 0 NOT NULL, creation INTEGER UNSIGNED DEFAULT 0, last_updated INTEGER UNSIGNED DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "oc_share",
+        "tbl_name": "oc_share",
+        "sql": "CREATE TABLE oc_share (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, share_type SMALLINT DEFAULT 0 NOT NULL, share_with VARCHAR(255) DEFAULT NULL, password VARCHAR(255) DEFAULT NULL, uid_owner VARCHAR(64) DEFAULT '' NOT NULL, uid_initiator VARCHAR(64) DEFAULT NULL, parent BIGINT DEFAULT NULL, item_type VARCHAR(64) DEFAULT '' NOT NULL, item_source VARCHAR(255) DEFAULT NULL, item_target VARCHAR(255) DEFAULT NULL, file_source BIGINT DEFAULT NULL, file_target VARCHAR(512) DEFAULT NULL, permissions SMALLINT DEFAULT 0 NOT NULL, stime BIGINT DEFAULT 0 NOT NULL, accepted SMALLINT DEFAULT 0 NOT NULL, expiration DATETIME DEFAULT NULL, token VARCHAR(32) DEFAULT NULL, mail_send SMALLINT DEFAULT 0 NOT NULL, share_name VARCHAR(64) DEFAULT NULL, password_by_talk BOOLEAN DEFAULT 0, note CLOB DEFAULT NULL, hide_download SMALLINT DEFAULT 0, label VARCHAR(255) DEFAULT NULL, attributes CLOB DEFAULT NULL --(DC2Type:json)\n, password_expiration_time DATETIME DEFAULT NULL, reminder_sent BOOLEAN DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "oc_share_external",
+        "tbl_name": "oc_share_external",
+        "sql": "CREATE TABLE oc_share_external (id BIGINT NOT NULL, parent BIGINT DEFAULT -1, share_type INTEGER DEFAULT NULL, remote VARCHAR(512) NOT NULL, remote_id VARCHAR(255) DEFAULT '', password VARCHAR(64) DEFAULT NULL, name VARCHAR(4000) NOT NULL, owner VARCHAR(255) NOT NULL, user VARCHAR(64) NOT NULL, mountpoint VARCHAR(4000) NOT NULL, mountpoint_hash VARCHAR(32) NOT NULL, accepted INTEGER DEFAULT 0 NOT NULL, access_token VARCHAR(4000) DEFAULT NULL, access_token_expires INTEGER UNSIGNED DEFAULT NULL, refresh_token VARCHAR(64) DEFAULT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_shares_limits",
+        "tbl_name": "oc_shares_limits",
+        "sql": "CREATE TABLE oc_shares_limits (id VARCHAR(32) NOT NULL, \"limit\" BIGINT NOT NULL, downloads BIGINT DEFAULT 0 NOT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_classmap",
+        "tbl_name": "oc_sharing_classmap",
+        "sql": "CREATE TABLE oc_sharing_classmap (class_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, class_name VARCHAR(64) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share",
+        "tbl_name": "oc_sharing_share",
+        "sql": "CREATE TABLE oc_sharing_share (id BIGINT NOT NULL, owner_user_id VARCHAR(64) NOT NULL, owner_instance VARCHAR(128) DEFAULT NULL, last_updated BIGINT NOT NULL, state VARCHAR(16) NOT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share_permissions",
+        "tbl_name": "oc_sharing_share_permissions",
+        "sql": "CREATE TABLE oc_sharing_share_permissions (share_id BIGINT NOT NULL, permission_class_id INTEGER NOT NULL, permission_enabled BOOLEAN NOT NULL, PRIMARY KEY(share_id, permission_class_id), CONSTRAINT FK_9381FC6C2AE63FDB FOREIGN KEY (share_id) REFERENCES oc_sharing_share (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_9381FC6C1F38DEA6 FOREIGN KEY (permission_class_id) REFERENCES oc_sharing_classmap (class_id) NOT DEFERRABLE INITIALLY IMMEDIATE)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share_properties",
+        "tbl_name": "oc_sharing_share_properties",
+        "sql": "CREATE TABLE oc_sharing_share_properties (share_id BIGINT NOT NULL, property_class_id INTEGER NOT NULL, property_value VARCHAR(1000) DEFAULT NULL, PRIMARY KEY(share_id, property_class_id), CONSTRAINT FK_E0E322B52AE63FDB FOREIGN KEY (share_id) REFERENCES oc_sharing_share (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_E0E322B5B4873F54 FOREIGN KEY (property_class_id) REFERENCES oc_sharing_classmap (class_id) NOT DEFERRABLE INITIALLY IMMEDIATE)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share_recipient_permissions",
+        "tbl_name": "oc_sharing_share_recipient_permissions",
+        "sql": "CREATE TABLE oc_sharing_share_recipient_permissions (recipient_id BIGINT NOT NULL, permission_class_id INTEGER NOT NULL, permission_enabled BOOLEAN NOT NULL, PRIMARY KEY(recipient_id, permission_class_id), CONSTRAINT FK_A8206AC6E92F8F78 FOREIGN KEY (recipient_id) REFERENCES oc_sharing_share_recipients (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_A8206AC61F38DEA6 FOREIGN KEY (permission_class_id) REFERENCES oc_sharing_classmap (class_id) NOT DEFERRABLE INITIALLY IMMEDIATE)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share_recipients",
+        "tbl_name": "oc_sharing_share_recipients",
+        "sql": "CREATE TABLE oc_sharing_share_recipients (id BIGINT NOT NULL, share_id BIGINT NOT NULL, recipient_class_id INTEGER NOT NULL, recipient_value VARCHAR(255) NOT NULL, recipient_instance VARCHAR(128) DEFAULT NULL, recipient_secret VARCHAR(32) NOT NULL, initiator_user_id VARCHAR(64) NOT NULL, initiator_instance VARCHAR(128) DEFAULT NULL, PRIMARY KEY(id), CONSTRAINT FK_734621B62AE63FDB FOREIGN KEY (share_id) REFERENCES oc_sharing_share (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_734621B64185A14 FOREIGN KEY (recipient_class_id) REFERENCES oc_sharing_classmap (class_id) NOT DEFERRABLE INITIALLY IMMEDIATE)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share_sources",
+        "tbl_name": "oc_sharing_share_sources",
+        "sql": "CREATE TABLE oc_sharing_share_sources (share_id BIGINT NOT NULL, source_class_id INTEGER NOT NULL, source_value VARCHAR(255) NOT NULL, PRIMARY KEY(share_id, source_class_id, source_value), CONSTRAINT FK_FB9CB7D22AE63FDB FOREIGN KEY (share_id) REFERENCES oc_sharing_share (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_FB9CB7D2A9203DC2 FOREIGN KEY (source_class_id) REFERENCES oc_sharing_classmap (class_id) NOT DEFERRABLE INITIALLY IMMEDIATE)"
+      },
+      {
+        "type": "table",
+        "name": "oc_sharing_share_user_status",
+        "tbl_name": "oc_sharing_share_user_status",
+        "sql": "CREATE TABLE oc_sharing_share_user_status (share_id BIGINT NOT NULL, user_id VARCHAR(64) NOT NULL, status VARCHAR(16) NOT NULL, PRIMARY KEY(share_id, user_id), CONSTRAINT FK_A03E4E222AE63FDB FOREIGN KEY (share_id) REFERENCES oc_sharing_share (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE)"
+      },
+      {
+        "type": "table",
+        "name": "oc_storages",
+        "tbl_name": "oc_storages",
+        "sql": "CREATE TABLE oc_storages (numeric_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, id VARCHAR(64) DEFAULT NULL, available INTEGER DEFAULT 1 NOT NULL, last_checked INTEGER DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_storages_credentials",
+        "tbl_name": "oc_storages_credentials",
+        "sql": "CREATE TABLE oc_storages_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user VARCHAR(64) DEFAULT NULL, identifier VARCHAR(64) NOT NULL, credentials CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_systemtag",
+        "tbl_name": "oc_systemtag",
+        "sql": "CREATE TABLE oc_systemtag (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name VARCHAR(64) DEFAULT '' NOT NULL, visibility SMALLINT DEFAULT 1 NOT NULL, editable SMALLINT DEFAULT 1 NOT NULL, etag VARCHAR(32) DEFAULT NULL, color VARCHAR(6) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_systemtag_group",
+        "tbl_name": "oc_systemtag_group",
+        "sql": "CREATE TABLE oc_systemtag_group (systemtagid BIGINT UNSIGNED DEFAULT 0 NOT NULL, gid VARCHAR(255) NOT NULL, PRIMARY KEY(gid, systemtagid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_systemtag_object_mapping",
+        "tbl_name": "oc_systemtag_object_mapping",
+        "sql": "CREATE TABLE oc_systemtag_object_mapping (objectid VARCHAR(64) DEFAULT '' NOT NULL, objecttype VARCHAR(64) DEFAULT '' NOT NULL, systemtagid BIGINT UNSIGNED DEFAULT 0 NOT NULL, PRIMARY KEY(objecttype, objectid, systemtagid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_taskprocessing_tasks",
+        "tbl_name": "oc_taskprocessing_tasks",
+        "sql": "CREATE TABLE oc_taskprocessing_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type VARCHAR(255) NOT NULL, input CLOB NOT NULL, output CLOB DEFAULT NULL, status INTEGER DEFAULT 0, user_id VARCHAR(64) DEFAULT NULL, app_id VARCHAR(32) DEFAULT '' NOT NULL, custom_id VARCHAR(255) DEFAULT '', last_updated INTEGER UNSIGNED DEFAULT 0, completion_expected_at DATETIME DEFAULT NULL, progress DOUBLE PRECISION DEFAULT '0', error_message VARCHAR(4000) DEFAULT NULL, scheduled_at INTEGER UNSIGNED DEFAULT NULL, started_at INTEGER UNSIGNED DEFAULT NULL, ended_at INTEGER UNSIGNED DEFAULT NULL, webhook_uri VARCHAR(4000) DEFAULT NULL, webhook_method VARCHAR(64) DEFAULT NULL, allow_cleanup SMALLINT UNSIGNED DEFAULT 1 NOT NULL, user_facing_error_message VARCHAR(4000) DEFAULT NULL, include_watermark SMALLINT UNSIGNED DEFAULT 1 NOT NULL, prefer_streaming SMALLINT UNSIGNED DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_text2image_tasks",
+        "tbl_name": "oc_text2image_tasks",
+        "sql": "CREATE TABLE oc_text2image_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, input CLOB NOT NULL, status INTEGER DEFAULT 0, number_of_images INTEGER DEFAULT 1 NOT NULL, user_id VARCHAR(64) DEFAULT NULL, app_id VARCHAR(32) DEFAULT '' NOT NULL, identifier VARCHAR(255) DEFAULT '', last_updated DATETIME DEFAULT NULL, completion_expected_at DATETIME DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_text_documents",
+        "tbl_name": "oc_text_documents",
+        "sql": "CREATE TABLE oc_text_documents (id BIGINT UNSIGNED NOT NULL, current_version BIGINT UNSIGNED DEFAULT 0, last_saved_version BIGINT UNSIGNED DEFAULT 0, last_saved_version_time BIGINT UNSIGNED NOT NULL, last_saved_version_etag VARCHAR(64) DEFAULT '', base_version_etag VARCHAR(64) DEFAULT '', checksum VARCHAR(8) DEFAULT NULL, PRIMARY KEY(id))"
+      },
+      {
+        "type": "table",
+        "name": "oc_text_sessions",
+        "tbl_name": "oc_text_sessions",
+        "sql": "CREATE TABLE oc_text_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) DEFAULT NULL, guest_name VARCHAR(64) DEFAULT NULL, color VARCHAR(7) DEFAULT NULL, token VARCHAR(64) NOT NULL, document_id BIGINT NOT NULL, last_contact BIGINT UNSIGNED NOT NULL, last_awareness_message CLOB DEFAULT '')"
+      },
+      {
+        "type": "table",
+        "name": "oc_text_steps",
+        "tbl_name": "oc_text_steps",
+        "sql": "CREATE TABLE oc_text_steps (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, document_id BIGINT UNSIGNED NOT NULL, session_id BIGINT UNSIGNED NOT NULL, data CLOB NOT NULL, version BIGINT UNSIGNED DEFAULT 0, timestamp BIGINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_textprocessing_tasks",
+        "tbl_name": "oc_textprocessing_tasks",
+        "sql": "CREATE TABLE oc_textprocessing_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type VARCHAR(255) NOT NULL, input CLOB NOT NULL, output CLOB DEFAULT NULL, status INTEGER DEFAULT 0, user_id VARCHAR(64) DEFAULT NULL, app_id VARCHAR(32) DEFAULT '' NOT NULL, identifier VARCHAR(255) DEFAULT '' NOT NULL, last_updated INTEGER UNSIGNED DEFAULT 0, completion_expected_at DATETIME DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_trusted_servers",
+        "tbl_name": "oc_trusted_servers",
+        "sql": "CREATE TABLE oc_trusted_servers (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, url VARCHAR(512) NOT NULL, url_hash VARCHAR(255) DEFAULT '' NOT NULL, token VARCHAR(128) DEFAULT NULL, shared_secret VARCHAR(256) DEFAULT NULL, status INTEGER DEFAULT 2 NOT NULL, sync_token VARCHAR(512) DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_twofactor_backupcodes",
+        "tbl_name": "oc_twofactor_backupcodes",
+        "sql": "CREATE TABLE oc_twofactor_backupcodes (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) DEFAULT '' NOT NULL, code VARCHAR(128) NOT NULL, used SMALLINT DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_twofactor_providers",
+        "tbl_name": "oc_twofactor_providers",
+        "sql": "CREATE TABLE oc_twofactor_providers (provider_id VARCHAR(32) NOT NULL, uid VARCHAR(64) NOT NULL, enabled SMALLINT NOT NULL, PRIMARY KEY(provider_id, uid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_twofactor_totp_secrets",
+        "tbl_name": "oc_twofactor_totp_secrets",
+        "sql": "CREATE TABLE oc_twofactor_totp_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(64) DEFAULT '' NOT NULL, secret CLOB NOT NULL, state INTEGER DEFAULT 2 NOT NULL, last_counter BIGINT DEFAULT -1 NOT NULL, algorithm VARCHAR(10) DEFAULT 'sha1' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_user_status",
+        "tbl_name": "oc_user_status",
+        "sql": "CREATE TABLE oc_user_status (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, user_id VARCHAR(255) NOT NULL, status VARCHAR(255) NOT NULL, status_timestamp INTEGER UNSIGNED NOT NULL, is_user_defined BOOLEAN DEFAULT NULL, message_id VARCHAR(255) DEFAULT NULL, custom_icon VARCHAR(255) DEFAULT NULL, custom_message CLOB DEFAULT NULL, clear_at INTEGER UNSIGNED DEFAULT NULL, is_backup BOOLEAN DEFAULT 0, status_message_timestamp INTEGER UNSIGNED DEFAULT 0 NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_user_transfer_owner",
+        "tbl_name": "oc_user_transfer_owner",
+        "sql": "CREATE TABLE oc_user_transfer_owner (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, source_user VARCHAR(64) NOT NULL, target_user VARCHAR(64) NOT NULL, file_id BIGINT NOT NULL, node_name VARCHAR(255) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_users",
+        "tbl_name": "oc_users",
+        "sql": "CREATE TABLE oc_users (uid VARCHAR(64) DEFAULT '' NOT NULL, displayname VARCHAR(64) DEFAULT NULL, password VARCHAR(255) DEFAULT '' NOT NULL, uid_lower VARCHAR(64) DEFAULT '', PRIMARY KEY(uid))"
+      },
+      {
+        "type": "table",
+        "name": "oc_vcategory",
+        "tbl_name": "oc_vcategory",
+        "sql": "CREATE TABLE oc_vcategory (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) DEFAULT '' NOT NULL, type VARCHAR(64) DEFAULT '' NOT NULL, category VARCHAR(255) DEFAULT '' NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_vcategory_to_object",
+        "tbl_name": "oc_vcategory_to_object",
+        "sql": "CREATE TABLE oc_vcategory_to_object (objid BIGINT UNSIGNED DEFAULT 0 NOT NULL, categoryid BIGINT UNSIGNED DEFAULT 0 NOT NULL, type VARCHAR(64) DEFAULT '' NOT NULL, PRIMARY KEY(categoryid, objid, type))"
+      },
+      {
+        "type": "table",
+        "name": "oc_webauthn",
+        "tbl_name": "oc_webauthn",
+        "sql": "CREATE TABLE oc_webauthn (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, uid VARCHAR(64) NOT NULL, name VARCHAR(64) NOT NULL, public_key_credential_id VARCHAR(512) NOT NULL, data CLOB NOT NULL, user_verification BOOLEAN DEFAULT 0)"
+      },
+      {
+        "type": "table",
+        "name": "oc_webhook_listeners",
+        "tbl_name": "oc_webhook_listeners",
+        "sql": "CREATE TABLE oc_webhook_listeners (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, app_id VARCHAR(64) DEFAULT NULL, user_id VARCHAR(64) DEFAULT NULL, http_method VARCHAR(32) NOT NULL, uri VARCHAR(4000) NOT NULL, event VARCHAR(4000) NOT NULL, event_filter CLOB DEFAULT NULL, user_id_filter VARCHAR(64) DEFAULT NULL, headers CLOB DEFAULT NULL, auth_method VARCHAR(16) DEFAULT '' NOT NULL, auth_data CLOB DEFAULT NULL, token_needed CLOB DEFAULT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "oc_webhook_tokens",
+        "tbl_name": "oc_webhook_tokens",
+        "sql": "CREATE TABLE oc_webhook_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, token_id BIGINT UNSIGNED NOT NULL, user_id VARCHAR(64) DEFAULT NULL, created_at BIGINT UNSIGNED NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "sqlite_sequence",
+        "tbl_name": "sqlite_sequence",
+        "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+      },
+      {
+        "type": "trigger",
+        "name": "memories_fcu_trg",
+        "tbl_name": "oc_filecache",
+        "sql": "CREATE TRIGGER memories_fcu_trg\n                    AFTER UPDATE ON oc_filecache\n                    FOR EACH ROW\n                    BEGIN\n                        UPDATE oc_memories\n                        SET parent = NEW.parent\n                        WHERE fileid = NEW.fileid;\n                    END"
+      }
+    ]
+  },
+  "appState": [
+    {
+      "appid": "memories",
+      "configkey": "enabled",
+      "configvalue": "yes"
+    },
+    {
+      "appid": "memories",
+      "configkey": "installed_version",
+      "configvalue": "10.2.0"
+    },
+    {
+      "appid": "photos",
+      "configkey": "enabled",
+      "configvalue": "yes"
+    },
+    {
+      "appid": "photos",
+      "configkey": "installed_version",
+      "configvalue": "8.0.0"
+    }
+  ],
+  "migrations": [
+    {
+      "app": "activity",
+      "version": "2006Date20170808154933"
+    },
+    {
+      "app": "activity",
+      "version": "2006Date20170808155040"
+    },
+    {
+      "app": "activity",
+      "version": "2006Date20170919095939"
+    },
+    {
+      "app": "activity",
+      "version": "2007Date20181107114613"
+    },
+    {
+      "app": "activity",
+      "version": "2008Date20181011095117"
+    },
+    {
+      "app": "activity",
+      "version": "2010Date20190416112817"
+    },
+    {
+      "app": "activity",
+      "version": "2011Date20201006132544"
+    },
+    {
+      "app": "activity",
+      "version": "2011Date20201006132545"
+    },
+    {
+      "app": "activity",
+      "version": "2011Date20201006132546"
+    },
+    {
+      "app": "activity",
+      "version": "2011Date20201006132547"
+    },
+    {
+      "app": "activity",
+      "version": "2011Date20201207091915"
+    },
+    {
+      "app": "activity",
+      "version": "8000Date20260603120000"
+    },
+    {
+      "app": "app_api",
+      "version": "032000Date20250109162434"
+    },
+    {
+      "app": "app_api",
+      "version": "032001Date20250115164140"
+    },
+    {
+      "app": "app_api",
+      "version": "032002Date20250527174907"
+    },
+    {
+      "app": "app_api",
+      "version": "034000Date20260428144801"
+    },
+    {
+      "app": "app_api",
+      "version": "035000Date20260518120000"
+    },
+    {
+      "app": "app_api",
+      "version": "035000Date20260529120000"
+    },
+    {
+      "app": "app_api",
+      "version": "035000Date20260529130000"
+    },
+    {
+      "app": "app_api",
+      "version": "1000Date202305221555"
+    },
+    {
+      "app": "app_api",
+      "version": "1004Date202311061844"
+    },
+    {
+      "app": "app_api",
+      "version": "2000Date20240120094952"
+    },
+    {
+      "app": "app_api",
+      "version": "2005Date20240209094951"
+    },
+    {
+      "app": "app_api",
+      "version": "2201Date20240221124152"
+    },
+    {
+      "app": "app_api",
+      "version": "2203Date20240325124149"
+    },
+    {
+      "app": "app_api",
+      "version": "2204Date20240403125002"
+    },
+    {
+      "app": "app_api",
+      "version": "2205Date20240411124836"
+    },
+    {
+      "app": "app_api",
+      "version": "2206Date20240502145029"
+    },
+    {
+      "app": "app_api",
+      "version": "2207Date20240502145029"
+    },
+    {
+      "app": "app_api",
+      "version": "2700Date20240515092246"
+    },
+    {
+      "app": "app_api",
+      "version": "2800Date20240710220000"
+    },
+    {
+      "app": "app_api",
+      "version": "2800Date20240711080316"
+    },
+    {
+      "app": "app_api",
+      "version": "3000Date20240715170800"
+    },
+    {
+      "app": "app_api",
+      "version": "3000Date20240807085759"
+    },
+    {
+      "app": "app_api",
+      "version": "3100Date20240822080316"
+    },
+    {
+      "app": "app_api",
+      "version": "3200Date20240905080316"
+    },
+    {
+      "app": "app_api",
+      "version": "5000Date20241120135411"
+    },
+    {
+      "app": "circles",
+      "version": "0022Date20220526111723"
+    },
+    {
+      "app": "circles",
+      "version": "0022Date20220526113601"
+    },
+    {
+      "app": "circles",
+      "version": "0022Date20220703115023"
+    },
+    {
+      "app": "circles",
+      "version": "0023Date20211216113101"
+    },
+    {
+      "app": "circles",
+      "version": "0024Date20220203123901"
+    },
+    {
+      "app": "circles",
+      "version": "0024Date20220203123902"
+    },
+    {
+      "app": "circles",
+      "version": "0024Date20220317190331"
+    },
+    {
+      "app": "circles",
+      "version": "0028Date20230705222601"
+    },
+    {
+      "app": "circles",
+      "version": "0031Date20241105133904"
+    },
+    {
+      "app": "circles",
+      "version": "0032Date20250623120204"
+    },
+    {
+      "app": "circles",
+      "version": "8100Date20261129153333"
+    },
+    {
+      "app": "cloud_federation_api",
+      "version": "1016Date202502262004"
+    },
+    {
+      "app": "cloud_federation_api",
+      "version": "1017Date20260306120000"
+    },
+    {
+      "app": "contactsinteraction",
+      "version": "010000Date20200304152605"
+    },
+    {
+      "app": "core",
+      "version": "13000Date20170705121758"
+    },
+    {
+      "app": "core",
+      "version": "13000Date20170718121200"
+    },
+    {
+      "app": "core",
+      "version": "13000Date20170814074715"
+    },
+    {
+      "app": "core",
+      "version": "13000Date20170919121250"
+    },
+    {
+      "app": "core",
+      "version": "13000Date20170926101637"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180129121024"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180404140050"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180516101403"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180518120534"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180522074438"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180710092004"
+    },
+    {
+      "app": "core",
+      "version": "14000Date20180712153140"
+    },
+    {
+      "app": "core",
+      "version": "15000Date20180926101451"
+    },
+    {
+      "app": "core",
+      "version": "15000Date20181015062942"
+    },
+    {
+      "app": "core",
+      "version": "15000Date20181029084625"
+    },
+    {
+      "app": "core",
+      "version": "16000Date20190207141427"
+    },
+    {
+      "app": "core",
+      "version": "16000Date20190212081545"
+    },
+    {
+      "app": "core",
+      "version": "16000Date20190427105638"
+    },
+    {
+      "app": "core",
+      "version": "16000Date20190428150708"
+    },
+    {
+      "app": "core",
+      "version": "17000Date20190514105811"
+    },
+    {
+      "app": "core",
+      "version": "18000Date20190920085628"
+    },
+    {
+      "app": "core",
+      "version": "18000Date20191014105105"
+    },
+    {
+      "app": "core",
+      "version": "18000Date20191204114856"
+    },
+    {
+      "app": "core",
+      "version": "19000Date20200211083441"
+    },
+    {
+      "app": "core",
+      "version": "20000Date20201109081915"
+    },
+    {
+      "app": "core",
+      "version": "20000Date20201109081918"
+    },
+    {
+      "app": "core",
+      "version": "20000Date20201109081919"
+    },
+    {
+      "app": "core",
+      "version": "20000Date20201111081915"
+    },
+    {
+      "app": "core",
+      "version": "21000Date20201120141228"
+    },
+    {
+      "app": "core",
+      "version": "21000Date20201202095923"
+    },
+    {
+      "app": "core",
+      "version": "21000Date20210119195004"
+    },
+    {
+      "app": "core",
+      "version": "21000Date20210309185126"
+    },
+    {
+      "app": "core",
+      "version": "21000Date20210309185127"
+    },
+    {
+      "app": "core",
+      "version": "22000Date20210216080825"
+    },
+    {
+      "app": "core",
+      "version": "23000Date20210721100600"
+    },
+    {
+      "app": "core",
+      "version": "23000Date20210906132259"
+    },
+    {
+      "app": "core",
+      "version": "23000Date20210930122352"
+    },
+    {
+      "app": "core",
+      "version": "23000Date20211203110726"
+    },
+    {
+      "app": "core",
+      "version": "23000Date20211213203940"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20211210141942"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20211213081506"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20211213081604"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20211222112246"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20211230140012"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20220131153041"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20220202150027"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20220404230027"
+    },
+    {
+      "app": "core",
+      "version": "24000Date20220425072957"
+    },
+    {
+      "app": "core",
+      "version": "25000Date20220515204012"
+    },
+    {
+      "app": "core",
+      "version": "25000Date20220602190540"
+    },
+    {
+      "app": "core",
+      "version": "25000Date20220905140840"
+    },
+    {
+      "app": "core",
+      "version": "25000Date20221007010957"
+    },
+    {
+      "app": "core",
+      "version": "27000Date20220613163520"
+    },
+    {
+      "app": "core",
+      "version": "27000Date20230309104325"
+    },
+    {
+      "app": "core",
+      "version": "27000Date20230309104802"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20230616104802"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20230728104802"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20230803221055"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20230906104802"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20231004103301"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20231103104802"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20231126110901"
+    },
+    {
+      "app": "core",
+      "version": "28000Date20240828142927"
+    },
+    {
+      "app": "core",
+      "version": "29000Date20231126110901"
+    },
+    {
+      "app": "core",
+      "version": "29000Date20231213104850"
+    },
+    {
+      "app": "core",
+      "version": "29000Date20240124132201"
+    },
+    {
+      "app": "core",
+      "version": "29000Date20240124132202"
+    },
+    {
+      "app": "core",
+      "version": "29000Date20240131122720"
+    },
+    {
+      "app": "core",
+      "version": "30000Date20240429122720"
+    },
+    {
+      "app": "core",
+      "version": "30000Date20240708160048"
+    },
+    {
+      "app": "core",
+      "version": "30000Date20240717111406"
+    },
+    {
+      "app": "core",
+      "version": "30000Date20240814180800"
+    },
+    {
+      "app": "core",
+      "version": "30000Date20240815080800"
+    },
+    {
+      "app": "core",
+      "version": "30000Date20240906095113"
+    },
+    {
+      "app": "core",
+      "version": "31000Date20240101084401"
+    },
+    {
+      "app": "core",
+      "version": "31000Date20240814184402"
+    },
+    {
+      "app": "core",
+      "version": "31000Date20250213102442"
+    },
+    {
+      "app": "core",
+      "version": "32000Date20250620081925"
+    },
+    {
+      "app": "core",
+      "version": "32000Date20250731062008"
+    },
+    {
+      "app": "core",
+      "version": "32000Date20250806110519"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20250819110529"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251013110519"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251023110529"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251023120529"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251106131209"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251124110529"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251126152410"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20251209123503"
+    },
+    {
+      "app": "core",
+      "version": "33000Date20260126120000"
+    },
+    {
+      "app": "core",
+      "version": "34000Date20260318095645"
+    },
+    {
+      "app": "core",
+      "version": "34000Date20260415161745"
+    },
+    {
+      "app": "core",
+      "version": "34000Date20260518163022"
+    },
+    {
+      "app": "core",
+      "version": "34000Date20260521110333"
+    },
+    {
+      "app": "core",
+      "version": "35000Date20260527162338"
+    },
+    {
+      "app": "dav",
+      "version": "1004Date20170825134824"
+    },
+    {
+      "app": "dav",
+      "version": "1004Date20170919104507"
+    },
+    {
+      "app": "dav",
+      "version": "1004Date20170924124212"
+    },
+    {
+      "app": "dav",
+      "version": "1004Date20170926103422"
+    },
+    {
+      "app": "dav",
+      "version": "1005Date20180413093149"
+    },
+    {
+      "app": "dav",
+      "version": "1005Date20180530124431"
+    },
+    {
+      "app": "dav",
+      "version": "1006Date20180619154313"
+    },
+    {
+      "app": "dav",
+      "version": "1006Date20180628111625"
+    },
+    {
+      "app": "dav",
+      "version": "1008Date20181030113700"
+    },
+    {
+      "app": "dav",
+      "version": "1008Date20181105104826"
+    },
+    {
+      "app": "dav",
+      "version": "1008Date20181105104833"
+    },
+    {
+      "app": "dav",
+      "version": "1008Date20181105110300"
+    },
+    {
+      "app": "dav",
+      "version": "1008Date20181105112049"
+    },
+    {
+      "app": "dav",
+      "version": "1008Date20181114084440"
+    },
+    {
+      "app": "dav",
+      "version": "1011Date20190725113607"
+    },
+    {
+      "app": "dav",
+      "version": "1011Date20190806104428"
+    },
+    {
+      "app": "dav",
+      "version": "1012Date20190808122342"
+    },
+    {
+      "app": "dav",
+      "version": "1016Date20201109085907"
+    },
+    {
+      "app": "dav",
+      "version": "1017Date20210216083742"
+    },
+    {
+      "app": "dav",
+      "version": "1018Date20210312100735"
+    },
+    {
+      "app": "dav",
+      "version": "1024Date20211221144219"
+    },
+    {
+      "app": "dav",
+      "version": "1025Date20240308063933"
+    },
+    {
+      "app": "dav",
+      "version": "1027Date20230504122946"
+    },
+    {
+      "app": "dav",
+      "version": "1029Date20221114151721"
+    },
+    {
+      "app": "dav",
+      "version": "1029Date20231004091403"
+    },
+    {
+      "app": "dav",
+      "version": "1030Date20240205103243"
+    },
+    {
+      "app": "dav",
+      "version": "1031Date20240610134258"
+    },
+    {
+      "app": "dav",
+      "version": "1034Date20250605132605"
+    },
+    {
+      "app": "dav",
+      "version": "1034Date20250813093701"
+    },
+    {
+      "app": "dav",
+      "version": "1036Date20251202000000"
+    },
+    {
+      "app": "dav",
+      "version": "1038Date20260302000000"
+    },
+    {
+      "app": "dav",
+      "version": "1039Date20260408000000"
+    },
+    {
+      "app": "dav",
+      "version": "1040Date20260805000000"
+    },
+    {
+      "app": "federatedfilesharing",
+      "version": "1010Date20200630191755"
+    },
+    {
+      "app": "federatedfilesharing",
+      "version": "1011Date20201120125158"
+    },
+    {
+      "app": "federatedfilesharing",
+      "version": "1012Date20260306120000"
+    },
+    {
+      "app": "federation",
+      "version": "1010Date20200630191302"
+    },
+    {
+      "app": "files",
+      "version": "11301Date20191205150729"
+    },
+    {
+      "app": "files",
+      "version": "12101Date20221011153334"
+    },
+    {
+      "app": "files",
+      "version": "2003Date20241021095629"
+    },
+    {
+      "app": "files_downloadlimit",
+      "version": "000000Date20210910094923"
+    },
+    {
+      "app": "files_lock",
+      "version": "0001Date20191105000001"
+    },
+    {
+      "app": "files_lock",
+      "version": "1000Date20220201111525"
+    },
+    {
+      "app": "files_lock",
+      "version": "1000Date20220430180808"
+    },
+    {
+      "app": "files_reminders",
+      "version": "10000Date20230725162149"
+    },
+    {
+      "app": "files_sharing",
+      "version": "11300Date20201120141438"
+    },
+    {
+      "app": "files_sharing",
+      "version": "21000Date20201223143245"
+    },
+    {
+      "app": "files_sharing",
+      "version": "22000Date20210216084241"
+    },
+    {
+      "app": "files_sharing",
+      "version": "24000Date20220208195521"
+    },
+    {
+      "app": "files_sharing",
+      "version": "24000Date20220404142216"
+    },
+    {
+      "app": "files_sharing",
+      "version": "31000Date20240821142813"
+    },
+    {
+      "app": "files_sharing",
+      "version": "32000Date20251017081948"
+    },
+    {
+      "app": "files_sharing",
+      "version": "33000Date20251030081948"
+    },
+    {
+      "app": "files_sharing",
+      "version": "33000Date20260306120000"
+    },
+    {
+      "app": "files_sharing",
+      "version": "33000Date20260306150000"
+    },
+    {
+      "app": "files_trashbin",
+      "version": "1010Date20200630192639"
+    },
+    {
+      "app": "files_trashbin",
+      "version": "1020Date20240403003535"
+    },
+    {
+      "app": "files_versions",
+      "version": "1020Date20221114144058"
+    },
+    {
+      "app": "memories",
+      "version": "000000Date20220812163631"
+    },
+    {
+      "app": "memories",
+      "version": "200000Date20220924015634"
+    },
+    {
+      "app": "memories",
+      "version": "400000Date20221015121115"
+    },
+    {
+      "app": "memories",
+      "version": "400307Date20221025002524"
+    },
+    {
+      "app": "memories",
+      "version": "400308Date20221026151748"
+    },
+    {
+      "app": "memories",
+      "version": "400503Date20221101033144"
+    },
+    {
+      "app": "memories",
+      "version": "400604Date20221107205439"
+    },
+    {
+      "app": "memories",
+      "version": "400700Date20221110030909"
+    },
+    {
+      "app": "memories",
+      "version": "400800Date20221122105007"
+    },
+    {
+      "app": "memories",
+      "version": "401000Date20230118043813"
+    },
+    {
+      "app": "memories",
+      "version": "401100Date20230206002744"
+    },
+    {
+      "app": "memories",
+      "version": "401100Date20230208181533"
+    },
+    {
+      "app": "memories",
+      "version": "401300Date20230328012131"
+    },
+    {
+      "app": "memories",
+      "version": "500000Date20230414042534"
+    },
+    {
+      "app": "memories",
+      "version": "502000Date20230530052850"
+    },
+    {
+      "app": "memories",
+      "version": "505000Date20230821044807"
+    },
+    {
+      "app": "memories",
+      "version": "505001Date20230828155021"
+    },
+    {
+      "app": "memories",
+      "version": "505002Date20230831201833"
+    },
+    {
+      "app": "memories",
+      "version": "505003Date20230930155856"
+    },
+    {
+      "app": "memories",
+      "version": "505004Date20231004200012"
+    },
+    {
+      "app": "memories",
+      "version": "505005Date20231007154645"
+    },
+    {
+      "app": "memories",
+      "version": "602003Date20240310203729"
+    },
+    {
+      "app": "memories",
+      "version": "603001Date20240312031923"
+    },
+    {
+      "app": "memories",
+      "version": "800000Date20240329060325"
+    },
+    {
+      "app": "memories",
+      "version": "900001Date20260920224059"
+    },
+    {
+      "app": "memories",
+      "version": "900002Date20260920233813"
+    },
+    {
+      "app": "memories",
+      "version": "900003Date20260921010808"
+    },
+    {
+      "app": "memories",
+      "version": "900004Date20261005000000"
+    },
+    {
+      "app": "memories",
+      "version": "900005Date20261007000000"
+    },
+    {
+      "app": "memories",
+      "version": "900006Date20261016000000"
+    },
+    {
+      "app": "notifications",
+      "version": "2004Date20190107135757"
+    },
+    {
+      "app": "notifications",
+      "version": "2010Date20210218082811"
+    },
+    {
+      "app": "notifications",
+      "version": "2010Date20210218082855"
+    },
+    {
+      "app": "notifications",
+      "version": "2011Date20210930134607"
+    },
+    {
+      "app": "notifications",
+      "version": "2011Date20220826074907"
+    },
+    {
+      "app": "notifications",
+      "version": "6000Date20251112110000"
+    },
+    {
+      "app": "oauth2",
+      "version": "010401Date20181207190718"
+    },
+    {
+      "app": "oauth2",
+      "version": "010402Date20190107124745"
+    },
+    {
+      "app": "oauth2",
+      "version": "011601Date20230522143227"
+    },
+    {
+      "app": "oauth2",
+      "version": "011602Date20230613160650"
+    },
+    {
+      "app": "oauth2",
+      "version": "011603Date20230620111039"
+    },
+    {
+      "app": "oauth2",
+      "version": "011901Date20240829164356"
+    },
+    {
+      "app": "photos",
+      "version": "20000Date20220727125801"
+    },
+    {
+      "app": "photos",
+      "version": "20001Date20220830131446"
+    },
+    {
+      "app": "photos",
+      "version": "20003Date20221102170153"
+    },
+    {
+      "app": "photos",
+      "version": "20003Date20221103094628"
+    },
+    {
+      "app": "photos",
+      "version": "30000Date20240417075405"
+    },
+    {
+      "app": "photos",
+      "version": "32000Date20250507132617"
+    },
+    {
+      "app": "privacy",
+      "version": "100Date20190217131943"
+    },
+    {
+      "app": "sharing",
+      "version": "1000Date20250929161325"
+    },
+    {
+      "app": "sharing",
+      "version": "1000Date20260731171922"
+    },
+    {
+      "app": "sharing",
+      "version": "1000Date20260826073021"
+    },
+    {
+      "app": "sharing",
+      "version": "1000Date20260826115938"
+    },
+    {
+      "app": "sharing",
+      "version": "1000Date20260826122228"
+    },
+    {
+      "app": "systemtags",
+      "version": "31000Date20241018063111"
+    },
+    {
+      "app": "systemtags",
+      "version": "31000Date20241114171300"
+    },
+    {
+      "app": "text",
+      "version": "010000Date20190617184535"
+    },
+    {
+      "app": "text",
+      "version": "030001Date20200402075029"
+    },
+    {
+      "app": "text",
+      "version": "030201Date20201116110353"
+    },
+    {
+      "app": "text",
+      "version": "030201Date20201116123153"
+    },
+    {
+      "app": "text",
+      "version": "030501Date20220202101853"
+    },
+    {
+      "app": "text",
+      "version": "030701Date20230207131313"
+    },
+    {
+      "app": "text",
+      "version": "030901Date20231114150437"
+    },
+    {
+      "app": "text",
+      "version": "040100Date20240611165300"
+    },
+    {
+      "app": "text",
+      "version": "070000Date20250925110024"
+    },
+    {
+      "app": "text",
+      "version": "080000Date20260331132113"
+    },
+    {
+      "app": "theming",
+      "version": "2006Date20240905111627"
+    },
+    {
+      "app": "twofactor_backupcodes",
+      "version": "1002Date20170607104347"
+    },
+    {
+      "app": "twofactor_backupcodes",
+      "version": "1002Date20170607113030"
+    },
+    {
+      "app": "twofactor_backupcodes",
+      "version": "1002Date20170919123342"
+    },
+    {
+      "app": "twofactor_backupcodes",
+      "version": "1002Date20170926101419"
+    },
+    {
+      "app": "twofactor_backupcodes",
+      "version": "1002Date20180821043638"
+    },
+    {
+      "app": "twofactor_totp",
+      "version": "010501Date20181018124436"
+    },
+    {
+      "app": "twofactor_totp",
+      "version": "020102Date20190304124405"
+    },
+    {
+      "app": "twofactor_totp",
+      "version": "030000Date20190305114917"
+    },
+    {
+      "app": "twofactor_totp",
+      "version": "140000Date202503027114917"
+    },
+    {
+      "app": "twofactor_totp",
+      "version": "170100Date20260611120000"
+    },
+    {
+      "app": "user_status",
+      "version": "0001Date20200602134824"
+    },
+    {
+      "app": "user_status",
+      "version": "0002Date20200902144824"
+    },
+    {
+      "app": "user_status",
+      "version": "1000Date20201111130204"
+    },
+    {
+      "app": "user_status",
+      "version": "1003Date20210809144824"
+    },
+    {
+      "app": "user_status",
+      "version": "1008Date20230921144701"
+    },
+    {
+      "app": "webhook_listeners",
+      "version": "1000Date20240527153425"
+    },
+    {
+      "app": "webhook_listeners",
+      "version": "1001Date20240716184935"
+    },
+    {
+      "app": "webhook_listeners",
+      "version": "1500Date20251007130000"
+    },
+    {
+      "app": "workflowengine",
+      "version": "2000Date20190808074233"
+    },
+    {
+      "app": "workflowengine",
+      "version": "2200Date20210805101925"
+    }
+  ]
+}

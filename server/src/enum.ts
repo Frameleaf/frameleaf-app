@@ -2381,6 +2381,7 @@ export enum JobName {
   LandmarkMatchAll = 'LandmarkMatchAll',
   LandmarkInfer = 'LandmarkInfer',
   AlbumSuggestionAutoAdd = 'AlbumSuggestionAutoAdd',
+  AlbumSuggestionOutfit = 'AlbumSuggestionOutfit',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2502,7 +2503,7 @@ export enum JobName {
 // duplicate queue, observed as that queue, FL-667's filler-tag clean-up runs once, and FL-721's
 // Locked encryption jobs are observed through the Locked encryption status. Landmark inference
 // is observed through asset details rather than the public job catalogue, and FL-1092's album auto-add
-// through the album itself.
+// and FL-1094's outfit crops through the album itself.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2513,6 +2514,7 @@ export const JobNameSchema = z
     JobName.DescriptionFillerTagCleanup,
     JobName.LandmarkInfer,
     JobName.AlbumSuggestionAutoAdd,
+    JobName.AlbumSuggestionOutfit,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,

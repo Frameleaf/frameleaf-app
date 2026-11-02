@@ -2782,6 +2782,7 @@
   "frameleaf_album_suggestions_reason_identical": "Nearly identical to {name}, taken {date}",
   "frameleaf_album_suggestions_reason_looks_like": "Looks like the trip's photos",
   "frameleaf_album_suggestions_reason_people": "{names} in it, as in the album",
+  "frameleaf_album_suggestions_reason_same_outfit": "{names} is wearing the same clothes as in photos from {date}",
   "frameleaf_album_suggestions_reason_same_scene": "Same scene as {name}, taken {date}",
   "frameleaf_album_suggestions_review": "Review",
   "frameleaf_album_suggestions_set_date": "Change the date to {date}",

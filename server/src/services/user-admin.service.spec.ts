@@ -114,6 +114,7 @@ describe(UserAdminService.name, () => {
         mocks.user.getAdmin.mockResolvedValue(userStub.admin);
         mocks.user.create.mockResolvedValue(userStub.user1);
         mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.user.setPasswordLink.mockResolvedValue({ id: userStub.user1.id });
         mocks.crypto.randomBytes.mockReturnValue(Buffer.from('a'.repeat(32)));
         mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
         mocks.email.renderEmail.mockResolvedValue({ html: '<p>link</p>', text: 'link' });
@@ -130,10 +131,12 @@ describe(UserAdminService.name, () => {
           expect.objectContaining({ password: '', shouldChangePassword: false }),
         );
         expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
-        expect(mocks.user.update).toHaveBeenCalledWith(userStub.user1.id, {
-          passwordLinkHash: Buffer.from('digest'),
-          passwordLinkExpiresAt: expect.any(Date),
-        });
+        expect(mocks.user.setPasswordLink).toHaveBeenCalledWith(
+          userStub.user1.id,
+          userStub.user1.email,
+          Buffer.from('digest'),
+          expect.any(Date),
+        );
         const token = Buffer.from('a'.repeat(32)).toString('base64url');
         expect(mocks.email.renderEmail).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -165,9 +168,20 @@ describe(UserAdminService.name, () => {
         expect(mocks.user.create).not.toHaveBeenCalled();
       });
 
+      it('refuses to send a link after the destination email changes', async () => {
+        mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.crypto.randomBytes.mockReturnValue(Buffer.alloc(32));
+        mocks.user.setPasswordLink.mockResolvedValue(undefined);
+        await expect(sut.sendPasswordLink(authStub.admin, userStub.user1.id)).rejects.toBeInstanceOf(ConflictException);
+        expect(mocks.email.renderEmail).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+      });
+
       it('emails an existing person a new link from their page', async () => {
         mocks.user.get.mockResolvedValue(userStub.user1);
         mocks.systemMetadata.get.mockResolvedValue(mailReady);
+        mocks.user.setPasswordLink.mockResolvedValue({ id: userStub.user1.id });
         mocks.crypto.randomBytes.mockReturnValue(Buffer.from('b'.repeat(32)));
         mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
 

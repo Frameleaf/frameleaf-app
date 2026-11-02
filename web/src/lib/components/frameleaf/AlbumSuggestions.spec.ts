@@ -34,7 +34,10 @@ const suggestions = {
       savedAt: '2026-09-04T16:53:32.000Z',
       precision: 'moment',
       dateTimeOriginal: '2026-08-13T20:41:00-06:00',
-      reasons: [{ kind: 'near-identical', assetId: 'a3', fileName: 'Campfire evening.jpg', date: '2026-08-13' }],
+      reasons: [
+        { kind: 'near-identical', assetId: 'a3', fileName: 'Campfire evening.jpg', date: '2026-08-13' },
+        { kind: 'same-outfit', names: ['Emma'], assetId: 'a4', fileName: 'Moraine Lake.jpg', date: '2026-08-14' },
+      ],
     },
   ],
 };
@@ -82,6 +85,8 @@ describe('AlbumSuggestions', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Need a date · 1' }));
     expect(screen.getByText('Saved from Facebook')).toBeTruthy();
     expect(screen.getByText(/Nearly identical to Campfire evening.jpg/)).toBeTruthy();
+    // FL-1094
+    expect(screen.getByText(/Emma is wearing the same clothes as in photos from .*14/)).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
     await waitFor(() =>

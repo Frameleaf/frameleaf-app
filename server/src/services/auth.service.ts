@@ -209,7 +209,7 @@ export class AuthService extends BaseService {
     // is registered, preventing timing-based user enumeration.
     const isAuthenticated = await this.cryptoRepository.compareBcrypt(dto.password, user?.password ?? LOGIN_DUMMY_HASH);
 
-    if (!user || !user.password || !isAuthenticated) {
+    if (!user || !user.password || !isAuthenticated || user.importClaimPending) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
       throw new UnauthorizedException('Incorrect email or password');
     }
@@ -394,11 +394,14 @@ export class AuthService extends BaseService {
    */
   async redeemPasswordLink(dto: PasswordLinkRedeemDto): Promise<void> {
     const hash = this.cryptoRepository.hashSha256(dto.token);
-    if (!(await this.userRepository.getByPasswordLink(hash))) {
+    const account = await this.userRepository.getByPasswordLink(hash);
+    if (!account) {
       throw new BadRequestException('This link has expired or was already used');
     }
     const hashedPassword = await this.cryptoRepository.hashBcrypt(dto.newPassword, SALT_ROUNDS);
-    const user = await this.userRepository.redeemPasswordLink(hash, hashedPassword);
+    const user = account.importClaimPending
+      ? await this.userRepository.redeemImportedAccountClaim(hash, hashedPassword)
+      : await this.userRepository.redeemPasswordLink(hash, hashedPassword);
     if (!user) {
       throw new BadRequestException('This link has expired or was already used');
     }
@@ -767,6 +770,7 @@ export class AuthService extends BaseService {
     const { autoRegister, defaultStorageQuota, storageLabelClaim, storageQuotaClaim, roleClaim } = oauth;
     this.logger.debug(`Logging in with OAuth: ${JSON.stringify(profile)}`);
     let user: UserAdmin | undefined = await this.userRepository.getByOAuthId(profile.sub);
+    if (user?.importClaimPending) throw new BadRequestException('OAuth authentication failed');
 
     // FL-158: an email is used to find or create an account only when the provider verified it
     const emailProblem = emailVerificationProblem(profile);
@@ -775,6 +779,7 @@ export class AuthService extends BaseService {
     if (!user && normalizedEmail) {
       const emailUser = await this.userRepository.getByEmail(normalizedEmail);
       if (emailUser) {
+        if (emailUser.importClaimPending) throw new BadRequestException('OAuth authentication failed');
         if (emailProblem) {
           this.logger.warn(`OAuth login refused: ${normalizedEmail} is not verified by the provider`);
           throw new BadRequestException(emailProblem);

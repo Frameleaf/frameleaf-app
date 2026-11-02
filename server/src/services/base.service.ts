@@ -735,14 +735,25 @@ export class BaseService {
       throw new BadRequestException('Email is not available');
     }
 
-    if (!dto.isAdmin) {
+    const payload: Omit<Insertable<UserTable>, 'clusterGroupId'> = { ...dto };
+    if (payload.importClaimPending) {
+      Object.assign(payload, {
+        isAdmin: false,
+        password: null,
+        pinCode: null,
+        oauthId: null,
+        passwordLinkHash: null,
+        passwordLinkExpiresAt: null,
+        shouldChangePassword: false,
+      });
+    }
+    if (!payload.isAdmin) {
       const localAdmin = await this.userRepository.getAdmin();
       if (!localAdmin) {
         throw new BadRequestException('The first registered account must be the administrator.');
       }
     }
 
-    const payload: Omit<Insertable<UserTable>, 'clusterGroupId'> = { ...dto };
     if (payload.password) {
       payload.password = await this.cryptoRepository.hashBcrypt(payload.password, SALT_ROUNDS);
     }

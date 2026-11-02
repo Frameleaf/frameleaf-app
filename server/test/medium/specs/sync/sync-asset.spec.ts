@@ -1,8 +1,10 @@
 import { Kysely, sql } from 'kysely';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { ChecksumAlgorithm, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
+import { up as restreamOwnAssets } from 'src/schema/migrations/2100000003040-Sha256SyncChecksums.js';
 import { SyncTestContext } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -14,6 +16,31 @@ const setup = async (db?: Kysely<DB>) => {
   const { auth, user, session } = await ctx.newSyncAuthUser();
   return { auth, user, session, ctx };
 };
+
+const fileOf = (contents = randomBytes(64)) => ({
+  contents,
+  sha1: createHash('sha1').update(contents).digest(),
+  sha256: createHash('sha256').update(contents).digest(),
+});
+
+/** The digests an upload or the nightly checksum check records for an asset's file. */
+const record = (
+  ctx: SyncTestContext,
+  asset: { id: string; originalPath: string },
+  file: ReturnType<typeof fileOf>,
+  source: 'upload' | 'integrity',
+) =>
+  ctx.get(AssetChecksumRepository).recordAssetChecksums({
+    assetId: asset.id,
+    sha1: file.sha1,
+    sha256: file.sha256,
+    sizeInBytes: file.contents.length,
+    path: asset.originalPath,
+    source,
+  });
+
+const streamedChecksum = (response: Array<{ type: string; data: any }>, type: SyncEntityType, id: string) =>
+  response.find((item) => item.type === type && item.data.id === id)?.data.checksum;
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
@@ -100,6 +127,106 @@ describe(SyncEntityType.AssetV2, () => {
       }),
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
+  });
+
+  it('sends the SHA-256 an upload recorded, not the SHA-1 kept beside it', async () => {
+    const { auth, ctx } = await setup();
+    const file = fileOf();
+    const { asset } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: file.sha256,
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    await record(ctx, asset, file, 'upload');
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(response).toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetV2 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    expect(streamedChecksum(response, SyncEntityType.AssetV2, asset.id)).toBe(file.sha256.toString('base64'));
+  });
+
+  it('sends a legacy asset the SHA-256 the checksum check recorded, and its SHA-1 while none is', async () => {
+    const { auth, ctx } = await setup();
+    const verified = fileOf();
+    const unverified = fileOf();
+    const { asset: checked } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: verified.sha1,
+      checksumAlgorithm: ChecksumAlgorithm.sha1File,
+    });
+    const { asset: unchecked } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: unverified.sha1,
+      checksumAlgorithm: ChecksumAlgorithm.sha1File,
+    });
+    await record(ctx, checked, verified, 'integrity');
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(streamedChecksum(response, SyncEntityType.AssetV2, checked.id)).toBe(verified.sha256.toString('base64'));
+    expect(streamedChecksum(response, SyncEntityType.AssetV2, unchecked.id)).toBe(unverified.sha1.toString('base64'));
+  });
+
+  it('sends a legacy asset again, with its SHA-256, once the checksum check moves it', async () => {
+    const { auth, ctx } = await setup();
+    const file = fileOf();
+    const { asset } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: file.sha1,
+      checksumAlgorithm: ChecksumAlgorithm.sha1File,
+    });
+
+    const first = await ctx.syncStream(auth, [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3]);
+    expect(streamedChecksum(first, SyncEntityType.AssetV2, asset.id)).toBe(file.sha1.toString('base64'));
+    expect(streamedChecksum(first, SyncEntityType.AssetV3, asset.id)).toBe(file.sha1.toString('base64'));
+    await ctx.syncAckAll(auth, first);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3]);
+
+    // what IntegrityService does once the file verifies
+    await record(ctx, asset, file, 'integrity');
+    await expect(
+      ctx.get(AssetChecksumRepository).promoteToSha256({ assetId: asset.id, sha1: file.sha1, sha256: file.sha256 }),
+    ).resolves.toBe(true);
+
+    const second = await ctx.syncStream(auth, [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3]);
+    expect(second.filter((item) => item.type !== SyncEntityType.SyncCompleteV1)).toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetV2, data: expect.objectContaining({ id: asset.id }) }),
+      expect.objectContaining({ type: SyncEntityType.AssetV3, data: expect.objectContaining({ id: asset.id }) }),
+    ]);
+    expect(streamedChecksum(second, SyncEntityType.AssetV2, asset.id)).toBe(file.sha256.toString('base64'));
+    expect(streamedChecksum(second, SyncEntityType.AssetV3, asset.id)).toBe(file.sha256.toString('base64'));
+    await ctx.syncAckAll(auth, second);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3]);
+  });
+
+  it('sends every own asset again once, with its SHA-256, after the re-stream migration', async () => {
+    const { auth, ctx } = await setup();
+    const file = fileOf();
+    const { asset } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      checksum: file.sha1,
+      checksumAlgorithm: ChecksumAlgorithm.sha1File,
+    });
+    const { asset: gone } = await ctx.newAsset({ ownerId: auth.user.id });
+    await ctx.get(AssetRepository).remove(gone);
+    const types = [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3];
+
+    // a device that synced while sync sent SHA-1, and only then had the SHA-256 recorded
+    const first = await ctx.syncStream(auth, types);
+    await ctx.syncAckAll(auth, first);
+    await record(ctx, asset, file, 'integrity');
+    await ctx.assertSyncIsComplete(auth, types);
+
+    await restreamOwnAssets(defaultDatabase);
+
+    const second = await ctx.syncStream(auth, types);
+    expect(streamedChecksum(second, SyncEntityType.AssetV2, asset.id)).toBe(file.sha256.toString('base64'));
+    expect(streamedChecksum(second, SyncEntityType.AssetV3, asset.id)).toBe(file.sha256.toString('base64'));
+    // deletes carry on from where they were
+    expect(second.filter((item) => item.data?.assetId === gone.id)).toEqual([]);
+    await ctx.syncAckAll(auth, second);
+    await ctx.assertSyncIsComplete(auth, types);
   });
 
   it('should detect and sync a deleted asset', async () => {

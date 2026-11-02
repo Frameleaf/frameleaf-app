@@ -1,8 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { LibraryScope } from 'src/enum.js';
-import { LOOKS_LIKE_DISTANCE } from 'src/utils/album-suggestions.js';
+import { AssetVisibility, LibraryScope } from 'src/enum.js';
+import { LOOKS_LIKE_DISTANCE, sample } from 'src/utils/album-suggestions.js';
 import {
   hiddenByOwnerRules,
   hiddenFromOthers,
@@ -41,6 +41,7 @@ const landmark = (alias: string) => sql`(
 
 export type TripPhotoRow = {
   id: string;
+  visibility: AssetVisibility;
   takenAt: Date;
   localDateTime: Date;
   latitude: number | null;
@@ -50,7 +51,7 @@ export type TripPhotoRow = {
   model: string | null;
 };
 
-export type CandidateRow = TripPhotoRow & { originalFileName: string; hasCameraDetails: boolean };
+export type CandidateRow = Omit<TripPhotoRow, 'visibility'> & { originalFileName: string; hasCameraDetails: boolean };
 
 export class AlbumSuggestionRepository {
   constructor(private db: Kysely<DB>) {}
@@ -85,6 +86,7 @@ export class AlbumSuggestionRepository {
           'photo.id',
           'photo.fileCreatedAt as takenAt',
           'photo.localDateTime',
+          'photo.visibility',
           'photo_exif.make',
           'photo_exif.model',
           ...this.located('photo'),
@@ -270,6 +272,76 @@ export class AlbumSuggestionRepository {
     return people;
   }
 
+  /**
+   * FL-1094: the faces of `ownerId`'s named, shown people in these photos, with the outfit stored for each
+   * by `modelName` (`encoded` is false while none was made; `embedding` is null when there's no torso).
+   */
+  getOutfits(ownerId: string, assetIds: string[], modelName: string) {
+    if (assetIds.length === 0) return Promise.resolve([]);
+    return this.db
+      .selectFrom('asset_face')
+      .innerJoin('person', 'person.personGroupId', 'asset_face.personGroupId')
+      .leftJoin('asset_face_outfit as outfit', (join) =>
+        join.onRef('outfit.faceId', '=', 'asset_face.id').on('outfit.modelName', '=', modelName),
+      )
+      .where('asset_face.assetId', 'in', assetIds)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', '=', true)
+      .where('person.ownerId', '=', ownerId)
+      .where('person.isHidden', '=', false)
+      .where('person.name', '!=', '')
+      .select([
+        'asset_face.assetId',
+        'person.personGroupId as personId',
+        'person.name',
+        'outfit.embedding',
+        sql<boolean>`outfit."faceId" is not null`.as('encoded'),
+      ])
+      .orderBy('asset_face.assetId')
+      .orderBy('asset_face.id')
+      .execute();
+  }
+
+  /** FL-1094: a photo's visible faces with a person and no outfit by `modelName` yet, for the outfit job. */
+  getFacesWithoutOutfit(assetId: string, modelName: string) {
+    return this.db
+      .selectFrom('asset_face')
+      .leftJoin('asset_face_outfit as outfit', (join) =>
+        join.onRef('outfit.faceId', '=', 'asset_face.id').on('outfit.modelName', '=', modelName),
+      )
+      .where('asset_face.assetId', '=', assetId)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', '=', true)
+      .where('asset_face.personGroupId', 'is not', null)
+      .where('outfit.faceId', 'is', null)
+      .select([
+        'asset_face.id',
+        'asset_face.imageWidth',
+        'asset_face.imageHeight',
+        'asset_face.boundingBoxX1 as x1',
+        'asset_face.boundingBoxY1 as y1',
+        'asset_face.boundingBoxX2 as x2',
+        'asset_face.boundingBoxY2 as y2',
+      ])
+      .orderBy('asset_face.id')
+      .execute();
+  }
+
+  async saveOutfits(rows: { faceId: string; modelName: string; embedding: string | null }[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db
+      .insertInto('asset_face_outfit')
+      .values(rows)
+      .onConflict((oc) =>
+        oc.column('faceId').doUpdateSet((eb) => ({
+          modelName: eb.ref('excluded.modelName'),
+          embedding: eb.ref('excluded.embedding'),
+          createdAt: sql`now()`,
+        })),
+      )
+      .execute();
+  }
+
   async getFileNames(ids: string[]): Promise<Map<string, string>> {
     if (ids.length === 0) return new Map();
     const rows = await this.db.selectFrom('asset').select(['id', 'originalFileName']).where('id', 'in', ids).execute();
@@ -321,10 +393,3 @@ export class AlbumSuggestionRepository {
     return rows.map(({ id }) => id);
   }
 }
-
-/** Evenly spaced picks, so a long trip is represented from start to end. */
-const sample = <T>(items: T[], count: number): T[] => {
-  if (items.length <= count) return items;
-  const step = items.length / count;
-  return Array.from({ length: count }, (_, index) => items[Math.floor(index * step)]);
-};

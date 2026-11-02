@@ -210,6 +210,7 @@ test("actual release-upload failure stops all latest alias actions", async (t) =
     "manager-manifest.json",
     "frameleaf-manager.xml",
     "frameleaf-manager.compose.yaml",
+    "frameleaf-manager.hexos.json",
   ])
     await fs.writeFile(path.join(dir, name), "controlled fixture");
   assert.throws(() =>
@@ -231,7 +232,8 @@ test("actual release-upload failure stops all latest alias actions", async (t) =
   assert(calls.startsWith("release create "));
   assert(
     calls.includes("frameleaf-manager.xml") &&
-      calls.includes("frameleaf-manager.compose.yaml"),
+      calls.includes("frameleaf-manager.compose.yaml") &&
+      calls.includes("frameleaf-manager.hexos.json"),
   );
   assert(
     !calls.includes("ORAS") &&

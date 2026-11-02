@@ -35,6 +35,7 @@
     mdiImageSearchOutline,
     mdiInformationOutline,
     mdiMapMarkerOutline,
+    mdiTshirtCrewOutline,
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -138,6 +139,7 @@
     'same-scene': mdiImageSearchOutline,
     'near-identical': mdiContentCopy,
     people: mdiAccountMultipleOutline,
+    'same-outfit': mdiTshirtCrewOutline,
   };
 
   const reasonText = (reason: AlbumSuggestionReasonDto): string | undefined => {
@@ -167,6 +169,11 @@
       case 'people': {
         return $t('frameleaf_album_suggestions_reason_people', {
           values: { names: new Intl.ListFormat($locale, { type: 'conjunction' }).format(reason.names ?? []) },
+        });
+      }
+      case 'same-outfit': {
+        return $t('frameleaf_album_suggestions_reason_same_outfit', {
+          values: { names: reason.names?.[0] ?? '', date: formatDay(reason.date!) },
         });
       }
       default: {

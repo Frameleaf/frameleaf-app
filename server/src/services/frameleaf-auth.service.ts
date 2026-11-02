@@ -66,6 +66,7 @@ export const HANDOFF_TTL_SECONDS = 60;
 
 const NOT_AVAILABLE_MESSAGE = 'Sign in with Frameleaf is not available on this server';
 const NOT_LINKED_MESSAGE = 'This server is not linked to Frameleaf Cloud';
+const IMPORT_CLAIM_PENDING_MESSAGE = 'This account must be claimed before signing in';
 const LINK_CONFIRM_TTL_SECONDS = 10 * 60;
 const LINK_CONFIRM_PURPOSE = 'frameleaf-link-confirm';
 
@@ -94,12 +95,13 @@ const DELETED_ACCOUNT_MESSAGE =
   'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
 
 /** Why a person Frameleaf vouched for cannot be signed in (the account rules of every Frameleaf sign-in). */
-type SignInRefusal = 'email' | 'removed' | 'conflict' | 'setup';
+type SignInRefusal = 'email' | 'removed' | 'conflict' | 'setup' | 'unclaimed';
 
 const SIGN_IN_REFUSAL_CODES: Record<SignInRefusal, FrameleafTokenExchangeErrorCode> = {
   email: FrameleafTokenExchangeErrorCode.EmailUnverified,
   removed: FrameleafTokenExchangeErrorCode.AccountRemoved,
   conflict: FrameleafTokenExchangeErrorCode.AccountConflict,
+  unclaimed: FrameleafTokenExchangeErrorCode.AccountConflict,
   // FL-292: only the owner may become a new server's first administrator
   setup: FrameleafTokenExchangeErrorCode.NoAccess,
 };
@@ -151,9 +153,12 @@ const ERROR_NAMES = {
 } as const;
 
 /** FL-230: a token exchange refusal, with the code the app explains it by. */
-const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode) => {
-  const { status, message } = EXCHANGE_REFUSALS[code];
-  return new HttpException({ message, error: ERROR_NAMES[status], statusCode: status, code }, status);
+const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode, message?: string) => {
+  const { status, message: defaultMessage } = EXCHANGE_REFUSALS[code];
+  return new HttpException(
+    { message: message ?? defaultMessage, error: ERROR_NAMES[status], statusCode: status, code },
+    status,
+  );
 };
 
 /**
@@ -333,7 +338,8 @@ export class FrameleafAuthService extends BaseService {
           claims as OAuthProfile,
           loginDetails,
           { sid: sid ?? undefined },
-          (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+          (refusal, message) =>
+            exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal], refusal === 'unclaimed' ? message : undefined),
           async () => {
             checkExpiry();
             // A back-channel logout records the revocation before it looks for tagged sessions, so a
@@ -393,6 +399,7 @@ export class FrameleafAuthService extends BaseService {
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (link) {
       user = await this.userRepository.get(link.userId, { withDeleted: false });
+      if (user?.importClaimPending) throw refuse('unclaimed', IMPORT_CLAIM_PENDING_MESSAGE);
       if (!user) {
         // the linked account is in the trash (scheduled for removal): never create a second one
         throw refuse('removed', DELETED_ACCOUNT_MESSAGE);
@@ -402,6 +409,7 @@ export class FrameleafAuthService extends BaseService {
       // an account here with the same verified email is linked to this Frameleaf account
       const existing = await this.userRepository.getByEmail(email);
       if (existing) {
+        if (existing.importClaimPending) throw refuse('unclaimed', IMPORT_CLAIM_PENDING_MESSAGE);
         const other = await this.frameleafAccountRepository.getLinkByUser(existing.id);
         if (other && other.sub !== profile.sub) {
           throw refuse('conflict', 'This account is already linked to another Frameleaf account');

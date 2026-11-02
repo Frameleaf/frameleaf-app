@@ -4,20 +4,18 @@ import type { LockedEncryptionRepository } from 'src/repositories/locked-encrypt
 import type { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { JobName } from 'src/enum.js';
-import { publishJobResult } from 'src/queue/context.js';
 
 /**
  * FL-721 (spec §7.2), for services outside `BaseService` (which has `queueLockedSeal`): after a job
  * wrote new or derived files for `assetIds`, each one in an encrypted set
- * (`LockedFileRepository.encryptedSetOwner`) is sealed again. Queue jobs publish sealing intents with
- * their new file paths so a sealing worker cannot finish before those paths become visible.
- * Lookup or standalone enqueue failures fall back to the hourly sweep; publication failures retry
- * the producing job without publishing its new paths.
+ * (`LockedFileRepository.encryptedSetOwner`) is sealed again. A failure to queue never fails the job
+ * that wrote the files; the hourly sweep seals them. Queued writers admit sealing with their
+ * staged file references, so a sealer cannot finish against the previous paths.
  */
 export async function queueLockedSealOf(
   deps: {
     lockedFile?: Pick<LockedFileRepository, 'encryptedSetOwner'>;
-    job: Pick<JobRepository, 'queueAll'>;
+    job: Pick<JobRepository, 'queueAll' | 'collectFollowups'>;
     logger: Pick<LoggingRepository, 'warn'>;
   },
   assetIds: string[],
@@ -33,7 +31,9 @@ export async function queueLockedSealOf(
       }
     }
     if (sealed.length > 0) {
-      await publishJobResult(() => deps.job.queueAll(sealed.map((id) => ({ name: JobName.LockedSeal, data: { id } }))));
+      await deps.job.collectFollowups(() =>
+        deps.job.queueAll(sealed.map((id) => ({ name: JobName.LockedSeal, data: { id } }))),
+      );
     }
   } catch (error) {
     deps.logger.warn(`Could not queue sealing of new Locked files; the hourly sweep seals them: ${error}`);
@@ -44,7 +44,7 @@ export async function queueLockedSealOf(
 export async function queueLockedSealFor(
   deps: {
     asset: Pick<AssetRepository, 'getLockedEncryptionItems'>;
-    job: Pick<JobRepository, 'queueAll'>;
+    job: Pick<JobRepository, 'queueAll' | 'collectFollowups'>;
     logger: Pick<LoggingRepository, 'warn'>;
   },
   assetIds: string[],
@@ -55,7 +55,7 @@ export async function queueLockedSealFor(
   try {
     const items = (await deps.asset.getLockedEncryptionItems([...new Set(assetIds)])).filter(({ pending }) => !pending);
     if (items.length > 0) {
-      await publishJobResult(() =>
+      await deps.job.collectFollowups(() =>
         deps.job.queueAll(items.map(({ id }) => ({ name: JobName.LockedSeal, data: { id } }))),
       );
     }

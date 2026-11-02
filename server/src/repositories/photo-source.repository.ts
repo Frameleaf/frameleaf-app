@@ -12,6 +12,7 @@ import type { PhotoSourceResourceTable } from 'src/schema/tables/photo-source.ta
 import type { FolderUploadSourceIdentity } from 'src/utils/asset-upload-resource.js';
 import { AssetStatus, AssetVisibility } from 'src/enum.js';
 import { lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { isMotionOfLockedStill, isNotLockedAsset } from 'src/utils/database.js';
 
 export type SourceAuthority = { ownerId: string; sessionId: string };
 type Item = Selectable<PhotoSourceResourceTable>;
@@ -289,6 +290,25 @@ export class PhotoSourceRepository {
     const asset = await tx
       .selectFrom('asset')
       .select(['id', 'originalPath', 'visibility'])
+      // The motion half of the owner's Live Photo, hidden only because it is a half: neither it nor any still
+      // linked to it is Locked. A desktop copy of a Live Photo the phone (or the metadata link) already paired
+      // lands on it.
+      .select((eb) =>
+        eb
+          .and([
+            isNotLockedAsset(eb),
+            eb.not(isMotionOfLockedStill(eb)),
+            eb.exists(
+              eb
+                .selectFrom('asset as still')
+                .select(sql.lit(1).as('exists'))
+                .whereRef('still.livePhotoVideoId', '=', 'asset.id')
+                .whereRef('still.ownerId', '=', 'asset.ownerId')
+                .where((eb) => isNotLockedAsset(eb, 'still')),
+            ),
+          ])
+          .as('openLiveMotion'),
+      )
       .where('id', '=', upload.resultAssetId)
       .where('ownerId', '=', auth.ownerId)
       .where('checksum', '=', item.checksum)
@@ -299,7 +319,7 @@ export class PhotoSourceRepository {
       .where('status', '=', AssetStatus.Active)
       .forShare()
       .executeTakeFirst();
-    if (!asset || (asset.visibility === AssetVisibility.Hidden && !unlocked))
+    if (!asset || (asset.visibility === AssetVisibility.Hidden && !asset.openLiveMotion && !unlocked))
       throw new ConflictException('photo_source_managed_original_unavailable');
     if (item.assetId && item.assetId !== asset.id) throw new ConflictException('photo_source_association_changed');
     return { item, assetId: asset.id, path: asset.originalPath, uploadResourceId };

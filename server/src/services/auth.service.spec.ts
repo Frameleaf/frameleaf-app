@@ -84,6 +84,19 @@ describe(AuthService.name, () => {
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps an imported account inactive even when a password is present', async () => {
+      const user = Object.assign(UserFactory.create({ password: 'destination-password-hash' }), {
+        importClaimPending: true,
+      });
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.crypto.compareBcrypt.mockResolvedValue(true);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await expect(sut.login(dto, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.crypto.compareBcrypt).toHaveBeenCalledTimes(1);
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
     it('should successfully log the user in', async () => {
       const user = UserFactory.create({ password: 'immich_password' });
       const session = SessionFactory.create();
@@ -109,7 +122,12 @@ describe(AuthService.name, () => {
   describe('password link (FL-538)', () => {
     it('says who a usable link is for, and refuses one that is not', async () => {
       mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
-      mocks.user.getByPasswordLink.mockResolvedValueOnce({ id: 'u1', name: 'Alex', email: 'alex@example.test' });
+      mocks.user.getByPasswordLink.mockResolvedValueOnce({
+        id: 'u1',
+        name: 'Alex',
+        email: 'alex@example.test',
+        importClaimPending: false,
+      });
       await expect(sut.checkPasswordLink({ token: 'token' })).resolves.toEqual({
         name: 'Alex',
         email: 'alex@example.test',
@@ -121,10 +139,31 @@ describe(AuthService.name, () => {
       await expect(sut.checkPasswordLink({ token: 'used' })).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('activates an imported owner through the atomic credential cleanup', async () => {
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+      mocks.user.getByPasswordLink.mockResolvedValue({
+        id: 'u1',
+        name: 'Alex',
+        email: 'alex@example.test',
+        importClaimPending: true,
+      });
+      mocks.user.redeemImportedAccountClaim.mockResolvedValue({ id: 'u1', email: 'alex@example.test' });
+      await sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' });
+      expect(mocks.user.redeemImportedAccountClaim).toHaveBeenCalledWith(Buffer.from('digest'), 'hashed');
+      expect(mocks.user.redeemPasswordLink).not.toHaveBeenCalled();
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', { userId: 'u1', invalidateSessions: true });
+    });
+
     it('sets the chosen password once and signs every session out', async () => {
       mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
       mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
-      mocks.user.getByPasswordLink.mockResolvedValue({ id: 'u1', name: 'Alex', email: 'alex@example.test' });
+      mocks.user.getByPasswordLink.mockResolvedValue({
+        id: 'u1',
+        name: 'Alex',
+        email: 'alex@example.test',
+        importClaimPending: false,
+      });
       mocks.user.redeemPasswordLink.mockResolvedValueOnce({ id: 'u1', email: 'alex@example.test' });
 
       await sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' });
@@ -1554,6 +1593,24 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { oauthId: profile.sub });
+    });
+
+    it.each(['subject', 'email'])('refuses an unclaimed imported owner matched by %s before linking', async (match) => {
+      const user = UserFactory.create({ importClaimPending: true });
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create() });
+      if (match === 'subject') mocks.user.getByOAuthId.mockResolvedValue(user);
+      else mocks.user.getByEmail.mockResolvedValue(user);
+      await expect(
+        sut.callback(
+          { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foobar' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+      expect(mocks.user.create).not.toHaveBeenCalled();
     });
 
     it('should store the OAuth bearer token on the new session', async () => {

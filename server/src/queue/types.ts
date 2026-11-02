@@ -82,6 +82,7 @@ export type QueueExecution = {
   failureSettlements?: Array<(tx: Transaction<any>, reason: string, cancelled: boolean) => Promise<void>>;
   afterCommit?: Array<() => Promise<void>>;
   buffering: boolean;
+  followupCollection?: { active: number; buffering: boolean };
   progressUnits: number;
   outcome?: 'completed' | 'failed';
   dependencyReason?: JobDependencyReason;

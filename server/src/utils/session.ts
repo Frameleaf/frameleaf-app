@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import type { UserAdmin } from 'src/database.js';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { SessionRepository } from 'src/repositories/session.repository.js';
@@ -16,6 +17,7 @@ export const createSession = async (
   oauth: { sid?: string; bearerToken?: string } = {},
   expectedPassword?: string,
 ) => {
+  if (user.importClaimPending) throw new UnauthorizedException('This account must be claimed before signing in');
   const token = deps.cryptoRepository.randomBytesAsText(32);
   const hashed = deps.cryptoRepository.hashSha256(token);
 

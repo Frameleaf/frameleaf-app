@@ -199,7 +199,7 @@ describe(IdenticalFilesService.name, () => {
     const { rows } = await sql<{
       sha1: Buffer;
     }>`SELECT sha1 FROM public.asset_checksum WHERE "assetId" = ${asset.id}::uuid`.execute(database);
-    // devices keep seeing the SHA-1
+    // the SHA-1 stays recorded for upstream clients' duplicate checks
     expect(rows[0].sha1).toEqual(sha1(bytes));
     const status = await sut.getStatus();
     expect(status).toMatchObject({
