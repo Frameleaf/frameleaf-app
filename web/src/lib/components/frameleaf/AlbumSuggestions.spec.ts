@@ -169,13 +169,14 @@ describe('AlbumSuggestions', () => {
     sdkMock.updateAsset.mockRejectedValueOnce(new Error('offline'));
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
     await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
-    await fireEvent.click(screen.getByLabelText(/Add to Summer/));
     await fireEvent.click(screen.getByLabelText(/Change the date to/));
-    await fireEvent.click(screen.getByRole('button', { name: 'Fix 1 date' }));
+    // The date change fails before the add starts, so it is a save that failed.
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 1 photo, fix 1 date' }));
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent("Couldn't save the changes.");
     await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(sdkMock.updateAsset).toHaveBeenCalledTimes(2));
+    expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledTimes(1);
   });
 
   it('labels the button for dates alone, and moves between tabs with the arrow keys', async () => {

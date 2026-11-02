@@ -232,6 +232,8 @@
     let added = 0;
     let fixed = 0;
     let failed = 0;
+    /** Which request failed decides the message: adding the photos, or saving a date or the choice. */
+    let addingStarted = false;
     try {
       if (autoAddChanged) {
         await setAlbumSuggestionAutoAdd({ id: albumId, albumSuggestionAutoAddDto: { enabled: autoAdd } });
@@ -241,6 +243,7 @@
         fixed++;
       }
       if (adding.length > 0) {
+        addingStarted = true;
         const results = await addAssetsToAlbum({
           id: albumId,
           bulkIdsDto: { ids: adding.map(({ assetId }) => assetId) },
@@ -270,11 +273,9 @@
       await load(albumId);
     } catch (error) {
       console.error(error);
-      // Name the photos only when adding them was part of it; a date or the auto-add choice is a save.
+      // Name the photos only when adding them failed; a date or the auto-add choice is a save.
       report(
-        adding.length > 0
-          ? $t('frameleaf_album_suggestions_apply_failed')
-          : $t('frameleaf_album_suggestions_save_failed'),
+        addingStarted ? $t('frameleaf_album_suggestions_apply_failed') : $t('frameleaf_album_suggestions_save_failed'),
         true,
       );
       if (added > 0 || fixed > 0) {
