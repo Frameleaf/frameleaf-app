@@ -78,15 +78,64 @@ const catalogs = [
   },
 ] as const;
 
+const mysqlCatalogs = [
+  ...catalogs.map((catalog) => ({
+    ...catalog,
+    columns:
+      catalog.name === 'indexes'
+        ? [...catalog.columns.filter((column) => column !== 'IGNORED'), 'IS_VISIBLE', 'EXPRESSION']
+        : catalog.name === 'constraints'
+          ? [...catalog.columns, 'ENFORCED']
+          : catalog.columns,
+  })),
+  {
+    name: 'foreignKeys',
+    table: 'REFERENTIAL_CONSTRAINTS',
+    scope: 'CONSTRAINT_SCHEMA',
+    columns: [
+      'TABLE_NAME',
+      'CONSTRAINT_NAME',
+      'REFERENCED_TABLE_NAME',
+      'UPDATE_RULE',
+      'DELETE_RULE',
+      'MATCH_OPTION',
+      'UNIQUE_CONSTRAINT_NAME',
+    ],
+  },
+  {
+    name: 'checks',
+    table: 'CHECK_CONSTRAINTS',
+    scope: 'CONSTRAINT_SCHEMA',
+    columns: ['CONSTRAINT_NAME', 'CHECK_CLAUSE'],
+  },
+];
+
 /** Caller keeps the isolated restore locked; incomplete metadata visibility must be refused before collection. */
 export const readMysqlSourceSchema = async (
   query: (statement: string, parameters: string[]) => Promise<Record<string, unknown>[]>,
+  engine: 'mariadb' | 'mysql' = 'mariadb',
 ): Promise<Record<string, unknown>> => {
   const result: Record<string, unknown> = {};
-  for (const catalog of catalogs) {
+  for (const catalog of engine === 'mysql' ? mysqlCatalogs : catalogs) {
     const fields = catalog.columns.map((column) => `'${column}',\`${column}\``).join(',');
+    const referenceSchema =
+      engine !== 'mysql'
+        ? undefined
+        : catalog.name === 'keys'
+          ? 'REFERENCED_TABLE_SCHEMA'
+          : catalog.name === 'foreignKeys'
+            ? 'UNIQUE_CONSTRAINT_SCHEMA'
+            : undefined;
+    // Database names vary; an external reference must never fingerprint as a source-local relationship.
+    const namespace = referenceSchema
+      ? `,'${referenceSchema}',IF(\`${referenceSchema}\` IS NULL,NULL,IF(CAST(\`${referenceSchema}\` AS BINARY)=CAST(DATABASE() AS BINARY),'source','external'))`
+      : '';
+    const scope =
+      engine === 'mysql'
+        ? `CAST(\`${catalog.scope}\` AS BINARY)=CAST(DATABASE() AS BINARY)`
+        : `\`${catalog.scope}\`=DATABASE()`;
     const rows = await query(
-      `SELECT JSON_ARRAYAGG(JSON_OBJECT(${fields})) AS records FROM information_schema.${catalog.table} WHERE \`${catalog.scope}\`=DATABASE()`,
+      `SELECT JSON_ARRAYAGG(JSON_OBJECT(${fields}${namespace})) AS records FROM information_schema.${catalog.table} WHERE ${scope}`,
       [],
     );
     if (rows.length !== 1) throw new Error('MySQL schema refused: MYSQL_CATALOG_INVALID');
