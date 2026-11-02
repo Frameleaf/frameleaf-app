@@ -179,6 +179,8 @@ export type UserAdmin = User & {
   quotaSizeInBytes: number | null;
   quotaUsageInBytes: number;
   uploadsPaused: boolean;
+  /** Private account-enrolment state; not part of public user status. */
+  importClaimPending: boolean;
   status: UserStatus;
   metadata: UserMetadataItem[];
   /** FL-721: whether the person has Locked encryption on (a `locked_encryption` row exists). */
@@ -458,6 +460,7 @@ export const columns = {
     'quotaSizeInBytes',
     'quotaUsageInBytes',
     'uploadsPaused',
+    'importClaimPending',
   ],
   tag: ['tag.id', 'tag.value', 'tag.createdAt', 'tag.updatedAt', 'tag.color', 'tag.parentId'],
   apiKey: ['id', 'name', 'userId', 'createdAt', 'updatedAt', 'permissions'],

@@ -43,15 +43,16 @@ select
         where
           "user"."id" = "session"."userId"
           and "user"."deletedAt" is null
+          and "user"."importClaimPending" = $1
       ) as obj
   ) as "user"
 from
   "session"
 where
-  "session"."token" = $1
+  "session"."token" = $2
   and (
     "session"."expiresAt" is null
-    or "session"."expiresAt" > $2
+    or "session"."expiresAt" > $3
   )
 
 -- SessionRepository.getByUserId

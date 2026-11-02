@@ -105,4 +105,7 @@ export class UserTable {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   passwordLinkExpiresAt!: Timestamp | null;
+  /** Imported owners cannot sign in until they redeem a destination-issued password link. */
+  @Column({ type: 'boolean', default: false })
+  importClaimPending!: Generated<boolean>;
 }

@@ -34,6 +34,7 @@ it('finds and uses a link once, and never one that has expired', async () => {
     id: user.id,
     name: user.name,
     email: user.email,
+    importClaimPending: false,
   });
   await expect(sut.getByPasswordLink(digest('stale'))).resolves.toBeUndefined();
   await expect(sut.redeemPasswordLink(digest('stale'), 'hash')).resolves.toBeUndefined();

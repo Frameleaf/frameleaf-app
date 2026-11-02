@@ -400,11 +400,19 @@ from
   left join "album" on "album"."id" = "shared_link"."albumId"
 where
   "album"."deletedAt" is null
+  and "shared_link"."userId" in (
+    select
+      "user"."id"
+    from
+      "user"
+    where
+      "user"."importClaimPending" = $1
+  )
   and (
-    "shared_link"."type" = $1
+    "shared_link"."type" = $2
     or "album"."id" is not null
   )
-  and "shared_link"."key" = $2
+  and "shared_link"."key" = $3
 
 -- SharedLinkRepository.getBySlug
 select
@@ -441,11 +449,19 @@ from
   left join "album" on "album"."id" = "shared_link"."albumId"
 where
   "album"."deletedAt" is null
+  and "shared_link"."userId" in (
+    select
+      "user"."id"
+    from
+      "user"
+    where
+      "user"."importClaimPending" = $1
+  )
   and (
-    "shared_link"."type" = $1
+    "shared_link"."type" = $2
     or "album"."id" is not null
   )
-  and "shared_link"."slug" = $2
+  and "shared_link"."slug" = $3
 
 -- SharedLinkRepository.getSharedLinks
 select

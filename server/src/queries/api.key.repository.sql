@@ -22,12 +22,13 @@ select
         where
           "user"."id" = "api_key"."userId"
           and "user"."deletedAt" is null
+          and "user"."importClaimPending" = $1
       ) as obj
   ) as "user"
 from
   "api_key"
 where
-  "api_key"."key" = $1
+  "api_key"."key" = $2
 
 -- ApiKeyRepository.getById
 select
