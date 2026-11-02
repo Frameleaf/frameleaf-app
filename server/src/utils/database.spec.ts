@@ -70,6 +70,9 @@ describe('desktop inference database diagnostics', () => {
     ...['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session', 'desktop_worker_challenge'].map(
       (table) => `insert into "${table}" values ($1)`,
     ),
+    'UPDATE public.frameleaf_library_import SET private_owners=$1::text::jsonb,private_owners_sha256=$2',
+    'SELECT private_owners,private_owners_sha256 FROM public.frameleaf_library_import',
+    'select * from "frameleaf_library_import"',
     // queued job payloads (a new user's password, mail html) are bound as parameters
     'insert into job(id, queue, name, data) values ($1::uuid, $2, $3, $4::text::jsonb)',
     'update job set data = $1::text::jsonb where id = $2::uuid',

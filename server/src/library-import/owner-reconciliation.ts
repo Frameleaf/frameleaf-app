@@ -44,6 +44,11 @@ const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(va
 const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
 };
+export const parseImportedOwnerIntent = (input: unknown) => {
+  const parsed = intentSchema.safeParse(input);
+  if (!parsed.success) return refuse('OWNER_INTENT_INVALID');
+  return parsed.data;
+};
 const boundOwners = (context: Context) => {
   const binding = parseLibraryImportBinding(context.binding);
   const plan = bindDestinationImportPlan(context.plan, binding, context.manifest, context.destinationId);
@@ -60,9 +65,7 @@ const boundOwners = (context: Context) => {
   };
 };
 const prepareOwner = (bound: ReturnType<typeof boundOwners>, input: unknown, credential?: ImportedPassword) => {
-  const parsed = intentSchema.safeParse(input);
-  if (!parsed.success) return refuse('OWNER_INTENT_INVALID');
-  const intent = parsed.data;
+  const intent = parseImportedOwnerIntent(input);
   const mapped = bound.owners.get(intent.sourceUserId);
   if (!mapped) return refuse('OWNER_SOURCE_MISSING');
   if (intent.login.revision !== bound.binding.source.revision) return refuse('OWNER_QUALIFICATION_CHANGED');
@@ -92,8 +95,27 @@ const prepareOwner = (bound: ReturnType<typeof boundOwners>, input: unknown, cre
     disposition: intent.disposition,
     password: credential?.forImport() ?? null,
   });
-  return { owner, credential, claim: intent.disposition.kind === 'claim', recordSha256 };
+  return { owner, intent, credential, claim: intent.disposition.kind === 'claim', recordSha256 };
 };
+const prepareOwnerInventory = (bound: ReturnType<typeof boundOwners>, inventory: unknown) => {
+  const parsed = z
+    .array(
+      z.strictObject({
+        intent: z.unknown(),
+        credential: z.custom<ImportedPassword>((value) => value instanceof ImportedPassword).optional(),
+      }),
+    )
+    .safeParse(inventory);
+  if (!parsed.success || parsed.data.length !== bound.owners.size) return refuse('OWNER_RECONCILIATION_MISMATCH');
+  const expected = parsed.data.map(({ intent, credential }) => prepareOwner(bound, intent, credential));
+  if (new Set(expected.map((item) => item.owner.sourceUserId)).size !== bound.owners.size)
+    return refuse('OWNER_RECONCILIATION_MISMATCH');
+  return expected;
+};
+
+/** Private canonical inputs, not evidence that source login restrictions have been independently qualified. */
+export const prepareImportedOwners = (context: Context, inventory: unknown) =>
+  prepareOwnerInventory(boundOwners(context), inventory);
 
 /** Internal destination primitive: adapters/controller must independently qualify and retain private source login evidence. */
 export class CanonicalOwnerWriter {
@@ -143,18 +165,7 @@ const sameCredential = (actual: unknown, expected: string | null) => {
 /** Owner evidence only: source qualification, other preservation records and activation remain separate requirements. */
 export async function reconcileImportedOwners(db: ImportDatabase, context: Context, inventory: unknown) {
   const bound = boundOwners(context);
-  const parsed = z
-    .array(
-      z.strictObject({
-        intent: z.unknown(),
-        credential: z.custom<ImportedPassword>((value) => value instanceof ImportedPassword).optional(),
-      }),
-    )
-    .safeParse(inventory);
-  if (!parsed.success || parsed.data.length !== bound.owners.size) return refuse('OWNER_RECONCILIATION_MISMATCH');
-  const expected = parsed.data.map(({ intent, credential }) => prepareOwner(bound, intent, credential));
-  if (new Set(expected.map((item) => item.owner.sourceUserId)).size !== bound.owners.size)
-    return refuse('OWNER_RECONCILIATION_MISMATCH');
+  const expected = prepareOwnerInventory(bound, inventory);
   try {
     return await db.transaction(async (tx) => {
       await beginLibraryImportReadback(tx);
