@@ -458,9 +458,21 @@ test.describe('Album', () => {
 
     // App.jsx onOpenMap: the album's Map action opens the Map screen with the album's scope.
     await page.goto(`/albums/${mapAlbum.id}`);
+    // FL-1118: Map folds into "…" when the album header is 1060px or narrower.
+    const moreActions = page.getByRole('button', { name: 'More actions', exact: true });
+    await expect(moreActions).toBeVisible();
     const mapButton = page.getByRole('button', { name: 'Map', exact: true });
-    await expect(mapButton).toBeEnabled();
-    await mapButton.click();
+    if ((await mapButton.count()) > 0) {
+      await expect(mapButton).toBeEnabled();
+      await mapButton.click();
+    } else {
+      await moreActions.click();
+      const mapItem = page
+        .getByRole('menu', { name: 'More actions' })
+        .getByRole('menuitem', { name: 'Map', exact: true });
+      await expect(mapItem).toBeEnabled();
+      await mapItem.click();
+    }
     await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
 
     // MapView.jsx:579-582: a single item's marker is a button named "Open <file name>, <place>".

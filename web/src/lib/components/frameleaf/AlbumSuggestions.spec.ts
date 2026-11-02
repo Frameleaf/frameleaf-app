@@ -120,9 +120,11 @@ describe('AlbumSuggestions', () => {
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
     await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
-    await waitFor(() =>
-      expect(toastManager.danger).toHaveBeenCalledWith("1 photo couldn't be added. They're still here to try again."),
+    // Said in the review itself, not a toast (prototype `.ma-alert`).
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "1 photo couldn't be added. It's still here to try again.",
     );
+    expect(toastManager.danger).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
@@ -137,13 +139,111 @@ describe('AlbumSuggestions', () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    const { toastManager } = await import('@frameleaf/ui');
+    expect(toastManager.primary).toHaveBeenCalledWith("New photos from this trip won't be added any more.");
+  });
+
+  it('says in the notice when turning off fails, and offers to try again', async () => {
+    sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, autoAdd: true, fromTrip: [], needDate: [] });
+    sdkMock.setAlbumSuggestionAutoAdd.mockRejectedValueOnce(new Error('offline'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Turn off' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't turn off adding new photos.");
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
+  it('names the photo when it cannot be removed from the suggestions', async () => {
+    sdkMock.dismissAlbumSuggestions.mockRejectedValueOnce(new Error('offline'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Not from this trip: IMG_4821.HEIC' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't remove IMG_4821.HEIC from the suggestions. Try again.",
+    );
+    expect(screen.getByText('IMG_4821.HEIC')).toBeTruthy();
+  });
+
+  it('names a save, not an add, when only a date change fails, and offers to try again', async () => {
+    sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
+    sdkMock.updateAsset.mockRejectedValueOnce(new Error('offline'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByLabelText(/Change the date to/));
+    // The date change fails before the add starts, so it is a save that failed.
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 1 photo, fix 1 date' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("Couldn't save the changes.");
+    await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(sdkMock.updateAsset).toHaveBeenCalledTimes(2));
+    expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the album and suggestions again when an add fails, since it may have been saved', async () => {
+    sdkMock.addAssetsToAlbum.mockRejectedValueOnce(new Error('timeout'));
+    const onChanged = vi.fn();
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't finish adding the photos.");
+    await waitFor(() => expect(sdkMock.getAlbumSuggestions).toHaveBeenCalledTimes(2));
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('keeps the suggestions to try again when reading them again also fails', async () => {
+    sdkMock.addAssetsToAlbum.mockRejectedValueOnce(new Error('timeout'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    sdkMock.getAlbumSuggestions.mockRejectedValueOnce(new Error('offline'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
+    const alert = await screen.findByRole('alert');
+    await waitFor(() => expect(sdkMock.getAlbumSuggestions).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('IMG_4821.HEIC')).toBeTruthy();
+    await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps a pending auto-add choice to try again after a failed save', async () => {
+    sdkMock.setAlbumSuggestionAutoAdd.mockRejectedValueOnce(new Error('offline'));
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByLabelText(/Keep adding new photos/));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
+    const alert = await screen.findByRole('alert');
+    await waitFor(() => expect(sdkMock.getAlbumSuggestions).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText(/Keep adding new photos/)).toBeChecked();
+    await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(sdkMock.setAlbumSuggestionAutoAdd).toHaveBeenCalledTimes(2));
+    expect(sdkMock.setAlbumSuggestionAutoAdd).toHaveBeenLastCalledWith({
+      id: 'album',
+      albumSuggestionAutoAddDto: { enabled: true },
+    });
+  });
+
+  it('labels the button for dates alone, and moves between tabs with the arrow keys', async () => {
+    sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    const dates = screen.getByRole('tab', { name: 'Need a date · 1' });
+    expect(dates).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', dates.id);
+    expect(dates).toHaveAttribute('aria-controls', screen.getByRole('tabpanel').id);
+    await fireEvent.click(screen.getByLabelText(/Add to Summer/));
+    await fireEvent.click(screen.getByLabelText(/Change the date to/));
+    expect(screen.getByRole('button', { name: 'Fix 1 date' })).toBeTruthy();
+    expect(screen.getByText(/Date it has now/)).toBeTruthy();
+
+    await fireEvent.keyDown(dates, { key: 'Home' });
+    expect(screen.getByRole('tab', { name: 'From the trip · 0' })).toHaveAttribute('aria-selected', 'true');
+    await fireEvent.keyDown(screen.getByRole('tab', { name: 'From the trip · 0' }), { key: 'ArrowLeft' });
+    expect(dates).toHaveAttribute('aria-selected', 'true');
   });
 
   it('remembers a photo that is not from the trip', async () => {
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
     await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
     const tile = screen.getByText('IMG_4821.HEIC').closest('li')!;
-    await fireEvent.click(within(tile).getByRole('button', { name: 'Not from this trip' }));
+    await fireEvent.click(within(tile).getByRole('button', { name: 'Not from this trip: IMG_4821.HEIC' }));
     await waitFor(() =>
       expect(sdkMock.dismissAlbumSuggestions).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['trip-1'] } }),
     );

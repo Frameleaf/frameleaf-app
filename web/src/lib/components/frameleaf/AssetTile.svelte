@@ -99,6 +99,11 @@
      * whose thumbnail was already asked for keeps it.
      */
     deferImage?: boolean;
+    /**
+     * Work with the information panel beside the grid: this is the item the panel describes, so the
+     * first click visibly lands (FL-1117, prototype asset-tile.css `.is-in-panel`).
+     */
+    inPanel?: boolean;
   };
 
   let {
@@ -121,6 +126,7 @@
     overlay,
     quickActions = null,
     deferImage = false,
+    inPanel = false,
   }: Props = $props();
 
   let imageRequested = $state(untrack(() => !deferImage));
@@ -218,8 +224,17 @@
       return null;
     }
   });
+  /**
+   * Under the Added sort there are no day headers, so the caption names the day too ("18 Aug, 06:00",
+   * prototype `localAddedAt`); otherwise the day header above already says it.
+   */
   const captureTime = $derived(
-    displayDateTime?.toLocaleString(DateTime.TIME_SIMPLE, { locale: $locale ?? undefined }) ?? null,
+    displayDateTime?.toLocaleString(
+      dateType === TimeBucketDateType.Added
+        ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }
+        : DateTime.TIME_SIMPLE,
+      { locale: $locale ?? undefined },
+    ) ?? null,
   );
   /** The List view (S-15, template asset-tile.css `[data-layout="list"]`): a 96px 3:2 thumbnail and columns. */
   const listed = $derived(layout === 'list');
@@ -437,6 +452,7 @@
   class="fl-tile"
   class:has-caption={withCaption}
   class:is-selected={selected}
+  class:is-in-panel={inPanel}
   class:is-selecting={selecting}
   class:is-previewing={!!previewMode}
   class:is-pressing={pressing && !previewMode}
@@ -810,6 +826,14 @@
   }
   .fl-tile.is-selected .fl-tile-ring {
     opacity: 1;
+  }
+  /*
+   * The photo the Work panel describes: a neutral ring, so it never reads as selected; selection
+   * wins when both. Drawn on the ring layer, since an outline on the button paints under the photo.
+   */
+  .fl-tile:where(.is-in-panel):not(.is-selected) .fl-tile-ring {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--fl-text) 85%, transparent);
   }
   .fl-tile.is-pressing:not([data-layout='list']) .fl-tile-media {
     scale: 0.96;

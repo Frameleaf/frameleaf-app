@@ -996,6 +996,11 @@
     const id = session.selection.at(-1) ?? session.session.scrollAnchor;
     return id ? findAsset(id) : null;
   });
+  /**
+   * Work with the panel beside the grid (FL-1117, prototype `workPanelBeside`): the tile the panel
+   * describes carries a neutral ring, since otherwise a first click only changes the far side.
+   */
+  const inPanelId = $derived(gridLayout === 'work' && !listView && showInfoPanel ? (inspectedAsset?.id ?? null) : null);
 
   const loadedIds = () =>
     manager.months.flatMap((month) =>
@@ -1808,6 +1813,7 @@
         <LibraryTimeline
           timelineManager={manager}
           {session}
+          {inPanelId}
           {ratingFor}
           sensitiveFor={lockedView ? isLockedRuleMatch : undefined}
           {tileLayout}

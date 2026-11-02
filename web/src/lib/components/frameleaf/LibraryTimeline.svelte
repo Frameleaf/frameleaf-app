@@ -73,6 +73,8 @@
     thumbnailSize?: number;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
+    /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
+    inPanelId?: string | null;
     /**
      * Called with a new Thumbnail size when a pinch, Ctrl-scroll or + / − zooms the Browse or Work
      * grid. Without it the grids do not zoom.
@@ -131,6 +133,7 @@
     tileLayout = 'timeline',
     thumbnailSize = THUMBNAIL_SIZE_DEFAULT,
     showFileNames = false,
+    inPanelId = null,
     onThumbnailSizeChange,
     grouping = 'days',
     onGroupingChange,
@@ -1552,6 +1555,7 @@
                   captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
                   captionBelow={!cells}
                   {showFileNames}
+                  {inPanelId}
                   showHeader={false}
                   grouped
                   headerHeight={month.groupHeaderHeight}
@@ -1574,6 +1578,7 @@
                   captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
                   captionBelow={!cells}
                   {showFileNames}
+                  {inPanelId}
                   showHeader={showDayHeaders}
                   grouped={effectiveGrouping !== 'days' || !!cells}
                   headerHeight={month.groupHeaderHeight}
@@ -1657,6 +1662,11 @@
   }
   .fl-timeline-body {
     position: relative;
+    /*
+     * At least the scroller's height: the header's menus hang over the photos and are clipped by
+     * this box, so a short album (one row) must not cut the "…" menu off under its last photo.
+     */
+    min-height: 100%;
     overflow: clip;
   }
   .fl-timeline-cards {

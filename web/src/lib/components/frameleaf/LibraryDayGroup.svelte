@@ -50,6 +50,8 @@
     captionBelow?: boolean;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
+    /** Work with the panel beside the grid: the item the panel describes gets a neutral ring. */
+    inPanelId?: string | null;
     /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
     /** FL-34: tiles that carry the Sensitive badge without a lock (the Locked view's rule matches). */
@@ -90,6 +92,7 @@
     captionHeight = 0,
     captionBelow = false,
     showFileNames = false,
+    inPanelId = null,
     ratingFor,
     sensitiveFor,
     onOpen,
@@ -190,6 +193,7 @@
             overlay={tileOverlay}
             quickActions={quickActions?.(asset)}
             deferImage={deferImages}
+            inPanel={inPanelId === asset.id}
           />
         </div>
       {/if}

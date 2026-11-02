@@ -461,10 +461,16 @@
       <h3 class="fl-info-heading">{$t('frameleaf_info_sensitive_content')}</h3>
       {#if sensitivity}
         <em class={['fl-pill', sensitivity.tone]} data-testid="frameleaf-sensitivity-state">{stateLabel}</em>
-      {:else if isLoading}
-        <LoadingSpinner />
       {/if}
     </div>
+
+    {#if !sensitivity && isLoading}
+      <!-- A visible label beside the spinner (prototype MediaViewer "Loading the sensitive-content check…"). -->
+      <div class="fl-sensitivity-loading" role="status">
+        <LoadingSpinner />
+        <span>{$t('frameleaf_info_sensitive_loading')}</span>
+      </div>
+    {/if}
 
     {#if enrichment && sensitivity}
       <div class="fl-enrich-row" data-testid="frameleaf-enrichment-sensitivity">
@@ -524,6 +530,13 @@
 {/if}
 
 <style>
+  .fl-sensitivity-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
   /* FL-707 item 13 (review-1030-library.css): the evidence sits under the editor, the check is a band. */
   .fl-enrich-row.fl-enrich-evidence {
     min-height: 0;
