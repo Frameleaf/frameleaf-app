@@ -84,6 +84,7 @@ const legacyManifestSchema = z.strictObject({
   ),
   losses: z.array(z.strictObject({ code: id, entityId: id.optional(), acknowledged: z.boolean() })),
 });
+export const importFileSchema = legacyManifestSchema.shape.files.element;
 const manifestSchema = z.discriminatedUnion('version', [
   legacyManifestSchema,
   legacyManifestSchema.extend({

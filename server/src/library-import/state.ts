@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { type ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
@@ -18,6 +19,9 @@ const mappingSchema = z.strictObject({
   sourceId: id,
   destinationId: uuid,
   recordSha256: hash,
+});
+const creationSchema = mappingSchema.omit({ destinationId: true }).extend({
+  kind: z.enum(['library', 'asset', 'file', 'album', 'person', 'stack']),
 });
 export type LibraryImportBinding = z.infer<typeof bindingSchema>;
 export type LibraryImportMapping = z.infer<typeof mappingSchema>;
@@ -86,7 +90,24 @@ export class LibraryImportJournal {
     const binding = bindingOf(input);
     const parsed = mappingSchema.safeParse(value);
     if (!parsed.success) throw new LibraryImportRefused('INVALID_IMPORT_MAPPING');
-    const mapping = parsed.data;
+    return this.persist(binding, parsed.data, write);
+  }
+  /** Non-owner IDs are allocated with their writes, so reconnects recover the committed identity. */
+  async create(
+    input: unknown,
+    value: unknown,
+    write: (db: ImportDatabase, destinationId: string) => Promise<void>,
+  ): Promise<string> {
+    const binding = bindingOf(input);
+    const parsed = creationSchema.safeParse(value);
+    if (!parsed.success) throw new LibraryImportRefused('INVALID_IMPORT_MAPPING');
+    return this.persist(binding, parsed.data, write);
+  }
+  private persist(
+    binding: LibraryImportBinding,
+    mapping: Omit<LibraryImportMapping, 'destinationId'> & { destinationId?: string },
+    write: (db: ImportDatabase, destinationId: string) => Promise<void>,
+  ): Promise<string> {
     return this.exclusive(async (db) => {
       const run = await this.current(db, binding);
       if (run.status !== 'copying') throw new LibraryImportRefused('IMPORT_NOT_COPYING');
@@ -96,17 +117,23 @@ export class LibraryImportJournal {
         [binding.operationId, mapping.kind, mapping.sourceId],
       );
       if (existing) {
-        if (existing.destination_id !== mapping.destinationId || existing.record_sha256 !== mapping.recordSha256)
+        const destination = uuid.safeParse(existing.destination_id);
+        if (
+          !destination.success ||
+          (mapping.destinationId !== undefined && destination.data !== mapping.destinationId) ||
+          existing.record_sha256 !== mapping.recordSha256
+        )
           throw new LibraryImportRefused('IMPORT_MAPPING_CHANGED');
-        return mapping.destinationId;
+        return destination.data;
       }
-      await write(db, mapping.destinationId);
+      const destinationId = mapping.destinationId ?? randomUUID();
+      await write(db, destinationId);
       await db.query(
         `INSERT INTO public.frameleaf_library_import_mapping(operation_id,entity_kind,source_id,destination_id,record_sha256)
         VALUES($1::uuid,$2,$3,$4::uuid,$5)`,
-        [binding.operationId, mapping.kind, mapping.sourceId, mapping.destinationId, mapping.recordSha256],
+        [binding.operationId, mapping.kind, mapping.sourceId, destinationId, mapping.recordSha256],
       );
-      return mapping.destinationId;
+      return destinationId;
     });
   }
   async phase(input: unknown, phase: 'verifying' | 'abandoned'): Promise<void> {
