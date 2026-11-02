@@ -135,6 +135,74 @@ describe(CloudLibraryBatchService.name, () => {
     });
   });
 
+  describe('refusals', () => {
+    type Refuse = (run: unknown, refusal: unknown) => Promise<void>;
+    const refuse = () => (sut as unknown as { refuse: Refuse }).refuse.bind(sut);
+    const run = () => ({
+      operation: { id: 'batch-1', ownerId: 'owner' },
+      claimToken: 'claim-1',
+      snapshot: snapshot({ assetIds: ['asset-1', 'asset-2', 'asset-3'] }),
+      result: {
+        ...emptyCloudLibraryResult(['asset-1', 'asset-2', 'asset-3']),
+        items: [
+          { assetId: 'asset-1', inputId: 'p1' },
+          { assetId: 'asset-2', inputId: 'p2', refused: 'locked' },
+          { assetId: 'asset-3', inputId: 'p3', outcome: 'stored' },
+        ],
+      },
+      now,
+    });
+    const refusal = (transient: boolean) =>
+      Object.assign(new Error('Frameleaf Cloud is unavailable'), { code: 'cloud_library_unavailable', transient });
+
+    beforeEach(() => {
+      mocks.mediaOperation.setBulkResult.mockResolvedValue({ status: 'rendering' } as never);
+    });
+
+    it('takes the one automatic retry for a transient refusal, giving nothing back yet', async () => {
+      mocks.mediaOperation.fail.mockResolvedValue('retrying');
+
+      await refuse()(run(), refusal(true));
+
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        'batch-1',
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_library_unavailable' }),
+        { retry: true, resumable: true },
+      );
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('gives a photo whose preview could not be prepared back to its own job on this server', async () => {
+      type Estimate = (run: unknown, gateway: unknown) => Promise<void>;
+      mocks.mediaOperation.getLockedAssetIds.mockResolvedValue(new Set());
+      mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+        ownerId: 'owner',
+        deletedAt: null,
+        status: 'active',
+        visibility: 'timeline',
+      } as never);
+      mocks.assetJob.getForClipEncoding.mockResolvedValue({ files: [{ path: '/preview.jpeg' }] } as never);
+      mocks.storage.readFile.mockRejectedValue(new Error('EIO'));
+      const batch = { ...run(), result: emptyCloudLibraryResult(['asset-1']), snapshot: snapshot() };
+
+      await (sut as unknown as { estimate: Estimate }).estimate.bind(sut)(batch, {});
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SmartSearch, data: { id: 'asset-1', onThisServer: true } },
+      ]);
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('gives the photos a failed batch made nothing for back to their own jobs on this server', async () => {
+      await refuse()(run(), refusal(false));
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SmartSearch, data: { id: 'asset-1', onThisServer: true } },
+      ]);
+    });
+  });
+
   describe('results (the identity guard)', () => {
     type WriteResult = (
       snapshot: CloudLibrarySnapshot,

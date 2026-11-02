@@ -2,8 +2,8 @@ ARG CPU_IMAGE=python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8
 ARG CUDA_IMAGE=nvidia/cuda:12.8.1-runtime-ubuntu22.04@sha256:4a801ef9232d2b05e69df4eb8aa054dbbe2824e5499e1e6e857320bb01ac41a9
 ARG DEVICE=cpu
 # FL-408: the bundled Studio render worker. Same Node as the server's Studio engine stage.
-ARG STUDIO_NODE_IMAGE=node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
-ARG NODE_RUNTIME_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+ARG STUDIO_NODE_IMAGE=node:22.23.4-bookworm@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765
+ARG NODE_RUNTIME_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
 
 # Native CPU semantic masks use the locked Torch / Torchvision Python 3.12 ABI.
 FROM ${CPU_IMAGE} AS builder-cpu
@@ -13,7 +13,7 @@ FROM python:3.13.16-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5d
 # Use the same CUDA base in both stages and a portable Python installation.
 FROM ${CUDA_IMAGE} AS builder-cuda
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /bin/uv
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
 RUN uv python install 3.12.15 && \
     ln -s /opt/python/cpython-3.12.15-linux-$(uname -m)-gnu/bin/python3 /usr/local/bin/python3
@@ -43,6 +43,8 @@ FROM rocm/dev-ubuntu-24.04:7.2-complete@sha256:86e11093b4a7ec2a79b1b6701d10e840a
 #   docker build --build-context frameleaf=. -f machine-learning/Dockerfile machine-learning
 FROM ${STUDIO_NODE_IMAGE} AS studio-worker
 
+RUN npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
+
 WORKDIR /usr/src/app
 COPY --from=frameleaf scripts/frameleaf-studio-contracts.mjs scripts/frameleaf-studio-rights.mjs ./scripts/
 COPY --from=frameleaf studio ./studio/
@@ -64,9 +66,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv
 
-RUN apt-get update && apt-get install -y --no-install-recommends g++
+RUN apt-get update && apt-get install -y --no-install-recommends g++ ca-certificates && \
+    test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem
 
-COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -92,6 +95,9 @@ RUN apt-get update && \
     echo "779e1b9e88098eb25711e9a8f67c2752665bad22f134aa40ed5649f6e1b87058  intel-igc-opencl-2_2.41.5+22716_amd64.deb" | sha256sum --check - && \
     echo "61712caaddeba3d38e4f79e2a0fb23fea25596ca2d72c3144c6eea2331ec4301  intel-opencl-icd_26.35.39758.10-0_amd64.deb" | sha256sum --check - && \
     echo "6031a63d6e8a12ce61c14efc15f2c8e727061286e3820b8594e6d00615e04d54  libigdgmm12_22.10.0_amd64.deb" | sha256sum --check - && \
+    echo "c1e1ecdfe2064c047c552651cfdcdafc504f2033afafba65654338b880048b67  intel-igc-core_1.0.17537.24_amd64.deb" | sha256sum --check - && \
+    echo "dd016400f87fa2b6a9fa9fbcca7eb4a2629174a29de679709f9bec5cede88b0e  intel-igc-opencl_1.0.17537.24_amd64.deb" | sha256sum --check - && \
+    echo "bbe71e4f414259e06a10cde72c29a2bd78d41b2bb2f6f8463b1806797fe66e85  intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb" | sha256sum --check - && \
     dpkg -i *.deb && \
     rm *.deb && \
     apt-get remove wget -yqq && \
@@ -162,7 +168,8 @@ RUN MIMALLOC=$(case "$DEVICE:$(uname -m)" in cuda:*) echo "libmimalloc2.0";; cpu
 # FL-408: the Studio render worker's runtime: Node, a browser for the engine, ffmpeg to check and
 # align what it encoded, Vulkan for WebGPU (the GPU when the container has one, else software).
 COPY scripts/install-studio-runtime.sh /tmp/install-studio-runtime.sh
-RUN sh /tmp/install-studio-runtime.sh && rm /tmp/install-studio-runtime.sh
+COPY scripts/studio-browser-guard.py /tmp/studio-browser-guard.py
+RUN sh /tmp/install-studio-runtime.sh && rm /tmp/install-studio-runtime.sh /tmp/studio-browser-guard.py
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=studio-worker /opt/frameleaf-studio /opt/frameleaf-studio
 RUN mkdir -p /usr/share/fonts/truetype/frameleaf-studio && \
@@ -194,6 +201,11 @@ ENV TRANSFORMERS_CACHE=/cache \
     FRAMELEAF_STUDIO_WORKER_ENTRY=/opt/frameleaf-studio/studio/tools/bundled-worker.mjs \
     FRAMELEAF_STUDIO_CHROMIUM=/usr/local/bin/frameleaf-studio-browser \
     FREECUT_CHROME_ARGS=--no-sandbox
+
+# The GPU runtimes' JIT caches live beside the models, so a recreated container keeps what they compiled.
+ENV CUDA_CACHE_PATH=/cache/jit/cuda \
+    AMD_COMGR_CACHE_DIR=/cache/jit/comgr \
+    NEO_CACHE_DIR=/cache/jit/neo
 
 # prevent core dumps
 RUN echo "hard core 0" >> /etc/security/limits.conf && \

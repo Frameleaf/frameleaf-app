@@ -121,6 +121,11 @@ export const EnvSchema = z
      * (owner decision 2026-10-21); deployments override it only to point at a test fixture.
      */
     FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).default('https://api.frameleaf.cloud'),
+    /**
+     * Overrides the push gateway address Frameleaf Cloud publishes in its discovery document
+     * (`endpoints.push`, `https://push.frameleaf.cloud`). Unset is the normal case; push is only off
+     * when neither names an address.
+     */
     FRAMELEAF_PUSH_URL: z.url({ protocol: /^https?$/ }).optional(),
     /**
      * Pre-release integration builds only (owner decision 2026-09-27): an absolute path to a mounted,
@@ -131,12 +136,16 @@ export const EnvSchema = z
     FRAMELEAF_IDENTITY_DIR: z.string().optional(),
     /**
      * FL-154/FL-155: a single-use link token (`fll_…`, valid at most one hour) that links this server
-     * headlessly at boot. A token that already linked, or failed, is never sent again.
+     * headlessly at boot. A token that already linked, or failed, is never sent again. An empty value
+     * is unset: compose templates like `${LINK_TOKEN:-}` produce one once the token is cleared.
      */
-    FRAMELEAF_LINK_TOKEN: z
-      .string()
-      .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
-      .optional(),
+    FRAMELEAF_LINK_TOKEN: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z
+        .string()
+        .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
+        .optional(),
+    ),
     /** FL-154: the edge worker's direct HTTPS port (default 2443) and bind address. */
     FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
     FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),

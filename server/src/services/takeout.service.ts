@@ -50,7 +50,7 @@ import {
 } from 'src/repositories/takeout.repository.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
-import { checkAccess } from 'src/utils/access.js';
+import { checkAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import {
@@ -157,6 +157,7 @@ export class TakeoutService {
 
   async create(auth: AuthDto, dto: TakeoutCreateDto): Promise<TakeoutResponseDto> {
     this.requireSession(auth);
+    requireUploadsNotPaused(auth);
     const wantsDirectory = dto.rootId !== undefined || dto.directory !== undefined;
     let directory: string | undefined;
     if (wantsDirectory) {
@@ -191,6 +192,7 @@ export class TakeoutService {
    */
   async addArchive(auth: AuthDto, id: string, dto: TakeoutArchiveCreateDto): Promise<TakeoutSourceResponseDto> {
     this.requireSession(auth);
+    requireUploadsNotPaused(auth);
     const name = path.basename(dto.name);
     const source = await this.mapErrors(() =>
       this.repository.withImport(auth.user.id, id, async (tx, row, operation, ownerQuota) => {
@@ -316,6 +318,7 @@ export class TakeoutService {
    */
   async startImport(auth: AuthDto, id: string, dto: TakeoutOptionsDto): Promise<TakeoutResponseDto> {
     this.requireSession(auth);
+    requireUploadsNotPaused(auth);
     const options = parseTakeoutOptions(dto);
     await this.mapErrors(() =>
       this.repository.withImport(auth.user.id, id, async (tx, row, operation) => {

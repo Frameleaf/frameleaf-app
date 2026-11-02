@@ -98,8 +98,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   'smart-albums': ['smartAlbums'],
   'storage-template': ['storageTemplate'],
   theme: ['theme'],
-  trash: ['trash'],
-  'user-settings': ['user'],
+  // FL-365: Deleted items holds deleted accounts' delay; Storage & originals' disk warning is saved with it.
+  trash: ['trash', 'user', 'storageWarning'],
   'version-check': ['newVersionCheck'],
   'video-transcoding': ['ffmpeg'],
   // FL-422: Edited masters holds the editing group; its restoration style is on AI restoration.
@@ -127,6 +127,15 @@ const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   libraryCare: 'integrity-checks',
   // FL-168: the Public server URL sits on Frameleaf Cloud › Remote access, not Server identity.
   'server.externalDomain': 'cloud-remote',
+  // FL-516: "Space for new people" on Users writes all three; without these it read as Deleted items
+  // (`user`), Who can sign in (`oauth`) and Cloud processing.
+  'user.newUserStorageQuota': 'accounts',
+  'oauth.defaultStorageQuota': 'accounts',
+  'frameleafCloud.signIn.invitedStorageQuota': 'accounts',
+  // Frameleaf Cloud's other groups sit on their own pages, not all on Cloud processing.
+  'frameleafCloud.signIn': 'frameleaf-signin',
+  'frameleafCloud.remoteAccess': 'cloud-remote',
+  'frameleafCloud.cloudBackup': 'cloud-backup',
   'editing.restoration': 'restoration',
 });
 
@@ -226,12 +235,26 @@ export const rebaseDraft = <T extends object>(
   return { draft: applyChanges(latest, apply), conflicts };
 };
 
-/** "Reset this page": the defaults of the given groups go into the draft. Save applies them. */
-export const resetConfigKeys = <T extends object>(draft: T, defaults: T, keys: readonly (keyof T)[]): T => {
+/** A top-level group, or a dotted path to one part of it (`frameleafCloud.cloudMl`, FL-529). */
+export type ConfigResetKey<T> = (keyof T & string) | `${keyof T & string}.${string}`;
+
+/**
+ * "Reset this page": the defaults of the given groups go into the draft. Save applies them. A
+ * dotted path resets only that part, so a page that edits part of a group leaves the rest alone.
+ */
+export const resetConfigKeys = <T extends object>(draft: T, defaults: T, keys: readonly ConfigResetKey<T>[]): T => {
   const next = cloneConfig(draft);
   for (const key of keys) {
-    if (Object.hasOwn(defaults as object, key)) {
-      next[key] = cloneConfig(defaults[key]);
+    const path = key.split('.');
+    const last = path.pop()!;
+    let target = next as Record<string, unknown> | undefined;
+    let source = defaults as Record<string, unknown> | undefined;
+    for (const segment of path) {
+      target = target?.[segment] as Record<string, unknown> | undefined;
+      source = source?.[segment] as Record<string, unknown> | undefined;
+    }
+    if (target && source && Object.hasOwn(source, last)) {
+      target[last] = cloneConfig(source[last]);
     }
   }
   return next;

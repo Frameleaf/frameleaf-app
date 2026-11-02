@@ -4,6 +4,7 @@ import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetFileType, Permission } from 'src/enum.js';
 import { checkAccess } from 'src/utils/access.js';
 import { addAssets, getAssetFiles, removeAssets } from 'src/utils/asset.util.js';
+import { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
@@ -150,8 +151,14 @@ describe('bulk asset membership', () => {
     });
   });
 
-  it('retains the hidden-content filter even when the caller can otherwise remove any asset', async () => {
-    auth.hideNsfwAssets = true;
+  it.each([
+    { name: 'hideNsfwAssets', privacy: { hideNsfwAssets: true } },
+    {
+      name: 'hiddenContent',
+      privacy: { hiddenContent: { userId: 'user', includeNsfw: false } as unknown as HiddenContentFilter },
+    },
+  ])('retains the $name filter even when the caller can otherwise remove any asset', async ({ privacy }) => {
+    Object.assign(auth, privacy);
     bulk.getAssetIds.mockResolvedValue(new Set(['hidden', 'visible']));
     vi.mocked(checkAccess)
       .mockResolvedValueOnce(new Set([parentId]))

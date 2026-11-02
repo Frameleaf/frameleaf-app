@@ -4,10 +4,15 @@ import type { TimelineDay } from './timeline-day.svelte';
 import type { ViewerAsset } from './viewer-asset.svelte';
 
 export type ViewportTopMonth = TimelineYearMonth | undefined | 'lead-in' | 'lead-out';
+/** Page identity is separate from the calendar date used for headings and navigation. */
+export type TimelinePageKey = TimelineYearMonth & { page?: number };
 
 export type AssetApiGetTimeBucketsRequest = Parameters<typeof import('@frameleaf/sdk').getTimeBuckets>[0];
 
-export type TimelineManagerOptions = Omit<AssetApiGetTimeBucketsRequest, 'size'> & {
+export type TimelineManagerOptions = Omit<
+  AssetApiGetTimeBucketsRequest,
+  'size' | 'pageSize' | 'locateAssetId' | 'sort'
+> & {
   timelineAlbumId?: string;
   /**
    * FL-30 (S-15): lay the same assets out in one flat order — by file name or by rating — instead of

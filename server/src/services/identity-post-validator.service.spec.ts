@@ -20,6 +20,80 @@ describe(IdentityPostValidator.name, () => {
       },
     );
 
+    it.each([
+      ['Jos\u{E9}', 'Jose\u{301}'],
+      ['Jose\u{301}', 'Jos\u{E9}'],
+    ])('keeps the known name %j when the caption spells it %j', (stored, written) => {
+      const text = `I saw ${written} beside a child.`;
+      expect(sut.validate(text, [person(stored)])).toEqual({ description: text, flags: {} });
+    });
+
+    it('does not treat an accented place after "in" as a person', () => {
+      const text = 'I saw Anne in Zürich.';
+      expect(sut.validate(text, [person('Anne')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('still strips an unknown accented name elsewhere and a possessive after "in"', () => {
+      expect(sut.validate("I saw Zoë and a baby in Chloé's arms.", [])).toEqual({
+        description: "I saw Someone and a baby in Someone's arms.",
+        flags: { hallucinatedNames: ['Zoë', 'Chloé'] },
+      });
+    });
+
+    it('strips every name of a coordinated possessive after "in"', () => {
+      expect(sut.validate("The child is in Zoë and Chloé's arms.", [person('Anne')])).toEqual({
+        description: "Anne is in Someone and Someone's arms.",
+        flags: { hallucinatedNames: ['Zoë', 'Chloé'] },
+      });
+    });
+
+    it('keeps a place after "in" when a new clause starts with a possessive', () => {
+      const text = "Anne was in Paris, and Mary's child smiled.";
+      expect(sut.validate(text, [person('Anne'), person('Mary')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('strips a list of possessive names after "in"', () => {
+      expect(sut.validate("The child is in Zoë, Chloé & Max's arms.", [person('Anne')])).toMatchObject({
+        description: "Anne is in Someone, Someone & Someone's arms.",
+      });
+    });
+
+    it('preserves the hyphenated spelling of a known name stored with a space', () => {
+      const text = 'I saw Anne-Marie by the lake.';
+      expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('matches a hyphenated known name whatever its Unicode normalisation', () => {
+      const text = 'I saw Jose\u{301}-Maria by the lake.';
+      expect(sut.validate(text, [person('Jos\u{E9} Maria')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('names the known person at a generic reference when only a stripped name held their token', () => {
+      expect(sut.validate('I saw Anne-Sophie and a child.', [person('Anne Marie')])).toEqual({
+        description: 'I saw Someone and Anne Marie.',
+        flags: { hallucinatedNames: ['Anne-Sophie'] },
+      });
+    });
+
+    it('does not substitute a generic reference when a hyphenated known name remains', () => {
+      const text = 'I saw Jose\u{301}-Maria and a child.';
+      expect(sut.validate(text, [person('Jos\u{E9} Maria')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('strips a hyphenated name built from two different known people', () => {
+      expect(sut.validate('I saw Anne-Smith by the lake.', [person('Anne Jones'), person('John Smith')])).toEqual({
+        description: 'I saw Someone by the lake.',
+        flags: { hallucinatedNames: ['Anne-Smith'] },
+      });
+    });
+
+    it('still strips a hyphenated name only partly made of known tokens', () => {
+      expect(sut.validate('I saw Anne-Sophie by the lake.', [person('Anne Marie')])).toEqual({
+        description: 'I saw Someone by the lake.',
+        flags: { hallucinatedNames: ['Anne-Sophie'] },
+      });
+    });
+
     it('still strips an unknown name beside a known compound name', () => {
       expect(sut.validate("I saw O'Brien and Madison.", [person("O'Brien")])).toEqual({
         description: "I saw O'Brien and Someone.",
@@ -41,6 +115,16 @@ describe(IdentityPostValidator.name, () => {
       expect(description).toBe('A boy and Someone are playing baseball.');
       expect(flags.hallucinatedNames).toEqual(['Madison']);
     });
+
+    it.each(['Zoë', 'Zoe\u{308}', 'José', "O'Brien", 'Anne-Marie', "d'Artagnan", 'd’Angelo'])(
+      'replaces the whole unknown name %s, never a fragment of it',
+      (name) => {
+        expect(sut.validate(`I saw ${name} and Madison.`, [])).toEqual({
+          description: 'I saw Someone and Someone.',
+          flags: { hallucinatedNames: [name, 'Madison'] },
+        });
+      },
+    );
 
     it('does not strip a name that IS a known person', () => {
       const { description, flags } = sut.validate('Conner is playing baseball.', [person('Conner')]);

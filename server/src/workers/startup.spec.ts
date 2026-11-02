@@ -7,6 +7,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { useSwagger } from 'src/utils/misc.js';
 import { bootstrap } from 'src/workers/microservices.js';
 
 const fixture = vi.hoisted(() => ({
@@ -74,6 +75,7 @@ const setup = () => {
     set: vi.fn(),
     use: vi.fn(),
     setGlobalPrefix: vi.fn(),
+    enableCors: vi.fn(),
     useWebSocketAdapter,
     listen,
     getUrl: vi.fn().mockResolvedValue('http://localhost'),
@@ -121,11 +123,25 @@ describe('PostgreSQL readiness before gateway startup', () => {
   it('keeps maintenance startup available without the normal database gate', async () => {
     const { app, providers, initialize, useWebSocketAdapter, listen } = setup();
     providers.delete(DatabaseService);
-    await configureExpress(app, { permitSwaggerWrite: false, ssr: MaintenanceWorkerService });
+    await configureExpress(app, { ssr: MaintenanceWorkerService });
     expect(initialize).not.toHaveBeenCalled();
     expect(useWebSocketAdapter).toHaveBeenCalledOnce();
     expect(listen).toHaveBeenCalledOnce();
   });
+});
+
+describe('OpenAPI specification at startup', () => {
+  it.each([ApiService, MaintenanceWorkerService])(
+    'serves the specification without writing the tracked file in development (%o)',
+    async (ssr) => {
+      const { app, providers } = setup();
+      const configRepository = providers.get(ConfigRepository) as { isDev: () => boolean };
+      configRepository.isDev = () => true;
+      vi.mocked(useSwagger).mockClear();
+      await configureExpress(app, { ssr });
+      expect(useSwagger).toHaveBeenCalledExactlyOnceWith(app, { write: false });
+    },
+  );
 });
 
 describe('microservices stopped during startup', () => {

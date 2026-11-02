@@ -4,12 +4,17 @@ import type { JobRunResponseDto } from 'src/dtos/job-run.dto.js';
 import type { RunRead } from 'src/queue/run-query.js';
 import { mapMemoryExport } from 'src/dtos/memory.dto.js';
 import { QueueRunDto, RunningJobsResponseDto } from 'src/dtos/running-job.dto.js';
-import { MemoryExportStatus, Permission, QueueName } from 'src/enum.js';
+import { MemoryExportStatus, Permission, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { isGranted } from 'src/utils/access.js';
+import { getConfig } from 'src/utils/config.js';
+import { quietHoursHolds } from 'src/utils/overnight.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 /** The panel shows what is happening now; a longer backlog is on the Activity page. */
 export const RUNNING_OPERATIONS_LIMIT = 50;
@@ -44,6 +49,8 @@ export class RunningJobService {
     private jobRepository: JobRepository,
     private mediaOperationService: MediaOperationService,
     private memoryRepository: MemoryRepository,
+    private configRepository: ConfigRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
   ) {
     this.logger.setContext(RunningJobService.name);
   }
@@ -79,6 +86,7 @@ export class RunningJobService {
    * A failed queue read becomes an explicit unavailable row. Other work remains visible.
    */
   private async getQueueRuns(): Promise<QueueRunDto[]> {
+    const holds = await this.getQuietHoursHolds();
     const runs = await Promise.all(
       Object.values(QueueName).map(async (name): Promise<QueueRunDto | null> => {
         try {
@@ -90,9 +98,11 @@ export class RunningJobService {
             return null;
           }
 
+          const held = isPaused && holds.has(name);
           return {
             name,
             isPaused,
+            ...(held && { heldForNight: true, resumesAt: holds.get(name) ?? null }),
             canPause: !UNPAUSABLE_QUEUES.has(name),
             active: run.active,
             waiting: run.waiting,
@@ -137,6 +147,27 @@ export class RunningJobService {
     );
 
     return runs.filter((run): run is QueueRunDto => run !== null);
+  }
+
+  /**
+   * FL-711: the queues quiet hours saved for the overnight window. Activity says these as waiting
+   * for tonight, not as paused until someone starts them again. A failed read only loses the wording.
+   */
+  private async getQuietHoursHolds(): Promise<Map<QueueName, string | null>> {
+    try {
+      const overnight = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
+      if (!overnight?.quiet?.holding?.length) {
+        return new Map();
+      }
+      const config = await getConfig(
+        { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+        { withCache: true },
+      );
+      return quietHoursHolds(overnight, config.nightlyTasks, serverTimeZone(config.server));
+    } catch {
+      this.logger.warn('Unable to read quiet hours for the running-jobs summary');
+      return new Map();
+    }
   }
 
   private async getDurableRuns(): Promise<{ runs: JobRunResponseDto[]; unavailable: boolean }> {

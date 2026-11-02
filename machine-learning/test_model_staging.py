@@ -297,6 +297,18 @@ def test_missing_model_offline_gives_staging_guidance(model: SyntheticModel, mon
         download.assert_not_called()
 
 
+@pytest.mark.parametrize("task", [ModelTask.SEMANTIC_MASK, ModelTask.SUBJECT_MATTE])
+def test_offline_snapshot_tasks_skip_the_staging_receipt(
+    model: SyntheticModel, monkeypatch: pytest.MonkeyPatch, task: ModelTask
+) -> None:
+    monkeypatch.setattr(settings, "model_downloads", False)
+    monkeypatch.setattr(SyntheticModel, "identity", (ModelType.VISUAL, task))
+    monkeypatch.setattr(SyntheticModel, "cached", property(lambda _: True))
+    with patch("frameleaf_ml.staging.verify_staged") as verify:
+        model.download()
+    verify.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_offline_load_failure_preserves_staged_cache(
     model: SyntheticModel, monkeypatch: pytest.MonkeyPatch

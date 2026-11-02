@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { JobName, PhysicalFileType, QueueName } from 'src/enum.js';
 import { queueAdmission } from 'src/queue/admission.js';
 import { afterJobCommit } from 'src/queue/context.js';
-import * as observers from 'src/queue/observers.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -35,7 +34,8 @@ describe('Queued asset deletion publication', () => {
   it.each([
     'accepted',
     'accepted shared original',
-    'accepted shared original without observers',
+    'accepted shared original with pending observer',
+    'accepted shared original with rejected observer',
     'cancelled',
     'cancelled shared original',
     'restored',
@@ -47,13 +47,13 @@ describe('Queued asset deletion publication', () => {
     const originalPath = join(directory, 'original.txt');
     const bytes = 'An unaccepted deletion must keep this original';
     await writeFile(originalPath, bytes);
-    const withoutObservers = outcome === 'accepted shared original without observers';
-    const droppedObserver = vi.fn().mockResolvedValue(undefined);
-    if (withoutObservers) {
-      vi.spyOn(observers, 'deliverJobObservers').mockImplementation(
-        observers.createObserverDelivery({ maxInFlight: 0 }),
-      );
-    }
+    const pendingObserver = Promise.withResolvers<void>();
+    const hasObserver = outcome.includes('observer');
+    const observe = vi.fn().mockImplementation(async () => {
+      if (outcome.includes('rejected')) throw new Error('Observer unavailable');
+      await pendingObserver.promise;
+    });
+    const remainder = vi.fn().mockResolvedValue(undefined);
     const { sut, ctx } = newMediumService(AssetService, {
       database: db,
       real: [AssetRepository, AssetJobRepository, PhysicalFileRepository, UserRepository],
@@ -105,7 +105,10 @@ describe('Queued asset deletion publication', () => {
           if (event !== 'JobRun') return;
           try {
             await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
-            if (withoutObservers) await afterJobCommit(droppedObserver);
+            if (hasObserver) {
+              await afterJobCommit(observe);
+              await afterJobCommit(remainder);
+            }
           } finally {
             returned();
           }
@@ -114,6 +117,10 @@ describe('Queued asset deletion publication', () => {
       ctx.getMock(LoggingRepository),
       db,
     );
+    onTestFinished(async () => {
+      pendingObserver.resolve();
+      await Promise.all(jobs['observerDeliveries']);
+    });
     for (const name of [JobName.AssetDelete, JobName.FileDelete, JobName.StorageTemplateMigrationSingle]) {
       jobs['handlers'][name] = {
         jobName: name,
@@ -168,9 +175,15 @@ describe('Queued asset deletion publication', () => {
     if (accepted) {
       expect(cleanup[0].data.files).toContain(originalPath);
     }
-    if (withoutObservers) {
-      expect(droppedObserver).not.toHaveBeenCalled();
-      expect(ctx.getMock(LoggingRepository).warn).toHaveBeenCalledWith('Accepted job observer delivery unavailable');
+    if (hasObserver) {
+      expect(observe).toHaveBeenCalledOnce();
+      expect((await sql`select state, attempt from job where id=${claim.id}::uuid`.execute(db)).rows).toEqual([
+        { state: 'completed', attempt: 1 },
+      ]);
+      if (outcome.includes('pending')) {
+        expect(remainder).not.toHaveBeenCalled();
+        expect(jobs['observerDeliveries'].size).toBe(1);
+      }
     }
     if (shared) {
       await expect(
@@ -188,7 +201,7 @@ describe('Queued asset deletion publication', () => {
         ).rows,
       ).toEqual(accepted ? [{ data: { id: shared.id } }] : []);
       if (accepted) {
-        // The durable cleanup runs the deletion listeners even if all queue observers were dropped.
+        // Durable cleanup runs the deletion listeners even while an accepted callback is pending or failed.
         await storage.handleDeleteFiles(cleanup[0].data);
         expect(announced).toEqual([false]);
         expect(storageCtx.getMock(StorageRepository).unlink).not.toHaveBeenCalled();
@@ -196,5 +209,15 @@ describe('Queued asset deletion publication', () => {
     }
     if (accepted) expect(cleanup[0].data).toMatchObject({ removedAssetId: asset.id, removedAssetOwnerId: user.id });
     await expect(readFile(originalPath, 'utf8')).resolves.toBe(bytes);
+    if (hasObserver) {
+      pendingObserver.resolve();
+      await Promise.all(jobs['observerDeliveries']);
+      expect(remainder).toHaveBeenCalledOnce();
+      expect(observe).toHaveBeenCalledOnce();
+      expect(jobs['observerDeliveries'].size).toBe(0);
+      expect((await sql`select state, attempt from job where id=${claim.id}::uuid`.execute(db)).rows).toEqual([
+        { state: 'completed', attempt: 1 },
+      ]);
+    }
   });
 });

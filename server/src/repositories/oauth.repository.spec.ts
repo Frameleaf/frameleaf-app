@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import * as openidClient from 'openid-client';
 import { OAuthTokenEndpointAuthMethod } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { OAuthConfig, OAuthRepository } from 'src/repositories/oauth.repository.js';
+import { OAuthConfig, OAuthRepository, oauthTimeoutSeconds } from 'src/repositories/oauth.repository.js';
 import { automock } from 'test/utils.js';
 
 vi.mock('openid-client', async (importOriginal) => {
@@ -119,5 +119,13 @@ describe(OAuthRepository.name, () => {
       await expect(promise).rejects.not.toBeInstanceOf(BadRequestException);
       await expect(promise).rejects.toThrow('OAuth login failed');
     });
+  });
+});
+
+describe('oauthTimeoutSeconds (FL-367)', () => {
+  it('passes the millisecond setting to openid-client as whole seconds', () => {
+    expect(oauthTimeoutSeconds(30_000)).toBe(30);
+    expect(oauthTimeoutSeconds(10_500)).toBe(11);
+    expect(oauthTimeoutSeconds(1)).toBe(1);
   });
 });

@@ -42,6 +42,13 @@ describe('loadSharedLink (FL-56)', () => {
 
     await expect(loadSharedLink({ url, params })).rejects.toBe(refused);
   });
+
+  it('keeps an HTTP error with no body instead of throwing a TypeError', async () => {
+    const empty = Object.assign(new Error('Bad gateway'), { status: 502, data: null });
+    vi.mocked(getMySharedLink).mockRejectedValue(empty);
+
+    await expect(loadSharedLink({ url, params })).rejects.toBe(empty);
+  });
 });
 
 it('does not reuse a legacy cached link whose missing slug only matches an absent route parameter', async () => {

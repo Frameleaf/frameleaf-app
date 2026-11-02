@@ -1,9 +1,14 @@
 #!/bin/sh
 # Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER HTTPS_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
+# Another installation on the same host: run again with MANAGER_NAME, MANAGER_PORT and its own state, media and backup folders.
 set -eu
 umask 077
 test "$#" -ge 5 || { echo 'Expected Manager image, state folder, media folder, backup folder and HTTPS origin' >&2; exit 2; }
 image=$1 state=$2 media=$3 backups=$4 origin=$5 appdata=${6:-auto} bind=${7:-127.0.0.1}
+name=${MANAGER_NAME:-frameleaf-manager} port=${MANAGER_PORT:-2282}
+printf '%s' "$name" | LC_ALL=C grep -Eqx '[a-zA-Z0-9][a-zA-Z0-9_.-]*' || { echo 'MANAGER_NAME must be a valid container name' >&2; exit 2; }
+case "$port" in ''|*[!0-9]*) echo 'MANAGER_PORT must be a port number' >&2; exit 2;; esac
+test "$port" -ge 1 && test "$port" -le 65535 || { echo 'MANAGER_PORT must be a port number' >&2; exit 2; }
 platform=linux
 if test -f /boot/config/docker.cfg; then platform=unraid; fi
 if test "$appdata" = auto; then
@@ -48,6 +53,11 @@ case "$filesystem" in
   fuse.shfs|fuse.unraid) test "$platform" = unraid || exit 2 ;;
   *) echo 'Choose disk-backed appdata storage, outside the container filesystem' >&2; exit 2;;
 esac
+# Each installation owns its state and its Restic backup repository; two Managers must never share either.
+shared=$(docker ps -aq | xargs -r docker inspect --format '{{range .Mounts}}{{$.Name}}{{"\t"}}{{.Source}}{{"\n"}}{{end}}' |
+  awk -F '\t' -v self="/$name" -v state="$state" -v backups="$backups" \
+    '$1 != self && ($2 == state || $2 == backups) { print substr($1, 2) }' | sort -u | tr '\n' ' ')
+test -z "$shared" || { echo "State or backup folder is already used by: $shared- choose separate folders for this installation" >&2; exit 2; }
 command -v cosign >/dev/null || { echo 'Install Cosign to verify the Manager image before launch' >&2; exit 2; }
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 docker pull "$image"
@@ -66,10 +76,10 @@ if test "$platform" = unraid; then
       --env MANAGER_UNRAID_AUTOSTART=/run/frameleaf-host/unraid-autostart
   fi
 fi
-docker run --detach --name frameleaf-manager --restart unless-stopped \
+docker run --detach --name "$name" --restart unless-stopped \
   --label app.frameleaf.manager.role=controller \
   --security-opt no-new-privileges --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
-  --publish "$bind:2282:9443" \
+  --publish "$bind:$port:9443" \
   --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
   --mount type=bind,source=/proc/1/mountinfo,target=/run/frameleaf-host/mountinfo,readonly \
   --mount "type=bind,source=$state,target=$state" \

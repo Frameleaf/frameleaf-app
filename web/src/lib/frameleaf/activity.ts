@@ -1,4 +1,5 @@
 import {
+  StudioRenderStage,
   CloudMlJobPurpose,
   CloudMlJobStage,
   MediaOperationBulkAction,
@@ -194,6 +195,11 @@ export type ActivityItem = {
    */
   bulk?: { requested: number; succeeded: number; failed: number; skipped: number; retried: number };
   /**
+   * FL-721: a Cloud or Buddy restore brought back Locked items encrypted with an older key, which this
+   * server's key doesn't open. A count only, shown when above 0.
+   */
+  encryptedWithOlderKey?: number;
+  /**
    * Set on a completed portable Studio bundle job (FL-91): an export offers its file, an import the
    * project it created; both are looked up through the owner-scoped bundle routes when asked for.
    */
@@ -202,6 +208,9 @@ export type ActivityItem = {
   projectId?: string;
   /** The server's measured estimate of the time left, in seconds, when it has one. */
   estimateSeconds?: number;
+  /** Studio rates come only from durable worker frame samples; never infer them from a percentage. */
+  renderProgress?: NonNullable<MediaOperationDto['renderProgress']>;
+  finishedAt?: number;
   /** The server's estimate of the output size, in bytes, when it has one (prototype "Done · 12 MB"). */
   sizeBytes?: number;
   /**
@@ -446,6 +455,21 @@ export const isWaitingICloudSync = (operation: Pick<MediaOperationDto, 'status' 
  * What an edit job rendered (FL-43). Edits the server's job queue renders carry it in
  * `settings.edit`, and Activity names the row by it rather than calling every one "Edit".
  */
+/**
+ * FL-637/FL-638: Studio clip jobs that share the `studio_transcription` kind with captions, named by
+ * the server's `studioWork`. An unknown value falls back to the kind's own name.
+ */
+const STUDIO_WORK_KIND_KEY: Readonly<Record<string, Translations>> = {
+  stabilise: 'frameleaf_activity_kind_studio_stabilise',
+  'voice-cleanup': 'frameleaf_activity_kind_studio_voice_cleanup',
+};
+
+/** What a job is called in Activity and on its status line: its Studio work, else its kind. */
+export const mediaOperationKindKey = (operation: Pick<MediaOperationDto, 'kind' | 'studioWork'>): Translations =>
+  (operation.studioWork && Object.hasOwn(STUDIO_WORK_KIND_KEY, operation.studioWork)
+    ? STUDIO_WORK_KIND_KEY[operation.studioWork]
+    : undefined) ?? `frameleaf_activity_kind_${operation.kind}`;
+
 const EDIT_KIND_KEY: Readonly<Record<string, Translations>> = {
   photo_edit: 'frameleaf_activity_kind_photo_edit',
   photo_version: 'frameleaf_activity_kind_photo_version',
@@ -515,7 +539,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     id: `job:${operation.id}`,
     source: 'job',
     operationId: operation.id,
-    kindKey: edit ? EDIT_KIND_KEY[edit] : `frameleaf_activity_kind_${operation.kind}`,
+    kindKey: edit ? EDIT_KIND_KEY[edit] : mediaOperationKindKey(operation),
     statusKey: pause.pausePending
       ? 'frameleaf_activity_status_pausing'
       : waiting
@@ -570,6 +594,22 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
     ...(operation.projectId && STUDIO_RENDER_KINDS.has(operation.kind) && { projectId: operation.projectId }),
     ...estimateOf(operation),
+    ...(operation.kind === MediaOperationKind.StudioExport && {
+      renderProgress: operation.renderProgress ?? {
+        stage:
+          status === MediaOperationStatus.Validating
+            ? StudioRenderStage.Finalising
+            : status === MediaOperationStatus.Rendering
+              ? StudioRenderStage.Rendering
+              : StudioRenderStage.Preparing,
+        lastProgressAt: null,
+        framesPerSecond: null,
+        remainingRenderSeconds: null,
+      },
+      estimateSeconds: undefined,
+      finishedAt: operation.finishedAt ? Date.parse(operation.finishedAt) : undefined,
+    }),
+    ...((operation.encryptedWithOlderKey ?? 0) > 0 && { encryptedWithOlderKey: operation.encryptedWithOlderKey! }),
     ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
     stage: mediaOperationStage(operation),
     // FL-162: a Frameleaf Cloud job reads its stage, progress and money from the cloud job itself
@@ -936,9 +976,20 @@ export const activityIndicatorState = (items: readonly ActivityItem[]) => {
 
 /** Seconds left at the rate so far, or null when there is no honest estimate yet. */
 export const activityEtaSeconds = (
-  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running' | 'estimateSeconds'>,
+  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running' | 'estimateSeconds' | 'renderProgress'>,
   now: number,
 ): number | null => {
+  if (item.renderProgress) {
+    const last = item.renderProgress.lastProgressAt ? Date.parse(item.renderProgress.lastProgressAt) : NaN;
+    const seconds = item.renderProgress.remainingRenderSeconds;
+    return item.running &&
+      item.renderProgress.stage === 'rendering' &&
+      Number.isFinite(last) &&
+      now - last < 60_000 &&
+      seconds !== null
+      ? Math.ceil(seconds)
+      : null;
+  }
   // The server's own measurement wins over a guess from elapsed time.
   if (item.running && item.estimateSeconds !== undefined) {
     return item.estimateSeconds > 0 ? Math.ceil(item.estimateSeconds) : null;
@@ -960,7 +1011,15 @@ export const activityEtaSeconds = (
 export const activityStatusText = (
   item: Pick<
     ActivityItem,
-    'statusKey' | 'progress' | 'startedAt' | 'running' | 'paused' | 'finished' | 'estimateSeconds' | 'sizeBytes'
+    | 'statusKey'
+    | 'progress'
+    | 'startedAt'
+    | 'running'
+    | 'paused'
+    | 'finished'
+    | 'estimateSeconds'
+    | 'sizeBytes'
+    | 'renderProgress'
   >,
   {
     translate,

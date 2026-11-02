@@ -7,11 +7,11 @@ import { MlWorkload, QueueName } from 'src/enum.js';
  * Each library workload is routed to exactly one destination, and these are the queues whose
  * jobs make that workload's requests, so a workload's backlog is the work waiting for its routed
  * destination. Facial recognition (clustering) and duplicate detection (vector search) run in the
- * database and are not listed.
+ * database, and video duplicate fingerprints (FL-651) on the server, so they are not listed.
  */
 export const LIBRARY_ANALYSIS_QUEUES: Readonly<Record<MlWorkload, readonly QueueName[]>> = {
   [MlWorkload.Face]: [QueueName.FaceDetection],
-  [MlWorkload.Clip]: [QueueName.SmartSearch, QueueName.VideoDuplicateDetection],
+  [MlWorkload.Clip]: [QueueName.SmartSearch],
   [MlWorkload.Ocr]: [QueueName.Ocr],
   [MlWorkload.Enrichment]: [QueueName.ImageDescription, QueueName.NsfwDetection],
   [MlWorkload.RestorationFaithful]: [],

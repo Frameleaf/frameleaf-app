@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AssetMetadataUpsertItemSchema } from 'src/dtos/asset.dto.js';
-import { ApiCustomExtension, AssetVisibilitySchema } from 'src/enum.js';
+import { ApiCustomExtension, AssetVisibilitySchema, LibraryScopeSchema } from 'src/enum.js';
 import { JsonParsed, isoDatetimeToDate, stringToBool } from 'src/validation.js';
 
 export enum AssetMediaSize {
@@ -80,6 +80,7 @@ const AssetMediaBaseSchema = z.object({
 });
 
 const AssetMediaCreateSchema = AssetMediaBaseSchema.extend({
+  libraryScope: LibraryScopeSchema.optional().describe('Workspace membership; defaults to personal'),
   isFavorite: stringToBool.optional().describe('Mark as favorite'),
   visibility: AssetVisibilitySchema.optional(),
   livePhotoVideoId: z.uuidv4().optional().describe('Live photo video ID'),

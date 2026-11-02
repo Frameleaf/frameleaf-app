@@ -1,0 +1,315 @@
+{
+  "source": {
+    "name": "PiGallery2",
+    "version": "3.5.2",
+    "commit": "ed21d7f94bb346b5ba98e846bd71cd59782b453a",
+    "archiveSha256": "e63cc03767d4b97d9f6bcc1c0f6bfb31cd7262a4afc81c3af176866eee1741d1"
+  },
+  "runtime": {
+    "appVersion": "3.5.2",
+    "nodeVersion": "v22.22.0",
+    "sqliteVersion": "3.49.2",
+    "driverVersion": "11.10.0",
+    "dataStructureVersion": 41,
+    "image": "bpatrik/pigallery2@sha256:afc40f0513831ff260171c37bdbf872e52505cd2b35fa7276f0a28566bb43739"
+  },
+  "schemaSha256": "c2cb2ba31b20e4e37d8ef198fe6eafd79327d43536b81914c4599f32388dae89",
+  "structure": {
+    "applicationId": {
+      "application_id": 0
+    },
+    "userVersion": {
+      "user_version": 0
+    },
+    "objects": [
+      {
+        "type": "index",
+        "name": "IDX_0201e04bc33db92e094d20e05f",
+        "tbl_name": "album_base_entity",
+        "sql": "CREATE INDEX \"IDX_0201e04bc33db92e094d20e05f\" ON \"album_base_entity\" (\"id\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_09635eeb7bb8a61127f6440c56",
+        "tbl_name": "person_entry",
+        "sql": "CREATE INDEX \"IDX_09635eeb7bb8a61127f6440c56\" ON \"person_entry\" (\"id\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_146e2e895374ce3336e4638444",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": "CREATE INDEX \"IDX_146e2e895374ce3336e4638444\" ON \"projected_directory_cache_entity\" (\"projectionKey\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_1b03750121cb502cb51124d880",
+        "tbl_name": "file_entity",
+        "sql": "CREATE INDEX \"IDX_1b03750121cb502cb51124d880\" ON \"file_entity\" (\"type\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_1ce92610af8db7fdf208c886c5",
+        "tbl_name": "person_junction_table",
+        "sql": "CREATE INDEX \"IDX_1ce92610af8db7fdf208c886c5\" ON \"person_junction_table\" (\"personId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_256fb02d39e837089c9e658f3a",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": "CREATE INDEX \"IDX_256fb02d39e837089c9e658f3a\" ON \"projected_directory_cache_entity\" (\"projectionKey\", \"valid\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_273bf567306a63d675cd9b1571",
+        "tbl_name": "album_base_entity",
+        "sql": "CREATE INDEX \"IDX_273bf567306a63d675cd9b1571\" ON \"album_base_entity\" (\"type\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_39c047c1ee5d610fd388a78990",
+        "tbl_name": "person_junction_table",
+        "sql": "CREATE INDEX \"IDX_39c047c1ee5d610fd388a78990\" ON \"person_junction_table\" (\"mediaId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_4562ddfee404686da5b227a3db",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": "CREATE INDEX \"IDX_4562ddfee404686da5b227a3db\" ON \"projected_directory_cache_entity\" (\"directoryId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_4763e0b12820b509c71b261d26",
+        "tbl_name": "projected_album_cache_entity",
+        "sql": "CREATE INDEX \"IDX_4763e0b12820b509c71b261d26\" ON \"projected_album_cache_entity\" (\"albumId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_4936edfd322a9cc13dc48b2474",
+        "tbl_name": "projected_person_cache_entity",
+        "sql": "CREATE INDEX \"IDX_4936edfd322a9cc13dc48b2474\" ON \"projected_person_cache_entity\" (\"personId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_5713ce802e515e682e1c31aa21",
+        "tbl_name": "album_base_entity",
+        "sql": "CREATE INDEX \"IDX_5713ce802e515e682e1c31aa21\" ON \"album_base_entity\" (\"name\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_64e820712b91ca1aa1f1ccefe3",
+        "tbl_name": "media_entity",
+        "sql": "CREATE INDEX \"IDX_64e820712b91ca1aa1f1ccefe3\" ON \"media_entity\" (\"metadataCreationdate\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_6fdfaf8ec55cf0ef9f2652b964",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": "CREATE INDEX \"IDX_6fdfaf8ec55cf0ef9f2652b964\" ON \"projected_directory_cache_entity\" (\"directoryId\", \"projectionKey\", \"valid\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_710a3c58dbd57aed3ca926f1ac",
+        "tbl_name": "directory_entity",
+        "sql": "CREATE INDEX \"IDX_710a3c58dbd57aed3ca926f1ac\" ON \"directory_entity\" (\"name\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_75ddadc8db8a8d858ee46ee5a7",
+        "tbl_name": "media_entity",
+        "sql": "CREATE INDEX \"IDX_75ddadc8db8a8d858ee46ee5a7\" ON \"media_entity\" (\"directoryId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_7c7321b32739f276de4c8f73c8",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": "CREATE INDEX \"IDX_7c7321b32739f276de4c8f73c8\" ON \"projected_directory_cache_entity\" (\"valid\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_7f2f144c5119791dbeac5f5a9c",
+        "tbl_name": "media_entity",
+        "sql": "CREATE INDEX \"IDX_7f2f144c5119791dbeac5f5a9c\" ON \"media_entity\" (\"id\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_801f0f7977ba54e03c31f7c55e",
+        "tbl_name": "file_entity",
+        "sql": "CREATE INDEX \"IDX_801f0f7977ba54e03c31f7c55e\" ON \"file_entity\" (\"directoryId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_a200e6dca2fff10777b6b54620",
+        "tbl_name": "directory_entity",
+        "sql": "CREATE INDEX \"IDX_a200e6dca2fff10777b6b54620\" ON \"directory_entity\" (\"id\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_abda48911d7eec302401f4f931",
+        "tbl_name": "media_entity",
+        "sql": "CREATE INDEX \"IDX_abda48911d7eec302401f4f931\" ON \"media_entity\" (\"metadataRating\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_c1830a0ecff89c74f59a52ffa1",
+        "tbl_name": "directory_entity",
+        "sql": "CREATE INDEX \"IDX_c1830a0ecff89c74f59a52ffa1\" ON \"directory_entity\" (\"path\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_c685ab97c3b078cfef472a475f",
+        "tbl_name": "projected_person_cache_entity",
+        "sql": "CREATE INDEX \"IDX_c685ab97c3b078cfef472a475f\" ON \"projected_person_cache_entity\" (\"projectionKey\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_d8375e0b2592310864d2b4974b",
+        "tbl_name": "file_entity",
+        "sql": "CREATE INDEX \"IDX_d8375e0b2592310864d2b4974b\" ON \"file_entity\" (\"id\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_ddecf5f3130acb8663c404ed2a",
+        "tbl_name": "directory_entity",
+        "sql": "CREATE INDEX \"IDX_ddecf5f3130acb8663c404ed2a\" ON \"directory_entity\" (\"parentId\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_ed54661ddfc98f8ea818002d32",
+        "tbl_name": "person_junction_table",
+        "sql": "CREATE INDEX \"IDX_ed54661ddfc98f8ea818002d32\" ON \"person_junction_table\" (\"id\") "
+      },
+      {
+        "type": "index",
+        "name": "IDX_f37e844be2da219706d9cae83c",
+        "tbl_name": "projected_album_cache_entity",
+        "sql": "CREATE INDEX \"IDX_f37e844be2da219706d9cae83c\" ON \"projected_album_cache_entity\" (\"projectionKey\") "
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_directory_entity_1",
+        "tbl_name": "directory_entity",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_media_entity_1",
+        "tbl_name": "media_entity",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_person_entry_1",
+        "tbl_name": "person_entry",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_projected_album_cache_entity_1",
+        "tbl_name": "projected_album_cache_entity",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_projected_directory_cache_entity_1",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_projected_person_cache_entity_1",
+        "tbl_name": "projected_person_cache_entity",
+        "sql": null
+      },
+      {
+        "type": "index",
+        "name": "sqlite_autoindex_user_entity_1",
+        "tbl_name": "user_entity",
+        "sql": null
+      },
+      {
+        "type": "table",
+        "name": "album_base_entity",
+        "tbl_name": "album_base_entity",
+        "sql": "CREATE TABLE \"album_base_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"name\" varchar NOT NULL, \"locked\" boolean NOT NULL DEFAULT (0), \"searchQuery\" text, \"type\" varchar(24) NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "directory_entity",
+        "tbl_name": "directory_entity",
+        "sql": "CREATE TABLE \"directory_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"name\" varchar NOT NULL, \"path\" varchar NOT NULL, \"lastModified\" bigint NOT NULL, \"lastScanned\" bigint, \"parentId\" integer, CONSTRAINT \"UQ_05d748647d27bf887ef0826de72\" UNIQUE (\"name\", \"path\"), CONSTRAINT \"FK_ddecf5f3130acb8663c404ed2ac\" FOREIGN KEY (\"parentId\") REFERENCES \"directory_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "file_entity",
+        "tbl_name": "file_entity",
+        "sql": "CREATE TABLE \"file_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"name\" varchar NOT NULL, \"date\" bigint, \"type\" varchar(16) NOT NULL, \"directoryId\" integer NOT NULL, CONSTRAINT \"FK_801f0f7977ba54e03c31f7c55ee\" FOREIGN KEY (\"directoryId\") REFERENCES \"directory_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "media_entity",
+        "tbl_name": "media_entity",
+        "sql": "CREATE TABLE \"media_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"name\" varchar NOT NULL, \"type\" varchar(16) NOT NULL, \"directoryId\" integer NOT NULL, \"metadataCaption\" text, \"metadataTitle\" text, \"metadataCreationdate\" bigint, \"metadataCreationdateoffset\" smallint, \"metadataFilesize\" bigint, \"metadataKeywords\" text, \"metadataRating\" tinyint, \"metadataFaces\" text, \"metadataPersons\" text, \"metadataPersonslength\" tinyint DEFAULT (0), \"metadataBitrate\" integer, \"metadataDuration\" integer, \"metadataSizeWidth\" integer NOT NULL, \"metadataSizeHeight\" integer NOT NULL, \"metadataCameraDataIso\" integer, \"metadataCameraDataModel\" text, \"metadataCameraDataMake\" text, \"metadataCameraDataFstop\" float, \"metadataCameraDataExposure\" float, \"metadataCameraDataFocallength\" float, \"metadataCameraDataLens\" text, \"metadataPositionDataCountry\" text, \"metadataPositionDataState\" text, \"metadataPositionDataCity\" text, \"metadataPositionDataGPSDataLatitude\" float, \"metadataPositionDataGPSDataLongitude\" float, CONSTRAINT \"UQ_332f316a46fcb158ac71210109a\" UNIQUE (\"name\", \"directoryId\"), CONSTRAINT \"FK_75ddadc8db8a8d858ee46ee5a76\" FOREIGN KEY (\"directoryId\") REFERENCES \"directory_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "person_entry",
+        "tbl_name": "person_entry",
+        "sql": "CREATE TABLE \"person_entry\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"name\" varchar NOT NULL, \"isFavourite\" boolean NOT NULL DEFAULT (0), CONSTRAINT \"UQ_1c78d96bbb8f929e67d32a1e051\" UNIQUE (\"name\"))"
+      },
+      {
+        "type": "table",
+        "name": "person_junction_table",
+        "tbl_name": "person_junction_table",
+        "sql": "CREATE TABLE \"person_junction_table\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaId\" integer NOT NULL, \"personId\" integer NOT NULL, CONSTRAINT \"FK_39c047c1ee5d610fd388a789906\" FOREIGN KEY (\"mediaId\") REFERENCES \"media_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_1ce92610af8db7fdf208c886c5a\" FOREIGN KEY (\"personId\") REFERENCES \"person_entry\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "projected_album_cache_entity",
+        "tbl_name": "projected_album_cache_entity",
+        "sql": "CREATE TABLE \"projected_album_cache_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"projectionKey\" varchar(32) NOT NULL, \"itemCount\" integer NOT NULL DEFAULT (0), \"oldestMedia\" bigint, \"youngestMedia\" bigint, \"valid\" boolean NOT NULL DEFAULT (0), \"albumId\" integer NOT NULL, \"coverId\" integer, CONSTRAINT \"UQ_9379a5577b94ee391d235c96b90\" UNIQUE (\"projectionKey\", \"albumId\"), CONSTRAINT \"FK_4763e0b12820b509c71b261d260\" FOREIGN KEY (\"albumId\") REFERENCES \"album_base_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_256358a292175dcd11db11a32ca\" FOREIGN KEY (\"coverId\") REFERENCES \"media_entity\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "projected_directory_cache_entity",
+        "tbl_name": "projected_directory_cache_entity",
+        "sql": "CREATE TABLE \"projected_directory_cache_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"projectionKey\" varchar(32) NOT NULL, \"mediaCount\" integer NOT NULL DEFAULT (0), \"recursiveMediaCount\" integer NOT NULL DEFAULT (0), \"oldestMedia\" bigint, \"youngestMedia\" bigint, \"valid\" boolean NOT NULL DEFAULT (0), \"directoryId\" integer NOT NULL, \"coverId\" integer, CONSTRAINT \"UQ_2586e5005b34aedb03c10aa6666\" UNIQUE (\"projectionKey\", \"directoryId\"), CONSTRAINT \"FK_4562ddfee404686da5b227a3db3\" FOREIGN KEY (\"directoryId\") REFERENCES \"directory_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_34379c928a45c9582ac5834d254\" FOREIGN KEY (\"coverId\") REFERENCES \"media_entity\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "projected_person_cache_entity",
+        "tbl_name": "projected_person_cache_entity",
+        "sql": "CREATE TABLE \"projected_person_cache_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"projectionKey\" varchar(32) NOT NULL, \"count\" integer NOT NULL DEFAULT (0), \"valid\" boolean NOT NULL DEFAULT (1), \"personId\" integer NOT NULL, \"sampleRegionId\" integer, CONSTRAINT \"UQ_aea9e34f389ccd6c2e9a413e677\" UNIQUE (\"projectionKey\", \"personId\"), CONSTRAINT \"FK_4936edfd322a9cc13dc48b2474c\" FOREIGN KEY (\"personId\") REFERENCES \"person_entry\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_fc2088eb4b33732dc5793362894\" FOREIGN KEY (\"sampleRegionId\") REFERENCES \"person_junction_table\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "sharing_entity",
+        "tbl_name": "sharing_entity",
+        "sql": "CREATE TABLE \"sharing_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"sharingKey\" varchar NOT NULL, \"searchQuery\" text NOT NULL, \"password\" text, \"expires\" bigint NOT NULL, \"timeStamp\" bigint NOT NULL, \"creatorId\" integer NOT NULL, CONSTRAINT \"FK_ea40f41a2571c7e9bcf8e34ad03\" FOREIGN KEY (\"creatorId\") REFERENCES \"user_entity\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      },
+      {
+        "type": "table",
+        "name": "sqlite_sequence",
+        "tbl_name": "sqlite_sequence",
+        "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+      },
+      {
+        "type": "table",
+        "name": "user_entity",
+        "tbl_name": "user_entity",
+        "sql": "CREATE TABLE \"user_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"name\" varchar NOT NULL, \"password\" varchar NOT NULL, \"role\" smallint NOT NULL, \"overrideAllowBlockList\" boolean NOT NULL DEFAULT (0), \"allowQuery\" text, \"blockQuery\" text, CONSTRAINT \"UQ_3fe76ecf0f0ef036ff981e9f67d\" UNIQUE (\"name\"))"
+      },
+      {
+        "type": "table",
+        "name": "version_entity",
+        "tbl_name": "version_entity",
+        "sql": "CREATE TABLE \"version_entity\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"version\" integer NOT NULL)"
+      }
+    ]
+  },
+  "versions": [
+    {
+      "id": 1,
+      "version": 41
+    }
+  ]
+}

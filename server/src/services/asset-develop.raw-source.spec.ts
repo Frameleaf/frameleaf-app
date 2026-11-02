@@ -37,6 +37,7 @@ describe('AssetDevelopService sensor source', () => {
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
       mocks.machineLearning as never,
+      mocks.event as never,
     );
   });
 
@@ -52,7 +53,7 @@ describe('AssetDevelopService sensor source', () => {
           .build(),
       );
       const image = { ...defaults.image, extractEmbedded, enhancedRaw: { enabled: false } };
-      expect(await sut['decodeSource'](source, image, 1536)).toEqual({
+      expect(await sut['decodeSource'](source, image, null, 1536)).toEqual({
         data: pixels,
         info,
         colorspace: Colorspace.Srgb,
@@ -69,7 +70,7 @@ describe('AssetDevelopService sensor source', () => {
 
   it('decodes full sensor resolution for a developed master', async () => {
     const source = getForGenerateThumbnail(AssetFactory.from({ originalFileName: 'photo.CR2' }).exif().build());
-    await sut['decodeSource'](source, { ...defaults.image, extractEmbedded: true });
+    await sut['decodeSource'](source, { ...defaults.image, extractEmbedded: true }, null);
     expect(mocks.media.decodeImage).toHaveBeenCalledWith(sensor, expect.objectContaining({ size: undefined }));
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
@@ -78,7 +79,7 @@ describe('AssetDevelopService sensor source', () => {
     const source = getForGenerateThumbnail(AssetFactory.from({ originalFileName: 'photo.NEF' }).exif().build());
     const error = new RawRenderError('damaged', 'ERR_RAW_DAMAGED');
     vi.mocked(renderRawWithLibRaw).mockRejectedValue(error);
-    await expect(sut['decodeSource'](source, { ...defaults.image, extractEmbedded: true })).rejects.toBe(error);
+    await expect(sut['decodeSource'](source, { ...defaults.image, extractEmbedded: true }, null)).rejects.toBe(error);
     expect(renderRawWithLibRaw).toHaveBeenCalledOnce();
     expect(mocks.media.extract).not.toHaveBeenCalled();
     expect(mocks.media.decodeImage).not.toHaveBeenCalled();
@@ -86,7 +87,7 @@ describe('AssetDevelopService sensor source', () => {
 
   it.each(['photo.jpeg', 'layered.psd'])('preserves successful original decoding for %s', async (originalFileName) => {
     const source = getForGenerateThumbnail(AssetFactory.from({ originalFileName, isExternal: true }).exif().build());
-    await sut['decodeSource'](source, { ...defaults.image, extractEmbedded: true });
+    await sut['decodeSource'](source, { ...defaults.image, extractEmbedded: true }, null);
     expect(renderRawWithLibRaw).not.toHaveBeenCalled();
     expect(mocks.media.decodeImage).toHaveBeenCalledWith(
       source.originalPath,

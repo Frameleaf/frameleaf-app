@@ -22,6 +22,7 @@ import type {
   UserAdminResponseDto,
 } from '@frameleaf/sdk';
 import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 
 export class MigrateHttpError extends Error {
   constructor(
@@ -39,6 +40,9 @@ export class MigrateHttpError extends Error {
 // A File subclass that streams its bytes from disk on demand, so uploads never buffer
 // a whole asset in memory. Same pattern the `upload` command uses.
 class StreamFile extends File {
+  /** Called for every chunk read from disk, so an upload in progress counts as activity. */
+  onChunk?: () => void;
+
   constructor(
     private readonly filepath: string,
     size: number,
@@ -50,12 +54,58 @@ class StreamFile extends File {
     Object.defineProperty(this, 'size', { value: size });
   }
   stream() {
-    return createReadStream(this.filepath) as unknown as ReadableStream;
+    const chunks = Readable.toWeb(createReadStream(this.filepath)) as ReadableStream<Uint8Array>;
+    return chunks.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform: (chunk, controller) => {
+          this.onChunk?.();
+          controller.enqueue(chunk);
+        },
+      }),
+    ) as unknown as ReadableStream;
   }
 }
 
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+// POSTs the server can safely receive twice. Any other POST (create album, person, stack…)
+// may already have taken effect when the response is lost, so it is retried only on 429.
+const REPEAT_SAFE_POSTS = new Set(['/search/metadata', '/assets/bulk-upload-check', '/assets']);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const canRetry = (method: string, path: string, status?: number) =>
+  method !== 'POST' || status === 429 || REPEAT_SAFE_POSTS.has(path.split('?', 1)[0]);
+
+/** An abort signal that fires only after `ms` without activity; `touch()` restarts the clock. */
+const inactivityTimeout = (ms: number) => {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => clearTimeout(timer);
+  const touch = () => {
+    stop();
+    timer = setTimeout(() => controller.abort(new DOMException(`No data for ${ms / 1000}s`, 'TimeoutError')), ms);
+    timer.unref?.();
+  };
+  touch();
+  return { signal: controller.signal, touch, stop };
+};
+
+/** Re-wraps a response so every body chunk received counts as activity. */
+const watchBody = (response: Response, touch: () => void, stop: () => void): Response => {
+  if (!response.body) {
+    stop();
+    return response;
+  }
+  const body = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        touch();
+        controller.enqueue(chunk);
+      },
+      flush: stop,
+    }),
+  );
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+};
 
 const buildQuery = (params: Record<string, string | number | boolean | undefined>): string => {
   const usp = new URLSearchParams();
@@ -105,29 +155,40 @@ export class ServerClient {
   private async request(method: string, path: string, init: RequestInit = {}): Promise<Response> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
+      // Without a timeout a half-open connection hangs the whole migration indefinitely.
+      // Applied per attempt, so a timeout is just another retryable network failure. It
+      // measures inactivity, not total time, so large originals keep going while bytes flow.
+      const timeout = inactivityTimeout(this.timeoutMs);
+      const upload = init.body instanceof FormData ? init.body.get('assetData') : null;
+      if (upload instanceof StreamFile) {
+        upload.onChunk = timeout.touch;
+      }
       try {
         const response = await fetch(`${this.baseUrl}${path}`, {
           ...init,
           method,
           redirect: 'error',
-          // Without a timeout a half-open connection hangs the whole migration indefinitely.
-          // Applied per attempt, so a timeout is just another retryable network failure.
-          // Generous, because uploads and downloads of large originals live on this path.
-          signal: init.signal ?? AbortSignal.timeout(this.timeoutMs),
+          signal: init.signal ?? timeout.signal,
           headers: { 'x-api-key': this.apiKey, Accept: 'application/json', ...init.headers },
         });
         if (response.ok) {
-          return response;
+          return watchBody(response, timeout.touch, timeout.stop);
         }
-        if (RETRYABLE.has(response.status) && attempt < this.retries) {
+        if (RETRYABLE.has(response.status) && attempt < this.retries && canRetry(method, path, response.status)) {
+          // Release the connection now rather than when the unread body is garbage-collected.
+          await response.body?.cancel();
+          timeout.stop();
           await sleep(Math.min(30_000, 500 * 2 ** attempt));
           continue;
         }
-        throw new MigrateHttpError(response.status, response.statusText, await response.text(), method, path);
+        const text = await response.text();
+        timeout.stop();
+        throw new MigrateHttpError(response.status, response.statusText, text, method, path);
       } catch (error) {
+        timeout.stop();
         lastError = error;
         // Network-level failure: back off and retry. HTTP errors we already decided to throw above.
-        if (error instanceof MigrateHttpError || attempt >= this.retries) {
+        if (error instanceof MigrateHttpError || attempt >= this.retries || !canRetry(method, path)) {
           throw error;
         }
         await sleep(Math.min(30_000, 500 * 2 ** attempt));
@@ -149,7 +210,8 @@ export class ServerClient {
 
   // --- enumeration ---
   searchAssets = (dto: MetadataSearchDto) => this.json<SearchResponseDto>('POST', '/search/metadata', dto);
-  getAllAlbums = () => this.json<AlbumResponseDto[]>('GET', '/albums');
+  /** Albums this account owns. Albums other users share with it are theirs to migrate. */
+  getAllAlbums = () => this.json<AlbumResponseDto[]>('GET', `/albums${buildQuery({ isOwned: true })}`);
   getAlbumInfo = (id: string) => this.json<AlbumResponseDto>('GET', `/albums/${id}`);
   getAllTags = () => this.json<TagResponseDto[]>('GET', '/tags');
   searchStacks = () => this.json<StackResponseDto[]>('GET', '/stacks');
@@ -172,6 +234,7 @@ export class ServerClient {
   checkBulkUpload = (assets: Array<{ id: string; checksum: string }>) =>
     this.json<AssetBulkUploadCheckResponseDto>('POST', '/assets/bulk-upload-check', { assets });
   getAssetInfo = (id: string) => this.json<AssetResponseDto>('GET', `/assets/${id}`);
+  restoreAssets = (ids: string[]) => this.json<unknown>('POST', '/trash/restore/assets', { ids });
 
   /** Streamed original bytes. Caller pipes `response.body` to disk. */
   downloadOriginal = (id: string) => this.request('GET', `/assets/${id}/original`);
@@ -221,6 +284,7 @@ export class ServerClient {
 
   createStack = (assetIds: string[]) => this.json<StackResponseDto>('POST', '/stacks', { assetIds });
 
+  getPerson = (id: string) => this.json<PersonResponseDto>('GET', `/people/${id}`);
   searchPerson = (name: string) =>
     this.json<PersonResponseDto[]>('GET', `/search/person${buildQuery({ name, withHidden: true })}`);
   /** Faces detected on an asset, each with the person it currently belongs to (if any). */

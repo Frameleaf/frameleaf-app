@@ -11,6 +11,7 @@ import {
   AssetTypeSchema,
   AssetVisibilitySchema,
   ImageEnrichmentFilterSchema,
+  LibraryViewScopeSchema,
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
@@ -35,6 +36,7 @@ const FLAT_PET_IDS_FIELD = {
 };
 
 const BaseSearchSchema = z.object({
+  libraryScope: LibraryViewScopeSchema.optional(),
   imageEnrichment: ImageEnrichmentFilterSchema.optional(),
   suppressedOnly: z.boolean().optional().describe('Return only suppressed content. Requires an elevated session.'),
   libraryId: z.uuidv4().nullish().describe('Library ID to filter by').meta(DEPRECATED_FLAT_FIELD),
@@ -293,7 +295,27 @@ export const SearchOrderSchema = z
   })
   .meta({ id: 'SearchOrder' });
 
+export const ColorFilterSchema = z
+  .strictObject({
+    hex: z
+      .string()
+      .regex(/^#[a-fA-F0-9]{6}$/)
+      .transform((value) => value.toLowerCase()),
+    tolerance: z.enum(['tight', 'normal', 'broad']).meta({ id: 'ColorTolerance' }).default('normal'),
+    minWeight: z.number().min(0).max(1).meta({ format: 'double' }).default(0.05),
+  })
+  .meta({ id: 'ColorFilter' });
+export type ColorFilter = z.infer<typeof ColorFilterSchema>;
+
 const searchFilterBranchShape = {
+  text: z.strictObject({ contains: z.string().trim().min(1).max(4096) }).meta({ id: 'LibraryTextFilter' }),
+  source: z.strictObject({ contains: z.string().trim().min(1).max(500) }).meta({ id: 'SourceFilter' }),
+  color: ColorFilterSchema,
+  hasTransparency: BoolFilterSchema,
+  albumSubtreeIds: IdsFilterSchema.refine(
+    (groups) => Object.values(groups).every((ids) => ids.length <= 100),
+    'Select at most 100 subtree roots',
+  ).meta({ id: 'AlbumSubtreeFilter' }),
   id: IdFilterSchema,
   libraryId: IdFilterNullableSchema,
   type: EnumFilterAssetTypeSchema,
@@ -324,6 +346,12 @@ const searchFilterBranchShape = {
   ocr: StringSimilarityFilterSchema,
   rating: NumberFilterNullableSchema,
   fileSizeInBytes: NumberFilterSchema,
+  width: NumberFilterNullableSchema.describe('Source pixel width from metadata'),
+  height: NumberFilterNullableSchema.describe('Source pixel height from metadata'),
+  aspectRatio: NumberFilterNullableSchema.describe(
+    'Source pixel width divided by height; null when dimensions are unavailable',
+  ),
+  durationMs: NumberFilterNullableSchema.describe('Video/GIF duration in milliseconds; null for static images'),
   takenAt: DateFilterSchema,
   // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
   // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it
@@ -354,6 +382,7 @@ export const SearchFilterSchema = z
   .strictObject(searchFilterBranchShape)
   .partial()
   .extend({
+    libraryScope: LibraryViewScopeSchema.optional(),
     or: z.array(SearchFilterBranchSchema).min(1).optional(),
   })
   .meta({ id: 'SearchFilter' });
@@ -380,7 +409,10 @@ export const isNewShapeRequest = (dto: Partial<Record<(typeof NEW_SHAPE_FIELDS)[
 
 /** Whether every asset the branch can match is provably inside an (access-checked) album */
 export const isAlbumConfined = (branch: SearchFilterBranch): boolean =>
-  branch.albumIds?.any !== undefined || branch.albumIds?.all !== undefined;
+  branch.albumIds?.any !== undefined ||
+  branch.albumIds?.all !== undefined ||
+  branch.albumSubtreeIds?.any !== undefined ||
+  branch.albumSubtreeIds?.all !== undefined;
 
 /** Whether every result of the whole filter is album-confined */
 export const isFullyAlbumConfined = (filter: SearchFilter): boolean =>
@@ -563,6 +595,7 @@ export enum SearchFacetField {
   Rating = 'rating',
   IsFavorite = 'isFavorite',
   Tags = 'tags',
+  Pets = 'pets',
 }
 
 export const SearchFacetFieldSchema = z.enum(SearchFacetField).meta({ id: 'SearchFacetField' });

@@ -62,6 +62,13 @@ const INCOMING_FOLDER = 'incoming';
 export const studioImportIncomingFolder = (ownerId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), IMPORT_FOLDER, INCOMING_FOLDER);
 
+/**
+ * A fresh scratch path in the incoming folder. Publication only accepts `<uuid>.upload` here, so
+ * every file the server stages for `upload()` must take its name from this.
+ */
+export const studioImportStagePath = (ownerId: string) =>
+  join(studioImportIncomingFolder(ownerId), `${randomUUID()}.upload`);
+
 /** Where a checked import is kept for the life of its project. */
 export const studioImportProjectFolder = (ownerId: string, projectId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), IMPORT_FOLDER, projectId);

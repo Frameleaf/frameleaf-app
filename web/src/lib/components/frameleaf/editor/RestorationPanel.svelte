@@ -90,6 +90,7 @@
     type AssetRestorationOptionsDto,
     type AssetRestorationResponseDto,
     type CloudMlJobEstimateRequestDto,
+    MlAdmissionRefusal,
   } from '@frameleaf/sdk';
   import { Icon, modalManager, toastManager } from '@frameleaf/ui';
   import {
@@ -109,6 +110,7 @@
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { editingDefaults } from '$lib/frameleaf/editing-defaults.svelte';
 
   type Props = {
@@ -353,8 +355,13 @@
     }
   };
 
+  /** Set on destroy: a list read still on its way must not start a new poll for a closed panel. */
+  let destroyed = false;
   const schedulePoll = () => {
     clearTimeout(pollTimer);
+    if (destroyed) {
+      return;
+    }
     pollTimer = setTimeout(
       () =>
         void (async () => {
@@ -397,6 +404,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     clearTimeout(pollTimer);
     stopActivity?.();
     onCompare(null);
@@ -932,6 +940,13 @@
           <p class="rs-warning" role="status">
             {$t(mlRefusalLabelKey(selected.refusal))}{selected.refusalDetail ? ` ${selected.refusalDetail}` : ''}
           </p>
+          {#if selected.refusal === MlAdmissionRefusal.EntitlementMissing || selected.refusal === MlAdmissionRefusal.WalletInsufficient}
+            <button type="button" class="rs-button" onclick={() => getCloudManager.open('processing')}>
+              {selected.refusal === MlAdmissionRefusal.WalletInsufficient
+                ? $t('frameleaf_add_ai_credit')
+                : $t('frameleaf_get_cloud')}
+            </button>
+          {/if}
         {:else if selected.leavesNetwork}
           <p class="rs-warning" role="status">
             <Icon icon={mdiCloudOutline} size="14" />

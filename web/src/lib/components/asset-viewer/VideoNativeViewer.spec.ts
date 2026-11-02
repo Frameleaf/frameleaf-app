@@ -297,6 +297,28 @@ describe('VideoNativeViewer component', () => {
       videoSeek.pending = null;
     });
 
+    it('holds a spoken timestamp until original-source metadata replaces a trimmed preview', async () => {
+      const props = videoProps();
+      const viewer = renderViewer(props);
+      let video = viewer.container.querySelector('video')!;
+      loaded(video, { duration: 10 });
+      await fireEvent.loadedMetadata(video);
+      videoSeek.request(props.assetId, 65_000, true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(videoSeek.pending?.seconds).toBe(65);
+      await viewer.rerender({ componentProps: { ...props, playOriginalVideo: true } });
+      video = viewer.container.querySelector('video')!;
+      expect(video).toHaveAttribute(
+        'src',
+        getAssetMediaUrl({ id: props.assetId, size: AssetMediaSize.Original, cacheKey: null }),
+      );
+      expect(videoSeek.pending?.seconds).toBe(65);
+      loaded(video, { duration: 120 });
+      await fireEvent.loadedMetadata(video);
+      await waitFor(() => expect(video.currentTime).toBe(65));
+      expect(videoSeek.pending).toBeNull();
+    });
+
     it('resumes the session’s open video where it was left', async () => {
       const props = videoProps();
       librarySession.open(props.assetId, 42);
@@ -460,6 +482,64 @@ describe('VideoNativeViewer component', () => {
     expect(onVideoStarted).not.toHaveBeenCalled();
     expect(viewer.getByRole('status', { name: 'loading' })).toBeInTheDocument();
     play.mockRestore();
+  });
+
+  describe('encrypted Locked videos (FL-721)', () => {
+    it('plays a partner’s encrypted Locked video directly instead of over HLS', () => {
+      featureFlagsManager.value.realtimeTranscoding = true;
+      const props = videoProps();
+      props.asset = {
+        ...props.asset,
+        visibility: AssetVisibility.Locked,
+        lockedEncryption: { openable: true, ownerName: 'Taylor' },
+      };
+      const viewer = renderViewer(props);
+      expect(viewer.container.querySelector('hls-video')).not.toBeInTheDocument();
+      expect(viewer.container.querySelector('video')).toHaveAttribute(
+        'src',
+        getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
+      );
+    });
+
+    it('falls back to direct play when the server refuses HLS with a 400, without an error', async () => {
+      featureFlagsManager.value.realtimeTranscoding = true;
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const props = videoProps();
+      props.asset = { ...props.asset, visibility: AssetVisibility.Locked };
+      const viewer = renderViewer(props);
+      await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+      const errorHandler = hlsMocks.instances[0].on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
+      errorHandler(Hls.Events.ERROR, {
+        fatal: true,
+        details: Hls.ErrorDetails.MANIFEST_LOAD_ERROR,
+        response: { code: 400 },
+      });
+      await waitFor(() =>
+        expect(viewer.container.querySelector('video')).toHaveAttribute(
+          'src',
+          getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
+        ),
+      );
+      expect(viewer.container.querySelector('hls-video')).not.toBeInTheDocument();
+      expect(viewer.queryByRole('alert')).not.toBeInTheDocument();
+      errorLog.mockRestore();
+    });
+  });
+
+  it('keeps HLS after a non-fatal 400 on the manifest (FL-721)', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const props = videoProps();
+    const viewer = renderViewer(props);
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const errorHandler = hlsMocks.instances[0].on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
+    errorHandler(Hls.Events.ERROR, {
+      fatal: false,
+      details: Hls.ErrorDetails.MANIFEST_LOAD_ERROR,
+      response: { code: 400 },
+    });
+    expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.assetId));
+    errorLog.mockRestore();
   });
 
   it('reports fatal HLS failure and retries HLS without selecting original playback', async () => {

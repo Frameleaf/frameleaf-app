@@ -9,15 +9,17 @@ const items = [
 ];
 
 it.each(['EACCES', 'EIO', 'ELOOP', 'ENOTDIR'])(
-  'does not turn %s into missing reports or successful progress',
+  'does not turn %s into a missing report, and still finishes the batch',
   async (code) => {
     const { sut, mocks } = newTestService(IntegrityService);
     const failure = Object.assign(new Error('stat failed'), { code });
     mocks.storage.stat.mockResolvedValueOnce({} as never).mockRejectedValueOnce(failure);
-    await expect(sut.handleMissingFiles({ runId: 'run', items })).rejects.toBe(failure);
-    expect(mocks.integrityReport.deleteByIds).not.toHaveBeenCalled();
+    await expect(sut.handleMissingFiles({ runId: 'run', items })).resolves.toBe(JobStatus.Success);
+    expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['outdated']);
     expect(mocks.integrityReport.create).not.toHaveBeenCalled();
-    expect(mocks.systemMetadata.updateIntegrityRun).not.toHaveBeenCalled();
+    expect(mocks.systemMetadata.updateIntegrityRun).toHaveBeenCalledWith(IntegrityReport.MissingFile, 'run', {
+      finished: 1,
+    });
   },
 );
 
@@ -40,8 +42,8 @@ it.each(['handleMissingRefresh', 'handleUntrackedRefresh'] as const)(
     const failure = Object.assign(new Error('read denied'), { code: 'EACCES' });
     mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
     mocks.storage.stat.mockRejectedValue(failure);
-    await expect(sut[handler]({ items: [{ path: '/synthetic/unreadable', reportId: 'report' }] })).rejects.toBe(
-      failure,
+    await expect(sut[handler]({ items: [{ path: '/synthetic/unreadable', reportId: 'report' }] })).resolves.toBe(
+      JobStatus.Success,
     );
     expect(mocks.integrityReport.deleteByIds).not.toHaveBeenCalled();
   },

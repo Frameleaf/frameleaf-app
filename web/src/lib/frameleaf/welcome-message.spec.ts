@@ -36,6 +36,7 @@ describe('the welcome message before sign-in (FL-426)', () => {
     expect(link('javascript:alert(1)')).toBe('<a>Go</a>');
     expect(link('data:text/html,hi')).toBe('<a>Go</a>');
     expect(link('//elsewhere.example/x')).toBe('<a>Go</a>');
+    expect(link(String.raw`/\elsewhere.example/x`)).toBe('<a>Go</a>');
     expect(link('mailto:help@example.com')).toContain('href="mailto:help@example.com"');
     expect(link('/photos')).toContain('href="/photos"');
     const kept = link('https://example.com');

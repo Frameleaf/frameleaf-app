@@ -1,14 +1,19 @@
 import { ActivityService } from 'src/services/activity.service.js';
+import { AlbumItemsService } from 'src/services/album-items.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
+import { AlbumSuggestionService } from 'src/services/album-suggestion.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
 import { ArchiveOperationService } from 'src/services/archive-operation.service.js';
+import { AssetAnnotationService } from 'src/services/asset-annotation.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
+import { AssetSourceService } from 'src/services/asset-source.service.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -18,6 +23,8 @@ import { AuthService } from 'src/services/auth.service.js';
 import { BackupDeviceService } from 'src/services/backup-device.service.js';
 import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
+import { BookmarkService } from 'src/services/bookmark.service.js';
+import { BrowserExtensionSignInService } from 'src/services/browser-extension-sign-in.service.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
@@ -25,6 +32,7 @@ import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.ser
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { BundledRenderWorkerService } from 'src/services/bundled-render-worker.service.js';
+import { CaptureService } from 'src/services/capture.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
@@ -37,6 +45,7 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DescriptionTagCleanupService } from 'src/services/description-tag-cleanup.service.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
@@ -45,10 +54,13 @@ import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.ser
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
+import { DevelopBatchService } from 'src/services/develop-batch.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
+import { EagleImportWorkerService } from 'src/services/eagle-import-worker.service.js';
+import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
@@ -72,14 +84,19 @@ import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-work
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
+import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
 import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
+import { LibraryItemService } from 'src/services/library-item.service.js';
+import { LibraryProgressService } from 'src/services/library-progress.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
+import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { MailConnectionService } from 'src/services/mail-connection.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
@@ -98,6 +115,7 @@ import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
+import { OvernightService } from 'src/services/overnight.service.js';
 import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerLockService } from 'src/services/partner-lock.service.js';
 import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
@@ -106,12 +124,12 @@ import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
+import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
-import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
-import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
@@ -131,24 +149,32 @@ import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
+import { SpeechService } from 'src/services/speech.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
+import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
+import { StudioMovieService } from 'src/services/studio-movie.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
+import { StudioReframeService } from 'src/services/studio-reframe.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
+import { StudioStabiliseService } from 'src/services/studio-stabilise.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
+import { StudioVoiceCleanupService } from 'src/services/studio-voice-cleanup.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -161,6 +187,7 @@ import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
+import { UtilitiesService } from 'src/services/utilities.service.js';
 import { VersionService } from 'src/services/version.service.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { ViewService } from 'src/services/view.service.js';
@@ -170,10 +197,22 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PhotoLocationsService,
+  SpeechService,
+  LibraryItemService,
+  AssetAnnotationService,
+  AssetPaletteService,
+  CaptureService,
+  BrowserExtensionSignInService,
+  AlbumItemsService,
+  AssetSourceService,
+  BookmarkService,
+  DevelopBatchService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
   PhotoSourceService,
+  SourceResourceAuthService,
   DesktopMlService,
   DesktopNasProducerService,
   DesktopQualificationService,
@@ -187,6 +226,7 @@ export const services = [
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
   PhotographyWorkflowService,
+  PhotographySiteService,
   AssetUploadResourceService,
   AssetUploadDirectService,
   BackupDeviceService,
@@ -226,6 +266,7 @@ export const services = [
   ArchiveOperationService,
   ActivityService,
   AlbumService,
+  AlbumSuggestionService,
   ApiService,
   AssetDevelopService,
   AssetFileService,
@@ -233,7 +274,11 @@ export const services = [
   AssetRestorationService,
   AssetService,
   AttentionService,
+  LibraryProgressService,
+  OvernightService,
   AuthService,
+  LockedEncryptionService,
+  LockedSealService,
   AuthAdminService,
   AnalyticsService,
   BestPhotosService,
@@ -242,6 +287,7 @@ export const services = [
   CliService,
   DatabaseBackupService,
   DatabaseService,
+  DescriptionTagCleanupService,
   DocumentService,
   DownloadService,
   DuplicateDecisionService,
@@ -255,6 +301,7 @@ export const services = [
   LibraryScanService,
   LibraryService,
   LivePhotoService,
+  UtilitiesService,
   MaintenanceService,
   MapService,
   MediaHealthOperationService,
@@ -286,8 +333,7 @@ export const services = [
   PinnedCollectionService,
   PetRecognitionService,
   PetService,
-  PhysicalDeduplicationPlanService,
-  PhysicalDeduplicationService,
+  IdenticalFilesService,
   PhysicalFileTrashService,
   PluginService,
   PreservationService,
@@ -307,6 +353,8 @@ export const services = [
   ZeroShotTaggingService,
   StackService,
   StudioExportService,
+  StudioCutoutService,
+  StudioReframeService,
   StudioPreviewService,
   StudioPreviewStreamService,
   StorageService,
@@ -318,7 +366,11 @@ export const services = [
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,
+  StudioCaptionTranslationService,
+  StudioMovieService,
+  StudioStabiliseService,
   StudioTranscriptionService,
+  StudioVoiceCleanupService,
   StudioResourceService,
   StudioRevocationService,
   StudioCatalogService,
@@ -327,6 +379,8 @@ export const services = [
   SystemConfigService,
   SystemMetadataService,
   TagService,
+  EagleImportService,
+  EagleImportWorkerService,
   TakeoutService,
   TakeoutWorkerService,
   TimelineService,

@@ -34,6 +34,7 @@ describe('PersonService face history (FL-57)', () => {
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
     mocks.person.getVisibleEvidenceAssetIds.mockResolvedValue(new Set());
     mocks.person.getForMergePerson.mockResolvedValue([]);
+    mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
   });
 

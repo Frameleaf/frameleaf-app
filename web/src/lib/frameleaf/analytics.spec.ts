@@ -1,6 +1,7 @@
 import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState, AnalyticsVolumePart } from '@frameleaf/sdk';
 import {
   analyticsCsv,
+  analyticsFormats,
   analyticsTables,
   breakdownTotal,
   calendarWeeks,
@@ -13,7 +14,9 @@ import {
   columnTotal,
   CSV_HEADER,
   historyNotice,
+  oneFullStop,
   parseCsv,
+  printRecords,
   scopeLabel,
   type Translate,
 } from '$lib/frameleaf/analytics';
@@ -317,6 +320,30 @@ describe('dashboard insights (FL-79)', () => {
       perDay: 2,
     });
     expect(dayRecords([])).toEqual({ busiest: null, streak: null, perDay: 0 });
+    // A quiet library averages a fraction a day, not 0.
+    expect(
+      dayRecords([
+        { date: '2026-09-01', captured: 1, uploaded: 0 },
+        ...Array.from({ length: 3 }, (_, i) => ({ date: `2026-09-0${i + 2}`, captured: 0, uploaded: 0 })),
+      ]).perDay,
+    ).toBe(0.3);
+  });
+
+  it('measures small libraries in MB, cm and m rather than rounding to zero', () => {
+    const f = analyticsFormats('en', t);
+    expect(f.size(23_400_000)).toBe('frameleaf_analytics_mb(23)');
+    expect(f.size(2_500_000)).toBe('frameleaf_analytics_mb(2.5)');
+    expect(f.size(2_500_000_000)).toBe('frameleaf_analytics_gb(2.5)');
+    expect(f.size(1_820_000_000_000)).toBe('frameleaf_analytics_tb(1.82)');
+    // 239 photos: a 7.2 cm stack and a 36.4 m line.
+    expect(printRecords(239)).toEqual({ stack: { unit: 'cm', value: 7.2 }, line: { unit: 'm', value: 36.4 } });
+    expect(printRecords(10_000)).toEqual({ stack: { unit: 'm', value: 3 }, line: { unit: 'km', value: 1.5 } });
+    expect(printRecords(0)).toEqual({ stack: { unit: 'cm', value: 0 }, line: { unit: 'm', value: 0 } });
+  });
+
+  it('keeps one full stop after a time that ends in its own', () => {
+    expect(oneFullStop('Library read Oct 27, 2026, 11:34 a.m..')).toBe('Library read Oct 27, 2026, 11:34 a.m.');
+    expect(oneFullStop('Library read Oct 27, 2026, 11:34.')).toBe('Library read Oct 27, 2026, 11:34.');
   });
 
   it('names every punchcard row by its weekday and hour in the CSV', () => {

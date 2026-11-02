@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
+import { LibraryViewScope, AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -127,6 +127,26 @@ describe('album targets for Add to album', () => {
       '#family',
       'birthday',
     ]);
+  });
+
+  it('distinguishes nested ordinary albums without looking up inaccessible parents', () => {
+    const directory = buildAlbumTargets(
+      [
+        album({ id: 'client', albumName: 'Client' }),
+        album({ id: 'campaign', albumName: 'Campaign', parentId: 'client' }),
+        album({ id: 'packaging', albumName: 'Packaging', parentId: 'campaign' }),
+        album({ id: 'orphan', albumName: 'Private child', parentId: 'hidden' }),
+      ],
+      'me',
+    );
+    expect(directory.albums.find((target) => target.id === 'packaging')?.name).toBe('Client / Campaign / Packaging');
+    expect(directory.albums.find((target) => target.id === 'orphan')?.name).toBe('Private child');
+  });
+
+  it('loads writable Pro destinations from the shared Design album catalog', async () => {
+    vi.mocked(getAllAlbums).mockResolvedValue([]);
+    await loadAlbumTargets('me', '', LibraryViewScope.Design);
+    expect(getAllAlbums).toHaveBeenCalledWith({ libraryScope: LibraryViewScope.Design });
   });
 
   it('loads through the album API itself, so no caller has to pass a list', async () => {

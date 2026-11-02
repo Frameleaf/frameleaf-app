@@ -171,6 +171,21 @@ describe('studio command bridge', () => {
     expect(retry[0]).toEqual(first[0]);
   });
 
+  it('answers a retry sent while the first send is still applying without applying it twice', async () => {
+    let finish: (revision: number) => void = () => {};
+    const handler = vi.fn(() => new Promise<number>((resolve) => (finish = resolve)));
+    const bridge = createStudioBridge({ context: () => context(), handlers: { 'clip.split': handler } });
+    const envelope = createStudioCommandEnvelope('clip.split', { at: rational(2) }, 4, { idempotencyKey: 'in-flight' });
+
+    const first = bridge.submit([envelope]);
+    const retry = bridge.submit([envelope]);
+    await vi.waitFor(() => expect(handler).toHaveBeenCalled());
+    finish(5);
+
+    expect(await retry).toEqual(await first);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it('lets a retry through when the first attempt never reached a verdict', async () => {
     const handler = vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(5);
     const bridge = createStudioBridge({ context: () => context(), handlers: { 'clip.split': handler } });

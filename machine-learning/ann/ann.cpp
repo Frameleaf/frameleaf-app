@@ -2,6 +2,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <vector>
 
 #include "armnn/IRuntime.hpp"
@@ -66,7 +67,8 @@ public:
         for (const BindingPointInfo &info : infos->outputInfos)
             outputTensors.emplace_back(info.first, Tensor(info.second, outputData[i++]));
         std::lock_guard<std::mutex> guard(*m);
-        runtime->EnqueueWorkload(netId, inputTensors, outputTensors);
+        if (runtime->EnqueueWorkload(netId, inputTensors, outputTensors) != Status::Success)
+            throw std::runtime_error("EnqueueWorkload failed");
     }
 
     void unload(NetworkId netId)
@@ -260,9 +262,17 @@ extern "C" void unload(void *ann, NetworkId netId)
     ((Ann *)ann)->unload(netId);
 }
 
-extern "C" void execute(void *ann, NetworkId netId, const void **inputData, void **outputData)
+extern "C" int execute(void *ann, NetworkId netId, const void **inputData, void **outputData)
 {
-    ((Ann *)ann)->execute(netId, inputData, outputData);
+    try
+    {
+        ((Ann *)ann)->execute(netId, inputData, outputData);
+        return 0;
+    }
+    catch (...)
+    {
+        return -1;
+    }
 }
 
 extern "C" unsigned long shape(void *ann, NetworkId netId, bool isInput, int index)

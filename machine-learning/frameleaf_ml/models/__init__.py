@@ -19,6 +19,10 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from frameleaf_ml.models.semantic_mask import SemanticMaskModel
 
         return SemanticMaskModel
+    if model_task == ModelTask.SUBJECT_MATTE and model_type == ModelType.VISUAL:
+        from frameleaf_ml.models.subject_matte import SubjectMatteModel
+
+        return SubjectMatteModel
     if model_task == ModelTask.INPAINT and model_type == ModelType.VISUAL:
         from frameleaf_ml.models.inpaint import InpaintModel
 
@@ -27,6 +31,18 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from frameleaf_ml.models.transcribe import TranscribeModel
 
         return TranscribeModel
+    if model_task == ModelTask.MUSIC and model_type == ModelType.AUDIO:
+        from frameleaf_ml.models.musicgen import MusicGenModel
+
+        return MusicGenModel
+    if model_task == ModelTask.VOICE_CLEANUP and model_type == ModelType.AUDIO:
+        from frameleaf_ml.models.voice_cleanup import VoiceCleanupModel
+
+        return VoiceCleanupModel
+    if model_task == ModelTask.TRANSLATE and model_type == ModelType.TEXTUAL:
+        from frameleaf_ml.models.translate import TranslateModel
+
+        return TranslateModel
     source = get_model_source(model_name)
     match source, model_type, model_task:
         case ModelSource.OPENCLIP | ModelSource.MCLIP, ModelType.VISUAL, ModelTask.SEARCH:

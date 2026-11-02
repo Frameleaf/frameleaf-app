@@ -10,8 +10,23 @@ class ServerConfigManager {
     });
   }
 
+  #loading?: Promise<void>;
+
   async init() {
-    await this.loadServerConfig();
+    this.#loading ??= this.loadServerConfig().finally(() => (this.#loading = undefined));
+    await this.#loading;
+  }
+
+  /**
+   * The server config, loaded once if nothing has loaded it yet: a page's loader can run before the
+   * root layout's has, and must not skip the decisions (like the setup redirect) that read it.
+   */
+  async ready(): Promise<ServerConfigDto> {
+    if (!this.#value) {
+      this.#loading ??= this.loadServerConfig().finally(() => (this.#loading = undefined));
+      await this.#loading;
+    }
+    return this.value;
   }
 
   get value() {

@@ -1,7 +1,7 @@
 import {
   AssetTypeEnum,
   AssetVisibility,
-  ClassificationMediaType,
+  LibraryViewScope,
   ImageEnrichmentFilter,
   type ClassificationRuleCreateDto,
   SearchFacetField,
@@ -48,7 +48,7 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 /* -------------------------------------------------------------------------- */
 
 /** The palette's search modes: smart search, "All text" (every text field) or one text field. */
-export type PaletteMode = 'smart' | 'all' | DiscoveryTextField;
+export type PaletteMode = 'speech' | 'smart' | 'all' | DiscoveryTextField;
 
 export const PALETTE_MODES: readonly {
   value: PaletteMode;
@@ -56,6 +56,7 @@ export const PALETTE_MODES: readonly {
   /** @mdi/js icon name, matching `SearchPalette.jsx` `searchModes`. */
   icon: 'smart' | 'all' | 'file' | 'description' | 'ocr' | 'path';
 }[] = [
+  { value: 'speech', labelKey: 'frameleaf_speech_title', icon: 'description' },
   { value: 'smart', labelKey: 'frameleaf_search_mode_smart', icon: 'smart' },
   { value: 'all', labelKey: 'frameleaf_search_mode_all_text', icon: 'all' },
   { value: 'originalFileName', labelKey: 'frameleaf_search_mode_filename', icon: 'file' },
@@ -69,9 +70,12 @@ export const PALETTE_MODES: readonly {
  * photos is only read while text recognition (OCR) is on. The palette offers a mode, an example or
  * an operator only when a search with it can find something.
  */
-export type PaletteCapabilities = { smartSearch: boolean; ocr: boolean };
+export type PaletteCapabilities = { smartSearch: boolean; ocr: boolean; speech?: boolean };
 
-export const isPaletteModeAvailable = (mode: PaletteMode, { smartSearch, ocr }: PaletteCapabilities) => {
+export const isPaletteModeAvailable = (mode: PaletteMode, { smartSearch, ocr, speech }: PaletteCapabilities) => {
+  if (mode === 'speech') {
+    return speech === true;
+  }
   if (mode === 'smart') {
     return smartSearch;
   }
@@ -101,6 +105,9 @@ const MAX_OR_BRANCHES = 64;
  * exceed the server's branch limit, so the caller can refuse instead of widening the search.
  */
 export const withAllText = (filter: SearchFilter, text: string): SearchFilter | undefined => {
+  if (filter.libraryScope === LibraryViewScope.Design) {
+    return { ...filter, text: { contains: text } };
+  }
   const branches = allTextBranches(text);
   if (!filter.or?.length) {
     return { ...filter, or: branches };
@@ -122,6 +129,9 @@ export const withAllText = (filter: SearchFilter, text: string): SearchFilter | 
 
 /** The text an "All text" `or` searches for, when the filter's `or` is exactly one. */
 export const readAllText = (filter: SearchFilter | undefined): string | undefined => {
+  if (filter?.text) {
+    return filter.text.contains;
+  }
   const branches = filter?.or;
   if (!branches || branches.length !== ALL_TEXT_FIELDS.length) {
     return undefined;
@@ -917,8 +927,8 @@ export const compilePaletteQuery = (
   result.filter = { ...result.filter, ...structuredClone(parsed.filter) };
   const text = parsed.text.trim();
   delete result.textField;
-  if (mode === 'smart') {
-    result.mode = 'smart';
+  if (mode === 'smart' || mode === 'speech') {
+    result.mode = mode;
     result.text = text;
     return result;
   }
@@ -945,13 +955,22 @@ export const compilePaletteQuery = (
 export const readPaletteState = (query: DiscoveryQuery): PaletteState => {
   const base = structuredClone(query);
   const allText = readAllText(base.filter);
-  if (allText !== undefined && !base.text) {
-    delete base.filter.or;
+  if (allText !== undefined && !base.text && base.mode !== 'smart') {
+    if (base.filter.text) {
+      delete base.filter.text;
+    } else {
+      delete base.filter.or;
+    }
     delete base.textField;
     return { input: allText, mode: 'all', base: { ...base, mode: 'text' } };
   }
   const input = base.text;
-  const mode: PaletteMode = base.mode === 'smart' ? 'smart' : discoveryTextField(base);
+  const mode: PaletteMode =
+    base.mode === 'smart' || base.mode === 'speech'
+      ? base.mode
+      : base.filter.libraryScope === LibraryViewScope.Design && !base.textField
+        ? 'all'
+        : discoveryTextField(base);
   base.text = '';
   delete base.textField;
   return { input, mode, base };
@@ -1296,155 +1315,26 @@ export const removeSavedSearch = (list: SavedSearch[], name: string): SavedSearc
 
 export type SmartAlbumCriteria = Omit<ClassificationRuleCreateDto, 'albumName'>;
 
-const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
-const MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/;
-const shiftDay = (day: string, days: number) =>
-  new Date(Date.parse(`${day}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
-
-/**
- * The inclusive capture days a localDateTime condition covers, as a rule's takenAfter/takenBefore.
- * Each operator becomes its own bound (a calendar day or a UTC midnight, as the palette and the filter
- * panel write them); when both a strict and a non-strict bound are given, the narrower wins. A condition
- * that is not whole days (an intraday instant, `eq`, `ne`) returns undefined.
- */
-const smartAlbumDays = (condition: Record<string, unknown>): { after?: string; before?: string } | undefined => {
-  const lower: string[] = [];
-  const upper: string[] = [];
-  for (const [operator, operand] of Object.entries(condition)) {
-    if (typeof operand !== 'string') {
-      return undefined;
-    }
-    const isDay = CALENDAR_DAY.test(operand);
-    const isMidnight = MIDNIGHT.test(operand);
-    const day = operand.slice(0, 10);
-    switch (operator) {
-      case 'gte': {
-        if (!isDay && !isMidnight) {
-          return undefined;
-        }
-        lower.push(day);
-        break;
-      }
-      case 'gt': {
-        // After a whole day (the filter panel's day form); after an instant is not a whole day
-        if (!isDay) {
-          return undefined;
-        }
-        lower.push(shiftDay(day, 1));
-        break;
-      }
-      case 'lte': {
-        if (!isDay) {
-          return undefined;
-        }
-        upper.push(day);
-        break;
-      }
-      case 'lt': {
-        if (!isDay && !isMidnight) {
-          return undefined;
-        }
-        upper.push(shiftDay(day, -1));
-        break;
-      }
-      default: {
-        return undefined;
-      }
-    }
-  }
-  const after = lower.sort().at(-1);
-  const before = upper.sort().at(0);
-  return { ...(after && { after }), ...(before && { before }) };
-};
-
-/**
- * The FL-60 smart-album rule a palette search becomes (`SearchPalette.jsx` "Save search" → Smart album).
- * A rule matches any of its people, any of its tags, a media type, an inclusive capture-day range and
- * visual phrases, all together. A search that says anything else — an exclusion, all of several people,
- * a place, a camera, a rating, a collection, text in a text field — cannot become a rule without
- * changing what it matches, so the fields that stop it are returned instead and nothing is invented.
- */
+/** Save the same structured predicate; semantic phrases keep the existing rule threshold. */
 export const smartAlbumCriteria = (
   query: DiscoveryQuery,
 ): { ok: true; criteria: SmartAlbumCriteria } | { ok: false; fields: string[] } => {
   const blocked: string[] = [];
-  const criteria: SmartAlbumCriteria = {};
-  const ids = (field: 'personIds' | 'tagIds') => {
-    const condition = query.filter[field];
-    if (!condition) {
-      return;
-    }
-    const any = condition.any ?? [];
-    const all = condition.all ?? [];
-    if (condition.none?.length || (any.length > 0 && all.length > 0) || all.length > 1) {
-      blocked.push(field);
-      return;
-    }
-    criteria[field] = [...any, ...all];
-  };
-  for (const [field, condition] of Object.entries(query.filter) as [string, Record<string, unknown>][]) {
-    switch (field) {
-      case 'personIds':
-      case 'tagIds': {
-        ids(field);
-        break;
-      }
-      case 'type': {
-        const keys = Object.keys(condition);
-        if (keys.length === 1 && (condition.eq === AssetTypeEnum.Image || condition.eq === AssetTypeEnum.Video)) {
-          criteria.mediaType =
-            condition.eq === AssetTypeEnum.Video ? ClassificationMediaType.Video : ClassificationMediaType.Photo;
-        } else {
-          blocked.push(field);
-        }
-        break;
-      }
-      case 'localDateTime': {
-        // A rule compares the local capture day (classification.repository.ts), which is what
-        // localDateTime holds; a UTC takenAt condition is a different column and cannot become a rule
-        const bounds = smartAlbumDays(condition);
-        if (!bounds) {
-          blocked.push(field);
-          break;
-        }
-        if (bounds.after) {
-          criteria.takenAfter = bounds.after;
-        }
-        if (bounds.before) {
-          criteria.takenBefore = bounds.before;
-        }
-        break;
-      }
-      default: {
-        blocked.push(field);
-      }
-    }
-  }
-  const text = query.text.trim();
-  if (text) {
-    if (query.mode === 'smart') {
-      criteria.visualQueries = [text];
-    } else {
-      blocked.push('text');
-    }
-  }
   if (query.imageEnrichment) {
     blocked.push('imageEnrichment');
   }
-  if (query.queryAssetId || query.spaceId) {
-    blocked.push(query.queryAssetId ? 'queryAssetId' : 'spaceId');
+  if (query.queryAssetId) {
+    blocked.push('queryAssetId');
   }
-  const says =
-    !!criteria.personIds?.length ||
-    !!criteria.tagIds?.length ||
-    !!criteria.mediaType ||
-    !!criteria.takenAfter ||
-    !!criteria.takenBefore ||
-    !!criteria.visualQueries?.length;
-  if (blocked.length > 0 || !says) {
+  const text = query.text.trim();
+  if (blocked.length > 0 || (!text && Object.keys(query.filter).length === 0 && !query.spaceId)) {
     return { ok: false, fields: blocked };
   }
-  return { ok: true, criteria };
+  const { filter } = structuredSearchRequest(toSearchDto(query));
+  return {
+    ok: true,
+    criteria: { filter, ...(query.mode === 'smart' && text && { visualQueries: [text] }) },
+  };
 };
 
 /* -------------------------------------------------------------------------- */

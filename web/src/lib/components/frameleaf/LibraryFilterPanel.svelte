@@ -35,6 +35,7 @@
     scopeLabel?: string;
     /** How many items match, for "Save search" (a smart album collects them). */
     count?: number | null;
+    mediaCounts?: boolean;
     onChange: (query: DiscoveryQuery) => void;
     onClose: () => void;
   };
@@ -46,6 +47,7 @@
     matchingLabel,
     scopeLabel,
     count = null,
+    mediaCounts = true,
     onChange,
     onClose,
   }: Props = $props();
@@ -62,10 +64,13 @@
   /** Bumped when access changes (locked, unlocked, another account): everything is asked again. */
   let generation = $state(0);
 
+  const libraryScope = $derived(query.filter.libraryScope);
   $effect(() => {
     void generation;
+    const scope = libraryScope;
+    options = emptyFilterPanelOptions();
     const controller = new AbortController();
-    loadFilterPanelOptions(controller.signal)
+    loadFilterPanelOptions(controller.signal, scope)
       .then((result) => {
         if (!controller.signal.aborted) {
           options = result;
@@ -79,6 +84,11 @@
 
   const countKey = $derived(JSON.stringify(paletteSearchBody(countQuery)));
   $effect(() => {
+    facets = {};
+    enrichmentCounts = {};
+    if (!mediaCounts) {
+      return;
+    }
     const key = countKey;
     void generation;
     const controller = new AbortController();
@@ -129,6 +139,7 @@
     {scopeLabel}
     {facets}
     {enrichmentCounts}
+    showEnrichment={mediaCounts}
     {onChange}
     {onClose}
     onSave={() => (saving = true)}

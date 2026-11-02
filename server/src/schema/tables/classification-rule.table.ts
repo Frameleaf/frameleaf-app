@@ -1,5 +1,6 @@
 import { Check, Column, CreateDateColumn, ForeignKeyColumn, Table, Unique } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { SearchFilter } from 'src/dtos/search.dto.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { ClassificationMediaType, ClassificationRuleAction } from 'src/enum.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -34,6 +35,9 @@ export class ClassificationRuleTable {
   /** A disabled rule keeps what it applied and stops changing anything. */
   @Column({ type: 'boolean', default: true })
   enabled!: Generated<boolean>;
+
+  @Column({ type: 'jsonb', nullable: true })
+  filter!: SearchFilter | null;
 
   /** Any of these people. */
   @Column({ type: 'jsonb', default: '[]' })

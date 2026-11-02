@@ -21,6 +21,15 @@ const QueueRunSchema = z
     noDispatchBacklog: z.boolean().optional(),
     lastProgressAt: z.iso.datetime().nullable().optional(),
     isPaused: z.boolean().describe('Whether the queue is paused'),
+    heldForNight: z
+      .boolean()
+      .optional()
+      .describe('Paused by quiet hours: the heavy work waits for the overnight window and starts again by itself'),
+    resumesAt: z.iso
+      .datetime()
+      .nullable()
+      .optional()
+      .describe('When quiet hours start this queue again; null when the overnight schedule never starts'),
     canPause: z.boolean().describe('Whether this queue can be paused; background tasks cannot'),
     active: z.int().min(0).describe('Jobs running now'),
     waiting: z.int().min(0).describe('Jobs waiting to start, including those held by a paused queue'),

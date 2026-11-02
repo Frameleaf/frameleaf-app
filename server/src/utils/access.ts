@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthSharedLink } from 'src/database.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -106,6 +106,19 @@ export const requireUploadAccess = (auth: AuthDto | null): AuthDto => {
     throw new UnauthorizedException();
   }
   return auth;
+};
+
+/** The refusal every upload path gives while an administrator has paused new uploads (FL-538). */
+export const UPLOADS_PAUSED_MESSAGE = 'New uploads are paused for this account';
+
+/**
+ * FL-538: refuse a new upload while an administrator has paused uploads for the account. Uploads
+ * through a shared link are refused while the link owner's are paused, since they land in that library.
+ */
+export const requireUploadsNotPaused = (auth: AuthDto) => {
+  if (auth.user.uploadsPaused) {
+    throw new ForbiddenException(UPLOADS_PAUSED_MESSAGE);
+  }
 };
 
 export const requireAccess = async (access: AccessRepository, request: AccessRequest) => {

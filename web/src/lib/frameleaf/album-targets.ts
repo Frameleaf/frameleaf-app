@@ -1,5 +1,6 @@
-import { AlbumKind, getAllAlbums, type AlbumResponseDto } from '@frameleaf/sdk';
+import { AlbumKind, getAllAlbums, type LibraryViewScope, type AlbumResponseDto } from '@frameleaf/sdk';
 import { canEdit } from '$lib/frameleaf/album-directory';
+import { albumSelectionOptions } from '$lib/frameleaf/album-tree';
 
 /**
  * Where "Add to album" may put photos, loaded by the picker itself so it works from every view
@@ -53,6 +54,8 @@ const toTarget = (album: AlbumResponseDto, kind: AlbumTarget['kind'], unnamed: s
  * picker's shape. An album whose collection is not in the list stands on its own.
  */
 export const buildAlbumTargets = (albums: AlbumResponseDto[], userId: string, unnamed = ''): AlbumTargetDirectory => {
+  const paths = new Map(albumSelectionOptions(albums).map(({ value, label }) => [value, label]));
+  const byId = new Map(albums.map((album) => [album.id, album]));
   const collections = new Map<string, AlbumTargetCollection>();
   for (const album of albums) {
     if (album.kind === AlbumKind.Collection) {
@@ -70,7 +73,11 @@ export const buildAlbumTargets = (albums: AlbumResponseDto[], userId: string, un
       continue;
     }
     const collection = album.parentId ? collections.get(album.parentId) : undefined;
-    (collection ? collection.albums : directory.albums).push(toTarget(album, 'album', unnamed));
+    const target = toTarget(album, 'album', unnamed);
+    if (album.parentId && byId.get(album.parentId)?.kind === AlbumKind.Album) {
+      target.name = paths.get(album.id) || target.name;
+    }
+    (collection ? collection.albums : directory.albums).push(target);
   }
 
   directory.albums.sort(byName);
@@ -160,5 +167,9 @@ export const albumTargetRows = (
 };
 
 /** Load every album and space the user may add to, straight from the album API. */
-export const loadAlbumTargets = async (userId: string, unnamed = ''): Promise<AlbumTargetDirectory> =>
-  buildAlbumTargets(await getAllAlbums({}), userId, unnamed);
+export const loadAlbumTargets = async (
+  userId: string,
+  unnamed = '',
+  libraryScope?: LibraryViewScope,
+): Promise<AlbumTargetDirectory> =>
+  buildAlbumTargets(await getAllAlbums(libraryScope ? { libraryScope } : {}), userId, unnamed);

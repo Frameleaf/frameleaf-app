@@ -639,3 +639,39 @@
   line-height: 1.7;
   color: var(--fl-muted);
 }
+
+/* FL-365: the folder chooser and "What to skip" in the add/edit folder dialog. */
+.fl-libraries .resource-browse {
+  display: grid;
+  gap: var(--fl-space-3);
+  margin-block: var(--fl-space-3);
+}
+.fl-libraries .resource-browser {
+  display: grid;
+  gap: var(--fl-space-2);
+  padding: var(--fl-space-3);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.fl-libraries .resource-browser ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2);
+  max-height: 14rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.fl-libraries .resource-browser > .primary {
+  justify-self: start;
+}
+.fl-libraries .resource-advanced {
+  margin-block: var(--fl-space-3);
+}
+.fl-libraries .resource-advanced > summary {
+  cursor: pointer;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}

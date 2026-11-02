@@ -588,6 +588,27 @@ describe(ServerService.name, () => {
   });
 
   describe('getSystemConfig', () => {
+    // FL-402: the web app explains missing place names while the worker puts them back
+    it('reports places being put back while the reverse geocoding state says so', async () => {
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          key === SystemMetadataKey.ReverseGeocodingState ? { lastUpdate: '2026-10-01', restoring: true } : null,
+        ),
+      );
+
+      await expect(sut.getSystemConfig()).resolves.toMatchObject({ placesRestoring: true });
+    });
+
+    it('reports no restore once the places are back', async () => {
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          key === SystemMetadataKey.ReverseGeocodingState ? { lastUpdate: '2026-10-01', restoring: false } : null,
+        ),
+      );
+
+      await expect(sut.getSystemConfig()).resolves.toMatchObject({ placesRestoring: false });
+    });
+
     it('reports the server name an administrator set (FL-71 CC-4)', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ server: { name: 'Home archive' } });
 
@@ -601,17 +622,19 @@ describe(ServerService.name, () => {
         loginPageMessage: '',
         loginPageMessageFormat: 'plain',
         serverName: '',
-        oauthButtonText: 'Login with OAuth',
+        oauthButtonText: 'Sign in with your provider',
         oauthAccountManagementUrl: '',
         trashDays: 30,
         userDeleteDelay: 7,
         isInitialized: false,
         isOnboarded: false,
+        isNewServerSetup: false,
         externalDomain: '',
         publicUsers: true,
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
         mapLightStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/light.json',
         maintenanceMode: false,
+        placesRestoring: false,
         minFaces: 3,
         frameleaf: {
           via: null,

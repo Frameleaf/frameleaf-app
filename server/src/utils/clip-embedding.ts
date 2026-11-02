@@ -1,5 +1,5 @@
 import z from 'zod';
-import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
+import type { LocalPinnedModel } from 'src/utils/local-model-pins.js';
 
 export type ClipEmbedding = string | { embedding: string; modelKey: string };
 
@@ -21,7 +21,7 @@ export const clipEmbeddingForStorage = (
 };
 
 /** Decode before scheduling publication; both NAS HTTP and desktop results use this contract. */
-export const parseBoundClipResult = (value: unknown, profile: DesktopModelProfile) => {
+export const parseBoundClipResult = (value: unknown, profile: LocalPinnedModel) => {
   if (profile.workload !== 'clip' || profile.embeddingDimensions === undefined)
     throw new Error('producer_result_invalid');
   const result = z

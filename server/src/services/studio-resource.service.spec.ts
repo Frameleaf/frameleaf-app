@@ -269,6 +269,42 @@ describe(StudioResourceService.name, () => {
       expect(manifest.digest).toMatch(/^[\da-f]{64}$/);
     });
 
+    it('admits clips added from Studio’s library once they are stored by media id, as handoff clips are (FL-673)', async () => {
+      const video = ownedVideo();
+      const photo = AssetFactory.create({ ownerId: auth.user.id, type: AssetType.Image });
+      mocks.asset.getByIds.mockResolvedValue([video, photo]);
+      allowOwned(video.id, photo.id);
+      const placed = (videoSrc: string, photoSrc: string) => ({
+        id: 'main',
+        timeline: {
+          tracks: [{ id: 'track' }],
+          items: [
+            { id: 'clip-1', trackId: 'track', type: 'video', mediaId: video.id, src: videoSrc },
+            { id: 'clip-2', trackId: 'track', type: 'image', mediaId: photo.id, src: photoSrc },
+          ],
+        },
+      });
+
+      // What the web saved before FL-673: the URL each clip played from.
+      const before = await sut.resolveProjectResources(
+        auth,
+        context(placed(`/api/assets/${video.id}/video/playback`, `/api/assets/${photo.id}/thumbnail?size=preview`)),
+      );
+      expect(before.manifest.complete).toBe(false);
+      expect(before.refused.map(({ reason }) => reason)).toEqual([
+        StudioRefusalReason.ExternalLocator,
+        StudioRefusalReason.ExternalLocator,
+      ]);
+
+      // What the web stores now: the media id alone, which the export accepts.
+      const after = await sut.resolveProjectResources(auth, context(placed('', '')));
+      expect(after.refused).toEqual([]);
+      expect(after.manifest.complete).toBe(true);
+      expect(after.manifest.entries.map(({ key }) => key).toSorted()).toEqual(
+        [`library-asset:${video.id}`, `library-asset:${photo.id}`].toSorted(),
+      );
+    });
+
     it('goes through the library access check for the acting user, not the project owner', async () => {
       const asset = ownedVideo();
       mocks.asset.getByIds.mockResolvedValue([asset]);
@@ -613,14 +649,16 @@ describe(StudioResourceService.name, () => {
         stream(dolby, { dvProfile: 8 }),
       ] as never);
 
-      await expect(sut.hdrLibraryAssets([sdr, pq, hlg, dolby, pq, 'not-a-uuid'])).resolves.toEqual(
-        [pq, hlg, dolby].toSorted(),
-      );
+      await expect(sut.hdrLibrarySources([sdr, pq, hlg, dolby, pq, 'not-a-uuid'])).resolves.toEqual({
+        hdr: [pq, hlg, dolby].toSorted(),
+        pq: [pq],
+        hlg: [hlg],
+      });
       expect(mocks.asset.getVideoStreamsForDecode).toHaveBeenCalledWith([sdr, pq, hlg, dolby]);
     });
 
     it('asks nothing when no library asset is placed', async () => {
-      await expect(sut.hdrLibraryAssets([])).resolves.toEqual([]);
+      await expect(sut.hdrLibrarySources([])).resolves.toEqual({ hdr: [], pq: [], hlg: [] });
       expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
     });
 

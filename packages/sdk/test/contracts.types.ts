@@ -1,5 +1,10 @@
 import {
   Evidence,
+  StudioExportShape,
+  type StudioExportSettingsDto,
+  type StudioExportCreateDto,
+  Provider,
+  type DesktopModelInventoryDto,
   ProcessingProvenanceEvidence,
   ProcessingProvenanceVersion,
   StudioImportPublicationCancelStatus,
@@ -11,6 +16,9 @@ import {
   type ReconciliationResultDto,
   type SyncAssetTrashStateV1,
 } from '../build/index.js';
+
+const desktopProvider: DesktopModelInventoryDto['provider'] =
+  Provider.CpuExecutionProvider;
 
 const resultEvidence: ReconciliationResultDto['evidence'] =
   Evidence.RegisteredCurrentOriginals;
@@ -63,3 +71,11 @@ const unsupportedState: StudioImportPublicationDto['state'] = 'unknown';
 // @ts-expect-error Unknown cancellation results must remain outside the generated contract.
 const unsupportedCancellation: StudioImportPublicationCancelDto['status'] =
   'unknown';
+
+// Existing consumers reuse the response enum in requests and assignments.
+declare const exportSettings: StudioExportSettingsDto;
+const responseShape: StudioExportShape | undefined = exportSettings.shape;
+const legacyRequestShape: StudioExportCreateDto['shape'] = StudioExportShape.Vertical;
+const landscapeRequestShape: StudioExportCreateDto['shape'] = 'landscape';
+// @ts-expect-error Landscape remains outside the existing closed response enum.
+const landscapeResponseShape: StudioExportSettingsDto['shape'] = 'landscape';

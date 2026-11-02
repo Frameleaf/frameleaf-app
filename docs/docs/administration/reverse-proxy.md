@@ -14,6 +14,10 @@ If your reverse proxy uses the [Let's Encrypt](https://letsencrypt.org/) [http-0
 
 Below is an example config for nginx. Make sure to set `public_url` to the front-facing URL of your instance, and `backend_url` to the path of the Frameleaf server.
 
+:::caution
+This example serves plain HTTP, which sends sign-in details unencrypted. Add your certificate and an HTTPS listener (`listen 443 ssl` with `ssl_certificate` and `ssl_certificate_key`) with a redirect from port 80, or put a TLS terminator in front of it, before exposing it beyond your home network.
+:::
+
 ```nginx
 server {
     server_name <public_url>;
@@ -68,6 +72,10 @@ photos.example.org {
 ### Apache example config
 
 Below is an example config for Apache2 site configuration.
+
+:::caution
+This example serves plain HTTP, which sends sign-in details unencrypted. Add your certificate and an HTTPS listener (a `<VirtualHost *:443>` with `SSLEngine on`, `SSLCertificateFile` and `SSLCertificateKeyFile`) with a redirect from port 80, or put a TLS terminator in front of it, before exposing it beyond your home network.
+:::
 
 ```ApacheConf
 <VirtualHost *:80>

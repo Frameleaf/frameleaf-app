@@ -10,6 +10,8 @@ import {
   LINK_CODE_PATTERN,
   LicenseActivateDto,
   LicenseCertificateDto,
+  LicenseCheckoutDto,
+  LicenseCheckoutResponseDto,
   LicenseLinkCodeDto,
   LicenseLinkCodeResponseDto,
   LicenseProductsResponseDto,
@@ -33,11 +35,13 @@ import { FrameleafCloudPublicCall } from 'src/repositories/frameleaf-cloud.repos
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { FRAMELEAF_BUILD_CHANNEL, FrameleafBuildChannel } from 'src/utils/frameleaf-build-channel.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudErrorCode,
   FrameleafCloudError,
   accountStoreUrl,
+  cloudAddressProblem,
   cloudErrorCode,
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
@@ -90,6 +94,12 @@ const certificateResponseSchema = z.object({
     .max(64 * 1024),
   activationId: z.string().max(200).optional(),
 });
+/** FC-152: what the cloud answers a combined checkout with. */
+const checkoutResponseSchema = z.object({
+  checkoutId: z.string().min(1).max(200),
+  url: z.string().min(1).max(2048),
+  expiresAt: z.string().max(64),
+});
 /** The complete current set: a plan certificate when present, then one per key activation; empty is valid. */
 const refreshResponseSchema = z.object({
   certificates: z
@@ -103,6 +113,8 @@ const refreshResponseSchema = z.object({
 });
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+/** A personal licence's uniqueness key, from its licence id: the same whether the key was pasted or redeemed. */
+const licenceKeySha256 = (licenceId: string) => sha256(`lic:${licenceId}`);
 
 /**
  * FL-177: Frameleaf Cloud refused an activation because this server's ID is already registered
@@ -358,6 +370,48 @@ export class FrameleafLicenseService extends BaseService {
     return this.getStatus();
   }
 
+  /**
+   * `POST admin/license/checkout` (FL-544, FC-152): start the combined licence-and-plan purchase for
+   * this linked server. The cloud answers with the store page; the buyer signs into the account that
+   * owns this server and pays there. An Individual licence is bound to the person asking, with the same
+   * fingerprint a personal key uses. The plan and licence arrive on the next licence refresh.
+   */
+  async startCheckout(auth: AuthDto, dto: LicenseCheckoutDto): Promise<LicenseCheckoutResponseDto> {
+    const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
+    if (!cloudUrl || !linked || !link?.instanceId) {
+      throw new BadRequestException(CLOUD_GATES.linkFirst);
+    }
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    const body = {
+      licence: dto.licence,
+      plan: dto.plan,
+      ...(dto.licence === 'supporter-individual'
+        ? { userFingerprint: sha256(`${identity.instanceId}${auth.user.id}`) }
+        : {}),
+    };
+    let answer: z.infer<typeof checkoutResponseSchema>;
+    try {
+      const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
+      answer = await this.frameleafCloudRepository.requestJson(checkoutResponseSchema, {
+        method: 'POST',
+        url: `${document.api.replace(/\/+$/, '')}/v1/billing/licensed-checkout`,
+        dpop: token,
+        body,
+      });
+    } catch (error) {
+      if (error instanceof FrameleafCloudError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+    // the page must be on the cloud, like every other address the cloud names
+    const problem = cloudAddressProblem(cloudUrl, 'checkout', answer.url);
+    if (problem) {
+      throw new BadRequestException(problem);
+    }
+    return answer;
+  }
+
   /** `POST admin/license/refresh`: ask Frameleaf Cloud for current certificates now. */
   async refreshNow(): Promise<LicenseStatusResponseDto> {
     const store = await this.readStore();
@@ -366,7 +420,7 @@ export class FrameleafLicenseService extends BaseService {
       throw new BadRequestException(
         store.key?.source === 'file' || store.plan?.source === 'file'
           ? 'This licence came from a file. Install a newer file to update it.'
-          : 'Link this server to refresh its licence.',
+          : CLOUD_GATES.linkFirst,
       );
     }
     await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, () => this.refresh(true));
@@ -587,10 +641,19 @@ export class FrameleafLicenseService extends BaseService {
     if (license.kind !== 'individual') {
       throw new BadRequestException('Frameleaf Cloud returned a licence that is not a personal one.');
     }
+    // the licence id is what a link-code redemption knows too, so one licence has one key in either path
+    const licenceId = license.claims.lic?.id;
+    const licenceSha256 = licenceId ? licenceKeySha256(licenceId) : keySha256;
+    if (licenceSha256 !== keySha256) {
+      const holder = await this.frameleafUserLicenseRepository.getByKeyHash(licenceSha256);
+      if (holder && holder.userId !== auth.user.id) {
+        throw new ConflictException('This key is already active for another account on this server.');
+      }
+    }
     const row = await this.frameleafUserLicenseRepository.upsert({
       userId: auth.user.id,
       keyHint: check.last4,
-      keySha256,
+      keySha256: licenceSha256,
       binding,
       certificate,
       activationId: activationId ?? null,
@@ -694,7 +757,7 @@ export class FrameleafLicenseService extends BaseService {
     }
     if (license.kind === 'individual') {
       // the key itself never reaches this server: the licence id stands in for it in the uniqueness check
-      const keySha256 = sha256(`lic:${license.claims.lic?.id ?? license.claims.jti ?? answer.certificate}`);
+      const keySha256 = licenceKeySha256(license.claims.lic?.id ?? license.claims.jti ?? answer.certificate);
       const existing = await this.frameleafUserLicenseRepository.getByKeyHash(keySha256);
       if (existing && existing.userId !== auth.user.id) {
         throw new ConflictException('This key is already active for another account on this server.');

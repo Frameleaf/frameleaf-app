@@ -24,6 +24,7 @@ it('caps new resources at half the actual writable volume and refuses declared e
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   vi.spyOn(StorageCore, 'getBaseFolder').mockReturnValue(folder);
   vi.spyOn(service as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue('owner');

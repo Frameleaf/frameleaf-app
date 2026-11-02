@@ -28,6 +28,7 @@ import {
   JobName,
   JobStatus,
   RawExtractedFormat,
+  SystemMetadataKey,
   ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
@@ -44,11 +45,13 @@ import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
 import { personThumbnailStub } from 'test/fixtures/person.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
@@ -552,6 +555,67 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('regenerating thumbnails of a sealed asset reads the original through withPlainCopy and queues LockedSeal afterwards', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        locked.loadKey();
+        const originalPath = await locked.seal('IMG_0001.jpg', 'jpeg bytes', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        });
+        mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+        mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+          { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' as const },
+        ]);
+        const seen: string[] = [];
+        mocks.media.decodeImage.mockImplementation(async (input) => {
+          if (typeof input === 'string') {
+            seen.push(input);
+            expect(await readFile(input, 'utf8')).toBe('jpeg bytes');
+          }
+          return { data: rawBuffer, info: rawInfo as OutputInfo };
+        });
+
+        await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen.every((path) => path.startsWith(locked.tmp) && path.endsWith('/IMG_0001.jpg'))).toBe(true);
+        expect(await locked.copiesLeft()).toBe(0);
+        expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('defers (no error) when a sealed original has no loaded key', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      const locked = await lockedFixture(asset.ownerId);
+      try {
+        const originalPath = await locked.seal('IMG_0001.jpg', 'jpeg bytes', 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalPath,
+        });
+        const context = {
+          claim: { id: 'job-locked', token: 'attempt', attempt: 1, name: JobName.AssetGenerateThumbnails, data: {} },
+          signal: new AbortController().signal,
+          adoptions: [],
+          followups: [],
+        } as unknown as QueueExecution;
+        await expect(queueExecution.run(context, () => sut.handleGenerateThumbnails({ id: asset.id }))).rejects.toThrow(
+          LockedKeyUnavailableError,
+        );
+        expect(context.dependencyReason).toBe('locked-key-unavailable');
+        expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
     it('should generate P3 thumbnails for a wide gamut image', async () => {
       const asset = AssetFactory.from()
         .exif({
@@ -779,7 +843,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
       });
       mocks.media.scoreThumbnailCandidate
         .mockResolvedValueOnce(10)
@@ -822,7 +886,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
         coverTimestampMs: 64_500,
       });
 
@@ -848,7 +912,7 @@ describe(MediaService.name, () => {
         mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
           ...getForGenerateThumbnail(asset),
           ...probeStub.videoStream2160p,
-          format: { ...probeStub.videoStream2160p.format, duration: 120 },
+          format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
           coverTimestampMs,
         });
         await sut.handleGenerateThumbnails({ id: asset.id });
@@ -870,7 +934,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 120 },
+        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
         coverTimestampMs: 119_900,
       });
 
@@ -920,12 +984,34 @@ describe(MediaService.name, () => {
       );
     });
 
+    it('reads the stored duration in milliseconds when the container has no frame count', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.webm' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+        videoStream: { ...probeStub.videoStream2160p.videoStream, frameCount: 0 },
+        format: { ...probeStub.videoStream2160p.format, duration: 20_000 },
+      });
+      mocks.media.scoreThumbnailCandidate.mockResolvedValue(10);
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      for (const [index, seconds] of ['4', '10', '16'].entries()) {
+        expect(mocks.media.transcode).toHaveBeenNthCalledWith(
+          index + 1,
+          '/original/path.webm',
+          expect.stringContaining(`_candidate_${index}`),
+          expect.objectContaining({ inputOptions: expect.arrayContaining(['-ss', seconds]) }),
+        );
+      }
+    });
+
     it('should use proportional candidate timestamps for short videos', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 10 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10_000 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -987,7 +1073,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 30.3 },
+        format: { ...probeStub.videoStream2160p.format, duration: 30_300 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -1043,7 +1129,7 @@ describe(MediaService.name, () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
-        format: { ...probeStub.videoStream2160p.format, duration: 10 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10_000 },
       });
       mocks.media.scoreThumbnailCandidate.mockRejectedValue(new Error('could not read candidate'));
 
@@ -1079,7 +1165,7 @@ describe(MediaService.name, () => {
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
         videoStream: { ...probeStub.videoStream2160p.videoStream!, frameCount: 144, frameRate: 24 },
-        format: { ...probeStub.videoStream2160p.format, duration: 6 },
+        format: { ...probeStub.videoStream2160p.format, duration: 6000 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -1105,7 +1191,7 @@ describe(MediaService.name, () => {
         ...getForGenerateThumbnail(asset),
         ...probeStub.videoStream2160p,
         videoStream: { ...probeStub.videoStream2160p.videoStream!, frameCount: 251, frameRate: 24 },
-        format: { ...probeStub.videoStream2160p.format, duration: 10.458 },
+        format: { ...probeStub.videoStream2160p.format, duration: 10_458 },
       });
       mocks.media.scoreThumbnailCandidate.mockResolvedValueOnce(10).mockResolvedValueOnce(80).mockResolvedValueOnce(30);
 
@@ -3052,6 +3138,9 @@ describe(MediaService.name, () => {
       await sut.handleQueueVideoConversion({ force });
       expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(force);
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEncodeVideo, query);
+      // FL-650: every video's seek-bar previews, which are a cache hit where they exist
+      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, query);
       expect(mocks.assetJob.streamForVideoConversion).not.toHaveBeenCalled();
     });
   });
@@ -3635,6 +3724,38 @@ describe(MediaService.name, () => {
         mocks.assetEdit.getAll.mockResolvedValue([
           { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
         ]);
+      });
+
+      it('renders a sealed video edit from a plain copy and queues LockedSeal (FL-721)', async () => {
+        const base = editedAsset();
+        const locked = await lockedFixture(base.ownerId);
+        try {
+          locked.loadKey();
+          const originalPath = await locked.seal('clip.mp4', 'plain video', 'video/mp4');
+          mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...base, originalPath });
+          mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+            { id: 'video-id', ownerId: base.ownerId, pending: false, mode: 'pin' as const },
+          ]);
+          mocks.systemMetadata.get.mockResolvedValue({
+            ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+          } as never as SystemConfig);
+          const inputs: string[] = [];
+          mocks.media.transcode.mockImplementation(async (input) => {
+            if (typeof input === 'string' && input.endsWith('/clip.mp4')) {
+              inputs.push(input);
+              expect(await readFile(input, 'utf8')).toBe('plain video');
+            }
+          });
+
+          await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+          expect(inputs.length).toBeGreaterThan(0);
+          expect(inputs.every((input) => input.startsWith(locked.tmp))).toBe(true);
+          expect(await locked.copiesLeft()).toBe(0);
+          expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: 'video-id' } }]);
+        } finally {
+          await locked.cleanup();
+        }
       });
 
       it('does not let the playback resolution, CRF or bitrate ceiling cap the edited master', async () => {
@@ -4828,6 +4949,32 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).toHaveBeenCalledTimes(1);
+    });
+
+    it('records when the graphics card stopped helping, and clears it once a copy is made on it again (FL-537)', async () => {
+      const config = {
+        ffmpeg: { transcode: TranscodePolicy.All, accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: false },
+      };
+      const metadata: Record<string, unknown> = {};
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve((key === SystemMetadataKey.VideoCardState ? metadata[key] : config) as never),
+      );
+      mocks.systemMetadata.set.mockImplementation((key, value) => {
+        metadata[key] = value;
+        return Promise.resolve();
+      });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+      mocks.media.transcode.mockRejectedValueOnce(new Error('nvenc failed')).mockResolvedValueOnce(void 0);
+
+      await sut.handleVideoConversion({ id: 'video-id' });
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      expect(metadata[SystemMetadataKey.VideoCardState]).toEqual(
+        expect.objectContaining({ failedAt: expect.any(String), accel: TranscodeHardwareAcceleration.Nvenc }),
+      );
+
+      mocks.media.transcode.mockResolvedValue(void 0);
+      await sut.handleVideoConversion({ id: 'video-id' });
+      expect(metadata[SystemMetadataKey.VideoCardState]).toEqual(expect.objectContaining({ failedAt: null }));
     });
 
     it('should transcode when set to all', async () => {

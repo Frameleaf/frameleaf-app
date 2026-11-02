@@ -82,6 +82,7 @@ const setup = () => {
   const jobs = automock(JobRepository, { args: [undefined, undefined, undefined, { setContext: () => {} }] });
   jobs.queue.mockResolvedValue();
   jobs.queueAll.mockResolvedValue();
+  jobs.collectFollowups.mockImplementation((action) => action());
   useRealJobPublication(database, jobs);
   const sut = new VideoMomentIndexService(
     ctx.getMock(LoggingRepository),

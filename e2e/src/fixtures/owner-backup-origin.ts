@@ -31,7 +31,10 @@ export class OwnerBackupOrigin {
         const authorization = req.headers.authorization ?? '';
         assert.match(authorization, /^AWS4-HMAC-SHA256 Credential=FL234FIXTURE\//);
         assert.match(authorization, /Signature=[a-f\d]{64}$/);
-        const signed = /SignedHeaders=[^,]*host/.test(authorization);
+        const signed = authorization
+          .split(',')
+          .map((part) => part.trim())
+          .some((part) => part.startsWith('SignedHeaders=') && part.slice(14).split(';').includes('host'));
         assert.ok(signed);
         const customerKey = req.headers['x-amz-server-side-encryption-customer-key'];
         const encrypted = typeof customerKey === 'string';

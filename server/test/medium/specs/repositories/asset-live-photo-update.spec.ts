@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
-import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -127,6 +127,23 @@ describe('atomic Live Photo asset edits', () => {
       }
     },
   );
+
+  it('publishes an ordinary designer Live Photo with its paired video in the same scope', async () => {
+    const f = await fixture();
+    try {
+      const upload = mediumFactory.assetInsert({
+        ownerId: f.user.id,
+        type: AssetType.Image,
+        livePhotoVideoId: f.video.id,
+        libraryScope: LibraryScope.Design,
+      });
+      const result = await f.repo.createLivePhotoUpload(upload);
+      expect(result.asset.libraryScope).toBe(LibraryScope.Design);
+      expect((await f.repo.getById(f.video.id))?.libraryScope).toBe(LibraryScope.Design);
+    } finally {
+      await dispose(f);
+    }
+  });
 
   it.each(['insert', 'hide'])('rolls back ordinary Live Photo upload after an actual %s write fails', async (stage) => {
     const f = await fixture();

@@ -39,7 +39,7 @@ export interface ReadStreamResponse {
 
 export interface ZipDownloadStream extends ReadStreamResponse {
   /** Adds the file at a path, or (FL-423) bytes made for the archive, such as a generated details file. */
-  addFile: (input: string | Buffer, filename: string) => void;
+  addFile: (input: string | Buffer | Readable, filename: string) => void;
   finalize: () => Promise<void>;
 }
 
@@ -104,15 +104,35 @@ export class StorageRepository {
   createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
 
-    const addFile = (input: string | Buffer, filename: string) => {
-      if (typeof input === 'string') {
-        archive.file(input, { name: filename, mode: 0o644 });
-      } else {
+    // archiver pipes an appended stream at once, which starts it (FL-721: a decrypting stream opens
+    // its file), so the entry after a stream is added only once that stream is done or the archive is
+    // gone. A long list of streamed entries then holds one open at a time, in the order they were added.
+    let queue = Promise.resolve();
+    const addFile = (input: string | Buffer | Readable, filename: string) => {
+      queue = queue.then(() => {
+        if (typeof input === 'string') {
+          archive.file(input, { name: filename, mode: 0o644 });
+          return;
+        }
         archive.append(input, { name: filename, mode: 0o644 });
-      }
+        if (Buffer.isBuffer(input)) {
+          return;
+        }
+        return new Promise<void>((resolve) => {
+          const done = () => {
+            input.off('close', done);
+            archive.off('close', done);
+            archive.off('error', done);
+            resolve();
+          };
+          input.once('close', done);
+          archive.once('close', done);
+          archive.once('error', done);
+        });
+      });
     };
 
-    const finalize = () => archive.finalize();
+    const finalize = () => queue.then(() => archive.finalize());
 
     return { stream: archive, addFile, finalize };
   }
@@ -216,6 +236,19 @@ export class StorageRepository {
 
   async unlinkDir(folder: string, options: { recursive?: boolean; force?: boolean }) {
     await fs.rm(folder, { ...options, maxRetries: 5, retryDelay: 100 });
+  }
+
+  /** Remove the folder when it is empty; false when it is not, or is gone already. */
+  async removeDirIfEmpty(directory: string): Promise<boolean> {
+    try {
+      await fs.rmdir(directory);
+      return true;
+    } catch (error) {
+      if (['ENOENT', 'ENOTEMPTY', 'EEXIST', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async removeEmptyDirs(directory: string, self: boolean = false) {

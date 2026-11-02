@@ -128,7 +128,7 @@ describe('Computers (FL-364)', () => {
     const add = within(screen.getByRole('region', { name: 'Add a computer' }));
     expect(add.getByText(/Frameleaf helper for Mac and Windows is not available yet/)).toBeInTheDocument();
     expect(add.queryByRole('textbox')).not.toBeInTheDocument();
-    const details = screen.getByText('AI helpers: addresses, access keys and limits').closest('details')!;
+    const details = screen.getByText('AI helpers: addresses, access tokens and limits').closest('details')!;
     expect(details).not.toHaveAttribute('open');
     await fireEvent.click(add.getByRole('button', { name: 'Connect by address' }));
     expect(details).toHaveAttribute('open');

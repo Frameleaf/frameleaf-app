@@ -78,7 +78,7 @@ describe('PreservationExportDialog', () => {
       ],
     };
     expect(previewPreservationExport).toHaveBeenCalledWith({
-      preservationPreviewDto: { scope: { filter }, includeLocked: false },
+      preservationPreviewDto: { scope: { filter }, includeLocked: false, includeMetadata: true },
     });
 
     await fireEvent.click(await screen.findByRole('button', { name: en.continue }));
@@ -104,11 +104,19 @@ describe('PreservationExportDialog', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: en.continue }));
     expect(previewPreservationExport).toHaveBeenCalledWith({
-      preservationPreviewDto: { scope: { assetIds: ['a', 'b', 'c'] }, includeLocked: false },
+      preservationPreviewDto: { scope: { assetIds: ['a', 'b', 'c'] }, includeLocked: false, includeMetadata: true },
     });
     expect(
       await screen.findByText('1 more could not be included: it is in the trash, no longer available or not yours.'),
     ).toBeInTheDocument();
+  });
+
+  it('excludes saved links from the preview when metadata is off', async () => {
+    render(PreservationExportDialog, { props: { open: true, includeMetadata: false } });
+    await fireEvent.click(screen.getByRole('button', { name: en.continue }));
+    expect(previewPreservationExport).toHaveBeenCalledWith({
+      preservationPreviewDto: { scope: { filter: {} }, includeLocked: false, includeMetadata: false },
+    });
   });
 
   it('shows checksums as always included, since every package carries them', () => {

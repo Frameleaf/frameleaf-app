@@ -1,4 +1,9 @@
-import { AssetOrder, TimeBucketDateType, type TimeBucketAssetResponseDto } from '@frameleaf/sdk';
+import {
+  AssetOrder,
+  TimeBucketDateType,
+  type TimeBucketAssetResponseDto,
+  type TimeBucketsResponseDto,
+} from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
@@ -13,6 +18,7 @@ import {
   formatGroupTitle,
   formatTimelineMonthHeading,
   formatTimelineMonthTitle,
+  fromISODateTimeUTCToObject,
   fromTimelinePlainDate,
   fromTimelinePlainYearMonth,
   getTimes,
@@ -20,9 +26,11 @@ import {
   getOrderingDate,
 } from '$lib/utils/timeline-util';
 import { GroupInsertionCache } from './group-insertion-cache.svelte';
+import { leaveFlow } from './internal/flow-support.svelte';
+import { updateGeometry } from './internal/layout-support.svelte';
 import { TimelineDay } from './timeline-day.svelte';
 import type { TimelineManager } from './timeline-manager.svelte';
-import type { AssetDescriptor, Direction, FlowItem, MoveAsset, TimelineAsset } from './types';
+import type { AssetDescriptor, Direction, FlowItem, MoveAsset, TimelineAsset, TimelinePageKey } from './types';
 import { ViewerAsset } from './viewer-asset.svelte';
 
 export class TimelineMonth {
@@ -51,7 +59,7 @@ export class TimelineMonth {
   readonly title: string;
   /** The long form ("October 2026"), for the loading placeholder's heading. */
   readonly heading: string;
-  readonly yearMonth: TimelineYearMonth;
+  readonly yearMonth: TimelinePageKey;
 
   /*
    * FL-143: in All (and Years when not shown as cards) and the Browse and Work grids, a group's rows
@@ -86,13 +94,18 @@ export class TimelineMonth {
     dateType: TimeBucketDateType = TimeBucketDateType.Taken,
     /** A page of a flat order (S-15) is not a calendar month and has no title. */
     title?: string,
+    readonly calendarPage?: TimeBucketsResponseDto,
   ) {
     this.timelineManager = timelineManager;
     this.#initialCount = initialCount;
     this.#sortOrder = order;
     this.#dateType = dateType;
 
-    this.yearMonth = { year: yearMonth.year, month: yearMonth.month };
+    this.yearMonth = {
+      year: yearMonth.year,
+      month: yearMonth.month,
+      ...(calendarPage?.page !== undefined && { page: calendarPage.page }),
+    };
     this.title = title ?? formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
     this.heading = title ?? formatTimelineMonthHeading(fromTimelinePlainYearMonth(yearMonth));
 
@@ -195,10 +208,11 @@ export class TimelineMonth {
     };
   }
 
-  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean) {
+  /** `skipIds`: assets the month already holds, left out rather than added twice. */
+  addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean, skipIds?: ReadonlySet<string>) {
     const addContext = new GroupInsertionCache();
     for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
-      if (this.timelineManager.isExcluded(timelineAsset)) {
+      if (skipIds?.has(timelineAsset.id) || this.timelineManager.isExcluded(timelineAsset)) {
         continue;
       }
 
@@ -264,8 +278,21 @@ export class TimelineMonth {
   }
 
   get viewId() {
-    const { year, month } = this.yearMonth;
-    return year + '-' + month;
+    const { year, month, page } = this.yearMonth;
+    return year + '-' + month + (page === undefined ? '' : `-${page}`);
+  }
+
+  #initializingGeometry = false;
+
+  initializeGeometry(index: number, top: number) {
+    this.#indexHint = index;
+    this.#top = top;
+    this.#initializingGeometry = true;
+    try {
+      updateGeometry(this.timelineManager, this, { invalidateHeight: false });
+    } finally {
+      this.#initializingGeometry = false;
+    }
   }
 
   set height(height: number) {
@@ -276,6 +303,10 @@ export class TimelineMonth {
     const index = this.#index;
     const heightDelta = height - this.#height;
     this.#height = height;
+    // A month a refresh replaced is no longer laid out: moving the current months by it would shift them.
+    if (index === -1 || this.#initializingGeometry) {
+      return;
+    }
     const previousTimelineMonth = timelineManager.months[index - 1];
     if (previousTimelineMonth) {
       const newTop = previousTimelineMonth.#top + previousTimelineMonth.#height;
@@ -332,12 +363,16 @@ export class TimelineMonth {
    */
   get startsGroup(): boolean {
     const { grouping, months } = this.timelineManager;
-    if (grouping === 'days' || grouping === 'months') {
+    if (grouping === 'days') {
       return true;
     }
     const index = this.#index;
     if (index <= 0) {
       return true;
+    }
+    if (grouping === 'months') {
+      const previous = months[index - 1].yearMonth;
+      return previous.year !== this.yearMonth.year || previous.month !== this.yearMonth.month;
     }
     return grouping === 'years' && months[index - 1].yearMonth.year !== this.yearMonth.year;
   }
@@ -422,6 +457,19 @@ export class TimelineMonth {
   cancel() {
     this.loader?.cancel();
   }
+
+  releaseAssets() {
+    if (this.loader?.loading) {
+      return;
+    }
+    for (const asset of this.getAssets()) {
+      this.timelineManager.albumAssets.delete(asset.id);
+    }
+    leaveFlow(this);
+    this.timelineDays = [];
+    this.isLoaded = false;
+    void this.loader?.reset();
+  }
 }
 
 /** The time bucket's columnar response as timeline assets, in the order the server sent them. */
@@ -442,7 +490,7 @@ export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto):
       isVideo: !bucketAssets.isImage[i],
       livePhotoVideoId: bucketAssets.livePhotoVideoId[i],
       localDateTime,
-      createdAt: fileCreatedAt,
+      createdAt: fromISODateTimeUTCToObject(bucketAssets.createdAt[i]),
       fileCreatedAt,
       ownerId: bucketAssets.ownerId[i],
       projectionType: bucketAssets.projectionType[i],

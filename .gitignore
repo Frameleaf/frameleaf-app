@@ -4,6 +4,7 @@
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/settings.json
+!.vscode/tasks.json
 .idea
 
 # Local planning and agent work products
@@ -51,6 +52,7 @@ AGENTS.md
 !/AGENTS.md
 !/design/AGENTS.md
 CLAUDE.md
+CLAUDE.local.md
 SKILL.md
 CODEX-HANDOFF.md
 FORK_FOLLOWUPS.md

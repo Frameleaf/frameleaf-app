@@ -35,6 +35,8 @@ const RETRY_AFTER_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
 const ASK_TIMEOUT_MS = 45_000;
 const MAX_ARTICLE_BYTES = 512 * 1024;
+/** An article id is a guide path such as `using/sharing`, the same shape `HelpArticleSchema` accepts. */
+const ARTICLE_ID = /^[a-z0-9-]+\/[a-z0-9-]+$/;
 const RUNTIMES: Partial<Record<HardwareCheck['ml']['backend'], string>> = {
   CUDA: 'cuda',
   ROCm: 'rocm',
@@ -125,7 +127,7 @@ export class HelpService extends BaseService {
   async getArticle(id: string): Promise<HelpArticleResponseDto> {
     const { index } = await this.loadIndex();
     const article = index.articles.find((item) => item.id === id);
-    if (!article) {
+    if (!article || !ARTICLE_ID.test(article.id)) {
       throw new NotFoundException('There is no help article with this id');
     }
     const cached = this.articles.get(id);
@@ -133,7 +135,12 @@ export class HelpService extends BaseService {
       return { id, url: article.url, markdown: cached.markdown };
     }
     try {
-      const response = await fetch(`${this.origin}/content/docs/${id}.md`, {
+      // the id only ever names a path on the help website, never another host
+      const url = new URL(`/content/docs/${article.id}.md`, this.origin);
+      if (url.origin !== new URL(this.origin).origin) {
+        throw new Error('Article address leaves the help website');
+      }
+      const response = await fetch(url.href, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {

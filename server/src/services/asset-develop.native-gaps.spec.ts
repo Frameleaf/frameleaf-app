@@ -10,9 +10,11 @@ import { assertPublicationMotionSource } from 'src/queue/transaction.js';
 import { InpaintUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { getMocks } from 'test/utils.js';
 
@@ -61,7 +63,7 @@ describe('AssetDevelopService native API gaps', () => {
       ownerId: still.ownerId,
       originalPath: '/library/IMG_0001.mov',
       videoStream: { index: 0, codecName: 'hevc', colorTransfer: 'bt709' },
-      format: { duration: 2.5 },
+      format: { duration: 2500 },
     } as never);
     mocks.systemMetadata.get.mockResolvedValue({});
     mocks.media.decodeImage.mockResolvedValue({
@@ -83,6 +85,7 @@ describe('AssetDevelopService native API gaps', () => {
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
       mocks.machineLearning as never,
+      mocks.event as never,
     );
   });
 
@@ -95,7 +98,7 @@ describe('AssetDevelopService native API gaps', () => {
 
     it('decodes the still from the motion clip frame at the key frame time', async () => {
       const source = { ...getForGenerateThumbnail(still), originalPath };
-      const result = await sut['decodeSource'](source, defaults.image, 1280, { timeMs: 1200 });
+      const result = await sut['decodeSource'](source, defaults.image, null, 1280, { timeMs: 1200 });
       expect(mocks.assetJob.getForVideoConversion).toHaveBeenCalledWith(motionId);
       const [input, output, command] = mocks.media.transcode.mock.calls[0];
       expect(input).toBe('/library/IMG_0001.mov');
@@ -129,17 +132,17 @@ describe('AssetDevelopService native API gaps', () => {
           Promise.resolve({ ...still, id, livePhotoVideoId: motionId, ...state } as never),
         );
         await expect(
-          sut['decodeSource'](getForGenerateThumbnail(still), defaults.image, 1280, { timeMs: 0 }),
+          sut['decodeSource'](getForGenerateThumbnail(still), defaults.image, null, 1280, { timeMs: 0 }),
         ).rejects.toThrow();
         expect(mocks.media.transcode).not.toHaveBeenCalled();
       },
     );
 
-    it('does not round fractional duration up to admit an offset after the last frame', async () => {
+    it('reads the stored duration in milliseconds', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({
         id: motionId,
         ownerId: still.ownerId,
-        format: { duration: 2.5004 },
+        format: { duration: 2501 },
       } as never);
       await expect(sut['requireMotionClip'](still, 2501)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'develop_key_frame_out_of_range' }),
@@ -157,7 +160,7 @@ describe('AssetDevelopService native API gaps', () => {
     it("refuses another owner's clip and a time past the end", async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValueOnce({
         ownerId: 'someone-else',
-        format: { duration: 2.5 },
+        format: { duration: 2500 },
       } as never);
       await expect(sut['requireMotionClip'](still, 0)).rejects.toBeInstanceOf(BadRequestException);
       await expect(sut['requireMotionClip'](still, 2600)).rejects.toMatchObject({
@@ -199,6 +202,8 @@ describe('AssetDevelopService native API gaps', () => {
         still.id,
         AssetDevelopArtifactKind.Mask,
         expect.any(Buffer),
+        // FL-721 M6: a plain original's mask is staged in the OS temp folder
+        false,
         undefined,
       );
       expect(renderRawWithLibRaw).not.toHaveBeenCalled();
@@ -214,6 +219,86 @@ describe('AssetDevelopService native API gaps', () => {
       await expect(
         sut.proposeSemanticMask(authStub.user1, still.id, { target: 'subject', coordinates: 'original' }),
       ).rejects.toThrow('invalid mask');
+    });
+  });
+
+  describe('a sealed Locked original (FL-721, spec §8.2)', () => {
+    const jpeg = () =>
+      sharp({ create: { width: 400, height: 300, channels: 3, background: { r: 90, g: 120, b: 200 } } })
+        .jpeg()
+        .toBuffer();
+
+    it('proposes a mask from a plain copy that is gone afterwards', async () => {
+      const locked = await lockedFixture(still.ownerId);
+      try {
+        locked.loadKey();
+        const sealed = await locked.seal('IMG_0001.jpg', await jpeg(), 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(still),
+          originalPath: sealed,
+        });
+        mocks.machineLearning.semanticMaskLocal.mockImplementation(async (canvas: Buffer) => {
+          const { width, height } = await sharp(canvas).metadata();
+          return sharp({ create: { width: width!, height: height!, channels: 3, background: '#fff' } })
+            .toColourspace('b-w')
+            .png()
+            .toBuffer();
+        });
+        vi.spyOn(sut as unknown as Admits, 'admitGeneratedArtifact').mockResolvedValue({} as never);
+
+        await sut.proposeSemanticMask(authStub.user1, still.id, { target: 'sky', coordinates: 'original' });
+
+        const [canvas] = mocks.machineLearning.semanticMaskLocal.mock.calls[0];
+        expect(await sharp(canvas).metadata()).toMatchObject({ format: 'jpeg', width: 400, height: 300 });
+        expect(await locked.copiesLeft()).toBe(0);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('makes a Clean Up fill from a plain copy that is gone afterwards', async () => {
+      const locked = await lockedFixture(still.ownerId);
+      try {
+        locked.loadKey();
+        const sealed = await locked.seal('IMG_0001.jpg', await jpeg(), 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(still),
+          originalPath: sealed,
+        });
+        mocks.machineLearning.inpaintLocal.mockImplementation(async (image: Buffer) => {
+          const { width, height } = await sharp(image).metadata();
+          return sharp({ create: { width: width!, height: height!, channels: 3, background: { r: 1, g: 2, b: 3 } } })
+            .png()
+            .toBuffer();
+        });
+        vi.spyOn(sut as unknown as Admits, 'admitGeneratedArtifact').mockResolvedValue({} as never);
+
+        await sut.generateFill(authStub.user1, still.id, { region: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, feather: 0 });
+
+        const [image] = mocks.machineLearning.inpaintLocal.mock.calls[0];
+        expect(await sharp(image).metadata()).toMatchObject({ format: 'png', width: 400, height: 300 });
+        expect(await locked.copiesLeft()).toBe(0);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('waits for the key instead of decoding ciphertext', async () => {
+      const locked = await lockedFixture(still.ownerId);
+      try {
+        const sealed = await locked.seal('IMG_0001.jpg', await jpeg(), 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(still),
+          originalPath: sealed,
+        });
+
+        await expect(
+          sut.proposeSemanticMask(authStub.user1, still.id, { target: 'subject', coordinates: 'original' }),
+        ).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+        expect(mocks.machineLearning.semanticMaskLocal).not.toHaveBeenCalled();
+      } finally {
+        await locked.cleanup();
+      }
     });
   });
 

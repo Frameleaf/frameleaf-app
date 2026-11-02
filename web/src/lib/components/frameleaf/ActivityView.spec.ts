@@ -2,6 +2,7 @@ import {
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  StudioRenderStage,
   QueueName,
   type MediaOperationDto,
   type QueueRunDto,
@@ -99,6 +100,31 @@ describe('Frameleaf Activity page', () => {
     // The row reports stopping, not stopped: the worker has not acknowledged yet.
     await vi.waitFor(() => expect(screen.getByText('Stopping')).toBeInTheDocument());
   });
+
+  it.each([MediaOperationStatus.Queued, MediaOperationStatus.Preparing])(
+    'warns about stale Studio workers only after a claim (%s)',
+    async (status) => {
+      await mount([
+        operation({
+          status,
+          startedAt: status === MediaOperationStatus.Queued ? null : '2026-09-22T09:50:00.000Z',
+          renderProgress: {
+            stage: StudioRenderStage.Preparing,
+            lastProgressAt: null,
+            framesPerSecond: null,
+            remainingRenderSeconds: null,
+          },
+        }),
+      ]);
+      await screen.findByText(/Preparing export/);
+      const warning = screen.queryByText(/No measured progress for at least a minute/);
+      if (status === MediaOperationStatus.Queued) {
+        expect(warning).not.toBeInTheDocument();
+      } else {
+        expect(warning).toBeInTheDocument();
+      }
+    },
+  );
 
   it('offers retry only after a failure, and sends it to the server', async () => {
     sdkMock.retryMediaOperation.mockResolvedValue(
@@ -287,8 +313,8 @@ describe('Frameleaf Activity page', () => {
     expect(card?.getAttribute('aria-labelledby')).toBe(heading.id);
     const bar = screen.getByRole('progressbar', { name: /summer in the rockies/i });
     expect(bar.getAttribute('aria-valuenow')).toBe('42');
-    // Prototype `statusText`: the state, the percentage and about how long is left at the rate so far.
-    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toMatch(/^Rendering · 42% · about .+ left$/);
+    // A legacy Studio worker supplies counted percent, but no measured frame rate or render ETA.
+    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toBe('Rendering · 42%');
     expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
     // The prototype's summary names only what is not zero.
     expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
@@ -379,6 +405,12 @@ describe('Frameleaf Activity page', () => {
       );
       expect(cards[1]).toHaveAccessibleName('Face detection: Paused · 52 waiting · This server. Open Background work.');
       expect(screen.getByText('2 background tasks busy')).toBeInTheDocument();
+      // UI review 2026-10-30 #18: one link to where background work is managed, no "read-only" hint.
+      expect(within(group).getByRole('link', { name: 'Manage background work' })).toHaveAttribute(
+        'href',
+        expect.stringContaining('area=processing'),
+      );
+      expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Nothing in progress' })).not.toBeInTheDocument();
       expect(screen.queryByText(/stage|prerequisite/i)).not.toBeInTheDocument();
     } finally {

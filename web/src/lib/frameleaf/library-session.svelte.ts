@@ -26,6 +26,7 @@ import {
   toStoredLibraryTransient,
   writeLibraryView,
   type LibraryLayout,
+  type LibraryWorkspace,
   type LibrarySession,
   type LibrarySessionAction,
   type LibraryViewProblem,
@@ -46,6 +47,8 @@ import { libraryStartLayout } from '$lib/stores/preferences.store';
  * must still match; a response from a superseded query is dropped rather than applied.
  */
 export type LibrarySessionStoreOptions = {
+  /** Presentation state only; workspace never grants resource access. */
+  workspace?: LibraryWorkspace;
   /** The authenticated user's id. Stored state is keyed by it; sessions are never shared. */
   userId?: string;
   /** Items per page for the cumulative Show more summary. */
@@ -92,6 +95,7 @@ export class LibrarySessionStore {
   #destination: DiscoveryDestination | undefined = $state();
   #userId: string | undefined;
   #context = '';
+  #workspace: LibraryWorkspace;
   #storage: Pick<Storage, 'getItem' | 'setItem'> | null;
   #transientStorage: Pick<Storage, 'getItem' | 'setItem'> | null;
   /** Total matches for the current revision, or null while the server has not counted. */
@@ -103,6 +107,7 @@ export class LibrarySessionStore {
   #refusedAt: string | null = null;
 
   constructor(options: LibrarySessionStoreOptions = {}) {
+    this.#workspace = options.workspace ?? 'personal';
     this.#pageSize = options.pageSize && options.pageSize > 0 ? options.pageSize : undefined;
     this.#destination = options.destination;
     this.#userId = options.userId;
@@ -172,17 +177,17 @@ export class LibrarySessionStore {
     let contextualTransient = false;
     if (currentUserId) {
       try {
-        stored = this.#storage?.getItem(libraryPreferenceKey(currentUserId)) ?? null;
+        stored = this.#storage?.getItem(libraryPreferenceKey(currentUserId, this.#workspace)) ?? null;
       } catch {
         stored = null;
       }
       try {
         // An exact tab snapshot survives another route replacing the legacy per-user slot.
         transient = context
-          ? (this.#transientStorage?.getItem(libraryTransientKey(currentUserId, context)) ?? null)
+          ? (this.#transientStorage?.getItem(libraryTransientKey(currentUserId, context, this.#workspace)) ?? null)
           : null;
         contextualTransient = transient !== null;
-        transient ??= this.#transientStorage?.getItem(libraryTransientKey(currentUserId)) ?? null;
+        transient ??= this.#transientStorage?.getItem(libraryTransientKey(currentUserId, '', this.#workspace)) ?? null;
       } catch {
         transient = null;
       }
@@ -191,7 +196,16 @@ export class LibrarySessionStore {
     // ACCOUNT-P3: the first library view in a tab opens in the layout chosen under Look & playback
     // ("Open the library in"). Later views in the tab keep the layout the person switched to.
     const start = get(libraryStartLayout);
-    if (currentUserId && transient === null && start && LIBRARY_LAYOUTS.includes(start)) {
+    if (this.#workspace === 'design' && stored === null && transient === null) {
+      this.#session = { ...this.#session, layout: 'timeline' };
+    }
+    if (
+      this.#workspace === 'personal' &&
+      currentUserId &&
+      transient === null &&
+      start &&
+      LIBRARY_LAYOUTS.includes(start)
+    ) {
       this.#session = { ...this.#session, layout: start };
     }
     this.#total = null;
@@ -219,14 +233,14 @@ export class LibrarySessionStore {
     let failedPreferenceSnapshot: string | null = null;
     try {
       this.#storage?.setItem(
-        libraryPreferenceKey(currentUserId),
+        libraryPreferenceKey(currentUserId, this.#workspace),
         JSON.stringify(toStoredLibrarySession(this.#session)),
       );
       saved = !!this.#storage;
     } catch {
       // A full or blocked store must not break the page.
       try {
-        failedPreferenceSnapshot = this.#storage?.getItem(libraryPreferenceKey(currentUserId)) ?? null;
+        failedPreferenceSnapshot = this.#storage?.getItem(libraryPreferenceKey(currentUserId, this.#workspace)) ?? null;
       } catch {
         // The tab can still keep its own state when device storage is unreadable.
       }
@@ -237,9 +251,9 @@ export class LibrarySessionStore {
         ...(failedPreferenceSnapshot && { failedPreferenceSnapshot }),
       });
       // Keep the legacy slot for older contexts, and the exact slot for returning to this view.
-      this.#transientStorage?.setItem(libraryTransientKey(currentUserId), transient);
+      this.#transientStorage?.setItem(libraryTransientKey(currentUserId, '', this.#workspace), transient);
       if (this.#context) {
-        this.#transientStorage?.setItem(libraryTransientKey(currentUserId, this.#context), transient);
+        this.#transientStorage?.setItem(libraryTransientKey(currentUserId, this.#context, this.#workspace), transient);
       }
       return saved && !!this.#transientStorage;
     } catch {
@@ -296,6 +310,18 @@ export class LibrarySessionStore {
 
   setScope(scope: LibraryViewState['scope']) {
     return this.dispatch({ type: 'scope', scope });
+  }
+
+  /**
+   * The scope the page itself settles on right after a restore (the library outside an album or a
+   * space). Not a change the person made: a refused link stays in the address bar through it.
+   */
+  normalizeScope(scope: LibraryViewState['scope']) {
+    const result = this.setScope(scope);
+    if (this.#refusedAt !== null) {
+      this.#refusedAt = JSON.stringify(this.#session.state);
+    }
+    return result;
   }
 
   /* ---------------------------------------------------------------------- */

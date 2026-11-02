@@ -5,6 +5,7 @@ import { ZodSerializationException, ZodValidationException } from 'nestjs-zod';
 import { ZodError } from 'zod';
 import { RequestHeader } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LockedKeyUnavailableError, lockedKeyHttpException } from 'src/utils/locked-read.js';
 import { isHttpException, onRouteError } from 'src/utils/logger.js';
 import { serverErrorDisplay } from 'src/utils/server-error-display.js';
 
@@ -23,6 +24,10 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
   }
 
   handleError(req: Request, res: Response, error: Error) {
+    // FL-721 (spec §8): a request that needs a Locked key that isn't loaded answers 423
+    if (error instanceof LockedKeyUnavailableError) {
+      error = lockedKeyHttpException(error);
+    }
     const { canWrite } = onRouteError(req, res, error, this.logger);
     if (!canWrite) {
       return;

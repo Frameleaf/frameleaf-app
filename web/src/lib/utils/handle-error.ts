@@ -3,6 +3,7 @@ import { toastManager } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { pausedRefusalMessage } from '$lib/frameleaf/cloud-paused';
+import { handledLockedKeyError } from '$lib/frameleaf/locked-key-prompt';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
 /**
@@ -140,6 +141,12 @@ export function handleError(error: unknown, localizedMessage: string, options?: 
 
   if (isFrameleafSignInRequired(error)) {
     revokeSessionView('/auth/logout');
+    return localizedMessage;
+  }
+
+  // FL-721: a Locked read or action refused until the key is open asks for the passphrase or PIN;
+  // if the key doesn't open, the action's own message is shown as usual
+  if (handledLockedKeyError(error, () => notifyError(error, localizedMessage, notify))) {
     return localizedMessage;
   }
 

@@ -1,0 +1,3269 @@
+{
+  "source": {
+    "app": "LibrePhotos",
+    "version": "1.5.1",
+    "commit": "2097ce7b44a318039c68997816bc91d85da3ea31",
+    "repository": "https://github.com/LibrePhotos/librephotos",
+    "image": "reallibrephotos/librephotos-unified@sha256:a03393fc07ab80b69d58f4c4f083b4ec99a25c3f9e9d7cd235b50e5f4875ff9f",
+    "architecture": "linux/arm64",
+    "settings": "librephotos.settings.production_noproxy",
+    "database": "SQLite 3.46.1",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2017 Hooram Nam"
+  },
+  "schemaSha256": "28c2f23c08a1c32150cf3c094ed29b96524b19d4f8f64a6f2a866806a178dc95",
+  "objects": [
+    {
+      "type": "index",
+      "name": "account_emailaddress_email_03be32b2",
+      "tbl_name": "account_emailaddress",
+      "sql": "CREATE INDEX \"account_emailaddress_email_03be32b2\" ON \"account_emailaddress\" (\"email\")"
+    },
+    {
+      "type": "index",
+      "name": "account_emailaddress_user_id_2c513194",
+      "tbl_name": "account_emailaddress",
+      "sql": "CREATE INDEX \"account_emailaddress_user_id_2c513194\" ON \"account_emailaddress\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "account_emailaddress_user_id_email_987c8728_uniq",
+      "tbl_name": "account_emailaddress",
+      "sql": "CREATE UNIQUE INDEX \"account_emailaddress_user_id_email_987c8728_uniq\" ON \"account_emailaddress\" (\"user_id\", \"email\")"
+    },
+    {
+      "type": "index",
+      "name": "account_emailconfirmation_email_address_id_5b7f8c58",
+      "tbl_name": "account_emailconfirmation",
+      "sql": "CREATE INDEX \"account_emailconfirmation_email_address_id_5b7f8c58\" ON \"account_emailconfirmation\" (\"email_address_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_cover_photo_id_81cf36aa",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE INDEX \"api_albumauto_cover_photo_id_81cf36aa\" ON \"api_albumauto\" (\"cover_photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_created_on_0c5c92b6",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE INDEX \"api_albumauto_created_on_0c5c92b6\" ON \"api_albumauto\" (\"created_on\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_favorited_68743c7f",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE INDEX \"api_albumauto_favorited_68743c7f\" ON \"api_albumauto\" (\"favorited\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_last_modified_97dd0117",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE INDEX \"api_albumauto_last_modified_97dd0117\" ON \"api_albumauto\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_owner_id_e83d8f88",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE INDEX \"api_albumauto_owner_id_e83d8f88\" ON \"api_albumauto\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_photos_albumauto_id_86a09378",
+      "tbl_name": "api_albumauto_photos",
+      "sql": "CREATE INDEX \"api_albumauto_photos_albumauto_id_86a09378\" ON \"api_albumauto_photos\" (\"albumauto_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_photos_albumauto_id_photo_id_a8d355b1_uniq",
+      "tbl_name": "api_albumauto_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_albumauto_photos_albumauto_id_photo_id_a8d355b1_uniq\" ON \"api_albumauto_photos\" (\"albumauto_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_photos_photo_id_3320c2f0",
+      "tbl_name": "api_albumauto_photos",
+      "sql": "CREATE INDEX \"api_albumauto_photos_photo_id_3320c2f0\" ON \"api_albumauto_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_shared_to_albumauto_id_94c13ddb",
+      "tbl_name": "api_albumauto_shared_to",
+      "sql": "CREATE INDEX \"api_albumauto_shared_to_albumauto_id_94c13ddb\" ON \"api_albumauto_shared_to\" (\"albumauto_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_shared_to_albumauto_id_user_id_332148f8_uniq",
+      "tbl_name": "api_albumauto_shared_to",
+      "sql": "CREATE UNIQUE INDEX \"api_albumauto_shared_to_albumauto_id_user_id_332148f8_uniq\" ON \"api_albumauto_shared_to\" (\"albumauto_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_shared_to_user_id_cf09f962",
+      "tbl_name": "api_albumauto_shared_to",
+      "sql": "CREATE INDEX \"api_albumauto_shared_to_user_id_cf09f962\" ON \"api_albumauto_shared_to\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_timestamp_584f1589",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE INDEX \"api_albumauto_timestamp_584f1589\" ON \"api_albumauto\" (\"timestamp\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumauto_timestamp_owner_id_314a1d7f_uniq",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE UNIQUE INDEX \"api_albumauto_timestamp_owner_id_314a1d7f_uniq\" ON \"api_albumauto\" (\"timestamp\", \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumco_album_i_c74d58_idx",
+      "tbl_name": "api_albumcomment",
+      "sql": "CREATE INDEX \"api_albumco_album_i_c74d58_idx\" ON \"api_albumcomment\" (\"album_id\", \"photo_id\", \"created_at\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcollection_albums_albumcollection_id_albumuser_id_03f3554c_uniq",
+      "tbl_name": "api_albumcollection_albums",
+      "sql": "CREATE UNIQUE INDEX \"api_albumcollection_albums_albumcollection_id_albumuser_id_03f3554c_uniq\" ON \"api_albumcollection_albums\" (\"albumcollection_id\", \"albumuser_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcollection_albums_albumcollection_id_f6b2ccd2",
+      "tbl_name": "api_albumcollection_albums",
+      "sql": "CREATE INDEX \"api_albumcollection_albums_albumcollection_id_f6b2ccd2\" ON \"api_albumcollection_albums\" (\"albumcollection_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcollection_albums_albumuser_id_d800a2bb",
+      "tbl_name": "api_albumcollection_albums",
+      "sql": "CREATE INDEX \"api_albumcollection_albums_albumuser_id_d800a2bb\" ON \"api_albumcollection_albums\" (\"albumuser_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcollection_last_modified_1da5dc2d",
+      "tbl_name": "api_albumcollection",
+      "sql": "CREATE INDEX \"api_albumcollection_last_modified_1da5dc2d\" ON \"api_albumcollection\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcollection_owner_id_26b0f180",
+      "tbl_name": "api_albumcollection",
+      "sql": "CREATE INDEX \"api_albumcollection_owner_id_26b0f180\" ON \"api_albumcollection\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcomment_album_id_1b70e230",
+      "tbl_name": "api_albumcomment",
+      "sql": "CREATE INDEX \"api_albumcomment_album_id_1b70e230\" ON \"api_albumcomment\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcomment_author_id_9bfc7353",
+      "tbl_name": "api_albumcomment",
+      "sql": "CREATE INDEX \"api_albumcomment_author_id_9bfc7353\" ON \"api_albumcomment\" (\"author_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumcomment_photo_id_9bb064a4",
+      "tbl_name": "api_albumcomment",
+      "sql": "CREATE INDEX \"api_albumcomment_photo_id_9bb064a4\" ON \"api_albumcomment\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_date_b825aef0",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE INDEX \"api_albumdate_date_b825aef0\" ON \"api_albumdate\" (\"date\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_date_owner_id_5ba3d470_uniq",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE UNIQUE INDEX \"api_albumdate_date_owner_id_5ba3d470_uniq\" ON \"api_albumdate\" (\"date\", \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_favorited_9f3d4007",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE INDEX \"api_albumdate_favorited_9f3d4007\" ON \"api_albumdate\" (\"favorited\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_location_dbba885f",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE INDEX \"api_albumdate_location_dbba885f\" ON \"api_albumdate\" (\"location\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_owner_id_2745f84a",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE INDEX \"api_albumdate_owner_id_2745f84a\" ON \"api_albumdate\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_photos_albumdate_id_cd458c5d",
+      "tbl_name": "api_albumdate_photos",
+      "sql": "CREATE INDEX \"api_albumdate_photos_albumdate_id_cd458c5d\" ON \"api_albumdate_photos\" (\"albumdate_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_photos_albumdate_id_photo_id_5c0ca0f9_uniq",
+      "tbl_name": "api_albumdate_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_albumdate_photos_albumdate_id_photo_id_5c0ca0f9_uniq\" ON \"api_albumdate_photos\" (\"albumdate_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_photos_photo_id_26095959",
+      "tbl_name": "api_albumdate_photos",
+      "sql": "CREATE INDEX \"api_albumdate_photos_photo_id_26095959\" ON \"api_albumdate_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_shared_to_albumdate_id_6d32c8dc",
+      "tbl_name": "api_albumdate_shared_to",
+      "sql": "CREATE INDEX \"api_albumdate_shared_to_albumdate_id_6d32c8dc\" ON \"api_albumdate_shared_to\" (\"albumdate_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_shared_to_albumdate_id_user_id_7eb2d2bf_uniq",
+      "tbl_name": "api_albumdate_shared_to",
+      "sql": "CREATE UNIQUE INDEX \"api_albumdate_shared_to_albumdate_id_user_id_7eb2d2bf_uniq\" ON \"api_albumdate_shared_to\" (\"albumdate_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_shared_to_user_id_9ccf440e",
+      "tbl_name": "api_albumdate_shared_to",
+      "sql": "CREATE INDEX \"api_albumdate_shared_to_user_id_9ccf440e\" ON \"api_albumdate_shared_to\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumdate_title_c0a886cc",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE INDEX \"api_albumdate_title_c0a886cc\" ON \"api_albumdate\" (\"title\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumlike_album_id_bf138b5c",
+      "tbl_name": "api_albumlike",
+      "sql": "CREATE INDEX \"api_albumlike_album_id_bf138b5c\" ON \"api_albumlike\" (\"album_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumlike_album_id_photo_id_user_id_6e5d0b37_uniq",
+      "tbl_name": "api_albumlike",
+      "sql": "CREATE UNIQUE INDEX \"api_albumlike_album_id_photo_id_user_id_6e5d0b37_uniq\" ON \"api_albumlike\" (\"album_id\", \"photo_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumlike_photo_id_acaede93",
+      "tbl_name": "api_albumlike",
+      "sql": "CREATE INDEX \"api_albumlike_photo_id_acaede93\" ON \"api_albumlike\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumlike_user_id_d1273361",
+      "tbl_name": "api_albumlike",
+      "sql": "CREATE INDEX \"api_albumlike_user_id_d1273361\" ON \"api_albumlike\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_favorited_ddb4a4c3",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE INDEX \"api_albumplace_favorited_ddb4a4c3\" ON \"api_albumplace\" (\"favorited\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_geolocation_level_35fbd31f",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE INDEX \"api_albumplace_geolocation_level_35fbd31f\" ON \"api_albumplace\" (\"geolocation_level\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_last_modified_09b846bd",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE INDEX \"api_albumplace_last_modified_09b846bd\" ON \"api_albumplace\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_owner_id_6bd352e3",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE INDEX \"api_albumplace_owner_id_6bd352e3\" ON \"api_albumplace\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_photos_albumplace_id_e0d81074",
+      "tbl_name": "api_albumplace_photos",
+      "sql": "CREATE INDEX \"api_albumplace_photos_albumplace_id_e0d81074\" ON \"api_albumplace_photos\" (\"albumplace_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_photos_albumplace_id_photo_id_8340aa63_uniq",
+      "tbl_name": "api_albumplace_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_albumplace_photos_albumplace_id_photo_id_8340aa63_uniq\" ON \"api_albumplace_photos\" (\"albumplace_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_photos_photo_id_8fd88190",
+      "tbl_name": "api_albumplace_photos",
+      "sql": "CREATE INDEX \"api_albumplace_photos_photo_id_8fd88190\" ON \"api_albumplace_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_shared_to_albumplace_id_1c57a597",
+      "tbl_name": "api_albumplace_shared_to",
+      "sql": "CREATE INDEX \"api_albumplace_shared_to_albumplace_id_1c57a597\" ON \"api_albumplace_shared_to\" (\"albumplace_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_shared_to_albumplace_id_user_id_878b44ef_uniq",
+      "tbl_name": "api_albumplace_shared_to",
+      "sql": "CREATE UNIQUE INDEX \"api_albumplace_shared_to_albumplace_id_user_id_878b44ef_uniq\" ON \"api_albumplace_shared_to\" (\"albumplace_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_shared_to_user_id_82c38c75",
+      "tbl_name": "api_albumplace_shared_to",
+      "sql": "CREATE INDEX \"api_albumplace_shared_to_user_id_82c38c75\" ON \"api_albumplace_shared_to\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_title_6cafeb2d",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE INDEX \"api_albumplace_title_6cafeb2d\" ON \"api_albumplace\" (\"title\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumplace_title_owner_id_851514f9_uniq",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE UNIQUE INDEX \"api_albumplace_title_owner_id_851514f9_uniq\" ON \"api_albumplace\" (\"title\", \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_cover_photos_albumthing_id_aa548eb5",
+      "tbl_name": "api_albumthing_cover_photos",
+      "sql": "CREATE INDEX \"api_albumthing_cover_photos_albumthing_id_aa548eb5\" ON \"api_albumthing_cover_photos\" (\"albumthing_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_cover_photos_albumthing_id_photo_id_86f2debc_uniq",
+      "tbl_name": "api_albumthing_cover_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_albumthing_cover_photos_albumthing_id_photo_id_86f2debc_uniq\" ON \"api_albumthing_cover_photos\" (\"albumthing_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_cover_photos_photo_id_ae113997",
+      "tbl_name": "api_albumthing_cover_photos",
+      "sql": "CREATE INDEX \"api_albumthing_cover_photos_photo_id_ae113997\" ON \"api_albumthing_cover_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_favorited_70dc6840",
+      "tbl_name": "api_albumthing",
+      "sql": "CREATE INDEX \"api_albumthing_favorited_70dc6840\" ON \"api_albumthing\" (\"favorited\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_last_modified_6aab255b",
+      "tbl_name": "api_albumthing",
+      "sql": "CREATE INDEX \"api_albumthing_last_modified_6aab255b\" ON \"api_albumthing\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_owner_id_b61d1b00",
+      "tbl_name": "api_albumthing",
+      "sql": "CREATE INDEX \"api_albumthing_owner_id_b61d1b00\" ON \"api_albumthing\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_photos_albumthing_id_00fcb0f3",
+      "tbl_name": "api_albumthing_photos",
+      "sql": "CREATE INDEX \"api_albumthing_photos_albumthing_id_00fcb0f3\" ON \"api_albumthing_photos\" (\"albumthing_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_photos_albumthing_id_photo_id_1cc34324_uniq",
+      "tbl_name": "api_albumthing_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_albumthing_photos_albumthing_id_photo_id_1cc34324_uniq\" ON \"api_albumthing_photos\" (\"albumthing_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_photos_photo_id_d0832fc3",
+      "tbl_name": "api_albumthing_photos",
+      "sql": "CREATE INDEX \"api_albumthing_photos_photo_id_d0832fc3\" ON \"api_albumthing_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_shared_to_albumthing_id_b81ac20a",
+      "tbl_name": "api_albumthing_shared_to",
+      "sql": "CREATE INDEX \"api_albumthing_shared_to_albumthing_id_b81ac20a\" ON \"api_albumthing_shared_to\" (\"albumthing_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_shared_to_albumthing_id_user_id_05b7dbd1_uniq",
+      "tbl_name": "api_albumthing_shared_to",
+      "sql": "CREATE UNIQUE INDEX \"api_albumthing_shared_to_albumthing_id_user_id_05b7dbd1_uniq\" ON \"api_albumthing_shared_to\" (\"albumthing_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_shared_to_user_id_40c200a0",
+      "tbl_name": "api_albumthing_shared_to",
+      "sql": "CREATE INDEX \"api_albumthing_shared_to_user_id_40c200a0\" ON \"api_albumthing_shared_to\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_thing_type_924227a6",
+      "tbl_name": "api_albumthing",
+      "sql": "CREATE INDEX \"api_albumthing_thing_type_924227a6\" ON \"api_albumthing\" (\"thing_type\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumthing_title_e9b82e55",
+      "tbl_name": "api_albumthing",
+      "sql": "CREATE INDEX \"api_albumthing_title_e9b82e55\" ON \"api_albumthing\" (\"title\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_cover_photo_id_69b304ac",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE INDEX \"api_albumuser_cover_photo_id_69b304ac\" ON \"api_albumuser\" (\"cover_photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_created_on_0807bc0f",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE INDEX \"api_albumuser_created_on_0807bc0f\" ON \"api_albumuser\" (\"created_on\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_favorited_15de9e16",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE INDEX \"api_albumuser_favorited_15de9e16\" ON \"api_albumuser\" (\"favorited\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_last_modified_fa65eb43",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE INDEX \"api_albumuser_last_modified_fa65eb43\" ON \"api_albumuser\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_owner_id_df3b5510",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE INDEX \"api_albumuser_owner_id_df3b5510\" ON \"api_albumuser\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_photos_added_by_id_5c8ad10f",
+      "tbl_name": "api_albumuser_photos",
+      "sql": "CREATE INDEX \"api_albumuser_photos_added_by_id_5c8ad10f\" ON \"api_albumuser_photos\" (\"added_by_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_photos_albumuser_id_80614a80",
+      "tbl_name": "api_albumuser_photos",
+      "sql": "CREATE INDEX \"api_albumuser_photos_albumuser_id_80614a80\" ON \"api_albumuser_photos\" (\"albumuser_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_photos_albumuser_id_photo_id_00091848_uniq",
+      "tbl_name": "api_albumuser_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_albumuser_photos_albumuser_id_photo_id_00091848_uniq\" ON \"api_albumuser_photos\" (\"albumuser_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_photos_photo_id_b9df1b14",
+      "tbl_name": "api_albumuser_photos",
+      "sql": "CREATE INDEX \"api_albumuser_photos_photo_id_b9df1b14\" ON \"api_albumuser_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_shared_to_albumuser_id_037fbb43",
+      "tbl_name": "api_albumuser_shared_to",
+      "sql": "CREATE INDEX \"api_albumuser_shared_to_albumuser_id_037fbb43\" ON \"api_albumuser_shared_to\" (\"albumuser_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_shared_to_albumuser_id_user_id_3c6a4938_uniq",
+      "tbl_name": "api_albumuser_shared_to",
+      "sql": "CREATE UNIQUE INDEX \"api_albumuser_shared_to_albumuser_id_user_id_3c6a4938_uniq\" ON \"api_albumuser_shared_to\" (\"albumuser_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_shared_to_user_id_60ab3643",
+      "tbl_name": "api_albumuser_shared_to",
+      "sql": "CREATE INDEX \"api_albumuser_shared_to_user_id_60ab3643\" ON \"api_albumuser_shared_to\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumuser_title_owner_id_ef2e4db4_uniq",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE UNIQUE INDEX \"api_albumuser_title_owner_id_ef2e4db4_uniq\" ON \"api_albumuser\" (\"title\", \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumusershare_enabled_a7f334cf",
+      "tbl_name": "api_albumusershare",
+      "sql": "CREATE INDEX \"api_albumusershare_enabled_a7f334cf\" ON \"api_albumusershare\" (\"enabled\")"
+    },
+    {
+      "type": "index",
+      "name": "api_albumusershare_expires_at_2a6e99b3",
+      "tbl_name": "api_albumusershare",
+      "sql": "CREATE INDEX \"api_albumusershare_expires_at_2a6e99b3\" ON \"api_albumusershare\" (\"expires_at\")"
+    },
+    {
+      "type": "index",
+      "name": "api_cluster_owner_id_ddf57161",
+      "tbl_name": "api_cluster",
+      "sql": "CREATE INDEX \"api_cluster_owner_id_ddf57161\" ON \"api_cluster\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_cluster_person_id_de1e4b3c",
+      "tbl_name": "api_cluster",
+      "sql": "CREATE INDEX \"api_cluster_person_id_de1e4b3c\" ON \"api_cluster\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_deletionlog_deleted_at_0d4cb74b",
+      "tbl_name": "api_deletionlog",
+      "sql": "CREATE INDEX \"api_deletionlog_deleted_at_0d4cb74b\" ON \"api_deletionlog\" (\"deleted_at\")"
+    },
+    {
+      "type": "index",
+      "name": "api_deletionlog_entity_0bdb6728",
+      "tbl_name": "api_deletionlog",
+      "sql": "CREATE INDEX \"api_deletionlog_entity_0bdb6728\" ON \"api_deletionlog\" (\"entity\")"
+    },
+    {
+      "type": "index",
+      "name": "api_deletionlog_owner_id_fe3fb028",
+      "tbl_name": "api_deletionlog",
+      "sql": "CREATE INDEX \"api_deletionlog_owner_id_fe3fb028\" ON \"api_deletionlog\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_duplica_owner_i_039fa3_idx",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE INDEX \"api_duplica_owner_i_039fa3_idx\" ON \"api_duplicate\" (\"owner_id\", \"review_status\")"
+    },
+    {
+      "type": "index",
+      "name": "api_duplica_owner_i_78a3a4_idx",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE INDEX \"api_duplica_owner_i_78a3a4_idx\" ON \"api_duplicate\" (\"owner_id\", \"duplicate_type\")"
+    },
+    {
+      "type": "index",
+      "name": "api_duplicate_duplicate_type_155b26e2",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE INDEX \"api_duplicate_duplicate_type_155b26e2\" ON \"api_duplicate\" (\"duplicate_type\")"
+    },
+    {
+      "type": "index",
+      "name": "api_duplicate_kept_photo_id_e0c33ed4",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE INDEX \"api_duplicate_kept_photo_id_e0c33ed4\" ON \"api_duplicate\" (\"kept_photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_duplicate_owner_id_3d0c7327",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE INDEX \"api_duplicate_owner_id_3d0c7327\" ON \"api_duplicate\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_duplicate_review_status_85cc6bfd",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE INDEX \"api_duplicate_review_status_85cc6bfd\" ON \"api_duplicate\" (\"review_status\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_classification_person_id_98d44049",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_classification_person_id_98d44049\" ON \"api_face\" (\"classification_person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_classification_probability_688e8040",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_classification_probability_688e8040\" ON \"api_face\" (\"classification_probability\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_cluster_id_7cc7025a",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_cluster_id_7cc7025a\" ON \"api_face\" (\"cluster_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_cluster_person_id_0a0b4811",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_cluster_person_id_0a0b4811\" ON \"api_face\" (\"cluster_person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_cluster_probability_89b3b2e2",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_cluster_probability_89b3b2e2\" ON \"api_face\" (\"cluster_probability\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_person_id_6a0347bd",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_person_id_6a0347bd\" ON \"api_face\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_photo_id_6f997226",
+      "tbl_name": "api_face",
+      "sql": "CREATE INDEX \"api_face_photo_id_6f997226\" ON \"api_face\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_rejected_persons_face_id_32b0b9c6",
+      "tbl_name": "api_face_rejected_persons",
+      "sql": "CREATE INDEX \"api_face_rejected_persons_face_id_32b0b9c6\" ON \"api_face_rejected_persons\" (\"face_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_rejected_persons_face_id_person_id_b0f4689b_uniq",
+      "tbl_name": "api_face_rejected_persons",
+      "sql": "CREATE UNIQUE INDEX \"api_face_rejected_persons_face_id_person_id_b0f4689b_uniq\" ON \"api_face_rejected_persons\" (\"face_id\", \"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_face_rejected_persons_person_id_b5730362",
+      "tbl_name": "api_face_rejected_persons",
+      "sql": "CREATE INDEX \"api_face_rejected_persons_person_id_b5730362\" ON \"api_face_rejected_persons\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_file_embedded_media_from_file_id_9cd74d0d",
+      "tbl_name": "api_file_embedded_media",
+      "sql": "CREATE INDEX \"api_file_embedded_media_from_file_id_9cd74d0d\" ON \"api_file_embedded_media\" (\"from_file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_file_embedded_media_from_file_id_to_file_id_dda3a651_uniq",
+      "tbl_name": "api_file_embedded_media",
+      "sql": "CREATE UNIQUE INDEX \"api_file_embedded_media_from_file_id_to_file_id_dda3a651_uniq\" ON \"api_file_embedded_media\" (\"from_file_id\", \"to_file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_file_embedded_media_to_file_id_69f18a1c",
+      "tbl_name": "api_file_embedded_media",
+      "sql": "CREATE INDEX \"api_file_embedded_media_to_file_id_69f18a1c\" ON \"api_file_embedded_media\" (\"to_file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_filecopy_file_id_435044cc",
+      "tbl_name": "api_filecopy",
+      "sql": "CREATE INDEX \"api_filecopy_file_id_435044cc\" ON \"api_filecopy\" (\"file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_libraryfolder_owner_id_e77de38a",
+      "tbl_name": "api_libraryfolder",
+      "sql": "CREATE INDEX \"api_libraryfolder_owner_id_e77de38a\" ON \"api_libraryfolder\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_libraryshare_owner_id_74036320",
+      "tbl_name": "api_libraryshare",
+      "sql": "CREATE INDEX \"api_libraryshare_owner_id_74036320\" ON \"api_libraryshare\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_libraryshare_recipient_id_7943a7b1",
+      "tbl_name": "api_libraryshare",
+      "sql": "CREATE INDEX \"api_libraryshare_recipient_id_7943a7b1\" ON \"api_libraryshare\" (\"recipient_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_longrunningjob_started_by_id_acef418a",
+      "tbl_name": "api_longrunningjob",
+      "sql": "CREATE INDEX \"api_longrunningjob_started_by_id_acef418a\" ON \"api_longrunningjob\" (\"started_by_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_metadat_photo_i_21e478_idx",
+      "tbl_name": "api_metadataedit",
+      "sql": "CREATE INDEX \"api_metadat_photo_i_21e478_idx\" ON \"api_metadataedit\" (\"photo_id\", \"created_at\" DESC)"
+    },
+    {
+      "type": "index",
+      "name": "api_metadataedit_photo_id_38524cb3",
+      "tbl_name": "api_metadataedit",
+      "sql": "CREATE INDEX \"api_metadataedit_photo_id_38524cb3\" ON \"api_metadataedit\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_metadataedit_user_id_83a820d9",
+      "tbl_name": "api_metadataedit",
+      "sql": "CREATE INDEX \"api_metadataedit_user_id_83a820d9\" ON \"api_metadataedit\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_cluster_owner_id_90df41de",
+      "tbl_name": "api_person",
+      "sql": "CREATE INDEX \"api_person_cluster_owner_id_90df41de\" ON \"api_person\" (\"cluster_owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_cover_face_id_bdd48874",
+      "tbl_name": "api_person",
+      "sql": "CREATE INDEX \"api_person_cover_face_id_bdd48874\" ON \"api_person\" (\"cover_face_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_cover_photo_id_e0d8a6ab",
+      "tbl_name": "api_person",
+      "sql": "CREATE INDEX \"api_person_cover_photo_id_e0d8a6ab\" ON \"api_person\" (\"cover_photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_groups_person_id_2c7754aa",
+      "tbl_name": "api_person_groups",
+      "sql": "CREATE INDEX \"api_person_groups_person_id_2c7754aa\" ON \"api_person_groups\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_groups_person_id_persongroup_id_d78906eb_uniq",
+      "tbl_name": "api_person_groups",
+      "sql": "CREATE UNIQUE INDEX \"api_person_groups_person_id_persongroup_id_d78906eb_uniq\" ON \"api_person_groups\" (\"person_id\", \"persongroup_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_groups_persongroup_id_e3ef8af8",
+      "tbl_name": "api_person_groups",
+      "sql": "CREATE INDEX \"api_person_groups_persongroup_id_e3ef8af8\" ON \"api_person_groups\" (\"persongroup_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_last_modified_c4a91103",
+      "tbl_name": "api_person",
+      "sql": "CREATE INDEX \"api_person_last_modified_c4a91103\" ON \"api_person\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_person_name_8e1ce669",
+      "tbl_name": "api_person",
+      "sql": "CREATE INDEX \"api_person_name_8e1ce669\" ON \"api_person\" (\"name\")"
+    },
+    {
+      "type": "index",
+      "name": "api_persongroup_last_modified_c40d6d77",
+      "tbl_name": "api_persongroup",
+      "sql": "CREATE INDEX \"api_persongroup_last_modified_c40d6d77\" ON \"api_persongroup\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_persongroup_owner_id_9140dba2",
+      "tbl_name": "api_persongroup",
+      "sql": "CREATE INDEX \"api_persongroup_owner_id_9140dba2\" ON \"api_persongroup\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_personshare_person_id_53d72ad8",
+      "tbl_name": "api_personshare",
+      "sql": "CREATE INDEX \"api_personshare_person_id_53d72ad8\" ON \"api_personshare\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_personshare_person_id_recipient_id_93b46c28_uniq",
+      "tbl_name": "api_personshare",
+      "sql": "CREATE UNIQUE INDEX \"api_personshare_person_id_recipient_id_93b46c28_uniq\" ON \"api_personshare\" (\"person_id\", \"recipient_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_personshare_recipient_id_bd867476",
+      "tbl_name": "api_personshare",
+      "sql": "CREATE INDEX \"api_personshare_recipient_id_bd867476\" ON \"api_personshare\" (\"recipient_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_personsharephoto_person_id_97dc82dc",
+      "tbl_name": "api_personsharephoto",
+      "sql": "CREATE INDEX \"api_personsharephoto_person_id_97dc82dc\" ON \"api_personsharephoto\" (\"person_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_personsharephoto_person_id_photo_id_8f408a02_uniq",
+      "tbl_name": "api_personsharephoto",
+      "sql": "CREATE UNIQUE INDEX \"api_personsharephoto_person_id_photo_id_8f408a02_uniq\" ON \"api_personsharephoto\" (\"person_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_personsharephoto_photo_id_e76c78e1",
+      "tbl_name": "api_personsharephoto",
+      "sql": "CREATE INDEX \"api_personsharephoto_photo_id_e76c78e1\" ON \"api_personsharephoto\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_added_on_ababa57d",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_added_on_ababa57d\" ON \"api_photo\" (\"added_on\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_archived_1ab2faff",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_archived_1ab2faff\" ON \"api_photo\" (\"archived\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_caption_captions_json_70c46fb8",
+      "tbl_name": "api_photo_caption",
+      "sql": "CREATE INDEX \"api_photo_caption_captions_json_70c46fb8\" ON \"api_photo_caption\" (\"captions_json\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_duplicates_duplicate_id_f06a9493",
+      "tbl_name": "api_photo_duplicates",
+      "sql": "CREATE INDEX \"api_photo_duplicates_duplicate_id_f06a9493\" ON \"api_photo_duplicates\" (\"duplicate_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_duplicates_photo_id_duplicate_id_9dd9906e_uniq",
+      "tbl_name": "api_photo_duplicates",
+      "sql": "CREATE UNIQUE INDEX \"api_photo_duplicates_photo_id_duplicate_id_9dd9906e_uniq\" ON \"api_photo_duplicates\" (\"photo_id\", \"duplicate_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_duplicates_photo_id_e89217df",
+      "tbl_name": "api_photo_duplicates",
+      "sql": "CREATE INDEX \"api_photo_duplicates_photo_id_e89217df\" ON \"api_photo_duplicates\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_exif_timestamp_3c113e34",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_exif_timestamp_3c113e34\" ON \"api_photo\" (\"exif_timestamp\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_files_file_id_b6d5e335",
+      "tbl_name": "api_photo_files",
+      "sql": "CREATE INDEX \"api_photo_files_file_id_b6d5e335\" ON \"api_photo_files\" (\"file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_files_photo_id_f4365127",
+      "tbl_name": "api_photo_files",
+      "sql": "CREATE INDEX \"api_photo_files_photo_id_f4365127\" ON \"api_photo_files\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_files_photo_id_file_id_0cd01909_uniq",
+      "tbl_name": "api_photo_files",
+      "sql": "CREATE UNIQUE INDEX \"api_photo_files_photo_id_file_id_0cd01909_uniq\" ON \"api_photo_files\" (\"photo_id\", \"file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_geolocation_json_dc1b353e",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_geolocation_json_dc1b353e\" ON \"api_photo\" (\"geolocation_json\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_hidden_59a5d521",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_hidden_59a5d521\" ON \"api_photo\" (\"hidden\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_image_hash_6b828f4d",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_image_hash_6b828f4d\" ON \"api_photo\" (\"image_hash\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_in_trashcan_516d54a0",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_in_trashcan_516d54a0\" ON \"api_photo\" (\"in_trashcan\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_is_document_89ef7db6",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_is_document_89ef7db6\" ON \"api_photo\" (\"is_document\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_is_screenshot_80bd33f2",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_is_screenshot_80bd33f2\" ON \"api_photo\" (\"is_screenshot\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_main_file_id_453ba4cc",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_main_file_id_453ba4cc\" ON \"api_photo\" (\"main_file_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_owner_id_234b5551",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_owner_id_234b5551\" ON \"api_photo\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_perceptual_hash_1076b9f8",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_perceptual_hash_1076b9f8\" ON \"api_photo\" (\"perceptual_hash\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_public_d9bcd839",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_public_d9bcd839\" ON \"api_photo\" (\"public\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_rating_53606e2c",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_rating_53606e2c\" ON \"api_photo\" (\"rating\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_removed_50380583",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_removed_50380583\" ON \"api_photo\" (\"removed\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_search_search_captions_929fb6aa",
+      "tbl_name": "api_photo_search",
+      "sql": "CREATE INDEX \"api_photo_search_search_captions_929fb6aa\" ON \"api_photo_search\" (\"search_captions\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_search_search_location_b864ad60",
+      "tbl_name": "api_photo_search",
+      "sql": "CREATE INDEX \"api_photo_search_search_location_b864ad60\" ON \"api_photo_search\" (\"search_location\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_shared_to_photo_id_852923c7",
+      "tbl_name": "api_photo_shared_to",
+      "sql": "CREATE INDEX \"api_photo_shared_to_photo_id_852923c7\" ON \"api_photo_shared_to\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_shared_to_photo_id_user_id_d9c7c4a1_uniq",
+      "tbl_name": "api_photo_shared_to",
+      "sql": "CREATE UNIQUE INDEX \"api_photo_shared_to_photo_id_user_id_d9c7c4a1_uniq\" ON \"api_photo_shared_to\" (\"photo_id\", \"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_shared_to_user_id_0407baf2",
+      "tbl_name": "api_photo_shared_to",
+      "sql": "CREATE INDEX \"api_photo_shared_to_user_id_0407baf2\" ON \"api_photo_shared_to\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_stacks_photo_id_db985d09",
+      "tbl_name": "api_photo_stacks",
+      "sql": "CREATE INDEX \"api_photo_stacks_photo_id_db985d09\" ON \"api_photo_stacks\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_stacks_photo_id_photostack_id_237b9c5b_uniq",
+      "tbl_name": "api_photo_stacks",
+      "sql": "CREATE UNIQUE INDEX \"api_photo_stacks_photo_id_photostack_id_237b9c5b_uniq\" ON \"api_photo_stacks\" (\"photo_id\", \"photostack_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_stacks_photostack_id_dd4eef21",
+      "tbl_name": "api_photo_stacks",
+      "sql": "CREATE INDEX \"api_photo_stacks_photostack_id_dd4eef21\" ON \"api_photo_stacks\" (\"photostack_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_timestamp_92a676d4",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_timestamp_92a676d4\" ON \"api_photo\" (\"timestamp\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_town_ebcbabc3",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_town_ebcbabc3\" ON \"api_photo\" (\"town\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photo_trashed_at_3ce5c4be",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"api_photo_trashed_at_3ce5c4be\" ON \"api_photo\" (\"trashed_at\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photome_camera__361eac_idx",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE INDEX \"api_photome_camera__361eac_idx\" ON \"api_photometadata\" (\"camera_make\", \"camera_model\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photometadata_aperture_dc8a65b2",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE INDEX \"api_photometadata_aperture_dc8a65b2\" ON \"api_photometadata\" (\"aperture\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photometadata_camera_make_c682ef26",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE INDEX \"api_photometadata_camera_make_c682ef26\" ON \"api_photometadata\" (\"camera_make\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photometadata_camera_model_f21bb3a4",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE INDEX \"api_photometadata_camera_model_f21bb3a4\" ON \"api_photometadata\" (\"camera_model\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photometadata_iso_aa268c5e",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE INDEX \"api_photometadata_iso_aa268c5e\" ON \"api_photometadata\" (\"iso\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photometadata_lens_model_42c78a22",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE INDEX \"api_photometadata_lens_model_42c78a22\" ON \"api_photometadata\" (\"lens_model\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photoshare_enabled_20ebda70",
+      "tbl_name": "api_photoshare",
+      "sql": "CREATE INDEX \"api_photoshare_enabled_20ebda70\" ON \"api_photoshare\" (\"enabled\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photost_owner_i_40a369_idx",
+      "tbl_name": "api_photostack",
+      "sql": "CREATE INDEX \"api_photost_owner_i_40a369_idx\" ON \"api_photostack\" (\"owner_id\", \"stack_type\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photostack_owner_id_56d8148c",
+      "tbl_name": "api_photostack",
+      "sql": "CREATE INDEX \"api_photostack_owner_id_56d8148c\" ON \"api_photostack\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photostack_primary_photo_id_a2e9fc96",
+      "tbl_name": "api_photostack",
+      "sql": "CREATE INDEX \"api_photostack_primary_photo_id_a2e9fc96\" ON \"api_photostack\" (\"primary_photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_photostack_stack_type_979b3dfd",
+      "tbl_name": "api_photostack",
+      "sql": "CREATE INDEX \"api_photostack_stack_type_979b3dfd\" ON \"api_photostack\" (\"stack_type\")"
+    },
+    {
+      "type": "index",
+      "name": "api_tag_last_modified_6d2b89ff",
+      "tbl_name": "api_tag",
+      "sql": "CREATE INDEX \"api_tag_last_modified_6d2b89ff\" ON \"api_tag\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_tag_name_e0f7a95d",
+      "tbl_name": "api_tag",
+      "sql": "CREATE INDEX \"api_tag_name_e0f7a95d\" ON \"api_tag\" (\"name\")"
+    },
+    {
+      "type": "index",
+      "name": "api_tag_owner_id_18caa483",
+      "tbl_name": "api_tag",
+      "sql": "CREATE INDEX \"api_tag_owner_id_18caa483\" ON \"api_tag\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_tag_photos_photo_id_1a9bb7a5",
+      "tbl_name": "api_tag_photos",
+      "sql": "CREATE INDEX \"api_tag_photos_photo_id_1a9bb7a5\" ON \"api_tag_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_tag_photos_tag_id_bca93ec5",
+      "tbl_name": "api_tag_photos",
+      "sql": "CREATE INDEX \"api_tag_photos_tag_id_bca93ec5\" ON \"api_tag_photos\" (\"tag_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_tag_photos_tag_id_photo_id_cf87bcf0_uniq",
+      "tbl_name": "api_tag_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_tag_photos_tag_id_photo_id_cf87bcf0_uniq\" ON \"api_tag_photos\" (\"tag_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_confidence_4ccde6b4",
+      "tbl_name": "api_user",
+      "sql": "CREATE INDEX \"api_user_confidence_4ccde6b4\" ON \"api_user\" (\"confidence\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_favorite_min_rating_3cb1cf14",
+      "tbl_name": "api_user",
+      "sql": "CREATE INDEX \"api_user_favorite_min_rating_3cb1cf14\" ON \"api_user\" (\"favorite_min_rating\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_groups_group_id_3af85785",
+      "tbl_name": "api_user_groups",
+      "sql": "CREATE INDEX \"api_user_groups_group_id_3af85785\" ON \"api_user_groups\" (\"group_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_groups_user_id_a5ff39fa",
+      "tbl_name": "api_user_groups",
+      "sql": "CREATE INDEX \"api_user_groups_user_id_a5ff39fa\" ON \"api_user_groups\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_groups_user_id_group_id_9c7ddfb5_uniq",
+      "tbl_name": "api_user_groups",
+      "sql": "CREATE UNIQUE INDEX \"api_user_groups_user_id_group_id_9c7ddfb5_uniq\" ON \"api_user_groups\" (\"user_id\", \"group_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_last_modified_e2efd2d6",
+      "tbl_name": "api_user",
+      "sql": "CREATE INDEX \"api_user_last_modified_e2efd2d6\" ON \"api_user\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_nextcloud_scan_directory_a85dc569",
+      "tbl_name": "api_user",
+      "sql": "CREATE INDEX \"api_user_nextcloud_scan_directory_a85dc569\" ON \"api_user\" (\"nextcloud_scan_directory\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_scan_directory_ad54b748",
+      "tbl_name": "api_user",
+      "sql": "CREATE INDEX \"api_user_scan_directory_ad54b748\" ON \"api_user\" (\"scan_directory\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_user_permissions_permission_id_305b7fea",
+      "tbl_name": "api_user_user_permissions",
+      "sql": "CREATE INDEX \"api_user_user_permissions_permission_id_305b7fea\" ON \"api_user_user_permissions\" (\"permission_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_user_permissions_user_id_f3945d65",
+      "tbl_name": "api_user_user_permissions",
+      "sql": "CREATE INDEX \"api_user_user_permissions_user_id_f3945d65\" ON \"api_user_user_permissions\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_user_user_permissions_user_id_permission_id_a06dd704_uniq",
+      "tbl_name": "api_user_user_permissions",
+      "sql": "CREATE UNIQUE INDEX \"api_user_user_permissions_user_id_permission_id_a06dd704_uniq\" ON \"api_user_user_permissions\" (\"user_id\", \"permission_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_userplace_last_modified_560efc4c",
+      "tbl_name": "api_userplace",
+      "sql": "CREATE INDEX \"api_userplace_last_modified_560efc4c\" ON \"api_userplace\" (\"last_modified\")"
+    },
+    {
+      "type": "index",
+      "name": "api_userplace_owner_id_02890ebd",
+      "tbl_name": "api_userplace",
+      "sql": "CREATE INDEX \"api_userplace_owner_id_02890ebd\" ON \"api_userplace\" (\"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_userplace_photos_photo_id_e50a806c",
+      "tbl_name": "api_userplace_photos",
+      "sql": "CREATE INDEX \"api_userplace_photos_photo_id_e50a806c\" ON \"api_userplace_photos\" (\"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_userplace_photos_userplace_id_87240d9e",
+      "tbl_name": "api_userplace_photos",
+      "sql": "CREATE INDEX \"api_userplace_photos_userplace_id_87240d9e\" ON \"api_userplace_photos\" (\"userplace_id\")"
+    },
+    {
+      "type": "index",
+      "name": "api_userplace_photos_userplace_id_photo_id_26810969_uniq",
+      "tbl_name": "api_userplace_photos",
+      "sql": "CREATE UNIQUE INDEX \"api_userplace_photos_userplace_id_photo_id_26810969_uniq\" ON \"api_userplace_photos\" (\"userplace_id\", \"photo_id\")"
+    },
+    {
+      "type": "index",
+      "name": "auth_group_permissions_group_id_b120cbf9",
+      "tbl_name": "auth_group_permissions",
+      "sql": "CREATE INDEX \"auth_group_permissions_group_id_b120cbf9\" ON \"auth_group_permissions\" (\"group_id\")"
+    },
+    {
+      "type": "index",
+      "name": "auth_group_permissions_group_id_permission_id_0cd325b0_uniq",
+      "tbl_name": "auth_group_permissions",
+      "sql": "CREATE UNIQUE INDEX \"auth_group_permissions_group_id_permission_id_0cd325b0_uniq\" ON \"auth_group_permissions\" (\"group_id\", \"permission_id\")"
+    },
+    {
+      "type": "index",
+      "name": "auth_group_permissions_permission_id_84c5c92e",
+      "tbl_name": "auth_group_permissions",
+      "sql": "CREATE INDEX \"auth_group_permissions_permission_id_84c5c92e\" ON \"auth_group_permissions\" (\"permission_id\")"
+    },
+    {
+      "type": "index",
+      "name": "auth_permission_content_type_id_2f476e4b",
+      "tbl_name": "auth_permission",
+      "sql": "CREATE INDEX \"auth_permission_content_type_id_2f476e4b\" ON \"auth_permission\" (\"content_type_id\")"
+    },
+    {
+      "type": "index",
+      "name": "auth_permission_content_type_id_codename_01ab375a_uniq",
+      "tbl_name": "auth_permission",
+      "sql": "CREATE UNIQUE INDEX \"auth_permission_content_type_id_codename_01ab375a_uniq\" ON \"auth_permission\" (\"content_type_id\", \"codename\")"
+    },
+    {
+      "type": "index",
+      "name": "chunked_upload_chunkedupload_user_id_70ff6dbf",
+      "tbl_name": "chunked_upload_chunkedupload",
+      "sql": "CREATE INDEX \"chunked_upload_chunkedupload_user_id_70ff6dbf\" ON \"chunked_upload_chunkedupload\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "deletionlog_scope_idx",
+      "tbl_name": "api_deletionlog",
+      "sql": "CREATE INDEX \"deletionlog_scope_idx\" ON \"api_deletionlog\" (\"owner_id\", \"entity\", \"deleted_at\")"
+    },
+    {
+      "type": "index",
+      "name": "django_admin_log_content_type_id_c4bce8eb",
+      "tbl_name": "django_admin_log",
+      "sql": "CREATE INDEX \"django_admin_log_content_type_id_c4bce8eb\" ON \"django_admin_log\" (\"content_type_id\")"
+    },
+    {
+      "type": "index",
+      "name": "django_admin_log_user_id_c564eba6",
+      "tbl_name": "django_admin_log",
+      "sql": "CREATE INDEX \"django_admin_log_user_id_c564eba6\" ON \"django_admin_log\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "django_content_type_app_label_model_76bd3d3b_uniq",
+      "tbl_name": "django_content_type",
+      "sql": "CREATE UNIQUE INDEX \"django_content_type_app_label_model_76bd3d3b_uniq\" ON \"django_content_type\" (\"app_label\", \"model\")"
+    },
+    {
+      "type": "index",
+      "name": "django_session_expire_date_a5c62663",
+      "tbl_name": "django_session",
+      "sql": "CREATE INDEX \"django_session_expire_date_a5c62663\" ON \"django_session\" (\"expire_date\")"
+    },
+    {
+      "type": "index",
+      "name": "lrj_one_open_upload_import",
+      "tbl_name": "api_longrunningjob",
+      "sql": "CREATE UNIQUE INDEX \"lrj_one_open_upload_import\" ON \"api_longrunningjob\" (\"started_by_id\") WHERE (\"finished\" = 0 AND \"job_type\" = 20 AND \"sealed\" = 0)"
+    },
+    {
+      "type": "index",
+      "name": "lrj_unfinished_idx",
+      "tbl_name": "api_longrunningjob",
+      "sql": "CREATE INDEX \"lrj_unfinished_idx\" ON \"api_longrunningjob\" (\"started_at\") WHERE \"finished\" = 0"
+    },
+    {
+      "type": "index",
+      "name": "photo_owner_visible_idx",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"photo_owner_visible_idx\" ON \"api_photo\" (\"owner_id\", \"id\")"
+    },
+    {
+      "type": "index",
+      "name": "photo_sync_keyset_idx",
+      "tbl_name": "api_photo",
+      "sql": "CREATE INDEX \"photo_sync_keyset_idx\" ON \"api_photo\" (\"last_modified\", \"id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialaccount_provider_uid_fc810c6e_uniq",
+      "tbl_name": "socialaccount_socialaccount",
+      "sql": "CREATE UNIQUE INDEX \"socialaccount_socialaccount_provider_uid_fc810c6e_uniq\" ON \"socialaccount_socialaccount\" (\"provider\", \"uid\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialaccount_user_id_8146e70c",
+      "tbl_name": "socialaccount_socialaccount",
+      "sql": "CREATE INDEX \"socialaccount_socialaccount_user_id_8146e70c\" ON \"socialaccount_socialaccount\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialapp_sites_site_id_2579dee5",
+      "tbl_name": "socialaccount_socialapp_sites",
+      "sql": "CREATE INDEX \"socialaccount_socialapp_sites_site_id_2579dee5\" ON \"socialaccount_socialapp_sites\" (\"site_id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialapp_sites_socialapp_id_97fb6e7d",
+      "tbl_name": "socialaccount_socialapp_sites",
+      "sql": "CREATE INDEX \"socialaccount_socialapp_sites_socialapp_id_97fb6e7d\" ON \"socialaccount_socialapp_sites\" (\"socialapp_id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialapp_sites_socialapp_id_site_id_71a9a768_uniq",
+      "tbl_name": "socialaccount_socialapp_sites",
+      "sql": "CREATE UNIQUE INDEX \"socialaccount_socialapp_sites_socialapp_id_site_id_71a9a768_uniq\" ON \"socialaccount_socialapp_sites\" (\"socialapp_id\", \"site_id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialtoken_account_id_951f210e",
+      "tbl_name": "socialaccount_socialtoken",
+      "sql": "CREATE INDEX \"socialaccount_socialtoken_account_id_951f210e\" ON \"socialaccount_socialtoken\" (\"account_id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialtoken_app_id_636a42d7",
+      "tbl_name": "socialaccount_socialtoken",
+      "sql": "CREATE INDEX \"socialaccount_socialtoken_app_id_636a42d7\" ON \"socialaccount_socialtoken\" (\"app_id\")"
+    },
+    {
+      "type": "index",
+      "name": "socialaccount_socialtoken_app_id_account_id_fca4e0ac_uniq",
+      "tbl_name": "socialaccount_socialtoken",
+      "sql": "CREATE UNIQUE INDEX \"socialaccount_socialtoken_app_id_account_id_fca4e0ac_uniq\" ON \"socialaccount_socialtoken\" (\"app_id\", \"account_id\")"
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_account_emailconfirmation_1",
+      "tbl_name": "account_emailconfirmation",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_albumthing_1",
+      "tbl_name": "api_albumthing",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_albumusershare_1",
+      "tbl_name": "api_albumusershare",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_albumusershare_2",
+      "tbl_name": "api_albumusershare",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_copybudget_1",
+      "tbl_name": "api_copybudget",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_duplicate_1",
+      "tbl_name": "api_duplicate",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_file_1",
+      "tbl_name": "api_file",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_file_2",
+      "tbl_name": "api_file",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_filecopy_1",
+      "tbl_name": "api_filecopy",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_libraryshare_1",
+      "tbl_name": "api_libraryshare",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_longrunningjob_1",
+      "tbl_name": "api_longrunningjob",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_metadataedit_1",
+      "tbl_name": "api_metadataedit",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photo_1",
+      "tbl_name": "api_photo",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photo_caption_1",
+      "tbl_name": "api_photo_caption",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photo_ocr_1",
+      "tbl_name": "api_photo_ocr",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photo_search_1",
+      "tbl_name": "api_photo_search",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photometadata_1",
+      "tbl_name": "api_photometadata",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photometadata_2",
+      "tbl_name": "api_photometadata",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photoshare_1",
+      "tbl_name": "api_photoshare",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photoshare_2",
+      "tbl_name": "api_photoshare",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_photostack_1",
+      "tbl_name": "api_photostack",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_tag_1",
+      "tbl_name": "api_tag",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_thumbnail_1",
+      "tbl_name": "api_thumbnail",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_upgradetaskstate_1",
+      "tbl_name": "api_upgradetaskstate",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_api_user_1",
+      "tbl_name": "api_user",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_auth_group_1",
+      "tbl_name": "auth_group",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_chunked_upload_chunkedupload_1",
+      "tbl_name": "chunked_upload_chunkedupload",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_constance_constance_1",
+      "tbl_name": "constance_constance",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_django_q_task_1",
+      "tbl_name": "django_q_task",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_django_session_1",
+      "tbl_name": "django_session",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_django_site_1",
+      "tbl_name": "django_site",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_token_blacklist_blacklistedtoken_1",
+      "tbl_name": "token_blacklist_blacklistedtoken",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "sqlite_autoindex_token_blacklist_outstandingtoken_1",
+      "tbl_name": "token_blacklist_outstandingtoken",
+      "sql": null
+    },
+    {
+      "type": "index",
+      "name": "success_index",
+      "tbl_name": "django_q_task",
+      "sql": "CREATE INDEX \"success_index\" ON \"django_q_task\" (\"group\", \"name\", \"func\") WHERE \"success\" = 1"
+    },
+    {
+      "type": "index",
+      "name": "thumbnail_ready_idx",
+      "tbl_name": "api_thumbnail",
+      "sql": "CREATE INDEX \"thumbnail_ready_idx\" ON \"api_thumbnail\" (\"photo_id\") WHERE \"aspect_ratio\" IS NOT NULL"
+    },
+    {
+      "type": "index",
+      "name": "token_blacklist_outstandingtoken_user_id_83bc629a",
+      "tbl_name": "token_blacklist_outstandingtoken",
+      "sql": "CREATE INDEX \"token_blacklist_outstandingtoken_user_id_83bc629a\" ON \"token_blacklist_outstandingtoken\" (\"user_id\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_album_collection_name",
+      "tbl_name": "api_albumcollection",
+      "sql": "CREATE UNIQUE INDEX \"unique_album_collection_name\" ON \"api_albumcollection\" ((LOWER(\"name\")), \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_library_folder_per_owner",
+      "tbl_name": "api_libraryfolder",
+      "sql": "CREATE UNIQUE INDEX \"unique_library_folder_per_owner\" ON \"api_libraryfolder\" (\"owner_id\", \"path\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_person_group_name",
+      "tbl_name": "api_persongroup",
+      "sql": "CREATE UNIQUE INDEX \"unique_person_group_name\" ON \"api_persongroup\" ((LOWER(\"name\")), \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_primary_email",
+      "tbl_name": "account_emailaddress",
+      "sql": "CREATE UNIQUE INDEX \"unique_primary_email\" ON \"account_emailaddress\" (\"user_id\", \"primary\") WHERE \"primary\" = 1"
+    },
+    {
+      "type": "index",
+      "name": "unique_user_place_name",
+      "tbl_name": "api_userplace",
+      "sql": "CREATE UNIQUE INDEX \"unique_user_place_name\" ON \"api_userplace\" ((LOWER(\"name\")), \"owner_id\")"
+    },
+    {
+      "type": "index",
+      "name": "unique_verified_email",
+      "tbl_name": "account_emailaddress",
+      "sql": "CREATE UNIQUE INDEX \"unique_verified_email\" ON \"account_emailaddress\" (\"email\") WHERE \"verified\" = 1"
+    },
+    {
+      "type": "table",
+      "name": "account_emailaddress",
+      "tbl_name": "account_emailaddress",
+      "sql": "CREATE TABLE \"account_emailaddress\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"verified\" bool NOT NULL, \"primary\" bool NOT NULL, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"email\" varchar(254) NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "account_emailconfirmation",
+      "tbl_name": "account_emailconfirmation",
+      "sql": "CREATE TABLE \"account_emailconfirmation\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"created\" datetime NOT NULL, \"sent\" datetime NULL, \"key\" varchar(64) NOT NULL UNIQUE, \"email_address_id\" integer NOT NULL REFERENCES \"account_emailaddress\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumauto",
+      "tbl_name": "api_albumauto",
+      "sql": "CREATE TABLE \"api_albumauto\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"title\" varchar(512) NOT NULL, \"timestamp\" datetime NOT NULL, \"created_on\" datetime NOT NULL, \"gps_lat\" real NULL, \"gps_lon\" real NULL, \"favorited\" bool NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"last_modified\" datetime NOT NULL, \"title_parts\" text NULL CHECK ((JSON_VALID(\"title_parts\") OR \"title_parts\" IS NULL)), \"cover_photo_id\" char(32) NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumauto_photos",
+      "tbl_name": "api_albumauto_photos",
+      "sql": "CREATE TABLE \"api_albumauto_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumauto_id\" integer NOT NULL REFERENCES \"api_albumauto\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumauto_shared_to",
+      "tbl_name": "api_albumauto_shared_to",
+      "sql": "CREATE TABLE \"api_albumauto_shared_to\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumauto_id\" integer NOT NULL REFERENCES \"api_albumauto\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumcollection",
+      "tbl_name": "api_albumcollection",
+      "sql": "CREATE TABLE \"api_albumcollection\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(128) NOT NULL, \"last_modified\" datetime NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumcollection_albums",
+      "tbl_name": "api_albumcollection_albums",
+      "sql": "CREATE TABLE \"api_albumcollection_albums\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumcollection_id\" integer NOT NULL REFERENCES \"api_albumcollection\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"albumuser_id\" integer NOT NULL REFERENCES \"api_albumuser\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumcomment",
+      "tbl_name": "api_albumcomment",
+      "sql": "CREATE TABLE \"api_albumcomment\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"text\" text NOT NULL, \"created_at\" datetime NOT NULL, \"edited_at\" datetime NULL, \"album_id\" integer NOT NULL REFERENCES \"api_albumuser\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"author_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumdate",
+      "tbl_name": "api_albumdate",
+      "sql": "CREATE TABLE \"api_albumdate\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"title\" varchar(512) NOT NULL, \"date\" date NULL, \"favorited\" bool NOT NULL, \"location\" text NULL CHECK ((JSON_VALID(\"location\") OR \"location\" IS NULL)), \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumdate_photos",
+      "tbl_name": "api_albumdate_photos",
+      "sql": "CREATE TABLE \"api_albumdate_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumdate_id\" integer NOT NULL REFERENCES \"api_albumdate\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumdate_shared_to",
+      "tbl_name": "api_albumdate_shared_to",
+      "sql": "CREATE TABLE \"api_albumdate_shared_to\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumdate_id\" integer NOT NULL REFERENCES \"api_albumdate\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumlike",
+      "tbl_name": "api_albumlike",
+      "sql": "CREATE TABLE \"api_albumlike\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"created_at\" datetime NOT NULL, \"album_id\" integer NOT NULL REFERENCES \"api_albumuser\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumplace",
+      "tbl_name": "api_albumplace",
+      "sql": "CREATE TABLE \"api_albumplace\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"title\" varchar(512) NOT NULL, \"geolocation_level\" integer NULL, \"favorited\" bool NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"last_modified\" datetime NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumplace_photos",
+      "tbl_name": "api_albumplace_photos",
+      "sql": "CREATE TABLE \"api_albumplace_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumplace_id\" integer NOT NULL REFERENCES \"api_albumplace\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumplace_shared_to",
+      "tbl_name": "api_albumplace_shared_to",
+      "sql": "CREATE TABLE \"api_albumplace_shared_to\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumplace_id\" integer NOT NULL REFERENCES \"api_albumplace\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumthing",
+      "tbl_name": "api_albumthing",
+      "sql": "CREATE TABLE \"api_albumthing\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"title\" varchar(512) NOT NULL, \"thing_type\" varchar(512) NULL, \"favorited\" bool NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_count\" integer NOT NULL, \"last_modified\" datetime NOT NULL, CONSTRAINT \"unique AlbumThing\" UNIQUE (\"title\", \"thing_type\", \"owner_id\"))"
+    },
+    {
+      "type": "table",
+      "name": "api_albumthing_cover_photos",
+      "tbl_name": "api_albumthing_cover_photos",
+      "sql": "CREATE TABLE \"api_albumthing_cover_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumthing_id\" integer NOT NULL REFERENCES \"api_albumthing\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumthing_photos",
+      "tbl_name": "api_albumthing_photos",
+      "sql": "CREATE TABLE \"api_albumthing_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumthing_id\" integer NOT NULL REFERENCES \"api_albumthing\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumthing_shared_to",
+      "tbl_name": "api_albumthing_shared_to",
+      "sql": "CREATE TABLE \"api_albumthing_shared_to\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumthing_id\" integer NOT NULL REFERENCES \"api_albumthing\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumuser",
+      "tbl_name": "api_albumuser",
+      "sql": "CREATE TABLE \"api_albumuser\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"title\" varchar(512) NOT NULL, \"created_on\" datetime NOT NULL, \"favorited\" bool NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"cover_photo_id\" char(32) NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"last_modified\" datetime NOT NULL, \"locked\" bool NOT NULL, \"members_share_location\" bool NOT NULL, \"members_share_faces\" bool NOT NULL, \"members_share_camera_info\" bool NOT NULL, \"members_share_captions\" bool NOT NULL, \"members_share_originals\" bool NOT NULL, \"comments_enabled\" bool NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumuser_photos",
+      "tbl_name": "api_albumuser_photos",
+      "sql": "CREATE TABLE \"api_albumuser_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumuser_id\" integer NOT NULL REFERENCES \"api_albumuser\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"added_by_id\" integer NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumuser_shared_to",
+      "tbl_name": "api_albumuser_shared_to",
+      "sql": "CREATE TABLE \"api_albumuser_shared_to\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"albumuser_id\" integer NOT NULL REFERENCES \"api_albumuser\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"role\" varchar(16) NOT NULL, \"share_location\" bool NOT NULL, \"share_faces\" bool NOT NULL, \"share_camera_info\" bool NOT NULL, \"share_captions\" bool NOT NULL, \"share_originals\" bool NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_albumusershare",
+      "tbl_name": "api_albumusershare",
+      "sql": "CREATE TABLE \"api_albumusershare\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"enabled\" bool NOT NULL, \"slug\" varchar(64) NULL UNIQUE, \"expires_at\" datetime NULL, \"album_id\" integer NOT NULL UNIQUE REFERENCES \"api_albumuser\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"share_location\" bool NULL, \"share_camera_info\" bool NULL, \"share_timestamps\" bool NULL, \"share_captions\" bool NULL, \"share_faces\" bool NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_cluster",
+      "tbl_name": "api_cluster",
+      "sql": "CREATE TABLE \"api_cluster\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"mean_face_encoding\" text NOT NULL, \"cluster_id\" integer NULL, \"name\" text NULL, \"person_id\" integer NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"owner_id\" integer NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_copybudget",
+      "tbl_name": "api_copybudget",
+      "sql": "CREATE TABLE \"api_copybudget\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"hour\" datetime NULL, \"made\" integer unsigned NOT NULL CHECK (\"made\" >= 0), \"user_id\" integer NOT NULL UNIQUE REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_deletionlog",
+      "tbl_name": "api_deletionlog",
+      "sql": "CREATE TABLE \"api_deletionlog\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"entity\" varchar(32) NOT NULL, \"entity_id\" varchar(64) NOT NULL, \"deleted_at\" datetime NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_duplicate",
+      "tbl_name": "api_duplicate",
+      "sql": "CREATE TABLE \"api_duplicate\" (\"id\" char(32) NOT NULL PRIMARY KEY, \"duplicate_type\" varchar(20) NOT NULL, \"review_status\" varchar(20) NOT NULL, \"created_at\" datetime NOT NULL, \"updated_at\" datetime NOT NULL, \"reviewed_at\" datetime NULL, \"similarity_score\" real NULL, \"potential_savings\" bigint NOT NULL, \"trashed_count\" integer NOT NULL, \"note\" text NULL, \"kept_photo_id\" char(32) NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_emailconfig",
+      "tbl_name": "api_emailconfig",
+      "sql": "CREATE TABLE \"api_emailconfig\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"provider\" varchar(32) NOT NULL, \"from_email\" varchar(255) NOT NULL, \"host\" varchar(255) NOT NULL, \"port\" integer unsigned NOT NULL CHECK (\"port\" >= 0), \"use_tls\" bool NOT NULL, \"use_ssl\" bool NOT NULL, \"username\" varchar(255) NOT NULL, \"secret\" BLOB NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_face",
+      "tbl_name": "api_face",
+      "sql": "CREATE TABLE \"api_face\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"image\" varchar(100) NULL, \"cluster_probability\" real NOT NULL, \"location_top\" integer NOT NULL, \"location_bottom\" integer NOT NULL, \"location_left\" integer NOT NULL, \"location_right\" integer NOT NULL, \"encoding\" text NOT NULL, \"person_id\" integer NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"cluster_id\" integer NULL REFERENCES \"api_cluster\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"classification_probability\" real NOT NULL, \"deleted\" bool NOT NULL, \"classification_person_id\" integer NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"cluster_person_id\" integer NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"video_time\" real NULL, \"unmatched_by\" varchar(64) NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_face_rejected_persons",
+      "tbl_name": "api_face_rejected_persons",
+      "sql": "CREATE TABLE \"api_face_rejected_persons\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"face_id\" integer NOT NULL REFERENCES \"api_face\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"person_id\" integer NOT NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_file",
+      "tbl_name": "api_file",
+      "sql": "CREATE TABLE \"api_file\" (\"hash\" varchar(64) NOT NULL PRIMARY KEY, \"type\" integer unsigned NOT NULL CHECK (\"type\" >= 0), \"missing\" bool NOT NULL, \"path\" text NOT NULL UNIQUE, \"indexed_mtime_ns\" bigint NULL, \"indexed_sidecar_mtimes\" text NULL CHECK ((JSON_VALID(\"indexed_sidecar_mtimes\") OR \"indexed_sidecar_mtimes\" IS NULL)))"
+    },
+    {
+      "type": "table",
+      "name": "api_file_embedded_media",
+      "tbl_name": "api_file_embedded_media",
+      "sql": "CREATE TABLE \"api_file_embedded_media\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"from_file_id\" varchar(64) NOT NULL REFERENCES \"api_file\" (\"hash\") DEFERRABLE INITIALLY DEFERRED, \"to_file_id\" varchar(64) NOT NULL REFERENCES \"api_file\" (\"hash\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_filecopy",
+      "tbl_name": "api_filecopy",
+      "sql": "CREATE TABLE \"api_filecopy\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"path\" text NOT NULL UNIQUE, \"file_id\" varchar(64) NOT NULL REFERENCES \"api_file\" (\"hash\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_libraryfolder",
+      "tbl_name": "api_libraryfolder",
+      "sql": "CREATE TABLE \"api_libraryfolder\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"path\" varchar(512) NOT NULL, \"created_at\" datetime NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_libraryshare",
+      "tbl_name": "api_libraryshare",
+      "sql": "CREATE TABLE \"api_libraryshare\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"show_in_timeline\" bool NOT NULL, \"share_location\" bool NOT NULL, \"share_faces\" bool NOT NULL, \"share_camera_info\" bool NOT NULL, \"share_captions\" bool NOT NULL, \"share_originals\" bool NOT NULL, \"created_at\" datetime NOT NULL, \"copies_hour\" datetime NULL, \"copies_made\" integer unsigned NOT NULL CHECK (\"copies_made\" >= 0), \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"recipient_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, CONSTRAINT \"library_share_once_per_pair\" UNIQUE (\"owner_id\", \"recipient_id\"), CONSTRAINT \"library_share_not_to_self\" CHECK (NOT (\"owner_id\" = (\"recipient_id\"))))"
+    },
+    {
+      "type": "table",
+      "name": "api_longrunningjob",
+      "tbl_name": "api_longrunningjob",
+      "sql": "CREATE TABLE \"api_longrunningjob\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"job_type\" integer unsigned NOT NULL CHECK (\"job_type\" >= 0), \"finished\" bool NOT NULL, \"failed\" bool NOT NULL, \"job_id\" varchar(36) NOT NULL UNIQUE, \"queued_at\" datetime NOT NULL, \"started_at\" datetime NULL, \"finished_at\" datetime NULL, \"started_by_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"progress_current\" integer unsigned NOT NULL CHECK (\"progress_current\" >= 0), \"progress_target\" integer unsigned NOT NULL CHECK (\"progress_target\" >= 0), \"progress_step\" varchar(100) NULL, \"result\" text NULL CHECK ((JSON_VALID(\"result\") OR \"result\" IS NULL)), \"cancelled\" bool NOT NULL, \"last_progress_at\" datetime NULL, \"last_file_at\" datetime NULL, \"sealed\" bool NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_metadataedit",
+      "tbl_name": "api_metadataedit",
+      "sql": "CREATE TABLE \"api_metadataedit\" (\"id\" char(32) NOT NULL PRIMARY KEY, \"field_name\" varchar(100) NOT NULL, \"new_value\" text NULL CHECK ((JSON_VALID(\"new_value\") OR \"new_value\" IS NULL)), \"synced_to_file\" bool NOT NULL, \"synced_at\" datetime NULL, \"created_at\" datetime NOT NULL, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"old_value\" text NULL CHECK ((JSON_VALID(\"old_value\") OR \"old_value\" IS NULL)))"
+    },
+    {
+      "type": "table",
+      "name": "api_person",
+      "tbl_name": "api_person",
+      "sql": "CREATE TABLE \"api_person\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(128) NOT NULL, \"kind\" varchar(10) NOT NULL, \"cover_photo_id\" char(32) NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"cluster_owner_id\" integer NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"face_count\" integer NOT NULL, \"cover_face_id\" integer NULL REFERENCES \"api_face\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"last_modified\" datetime NOT NULL, \"birth_date\" date NULL, \"first_shared_at\" datetime NULL, \"share_location\" bool NOT NULL, \"share_other_people\" bool NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_person_groups",
+      "tbl_name": "api_person_groups",
+      "sql": "CREATE TABLE \"api_person_groups\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"person_id\" integer NOT NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"persongroup_id\" integer NOT NULL REFERENCES \"api_persongroup\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_persongroup",
+      "tbl_name": "api_persongroup",
+      "sql": "CREATE TABLE \"api_persongroup\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(128) NOT NULL, \"last_modified\" datetime NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_personshare",
+      "tbl_name": "api_personshare",
+      "sql": "CREATE TABLE \"api_personshare\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"created_at\" datetime NOT NULL, \"person_id\" integer NOT NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"recipient_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_personsharephoto",
+      "tbl_name": "api_personsharephoto",
+      "sql": "CREATE TABLE \"api_personsharephoto\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"status\" varchar(10) NOT NULL, \"decided_at\" datetime NOT NULL, \"person_id\" integer NOT NULL REFERENCES \"api_person\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo",
+      "tbl_name": "api_photo",
+      "sql": "CREATE TABLE \"api_photo\" (\"image_hash\" varchar(64) NOT NULL, \"added_on\" datetime NOT NULL, \"exif_gps_lat\" real NULL, \"exif_gps_lon\" real NULL, \"exif_timestamp\" datetime NULL, \"exif_json\" text NULL CHECK ((JSON_VALID(\"exif_json\") OR \"exif_json\" IS NULL)), \"geolocation_json\" text NULL CHECK ((JSON_VALID(\"geolocation_json\") OR \"geolocation_json\" IS NULL)), \"hidden\" bool NOT NULL, \"public\" bool NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"video\" bool NOT NULL, \"clip_embeddings_magnitude\" real NULL, \"rating\" integer NOT NULL, \"video_length\" text NULL, \"timestamp\" datetime NULL, \"size\" bigint NOT NULL, \"main_file_id\" varchar(64) NULL REFERENCES \"api_file\" (\"hash\") DEFERRABLE INITIALLY DEFERRED, \"last_modified\" datetime NOT NULL, \"in_trashcan\" bool NOT NULL, \"removed\" bool NOT NULL, \"clip_embeddings\" text NULL CHECK ((JSON_VALID(\"clip_embeddings\") OR \"clip_embeddings\" IS NULL)), \"perceptual_hash\" varchar(64) NULL, \"exif_timestamp_subsec\" varchar(10) NULL, \"image_sequence_number\" integer NULL, \"id\" char(32) NOT NULL PRIMARY KEY, \"local_orientation\" integer NOT NULL, \"is_screenshot\" bool NOT NULL, \"is_document\" bool NOT NULL, \"category_source\" varchar(8) NOT NULL, \"video_codec\" varchar(32) NULL, \"video_color_transfer\" varchar(32) NULL, \"video_container\" varchar(64) NULL, \"video_pixel_format\" varchar(32) NULL, \"clip_embeddings_model\" varchar(32) NULL, \"metadata_read_at\" datetime NULL, \"faces_scanned_at\" datetime NULL, \"geocoded_lat\" real NULL, \"geocoded_lon\" real NULL, \"location_source\" varchar(8) NULL, \"trashed_at\" datetime NULL, \"archived\" bool NOT NULL, \"exif_timestamp_offset\" smallint NULL, \"exif_timestamp_source\" integer NULL, \"ocr_failures\" smallint unsigned NOT NULL CHECK (\"ocr_failures\" >= 0), \"projection_type\" varchar(32) NULL, \"town\" varchar(200) NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_caption",
+      "tbl_name": "api_photo_caption",
+      "sql": "CREATE TABLE \"api_photo_caption\" (\"photo_id\" char(32) NOT NULL PRIMARY KEY REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"captions_json\" text NULL CHECK ((JSON_VALID(\"captions_json\") OR \"captions_json\" IS NULL)), \"created_at\" datetime NOT NULL, \"updated_at\" datetime NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_duplicates",
+      "tbl_name": "api_photo_duplicates",
+      "sql": "CREATE TABLE \"api_photo_duplicates\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"duplicate_id\" char(32) NOT NULL REFERENCES \"api_duplicate\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_files",
+      "tbl_name": "api_photo_files",
+      "sql": "CREATE TABLE \"api_photo_files\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"file_id\" varchar(64) NOT NULL REFERENCES \"api_file\" (\"hash\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_ocr",
+      "tbl_name": "api_photo_ocr",
+      "sql": "CREATE TABLE \"api_photo_ocr\" (\"photo_id\" char(32) NOT NULL PRIMARY KEY REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"text\" text NULL, \"blocks\" text NOT NULL CHECK ((JSON_VALID(\"blocks\") OR \"blocks\" IS NULL)), \"engine\" varchar(64) NOT NULL, \"mean_confidence\" real NULL, \"text_area_fraction\" real NULL, \"created_at\" datetime NOT NULL, \"updated_at\" datetime NOT NULL, \"source_width\" integer unsigned NULL CHECK (\"source_width\" >= 0), \"source_height\" integer unsigned NULL CHECK (\"source_height\" >= 0))"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_search",
+      "tbl_name": "api_photo_search",
+      "sql": "CREATE TABLE \"api_photo_search\" (\"photo_id\" char(32) NOT NULL PRIMARY KEY REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"search_captions\" text NULL, \"search_location\" text NULL, \"created_at\" datetime NOT NULL, \"updated_at\" datetime NOT NULL, \"search_folded\" text NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_shared_to",
+      "tbl_name": "api_photo_shared_to",
+      "sql": "CREATE TABLE \"api_photo_shared_to\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_photo_stacks",
+      "tbl_name": "api_photo_stacks",
+      "sql": "CREATE TABLE \"api_photo_stacks\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photostack_id\" char(32) NOT NULL REFERENCES \"api_photostack\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_photometadata",
+      "tbl_name": "api_photometadata",
+      "sql": "CREATE TABLE \"api_photometadata\" (\"id\" char(32) NOT NULL PRIMARY KEY, \"aperture\" real NULL, \"shutter_speed\" varchar(20) NULL, \"shutter_speed_seconds\" real NULL, \"iso\" integer NULL, \"focal_length\" real NULL, \"focal_length_35mm\" integer NULL, \"exposure_compensation\" real NULL, \"flash_fired\" bool NULL, \"metering_mode\" varchar(50) NULL, \"white_balance\" varchar(50) NULL, \"camera_make\" varchar(100) NULL, \"camera_model\" varchar(100) NULL, \"lens_make\" varchar(100) NULL, \"lens_model\" varchar(100) NULL, \"serial_number\" varchar(100) NULL, \"width\" integer NULL, \"height\" integer NULL, \"orientation\" integer NULL, \"color_space\" varchar(50) NULL, \"bit_depth\" integer NULL, \"date_taken_subsec\" varchar(10) NULL, \"date_modified\" datetime NULL, \"timezone_offset\" varchar(10) NULL, \"gps_altitude\" real NULL, \"title\" varchar(500) NULL, \"keywords\" text NULL CHECK ((JSON_VALID(\"keywords\") OR \"keywords\" IS NULL)), \"copyright\" text NULL, \"creator\" varchar(200) NULL, \"source\" varchar(20) NOT NULL, \"version\" integer NOT NULL, \"created_at\" datetime NOT NULL, \"updated_at\" datetime NOT NULL, \"photo_id\" char(32) NOT NULL UNIQUE REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"digital_zoom_ratio\" real NULL, \"subject_distance\" real NULL, \"file_rating\" integer NULL, \"edited_keywords\" text NULL CHECK ((JSON_VALID(\"edited_keywords\") OR \"edited_keywords\" IS NULL)), \"license\" varchar(32) NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_photoshare",
+      "tbl_name": "api_photoshare",
+      "sql": "CREATE TABLE \"api_photoshare\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"enabled\" bool NOT NULL, \"slug\" varchar(64) NULL UNIQUE, \"created_at\" datetime NOT NULL, \"photo_id\" char(32) NOT NULL UNIQUE REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_photostack",
+      "tbl_name": "api_photostack",
+      "sql": "CREATE TABLE \"api_photostack\" (\"id\" char(32) NOT NULL PRIMARY KEY, \"created_at\" datetime NOT NULL, \"updated_at\" datetime NOT NULL, \"sequence_start\" datetime NULL, \"sequence_end\" datetime NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"primary_photo_id\" char(32) NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"stack_type\" varchar(20) NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_tag",
+      "tbl_name": "api_tag",
+      "sql": "CREATE TABLE \"api_tag\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(512) NOT NULL, \"photo_count\" integer NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"last_modified\" datetime NOT NULL, CONSTRAINT \"unique Tag\" UNIQUE (\"name\", \"owner_id\"))"
+    },
+    {
+      "type": "table",
+      "name": "api_tag_photos",
+      "tbl_name": "api_tag_photos",
+      "sql": "CREATE TABLE \"api_tag_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"tag_id\" integer NOT NULL REFERENCES \"api_tag\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_thumbnail",
+      "tbl_name": "api_thumbnail",
+      "sql": "CREATE TABLE \"api_thumbnail\" (\"photo_id\" char(32) NOT NULL PRIMARY KEY REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"thumbnail_big\" varchar(100) NOT NULL, \"square_thumbnail\" varchar(100) NOT NULL, \"square_thumbnail_small\" varchar(100) NOT NULL, \"aspect_ratio\" real NULL, \"dominant_color\" text NULL, \"video_poster\" bool NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_upgradetaskstate",
+      "tbl_name": "api_upgradetaskstate",
+      "sql": "CREATE TABLE \"api_upgradetaskstate\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"key\" varchar(64) NOT NULL UNIQUE, \"created_at\" datetime NOT NULL, \"started_at\" datetime NULL, \"completed_at\" datetime NULL, \"dismissed_at\" datetime NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_uploadfollowupstate",
+      "tbl_name": "api_uploadfollowupstate",
+      "sql": "CREATE TABLE \"api_uploadfollowupstate\" (\"user_id\" integer NOT NULL PRIMARY KEY REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"lease_holder\" varchar(32) NOT NULL, \"lease_expires_at\" datetime NULL, \"dirty\" bool NOT NULL, \"photos_added\" bool NOT NULL, \"face_watermark\" integer unsigned NOT NULL CHECK (\"face_watermark\" >= 0), \"last_clustered_at\" datetime NULL, \"last_face_label_at\" datetime NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_user",
+      "tbl_name": "api_user",
+      "sql": "CREATE TABLE \"api_user\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"password\" varchar(128) NOT NULL, \"last_login\" datetime NULL, \"is_superuser\" bool NOT NULL, \"username\" varchar(150) NOT NULL UNIQUE, \"first_name\" varchar(150) NOT NULL, \"last_name\" varchar(150) NOT NULL, \"email\" varchar(254) NOT NULL, \"is_staff\" bool NOT NULL, \"is_active\" bool NOT NULL, \"date_joined\" datetime NOT NULL, \"scan_directory\" varchar(512) NOT NULL, \"avatar\" varchar(100) NULL, \"nextcloud_server_address\" varchar(200) NOT NULL, \"nextcloud_username\" varchar(64) NOT NULL, \"nextcloud_app_password\" BLOB NOT NULL, \"nextcloud_scan_directory\" varchar(512) NOT NULL, \"confidence\" real NOT NULL, \"semantic_search_topk\" integer NOT NULL, \"favorite_min_rating\" integer NOT NULL, \"image_scale\" real NOT NULL, \"save_metadata_to_disk\" text NOT NULL, \"transcode_videos\" bool NOT NULL, \"datetime_rules\" text NOT NULL CHECK ((JSON_VALID(\"datetime_rules\") OR \"datetime_rules\" IS NULL)), \"default_timezone\" text NOT NULL, \"confidence_person\" real NOT NULL, \"public_sharing\" bool NOT NULL, \"confidence_unknown_face\" real NOT NULL, \"min_cluster_size\" integer NOT NULL, \"cluster_selection_epsilon\" real NOT NULL, \"min_samples\" integer NOT NULL, \"llm_settings\" text NOT NULL CHECK ((JSON_VALID(\"llm_settings\") OR \"llm_settings\" IS NULL)), \"text_alignment\" text NOT NULL, \"header_size\" text NOT NULL, \"skip_raw_files\" bool NOT NULL, \"slideshow_interval\" integer NOT NULL, \"duplicate_clear_existing\" bool NOT NULL, \"duplicate_sensitivity\" text NOT NULL, \"burst_detection_rules\" text NOT NULL CHECK ((JSON_VALID(\"burst_detection_rules\") OR \"burst_detection_rules\" IS NULL)), \"stack_raw_jpeg\" bool NOT NULL, \"public_sharing_defaults\" text NOT NULL CHECK ((JSON_VALID(\"public_sharing_defaults\") OR \"public_sharing_defaults\" IS NULL)), \"save_face_tags_to_disk\" bool NOT NULL, \"last_modified\" datetime NOT NULL, \"upload_directory\" varchar(512) NOT NULL, \"default_timeline_filter\" text NOT NULL CHECK ((JSON_VALID(\"default_timeline_filter\") OR \"default_timeline_filter\" IS NULL)), \"rating_mode\" varchar(16) NOT NULL, \"min_face_size\" real NOT NULL, \"share_people_names\" bool NOT NULL, \"last_seen_release\" varchar(32) NOT NULL, \"show_whats_new\" bool NOT NULL, \"excluded_folders\" text NOT NULL CHECK ((JSON_VALID(\"excluded_folders\") OR \"excluded_folders\" IS NULL)), \"scrubber_style\" text NOT NULL, \"photo_order\" text NOT NULL, \"default_copyright\" text NOT NULL, \"default_creator\" varchar(200) NOT NULL, \"default_license\" varchar(32) NOT NULL, \"in_public_gallery\" bool NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "api_user_groups",
+      "tbl_name": "api_user_groups",
+      "sql": "CREATE TABLE \"api_user_groups\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"group_id\" integer NOT NULL REFERENCES \"auth_group\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_user_user_permissions",
+      "tbl_name": "api_user_user_permissions",
+      "sql": "CREATE TABLE \"api_user_user_permissions\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"permission_id\" integer NOT NULL REFERENCES \"auth_permission\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_userplace",
+      "tbl_name": "api_userplace",
+      "sql": "CREATE TABLE \"api_userplace\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(100) NOT NULL, \"icon\" varchar(16) NOT NULL, \"center_lat\" real NOT NULL, \"center_lon\" real NOT NULL, \"radius_m\" integer unsigned NOT NULL CHECK (\"radius_m\" >= 0), \"use_in_titles\" bool NOT NULL, \"created_at\" datetime NOT NULL, \"last_modified\" datetime NOT NULL, \"owner_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "api_userplace_photos",
+      "tbl_name": "api_userplace_photos",
+      "sql": "CREATE TABLE \"api_userplace_photos\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"userplace_id\" integer NOT NULL REFERENCES \"api_userplace\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"photo_id\" char(32) NOT NULL REFERENCES \"api_photo\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "auth_group",
+      "tbl_name": "auth_group",
+      "sql": "CREATE TABLE \"auth_group\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(150) NOT NULL UNIQUE)"
+    },
+    {
+      "type": "table",
+      "name": "auth_group_permissions",
+      "tbl_name": "auth_group_permissions",
+      "sql": "CREATE TABLE \"auth_group_permissions\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"group_id\" integer NOT NULL REFERENCES \"auth_group\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"permission_id\" integer NOT NULL REFERENCES \"auth_permission\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "auth_permission",
+      "tbl_name": "auth_permission",
+      "sql": "CREATE TABLE \"auth_permission\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"content_type_id\" integer NOT NULL REFERENCES \"django_content_type\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"codename\" varchar(100) NOT NULL, \"name\" varchar(255) NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "chunked_upload_chunkedupload",
+      "tbl_name": "chunked_upload_chunkedupload",
+      "sql": "CREATE TABLE \"chunked_upload_chunkedupload\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"upload_id\" varchar(32) NOT NULL UNIQUE, \"file\" varchar(255) NOT NULL, \"filename\" varchar(255) NOT NULL, \"offset\" bigint NOT NULL, \"created_on\" datetime NOT NULL, \"status\" smallint unsigned NOT NULL CHECK (\"status\" >= 0), \"completed_on\" datetime NULL, \"user_id\" integer NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "constance_constance",
+      "tbl_name": "constance_constance",
+      "sql": "CREATE TABLE \"constance_constance\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"key\" varchar(255) NOT NULL UNIQUE, \"value\" text NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_admin_log",
+      "tbl_name": "django_admin_log",
+      "sql": "CREATE TABLE \"django_admin_log\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"object_id\" text NULL, \"object_repr\" varchar(200) NOT NULL, \"action_flag\" smallint unsigned NOT NULL CHECK (\"action_flag\" >= 0), \"change_message\" text NOT NULL, \"content_type_id\" integer NULL REFERENCES \"django_content_type\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"action_time\" datetime NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_content_type",
+      "tbl_name": "django_content_type",
+      "sql": "CREATE TABLE \"django_content_type\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"app_label\" varchar(100) NOT NULL, \"model\" varchar(100) NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_migrations",
+      "tbl_name": "django_migrations",
+      "sql": "CREATE TABLE \"django_migrations\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"app\" varchar(255) NOT NULL, \"name\" varchar(255) NOT NULL, \"applied\" datetime NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_q_ormq",
+      "tbl_name": "django_q_ormq",
+      "sql": "CREATE TABLE \"django_q_ormq\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"key\" varchar(100) NOT NULL, \"payload\" text NOT NULL, \"lock\" datetime NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_q_schedule",
+      "tbl_name": "django_q_schedule",
+      "sql": "CREATE TABLE \"django_q_schedule\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"func\" varchar(256) NOT NULL, \"hook\" varchar(256) NULL, \"args\" text NULL, \"kwargs\" text NULL, \"repeats\" integer NOT NULL, \"next_run\" datetime NULL, \"task\" varchar(100) NULL, \"name\" varchar(100) NULL, \"minutes\" smallint unsigned NULL CHECK (\"minutes\" >= 0), \"cron\" varchar(100) NULL, \"cluster\" varchar(100) NULL, \"schedule_type\" varchar(2) NOT NULL, \"intended_date_kwarg\" varchar(100) NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_q_task",
+      "tbl_name": "django_q_task",
+      "sql": "CREATE TABLE \"django_q_task\" (\"name\" varchar(100) NOT NULL, \"func\" varchar(256) NOT NULL, \"hook\" varchar(256) NULL, \"args\" text NULL, \"kwargs\" text NULL, \"result\" text NULL, \"started\" datetime NOT NULL, \"stopped\" datetime NOT NULL, \"success\" bool NOT NULL, \"id\" varchar(32) NOT NULL PRIMARY KEY, \"group\" varchar(100) NULL, \"attempt_count\" integer NOT NULL, \"cluster\" varchar(100) NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_session",
+      "tbl_name": "django_session",
+      "sql": "CREATE TABLE \"django_session\" (\"session_key\" varchar(40) NOT NULL PRIMARY KEY, \"session_data\" text NOT NULL, \"expire_date\" datetime NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "django_site",
+      "tbl_name": "django_site",
+      "sql": "CREATE TABLE \"django_site\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"name\" varchar(50) NOT NULL, \"domain\" varchar(100) NOT NULL UNIQUE)"
+    },
+    {
+      "type": "table",
+      "name": "socialaccount_socialaccount",
+      "tbl_name": "socialaccount_socialaccount",
+      "sql": "CREATE TABLE \"socialaccount_socialaccount\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"provider\" varchar(200) NOT NULL, \"uid\" varchar(191) NOT NULL, \"last_login\" datetime NOT NULL, \"date_joined\" datetime NOT NULL, \"user_id\" integer NOT NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"extra_data\" text NOT NULL CHECK ((JSON_VALID(\"extra_data\") OR \"extra_data\" IS NULL)))"
+    },
+    {
+      "type": "table",
+      "name": "socialaccount_socialapp",
+      "tbl_name": "socialaccount_socialapp",
+      "sql": "CREATE TABLE \"socialaccount_socialapp\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"provider\" varchar(30) NOT NULL, \"name\" varchar(40) NOT NULL, \"client_id\" varchar(191) NOT NULL, \"secret\" varchar(191) NOT NULL, \"key\" varchar(191) NOT NULL, \"provider_id\" varchar(200) NOT NULL, \"settings\" text NOT NULL CHECK ((JSON_VALID(\"settings\") OR \"settings\" IS NULL)))"
+    },
+    {
+      "type": "table",
+      "name": "socialaccount_socialapp_sites",
+      "tbl_name": "socialaccount_socialapp_sites",
+      "sql": "CREATE TABLE \"socialaccount_socialapp_sites\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"socialapp_id\" integer NOT NULL REFERENCES \"socialaccount_socialapp\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"site_id\" integer NOT NULL REFERENCES \"django_site\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "socialaccount_socialtoken",
+      "tbl_name": "socialaccount_socialtoken",
+      "sql": "CREATE TABLE \"socialaccount_socialtoken\" (\"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT, \"token\" text NOT NULL, \"token_secret\" text NOT NULL, \"expires_at\" datetime NULL, \"account_id\" integer NOT NULL REFERENCES \"socialaccount_socialaccount\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"app_id\" integer NULL REFERENCES \"socialaccount_socialapp\" (\"id\") DEFERRABLE INITIALLY DEFERRED)"
+    },
+    {
+      "type": "table",
+      "name": "sqlite_sequence",
+      "tbl_name": "sqlite_sequence",
+      "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+    },
+    {
+      "type": "table",
+      "name": "token_blacklist_blacklistedtoken",
+      "tbl_name": "token_blacklist_blacklistedtoken",
+      "sql": "CREATE TABLE \"token_blacklist_blacklistedtoken\" (\"blacklisted_at\" datetime NOT NULL, \"token_id\" bigint NOT NULL UNIQUE REFERENCES \"token_blacklist_outstandingtoken\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT)"
+    },
+    {
+      "type": "table",
+      "name": "token_blacklist_outstandingtoken",
+      "tbl_name": "token_blacklist_outstandingtoken",
+      "sql": "CREATE TABLE \"token_blacklist_outstandingtoken\" (\"token\" text NOT NULL, \"created_at\" datetime NULL, \"expires_at\" datetime NOT NULL, \"user_id\" integer NULL REFERENCES \"api_user\" (\"id\") DEFERRABLE INITIALLY DEFERRED, \"jti\" varchar(255) NOT NULL UNIQUE, \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT)"
+    }
+  ],
+  "migrations": [
+    {
+      "app": "account",
+      "name": "0001_initial"
+    },
+    {
+      "app": "account",
+      "name": "0002_email_max_length"
+    },
+    {
+      "app": "account",
+      "name": "0003_alter_emailaddress_create_unique_verified_email"
+    },
+    {
+      "app": "account",
+      "name": "0004_alter_emailaddress_drop_unique_email"
+    },
+    {
+      "app": "account",
+      "name": "0005_emailaddress_idx_upper_email"
+    },
+    {
+      "app": "account",
+      "name": "0006_emailaddress_lower"
+    },
+    {
+      "app": "account",
+      "name": "0007_emailaddress_idx_email"
+    },
+    {
+      "app": "account",
+      "name": "0008_emailaddress_unique_primary_email_fixup"
+    },
+    {
+      "app": "account",
+      "name": "0009_emailaddress_unique_primary_email"
+    },
+    {
+      "app": "admin",
+      "name": "0001_initial"
+    },
+    {
+      "app": "admin",
+      "name": "0002_logentry_remove_auto_add"
+    },
+    {
+      "app": "admin",
+      "name": "0003_logentry_add_action_flag_choices"
+    },
+    {
+      "app": "api",
+      "name": "0001_initial"
+    },
+    {
+      "app": "api",
+      "name": "0001_squashed_0100"
+    },
+    {
+      "app": "api",
+      "name": "0002_add_confidence"
+    },
+    {
+      "app": "api",
+      "name": "0003_remove_unused_thumbs"
+    },
+    {
+      "app": "api",
+      "name": "0004_fix_album_thing_constraint"
+    },
+    {
+      "app": "api",
+      "name": "0005_add_video_to_photo"
+    },
+    {
+      "app": "api",
+      "name": "0006_migrate_to_boolean_field"
+    },
+    {
+      "app": "api",
+      "name": "0007_migrate_to_json_field"
+    },
+    {
+      "app": "api",
+      "name": "0008_remove_image_path"
+    },
+    {
+      "app": "api",
+      "name": "0009_add_aspect_ratio"
+    },
+    {
+      "app": "api",
+      "name": "0009_add_clip_embedding_field"
+    },
+    {
+      "app": "api",
+      "name": "0010_merge_20210725_1547"
+    },
+    {
+      "app": "api",
+      "name": "0011_a_add_rating"
+    },
+    {
+      "app": "api",
+      "name": "0011_b_migrate_favorited_to_rating"
+    },
+    {
+      "app": "api",
+      "name": "0011_c_remove_favorited"
+    },
+    {
+      "app": "api",
+      "name": "0012_add_favorite_min_rating"
+    },
+    {
+      "app": "api",
+      "name": "0013_add_image_scale_and_misc"
+    },
+    {
+      "app": "api",
+      "name": "0014_add_save_metadata_to_disk"
+    },
+    {
+      "app": "api",
+      "name": "0015_add_dominant_color"
+    },
+    {
+      "app": "api",
+      "name": "0016_add_transcode_videos"
+    },
+    {
+      "app": "api",
+      "name": "0017_add_cover_photo"
+    },
+    {
+      "app": "api",
+      "name": "0018_user_config_datetime_rules"
+    },
+    {
+      "app": "api",
+      "name": "0019_change_config_datetime_rules"
+    },
+    {
+      "app": "api",
+      "name": "0020_add_default_timezone"
+    },
+    {
+      "app": "api",
+      "name": "0021_remove_photo_image"
+    },
+    {
+      "app": "api",
+      "name": "0022_photo_video_length"
+    },
+    {
+      "app": "api",
+      "name": "0023_photo_deleted"
+    },
+    {
+      "app": "api",
+      "name": "0024_photo_timestamp"
+    },
+    {
+      "app": "api",
+      "name": "0025_add_cover_photo"
+    },
+    {
+      "app": "api",
+      "name": "0026_add_cluster_info"
+    },
+    {
+      "app": "api",
+      "name": "0027_rename_unknown_person"
+    },
+    {
+      "app": "api",
+      "name": "0028_add_metadata_fields"
+    },
+    {
+      "app": "api",
+      "name": "0029_change_to_text_field"
+    },
+    {
+      "app": "api",
+      "name": "0030_user_confidence_person"
+    },
+    {
+      "app": "api",
+      "name": "0031_remove_account"
+    },
+    {
+      "app": "api",
+      "name": "0032_always_have_owner"
+    },
+    {
+      "app": "api",
+      "name": "0033_add_post_delete_person"
+    },
+    {
+      "app": "api",
+      "name": "0034_allow_deleting_person"
+    },
+    {
+      "app": "api",
+      "name": "0035_add_files_model"
+    },
+    {
+      "app": "api",
+      "name": "0036_handle_missing_files"
+    },
+    {
+      "app": "api",
+      "name": "0037_migrate_to_files"
+    },
+    {
+      "app": "api",
+      "name": "0038_add_main_file"
+    },
+    {
+      "app": "api",
+      "name": "0039_remove_photo_image_paths"
+    },
+    {
+      "app": "api",
+      "name": "0040_add_user_public_sharing_flag"
+    },
+    {
+      "app": "api",
+      "name": "0041_apply_user_enum_for_person"
+    },
+    {
+      "app": "api",
+      "name": "0042_alter_albumuser_cover_photo_alter_photo_main_file"
+    },
+    {
+      "app": "api",
+      "name": "0043_alter_photo_size"
+    },
+    {
+      "app": "api",
+      "name": "0044_alter_cluster_person_alter_person_cluster_owner"
+    },
+    {
+      "app": "api",
+      "name": "0045_alter_face_cluster"
+    },
+    {
+      "app": "api",
+      "name": "0046_add_embedded_media"
+    },
+    {
+      "app": "api",
+      "name": "0047_alter_file_embedded_media"
+    },
+    {
+      "app": "api",
+      "name": "0048_fix_null_height"
+    },
+    {
+      "app": "api",
+      "name": "0049_fix_metadata_files_as_main_files"
+    },
+    {
+      "app": "api",
+      "name": "0050_person_face_count"
+    },
+    {
+      "app": "api",
+      "name": "0051_set_person_defaults"
+    },
+    {
+      "app": "api",
+      "name": "0052_alter_person_name"
+    },
+    {
+      "app": "api",
+      "name": "0053_user_confidence_unknown_face_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0054_user_cluster_selection_epsilon_user_min_samples"
+    },
+    {
+      "app": "api",
+      "name": "0055_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0056_user_llm_settings_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0057_remove_face_image_path_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0058_alter_user_avatar_alter_user_nextcloud_app_password_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0059_person_cover_face"
+    },
+    {
+      "app": "api",
+      "name": "0060_apply_default_face_cover"
+    },
+    {
+      "app": "api",
+      "name": "0061_alter_person_name"
+    },
+    {
+      "app": "api",
+      "name": "0062_albumthing_cover_photos"
+    },
+    {
+      "app": "api",
+      "name": "0063_apply_default_album_things_cover"
+    },
+    {
+      "app": "api",
+      "name": "0064_albumthing_photo_count"
+    },
+    {
+      "app": "api",
+      "name": "0065_apply_default_photo_count"
+    },
+    {
+      "app": "api",
+      "name": "0066_photo_last_modified_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0067_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0068_remove_longrunningjob_result_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0069_rename_to_in_trashcan"
+    },
+    {
+      "app": "api",
+      "name": "0070_photo_removed"
+    },
+    {
+      "app": "api",
+      "name": "0071_rename_person_label_probability_face_cluster_probability_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0072_alter_face_person"
+    },
+    {
+      "app": "api",
+      "name": "0073_remove_unknown_person"
+    },
+    {
+      "app": "api",
+      "name": "0074_migrate_cluster_person"
+    },
+    {
+      "app": "api",
+      "name": "0075_alter_face_cluster_person"
+    },
+    {
+      "app": "api",
+      "name": "0076_alter_file_path_alter_longrunningjob_job_type_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0077_alter_albumdate_title"
+    },
+    {
+      "app": "api",
+      "name": "0078_create_photo_thumbnail"
+    },
+    {
+      "app": "api",
+      "name": "0079_alter_albumauto_title"
+    },
+    {
+      "app": "api",
+      "name": "0080_create_photo_caption"
+    },
+    {
+      "app": "api",
+      "name": "0081_remove_caption_fields_from_photo"
+    },
+    {
+      "app": "api",
+      "name": "0082_create_photo_search"
+    },
+    {
+      "app": "api",
+      "name": "0083_remove_search_fields"
+    },
+    {
+      "app": "api",
+      "name": "0084_convert_arrayfield_to_json"
+    },
+    {
+      "app": "api",
+      "name": "0085_albumuser_public_expires_at_albumuser_public_slug"
+    },
+    {
+      "app": "api",
+      "name": "0086_remove_albumuser_public_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0087_add_folder_album"
+    },
+    {
+      "app": "api",
+      "name": "0088_remove_folder_album"
+    },
+    {
+      "app": "api",
+      "name": "0089_add_text_alignment"
+    },
+    {
+      "app": "api",
+      "name": "0090_add_header_size"
+    },
+    {
+      "app": "api",
+      "name": "0091_alter_user_scan_directory"
+    },
+    {
+      "app": "api",
+      "name": "0092_add_skip_raw_files_field"
+    },
+    {
+      "app": "api",
+      "name": "0093_migrate_photon_to_nominatim"
+    },
+    {
+      "app": "api",
+      "name": "0094_add_slideshow_interval"
+    },
+    {
+      "app": "api",
+      "name": "0095_photo_perceptual_hash_alter_longrunningjob_job_type_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0096_add_progress_step_and_result_to_longrunningjob"
+    },
+    {
+      "app": "api",
+      "name": "0097_add_duplicate_detection_settings_to_user"
+    },
+    {
+      "app": "api",
+      "name": "0098_add_photo_stack"
+    },
+    {
+      "app": "api",
+      "name": "0099_photo_uuid_primary_key"
+    },
+    {
+      "app": "api",
+      "name": "0100_metadataedit_metadatafile_photometadata_stackreview_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0101_populate_photo_metadata"
+    },
+    {
+      "app": "api",
+      "name": "0102_photo_stacks_manytomany"
+    },
+    {
+      "app": "api",
+      "name": "0103_remove_photo_metadata_fields"
+    },
+    {
+      "app": "api",
+      "name": "0104_remove_photostack_potential_savings_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0105_alter_photo_image_hash"
+    },
+    {
+      "app": "api",
+      "name": "0106_alter_longrunningjob_options"
+    },
+    {
+      "app": "api",
+      "name": "0107_add_burst_detection_rules"
+    },
+    {
+      "app": "api",
+      "name": "0108_add_stack_raw_jpeg_field"
+    },
+    {
+      "app": "api",
+      "name": "0109_migrate_skip_raw_to_stack_raw_jpeg"
+    },
+    {
+      "app": "api",
+      "name": "0110_fix_file_embedded_media_self_reference"
+    },
+    {
+      "app": "api",
+      "name": "0111_alter_file_embedded_media"
+    },
+    {
+      "app": "api",
+      "name": "0112_convert_file_stacks_to_variants"
+    },
+    {
+      "app": "api",
+      "name": "0113_alter_photostack_stack_type"
+    },
+    {
+      "app": "api",
+      "name": "0114_add_file_path_unique"
+    },
+    {
+      "app": "api",
+      "name": "0115_cleanup_duplicate_photos"
+    },
+    {
+      "app": "api",
+      "name": "0116_cleanup_duplicate_groups_removed_photos"
+    },
+    {
+      "app": "api",
+      "name": "0117_delete_removed_photos"
+    },
+    {
+      "app": "api",
+      "name": "0118_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0119_add_public_sharing_options"
+    },
+    {
+      "app": "api",
+      "name": "0120_rename_thumbnails_uuid_to_hash"
+    },
+    {
+      "app": "api",
+      "name": "0121_add_default_tagging_model"
+    },
+    {
+      "app": "api",
+      "name": "0121_user_save_face_tags_to_disk"
+    },
+    {
+      "app": "api",
+      "name": "0122_merge_0121_add_default_tagging_model_0121_user_save_face_tags_to_disk"
+    },
+    {
+      "app": "api",
+      "name": "0123_longrunningjob_cancelled"
+    },
+    {
+      "app": "api",
+      "name": "0124_photo_local_orientation"
+    },
+    {
+      "app": "api",
+      "name": "0125_add_default_face_recognition_model"
+    },
+    {
+      "app": "api",
+      "name": "0126_clear_128dim_face_encodings"
+    },
+    {
+      "app": "api",
+      "name": "0127_migrate_photon_provider_robustly"
+    },
+    {
+      "app": "api",
+      "name": "0128_emailconfig"
+    },
+    {
+      "app": "api",
+      "name": "0129_alter_metadataedit_options"
+    },
+    {
+      "app": "api",
+      "name": "0130_tag"
+    },
+    {
+      "app": "api",
+      "name": "0131_photo_media_categories"
+    },
+    {
+      "app": "api",
+      "name": "0132_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0133_photo_ocr"
+    },
+    {
+      "app": "api",
+      "name": "0134_alter_longrunningjob_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0135_ocr_text_fts_index"
+    },
+    {
+      "app": "api",
+      "name": "0136_stackreview_monotonic_pk"
+    },
+    {
+      "app": "api",
+      "name": "0137_photo_ocr_source_dimensions"
+    },
+    {
+      "app": "api",
+      "name": "0138_onnx_only_ml_models"
+    },
+    {
+      "app": "api",
+      "name": "0139_album_m2m_photo_id_indexes"
+    },
+    {
+      "app": "api",
+      "name": "0140_album_m2m_unique_constraints"
+    },
+    {
+      "app": "api",
+      "name": "0141_photoshare"
+    },
+    {
+      "app": "api",
+      "name": "0142_deletionlog_albumauto_last_modified_and_more"
+    },
+    {
+      "app": "api",
+      "name": "0143_sqlite_photo_ids_hex"
+    },
+    {
+      "app": "api",
+      "name": "0144_sqlite_restore_foreign_keys"
+    },
+    {
+      "app": "api",
+      "name": "0145_video_probe_fields"
+    },
+    {
+      "app": "api",
+      "name": "0146_user_upload_directory"
+    },
+    {
+      "app": "api",
+      "name": "0147_user_default_timeline_filter"
+    },
+    {
+      "app": "api",
+      "name": "0148_albumuser_locked"
+    },
+    {
+      "app": "api",
+      "name": "0149_turn_off_public_links_of_deleted_users"
+    },
+    {
+      "app": "api",
+      "name": "0150_perf_indexes"
+    },
+    {
+      "app": "api",
+      "name": "0151_photo_clip_embeddings_model"
+    },
+    {
+      "app": "api",
+      "name": "0152_openclip_only"
+    },
+    {
+      "app": "api",
+      "name": "0153_face_person_set_null"
+    },
+    {
+      "app": "api",
+      "name": "0154_metadata_edit_json_encoder"
+    },
+    {
+      "app": "api",
+      "name": "0155_photo_metadata_one_store"
+    },
+    {
+      "app": "api",
+      "name": "0156_drop_user_face_recognition_model_and_stackreview"
+    },
+    {
+      "app": "api",
+      "name": "0157_move_scheduled_photo_functions"
+    },
+    {
+      "app": "api",
+      "name": "0158_move_scheduled_check_services"
+    },
+    {
+      "app": "api",
+      "name": "0159_merge_photos_sharing_a_main_file"
+    },
+    {
+      "app": "api",
+      "name": "0160_detect_stacks_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0161_photo_metadata_read_at"
+    },
+    {
+      "app": "api",
+      "name": "0162_photo_search_folded"
+    },
+    {
+      "app": "api",
+      "name": "0163_job_last_progress_at"
+    },
+    {
+      "app": "api",
+      "name": "0164_photo_faces_scanned_at"
+    },
+    {
+      "app": "api",
+      "name": "0165_photo_metadata_subject_distance_zoom"
+    },
+    {
+      "app": "api",
+      "name": "0166_photo_location_source"
+    },
+    {
+      "app": "api",
+      "name": "0167_drop_timestamp_set_by_user_rule"
+    },
+    {
+      "app": "api",
+      "name": "0168_video_date_rules"
+    },
+    {
+      "app": "api",
+      "name": "0169_strip_thumbnail_metadata_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0170_file_copy"
+    },
+    {
+      "app": "api",
+      "name": "0171_shown_photo_size"
+    },
+    {
+      "app": "api",
+      "name": "0172_cluster_selection_epsilon_unit_scale"
+    },
+    {
+      "app": "api",
+      "name": "0173_photo_trashed_at"
+    },
+    {
+      "app": "api",
+      "name": "0174_user_rating_mode"
+    },
+    {
+      "app": "api",
+      "name": "0175_salt_image_hashes_per_owner"
+    },
+    {
+      "app": "api",
+      "name": "0176_albumauto_title_parts"
+    },
+    {
+      "app": "api",
+      "name": "0177_longrunningjob_generate_captions"
+    },
+    {
+      "app": "api",
+      "name": "0178_reapply_date_rules_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0179_album_collections"
+    },
+    {
+      "app": "api",
+      "name": "0180_photo_archived"
+    },
+    {
+      "app": "api",
+      "name": "0181_person_groups"
+    },
+    {
+      "app": "api",
+      "name": "0182_file_indexed_mtimes"
+    },
+    {
+      "app": "api",
+      "name": "0183_takeout_date_rules"
+    },
+    {
+      "app": "api",
+      "name": "0184_write_metadata_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0185_upgrade_task_state"
+    },
+    {
+      "app": "api",
+      "name": "0186_look_up_places_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0187_albumauto_cover_photo"
+    },
+    {
+      "app": "api",
+      "name": "0188_move_photos_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0189_photo_metadata_file_rating"
+    },
+    {
+      "app": "api",
+      "name": "0190_photo_exif_timestamp_offset"
+    },
+    {
+      "app": "api",
+      "name": "0191_person_birth_date"
+    },
+    {
+      "app": "api",
+      "name": "0192_upload_followup_state"
+    },
+    {
+      "app": "api",
+      "name": "0193_upload_import_job"
+    },
+    {
+      "app": "api",
+      "name": "0194_photo_ocr_failures"
+    },
+    {
+      "app": "api",
+      "name": "0195_face_rejected_persons"
+    },
+    {
+      "app": "api",
+      "name": "0196_user_min_face_size"
+    },
+    {
+      "app": "api",
+      "name": "0197_deduplicate_faces_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0198_video_poster"
+    },
+    {
+      "app": "api",
+      "name": "0199_check_file_contents_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0200_user_share_people_names"
+    },
+    {
+      "app": "api",
+      "name": "0201_trash_photos_outside_library_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0202_rename_photos_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0203_photometadata_edited_keywords"
+    },
+    {
+      "app": "api",
+      "name": "0204_user_whats_new"
+    },
+    {
+      "app": "api",
+      "name": "0205_library_folder"
+    },
+    {
+      "app": "api",
+      "name": "0206_user_excluded_folders"
+    },
+    {
+      "app": "api",
+      "name": "0207_photo_projection_type"
+    },
+    {
+      "app": "api",
+      "name": "0208_face_video_time"
+    },
+    {
+      "app": "api",
+      "name": "0209_user_place"
+    },
+    {
+      "app": "api",
+      "name": "0210_library_share"
+    },
+    {
+      "app": "api",
+      "name": "0211_collaborative_albums"
+    },
+    {
+      "app": "api",
+      "name": "0212_album_comments"
+    },
+    {
+      "app": "api",
+      "name": "0213_person_shares"
+    },
+    {
+      "app": "api",
+      "name": "0214_user_scrubber_style"
+    },
+    {
+      "app": "api",
+      "name": "0215_user_photo_order"
+    },
+    {
+      "app": "api",
+      "name": "0216_photo_rights"
+    },
+    {
+      "app": "api",
+      "name": "0217_user_in_public_gallery"
+    },
+    {
+      "app": "api",
+      "name": "0218_photo_town"
+    },
+    {
+      "app": "api",
+      "name": "0219_repair_turned_faces_job_type"
+    },
+    {
+      "app": "api",
+      "name": "0220_face_unmatched_by"
+    },
+    {
+      "app": "auth",
+      "name": "0001_initial"
+    },
+    {
+      "app": "auth",
+      "name": "0002_alter_permission_name_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0003_alter_user_email_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0004_alter_user_username_opts"
+    },
+    {
+      "app": "auth",
+      "name": "0005_alter_user_last_login_null"
+    },
+    {
+      "app": "auth",
+      "name": "0006_require_contenttypes_0002"
+    },
+    {
+      "app": "auth",
+      "name": "0007_alter_validators_add_error_messages"
+    },
+    {
+      "app": "auth",
+      "name": "0008_alter_user_username_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0009_alter_user_last_name_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0010_alter_group_name_max_length"
+    },
+    {
+      "app": "auth",
+      "name": "0011_update_proxy_permissions"
+    },
+    {
+      "app": "auth",
+      "name": "0012_alter_user_first_name_max_length"
+    },
+    {
+      "app": "chunked_upload",
+      "name": "0001_initial"
+    },
+    {
+      "app": "constance",
+      "name": "0001_initial"
+    },
+    {
+      "app": "constance",
+      "name": "0002_migrate_from_old_table"
+    },
+    {
+      "app": "constance",
+      "name": "0003_drop_pickle"
+    },
+    {
+      "app": "contenttypes",
+      "name": "0001_initial"
+    },
+    {
+      "app": "contenttypes",
+      "name": "0002_remove_content_type_name"
+    },
+    {
+      "app": "django_q",
+      "name": "0001_initial"
+    },
+    {
+      "app": "django_q",
+      "name": "0002_auto_20150630_1624"
+    },
+    {
+      "app": "django_q",
+      "name": "0003_auto_20150708_1326"
+    },
+    {
+      "app": "django_q",
+      "name": "0004_auto_20150710_1043"
+    },
+    {
+      "app": "django_q",
+      "name": "0005_auto_20150718_1506"
+    },
+    {
+      "app": "django_q",
+      "name": "0006_auto_20150805_1817"
+    },
+    {
+      "app": "django_q",
+      "name": "0007_ormq"
+    },
+    {
+      "app": "django_q",
+      "name": "0008_auto_20160224_1026"
+    },
+    {
+      "app": "django_q",
+      "name": "0009_auto_20171009_0915"
+    },
+    {
+      "app": "django_q",
+      "name": "0010_auto_20200610_0856"
+    },
+    {
+      "app": "django_q",
+      "name": "0011_auto_20200628_1055"
+    },
+    {
+      "app": "django_q",
+      "name": "0012_auto_20200702_1608"
+    },
+    {
+      "app": "django_q",
+      "name": "0013_task_attempt_count"
+    },
+    {
+      "app": "django_q",
+      "name": "0014_schedule_cluster"
+    },
+    {
+      "app": "django_q",
+      "name": "0015_alter_schedule_schedule_type"
+    },
+    {
+      "app": "django_q",
+      "name": "0016_schedule_intended_date_kwarg"
+    },
+    {
+      "app": "django_q",
+      "name": "0017_task_cluster_alter"
+    },
+    {
+      "app": "django_q",
+      "name": "0018_task_success_index"
+    },
+    {
+      "app": "django_q",
+      "name": "0019_alter_task_options_alter_ormq_key_alter_ormq_lock_and_more"
+    },
+    {
+      "app": "sessions",
+      "name": "0001_initial"
+    },
+    {
+      "app": "sites",
+      "name": "0001_initial"
+    },
+    {
+      "app": "sites",
+      "name": "0002_alter_domain_unique"
+    },
+    {
+      "app": "socialaccount",
+      "name": "0001_initial"
+    },
+    {
+      "app": "socialaccount",
+      "name": "0002_token_max_lengths"
+    },
+    {
+      "app": "socialaccount",
+      "name": "0003_extra_data_default_dict"
+    },
+    {
+      "app": "socialaccount",
+      "name": "0004_app_provider_id_settings"
+    },
+    {
+      "app": "socialaccount",
+      "name": "0005_socialtoken_nullable_app"
+    },
+    {
+      "app": "socialaccount",
+      "name": "0006_alter_socialaccount_extra_data"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0001_initial"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0002_outstandingtoken_jti_hex"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0003_auto_20171017_2007"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0004_auto_20171017_2013"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0005_remove_outstandingtoken_jti"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0006_auto_20171017_2113"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0007_auto_20171017_2214"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0008_migrate_to_bigautofield"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0010_fix_migrate_to_bigautofield"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0011_linearizes_history"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0012_alter_outstandingtoken_user"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0013_alter_blacklistedtoken_options_and_more"
+    }
+  ]
+}

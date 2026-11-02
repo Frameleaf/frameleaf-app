@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
 import { type FileHandle, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { type Response as StorageResponse, fetch } from 'undici';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { BackupTransferJournal } from 'src/utils/cloud-backup-transfer.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -12,6 +13,7 @@ import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/u
 import {
   clientBackupContext,
   clientBackupPlainSize,
+  clientBackupStoredSize,
   decryptClientBackup,
   encryptClientBackup,
 } from 'src/utils/cloud-backup-crypto.js';
@@ -25,6 +27,7 @@ import {
   sseCustomerHeaders,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import {
   advanceExecutionProgress,
   assertExecutionActive,
@@ -37,12 +40,13 @@ import { type BackupCredentials, ManagedBackupAuthorizationError } from 'src/uti
 
 /**
  * Cloud backup storage (FL-160): the S3 API calls the backup agent makes, signed with AWS Signature
- * Version 4 over Node's own `fetch` and `crypto`. No SDK and no extra binaries are in the image; SSE-C
+ * Version 4 over Undici's `fetch` and Node's `crypto`. No SDK and no extra binaries are in the image; SSE-C
  * needs the S3 API directly, and every provider the agent supports (Wasabi, and any SSE-C-capable S3
  * store for your own bucket) speaks it.
  *
- * - Legacy objects retain SSE-C customer-key headers. Versioned client objects carry locally encrypted
- *   bodies and never those headers. Requests log method and object name, never keys or payloads.
+ * - Backups are written as client objects: locally encrypted bodies that never carry SSE-C headers. The
+ *   claim marker and probes still use SSE-C, and older SSE-C objects remain readable. Requests log method
+ *   and object name, never keys or payloads. A bucket must keep object versions (`versioning-off` otherwise).
  * - **Integrity.** Every body is signed with its SHA-256 (`x-amz-content-sha256`) and sent with
  *   `Content-MD5`, so the provider refuses a body that changed in flight. A file is read once while it
  *   uploads and hashed as it goes: an object named `o/<sha256>` is completed only when what was sent
@@ -81,7 +85,7 @@ export type CloudBackupConnection = {
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
 
 export type CloudBackupClaimRefusal =
-  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'claim-missing';
+  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'versioning-off' | 'claim-missing';
 
 /** A provider answered with an error, or could not be reached. The message never holds a secret. */
 export class CloudBackupStoreError extends Error {
@@ -118,6 +122,10 @@ export class CloudBackupFileChangedError extends Error {
 /** What an administrator reads when the provider refuses customer-provided keys on a bucket it lists. */
 export const SSE_C_REFUSED_MESSAGE =
   'The storage provider refused an encrypted test write: the bucket may block customer-provided encryption keys (SSE-C), or these credentials can’t write to it. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket’s default encryption settings (remove SSE-C from the blocked encryption types), check that the access key may write to the bucket, then check the bucket again.';
+
+/** Each backup's signed record names its manifest's exact version, so the bucket must keep versions. */
+export const VERSIONING_OFF_MESSAGE =
+  'This bucket does not keep object versions. Turn on versioning for the bucket (and a lifecycle rule that removes old versions after a few days), then check the bucket again.';
 
 const EMPTY_SHA256 = createHash('sha256').update('').digest('hex');
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -185,9 +193,13 @@ const PROVIDER_ERROR_CODES = [
 const providerErrorCode = (code: string | null) => PROVIDER_ERROR_CODES.find((knownCode) => knownCode === code) ?? null;
 
 /** Sanitize only transport reads and cancellation; callers retain their checksum and filesystem errors. */
-export const sanitizeProviderResponse = (response: Response, action: string): Response => {
+export const sanitizeProviderResponse = (response: Response | StorageResponse, action: string): Response => {
   if (!response.body) {
-    return response;
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: [...response.headers],
+    });
   }
   const reader = response.body.getReader();
   let cancelled = false;
@@ -233,7 +245,7 @@ export const sanitizeProviderResponse = (response: Response, action: string): Re
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers: [...response.headers],
   });
 };
 
@@ -343,6 +355,9 @@ type ClientUploadState = {
 
 type Part = { partNumber: number; etag: string };
 
+/** An ETag without its quotes, as a HEAD and an XML completion answer may each spell it. */
+export const bareEtag = (etag: string | null) => etag?.replaceAll(/&quot;|"/g, '');
+
 @Injectable()
 export class CloudBackupStoreRepository {
   /** Waits before the second and third attempt of a request that failed for a transient reason. */
@@ -432,11 +447,16 @@ export class CloudBackupStoreRepository {
       return null;
     }
     const stored = Number(response.headers.get('content-length') ?? 0);
-    return {
-      key,
-      size: clientBackupContext(connection.bucket, key, connection.vaultId) ? clientBackupPlainSize(stored) : stored,
-      etag: response.headers.get('etag'),
-    };
+    let size = stored;
+    if (clientBackupContext(connection.bucket, key, connection.vaultId)) {
+      try {
+        size = clientBackupPlainSize(stored);
+      } catch {
+        // no sealed object has this length: it was truncated or replaced at the provider
+        throw new CloudBackupStoreError('The backup object is damaged.', null, 'ChecksumMismatch');
+      }
+    }
+    return { key, size, etag: response.headers.get('etag') };
   }
 
   /**
@@ -578,16 +598,22 @@ export class CloudBackupStoreRepository {
     // eslint-disable-next-line unicorn/no-impossible-length-comparison -- Size comes from an untrusted HTTP header.
     if (!object?.etag || !Number.isSafeInteger(object.size) || object.size < 0)
       throw new CloudBackupStoreError('The backup download has no stable object identity.', 404, 'NoSuchKey');
-    if (
-      state &&
-      (state.partial !== partial ||
-        state.etag !== object.etag ||
+    const remoteChanged =
+      !!state &&
+      (state.etag !== object.etag ||
         state.size !== object.size ||
         state.expectedSha256 !== wireSha256 ||
         (state.plaintextSha256 ?? null) !== (client ? expectedSha256 : null) ||
-        (state.versionId !== undefined && state.versionId !== object.versionId))
-    )
-      throw new CloudBackupStoreError('The backup object changed during its download.', null, 'ChecksumMismatch');
+        (state.versionId !== undefined && state.versionId !== object.versionId));
+    if (state && (remoteChanged || state.partial !== partial)) {
+      // A receipt for another attempt (the target moved, or the object changed) is dropped with its partial,
+      // so the next attempt starts again instead of meeting the same receipt.
+      if (basename(state.partial).startsWith('.frameleaf-part-')) await rm(state.partial, { force: true });
+      await journal.save(null);
+      state = null;
+      if (remoteChanged)
+        throw new CloudBackupStoreError('The backup object changed during its download.', null, 'ChecksumMismatch');
+    }
     state ??= {
       kind: 'download',
       key,
@@ -841,17 +867,17 @@ export class CloudBackupStoreRepository {
     return { size, sha256: digest.digest('hex') };
   }
 
-  /** One object in one request. Answers the provider's ETag and whether it confirmed SSE-C. */
+  /** One object in one request. Answers the provider's ETag, whether it confirmed SSE-C and kept a version. */
   async put(
     connection: CloudBackupConnection,
     key: string,
     body: Buffer,
     bucketKey: Buffer,
     contentType = 'application/octet-stream',
-  ): Promise<{ etag: string; encrypted: boolean }> {
+  ): Promise<{ etag: string; encrypted: boolean; versioned: boolean }> {
     if (clientBackupContext(connection.bucket, key, connection.vaultId)) {
       const result = await this.uploadClientStream(connection, key, Readable.from([body]), bucketKey);
-      return { etag: result.etag, encrypted: true };
+      return { etag: result.etag, encrypted: true, versioned: !!result.versionId && result.versionId !== 'null' };
     }
     const response = await this.send(connection, {
       method: 'PUT',
@@ -867,9 +893,11 @@ export class CloudBackupStoreRepository {
     if (!etag) {
       throw new CloudBackupStoreError(`The storage provider did not confirm ${key}`, response.status, 'MissingETag');
     }
+    const versionId = response.headers.get('x-amz-version-id');
     return {
       etag,
       encrypted: response.headers.get('x-amz-server-side-encryption-customer-algorithm') === 'AES256',
+      versioned: !!versionId && versionId !== 'null',
     };
   }
 
@@ -1139,6 +1167,26 @@ export class CloudBackupStoreRepository {
     }
   }
 
+  /** Whether the bucket still holds the object an upload receipt names (same version, or same ETag). */
+  private async stillStored(
+    connection: CloudBackupConnection,
+    key: string,
+    root: Buffer,
+    receipt: { etag: string; versionId?: string },
+  ) {
+    const raw = { ...connection, trustedManifests: undefined };
+    try {
+      const head = await this.send(raw, { method: 'HEAD', key, headers: this.objectHeaders(raw, key, root) });
+      const versionId = head.headers.get('x-amz-version-id');
+      return receipt.versionId && versionId
+        ? receipt.versionId === versionId
+        : bareEtag(head.headers.get('etag')) === bareEtag(receipt.etag);
+    } catch (error) {
+      if (error instanceof CloudBackupStoreError && error.status === 404) return false;
+      throw error;
+    }
+  }
+
   private clientStage(connection: CloudBackupConnection, key: string) {
     if (!connection.stagingDirectory) throw new Error('Client encryption requires durable local staging');
     return join(connection.stagingDirectory, sha256Hex(`${connection.bucket}/${key}`));
@@ -1207,14 +1255,23 @@ export class CloudBackupStoreRepository {
     )
       throw new Error('Encrypted upload staging identity mismatch');
     if (state?.completed) {
+      // An object's receipt outlives its upload only when the run stopped right after it; the object may be
+      // pruned, deleted or replaced since, so it is trusted only while the bucket still answers with it.
+      const kept = context.kind !== 'object' || (await this.stillStored(connection, key, root, state.completed));
       if (connection.transfer) await connection.transfer.save(null);
-      return { ...state.completed, size: state.size, ciphertextSha256: state.ciphertextSha256 };
+      if (context.kind === 'object') await this.finishClientUpload(connection, key);
+      if (kept) return { ...state.completed, size: state.size, ciphertextSha256: state.ciphertextSha256 };
+      state = null;
     }
     if (!state) {
       const input = await open(path, 'r');
       const temporary = `${stage}.${randomUUID()}.tmp`;
       try {
         const before = await input.stat();
+        // Like Buddy, never stage a whole encrypted copy into the last 10 GiB or 10% of this disk.
+        const disk = await getDiskUsage(connection.stagingDirectory!);
+        if (disk.available - clientBackupStoredSize(before.size) < Math.max(10 * 1024 ** 3, disk.total * 0.1))
+          throw new Error('Cloud backup staging needs more free disk space');
         const digest = createHash('sha256');
         const source = async function* (store: CloudBackupStoreRepository) {
           for (let offset = 0; offset < before.size; offset += CLOUD_BACKUP_PART_BYTES) {
@@ -1482,13 +1539,14 @@ export class CloudBackupStoreRepository {
     const testKey = randomBytes(32);
     const content = randomBytes(64);
     try {
-      const { encrypted } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
+      const { encrypted, versioned } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
       if (!encrypted) {
         throw new CloudBackupClaimError(
           'sse-c-unsupported',
           'This storage provider did not encrypt the test file with a customer-provided key (SSE-C). Frameleaf backups need a provider that supports SSE-C.',
         );
       }
+      if (!versioned) throw new CloudBackupClaimError('versioning-off', VERSIONING_OFF_MESSAGE);
       const back = await this.get(connection, probeKey, testKey);
       if (!back.equals(content)) {
         throw new CloudBackupClaimError(
@@ -1549,7 +1607,7 @@ export class CloudBackupStoreRepository {
       keyFingerprint: options.keyFingerprint,
       claimedAt: options.now.toISOString(),
     };
-    const { encrypted } = await this.putWithCustomerKey(
+    const { encrypted, versioned } = await this.putWithCustomerKey(
       connection,
       CLOUD_BACKUP_MARKER,
       Buffer.from(JSON.stringify(marker)),
@@ -1563,6 +1621,10 @@ export class CloudBackupStoreRepository {
         'sse-c-unsupported',
         'This storage provider does not support customer-provided encryption keys (SSE-C), which Frameleaf backups need.',
       );
+    }
+    if (!versioned) {
+      await this.delete(connection, CLOUD_BACKUP_MARKER).catch(() => false);
+      throw new CloudBackupClaimError('versioning-off', VERSIONING_OFF_MESSAGE);
     }
 
     const written = await this.readMarker(connection, bucketKey);
@@ -1688,6 +1750,7 @@ export class CloudBackupStoreRepository {
     parts: AsyncIterable<Buffer>,
     beforeComplete?: () => void,
     identity?: { source: string | null; sourceStamp: string | null; expectedSha256: string | null },
+    restarted = false,
   ): Promise<string> {
     identity ??= { source: null, sourceStamp: null, expectedSha256: null };
     const journal = connection.transfer;
@@ -1749,11 +1812,17 @@ export class CloudBackupStoreRepository {
       const uploadId = state.uploadId;
       const found = journal
         ? await this.multipartParts(connection, key, uploadId).catch((error: unknown) => {
-            if (state!.completing && error instanceof CloudBackupStoreError && error.code === 'NoSuchUpload')
-              return state!.parts;
+            if (!(error instanceof CloudBackupStoreError) || error.code !== 'NoSuchUpload') throw error;
+            if (state!.completing) return state!.parts;
+            // the provider expired the saved upload (an abort-incomplete lifecycle rule): start a new one once
+            if (!restarted) return null;
             throw error;
           })
         : [];
+      if (!found) {
+        await journal!.save(null);
+        return await this.multipart(connection, key, bucketKey, contentType, parts, beforeComplete, identity, true);
+      }
       let size = 0;
       const receipts = state.parts;
       for await (const body of parts) {
@@ -1937,7 +2006,7 @@ export class CloudBackupStoreRepository {
         if (
           credentials &&
           error instanceof CloudBackupStoreError &&
-          ['ExpiredToken', 'InvalidToken', 'RequestExpired'].includes(error.code ?? '') &&
+          ['ExpiredToken', 'InvalidToken', 'RequestExpired', 'InvalidAccessKeyId'].includes(error.code ?? '') &&
           !renewed
         ) {
           renewed = true;
@@ -2039,7 +2108,7 @@ export class CloudBackupStoreRepository {
 
     const url = `${endpoint.origin}${canonicalUri}${query ? `?${query}` : ''}`;
     const action = `${request.method} ${request.key ?? connection.bucket}`;
-    let response: Response;
+    let response: StorageResponse;
     try {
       response = await fetch(url, {
         method: request.method,

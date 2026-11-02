@@ -22,6 +22,8 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Tell, { type TellRow } from '$lib/components/frameleaf/settings/kit/Tell.svelte';
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
+  import SpokenWordsSettings from '$lib/components/frameleaf/settings/intelligence/SpokenWordsSettings.svelte';
+  import MySmartAlbums from '$lib/components/frameleaf/settings/intelligence/MySmartAlbums.svelte';
   import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { Icon } from '@frameleaf/ui';
@@ -42,6 +44,7 @@
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type SwitchKey =
+    | 'clients.enabled'
     | 'folders.enabled'
     | 'folders.sidebarWeb'
     | 'memories.enabled'
@@ -69,6 +72,8 @@
     { id: 'tags', use: 'tags.enabled', sidebar: 'tags.sidebarWeb', icon: mdiTagMultipleOutline },
     { id: 'ratings', use: 'ratings.enabled' },
     { id: 'cast', use: 'cast.gCastEnabled' },
+    // Opt-in: on, Clients joins the top bar beside Library, Boards and Studio.
+    { id: 'clients', use: 'clients.enabled' },
     { id: 'recent', sidebar: 'recentlyAdded.sidebarWeb', icon: mdiClockOutline },
   ];
 
@@ -85,6 +90,7 @@
   ];
 
   const keys: AccountPreferenceKey[] = [
+    'clients.enabled',
     'folders.enabled',
     'folders.sidebarWeb',
     'memories.enabled',
@@ -234,6 +240,9 @@
         </p>
       </aside>
     </div>
+    <!-- FL-522: each person can hide a smart album from their own library. -->
+    <MySmartAlbums />
+    <SpokenWordsSettings />
   </KitPage>
 </OwnPreferencesForm>
 

@@ -102,7 +102,7 @@ const MEASURED = ['width', 'height', 'aspect', 'mostlyLight', 'mostlyDark', 'til
 ]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const qidOf = (iri) => iri.slice(iri.lastIndexOf('/') + 1).replace('>', '');
+const qidOf = (iri) => iri.slice(iri.lastIndexOf('/') + 1).replaceAll('>', '');
 // TSV literals arrive quoted ("x"@en, "x"^^<type>) or, for some datatypes, bare. Inner quotes are not escaped.
 const unquote = (literal) => (literal.startsWith('"') ? literal.slice(1, literal.lastIndexOf('"')) : literal);
 const chunks = (items, size) =>

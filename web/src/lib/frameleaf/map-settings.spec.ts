@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { formatMapArea, mapDateWindow, parseMapArea } from '$lib/frameleaf/map-settings';
+import { formatMapArea, isInMapArea, mapDateWindow, parseMapArea, toMapArea } from '$lib/frameleaf/map-settings';
 
 describe('mapDateWindow', () => {
   const now = DateTime.fromISO('2026-09-23T15:00:00', { zone: 'utc' });
@@ -62,5 +62,33 @@ describe('map areas', () => {
     expect(parseMapArea('a,b,c,d')).toBeNull();
     expect(parseMapArea('0,50,1,40')).toBeNull();
     expect(parseMapArea('0,-95,1,40')).toBeNull();
+  });
+});
+
+describe('visible map area across the antimeridian', () => {
+  const view = (west: number, east: number, south = -10, north = 10) => ({
+    getWest: () => west,
+    getEast: () => east,
+    getSouth: () => south,
+    getNorth: () => north,
+  });
+
+  it('wraps a view that straddles the date line into a west > east area', () => {
+    expect(toMapArea(view(145, 205))).toEqual({ west: 145, south: -10, east: -155, north: 10 });
+    expect(toMapArea(view(-200, -150))).toEqual({ west: 160, south: -10, east: -150, north: 10 });
+  });
+
+  it('keeps an ordinary view, and the whole world when the view is wider than it', () => {
+    expect(toMapArea(view(-10, 10))).toEqual({ west: -10, south: -10, east: 10, north: 10 });
+    expect(toMapArea(view(-300, 300, -100, 100))).toEqual({ west: -180, south: -90, east: 180, north: 90 });
+  });
+
+  it('finds items on both sides of the date line', () => {
+    const area = toMapArea(view(145, 205));
+    expect(isInMapArea(area, 170, 0)).toBe(true);
+    expect(isInMapArea(area, -170, 0)).toBe(true);
+    expect(isInMapArea(area, 0, 0)).toBe(false);
+    expect(isInMapArea(area, -170, 20)).toBe(false);
+    expect(isInMapArea(toMapArea(view(-10, 10)), 5, 5)).toBe(true);
   });
 });

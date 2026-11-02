@@ -6,6 +6,7 @@ import {
   THUMBNAIL_SIZE_MAX,
   THUMBNAIL_SIZE_MIN,
 } from '$lib/frameleaf/library-grid';
+import type { LibraryWorkspace } from '$lib/frameleaf/library-session';
 
 /**
  * Per-device library grid preferences (FL-33): the Thumbnail size and whether Work shows file names.
@@ -50,15 +51,24 @@ export class LibraryGridPreferences {
   #thumbnailSize = $state(THUMBNAIL_SIZE_DEFAULT);
   #showFileNames = $state(false);
 
-  constructor() {
+  #sizeKey: string;
+  #namesKey: string;
+  #defaultNames: boolean;
+
+  constructor(workspace: LibraryWorkspace = 'personal') {
+    const suffix = workspace === 'design' ? ':design' : '';
+    this.#sizeKey = THUMBNAIL_SIZE_STORAGE_KEY + suffix;
+    this.#namesKey = WORK_FILE_NAMES_STORAGE_KEY + suffix;
+    this.#defaultNames = workspace === 'design';
     this.reload();
   }
 
   /** Read both preferences from this device again. */
   reload() {
-    const size = read(THUMBNAIL_SIZE_STORAGE_KEY);
+    const size = read(this.#sizeKey);
     this.#thumbnailSize = size === null ? THUMBNAIL_SIZE_DEFAULT : clampThumbnailSize(size);
-    this.#showFileNames = read(WORK_FILE_NAMES_STORAGE_KEY) === 'true';
+    const names = read(this.#namesKey);
+    this.#showFileNames = names === null ? this.#defaultNames : names === 'true';
   }
 
   get thumbnailSize() {
@@ -71,7 +81,7 @@ export class LibraryGridPreferences {
       return;
     }
     this.#thumbnailSize = next;
-    write(THUMBNAIL_SIZE_STORAGE_KEY, String(next));
+    write(this.#sizeKey, String(next));
   }
 
   get canZoomIn() {
@@ -94,7 +104,7 @@ export class LibraryGridPreferences {
 
   set showFileNames(value: boolean) {
     this.#showFileNames = value;
-    write(WORK_FILE_NAMES_STORAGE_KEY, String(value));
+    write(this.#namesKey, String(value));
   }
 
   toggleFileNames() {
@@ -108,3 +118,4 @@ export class LibraryGridPreferences {
 }
 
 export const libraryGridPreferences = new LibraryGridPreferences();
+export const designLibraryGridPreferences = new LibraryGridPreferences('design');

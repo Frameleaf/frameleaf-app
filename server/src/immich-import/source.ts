@@ -6,8 +6,9 @@ import {
   digest,
   frozenSource,
   newestContainedRelease,
+  withForkContent,
 } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy, verifyMediaFile } from 'src/immich-import/media.js';
+import { assertMediaPolicy, lostOriginalReason, verifyMediaFile } from 'src/immich-import/media.js';
 import { readSourceStructure, verifyReadableStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
   FrozenSource,
@@ -19,12 +20,14 @@ import {
 } from 'src/immich-import/types.js';
 
 export class ImmichSource {
-  readonly fixture: FrozenSource;
+  private readonly frozen: FrozenSource;
+  /** The frozen shape, plus pre-Frameleaf fork content once preflight has seen the source. */
+  fixture: FrozenSource;
   constructor(
     readonly db: ImportDatabase,
     readonly config: ImportConfig,
   ) {
-    this.fixture = frozenSource(config.version);
+    this.frozen = this.fixture = frozenSource(config.version);
   }
 
   async preflight(): Promise<string> {
@@ -55,15 +58,17 @@ export class ImmichSource {
     const migrations = await this.db.query('SELECT name FROM public.kysely_migrations ORDER BY name');
     const names = migrations.map((row) => String(row.name));
     const structure = await readSourceStructure(this.db);
-    if (this.fixture.exact && canonicalJson(names) === canonicalJson(this.fixture.migrations)) {
-      verifySourceStructure(structure, this.fixture.structure);
+    if (this.frozen.exact && canonicalJson(names) === canonicalJson(this.frozen.migrations)) {
+      verifySourceStructure(structure, this.frozen.structure);
     } else {
       // A replayed 2.x shape or a newer release: the selected frozen shape must be the newest one its ledger contains.
       const newest = newestContainedRelease(names);
-      if (!newest || frozenSource(newest).migrations !== this.fixture.migrations) {
+      if (!newest || frozenSource(newest).migrations !== this.frozen.migrations) {
         throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
       }
-      verifyReadableStructure(structure, this.fixture);
+      verifyReadableStructure(structure, this.frozen);
+      // Fork sources carry extra migrations, so they always take this path.
+      this.fixture = withForkContent(this.frozen, structure);
     }
     const identity = await this.db.query(`SELECT current_database() AS database,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,
@@ -97,13 +102,20 @@ export class ImmichSource {
                   },
                 );
               } catch (error) {
-                if (
+                const lost =
+                  table === 'asset'
+                    ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media)
+                    : null;
+                if (lost) {
+                  hash.update(`lost-original:${lost}`);
+                } else if (
                   (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
                   (table !== 'asset_file' && table !== 'person')
                 ) {
                   throw error;
+                } else {
+                  hash.update('missing-regenerable-output');
                 }
-                hash.update('missing-regenerable-output');
               }
               hash.update('\n');
             }

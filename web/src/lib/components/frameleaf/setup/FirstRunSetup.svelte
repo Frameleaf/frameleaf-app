@@ -19,7 +19,10 @@
   import Logo from '$lib/components/frameleaf/Logo.svelte';
   import SetupChange from '$lib/components/frameleaf/setup/SetupChange.svelte';
   import SetupChoiceCard from '$lib/components/frameleaf/setup/SetupChoiceCard.svelte';
+  import SetupFrameleafAccount from '$lib/components/frameleaf/setup/SetupFrameleafAccount.svelte';
   import SetupFrameleafLink from '$lib/components/frameleaf/setup/SetupFrameleafLink.svelte';
+  import SetupRestoreBackup from '$lib/components/frameleaf/setup/SetupRestoreBackup.svelte';
+  import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
   import SetupImports from '$lib/components/frameleaf/setup/SetupImports.svelte';
   import SetupLogoIntro from '$lib/components/frameleaf/setup/SetupLogoIntro.svelte';
   import SetupRadio from '$lib/components/frameleaf/setup/SetupRadio.svelte';
@@ -30,27 +33,33 @@
   import {
     accountToolSections,
     applySetupChoices,
+    chapterCount,
     chapterIndex,
     clearLocalSetup,
     firstInvalidStep,
     flowSteps,
-    formatTb,
     goToStep,
     itemsPerHour,
     KEEP_LAYOUT,
+    KEEP_MODEL,
+    keepsUnlistedModel,
     layoutPattern,
     layoutPresets,
     modelTiers,
     needsReindex,
     processingOptions,
+    recommendedTier,
     reindexHours,
     saveLocalSetup,
     setLinked,
     setupChapters,
     SETUP_THEME,
+    showsRequired,
     themeAfterSetup,
     toProgress,
     validateStep,
+    settleFinishTier,
+    settleLoadedTier,
     type SetupChoices,
     type SetupState,
   } from '$lib/frameleaf/first-run-setup';
@@ -68,7 +77,7 @@
   import { lang, locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { convertBCP47, langs } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices } from '$lib/utils/i18n';
   import {
     CloudTourEnding,
     finishFrameleafSetup,
@@ -77,7 +86,6 @@
     getFrameleafSetupLibrary,
     getFrameleafSetupStorage,
     getHardwareCheck,
-    getServerConfig,
     getSummary,
     HardwareBackend,
     login,
@@ -95,6 +103,7 @@
     type FrameleafSetupStorageResponseDto,
     type HardwareCheckResponseDto,
     type UserAdminResponseDto,
+    getLicenseProducts,
   } from '@frameleaf/sdk';
   import { Icon, ThemePreference, themeManager } from '@frameleaf/ui';
   import {
@@ -181,13 +190,11 @@
   let users = $state<UserAdminResponseDto[]>([]);
   let backup = $state<FoundCloudBackup | null>(null);
 
-  /** FL-168: whether the server is already linked with Sign in with Frameleaf (a headless link token). */
-  let frameleafSignIn = $state(false);
   const steps = $derived(flowSteps(setup.flow));
   const current = $derived(steps[setup.step]);
   const choices = $derived(setup.choices);
   const linked = $derived(choices.linked);
-  const context = $derived({ secrets, storageWritable: storage ? storage.writable : null, frameleafSignIn });
+  const context = $derived({ secrets, storageWritable: storage ? storage.writable : null });
   const chapterAt = $derived(chapterIndex(current.chapter));
   /**
    * How far the rail's line is drawn: to the current chapter, and on to the next one the moment
@@ -214,15 +221,22 @@
         library = null;
       }
     })();
-    const [storageResult, configResult, , summary, hardwareResult, usersResult] = await Promise.allSettled([
-      getFrameleafSetupStorage(),
+    // The storage check is a quick disk probe; it must not wait for the hardware benchmark either.
+    const storageRequest = (async () => {
+      try {
+        storage = await getFrameleafSetupStorage();
+      } catch {
+        storage = null;
+      }
+    })();
+    const [configResult, summary, hardwareResult, usersResult] = await Promise.allSettled([
       getConfig(),
-      libraryRequest,
       setup.flow === 'existing' ? getSummary({ allAccounts: true }) : Promise.resolve(null),
       getHardwareCheck(),
       setup.flow === 'existing' ? searchUsersAdmin({}) : Promise.resolve([]),
+      storageRequest,
+      libraryRequest,
     ]);
-    storage = storageResult.status === 'fulfilled' ? storageResult.value : null;
     config = configResult.status === 'fulfilled' ? configResult.value : null;
     if (summary.status === 'fulfilled' && summary.value) {
       const queues = summary.value.queues;
@@ -232,44 +246,15 @@
     }
     hardware = hardwareResult.status === 'fulfilled' ? hardwareResult.value : null;
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
+    // A2: the tier starts from what the hardware runs well (a new server) or from the models the
+    // library already uses (an existing one), unless the administrator already took that decision.
+    setup = settleLoadedTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
     serverLoading = false;
-  };
-
-  /**
-   * Whether this server can offer Sign in with Frameleaf (FL-158). Until Frameleaf Cloud is
-   * reachable a brand-new server can't, so the local account becomes the default and the Frameleaf
-   * card says why it's unavailable.
-   */
-  let frameleafAvailable = $state<boolean | null>(null);
-
-  /**
-   * FL-168 (owner decision): linking to Frameleaf Cloud is the featured path wherever the deployment
-   * names Frameleaf Cloud (`FRAMELEAF_CLOUD_URL`); reading that contacts nothing. A server already
-   * linked (a headless link token) signs the administrator in with Frameleaf; any other server creates
-   * the administrator and then links, and nothing is sent until the administrator starts the link.
-   */
-  const probeFrameleafSignIn = async () => {
-    try {
-      const config = await getServerConfig();
-      frameleafAvailable = config.frameleaf.cloudConfigured;
-      frameleafSignIn = config.frameleaf.signInAvailable;
-    } catch {
-      frameleafAvailable = false;
-    }
   };
 
   onMount(() => {
     if (signedIn) {
       void loadServerData();
-    }
-    if (setup.flow === 'new') {
-      void probeFrameleafSignIn();
-    }
-  });
-
-  $effect(() => {
-    if (frameleafAvailable === false && setup.choices.signIn === 'frameleaf' && !setup.choices.linked) {
-      choose({ signIn: 'local' });
     }
   });
 
@@ -299,7 +284,6 @@
   const stepIndex = $derived(setup.step);
   $effect(() => {
     void stepIndex;
-    void accountPart;
     errors = {};
     formError = '';
     if (firstStep) {
@@ -369,10 +353,8 @@
       choose({ signedIn: true });
       await loadServerData();
     }
-    // FL-168: the Frameleaf path on a server not linked yet creates the administrator first, then links
-    const createsAdmin = choices.signIn === 'local' || !frameleafSignIn;
-    if (current.id === 'account' && setup.flow === 'new' && createsAdmin && !choices.accountCreated) {
-      const linkNext = choices.signIn === 'frameleaf';
+    // FL-708: a new server always creates its local administrator here, whatever comes after.
+    if (current.id === 'account' && setup.flow === 'new' && !choices.accountCreated) {
       const email = choices.adminEmail.trim();
       busyWith = 'account';
       await signUpAdmin({
@@ -387,11 +369,10 @@
       secrets.confirm = '';
       // The administrator exists, so this step is passed. Save the step after it before loading the
       // session: signing in re-verifies the session and redraws the page (SessionPrivacyGuard), and
-      // setup then resumes from the saved copy at the library, not at the account form.
-      // On the Frameleaf path the step stays open for the link that follows.
+      // setup then resumes from the saved copy at the Frameleaf account step, not at the form.
       const created = goToStep(
         { ...setup, choices: { ...setup.choices, accountCreated: true } },
-        linkNext ? setup.step : setup.step + 1,
+        setup.step + 1,
         context,
       );
       saveLocalSetup(created);
@@ -474,6 +455,21 @@
     finishPhase = 'saving';
     try {
       const current = await getConfig();
+      // Checked against the model the server has now: the library's model changes only for a tier the
+      // administrator chose. An unchosen tier that is no longer the default, or "keep" of a model other
+      // than the one it named, goes back to the tier step to confirm it.
+      const confirm = settleFinishTier(
+        setup,
+        { hardware, currentModel: current.machineLearning.clip.modelName },
+        config?.machineLearning.clip.modelName,
+      );
+      if (confirm) {
+        direction = -1;
+        config = current;
+        setup = confirm;
+        finishPhase = '';
+        return;
+      }
       // Saved here, not through the settings service: a failed save must stop setup on this step
       // with the error in view (the service only toasts), and no "Settings saved" toast belongs in
       // the hand-off. Credentials are emptied for the save exactly as the service does.
@@ -504,10 +500,9 @@
       themeManager.setPreference(
         themeAfterSetup(choices.theme) === 'light' ? ThemePreference.Light : ThemePreference.Dark,
       );
-      await goto(
-        choices.restore === 'restore' && linked ? commandCenterUrl('cloud', 'cloud-account') : Route.photos(),
-        { invalidateAll: true },
-      );
+      await goto(choices.restore === 'restore' && linked ? commandCenterUrl('backups', 'cloud') : Route.photos(), {
+        invalidateAll: true,
+      });
       // Still here (the navigation was turned back): never leave the faded stage on screen.
       showStage();
     } catch (error) {
@@ -540,53 +535,64 @@
   const preset = $derived(layoutPresets.find((entry) => entry.id === choices.layout) ?? layoutPresets[0]);
   const pathParts = $derived(examplePath(choices.layout).split('/'));
   const tier = $derived(modelTiers.find((entry) => entry.id === choices.model) ?? modelTiers[1]);
+  /** An existing library on a search model outside the tiers can keep it: no model change, no re-index. */
+  const currentModelName = $derived(config?.machineLearning.clip.modelName ?? '');
+  const keepModel = $derived(choices.model === KEEP_MODEL);
+  const offerKeepModel = $derived(keepsUnlistedModel(setup.flow, currentModelName) || keepModel);
+  const keepModelTitle = $derived($t('frameleaf_setup_tier_keep', { values: { model: currentModelName } }));
+  /** The tier this hardware is recommended (A2); shown as such on the tier step whatever is chosen. */
+  const recommendedTierId = $derived(recommendedTier(hardware));
   const gpu = $derived(!!hardware && hardware.ml.backend !== HardwareBackend.Cpu && hardware.ml.reachable);
   const perHour = $derived(itemsPerHour(gpu, hardware?.benchmark?.embeddingMs));
   const existing = $derived(setup.flow === 'existing');
   const items = $derived(library?.items ?? 0);
   /** Whether the file records were read: never show "0 of 0 healthy" for a check that has no data. */
   const libraryCheck = $derived(serverLoading ? 'loading' : library && health ? 'known' : 'unknown');
-  /**
-   * On the Frameleaf path of a server not linked yet the account step has two parts under one step:
-   * create the administrator, then link. 0 anywhere else.
-   */
-  const accountPart = $derived(
-    current.id === 'account' && !existing && choices.signIn === 'frameleaf' && !frameleafSignIn
-      ? choices.accountCreated
-        ? 2
-        : 1
-      : 0,
-  );
   /** The administrator form is on screen: Continue submits it, so Enter in any field works too. */
-  const accountForm = $derived(
-    current.id === 'account' &&
-      !existing &&
-      !choices.accountCreated &&
-      (choices.signIn === 'local' || !frameleafSignIn),
-  );
+  const accountForm = $derived(current.id === 'account' && !existing && !choices.accountCreated);
+  /** P6: a form step narrows the whole column, so the fields, buttons and note line up. */
+  const formWidth = $derived((current.id === 'account' && !existing) || current.id === 'frameleaf-account');
+  /** Item 2: the step counter counts the rail's chapters, not the steps inside them. */
+  const counter = $derived(chapterCount(current.chapter));
   const fieldErrors = $derived(['name', 'email', 'password', 'confirm'].filter((field) => errors[field]).length);
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
+  // FL-544: the Frameleaf Cloud card on Protection names the price, from the bundled prices
+  let cloudBundle = $state('');
+  let getCloud = $state(false);
+  $effect(() => {
+    if (!linked || cloudBundle) {
+      return;
+    }
+    const load = async () => {
+      try {
+        const products = await getLicenseProducts();
+        const price = (id: string) => products.products.find((product) => product.id === id)?.priceUsd ?? 0;
+        cloudBundle = $t('frameleaf_gc_price_year', {
+          values: {
+            once: formatUsd(price('supporter-server')),
+            renew: formatUsd(cloudPlanPrice(price('cloud-annual'), products.licensedDiscount)),
+          },
+        });
+      } catch {
+        cloudBundle = '';
+      }
+    };
+    void load();
+  });
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
   /** Originals in the unit that fits: an imported library of a few hundred MB never reads as "0.0 TB". */
   const formatSize = (bytes: number) => getByteUnitString(bytes, $locale);
   const hardwareName = (entry: HardwareCheckResponseDto['ml'] | undefined) =>
     entry ? [entry.vendor, entry.model].filter(Boolean).join(' ') || entry.backend.toUpperCase() : '';
 
-  const recommendedSteps = new Set(['sign-in-choice', 'processing', 'protection', 'privacy', 'library-check']);
-  const usesRecommended = $derived(
-    recommendedSteps.has(current.id) || (current.id === 'account' && existing && !linked && choices.signIn === 'local'),
-  );
-  const isRecommendedChoice = $derived(
-    (current.id === 'sign-in-choice' && choices.signIn === (frameleafAvailable === false ? 'local' : 'frameleaf')) ||
-      (current.id === 'library-check' && choices.layout === KEEP_LAYOUT) ||
-      (current.id === 'account' && existing) ||
-      (current.id === 'processing' && choices.processing === 'local' && choices.model === 'balanced') ||
-      (current.id === 'protection' && choices.nightlyBackup) ||
-      current.id === 'privacy',
-  );
-
   const summaryRows = $derived.by(() => {
+    const where =
+      choices.processing === 'cloud'
+        ? $t('frameleaf_setup_summary_where_cloud')
+        : choices.processing === 'later'
+          ? $t('frameleaf_setup_summary_where_later')
+          : $t('frameleaf_setup_summary_where_local');
     const rows: [string, string][] = [
       [
         $t('frameleaf_setup_chapter_account'),
@@ -596,41 +602,36 @@
             ? $t('frameleaf_setup_summary_local_kept')
             : $t('frameleaf_setup_summary_local'),
       ],
+      // Item 5: the room left and the folder layout in words, not a sample file path.
       [
         $t('frameleaf_setup_chapter_library'),
-        existing && choices.layout === KEEP_LAYOUT
-          ? $t('frameleaf_setup_summary_layout_kept')
-          : examplePath(choices.layout),
+        [
+          storage?.writable &&
+            $t('frameleaf_setup_summary_free', { values: { free: formatSize(Math.max(0, storage.freeBytes)) } }),
+          choices.layout === KEEP_LAYOUT ? $t('frameleaf_setup_summary_layout_current') : $t(preset.short),
+        ]
+          .filter(Boolean)
+          .join(' · '),
       ],
       [
         $t('frameleaf_setup_processing_title'),
-        $t('frameleaf_setup_summary_processing', {
-          values: {
-            tier: $t(tier.label),
-            where:
-              choices.processing === 'cloud'
-                ? $t('frameleaf_setup_summary_where_cloud')
-                : choices.processing === 'later'
-                  ? $t('frameleaf_setup_summary_where_later')
-                  : $t('frameleaf_setup_summary_where_local'),
-          },
-        }),
+        keepModel
+          ? `${keepModelTitle} · ${where}`
+          : $t('frameleaf_setup_summary_processing', { values: { tier: $t(tier.label), where } }),
       ],
       [
         $t('frameleaf_setup_summary_database_backups'),
         choices.nightlyBackup ? $t('frameleaf_setup_summary_nightly') : $t('frameleaf_setup_summary_off'),
       ],
+      // Item 5: every privacy switch says on or off.
+      [
+        $t('frameleaf_setup_privacy_title'),
+        [
+          choices.updates ? $t('frameleaf_setup_summary_updates_on') : $t('frameleaf_setup_summary_updates_off'),
+          choices.map ? $t('frameleaf_setup_summary_map_on') : $t('frameleaf_setup_summary_map_off'),
+        ].join(' · '),
+      ],
     ];
-    const on = [
-      choices.updates && $t('frameleaf_setup_summary_updates'),
-      choices.map && $t('frameleaf_setup_summary_map'),
-    ]
-      .filter(Boolean)
-      .join(', ');
-    rows.push([
-      $t('frameleaf_setup_privacy_title'),
-      on ? on[0].toUpperCase() + on.slice(1) : $t('frameleaf_setup_summary_everything_off'),
-    ]);
     return rows;
   });
 
@@ -641,26 +642,33 @@
     if (choices.processing === 'later') {
       return [];
     }
+    const health = {
+      id: 'health',
+      label: $t('frameleaf_setup_job_health'),
+      detail: $t('frameleaf_setup_job_health_detail'),
+    };
+    // keeping the current model re-indexes nothing
+    if (keepModel) {
+      return [health];
+    }
     return [
       {
         id: 'reindex',
         label: $t('frameleaf_setup_job_reindex', { values: { count: formatCount(items) } }),
         detail: $t('frameleaf_setup_job_reindex_detail', { values: { hours } }),
       },
-      { id: 'health', label: $t('frameleaf_setup_job_health'), detail: $t('frameleaf_setup_job_health_detail') },
+      health,
     ];
   });
 
   const headingText = $derived(
-    current.id === 'account' &&
-      !existing &&
-      (choices.signIn === 'local' || (!frameleafSignIn && !choices.accountCreated))
+    current.id === 'account' && !existing
       ? $t('frameleaf_setup_account_create_title')
-      : current.id === 'account' && !existing && !frameleafSignIn
-        ? $t('frameleaf_cloud_link_action')
-        : current.id === 'account' && !existing
-          ? $t('frameleaf_setup_sign_in_frameleaf')
-          : $t(current.title),
+      : current.id === 'frameleaf-account'
+        ? linked
+          ? $t('frameleaf_setup_frameleaf_account_yours')
+          : $t('frameleaf_setup_frameleaf_account_add')
+        : $t(current.title),
   );
   const people = $derived(users.filter((user) => user.id !== (authManager.authenticated ? authManager.user.id : '')));
 </script>
@@ -670,7 +678,7 @@
     <Icon icon={mdiTranslate} size="16" aria-hidden={true} />
     <span class="sr-only">{$t('language')}</span>
     <select value={choices.language} onchange={(event) => void chooseLanguage(event.currentTarget.value)}>
-      {#each langs as entry (entry.code)}
+      {#each languageChoices(choices.language) as entry (entry.code)}
         <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}
     </select>
@@ -688,7 +696,8 @@
           : $t('frameleaf_setup_working')}
     </span>
   {:else}
-    {usesRecommended && isRecommendedChoice ? $t('frameleaf_setup_use_recommended') : $t('continue')}
+    <!-- Item 3: always "Continue"; "Recommended" stays a badge on the choice. -->
+    {$t('continue')}
     <Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
   {/if}
 {/snippet}
@@ -829,6 +838,12 @@
             >
               {$t('frameleaf_setup_continue_setup')}<Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
             </button>
+            {#if !signedIn}
+              <!-- Item 1: the one welcome also holds "Restore from a backup" from the old first page. -->
+              <div class="frs-welcome-more" data-intro data-ready={introReady || undefined} inert={!introReady}>
+                <SetupRestoreBackup />
+              </div>
+            {/if}
           </SetupLogoIntro>
         {:else}
           <SetupLogoIntro onSettled={() => (introReady = true)}>
@@ -916,26 +931,18 @@
         </nav>
         {@render languagePicker()}
       </aside>
-      <main class="frs-main">
-        <!-- Keyed on the part too, so the second half of the account step slides in like a step. -->
-        {#key `${current.id}:${accountPart}`}
+      <main class="frs-main" data-width={formWidth ? 'form' : undefined}>
+        {#key current.id}
           <div class="frs-step" use:stepIn={direction}>
             <header class="frs-head">
               <span class="frs-eyebrow">
                 {$t('frameleaf_setup_eyebrow', {
-                  values: { chapter: $t(setupChapters[chapterAt].label), step: setup.step + 1, count: steps.length },
+                  values: { chapter: $t(counter.chapter), step: counter.position, count: counter.count },
                 })}
               </span>
               <h1 bind:this={heading} tabindex="-1">{headingText}</h1>
-              {#if current.required || accountPart}
-                <span class="frs-tags">
-                  {#if current.required}<span class="frs-required">{$t('frameleaf_setup_required')}</span>{/if}
-                  {#if accountPart}
-                    <span class="frs-part">
-                      {$t('frameleaf_setup_part', { values: { part: accountPart, count: 2 } })}
-                    </span>
-                  {/if}
-                </span>
+              {#if showsRequired(setup, current.id)}
+                <span class="frs-tags"><span class="frs-required">{$t('frameleaf_setup_required')}</span></span>
               {/if}
             </header>
             <div class="frs-body">
@@ -944,50 +951,7 @@
                   <Icon icon={mdiAlertCircleOutline} size="16" /><span>{formError}</span>
                 </p>
               {/if}
-              {#if current.id === 'sign-in-choice'}
-                <div class="frs-choices two" role="radiogroup" aria-label={$t('frameleaf_setup_sign_in_choice_title')}>
-                  <SetupChoiceCard
-                    name="frs-signin"
-                    value="frameleaf"
-                    checked={choices.signIn === 'frameleaf'}
-                    onchange={() => choose({ signIn: 'frameleaf' })}
-                    icon="frameleaf"
-                    title={$t('frameleaf_setup_choice_frameleaf')}
-                    recommended={frameleafAvailable !== false}
-                    disabled={frameleafAvailable === false}
-                  >
-                    {#if frameleafAvailable === false}
-                      <strong class="frs-unavailable">{$t('frameleaf_setup_choice_frameleaf_unavailable')}</strong>
-                    {/if}
-                    <ul class="frs-ticks">
-                      <li>{$t('frameleaf_setup_choice_frameleaf_remote')}</li>
-                      <li>{$t('frameleaf_setup_choice_frameleaf_anywhere')}</li>
-                      <li>{$t('frameleaf_setup_choice_frameleaf_cloud')}</li>
-                      <li>{$t('frameleaf_setup_choice_frameleaf_license')}</li>
-                    </ul>
-                    <small>{$t('frameleaf_setup_choice_frameleaf_note')}</small>
-                  </SetupChoiceCard>
-                  <SetupChoiceCard
-                    name="frs-signin"
-                    value="local"
-                    checked={choices.signIn === 'local'}
-                    onchange={() => {
-                      link(false);
-                      choose({ signIn: 'local' });
-                    }}
-                    icon={mdiServerOutline}
-                    title={$t('frameleaf_setup_choice_local')}
-                    recommended={frameleafAvailable === false}
-                  >
-                    <ul class="frs-ticks">
-                      <li>{$t('frameleaf_setup_choice_local_stored')}</li>
-                      <li>{$t('frameleaf_setup_choice_local_network')}</li>
-                      <li>{$t('frameleaf_setup_choice_local_later')}</li>
-                    </ul>
-                    <small>{$t('frameleaf_setup_choice_local_note')}</small>
-                  </SetupChoiceCard>
-                </div>
-              {:else if current.id === 'account' && existing}
+              {#if current.id === 'account' && existing}
                 <div class="frs-choices two" role="radiogroup" aria-label={$t('frameleaf_setup_account_title')}>
                   <SetupChoiceCard
                     name="frs-keep"
@@ -1019,50 +983,14 @@
                     onFallback={() => choose({ signIn: 'local' })}
                   />
                 {/if}
-              {:else if current.id === 'account' && choices.signIn === 'frameleaf' && !frameleafSignIn && choices.accountCreated}
-                <!-- FL-168: the administrator exists; now this server is linked to their Frameleaf account -->
-                <p class="frs-lead">{$t('frameleaf_setup_frameleaf_link_lead')}</p>
-                {#if errors.link}
-                  <p class="auth-error" role="alert">
-                    <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errors.link}</span>
-                  </p>
-                {/if}
-                <SetupFrameleafLink
-                  mode="link"
+              {:else if current.id === 'frameleaf-account'}
+                <!-- Item 20: optional; the administrator above is local whatever happens here. -->
+                {#if !linked}<p class="frs-lead">{$t('frameleaf_setup_frameleaf_account_lead')}</p>{/if}
+                <SetupFrameleafAccount
+                  name={choices.adminName}
+                  email={choices.adminEmail}
                   {linked}
                   onLinked={() => link(true)}
-                  onFallback={() => {
-                    link(false);
-                    choose({ signIn: 'local' });
-                  }}
-                />
-                {#if !linked}
-                  <button
-                    type="button"
-                    class="auth-link frs-local-fallback"
-                    onclick={() => {
-                      link(false);
-                      choose({ signIn: 'local' });
-                    }}
-                  >
-                    {$t('frameleaf_setup_continue_local')}
-                  </button>
-                {/if}
-              {:else if current.id === 'account' && choices.signIn === 'frameleaf' && frameleafSignIn}
-                <p class="frs-lead">{$t('frameleaf_setup_frameleaf_lead')}</p>
-                {#if errors.link}
-                  <p class="auth-error" role="alert">
-                    <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errors.link}</span>
-                  </p>
-                {/if}
-                <SetupFrameleafLink
-                  mode="sign-in"
-                  {linked}
-                  onLinked={() => link(true)}
-                  onFallback={() => {
-                    link(false);
-                    choose({ signIn: 'local' });
-                  }}
                 />
                 {#if linked && backup}
                   <section class="frs-found" aria-labelledby="frs-found-title">
@@ -1079,7 +1007,7 @@
                       [$t('frameleaf_setup_found_server'), backup.server],
                       [$t('frameleaf_setup_found_last'), new Date(backup.date).toLocaleString($locale)],
                       [$t('frameleaf_setup_stat_items'), formatCount(backup.items)],
-                      [$t('size'), formatTb(backup.bytes)],
+                      [$t('size'), formatSize(Math.max(0, backup.bytes))],
                     ])}
                     <div class="frs-choices two" role="radiogroup" aria-label={$t('frameleaf_setup_found_title')}>
                       <SetupChoiceCard
@@ -1106,9 +1034,7 @@
                   </section>
                 {/if}
               {:else if current.id === 'account'}
-                {#if choices.signIn === 'frameleaf' && !choices.accountCreated}
-                  <p class="frs-lead">{$t('frameleaf_setup_frameleaf_admin_lead')}</p>
-                {/if}
+                {#if !choices.accountCreated}<p class="frs-lead">{$t('frameleaf_setup_account_lead')}</p>{/if}
                 {#if choices.accountCreated}
                   <div class="frs-form">
                     <p class="frs-quiet">
@@ -1184,20 +1110,14 @@
                   </form>
                 {/if}
               {:else if current.id === 'library'}
-                <section class="frs-panel">
-                  <div class="auth-field">
-                    <label for="frs-storage">{$t('frameleaf_setup_storage_location')}</label>
-                    <div class="frs-storage">
-                      <Icon icon={mdiFolderOutline} size="18" aria-hidden={true} />
-                      <input
-                        id="frs-storage"
-                        value={storage?.path ?? ''}
-                        readonly
-                        spellcheck="false"
-                        aria-describedby="frs-storage-check"
-                      />
-                    </div>
-                  </div>
+                <!-- Item 4: the location is set where Frameleaf is installed, so it reads as text, not a field. -->
+                <section class="frs-panel frs-location" aria-labelledby="frs-storage-label">
+                  <span class="frs-location-label" id="frs-storage-label">{$t('frameleaf_setup_storage_location')}</span
+                  >
+                  <span class="frs-location-path">
+                    <Icon icon={mdiFolderOutline} size="18" aria-hidden={true} />
+                    <code aria-describedby="frs-storage-check">{storage?.path ?? '…'}</code>
+                  </span>
                   <p
                     id="frs-storage-check"
                     class="frs-check"
@@ -1210,7 +1130,7 @@
                       )}
                     {:else if storage.writable}
                       <Icon icon={mdiCheckCircle} size="16" aria-hidden={true} />{$t('frameleaf_setup_storage_ok', {
-                        values: { free: formatTb(storage.freeBytes) },
+                        values: { free: formatSize(Math.max(0, storage.freeBytes)) },
                       })}
                     {:else}
                       <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />{$t(
@@ -1218,7 +1138,7 @@
                       )}
                     {/if}
                   </p>
-                  <p class="auth-note">{$t('frameleaf_setup_storage_note')}</p>
+                  <p class="frs-location-note">{$t('frameleaf_setup_storage_note')}</p>
                 </section>
                 <SetupChange>
                   {#snippet summary()}
@@ -1324,27 +1244,40 @@
                 </section>
                 <SetupChange>
                   {#snippet summary()}
-                    <strong>
-                      {$t('frameleaf_setup_tier_models', { values: { tier: $t(tier.label) } })}
-                      {#if tier.recommended}<SetupRecommended />{/if}
-                    </strong>
-                    <span>{$t(tier.summary)}</span>
+                    {#if keepModel}
+                      <strong>{keepModelTitle}</strong>
+                    {:else}
+                      <strong>
+                        {$t('frameleaf_setup_tier_models', { values: { tier: $t(tier.label) } })}
+                        {#if tier.id === recommendedTierId}<SetupRecommended />{/if}
+                      </strong>
+                      <span>{$t(tier.summary)}</span>
+                    {/if}
                   {/snippet}
                   <div class="frs-radios" role="radiogroup" aria-label={$t('frameleaf_setup_tier_label')}>
+                    {#if offerKeepModel}
+                      <SetupRadio
+                        name="frs-tier"
+                        value={KEEP_MODEL}
+                        checked={keepModel}
+                        onchange={() => choose({ model: KEEP_MODEL, modelChosen: true, keptModel: currentModelName })}
+                        title={keepModelTitle}
+                      />
+                    {/if}
                     {#each modelTiers as entry (entry.id)}
                       <SetupRadio
                         name="frs-tier"
                         value={entry.id}
                         checked={choices.model === entry.id}
-                        onchange={() => choose({ model: entry.id })}
+                        onchange={() => choose({ model: entry.id, modelChosen: true })}
                         title={$t('frameleaf_setup_tier_models', { values: { tier: $t(entry.label) } })}
                         detail={$t(entry.summary)}
-                        recommended={entry.recommended}
+                        recommended={entry.id === recommendedTierId}
                       />
                     {/each}
                   </div>
                 </SetupChange>
-                {#if existing}
+                {#if existing && !keepModel}
                   <p class="frs-estimate">
                     <Icon icon={mdiTimerSandComplete} size="18" aria-hidden={true} />
                     <span
@@ -1369,7 +1302,7 @@
                     recommended
                   >
                     <span>
-                      {existing
+                      {existing && !keepModel
                         ? $t('frameleaf_setup_where_here_body', { values: { hours } })
                         : $t('frameleaf_setup_where_local_only_body')}
                     </span>
@@ -1412,20 +1345,34 @@
                   />
                 </div>
                 {#if linked}
+                  <!-- FL-544: Frameleaf Cloud as one purchase, with the price said here -->
                   <section class="frs-cloud-backup">
                     <header>
                       <span class="frs-found-icon"><Icon icon={mdiCloudOutline} size="24" aria-hidden={true} /></span>
                       <div>
-                        <h2>{$t('frameleaf_setup_cloud_backup_title')}</h2>
-                        <p>{$t('frameleaf_setup_cloud_backup_body')}</p>
+                        <h2>{$t('frameleaf_setup_cloud_title')}</h2>
+                        <p>{$t('frameleaf_setup_cloud_body')}</p>
                       </div>
                     </header>
-                    <p class="frs-later">
-                      <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t(
-                        'frameleaf_setup_cloud_backup_after',
-                      )}
-                    </p>
+                    {#if cloudBundle}
+                      <p class="frs-later">
+                        <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t('frameleaf_setup_cloud_price', {
+                          values: { price: cloudBundle },
+                        })}
+                      </p>
+                    {/if}
+                    <div class="frs-choices two">
+                      <button type="button" class="button primary" onclick={() => (getCloud = true)}
+                        >{$t('frameleaf_get_cloud')}</button
+                      >
+                      <span class="frs-quiet">{$t('frameleaf_setup_cloud_later')}</span>
+                    </div>
                   </section>
+                  {#if getCloud}
+                    {#await import('$lib/components/frameleaf/cloud/GetCloudSheet.svelte') then { default: GetCloudSheet }}
+                      <GetCloudSheet feature="backup" close={() => (getCloud = false)} />
+                    {/await}
+                  {/if}
                 {:else}
                   <p class="frs-quiet">
                     <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />{$t(
@@ -1551,7 +1498,7 @@
                 type="button"
                 class="button primary frs-open"
                 onclick={() => void finish()}
-                disabled={busy}
+                disabled={busy || serverLoading}
                 aria-busy={busy || undefined}
               >
                 {#if finishPhase}
@@ -1574,7 +1521,12 @@
                 step changes, the click that arrives at the form would also submit it, and the form
                 would open already marked with errors.
               -->
-              {#if accountForm}
+              {#if current.id === 'frameleaf-account' && !linked}
+                <!-- Item 20: the account form has its own button; here the administrator moves on without one. -->
+                <button type="button" class="button" onclick={() => void next()} disabled={busy}>
+                  {$t('frameleaf_setup_skip_for_now')}<Icon icon={mdiArrowRight} size="16" aria-hidden={true} />
+                </button>
+              {:else if accountForm}
                 <button
                   type="submit"
                   form="frs-account-form"

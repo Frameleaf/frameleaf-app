@@ -144,6 +144,28 @@ test('every graph the engine wrote in normal form satisfies the published schema
   }
 });
 
+test('FL-638: stabilisation is a video field with base64 paths', () => {
+  const [, graph] = normalGraphs().find(([, candidate]) => candidate.timeline.items.some((item) => item.type === 'video'));
+  const stabilisation = {
+    level: 'smooth',
+    motion: {
+      version: 1, method: 'block-similarity-v1', rate: 30, start: 0, count: 2, width: 160, height: 90,
+      x: 'AAAAAArXIzw=', y: 'AAAAAAAAAAA=', a: 'AAAAAAAAAAA=', found: 1,
+    },
+  };
+  const withItem = (change) => {
+    const copy = structuredClone(graph);
+    const index = copy.timeline.items.findIndex((item) => item.type === 'video');
+    copy.timeline.items[index] = change(copy.timeline.items[index]);
+    return validate(schema, copy);
+  };
+  assert.deepEqual(withItem((item) => ({ ...item, stabilisation })), []);
+  assert.notDeepEqual(withItem((item) => ({ ...item, type: 'image', stabilisation })), []);
+  for (const bad of ['', 'not base64!', 'AAA'])
+    assert.notDeepEqual(withItem((item) => ({ ...item, stabilisation: { ...stabilisation, motion: { ...stabilisation.motion, x: bad } } })), [], bad);
+  assert.notDeepEqual(withItem((item) => ({ ...item, stabilisation: { ...stabilisation, level: 'wobbly' } })), []);
+});
+
 test('a case is outside normal form exactly when it is marked so', () => {
   for (const entry of fixtures.cases) {
     if (!applied(entry)) {

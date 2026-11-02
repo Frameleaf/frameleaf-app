@@ -59,6 +59,18 @@ describe('FixMatchPanel (PD-3)', () => {
     expect(screen.getByText('1 face to review')).toBeTruthy();
   });
 
+  it('offers a retry when the first face read fails, without reading again until asked', async () => {
+    sdkMock.getFaces.mockRejectedValueOnce(new Error('offline'));
+    render(FixMatchPanel, { person, close: vi.fn() });
+
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    expect(sdkMock.getFaces).toHaveBeenCalledTimes(1);
+    await fireEvent.click(retry);
+
+    expect(await screen.findByText('one.jpg')).toBeTruthy();
+    expect(sdkMock.getFaces).toHaveBeenCalledTimes(2);
+  });
+
   it('moves a face to another person and reports the change on close', async () => {
     sdkMock.correctFace.mockResolvedValue({} as never);
     const onChanged = vi.fn();

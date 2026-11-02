@@ -10,6 +10,8 @@ import {
   checkStudioEnvelope,
   diffStudioGraphs,
   formatStudioTime,
+  hasNoMainTimelineItems,
+  isEmptyStudioTimeline,
   isStudioLeaseHeld,
   mergeCommandSummaries,
   normalizeCommandSummary,
@@ -70,6 +72,27 @@ describe('checkStudioEnvelope', () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(checkStudioEnvelope(envelope(cyclic))).toMatchObject({ ok: false, problem: 'not-serializable' });
+  });
+});
+
+describe('isEmptyStudioTimeline (FL-677)', () => {
+  it('calls a Freecut graph empty only when nothing is placed', () => {
+    expect(isEmptyStudioTimeline({ timeline: { tracks: [{ id: 't' }], items: [] } })).toBe(true);
+    expect(isEmptyStudioTimeline({ timeline: { items: [], compositions: [{ id: 'c', items: [] }] } })).toBe(true);
+    expect(isEmptyStudioTimeline({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+    expect(isEmptyStudioTimeline({ timeline: { items: [], compositions: [{ id: 'c', items: [{}] }] } })).toBe(false);
+    // Other shapes are the renderer's to judge.
+    expect(isEmptyStudioTimeline({ tracks: [] })).toBe(false);
+    expect(isEmptyStudioTimeline(null)).toBe(false);
+  });
+});
+
+describe('hasNoMainTimelineItems (FL-677)', () => {
+  it('looks at the main timeline only', () => {
+    expect(hasNoMainTimelineItems({ timeline: { items: [], compositions: [{ id: 'c', items: [{}] }] } })).toBe(true);
+    expect(hasNoMainTimelineItems({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+    expect(hasNoMainTimelineItems({ tracks: [] })).toBe(false);
+    expect(hasNoMainTimelineItems(null)).toBe(false);
   });
 });
 
@@ -197,6 +220,10 @@ describe('diffStudioGraphs', () => {
 
     const deep = (value: number) => ({ a: { b: { c: { d: { e: { f: value, g: value } } } } } });
     expect(diffStudioGraphs(deep(1), deep(2))).toMatchObject({ changed: 1, paths: ['/a/b/c/d'] });
+  });
+
+  it('treats an own constructor key as an addition, not an inherited property', () => {
+    expect(diffStudioGraphs({}, JSON.parse('{"constructor":1}'))).toMatchObject({ added: 1, changed: 0 });
   });
 
   it('reviews an imported expression as data and never runs it (FL-100)', () => {

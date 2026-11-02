@@ -1,7 +1,8 @@
-import { Kysely, Transaction, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, sql } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
 
-type Executor = Kysely<any> | Transaction<any>;
+type Executor = Kysely<DB>;
 export type LineageItemIdentity = { runId: string; itemKey: string; stage: string };
 
 /** Retire one unexecuted request, not the active predecessor. Keep its old origin cancelled even
@@ -49,7 +50,7 @@ export async function supersedeSelectionLineage(
 /** A late copy may precede a deferred child's execution assignment. Mirror its retained owner,
  * including terminal outcomes without a job, instead of relying on publication-time membership lists. */
 export async function mirrorSelectionLineage(
-  tx: Executor,
+  tx: QueryExecutorProvider,
   source: { jobIds: string[] } | { items: LineageItemIdentity[] },
 ) {
   if (('jobIds' in source ? source.jobIds : source.items).length === 0) return [];
@@ -59,16 +60,20 @@ export async function mirrorSelectionLineage(
       : sql`exists (select 1 from jsonb_to_recordset(${JSON.stringify(source.items)}::text::jsonb)
         as changed("runId" uuid, "itemKey" text, stage text)
         where (changed."runId", changed."itemKey", changed.stage) = (i."runId", i."itemKey", i.stage))`;
-  const { rows } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`update job_run_item shadow
-    set "jobId" = i."jobId", state = i.state from job_run_item i
+  // The empty-source guard prevents scanning a growing manifest before discovering there is no lineage.
+  const { rows } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`with source as materialized (
+    select i."jobId", i.state, membership."runId", origin."itemKey", origin.stage
+    from job_run_item i
     join job_selection_lineage origin on (origin."runId", origin."itemKey", origin.stage) = (i."runId", i."itemKey", i.stage)
     join job_selection_run membership on membership."selectionId" = origin."selectionId"
     where ${selected} and not origin.superseded
-      and (shadow."runId", shadow."itemKey", shadow.stage) = (membership."runId", origin."itemKey", origin.stage)
+  ) update job_run_item shadow set "jobId" = source."jobId", state = source.state from source
+    where exists (select 1 from source)
+      and (shadow."runId", shadow."itemKey", shadow.stage) = (source."runId", source."itemKey", source.stage)
       -- Only an unresolved copy may acquire its owner's outcome. Linked jobs already sync directly;
       -- a deliberately detached terminal request must never inherit a replacement's execution.
       and shadow."jobId" is null and shadow.state in ('pending','waiting')
-      and (shadow."jobId", shadow.state) is distinct from (i."jobId", i.state)
+      and (shadow."jobId", shadow.state) is distinct from (source."jobId", source.state)
     returning shadow."runId", shadow."itemKey", shadow.stage, shadow."rootItemKey"`.execute(tx);
   return rows;
 }
@@ -108,14 +113,19 @@ export async function recordSelectionLineage(tx: Executor, parentId: string, chi
   }
 }
 
-/** The sequence is assigned under publication's guard, so a cursor cannot pass an uncommitted descendant. */
+/** The sequence is assigned under publication's guard, so a cursor cannot pass an uncommitted descendant.
+ * Each lineage row looks up its unique source item through a lateral `limit 1`, which the planner
+ * cannot flatten into a hash join over every `job_run_item` row, so a page reads only its own rows.
+ */
 export const selectionLineageSource = (selectionId: string, after: string, limit = QUEUE_BATCH) => sql`
   select l.id "lineageId", i."runId", i."itemKey", i."rootItemKey", i.stage, i.queue, i."selectionId",
     case when l.superseded then '{}'::jsonb else i.selection end selection,
     case when l.superseded then null::uuid else i."jobId" end "jobId",
     case when l.superseded then 'cancelled' else i.state end state
-  from job_selection_lineage l join job_run_item i
-    on (i."runId", i."itemKey", i.stage) = (l."runId", l."itemKey", l.stage)
+  from job_selection_lineage l cross join lateral (
+    select * from job_run_item i
+    where (i."runId", i."itemKey", i.stage) = (l."runId", l."itemKey", l.stage) limit 1
+  ) i
   where l."selectionId" = ${selectionId}::uuid and l.id > ${after}::bigint and not l."libraryChildOrigin"
     and not exists (select 1 from job_selection s where s.id = i."selectionId" and s."sourceKind" = 'library-child')
   order by l.id limit ${limit}`;

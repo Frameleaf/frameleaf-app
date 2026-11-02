@@ -30,18 +30,28 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const client = createClient(2);
   // LISTEN owns its own bounded one-connection pool; it can never reserve a dispatch connection.
   const listener = createClient(1);
+  const heartbeatClient = createClient(1);
+  const maintenanceClient = createClient(1);
   const db = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: client }) });
   const store = new SqlQueueStore(db);
+  const heartbeatDb = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: heartbeatClient }) });
+  const heartbeatStore = new SqlQueueStore(heartbeatDb);
+  const maintenanceDb = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: maintenanceClient }) });
+  const maintenanceStore = new SqlQueueStore(maintenanceDb);
   const watchdog = new QueueWatchdog();
   const active = new Map<string, QueueClaim>();
   let stopping = false;
   let ready = false;
   let lastHeartbeat = performance.now();
   let lastSweep = 0;
-  let lastBeat = 0;
+  let maintenance: Promise<void> | undefined;
   let progressBusy = false;
   let nextQueue = 0;
   let reconciliationDue = true;
+  // An idle server reconciles every queue less often: the 5 s scan doubles up to 30 s while full
+  // passes find nothing to run, and the first claim brings it back. Wakes still check for work each scan.
+  let idleReconciliations = 0;
+  let scansBeforeReconciliation = 0;
   const progress = new Map<string, number>();
 
   parentPort!.on('message', (message: QueueWorkerMessage) => {
@@ -72,25 +82,45 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
     lastHeartbeat: () => lastHeartbeat,
   });
 
+  // Maintenance and dispatch must never reserve the lease-renewal connection or delay its timer.
+  const beat = coalescedTask(async () => {
+    if (!ready) return;
+    try {
+      await heartbeatStore.heartbeat(workerId, active.values().toArray());
+      lastHeartbeat = performance.now();
+    } catch {
+      parentPort!.postMessage({ type: 'unavailable' });
+    }
+  });
+  const heartbeat = setInterval(() => void beat(), QUEUE_TIMING.heartbeat);
+
+  // A recovery backlog must neither hold dispatch nor reserve one of its database sessions.
+  const sweep = () => {
+    if (stopping || maintenance || performance.now() - lastSweep < QUEUE_TIMING.sweep) return;
+    maintenance = (async () => {
+      try {
+        await maintenanceStore.recoverExpired();
+        if (!stopping) await pruneQueueHistory(maintenanceDb);
+      } catch {
+        if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
+      } finally {
+        lastSweep = performance.now();
+        maintenance = undefined;
+      }
+    })();
+  };
+
   const tick = coalescedTask(async () => {
     const reconcile = reconciliationDue;
     reconciliationDue = false;
+    let claimed = 0;
     try {
       if (!ready) {
         await store.initialize(queues, workerId);
         ready = true;
+        await beat();
       }
-      const now = performance.now();
-      if (now - lastBeat >= QUEUE_TIMING.heartbeat) {
-        await store.heartbeat(workerId, active.values().toArray());
-        lastBeat = now;
-        lastHeartbeat = performance.now();
-      }
-      if (now - lastSweep >= QUEUE_TIMING.sweep) {
-        await store.recoverExpired();
-        await pruneQueueHistory(db);
-        lastSweep = now;
-      }
+      sweep();
       if (!progressBusy) {
         progressBusy = true;
         try {
@@ -125,12 +155,21 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
           await store.feedManifest(queue);
           if (stopping) break;
           const claims = await store.claim(queue, workerId, capacity);
+          claimed += claims.length;
           for (const claim of claims) {
             active.set(claim.id, claim);
             watchdog.add(claim.id, performance.now(), claim.deadlineMs);
             parentPort!.postMessage({ type: 'execute', claim });
           }
         }
+      }
+      if (claimed > 0 || active.size > 0) {
+        idleReconciliations = 0;
+        scansBeforeReconciliation = 0;
+      } else if (reconcile) {
+        idleReconciliations = Math.min(idleReconciliations + 1, 3);
+        // 2, 4, then 6 scans: 10 s, 20 s, then 30 s apart
+        scansBeforeReconciliation = Math.min(2 ** idleReconciliations, 6) - 1;
       }
     } catch {
       if (reconcile) reconciliationDue = true;
@@ -141,15 +180,19 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const notifications = queueNotifications(listener, () => void tick());
   notifications.connect();
   const scan = setInterval(() => {
-    reconciliationDue = true;
+    if (scansBeforeReconciliation-- <= 0) reconciliationDue = true;
     notifications.connect();
     void tick();
   }, QUEUE_TIMING.scan);
   parentPort!.on('close', () => {
+    stopping = true;
     stopWatchdog();
     clearInterval(scan);
+    clearInterval(heartbeat);
     void notifications.close();
     void client.end({ timeout: 1 });
+    void heartbeatClient.end({ timeout: 1 });
+    void maintenanceClient.end({ timeout: 1 });
   });
   await tick();
 }

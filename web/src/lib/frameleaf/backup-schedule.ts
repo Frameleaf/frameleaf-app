@@ -36,8 +36,8 @@ const parseDays = (field: string): number[] | null => {
         return null;
       }
       const named = DAY_NAMES.indexOf(text);
-      const number = named === -1 ? whole(text, 7) : named;
-      return number === null ? null : number % 7;
+      // Raw numbers (0–7) here, so `0-7` and `5-7` are ranges; `% 7` folds 7 to Sunday below.
+      return named === -1 ? whole(text, 7) : named;
     };
     const start = day(from);
     const end = to === undefined ? start : day(to);
@@ -45,7 +45,7 @@ const parseDays = (field: string): number[] | null => {
       return null;
     }
     for (let value = start; value <= end; value++) {
-      days.add(value);
+      days.add(value % 7);
     }
   }
   return [...days].sort((a, b) => a - b);

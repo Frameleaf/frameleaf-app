@@ -138,6 +138,28 @@ describe('PetRecognitionPanel', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
+  it('says it is starting, not "0 of 0", while a run waits to count its photos (LIB-11)', () => {
+    setup(
+      status({
+        run: {
+          id: 'run',
+          status: PetRecognitionRunStatus.Queued,
+          assetCount: 0,
+          processedCount: 0,
+          proposalCount: 0,
+          destinationKind: MlDestinationKind.Local,
+          error: null,
+          createdAt: '2026-09-25T00:00:00.000Z',
+          finishedAt: null,
+        },
+      }),
+    );
+
+    const run = screen.getByTestId('pet-recognition-run');
+    expect(run).toHaveTextContent(en.frameleaf_pets_recognition_starting);
+    expect(run).not.toHaveTextContent('0 of 0');
+  });
+
   it('keeps the start button off until a pet is confirmed in a photo', () => {
     setup(status({ hasConfirmedPhotos: false }));
 

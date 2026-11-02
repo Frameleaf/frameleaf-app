@@ -19,6 +19,7 @@ import { goto } from '$app/navigation';
 import { SIGN_IN_POLL_MS } from '$lib/components/frameleaf/settings/notifications/mail-sign-in.svelte';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
 import { deferredPromise } from '@test-data/deferred';
 import en from '../../../../../i18n/en.json';
 import NotificationSettings from './NotificationSettings.svelte';
@@ -322,6 +323,8 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
         password: '',
       });
       expect(save).not.toHaveBeenCalled();
+      // FL-630: nothing was saved, so the result does not say so
+      expect(screen.queryByText(new RegExp(en.frameleaf_notify_test_saved.trim()))).not.toBeInTheDocument();
     });
 
     it('shows the server’s reason when the test fails, without the password advice', async () => {
@@ -573,5 +576,43 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
     flags.configFile = true;
     open(config({ type: MailTransportType.Gmail }, true), answer({ connection: connected() }));
     expect(await screen.findByRole('button', { name: 'Disconnect…' })).toBeDisabled();
+  });
+});
+
+describe('Send a test email before saving (OPS-14)', () => {
+  const hint = () => screen.getByText(/^Save your changes first/);
+
+  beforeAll(() => addMessages('dev', en));
+  beforeEach(() => {
+    flags.configFile = false;
+  });
+
+  it('asks for the password only when the mail server is signed in to and none is stored', async () => {
+    open(config({}, true), answer());
+    await pick(en.frameleaf_notify_delivery_other);
+    await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_notify_delivery_host }), {
+      target: { value: 'smtp.example.com' },
+    });
+    expect(hint()).toHaveTextContent(en.frameleaf_notify_test_save_first_no_password);
+
+    await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_notify_delivery_account }), {
+      target: { value: 'rivera@example.com' },
+    });
+    expect(hint()).toHaveTextContent(en.frameleaf_notify_test_save_first);
+  });
+
+  afterEach(() => {
+    systemConfigManager.value = {} as AdminConfigDto;
+  });
+
+  it('does not ask for a password that is already stored', async () => {
+    const saved = config({ username: 'rivera@example.com', passwordConfigured: true } as Partial<Transport>, true);
+    systemConfigManager.value = saved;
+    open(saved, answer());
+    await pick(en.frameleaf_notify_delivery_other);
+    await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_notify_delivery_host }), {
+      target: { value: 'smtp.example.com' },
+    });
+    expect(hint()).toHaveTextContent(en.frameleaf_notify_test_save_first_no_password);
   });
 });

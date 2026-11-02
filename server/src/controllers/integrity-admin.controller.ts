@@ -6,7 +6,10 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   IntegrityCheckRunsResponseDto,
+  IntegrityFindingAssetsDto,
+  IntegrityFindingAssetsResponseDto,
   IntegrityGetReportDto,
+  IntegrityOverviewResponseDto,
   IntegrityReportClearResponseDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
@@ -47,6 +50,43 @@ export class IntegrityAdminController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   getIntegrityCheckRuns(): Promise<IntegrityCheckRunsResponseDto> {
     return this.service.getIntegrityCheckRuns();
+  }
+
+  @Get('overview')
+  @Endpoint({
+    summary: 'Get the file checks overview',
+    description:
+      'One count per kind of problem across the file checks and the Library care scanner (a photo both report is counted once), the folders of originals that cannot be reached, the checks running now and the most recent checks.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  getIntegrityOverview(): Promise<IntegrityOverviewResponseDto> {
+    return this.service.getIntegrityOverview();
+  }
+
+  @Post('stop')
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Stop the file checks',
+    description:
+      'Stop the file checks in progress and take waiting ones off the queue. Findings so far are kept; the damage check carries on from where it stopped at the next overnight run.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  stopIntegrityChecks(): Promise<IntegrityOverviewResponseDto> {
+    return this.service.stopIntegrityChecks();
+  }
+
+  @Get('assets')
+  @Endpoint({
+    summary: 'Get the photos behind missing or damaged findings',
+    description:
+      'The photos still in the library whose files are missing or damaged, from both checkers, at most 10,000: what "Restore from a backup" restores.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  getIntegrityFindingAssets(@Query() dto: IntegrityFindingAssetsDto): Promise<IntegrityFindingAssetsResponseDto> {
+    return this.service.getFindingAssetIds(dto);
   }
 
   @Get('report')

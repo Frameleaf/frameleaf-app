@@ -10,6 +10,10 @@
    * back in place and the database dump for the maintenance restore, after typing RESTORE).
    * Restores run on the server as `cloud_restore` jobs, shown here and in Activity; every file is checked
    * against its fingerprint before it touches the library.
+   *
+   * FL-520: opened from Library care › File checks with `findings` ("Restore from a backup"), it offers
+   * the photos behind the missing or damaged findings first: their files come back from the chosen backup
+   * into the restore folder, where Library care puts each one back with its photo.
    */
   import './frameleaf-cloud.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -30,6 +34,8 @@
     CloudBackupRestoreStatus,
     CloudBackupRunState,
     getCloudBackupManifests,
+    getIntegrityFindingAssets,
+    IntegrityFindingKind,
     listCloudBackupManifestAlbums,
     restoreCloudBackup,
     searchCloudBackupManifestItems,
@@ -47,9 +53,14 @@
     status: CloudBackupStatusResponseDto;
     formatWhen: (value: string | null | undefined) => string;
     onStatus: (status: CloudBackupStatusResponseDto) => void;
+    /** FL-520: restore the photos behind Library care's missing or damaged findings. */
+    findings?: 'missing' | 'damaged';
   };
 
-  let { status, formatWhen, onStatus }: Props = $props();
+  let { status, formatWhen, onStatus, findings }: Props = $props();
+
+  /** FL-520: the photos behind the findings, read once when the page is opened for them. */
+  let findingAssets = $state<string[] | null>(null);
 
   type Mode = 'items' | 'albums' | 'library';
   const MODES: Array<[Mode, Translations]> = [
@@ -96,6 +107,16 @@
     value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(value)) : '—';
 
   onMount(() => {
+    if (findings) {
+      const kind = findings === 'missing' ? IntegrityFindingKind.Missing : IntegrityFindingKind.Damaged;
+      void (async () => {
+        try {
+          findingAssets = (await getIntegrityFindingAssets({ kind })).assetIds;
+        } catch {
+          findingAssets = [];
+        }
+      })();
+    }
     void (async () => {
       try {
         const answer = await getCloudBackupManifests();
@@ -235,6 +256,27 @@
     {:else if manifests.length === 0}
       <p class="fc-muted">{$t('frameleaf_cloud_restore_none')}</p>
     {:else}
+      {#if findings && findingAssets && findingAssets.length > 0}
+        {@const count = findingAssets.length}
+        <div class="fc-restore-findings" role="group" aria-label={$t('frameleaf_cloud_restore_findings_label')}>
+          <p>
+            <strong>
+              {findings === 'missing'
+                ? $t('frameleaf_cloud_restore_findings_missing', { values: { count } })
+                : $t('frameleaf_cloud_restore_findings_damaged', { values: { count } })}
+            </strong>
+            <span class="fc-muted">{$t('frameleaf_cloud_restore_findings_body')}</span>
+          </p>
+          <Button
+            variant="primary"
+            disabled={busy || busyBucket || needsKey || !chosen}
+            onclick={() => start(CloudBackupRestoreScope.Files, { assetIds: findingAssets ?? [] })}
+          >
+            {$t('frameleaf_cloud_restore_findings_button', { values: { count } })}
+          </Button>
+        </div>
+      {/if}
+
       <dl class="fc-restore-stats">
         <div>
           <dt>{$t('frameleaf_cloud_restore_newest')}</dt>
@@ -555,6 +597,24 @@
 {/if}
 
 <style>
+  .fc-restore-findings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+    margin: 0 0 var(--fl-space-5);
+    padding: var(--fl-space-4);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .fc-restore-findings p {
+    display: grid;
+    gap: var(--fl-space-1);
+    min-width: 0;
+    margin: 0;
+  }
   .fc-restore-stats {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

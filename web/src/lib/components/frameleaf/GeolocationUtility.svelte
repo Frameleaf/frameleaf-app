@@ -8,7 +8,16 @@
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, AssetVisibility, getAssetInfo, searchAssets, type AssetResponseDto } from '@frameleaf/sdk';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import {
+    AssetMediaSize,
+    AssetVisibility,
+    getAssetInfo,
+    searchAssets,
+    searchPlaces,
+    type AssetResponseDto,
+    type PlacesResponseDto,
+  } from '@frameleaf/sdk';
   import { mdiArrowDown, mdiArrowLeft, mdiArrowRight, mdiArrowUp, mdiMinus, mdiPlus } from '@mdi/js';
   import { Icon } from '@frameleaf/ui';
   import { onMount } from 'svelte';
@@ -20,6 +29,44 @@
   let error = $state(false);
   let latitude = $state<number>();
   let longitude = $state<number>();
+  // FL-519: find a place by name; the review then names it. Coordinates stay under Advanced.
+  let placeQuery = $state('');
+  let places = $state<PlacesResponseDto[]>([]);
+  let place = $state<{ label: string; latitude: number; longitude: number } | null>(null);
+  let placeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The chosen place's name, while the coordinates are still the ones it set. */
+  const placeLabel = $derived(
+    place && place.latitude === latitude && place.longitude === longitude ? place.label : undefined,
+  );
+  const placeText = (found: PlacesResponseDto) =>
+    [found.name, found.admin1name].filter((part) => part && part.trim()).join(', ');
+  const findPlaces = async (name: string) => {
+    try {
+      const found = await searchPlaces({ name });
+      if (name === placeQuery.trim()) {
+        places = found.slice(0, 8);
+      }
+    } catch {
+      places = [];
+    }
+  };
+  const onPlaceInput = () => {
+    clearTimeout(placeTimer);
+    const name = placeQuery.trim();
+    if (name.length < 2) {
+      places = [];
+      return;
+    }
+    placeTimer = setTimeout(() => void findPlaces(name), 250);
+  };
+  const choosePlace = (found: PlacesResponseDto) => {
+    place = { label: placeText(found), latitude: found.latitude, longitude: found.longitude };
+    latitude = found.latitude;
+    longitude = found.longitude;
+    placeQuery = place.label;
+    places = [];
+    mapElement?.centerOn(found.longitude, found.latitude);
+  };
   let selected = $state<string[]>([]);
   // FL-139: rows look their state up here, not by scanning the selection once per row
   const selectedSet = $derived(new Set(selected));
@@ -27,7 +74,12 @@
   let account = $state('all');
   let show = $state('open');
   /** `latitude`/`longitude` null: the review removes the location (FL-51). */
-  let review = $state<{ ids: string[]; latitude: number | null; longitude: number | null } | null>(null);
+  let review = $state<{
+    ids: string[];
+    latitude: number | null;
+    longitude: number | null;
+    place?: string;
+  } | null>(null);
   let reviewOpen = $state(false);
   let mapElement = $state<ReturnType<typeof MapComponent>>();
   /** Bumped when the map view settles, so the "outside this view" hint re-reads the bounds. */
@@ -163,7 +215,7 @@
     if (ids.length === 0) {
       return;
     }
-    review = { ids, latitude: latitude!, longitude: longitude! };
+    review = { ids, latitude: latitude!, longitude: longitude!, place: placeLabel };
     reviewOpen = true;
   };
   /**
@@ -301,8 +353,34 @@
       <p class="map-note" id={mapHelpId}>{$t('frameleaf_utilities_map_help')}</p>
     </div>
     <div class="coordinates">
-      <label>{$t('latitude')}<input type="number" min="-90" max="90" step="any" bind:value={latitude} /></label>
-      <label>{$t('longitude')}<input type="number" min="-180" max="180" step="any" bind:value={longitude} /></label>
+      <label class="place"
+        >{$t('frameleaf_utilities_find_place')}<input
+          type="search"
+          bind:value={placeQuery}
+          oninput={onPlaceInput}
+          placeholder={$t('frameleaf_utilities_find_place_placeholder')}
+          autocomplete="off"
+        /></label
+      >
+      {#if places.length > 0}
+        <ul class="places" aria-label={$t('frameleaf_utilities_places_found')}>
+          {#each places as found, index (index)}
+            <li>
+              <button type="button" onclick={() => choosePlace(found)}>
+                <strong>{found.name}</strong>
+                {#if found.admin1name}<small>{found.admin1name}</small>{/if}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if placeLabel}<p class="map-note">
+          {$t('frameleaf_utilities_place_chosen', { values: { place: placeLabel } })}
+        </p>{/if}
+      <Advanced summary={$t('frameleaf_utilities_coordinates_advanced')}>
+        <label>{$t('latitude')}<input type="number" min="-90" max="90" step="any" bind:value={latitude} /></label>
+        <label>{$t('longitude')}<input type="number" min="-180" max="180" step="any" bind:value={longitude} /></label>
+      </Advanced>
       <div class="coordinate-actions">
         <Button variant="primary" disabled={!valid || actionable.length === 0 || bulk.busy} onclick={ask}
           >{$t('frameleaf_utilities_apply_location', { values: { count: actionable.length } })}</Button
@@ -361,7 +439,9 @@
   <Dialog
     title={removing
       ? $t('frameleaf_utilities_remove_location_title')
-      : $t('frameleaf_utilities_update_locations_title')}
+      : frozen.place
+        ? $t('frameleaf_utilities_set_place_title', { values: { count: frozen.ids.length, place: frozen.place } })
+        : $t('frameleaf_utilities_update_locations_title')}
     closeLabel={$t('cancel')}
     wide
     bind:open={reviewOpen}
@@ -380,7 +460,9 @@
                   from: hasLocation(item)
                     ? `${item.exifInfo!.latitude}, ${item.exifInfo!.longitude}`
                     : $t('frameleaf_utilities_no_location'),
-                  to: removing ? $t('frameleaf_utilities_no_location') : `${frozen.latitude}, ${frozen.longitude}`,
+                  to: removing
+                    ? $t('frameleaf_utilities_no_location')
+                    : (frozen.place ?? `${frozen.latitude}, ${frozen.longitude}`),
                 },
               })}</span
             >
@@ -439,6 +521,29 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: 0.25rem;
+  }
+  .places {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .places button {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--fl-border);
+    border-radius: 8px;
+    background: var(--fl-panel);
+    color: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .places small {
+    color: var(--fl-muted);
   }
   .coordinates {
     padding: 1.375rem;

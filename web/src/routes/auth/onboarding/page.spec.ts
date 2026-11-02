@@ -12,7 +12,7 @@ const auth = vi.hoisted(() => ({
   preferences: { emailNotifications: { enabled: true, albumUpdate: true }, memories: { enabled: true } },
   load: vi.fn(),
 }));
-const server = vi.hoisted(() => ({ value: { isInitialized: true, isOnboarded: false } }));
+const server = vi.hoisted(() => ({ value: { isInitialized: true, isOnboarded: false, isNewServerSetup: false } }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
@@ -34,7 +34,7 @@ describe('/auth/onboarding (FL-176)', () => {
     localStorage.clear();
     auth.authenticated = true;
     auth.user.isAdmin = true;
-    server.value = { isInitialized: true, isOnboarded: false };
+    server.value = { isInitialized: true, isOnboarded: false, isNewServerSetup: false };
     sdkMock.getFrameleafSetup.mockResolvedValue({
       completed: false,
       completedAt: null,
@@ -70,14 +70,20 @@ describe('/auth/onboarding (FL-176)', () => {
   });
 
   it('gives an administrator the tool once setup is complete', async () => {
-    server.value = { isInitialized: true, isOnboarded: true };
+    server.value = { isInitialized: true, isOnboarded: true, isNewServerSetup: false };
     await expect(run()).resolves.toMatchObject({ mode: 'account' });
   });
 
   it('opens the existing-library sign-in when signed out, and sends others to sign in', async () => {
     auth.authenticated = false;
     await expect(run()).resolves.toMatchObject({ mode: 'setup', flow: 'existing', signedIn: false });
-    server.value = { isInitialized: true, isOnboarded: true };
+    server.value = { isInitialized: true, isOnboarded: true, isNewServerSetup: false };
+    await expect(run()).rejects.toMatchObject({ status: 307, location: '/auth/login?continue=%2Fauth%2Fonboarding' });
+  });
+
+  it('sends a signed-out visitor of a new server partway through setup to sign in, not the library gate', async () => {
+    auth.authenticated = false;
+    server.value = { isInitialized: true, isOnboarded: false, isNewServerSetup: true };
     await expect(run()).rejects.toMatchObject({ status: 307, location: '/auth/login?continue=%2Fauth%2Fonboarding' });
   });
 

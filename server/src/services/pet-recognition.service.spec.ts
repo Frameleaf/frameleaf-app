@@ -301,6 +301,15 @@ describe(PetRecognitionService.name, () => {
       expect(pets.upsertCandidates).not.toHaveBeenCalled();
     });
 
+    it('asks about no other pet in a photo the owner already matched to a pet', async () => {
+      pets.getDecisionsForAsset.mockResolvedValue([{ petId: 'another-pet', state: 'confirmed' }]);
+
+      await sut.handleRecognize({ id: assetId });
+
+      expect(pets.replaceDetections).toHaveBeenCalledOnce();
+      expect(pets.upsertCandidates).not.toHaveBeenCalled();
+    });
+
     it('replaces the detections of an older model revision and nothing durable', async () => {
       pets.getDetectionsForAsset.mockResolvedValue([
         { id: 'old-detection', modelName: clipModel, modelRevision: `clip-knn-0:${clipModel}` },

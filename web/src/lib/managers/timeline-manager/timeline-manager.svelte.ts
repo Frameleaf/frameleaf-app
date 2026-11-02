@@ -9,7 +9,9 @@ import {
   type AssetResponseDto,
 } from '@frameleaf/sdk';
 import { clamp, isEqual } from 'lodash-es';
+import { t } from 'svelte-i18n';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
+import { get } from 'svelte/store';
 import { revealsLocks, sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -34,6 +36,7 @@ import {
 import { WebsocketSupport } from '$lib/managers/timeline-manager/internal/websocket-support.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
 import { CancellableTask } from '$lib/utils/cancellable-task';
+import { handleError } from '$lib/utils/handle-error';
 import {
   getOrderingDate,
   isAssetResponseDto,
@@ -41,6 +44,7 @@ import {
   toTimelineAsset,
   type TimelineYearMonth,
 } from '$lib/utils/timeline-util';
+import { physicalTimelineHeight, toPhysicalScroll, toTimelineScroll } from './internal/scroll-range';
 import { isMismatched, updateObject } from './internal/utils.svelte';
 import { TimelineDay } from './timeline-day.svelte';
 import { TimelineMonth } from './timeline-month.svelte';
@@ -52,6 +56,7 @@ import type {
   TimelineAsset,
   TimelineGrouping,
   TimelineManagerOptions,
+  TimelinePageKey,
   Viewport,
 } from './types';
 
@@ -62,6 +67,9 @@ type ViewportTopMonthIntersection = {
   // Where month bottom is in viewport (0 = viewport top, 1 = viewport bottom)
   monthBottomViewportRatio: number;
 };
+/** Loads of one month a caller makes while live changes keep overtaking them, before it gives up. */
+const SUPERSEDED_LOAD_ATTEMPTS = 3;
+
 export class TimelineManager extends VirtualScrollManager {
   override bottomSectionHeight = $state(60);
 
@@ -152,7 +160,45 @@ export class TimelineManager extends VirtualScrollManager {
   #removedListeners = new Set<(ids: string[]) => void>();
   #updatingViewportProximities = false;
   #scrollableElement: HTMLElement | undefined = $state();
+  #scrollHeight: number | undefined;
+  #scrollViewport = 0;
+  #physicalScrollTop = $state(0);
   #unsubscribes: Array<() => void> = [];
+  #loadedPages = new Set<TimelineMonth>();
+  #pinnedPages = new Map<TimelineMonth, number>();
+
+  #calendarPaged = $state(false);
+  get calendarPaged() {
+    return !this.ordered && this.#calendarPaged;
+  }
+
+  #releaseDistantPages(keep?: TimelineMonth) {
+    for (const month of this.#loadedPages) {
+      if (this.#loadedPages.size <= 8) {
+        break;
+      }
+      if (
+        month === keep ||
+        month.isInOrNearViewport ||
+        month.loader?.loading ||
+        this.#pinnedPages.has(month) ||
+        this.months.some(
+          (other) => other.isInOrNearViewport && other.flowCarried.some((item) => item.day.timelineMonth === month),
+        )
+      ) {
+        continue;
+      }
+      month.releaseAssets();
+      for (const other of this.months) {
+        if (other.flowLinkedTo === month) {
+          other.flowLinkedTo = undefined;
+        }
+        other.flowCarried = other.flowCarried.filter((item) => item.day.timelineMonth !== month);
+        other.flowTail = other.flowTail.filter((item) => item.day.timelineMonth !== month);
+      }
+      this.#loadedPages.delete(month);
+    }
+  }
 
   get showAssetOwners() {
     return userPreferencesManager.showAssetOwners;
@@ -187,7 +233,10 @@ export class TimelineManager extends VirtualScrollManager {
         AssetsUnarchive: (assets) => this.upsertAssets(assets),
         AssetsMarkNsfw: (ids: string[]) => this.#handleMarkNsfw(ids),
         SessionLocked: () => {
+          this.#summaryGeneration++;
           this.initTask.cancel();
+          this.disconnect();
+          this.isInitialized = false;
           this.months = [];
           this.albumAssets.clear();
         },
@@ -209,21 +258,64 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   override get scrollTop(): number {
-    return this.#scrollableElement?.scrollTop ?? 0;
+    const height = this.#scrollHeight ?? this.totalViewerHeight;
+    if (physicalTimelineHeight(height) === height) {
+      return this.#scrollableElement?.scrollTop ?? 0;
+    }
+    return toTimelineScroll(
+      this.#scrollableElement?.scrollTop ?? 0,
+      height,
+      this.#scrollHeight === undefined ? this.viewportHeight : this.#scrollViewport,
+    );
+  }
+
+  get physicalViewerHeight() {
+    return physicalTimelineHeight(this.totalViewerHeight);
+  }
+
+  get scrollOffset() {
+    return this.visibleWindow.top - this.#physicalScrollTop;
+  }
+
+  override updateSlidingWindow() {
+    const top = this.scrollTop;
+    const wasCompressed =
+      this.#scrollHeight !== undefined && physicalTimelineHeight(this.#scrollHeight) !== this.#scrollHeight;
+    this.#scrollHeight = this.totalViewerHeight;
+    this.#scrollViewport = this.viewportHeight;
+    const physicalTop = toPhysicalScroll(top, this.#scrollHeight, this.#scrollViewport);
+    if (
+      (wasCompressed || this.physicalViewerHeight !== this.totalViewerHeight) &&
+      this.#scrollableElement &&
+      Math.abs(this.#scrollableElement.scrollTop - physicalTop) > 0.01
+    ) {
+      this.#scrollableElement.scrollTop = physicalTop;
+    }
+    this.#physicalScrollTop = this.#scrollableElement?.scrollTop ?? 0;
+    super.updateSlidingWindow();
   }
 
   set scrollableElement(element: HTMLElement | undefined) {
     this.#scrollableElement = element;
+    this.#scrollHeight = this.totalViewerHeight;
+    this.#scrollViewport = this.viewportHeight;
+    this.#physicalScrollTop = element?.scrollTop ?? 0;
   }
 
   scrollTo(top: number) {
-    this.#scrollableElement?.scrollTo({ top });
+    this.#scrollHeight = this.totalViewerHeight;
+    this.#scrollViewport = this.viewportHeight;
+    this.#scrollableElement?.scrollTo({
+      top:
+        this.physicalViewerHeight === this.totalViewerHeight
+          ? top
+          : toPhysicalScroll(top, this.#scrollHeight, this.#scrollViewport),
+    });
     this.updateSlidingWindow();
   }
 
   scrollBy(y: number) {
-    this.#scrollableElement?.scrollBy(0, y);
-    this.updateSlidingWindow();
+    this.scrollTo(this.scrollTop + y);
   }
 
   async *assetsIterator(options?: {
@@ -238,8 +330,19 @@ export class TimelineManager extends VirtualScrollManager {
       direction,
       startTimelineMonth: options?.startTimelineMonth,
     })) {
-      await this.loadTimelineMonth(timelineMonth.yearMonth, { cancelable: false });
-      yield* timelineMonth.assetsIterator({ startTimelineDay, startAsset, direction });
+      this.#pinnedPages.set(timelineMonth, (this.#pinnedPages.get(timelineMonth) ?? 0) + 1);
+      try {
+        await this.loadTimelineMonth(timelineMonth.yearMonth, { cancelable: false });
+        yield* timelineMonth.assetsIterator({ startTimelineDay, startAsset, direction });
+      } finally {
+        const pins = (this.#pinnedPages.get(timelineMonth) ?? 1) - 1;
+        if (pins) {
+          this.#pinnedPages.set(timelineMonth, pins);
+        } else {
+          this.#pinnedPages.delete(timelineMonth);
+        }
+        this.#releaseDistantPages();
+      }
       startTimelineDay = startAsset = undefined;
     }
   }
@@ -345,6 +448,10 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #projectionGeneration = 0;
+  #summaryGeneration = 0;
+  #viewAccessRevision = sessionAccess.revision;
+  #refreshPromise: Promise<void> | undefined;
+  #refreshAgain = false;
   get projectionGeneration() {
     return this.#projectionGeneration;
   }
@@ -352,17 +459,34 @@ export class TimelineManager extends VirtualScrollManager {
     this.#projectionGeneration++;
   }
 
-  async #initializeTimelineMonths(signal: AbortSignal) {
+  async #initializeTimelineMonths(signal: AbortSignal, refreshing = false) {
     const projection = this.#projectionGeneration;
+    const summary = this.#summaryGeneration;
+    const options = this.#requestedOptions;
     const revision = sessionAccess.revision;
     const timebuckets = await getTimeBuckets({
       ...authManager.params,
       ...this.#options,
+      ...(!this.ordered && { pageSize: ORDERED_PAGE_SIZE }),
     });
 
     // A load cancelled by newer options, or a session lock, must not replace what replaced it.
-    if (signal.aborted || revision !== sessionAccess.revision || projection !== this.#projectionGeneration) {
+    if (
+      signal.aborted ||
+      revision !== sessionAccess.revision ||
+      options !== this.#requestedOptions ||
+      (refreshing ? summary !== this.#summaryGeneration : projection !== this.#projectionGeneration)
+    ) {
       return;
+    }
+
+    this.#viewAccessRevision = revision;
+    const top = refreshing ? this.scrollTop : undefined;
+    this.#loadedPages.clear();
+    this.#geometryNeedsInitialization = true;
+    this.#nsfwHiddenAssetIds.clear();
+    if (timebuckets.length > 0) {
+      this.#calendarPaged = timebuckets.some((bucket) => bucket.page !== undefined);
     }
 
     if (this.#options.orderedBy) {
@@ -385,6 +509,9 @@ export class TimelineManager extends VirtualScrollManager {
       );
       this.albumAssets.clear();
       this.updateViewportGeometry(false);
+      if (top !== undefined) {
+        this.scrollTo(top);
+      }
       return;
     }
 
@@ -397,10 +524,15 @@ export class TimelineManager extends VirtualScrollManager {
         false,
         this.#options.order,
         this.#options.dateType,
+        undefined,
+        timeBucket.page === undefined ? undefined : timeBucket,
       );
     });
     this.albumAssets.clear();
     this.updateViewportGeometry(false);
+    if (top !== undefined) {
+      this.scrollTo(top);
+    }
   }
 
   async updateOptions(options: TimelineManagerOptions) {
@@ -435,36 +567,74 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async refresh() {
-    // Reload what was last asked for, which may still be loading.
     const options = this.#requestedOptions;
     if (options === TimelineManager.#INIT_OPTIONS || options.deferInit) {
       return;
     }
-
-    const projection = this.#projectionGeneration;
-    const overtaken = () => this.#requestedOptions !== options || projection !== this.#projectionGeneration;
-    this.suspendTransitions = true;
-    try {
-      await this.initTask.reset();
-      if (overtaken()) {
+    if (this.#viewAccessRevision !== sessionAccess.revision) {
+      this.#summaryGeneration++;
+      this.initTask.cancel();
+      this.disconnect();
+      this.isInitialized = false;
+      this.months = [];
+      this.albumAssets.clear();
+    }
+    if (!this.isInitialized) {
+      if (this.initTask.loading) {
+        await this.initTask.waitUntilCompletion();
+      } else {
+        await this.initTask.reset();
+        if (options !== this.#requestedOptions) {
+          return;
+        }
+        await this.#init(options);
+        if (this.isInitialized && options === this.#requestedOptions) {
+          this.updateViewportGeometry(false);
+          this.#createScrubberMonths();
+        }
         return;
       }
-      await this.#init(options);
-      if (overtaken()) {
+      if (!this.isInitialized || options !== this.#requestedOptions) {
         return;
-      }
-      this.updateViewportGeometry(false);
-      this.#createScrubberMonths();
-    } finally {
-      if (!overtaken()) {
-        this.suspendTransitions = false;
       }
     }
+    if (this.#refreshPromise) {
+      this.#refreshAgain = true;
+      return this.#refreshPromise;
+    }
+    const revision = sessionAccess.revision;
+    const current = () => options === this.#requestedOptions && revision === sessionAccess.revision;
+    this.suspendTransitions = true;
+    this.#refreshPromise = this.#initializeTimelineMonths(new AbortController().signal, true)
+      .then(() => {
+        if (current()) {
+          this.#createScrubberMonths();
+        }
+      })
+      .catch((error: unknown) => {
+        if (current()) {
+          handleError(error, get(t)('errors.failed_to_load_assets'));
+        }
+      })
+      .finally(() => {
+        this.#refreshPromise = undefined;
+        if (current()) {
+          this.suspendTransitions = false;
+        }
+        const again = this.#refreshAgain;
+        this.#refreshAgain = false;
+        if (again) {
+          void this.refresh();
+        }
+      });
+    return this.#refreshPromise;
   }
 
   async #init(options: TimelineManagerOptions) {
+    this.disconnect();
     this.isInitialized = false;
     this.months = [];
+    this.#loadedPages.clear();
     this.albumAssets.clear();
     // The server re-applies its NSFW filter on reload, so drop the locally
     // tracked ids to avoid hiding assets that may since have been marked safe.
@@ -484,6 +654,8 @@ export class TimelineManager extends VirtualScrollManager {
       month.cancel();
     }
     this.months = [];
+    this.#loadedPages.clear();
+    this.#pinnedPages.clear();
     this.albumAssets.clear();
     this.disconnect();
     this.isInitialized = false;
@@ -508,11 +680,10 @@ export class TimelineManager extends VirtualScrollManager {
       await (this.initTask.loading ? this.initTask.waitUntilCompletion() : this.#init(this.#requestedOptions));
     }
 
-    const changedWidth = viewport.width !== this.viewportWidth;
-    this.viewportHeight = viewport.height;
-    this.viewportWidth = viewport.width;
-    this.updateViewportGeometry(changedWidth);
+    this.setViewportSize(viewport.width, viewport.height);
   }
+
+  #geometryNeedsInitialization = false;
 
   protected override updateViewportGeometry(changedWidth: boolean) {
     if (!this.isInitialized || this.hasEmptyViewport) {
@@ -521,11 +692,21 @@ export class TimelineManager extends VirtualScrollManager {
     if (changedWidth) {
       releaseFlowHolds(this);
     }
-    batchFlow(this, () => {
-      for (const month of this.months) {
-        updateGeometry(this, month, { invalidateHeight: changedWidth });
+    if (this.#geometryNeedsInitialization) {
+      // Initialize positions once instead of shifting all following pages for each new height.
+      let top = 0;
+      for (const [index, month] of this.months.entries()) {
+        month.initializeGeometry(index, top);
+        top += month.height;
       }
-    });
+      this.#geometryNeedsInitialization = false;
+    } else {
+      batchFlow(this, () => {
+        for (const month of this.months) {
+          updateGeometry(this, month, { invalidateHeight: changedWidth });
+        }
+      });
+    }
     this.updateViewportProximities();
     if (changedWidth) {
       this.#createScrubberMonths();
@@ -534,39 +715,80 @@ export class TimelineManager extends VirtualScrollManager {
 
   #createScrubberMonths() {
     // A flat order has no dates to scrub through.
-    this.scrubberMonths = (this.ordered ? [] : this.months).map((month) => ({
-      assetCount: month.assetsCount,
-      year: month.yearMonth.year,
-      month: month.yearMonth.month,
-      title: month.title,
-      height: month.height,
-    }));
+    const summaries: ScrubberMonth[] = [];
+    for (const month of this.ordered ? [] : this.months) {
+      const previous = summaries.at(-1);
+      if (previous?.year === month.yearMonth.year && previous.month === month.yearMonth.month) {
+        previous.assetCount += month.assetsCount;
+        previous.height += month.height;
+      } else {
+        summaries.push({
+          assetCount: month.assetsCount,
+          year: month.yearMonth.year,
+          month: month.yearMonth.month,
+          title: month.title,
+          height: month.height,
+        });
+      }
+    }
+    this.scrubberMonths = summaries;
     this.scrubberTimelineHeight = this.totalViewerHeight;
   }
 
-  async loadTimelineMonth(yearMonth: TimelineYearMonth, options?: { cancelable: boolean }): Promise<void> {
+  async loadTimelineMonth(yearMonth: TimelinePageKey, options?: { cancelable: boolean }): Promise<void> {
     const cancelable = options?.cancelable ?? true;
     const timelineMonth = getTimelineMonthByDate(this, yearMonth);
     if (!timelineMonth) {
       return;
     }
 
-    if (timelineMonth.loader?.executed) {
-      return;
-    }
-
-    const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
-      await (this.#options.orderedBy
-        ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
-        : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
-    }, cancelable);
-    if (executionStatus === 'LOADED') {
-      updateGeometry(this, timelineMonth, { invalidateHeight: false });
-      this.updateViewportProximities();
+    for (let attempt = 1; ; attempt++) {
+      if (timelineMonth.loader?.executed) {
+        if (timelineMonth.calendarPage || this.ordered) {
+          this.#loadedPages.delete(timelineMonth);
+          this.#loadedPages.add(timelineMonth);
+        }
+        return;
+      }
+      const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
+        await (this.#options.orderedBy
+          ? loadOrderedPage(timelineMonth, this.months, this.#options, signal)
+          : loadFromTimeBuckets(this, timelineMonth, this.#options, signal));
+      }, cancelable);
+      if (executionStatus === 'LOADED' && this.months.includes(timelineMonth)) {
+        updateGeometry(this, timelineMonth, { invalidateHeight: false });
+        this.#createScrubberMonths();
+        this.updateViewportProximities();
+        if (timelineMonth.calendarPage || this.ordered) {
+          this.#loadedPages.delete(timelineMonth);
+          this.#loadedPages.add(timelineMonth);
+          this.#releaseDistantPages(timelineMonth);
+        }
+        return;
+      }
+      if (executionStatus !== 'CANCELED') {
+        return;
+      }
+      // Live changes kept overtaking the load, or another caller's load was cancelled. Ask again while
+      // the month is still wanted: a caller that waits for it (not cancellable), or a month in view.
+      const wanted = this.months.includes(timelineMonth) && (!cancelable || timelineMonth.isInOrNearViewport);
+      if (!wanted) {
+        return;
+      }
+      if (attempt >= SUPERSEDED_LOAD_ATTEMPTS) {
+        if (!cancelable) {
+          throw new Error(`Could not load timeline month ${timelineMonth.viewId}: live changes kept overtaking it`);
+        }
+        return;
+      }
     }
   }
 
   upsertAssets(assets: TimelineAsset[]) {
+    if (this.calendarPaged && assets.length > 0) {
+      this.#refreshPagedAssets(assets);
+      return;
+    }
     const notUpdated = this.#updateAssets(assets);
     // A flat order only learns where a new item belongs from the server, on the next load.
     if (this.ordered) {
@@ -578,12 +800,32 @@ export class TimelineManager extends VirtualScrollManager {
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
     this.invalidateLiveProjection();
+    if (this.calendarPaged && assets.length > 0) {
+      this.#refreshPagedAssets(assets);
+      return;
+    }
     const notUpdated = this.#updateAssets(assets);
     if (this.ordered) {
       return;
     }
     const insertable = notUpdated.filter((asset) => this.canInsertAssetFromLiveEvent(asset));
     this.addAssetsUpsertSegments(insertable);
+  }
+
+  #refreshPagedAssets(assets: TimelineAsset[]) {
+    this.invalidateLiveProjection();
+    // Retain unaffected tiles while reading new boundaries; changed tiles must be re-authorized.
+    const result = this.#runAssetCallbackInPlace(new Set(assets.map(({ id }) => id)), () => ({ remove: true }));
+    const excluded = assets.filter((asset) => this.isExcluded(asset)).map(({ id }) => id);
+    if (result.updated.size > 0 || excluded.length > 0) {
+      this.#summaryGeneration++;
+    }
+    if (excluded.length > 0) {
+      for (const listener of this.#removedListeners) {
+        listener(excluded);
+      }
+    }
+    void this.refresh();
   }
 
   async findTimelineMonthForAsset(asset: AssetDescriptor | AssetResponseDto) {
@@ -597,6 +839,63 @@ export class TimelineManager extends VirtualScrollManager {
       return timelineMonth;
     }
 
+    if (this.calendarPaged || this.ordered) {
+      const options = this.#requestedOptions;
+      const revision = sessionAccess.revision;
+      const overtaken = () => options !== this.#requestedOptions || revision !== sessionAccess.revision;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const months = this.months;
+        const [page] = await getTimeBuckets({
+          ...authManager.params,
+          ...this.#options,
+          pageSize: ORDERED_PAGE_SIZE,
+          locateAssetId: id,
+          ...(this.ordered && { sort: this.ordered }),
+        });
+        if (overtaken() || !page) {
+          return;
+        }
+        if (months !== this.months) {
+          continue;
+        }
+        timelineMonth = this.ordered
+          ? months[page.page ?? -1]
+          : months.find(
+              (month) => month.calendarPage?.timeBucket === page.timeBucket && month.calendarPage.page === page.page,
+            );
+        if (
+          !timelineMonth ||
+          (!this.ordered &&
+            (timelineMonth.calendarPage?.firstAssetId !== page.firstAssetId ||
+              timelineMonth.calendarPage?.lastAssetId !== page.lastAssetId))
+        ) {
+          await this.refresh();
+          if (overtaken()) {
+            return;
+          }
+          continue;
+        }
+        await this.loadTimelineMonth(timelineMonth.yearMonth, { cancelable: false });
+        if (overtaken()) {
+          return;
+        }
+        if (months !== this.months) {
+          continue;
+        }
+        if (timelineMonth.findAssetById({ id })) {
+          return timelineMonth;
+        }
+        if (!this.ordered || attempt === 1) {
+          return;
+        }
+        await this.refresh();
+        if (overtaken()) {
+          return;
+        }
+      }
+      return;
+    }
+
     const response = isAssetResponseDto(asset)
       ? asset
       : await getAssetInfo({ ...authManager.params, id }).catch(() => null);
@@ -606,20 +905,6 @@ export class TimelineManager extends VirtualScrollManager {
 
     const timelineAsset = toTimelineAsset(response);
     if (this.isExcluded(timelineAsset)) {
-      return;
-    }
-
-    if (this.ordered) {
-      // No date says which page holds it: read the pages in order until it turns up.
-      for (const month of this.months) {
-        if (month.isLoaded) {
-          continue;
-        }
-        await this.loadTimelineMonth(month.yearMonth, { cancelable: false });
-        if (month.findAssetById({ id })) {
-          return month;
-        }
-      }
       return;
     }
 
@@ -680,6 +965,9 @@ export class TimelineManager extends VirtualScrollManager {
 
   removeAssets(ids: string[]) {
     this.invalidateLiveProjection();
+    if (ids.length > 0) {
+      this.#summaryGeneration++;
+    }
     const result = this.#runAssetCallback(new Set(ids), () => ({ remove: true }));
     if (ids.length > 0) {
       for (const listener of this.#removedListeners) {
@@ -783,6 +1071,26 @@ export class TimelineManager extends VirtualScrollManager {
     if (ids.size === 0) {
       return { updated: new Set<string>(), notUpdated: ids, changedGeometry: false };
     }
+    if (this.calendarPaged) {
+      let changedPage = this.#narrowedByServer || this.#options.visibility === AssetVisibility.Locked;
+      const result = this.#runAssetCallbackInPlace(ids, (asset) => {
+        // Favorite/rating edits cannot reorder calendar pages; other edits remain conservative.
+        const before = JSON.stringify({ ...asset, isFavorite: undefined, rating: undefined });
+        const outcome = callback(asset);
+        changedPage ||=
+          !!outcome?.remove ||
+          !this.canInsertAssetFromLiveEvent(asset) ||
+          before !== JSON.stringify({ ...asset, isFavorite: undefined, rating: undefined });
+        return outcome;
+      });
+      this.invalidateLiveProjection();
+      if (changedPage || result.notUpdated.size > 0) {
+        this.#summaryGeneration++;
+        void this.refresh();
+      }
+      return result;
+    }
+    this.#summaryGeneration++;
     clearOrderedPageCursors(this.months);
     if (this.#options.orderedBy === 'rating') {
       // Ordered by rating, a new rating moves the item: the pages are read again in the new order.
@@ -794,13 +1102,7 @@ export class TimelineManager extends VirtualScrollManager {
         return outcome;
       });
       if (reordered) {
-        // Read the new order, and stay where the person was rather than jumping to the top.
-        const top = this.#scrollableElement?.scrollTop ?? 0;
-        void this.refresh().then(() => {
-          if (top > 0) {
-            this.scrollTo(top);
-          }
-        });
+        void this.refresh();
       }
       return result;
     }
@@ -876,7 +1178,50 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async retrieveRange(start: AssetDescriptor, end: AssetDescriptor) {
-    return retrieveRangeUtil(this, start, end, this.ordered ? this.#orderedPositions() : undefined);
+    const projection = this.#projectionGeneration;
+    const revision = sessionAccess.revision;
+    const options = this.#requestedOptions;
+    const pinned: TimelineMonth[] = [];
+    let missingStart = false;
+    const overtaken = () =>
+      projection !== this.#projectionGeneration ||
+      revision !== sessionAccess.revision ||
+      options !== this.#requestedOptions;
+    try {
+      for (const asset of [start, end]) {
+        const month = await this.findTimelineMonthForAsset(asset);
+        if (overtaken()) {
+          return [];
+        }
+        if (!month) {
+          if (asset === start) {
+            missingStart = true;
+            continue;
+          }
+          return [];
+        }
+        this.#pinnedPages.set(month, (this.#pinnedPages.get(month) ?? 0) + 1);
+        pinned.push(month);
+      }
+      const months = this.months;
+      const range = await retrieveRangeUtil(
+        this,
+        missingStart ? end : start,
+        end,
+        this.ordered || this.calendarPaged ? this.#orderedPositions() : undefined,
+      );
+      return overtaken() || months !== this.months ? [] : range;
+    } finally {
+      for (const month of pinned) {
+        const pins = (this.#pinnedPages.get(month) ?? 1) - 1;
+        if (pins) {
+          this.#pinnedPages.set(month, pins);
+        } else {
+          this.#pinnedPages.delete(month);
+        }
+      }
+      this.#releaseDistantPages();
+    }
   }
 
   /**
@@ -892,8 +1237,8 @@ export class TimelineManager extends VirtualScrollManager {
           continue;
         }
         indexed.add(month);
-        for (const [place, viewerAsset] of (month.timelineDays[0]?.viewerAssets ?? []).entries()) {
-          positions.set(viewerAsset.id, page * ORDERED_PAGE_SIZE + place);
+        for (const [place, asset] of month.getAssets().entries()) {
+          positions.set(asset.id, page * ORDERED_PAGE_SIZE + place);
         }
       }
     };

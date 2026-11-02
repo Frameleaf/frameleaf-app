@@ -8,6 +8,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -47,8 +48,16 @@ const setup = async () => {
       AssetEditRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
+    mock: [
+      EventRepository,
+      JobRepository,
+      LoggingRepository,
+      StorageRepository,
+      MachineLearningRepository,
+      MlDestinationRepository,
+    ],
   });
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
   const jobs = ctx.getMock(JobRepository);
   useRealJobPublication(database, jobs, [sut]);
   jobs.queue.mockResolvedValue();

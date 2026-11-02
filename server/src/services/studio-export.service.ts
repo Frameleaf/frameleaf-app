@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
@@ -17,6 +17,8 @@ import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
+  StudioExportBatchCreateDto,
+  StudioExportBatchCreateResponseDto,
   StudioExportCreateDto,
   StudioExportCreateResponseDto,
   StudioExportListResponseDto,
@@ -133,7 +135,8 @@ import {
 } from 'src/utils/studio-export.js';
 import { syncAncestors } from 'src/utils/studio-import-durability.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
-import { canonicalJson } from 'src/utils/studio-project.js';
+import { canonicalJson, hasNoMainTimelineItems, isEmptyStudioTimeline } from 'src/utils/studio-project.js';
+import { StudioReframeError, StudioReframeSeal, isReframeShape, sealStudioReframe } from 'src/utils/studio-reframe.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
   STUDIO_DOLBY_TOOLS_ID,
@@ -153,6 +156,7 @@ export type StudioExportCreateOptions = {
    * the project.
    */
   retainInProject?: boolean;
+  batch?: { requestKey: string; digest: string; revision: number };
 };
 
 const isRetainedInProject = (snapshot: unknown): boolean =>
@@ -286,6 +290,56 @@ export class StudioExportService {
    * cannot place in Studio (trashed, unshared, Locked…) refuses the export rather than rendering
    * a picture with a hole in it. The render job and its version row are created together.
    */
+  async createBatch(
+    auth: AuthDto,
+    projectId: string,
+    dto: StudioExportBatchCreateDto,
+  ): Promise<StudioExportBatchCreateResponseDto> {
+    this.requireInteractive(auth);
+    await this.requireOwnedProject(auth, projectId);
+    const digest = createHash('sha256').update(canonicalJson(dto)).digest('hex');
+    const items: StudioExportBatchCreateResponseDto['items'] = [];
+    for (const variant of dto.variants) {
+      try {
+        const result = await this.create(
+          auth,
+          projectId,
+          {
+            ...variant,
+            destination: dto.destination as StudioExportCreateDto['destination'],
+            expectedRevision: dto.expectedRevision,
+            requestKey: createHash('sha256').update(`${dto.requestKey}:${variant.shape}`).digest('hex'),
+          },
+          { batch: { requestKey: dto.requestKey, digest, revision: dto.expectedRevision } },
+        );
+        items.push({ shape: variant.shape, result, errorCode: null, error: null });
+      } catch (error) {
+        if (!(error instanceof HttpException)) {
+          // Keep operator correlation without logging exception text, crop paths or retry keys.
+          this.logger.error(
+            `Unexpected Studio export admission failure for project ${projectId}, delivery ${variant.shape}`,
+          );
+        }
+        const response = error instanceof HttpException ? error.getResponse() : null;
+        const code = response && typeof response === 'object' && 'code' in response ? String(response.code) : '';
+        items.push({
+          shape: variant.shape,
+          result: null,
+          errorCode: /^[a-z_:-]{1,128}$/.test(code) ? code : 'studio_export_delivery_refused',
+          error:
+            code === 'studio_export_unsupported'
+              ? 'No qualified worker supports these delivery settings. Choose a supported format, resolution and destination.'
+              : code === 'studio_export_sources_refused'
+                ? 'A source is no longer available. Review source access before retrying.'
+                : code === 'studio_export_batch_key_conflict'
+                  ? 'This batch was already submitted with different settings. Retry the original reviewed choices.'
+                  : 'This delivery could not be queued. Review its settings and source access, then retry.',
+        });
+      }
+    }
+    return { revision: dto.expectedRevision, items };
+  }
+
   async create(
     auth: AuthDto,
     projectId: string,
@@ -301,6 +355,12 @@ export class StudioExportService {
         dto.requestKey,
       );
       if (existing) {
+        if (options.batch && existing.snapshot?.batchDigest !== options.batch.digest) {
+          throw new ConflictException({
+            code: 'studio_export_batch_key_conflict',
+            message: 'This batch key was already used for different deliveries',
+          });
+        }
         if (existing.projectId !== projectId) {
           throw new ConflictException('This request key was already used for another export');
         }
@@ -345,6 +405,7 @@ export class StudioExportService {
     await this.requireOwnedProject(auth, projectId);
     const authorized = await this.studio.authorizeRevision(auth, {
       projectId,
+      ...(options.batch && { revision: options.batch.revision }),
       destination,
       cloudConsent: dto.cloudConsent === true,
     });
@@ -365,7 +426,16 @@ export class StudioExportService {
         refusedCount: authorized.manifest.refusedCount,
       });
     }
+    // FL-677: nothing on the main timeline renders nothing (a nested sequence placed nowhere is not
+    // output); refused before a job is queued for a worker to fail with empty_timeline.
+    if (isEmptyStudioTimeline(authorized.envelope.graph) || hasNoMainTimelineItems(authorized.envelope.graph)) {
+      throw new BadRequestException({
+        message: 'There is nothing on the timeline to export yet',
+        code: 'studio_export_empty',
+      });
+    }
 
+    const reframe = this.sealReframe(dto, authorized.envelope.graph);
     const settings = {
       format: dto.format,
       color: dto.color,
@@ -375,6 +445,8 @@ export class StudioExportService {
       ...(dto.range && { range: dto.range }),
       audio: dto.audio ?? 'preserve',
       ...(dto.mastering !== undefined && { mastering: structuredClone(dto.mastering) }),
+      // FL-563: a derived export setting; the render worker reframes, the project is never edited.
+      ...(reframe && { shape: reframe.shape, reframe }),
     };
     if (isStudioPhotoFormat(dto.format)) {
       if (dto.subtitleMode !== undefined || (dto.audio !== undefined && dto.audio !== 'preserve'))
@@ -403,13 +475,29 @@ export class StudioExportService {
       authorized.manifest.entries,
       settings,
     );
+    if (reframe && contract.video.transfer !== null) {
+      throw new BadRequestException(
+        'Vertical and square exports are SDR video; this project keeps an HDR picture. Export it in its original shape',
+      );
+    }
     const audioProblem = studioExportAudioProblem(dto.format, contract.audio);
     if (audioProblem) {
       throw new ConflictException({ code: 'studio_export_audio_unsupported', message: audioProblem });
     }
-    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8)) {
-      // The sources keep an HDR picture: only a worker that verified that precision can take it.
-      await this.requireRenderableOutput(dto.destination, { ...settings, minBitDepth: contract.video.minBitDepth });
+    const formatSpec = studioExportFormatSpec(dto.format);
+    if (
+      contract.video.minBitDepth > (formatSpec?.bitDepth ?? 8) ||
+      contract.video.transfer ||
+      (formatSpec?.kind === 'video' && formatSpec.bitDepth > 8)
+    ) {
+      // The sources keep (or the colour asks for) an HDR picture: only a worker that verified that
+      // precision, and for HLG that exact HLG master (FL-107), can take it. An SDR picture in a 10-bit
+      // format needs a worker that writes one, not only HDR masters (FL-674).
+      await this.requireRenderableOutput(dto.destination, {
+        ...settings,
+        minBitDepth: contract.video.minBitDepth,
+        transfer: contract.video.transfer,
+      });
     }
     const pairedCaptions = dto.subtitleMode === 'sidecar' || dto.subtitleMode === 'embedded';
     if (
@@ -473,7 +561,7 @@ export class StudioExportService {
         kind: MediaOperationKind.StudioExport,
         destination: dto.destination,
         destinationDetail: null,
-        label: authorized.project.name,
+        label: options.batch && dto.shape ? `${authorized.project.name} · ${dto.shape}` : authorized.project.name,
         assetId: null,
         resultAssetId: null,
         retryOfId: null,
@@ -492,6 +580,7 @@ export class StudioExportService {
           manifestDigest: authorized.manifest.digest,
           sourceEpochs: authorized.manifest.sourceEpochs,
           requestKey: dto.requestKey ?? null,
+          ...(options.batch && { batchKey: options.batch.requestKey, batchDigest: options.batch.digest }),
           studio: { stored: true, revision: authorized.revision.revision, cloudConsent: dto.cloudConsent === true },
           // FL-93 / FL-102: the cadence and source timing the worker renders on, and the precision
           // and audio its result must have. Publication holds the result to the contract.
@@ -521,6 +610,37 @@ export class StudioExportService {
 
     this.logger.log(`Studio export ${version.id} queued as render ${operation.id} for project ${projectId}`);
     return { version: this.map(version, auth), operation: mapOperation(operation) };
+  }
+
+  /**
+   * FL-563: the framing a vertical or square export seals for its render, or null for the project's
+   * own shape. Shaped exports are SDR video at 720p to 2160p; the crop paths are what the person saw
+   * in the export dialog, clamped to the frame. Nothing is written to the project.
+   */
+  private sealReframe(dto: StudioExportCreateDto, graph: unknown): StudioReframeSeal | null {
+    const shape = dto.shape ?? 'original';
+    if (!isReframeShape(shape)) {
+      if (dto.framing !== undefined) {
+        throw new BadRequestException('A framing needs a vertical or square shape');
+      }
+      return null;
+    }
+    if (
+      !isStudioVideoFormat(dto.format) ||
+      studioExportFormatSpec(dto.format)?.bitDepth !== 8 ||
+      dto.color !== 'preserve' ||
+      dto.mastering !== undefined
+    ) {
+      throw new BadRequestException('Vertical and square exports are SDR video: choose an 8-bit video format');
+    }
+    try {
+      return sealStudioReframe(graph, shape, dto.resolution, dto.framing ?? []);
+    } catch (error) {
+      if (error instanceof StudioReframeError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -662,11 +782,14 @@ export class StudioExportService {
       sources.filter((source) => source.ownerId !== auth.user.id).map((source) => source.assetId!),
     );
     // FL-326: partners hold their own copies, so another owner's source is reached only through an album
-    const [ownedOk, album] = await Promise.all([
+    // Owner access does not look at the trash or offline state, so availability is checked apart.
+    const [ownedOk, album, available] = await Promise.all([
       this.access.asset.checkOwnerAccess(auth.user.id, owned, !!getLockedOwnerId(auth)),
       this.access.asset.checkAlbumAccess(auth.user.id, shared),
+      this.repository.getAvailableSourceIds(sources.map((source) => source.assetId!)),
     ]);
-    const reachable = (assetId: string) => (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
+    const reachable = (assetId: string) =>
+      available.has(assetId) && (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
     if (sources.some((source) => !reachable(source.assetId!))) {
       throw new NotFoundException('Studio export not found');
     }
@@ -1121,6 +1244,9 @@ export class StudioExportService {
         userIds: [version.ownerId],
         title: 'Rendering',
         body: `${name} · ${percent}%`,
+        systemTemplate: operation.label?.trim()
+          ? { version: 1, key: 'studio-render-progress-named', args: { label: name, percent } }
+          : { version: 1, key: 'studio-render-progress', args: { percent } },
         // native apps: `kind` names the payload, `progress` is 0..1, `job` is the render's media operation
         data: {
           kind: 'render',
@@ -2024,16 +2150,27 @@ export class StudioExportService {
             : status === 'cancelled'
               ? `${name} was cancelled`
               : `${name} could not be finished`,
-        systemTemplate:
-          status === 'cancelled'
-            ? undefined
-            : label?.trim()
-              ? {
-                  version: 1,
-                  key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
-                  args: { label: name },
-                }
-              : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
+        systemTemplate: label?.trim()
+          ? {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready-named'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled-named'
+                    : 'studio-export-failed-named',
+              args: { label: name },
+            }
+          : {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled'
+                    : 'studio-export-failed',
+              args: {},
+            },
         // Studio operations cannot use generic Retry; reopen this project/version for a new export.
         data: {
           versionId: version.id,
@@ -2263,9 +2400,17 @@ export class StudioExportService {
     const {
       subtitleSeal: _privateSubtitleSeal,
       embeddedSubtitleSeal: _privateEmbeddedSubtitleSeal,
+      // FL-563: the sealed crop paths are the render's; the version shows only its shape.
+      reframe: _sealedReframe,
       ...publicSettings
     } = version.settings;
-    const settings = publicSettings as StudioExportVersionDto['settings'];
+    const { shape, ...otherSettings } = publicSettings;
+    // Keep the legacy response enum closed; new delivery shapes are additive metadata.
+    const settings = {
+      ...otherSettings,
+      ...(shape !== undefined && { deliveryShape: shape }),
+      ...(['original', 'vertical', 'square'].includes(String(shape)) && { shape }),
+    } as StudioExportVersionDto['settings'];
     const seal = sidecarSealOf(version.settings);
     return {
       id: version.id,

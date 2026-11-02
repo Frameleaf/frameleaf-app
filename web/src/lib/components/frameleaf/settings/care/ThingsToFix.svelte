@@ -9,10 +9,9 @@
    * switched off (`libraryCare.livePhotoRepair`, `libraryCare.rawRecovery`) keep their switch on the
    * row, for administrators only: they are server settings. The look-alike switch is on Duplicates.
    *
-   * The counts are the ones the app already keeps: Library Care's queues (missing, damaged,
-   * look-alike groups), the file checks' lists (the larger of the two, so a file is never counted
-   * twice) and the Live Photo pairs found. RAW originals have no count of their own yet, so that row
-   * says only whether Frameleaf is looking.
+   * The counts: for an administrator, the server's one source of findings (FL-520, a photo both
+   * checkers report counted once, and the missing RAW originals to match); for a member, their own
+   * Library Care queues. Look-alike groups and the Live Photo pairs found come from their own lists.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -30,11 +29,10 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import {
-    getIntegrityReportSummary,
+    getIntegrityOverview,
     getLivePhotoCandidates,
     getSummary,
-    IntegrityReport,
-    type IntegrityReportSummaryResponseDto,
+    type IntegrityOverviewResponseDto,
     type LivePhotoCandidatesResponseDto,
     type MediaHealthSummaryResponseDto,
   } from '@frameleaf/sdk';
@@ -59,9 +57,18 @@
   const held = $derived(featureFlagsManager.value.configFile);
 
   let summary = $state<MediaHealthSummaryResponseDto>();
-  let integrity = $state<IntegrityReportSummaryResponseDto>();
+  let integrity = $state<IntegrityOverviewResponseDto>();
   let live = $state<LivePhotoCandidatesResponseDto>();
   let loaded = $state(false);
+
+  /** FL-520: the one source of findings, or nothing when it cannot be read. */
+  const overviewOf = async () => {
+    try {
+      return await getIntegrityOverview();
+    } catch {
+      return undefined;
+    }
+  };
 
   $effect(() => {
     const admin = isAdmin;
@@ -69,7 +76,7 @@
     loaded = false;
     void Promise.all([
       getSummary(admin ? { allAccounts: true } : {}).catch(() => undefined),
-      admin ? getIntegrityReportSummary().catch(() => undefined) : Promise.resolve(undefined),
+      admin ? overviewOf() : Promise.resolve(undefined),
       getLivePhotoCandidates().catch(() => undefined),
     ]).then(([health, reports, pairs]) => {
       if (!current) {
@@ -86,13 +93,12 @@
   });
 
   const queues = $derived(summary?.queues);
-  const missing = $derived(Math.max(queues?.missing ?? 0, integrity?.[IntegrityReport.MissingFile] ?? 0));
+  // FL-520: one count per kind, from one source, for an administrator; a member's own queues otherwise.
+  const missing = $derived(integrity ? integrity.missing : (queues?.missing ?? 0));
   const damaged = $derived(
-    Math.max(
-      (queues?.damagedConfirmed ?? 0) + (queues?.damagedSuspected ?? 0),
-      integrity?.[IntegrityReport.ChecksumMismatch] ?? 0,
-    ),
+    integrity ? integrity.damaged : (queues?.damagedConfirmed ?? 0) + (queues?.damagedSuspected ?? 0),
   );
+  const rawToMatch = $derived(integrity?.rawToMatch);
   const lookAlikes = $derived(queues?.duplicates ?? 0);
 
   /** Whether Frameleaf looks for each switchable kind: the setting being edited, else what the server says. */
@@ -207,9 +213,10 @@
         icon: mdiRaw,
         name: $t('frameleaf_care_fix_raw_name'),
         detail: $t('frameleaf_care_fix_raw_detail'),
+        count: rawToMatch,
         unit: 'waiting',
         note: $t('frameleaf_care_fix_raw_note'),
-        tone: 'good',
+        tone: 'warn',
         looking: { on: lookingForRaw, set: setRaw },
         href: utilitiesUrl('missing-media', { from: 'care' }),
       },

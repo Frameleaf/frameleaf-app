@@ -463,13 +463,16 @@ export const cloudMlJobMonthStart = (now: Date): Date => new Date(Date.UTC(now.g
  * `CLOUD_ML_JOB_PRICE_TOLERANCE`); and a job that ended before anything was sent nothing.
  */
 export const cloudMlJobSpentUsd = (
-  rows: ReadonlyArray<{
-    status: string;
-    remoteJobId: string | null;
-    result: unknown;
-    holdUsd: number | null;
-    settledUsd: number | null;
-  }>,
+  rows: ReadonlyArray<
+    | {
+        status: string;
+        remoteJobId: string | null;
+        result: unknown;
+        holdUsd: number | null;
+        settledUsd: number | null;
+      }
+    | { reservedUsd: number; settledUsd: number | null }
+  >,
 ): number => {
   const ended = new Set<string>([
     MediaOperationStatus.Completed,
@@ -480,6 +483,10 @@ export const cloudMlJobSpentUsd = (
   for (const row of rows) {
     if (row.settledUsd !== null) {
       total += row.settledUsd;
+      continue;
+    }
+    if ('reservedUsd' in row) {
+      total += row.reservedUsd;
       continue;
     }
     if (ended.has(row.status) && !row.remoteJobId) {

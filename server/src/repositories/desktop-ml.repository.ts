@@ -377,6 +377,27 @@ export class DesktopMlRepository {
     return !!rows[0] && desktopWorkerAccountAllowed(this.db, rows[0].ownerId, rows[0].isAdmin);
   }
 
+  /**
+   * FL-456: one of the owner's approved Frameleaf Desktop helpers is online (seen in the last 90 seconds)
+   * and holds a current qualification for `modelKey`, so a job sent to the helpers now can be taken.
+   */
+  async hasReadyWorker(ownerId: string, modelKey: string): Promise<boolean> {
+    const { rows } = await sql<{ isAdmin: boolean }>`
+      SELECT u."isAdmin" FROM desktop_device d
+      JOIN "user" u ON u.id=d."userId" AND u."deletedAt" IS NULL
+      JOIN desktop_worker_session w ON w."deviceId"=d.id AND w."authorizationEpoch"=d."authorizationEpoch"
+      JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
+      JOIN desktop_worker_qualification q ON q."sessionId"=w.id AND q."deviceId"=d.id
+        AND q."authorizationEpoch"=d."authorizationEpoch" AND q."modelKey"=${modelKey}
+      WHERE d."userId"=${ownerId} AND d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
+        AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
+        AND w."lastSeenAt">clock_timestamp()-interval '90 seconds'
+        AND w."modelKeys" @> jsonb_build_array(${modelKey}::text) AND q."expiresAt">clock_timestamp()
+        AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
+      LIMIT 1`.execute(this.db);
+    return !!rows[0] && desktopWorkerAccountAllowed(this.db, ownerId, rows[0].isAdmin);
+  }
+
   result(id: string): Promise<TaskMetadata | undefined> {
     return this.db
       .selectFrom('desktop_ml_task')

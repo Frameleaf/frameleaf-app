@@ -45,6 +45,25 @@ afterEach(() => {
 });
 
 describe('face-store contracts', () => {
+  it('keeps the people shown while an update to the same asset reads them again (LIB-02)', async () => {
+    const jamie = personFactory.build({ id: 'jamie', name: 'Jamie' });
+    sdkMock.getFaces.mockResolvedValue([row('a', jamie)]);
+    await faces.getAssetFaces('photo');
+    const reread = deferred();
+    sdkMock.getFaces.mockReturnValue(reread.promise);
+
+    faces.clear(true);
+    const loading = faces.getAssetFaces('photo');
+    expect(faces.people.map(({ name }) => name)).toEqual(['Jamie']);
+
+    reread.resolve([row('a', jamie), row('b')]);
+    await loading;
+    expect(faces.data.map(({ id }) => id)).toEqual(['a', 'b']);
+
+    faces.clear();
+    expect(faces.data).toEqual([]);
+  });
+
   it('preserves face and person order, grouped references and the last record for a repeated person ID', async () => {
     const alex = personFactory.build({ id: 'alex', name: 'Alex' });
     const updatedAlex = { ...alex, name: 'Updated Alex' };

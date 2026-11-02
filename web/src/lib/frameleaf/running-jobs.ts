@@ -167,20 +167,32 @@ export const queueRow = (queue: DurableQueueRun): RunningJobRow => {
   // The server's own sum, but never less than what is visibly in hand right now.
   const total = Math.max(queue.total, queue.processed + queue.active + queue.waiting);
   const done = Math.min(queue.processed, total);
+  // FL-711: quiet hours saved it for the night; it starts again by itself, so it is not a warning.
+  const tonight = queue.isPaused && !!queue.heldForNight;
 
   return {
     id: `queue:${queue.name}`,
     source: 'queue',
     queueName: queue.name,
     kindKey: 'frameleaf_running_kind_queue',
-    statusKey: queue.state
-      ? runStateKey(queue.state)
-      : queue.isPaused
-        ? 'frameleaf_activity_status_paused'
-        : queue.active > 0
-          ? 'frameleaf_activity_bulk_running'
-          : 'frameleaf_activity_status_queued',
-    tone: queue.state ? runTone(queue.state) : queue.isPaused ? 'warning' : queue.active > 0 ? 'info' : 'neutral',
+    statusKey: tonight
+      ? 'frameleaf_activity_bg_tonight_unscheduled'
+      : queue.state
+        ? runStateKey(queue.state)
+        : queue.isPaused
+          ? 'frameleaf_activity_status_paused'
+          : queue.active > 0
+            ? 'frameleaf_activity_bulk_running'
+            : 'frameleaf_activity_status_queued',
+    tone: tonight
+      ? 'neutral'
+      : queue.state
+        ? runTone(queue.state)
+        : queue.isPaused
+          ? 'warning'
+          : queue.active > 0
+            ? 'info'
+            : 'neutral',
     live: !queue.isPaused && queue.active > 0,
     done: !queue.unavailable && total > 0 ? done : null,
     total: !queue.unavailable && total > 0 ? total : null,

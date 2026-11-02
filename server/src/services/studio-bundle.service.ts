@@ -36,9 +36,14 @@ import {
 } from 'src/repositories/studio-storage-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportStagePath,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -419,7 +424,7 @@ export class StudioBundleService {
 
     return {
       operationId: operation.id,
-      kind: operation.kind as MediaOperationKind,
+      kind: isExport ? MediaOperationKind.StudioBundleExport : MediaOperationKind.StudioBundleImport,
       status: operation.status as MediaOperationStatus,
       progress: operation.progress,
       attempt: operation.attempt,
@@ -460,7 +465,7 @@ export class StudioBundleService {
       ownerId: auth.user.id,
       path:
         kind === 'import'
-          ? join(studioImportIncomingFolder(auth.user.id), `${randomUUID()}.upload`)
+          ? studioImportStagePath(auth.user.id)
           : join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
       sizeBytes: bytes,
       digest: '',
@@ -846,10 +851,14 @@ export class StudioBundleService {
       const known = entry && asset && (!isLockedRow(asset) || revealed) ? { entry, asset } : null;
       const fileName = known ? known.asset.originalFileName : null;
       const contentType = fileName ? mimeTypes.lookup(fileName) || null : null;
-      const embedPath =
+      const candidatePath =
         known && known.entry.path && allowedEmbeds.has(key.key) && known.asset.ownerId === operation.ownerId
           ? known.entry.path
           : null;
+      // FL-721 (spec §8): a sealed Locked file is never copied into a bundle: decrypted, the bundle
+      // would put its plaintext on disk; as it is, the copy would be unreadable. It travels as a
+      // reference, by its plaintext checksum, like any media left out of the bundle.
+      const embedPath = candidatePath && !(await isLockedPath(candidatePath)) ? candidatePath : null;
 
       if (embedPath) {
         const { size } = await this.storage.stat(embedPath);
@@ -1082,7 +1091,14 @@ export class StudioBundleService {
         actor &&
         (await this.crypto.hashFile(retried.path, 'sha256')).toString('hex') === snapshot.digest
       ) {
-        const refused = await this.keepCarriedImports(actor, retried.path, this.storedManifest(retried), existing.id);
+        // The last attempt: a file that still cannot be kept is reported rather than failing the job.
+        const refused = await this.keepCarriedImports(
+          actor,
+          retried.path,
+          this.storedManifest(retried),
+          existing.id,
+          true,
+        );
         const listed = new Set(recovered.missing.map((item) => item.key));
         recovered.missing.push(...refused.filter((item) => !listed.has(item.key)));
       }
@@ -1348,13 +1364,16 @@ export class StudioBundleService {
    * the bytes, runs every check an upload gets (size, quota, graphics scan, caption and LUT
    * validation) and stores it as `<import id><extension>`. Nothing the manifest says about the file
    * reaches the disk: its name is a label and its type only settles what the bytes leave open, as
-   * a browser's does. Returns the files the checks refused; anything else that fails throws.
+   * a browser's does. Returns the files the checks refused; anything else that fails throws, so the
+   * job's retry can keep it, except with `settle` (the retry itself), where a file the import step
+   * still cannot keep is returned too: the project already exists and failing again would strand it.
    */
   private async keepCarriedImports(
     owner: AuthDto,
     bundlePath: string,
     manifest: StudioBundleManifest,
     projectId: string,
+    settle = false,
   ): Promise<StudioBundleMissingSource[]> {
     const carried = studioBundleImportSources(manifest.sources)
       .values()
@@ -1448,10 +1467,15 @@ export class StudioBundleService {
               lineage ? { publicationId, processingProvenance: JSON.stringify(lineage) } : undefined,
             );
           } catch (error) {
-            if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
+            if (error instanceof BadRequestException || error instanceof PayloadTooLargeException) {
+              this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
+            } else if (settle) {
+              this.logger.error(
+                `Studio bundle import: project file ${item.id} could not be kept: ${errorMessage(error)}`,
+              );
+            } else {
               throw error;
             }
-            this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
             refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
           }
         } finally {

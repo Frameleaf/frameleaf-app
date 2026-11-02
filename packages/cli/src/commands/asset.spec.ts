@@ -317,11 +317,20 @@ describe('checkForDuplicates', () => {
 
   it('returns results when check duplicates retry is failed', async () => {
     vi.mocked(checkBulkUpload).mockRejectedValue(new Error('Network error'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await expect(checkForDuplicates([testFilePath], { concurrency: 1 })).resolves.toEqual({
-      duplicates: [],
-      newFiles: [],
-    });
+    try {
+      await expect(checkForDuplicates([testFilePath], { concurrency: 1 })).resolves.toEqual({
+        duplicates: [],
+        newFiles: [],
+      });
+      expect(log).toHaveBeenCalledWith('Failed to check 1 file for duplicates:');
+      expect(log).toHaveBeenCalledWith(`- ${testFilePath} - Error: Network error`);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      log.mockRestore();
+    }
   });
 });
 
@@ -554,6 +563,40 @@ describe('deleteFiles', () => {
     );
     expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, false, false]);
   });
+
+  it('keeps a shared sidecar while another original with the same stem stays on disk', async () => {
+    const raw = path.join(testDir, 'test.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
+  });
+
+  it('keeps a shared sidecar when the remaining original differs only by case', async () => {
+    const raw = path.join(testDir, 'TEST.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
+  });
+
+  it.skipIf(os.platform() === 'win32' || process.getuid?.() === 0)(
+    'keeps the sidecar but deletes the original when the directory cannot be listed',
+    async () => {
+      const sidecar = path.join(testDir, 'test.xmp');
+      fs.writeFileSync(sidecar, 'metadata');
+      fs.chmodSync(testDir, 0o300); // write + search, no read: unlink works, readdir fails with EACCES
+      try {
+        await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+      } finally {
+        fs.chmodSync(testDir, 0o700);
+      }
+      expect(fs.existsSync(testFilePath)).toBe(false);
+      expect(fs.existsSync(sidecar)).toBe(true);
+    },
+  );
 
   it('keeps originals and shared sidecars during dry runs', async () => {
     const sidecar = path.join(testDir, 'test.xmp');

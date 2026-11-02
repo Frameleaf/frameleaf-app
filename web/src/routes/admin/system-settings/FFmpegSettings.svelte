@@ -11,9 +11,13 @@
    * What the graphics card is comes from the server's own check (`getHardwareCheck`), which the
    * Graphics card check page shows in full.
    *
-   * Left for later (server work): how many videos have a copy and the space they take, MB a minute
-   * per choice, remaking copies tonight from the save, "Test it" and the "graphics card stopped
-   * helping" state.
+   * FL-521: how many videos have a copy and the space they take (as last measured), "Save and remake
+   * tonight" from the save, and Stop while copies are being made.
+   *
+   * FL-537: "The graphics card stopped helping on <date>" when the converter had to make a copy on the
+   * processor (it clears once a copy is made on the card again), with **Test it** (a short test video
+   * on the card and on the processor, `testVideoCard`) and Graphics card check. Each playback quality
+   * says about how many MB a minute it takes, from the copies this server measured.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -25,6 +29,7 @@
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Reread from '$lib/components/frameleaf/settings/kit/Reread.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -35,12 +40,17 @@
     applyPlaybackQuality,
     COPY_RULES,
     copyRuleOf,
+    megabytesPerMinute,
     PLAYBACK_QUALITIES,
     playbackQualityOf,
     policyOf,
     type CopyRule,
     type PlaybackQuality,
   } from '$lib/frameleaf/playback-presets';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
+  import { saveAndRedo } from '$lib/frameleaf/library-progress';
+  import { locale } from '$lib/stores/preferences.store';
+  import { DateTime } from 'luxon';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -48,24 +58,32 @@
   import {
     AudioCodec,
     CQMode,
+    emptyQueue,
     getHardwareCheck,
+    getMediaCopies,
     getQueue,
     HardwareBackend,
     HlsVideoResolution,
+    LibraryRedoQueue,
+    LibraryRedoWhen,
     QueueCommand,
     QueueName,
     runQueueCommandLegacy,
+    testVideoCard,
     ToneMapping,
     TranscodeHWAccel,
     TranscodePolicy,
     VideoCodec,
     VideoContainer,
+    type MediaCopiesResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiChevronRight,
+    mdiExpansionCard,
     mdiPlayBoxMultipleOutline,
     mdiShieldCheckOutline,
+    mdiStop,
     mdiSync,
     mdiVideoOffOutline,
   } from '@mdi/js';
@@ -157,13 +175,56 @@
   let waiting = $state(0);
   let said = $state('');
   let remaking = $state(false);
+  let stopping = $state(false);
+  /** FL-521: how many videos have a copy and the space the copies take. */
+  let copies = $state<MediaCopiesResponseDto>();
+
+  // FL-630: one read at a time (it counts the whole library); a refresh asked for meanwhile runs once after it
+  let reading = false;
+  let readAgain = false;
+  const readCopies = async () => {
+    if (reading) {
+      readAgain = true;
+      return;
+    }
+    reading = true;
+    try {
+      do {
+        readAgain = false;
+        try {
+          copies = await getMediaCopies();
+        } catch {
+          // Without the counts the status says what happens to videos, without numbers.
+        }
+      } while (readAgain);
+    } finally {
+      reading = false;
+    }
+  };
+
+  /** Conversions finished so far, as the queue last said; undefined until the first check. */
+  let finished: number | undefined;
+  const readWaiting = async () => {
+    try {
+      const queue = await getQueue({ name: QueueName.VideoConversion });
+      const before = waiting;
+      waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
+      const finishedBefore = finished;
+      finished = (queue?.statistics.completed ?? 0) + (queue?.statistics.failed ?? 0);
+      // FL-630: while copies are being made, once more when they are done, and after a copy made
+      // between two checks, the count and the space they take follow along. Only then: the count
+      // reads the whole library.
+      if (waiting > 0 || before > 0 || (finishedBefore !== undefined && finished !== finishedBefore)) {
+        void readCopies();
+      }
+    } catch {
+      // The status then says what happens to videos, without a count.
+    }
+  };
 
   onMount(() => {
-    void getQueue({ name: QueueName.VideoConversion })
-      .then((queue) => (waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0)))
-      .catch(() => {
-        // The status then says what happens to videos, without a count.
-      });
+    void readWaiting();
+    void readCopies();
     void getHardwareCheck()
       .then((check) => {
         const server = check?.server;
@@ -173,6 +234,9 @@
       .catch(() => {
         // The Graphics card check page says why the server could not be checked.
       });
+    // FL-630: copies started by uploads or overnight are noticed while the page is open
+    const timer = setInterval(() => void readWaiting(), 5000);
+    return () => clearInterval(timer);
   });
 
   const hero = $derived.by(() => {
@@ -182,6 +246,20 @@
         icon: mdiVideoOffOutline,
         title: $t('frameleaf_play_vid_off'),
         body: $t('frameleaf_play_vid_off_body'),
+      };
+    }
+    // FL-537: the card failed and copies are made on the processor; only while the card is still chosen
+    const failedAt = copies?.videoCard.failedAt;
+    if (failedAt && config.ffmpeg.accel !== TranscodeHWAccel.Disabled) {
+      const slowdown = copies?.videoCard.slowdown;
+      return {
+        tone: 'warn' as const,
+        icon: mdiExpansionCard,
+        title: $t('frameleaf_play_vid_card_failed', { values: { date: shortDate(failedAt) } }),
+        body: slowdown
+          ? $t('frameleaf_play_vid_card_failed_body', { values: { times: Math.round(slowdown) } })
+          : $t('frameleaf_play_vid_card_failed_body_unknown'),
+        failed: true,
       };
     }
     if (waiting > 0) {
@@ -194,18 +272,76 @@
     }
     const size = sizeName(config.ffmpeg.targetResolution);
     const savedRule = copyRuleOf(config.ffmpeg.transcode);
+    const rule =
+      savedRule === 'all'
+        ? $t('frameleaf_play_vid_ok_all', { values: { size } })
+        : savedRule === 'needed'
+          ? $t('frameleaf_play_vid_ok_needed', { values: { size } })
+          : $t('frameleaf_play_vid_ok_custom');
+    // FL-521: how many have a copy, and the space the copies take when it has been measured.
+    const counted = copies
+      ? copies.playbackBytes === null
+        ? $t('frameleaf_play_vid_count', { values: { count: copies.withCopy, total: copies.videos } })
+        : $t('frameleaf_play_vid_count_space', {
+            values: { count: copies.withCopy, total: copies.videos, size: formatBytes(copies.playbackBytes) },
+          })
+      : '';
     return {
       tone: 'good' as const,
       icon: mdiPlayBoxMultipleOutline,
       title: $t('frameleaf_play_vid_ok'),
-      body:
-        savedRule === 'all'
-          ? $t('frameleaf_play_vid_ok_all', { values: { size } })
-          : savedRule === 'needed'
-            ? $t('frameleaf_play_vid_ok_needed', { values: { size } })
-            : $t('frameleaf_play_vid_ok_custom'),
+      body: counted ? `${rule} ${counted}` : rule,
     };
   });
+
+  const shortDate = (iso: string) =>
+    DateTime.fromISO(iso, { locale: $locale }).toLocaleString({ month: 'short', day: 'numeric' });
+
+  // FL-537: Test it ─ a short test video on the card, and on the processor for comparison
+  let testing = $state(false);
+  const testCard = async () => {
+    testing = true;
+    try {
+      const card = await testVideoCard();
+      copies = copies ? { ...copies, videoCard: card } : copies;
+      const test = card.lastTest;
+      if (!test?.encoder) {
+        said = $t('frameleaf_play_vid_card_none');
+      } else if (test.ok) {
+        said = card.slowdown
+          ? $t('frameleaf_play_vid_test_ok', { values: { times: Math.round(card.slowdown) } })
+          : $t('frameleaf_play_vid_test_ok_plain');
+      } else {
+        said = $t('frameleaf_play_vid_test_failed');
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_vid_test_error'));
+    } finally {
+      testing = false;
+    }
+  };
+  /** The last test said beside the switch: when, and whether it worked. */
+  const lastTested = $derived.by(() => {
+    const test = copies?.videoCard.lastTest;
+    if (!test) {
+      return '';
+    }
+    return test.ok
+      ? $t('frameleaf_play_vid_tested_ok', { values: { date: shortDate(test.at) } })
+      : $t('frameleaf_play_vid_tested_failed', { values: { date: shortDate(test.at) } });
+  });
+
+  // FL-537: about how many MB a minute each quality takes, from the copies this server measured
+  const perMinute = $derived(
+    megabytesPerMinute(
+      playbackQualityOf(config.ffmpeg),
+      copies ? { bytes: copies.playbackBytes, minutes: copies.copyMinutes } : undefined,
+    ),
+  );
+  /** The space a copy of every video still without one would take at the chosen quality, in bytes. */
+  const allMore = $derived(
+    copies && quality ? Math.max(0, copies.videoMinutes - copies.copyMinutes) * perMinute[quality] * 1_000_000 : null,
+  );
 
   const remake = async () => {
     remaking = true;
@@ -215,6 +351,9 @@
         queueCommandDto: { command: QueueCommand.Start, force: true },
       });
       said = $t('frameleaf_play_vid_remake_started');
+      await readWaiting();
+      // a remake that finished before the queue was read still changes the figures
+      void readCopies();
     } catch (error) {
       handleError(error, $t('frameleaf_play_vid_remake_failed'));
     } finally {
@@ -222,18 +361,89 @@
     }
   };
 
+  /** FL-521: Stop. Copies already made stay; the rest keep playing as they do until the next remake. */
+  const stop = async () => {
+    stopping = true;
+    try {
+      await emptyQueue({ name: QueueName.VideoConversion, queueDeleteDto: { failed: false } });
+      said = $t('frameleaf_play_vid_stopped');
+      await readWaiting();
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_vid_stop_failed'));
+    } finally {
+      stopping = false;
+    }
+  };
+
+  const remakeTonight = $derived(copies?.tonight.includes(LibraryRedoQueue.VideoConversion) ?? false);
+  const saveForNew = async () => {
+    if (await settingsDraft.saveKeys(['ffmpeg'])) {
+      said = $t('frameleaf_play_vid_saved_new');
+    }
+  };
+  const saveAndRemakeTonight = async () => {
+    try {
+      if (await saveAndRedo(settingsDraft, ['ffmpeg'], LibraryRedoQueue.VideoConversion, LibraryRedoWhen.Tonight)) {
+        said = $t('frameleaf_play_vid_saved_tonight');
+        copies = copies ? { ...copies, tonight: [...copies.tonight, LibraryRedoQueue.VideoConversion] } : copies;
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_vid_remake_failed'));
+    }
+  };
+  const remakeBody = $derived(
+    copies
+      ? configToEdit.ffmpeg.transcode === TranscodePolicy.All && config.ffmpeg.transcode !== TranscodePolicy.All
+        ? $t('frameleaf_play_vid_changed_all', { values: { count: copies.videos } })
+        : $t('frameleaf_play_vid_changed_remake', { values: { count: copies.withCopy } })
+      : $t('frameleaf_play_vid_changed_body'),
+  );
+
   const SPEEDS = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
 </script>
+
+{#snippet stopAction()}
+  <Button disabled={stopping || disabled} onclick={stop}>
+    <Icon icon={mdiStop} size="1em" aria-hidden />
+    {$t('frameleaf_play_stop')}
+  </Button>
+{/snippet}
+
+{#snippet cardActions()}
+  <Button variant="primary" disabled={testing} onclick={testCard}>{$t('frameleaf_play_vid_test')}</Button>
+  <Button onclick={() => goto(commandCenterUrl('processing', 'hardware'))}>
+    {$t('frameleaf_play_vid_card_check')}
+    <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} />
+  </Button>
+{/snippet}
 
 <KitPage>
   <Said message={said} onDismiss={() => (said = '')} />
 
-  <Hero tone={hero.tone} icon={hero.icon} title={hero.title} body={hero.body} label={$t('frameleaf_play_vid_label')} />
+  <Hero
+    tone={hero.tone}
+    icon={hero.icon}
+    title={hero.title}
+    body={hero.body}
+    label={$t('frameleaf_play_vid_label')}
+    actions={'failed' in hero
+      ? cardActions
+      : waiting > 0 && configToEdit.ffmpeg.transcode !== TranscodePolicy.Disabled
+        ? stopAction
+        : undefined}
+  />
+  {#if remakeTonight && waiting === 0}
+    <Notice title={$t('frameleaf_play_vid_tonight')}>{$t('frameleaf_play_vid_tonight_body')}</Notice>
+  {/if}
 
   <Section title={$t('frameleaf_play_vid_section')}>
     <Row
       label={$t('frameleaf_play_vid_which')}
-      help={rule ? $t(`frameleaf_play_vid_${rule}_help` as Translations) : $t('frameleaf_play_vid_rule_custom_help')}
+      help={rule === 'all' && allMore !== null && copyRuleOf(config.ffmpeg.transcode) !== 'all'
+        ? $t('frameleaf_play_vid_all_help_more', { values: { size: formatBytes(allMore) } })
+        : rule
+          ? $t(`frameleaf_play_vid_${rule}_help` as Translations)
+          : $t('frameleaf_play_vid_rule_custom_help')}
       lead={rule ? $t(RULE_NAME[rule]) : undefined}
     >
       <SegmentedControl
@@ -254,7 +464,7 @@
     <Row
       label={$t('frameleaf_play_vid_quality')}
       help={quality
-        ? $t(`frameleaf_play_vid_${quality}_help` as Translations)
+        ? $t(`frameleaf_play_vid_${quality}_help_mb` as Translations, { values: { mb: perMinute[quality] } })
         : $t('frameleaf_play_vid_quality_custom_help')}
       lead={quality ? $t(QUALITY_NAME[quality]) : $t('frameleaf_play_custom')}
     >
@@ -274,12 +484,16 @@
       />
     </Row>
     {#if changed}
-      <Notice title={$t('frameleaf_play_vid_changed')} tone="warn">
-        {$t('frameleaf_play_vid_changed_body')}
-        {#snippet action()}
-          <Button onclick={undo}>{$t('frameleaf_play_undo')}</Button>
-        {/snippet}
-      </Notice>
+      <Reread
+        title={$t('frameleaf_play_vid_changed')}
+        body={remakeBody}
+        {disabled}
+        choices={[
+          { label: $t('frameleaf_play_vid_save_tonight'), run: saveAndRemakeTonight },
+          { label: $t('frameleaf_play_vid_save_new'), run: saveForNew },
+        ]}
+        onUndo={undo}
+      />
     {/if}
     <Row label={$t('frameleaf_play_vid_remake_row')} help={$t('frameleaf_play_vid_remake_help')}>
       <Button disabled={remaking || configToEdit.ffmpeg.transcode === TranscodePolicy.Disabled} onclick={remake}>
@@ -303,19 +517,22 @@
   </Section>
 
   <Section title={$t('frameleaf_play_vid_speed')}>
-    <Row label={$t('frameleaf_play_vid_card')} help={cardHelp}>
-      <Switch
-        label={$t('frameleaf_play_vid_card')}
-        checked={card}
-        held={disabled || (!card && !cardKind)}
-        onChange={(value) => {
-          if (!value) {
-            configToEdit.ffmpeg.accel = TranscodeHWAccel.Disabled;
-          } else if (cardKind) {
-            configToEdit.ffmpeg.accel = cardKind;
-          }
-        }}
-      />
+    <Row label={$t('frameleaf_play_vid_card')} help={lastTested ? `${cardHelp} ${lastTested}` : cardHelp}>
+      <span class="inline">
+        <Button disabled={testing || (!card && !cardKind)} onclick={testCard}>{$t('frameleaf_play_vid_test')}</Button>
+        <Switch
+          label={$t('frameleaf_play_vid_card')}
+          checked={card}
+          held={disabled || (!card && !cardKind)}
+          onChange={(value) => {
+            if (!value) {
+              configToEdit.ffmpeg.accel = TranscodeHWAccel.Disabled;
+            } else if (cardKind) {
+              configToEdit.ffmpeg.accel = cardKind;
+            }
+          }}
+        />
+      </span>
     </Row>
     <Row label={$t('frameleaf_play_vid_card_where')} help={$t('frameleaf_play_vid_card_where_help')}>
       <Button onclick={() => goto(commandCenterUrl('processing', 'hardware'))}>
@@ -624,6 +841,12 @@
 </KitPage>
 
 <style>
+  .inline {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+  }
   .hint {
     max-width: 560px;
     margin: 0 0 var(--fl-space-3);

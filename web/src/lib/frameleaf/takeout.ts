@@ -9,6 +9,7 @@ import {
 } from '@frameleaf/sdk';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { createSHA256 } from 'hash-wasm';
 import type { Translations } from 'svelte-i18n';
 
 /**
@@ -159,6 +160,22 @@ export class TakeoutUploadError extends Error {
   }
 }
 
+let wasmHasher: ReturnType<typeof createSHA256> | undefined;
+
+/**
+ * SHA-256 of one staged chunk. Resuming a large archive re-checks every staged byte, so this uses the
+ * WebAssembly hasher the upload path uses (several times faster than plain JavaScript on the main
+ * thread), falling back to the JavaScript one where WebAssembly is unavailable.
+ */
+const chunkSha256 = async (bytes: Uint8Array) => {
+  try {
+    wasmHasher ??= createSHA256();
+    return (await wasmHasher).init().update(bytes).digest('hex');
+  } catch {
+    return bytesToHex(sha256(bytes));
+  }
+};
+
 /**
  * Upload an archive from where the server has it. Name and size only suggest that the chosen file is
  * the archive being resumed; every byte already staged is compared (by SHA-256, one chunk at a
@@ -181,7 +198,7 @@ export const resumeTakeoutArchive = async (
     signal.throwIfAborted();
     const end = Math.min(offset + TAKEOUT_UPLOAD_CHUNK_SIZE, staged.received);
     const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
-    await api.verify({ offset, size: bytes.byteLength, sha256: bytesToHex(sha256(bytes)) });
+    await api.verify({ offset, size: bytes.byteLength, sha256: await chunkSha256(bytes) });
     onProgress({ phase: 'verifying', name: file.name, bytes: end, total: staged.received });
   }
   let current = staged;

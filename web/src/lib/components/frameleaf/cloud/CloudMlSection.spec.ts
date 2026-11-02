@@ -156,8 +156,8 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     );
     render(CloudMlSection);
 
-    expect(await screen.findByText('Link this server first')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Link to Frameleaf' })).toBeInTheDocument();
+    expect(await screen.findByText('Cloud processing is pay as you go')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Frameleaf Cloud' })).toBeInTheDocument();
     expect(screen.getAllByText('Not linked').length).toBeGreaterThan(0);
     expect(screen.getByRole('switch', { name: 'Use Frameleaf Cloud for chosen jobs' })).toBeDisabled();
   });
@@ -238,6 +238,40 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     expect(sdkMock.createCloudMlDestination).not.toHaveBeenCalled();
   });
 
+  it('opens on the answer, says what leaves this server, and says the limits back (FL-541)', async () => {
+    const store = useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
+    render(CloudMlSection);
+
+    expect(await screen.findByRole('heading', { name: 'Cloud processing is on' })).toBeInTheDocument();
+    expect(await screen.findByText('$10.00 of AI credit to spend. $5.00 spent today.')).toBeInTheDocument();
+    expect(screen.getByText('What leaves this server')).toBeInTheDocument();
+    expect(screen.getByText(/Never your originals, faces, or the names you gave people/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Frameleaf will spend at most $20.00 a day in total. Nothing is ever charged automatically.'),
+    ).toBeInTheDocument();
+
+    store.draft.frameleafCloud!.cloudMl.autoDescribe.enabled = true;
+    expect(
+      await screen.findByText(/Up to \$2\.00 of that can go on describing new photos automatically\./),
+    ).toBeInTheDocument();
+  });
+
+  it('says the credit is almost gone, and that cloud processing is off', async () => {
+    useDraft(true);
+    sdkMock.getCloudMlStatus.mockResolvedValue(
+      status({ enabled: true, consent: consent('2026-10-01'), wallet: { ...wallet, balanceUsd: 2.5, heldUsd: 2 } }),
+    );
+    const first = render(CloudMlSection);
+    expect(await screen.findByRole('heading', { name: 'AI credit is almost gone' })).toBeInTheDocument();
+    first.unmount();
+
+    useDraft(false);
+    sdkMock.getCloudMlStatus.mockResolvedValue(status({ consent: consent('2026-10-01') }));
+    render(CloudMlSection);
+    expect(await screen.findByRole('heading', { name: 'Cloud processing is off' })).toBeInTheDocument();
+  });
+
   it('shows the AI Wallet in US dollars and saves a lower daily cap', async () => {
     useDraft(true);
     sdkMock.getCloudMlStatus.mockResolvedValue(status({ enabled: true, consent: consent('2026-10-01') }));
@@ -246,8 +280,8 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
 
     expect(await screen.findByText('$12.00')).toBeInTheDocument();
     expect(screen.getByText('$10.00 available')).toBeInTheDocument();
-    expect(screen.getByText('$5.00 of $20.00 daily cap')).toBeInTheDocument();
-    const cap = screen.getByLabelText('Daily spending cap');
+    expect(screen.getByText('$5.00 of $20.00 daily limit')).toBeInTheDocument();
+    const cap = screen.getByLabelText('Daily limit');
     await fireEvent.input(cap, { target: { value: '15' } });
     await fireEvent.change(cap);
     await vi.waitFor(() =>
@@ -263,12 +297,12 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     );
     render(CloudMlSection);
 
-    const cap = await screen.findByLabelText('Daily spending cap');
+    const cap = await screen.findByLabelText('Daily limit');
     await fireEvent.input(cap, { target: { value: '30' } });
     await fireEvent.change(cap);
     expect(await screen.findByText(/happen in your Frameleaf account/)).toBeInTheDocument();
     expect(sdkMock.updateCloudMlWallet).not.toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: /Raise the cap in your Frameleaf account/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Raise the limit in your Frameleaf account/ })).toHaveAttribute(
       'href',
       settingsUrl,
     );
@@ -288,7 +322,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     sdkMock.updateCloudMlWallet.mockRejectedValueOnce({ status: 403, data: { message: 'Forbidden' } });
     render(CloudMlSection);
 
-    const cap = await screen.findByLabelText('Daily spending cap');
+    const cap = await screen.findByLabelText('Daily limit');
     await fireEvent.input(cap, { target: { value: '40' } });
     await fireEvent.change(cap);
     await vi.waitFor(() => expect(handleError).toHaveBeenCalled());
@@ -323,7 +357,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     sdkMock.getCloudMlWallet.mockResolvedValue({ ...wallet, dailyCapUsd: null });
     render(CloudMlSection);
 
-    const cap = await screen.findByLabelText('Daily spending cap');
+    const cap = await screen.findByLabelText('Daily limit');
     await fireEvent.input(cap, { target: { value: '40' } });
     await fireEvent.change(cap);
     expect(await screen.findByText(/happen in your Frameleaf account/)).toBeInTheDocument();

@@ -189,12 +189,7 @@ it.skipIf(!desktop || !pack || !cache)(
       }
 
       db = await getKyselyDB();
-      for (const table of [
-        'smart_search',
-        'smart_search_description',
-        'asset_video_duplicate_frame',
-        'video_moment_frame_embedding',
-      ])
+      for (const table of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'])
         await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
       const { sut, ctx } = newMediumService(SmartInfoService, {
         database: db,

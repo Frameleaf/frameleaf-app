@@ -11,6 +11,7 @@ import {
   choicesFor,
   CLOUD,
   currentChoice,
+  FOLLOW,
   followerChoice,
   followerChoices,
   hasWrites,
@@ -157,6 +158,7 @@ describe('search and faces run in one place (FL-455)', () => {
     expect(routeWrites({ search: CLOUD }, {}, offered())).toEqual({
       routes: [{ workload: MlWorkload.Clip, destinationId: 'fc' }],
       cloud: {},
+      follow: [],
     });
     expect(routeWrites({ search: ASK }, {}, offered()).cloud).toEqual({});
   });
@@ -199,6 +201,7 @@ describe('saving a choice writes both records', () => {
         { workload: MlWorkload.PetRecognition, destinationId: 'office' },
       ],
       cloud: {},
+      follow: [],
     });
   });
 
@@ -225,6 +228,7 @@ describe('saving a choice writes both records', () => {
     expect(routeWrites({ descriptions: ASK, upscale: CLOUD }, {}, linked)).toEqual({
       routes: [],
       cloud: { descriptions: CloudRouteMode.Both, upscale: CloudRouteMode.Cloud },
+      follow: [],
     });
   });
 
@@ -237,6 +241,7 @@ describe('saving a choice writes both records', () => {
     expect(routeWrites({ descriptions: 'office' }, {}, onCloud)).toEqual({
       routes: [{ workload: MlWorkload.Enrichment, destinationId: 'office' }],
       cloud: { descriptions: CloudRouteMode.Local },
+      follow: [],
     });
   });
 
@@ -249,6 +254,7 @@ describe('saving a choice writes both records', () => {
     expect(routeWrites({ descriptions: NONE }, {}, asking)).toEqual({
       routes: [{ workload: MlWorkload.Enrichment, destinationId: null }],
       cloud: { descriptions: CloudRouteMode.Local },
+      follow: [],
     });
   });
 
@@ -256,5 +262,60 @@ describe('saving a choice writes both records', () => {
     expect(routeWrites({}, { creative: 'office' }, linked).routes).toEqual([
       { workload: MlWorkload.RestorationCreative, destinationId: 'office' },
     ]);
+  });
+});
+
+describe('following the processing order (FL-456)', () => {
+  const following = (overrides: Partial<RouteFacts> = {}) =>
+    facts({
+      destinations: [server, office],
+      routes: [
+        { workload: MlWorkload.Face, destinationId: 'srv', followsOrder: true },
+        { workload: MlWorkload.PetRecognition, destinationId: 'srv', followsOrder: true },
+        { workload: MlWorkload.Enrichment, destinationId: 'office', followsOrder: false },
+      ] as MlWorkloadRouteDto[],
+      ...overrides,
+    });
+
+  it('a row that follows the order says so, whatever place it runs on now', () => {
+    expect(currentChoice('faces', following())).toBe(FOLLOW);
+    expect(currentChoice('descriptions', following())).toBe('office');
+  });
+
+  it('offers the order first, then each place, then nowhere', () => {
+    expect(choicesFor('faces', following())).toEqual([FOLLOW, 'srv', 'office', NONE]);
+    // an older server keeps no order, so it is not offered
+    expect(choicesFor('faces', facts({ destinations: [server, office] }))).toEqual(['srv', 'office', NONE]);
+  });
+
+  it('picking the place a following row runs on now pins it there, with its follower', () => {
+    expect(routeWrites({ faces: 'srv' }, {}, following())).toEqual({
+      routes: [
+        { workload: MlWorkload.Face, destinationId: 'srv' },
+        { workload: MlWorkload.PetRecognition, destinationId: 'srv' },
+      ],
+      cloud: {},
+      follow: [],
+    });
+  });
+
+  it('a pinned row follows the order again, and nothing is written while nothing changes', () => {
+    expect(routeWrites({ descriptions: FOLLOW }, {}, following())).toEqual({
+      routes: [],
+      cloud: {},
+      follow: [MlWorkload.Enrichment],
+    });
+    expect(hasWrites(routeWrites({ faces: FOLLOW }, {}, following()))).toBe(false);
+    expect(hasWrites(routeWrites({}, {}, following()))).toBe(false);
+  });
+
+  it('a follower set to "same" follows the order with its row', () => {
+    const pinned = following({
+      routes: [
+        { workload: MlWorkload.Face, destinationId: 'srv', followsOrder: false },
+        { workload: MlWorkload.PetRecognition, destinationId: 'srv', followsOrder: false },
+      ] as MlWorkloadRouteDto[],
+    });
+    expect(routeWrites({ faces: FOLLOW }, {}, pinned).follow).toEqual([MlWorkload.Face, MlWorkload.PetRecognition]);
   });
 });

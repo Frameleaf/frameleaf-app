@@ -32,7 +32,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import { Route } from '$lib/route';
 import type { HeaderButtonActionItem } from '$lib/types';
-import { handleError } from '$lib/utils/handle-error';
+import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
 export const getUserAdminsActions = ($t: MessageFormatter) => {
@@ -101,7 +101,11 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
   return { Detail, Update, Delete, Restore, ResetPassword, ResetPinCode };
 };
 
-export const handleCreateUserAdmin = async (dto: UserAdminCreateDto) => {
+/** The server's answer when the email belongs to another account (`BaseService.createUser`). */
+const isEmailTaken = (error: unknown) => getServerErrorMessage(error) === 'Email is not available';
+
+/** `onEmailTaken` lets a form say it on the email field instead of in a toast. */
+export const handleCreateUserAdmin = async (dto: UserAdminCreateDto, options?: { onEmailTaken?: () => void }) => {
   const $t = await getFormatter();
 
   try {
@@ -110,7 +114,13 @@ export const handleCreateUserAdmin = async (dto: UserAdminCreateDto) => {
     toastManager.primary();
     return response;
   } catch (error) {
-    handleError(error, $t('errors.unable_to_create_user'));
+    if (!isEmailTaken(error)) {
+      handleError(error, $t('errors.unable_to_create_user'));
+    } else if (options?.onEmailTaken) {
+      options.onEmailTaken();
+    } else {
+      handleError(error, $t('frameleaf_userpage_email_taken'));
+    }
   }
 };
 

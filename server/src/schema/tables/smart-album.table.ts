@@ -27,4 +27,8 @@ export class SmartAlbumTable {
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
+
+  /** FL-522: when the owner hid this album from their own library; null while it shows. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  hiddenAt!: Timestamp | null;
 }

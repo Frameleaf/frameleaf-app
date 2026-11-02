@@ -13,6 +13,9 @@ import {
   MlDestinationHealthStateDto,
   MlDestinationResponseDto,
   MlDestinationUpdateDto,
+  MlProcessingOrderResponseDto,
+  MlProcessingOrderUpdateDto,
+  MlWorkloadProcessingOrderUpdateDto,
   MlWorkloadRouteUpdateDto,
   MlWorkloadRoutesResponseDto,
 } from 'src/dtos/ml-destination.dto.js';
@@ -74,6 +77,47 @@ export class MlDestinationController {
     @Body() dto: MlWorkloadRouteUpdateDto,
   ): Promise<MlWorkloadRoutesResponseDto> {
     return this.service.setRoute(workload, dto);
+  }
+
+  @Get('processing-order')
+  @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
+  @Endpoint({
+    operationId: 'getMlProcessingOrder',
+    summary: 'Get the processing order',
+    description:
+      'The order processing tries its places in (this server, your computers, Frameleaf Cloud), the workloads with a list of their own, and whether each place can take work now. A job runs on the first available place in its list and waits when none is.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getProcessingOrder(): Promise<MlProcessingOrderResponseDto> {
+    return this.service.getProcessingOrder();
+  }
+
+  @Put('processing-order')
+  @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+  @Endpoint({
+    operationId: 'setMlProcessingOrder',
+    summary: 'Set the processing order',
+    description: 'Save the order every workload without a list of its own tries its places in.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  setProcessingOrder(@Body() dto: MlProcessingOrderUpdateDto): Promise<MlProcessingOrderResponseDto> {
+    return this.service.setProcessingOrder(dto);
+  }
+
+  @Put('processing-order/:workload')
+  @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
+  @Endpoint({
+    operationId: 'setMlWorkloadProcessingOrder',
+    summary: 'Set the processing order of one workload',
+    description:
+      'Give a workload a list of its own (an empty list keeps it off), or send null to make it follow the main order again.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  setWorkloadProcessingOrder(
+    @Param() { workload }: MlWorkloadParamDto,
+    @Body() dto: MlWorkloadProcessingOrderUpdateDto,
+  ): Promise<MlProcessingOrderResponseDto> {
+    return this.service.setWorkloadProcessingOrder(workload, dto);
   }
 
   @Get()

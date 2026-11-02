@@ -69,6 +69,12 @@ export interface AuditReport extends Omit<ReportSections, 'unresolved'> {
   unresolvedCount: number;
   /** The migration only copies. Retiring the source is always the operator's decision. */
   sourceDeletion: 'never-automatic';
+  /**
+   * Locked items need an elevated (PIN-unlocked) session, which an API key never has, so the
+   * run can neither copy nor count them. Even a pass never clears the source while the
+   * owner might still have Locked items there.
+   */
+  lockedMedia: 'not-copied';
 }
 
 /**
@@ -138,7 +144,10 @@ export async function audit(
         break pages;
       }
       const res = await to.checkBulkUpload(part.map((r) => ({ id: r.aId, checksum: r.bChecksum! })));
-      const present = new Set(res.results.filter((r) => r.action === AssetUploadAction.Reject).map((r) => r.id));
+      // A match in B's trash is not present: B purges it when the trash empties.
+      const present = new Set(
+        res.results.filter((r) => r.action === AssetUploadAction.Reject && !r.isTrashed).map((r) => r.id),
+      );
       const absent = part.filter((row) => !present.has(row.aId));
       absentCount += absent.length;
       for (const row of absent) {
@@ -174,6 +183,7 @@ export async function audit(
     ...sections,
     unresolvedCount,
     sourceDeletion: 'never-automatic',
+    lockedMedia: 'not-copied',
     totals: {
       assets: counts.assetsTotal,
       uploaded: counts.assetsUploaded,

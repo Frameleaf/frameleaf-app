@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { ChecksumAlgorithm } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { isAssetChecksumConstraint } from 'src/utils/database.js';
 
 /** Byte-verified checksum evidence shared by uploads, integrity scans and recovery. */
 @Injectable()
@@ -41,6 +42,37 @@ export class AssetChecksumRepository {
         "updatedAt" = EXCLUDED."updatedAt"
       WHERE ${input.source} = 'recovery'
     `.execute(this.db);
+  }
+
+  /**
+   * Moves a legacy upload whose file was just read and verified from its SHA-1 to the SHA-256 read with it,
+   * so the uploads and duplicate checks of the apps, which send SHA-256, match it directly. Only an upload
+   * (`libraryId` null) still holding that SHA-1 changes: a path checksum or an external original never does.
+   * The update trigger gives it a new `updateId`, so sync sends it again. False when the asset changed
+   * meanwhile, or when the owner already has another upload with that SHA-256: that is a real duplicate,
+   * left for duplicate review, and the asset keeps its SHA-1.
+   * ponytail: a sealed Locked original is never read by the checksum check, so the SHA-1 its encrypted backup
+   * record keeps (FL-738) still matches its deletion. Only one unlocked after that backup, then promoted and
+   * deleted before the next backup, can't be listed from it; the deletion capture keeping the SHA-1 too closes that.
+   */
+  async promoteToSha256(input: { assetId: string; sha1: Buffer; sha256: Buffer }): Promise<boolean> {
+    try {
+      const result = await this.db
+        .updateTable('asset')
+        .set({ checksum: input.sha256, checksumAlgorithm: ChecksumAlgorithm.sha256File })
+        .where('id', '=', input.assetId)
+        .where('checksumAlgorithm', '=', ChecksumAlgorithm.sha1File)
+        .where('checksum', '=', input.sha1)
+        .where('libraryId', 'is', null)
+        .where('isExternal', '=', false)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows) > 0;
+    } catch (error) {
+      if (isAssetChecksumConstraint(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   /**
@@ -107,9 +139,9 @@ export class AssetChecksumRepository {
   }
 
   /**
-   * Maps client-supplied SHA-1 digests onto the SHA-256 digests this fork
-   * stores on `public.asset`, so a SHA-1 duplicate pre-check can be resolved
-   * through the normal filtered lookup.
+   * Maps the SHA-1 digests an upstream Immich client sends onto the SHA-256
+   * digests this fork stores on `public.asset`, so a SHA-1 duplicate
+   * pre-check can be resolved through the normal filtered lookup.
    */
   async getChecksumTranslations(
     ownerId: string,

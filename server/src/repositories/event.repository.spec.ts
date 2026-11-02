@@ -241,6 +241,17 @@ describe(EventRepository.name, () => {
     });
   });
 
+  it('does not turn a committed Develop switch into an error when palette follow-up fails', async () => {
+    const next = vi.fn(() => Promise.resolve());
+    const { sut, logger } = setup('AssetDevelopCurrentChanged', [
+      vi.fn(() => Promise.reject(new Error('queue unavailable'))),
+      next,
+    ]);
+    await expect(sut.emit('AssetDevelopCurrentChanged', { assetId: 'asset' })).resolves.toBeUndefined();
+    expect(next).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
   it('still stops other events at the first failure and rethrows it', async () => {
     const next = vi.fn(() => Promise.resolve());
     const { sut } = setup('AssetTrash', [vi.fn(() => Promise.reject(new Error('handler failed'))), next]);

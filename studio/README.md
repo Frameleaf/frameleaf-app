@@ -3,7 +3,7 @@
 This directory contains preservation metadata and an explicit isolated engine build. The source archive is recovered only by the preparation command below; the vendor snapshot and generated workspace are not committed. The production Studio host is present, but this build does not supply its engine adapter, deploy a rendering worker, qualify hardware or provide licensed Dolby tools. Locked npm packages may contain model, font and asset payloads; no separate weight acquisition is authorized by this build.
 
 - `freecut-provenance.json` records the immutable upstream Freecut revision, exact archive URL and digest, MIT license, and 2,646 ordered source-file hashes.
-- `freecut-feature-manifest.json` preserves 210 source-derived feature rows and a pinned contract for all 2,204 family-source references across ten categories. Its upstream axes (`status`: native, test, render, command) stay a fixed preservation record of the Freecut source: every row reads not implemented, not run and unqualified there. Each row's `frameleaf` object records Frameleaf delivery (FL-405): `status` is `shipped` (in the prepared engine or the Frameleaf adapter and host, and reachable in Studio; upstream behaviour carried over unchanged counts and its note says so), `descoped-v1` (MusicGen, for its licence) or `not-started` (not reachable), with `evidence` naming patches under `patches/`, commits or PRs. Web Studio rows require an admitted GPU and render worker, which the bundled local ML server provides by default. `node studio/tools/feature-manifest.mjs --check` requires a valid status on every row and evidence on every shipped row. `conformance.json` remains the authority for measured qualification.
+- `freecut-feature-manifest.json` preserves 210 source-derived feature rows and a pinned contract for all 2,204 family-source references across ten categories. Its upstream axes (`status`: native, test, render, command) stay a fixed preservation record of the Freecut source: every row reads not implemented, not run and unqualified there. Each row's `frameleaf` object records Frameleaf delivery (FL-405): `status` is `shipped` (in the prepared engine or the Frameleaf adapter and host, and reachable in Studio; upstream behaviour carried over unchanged counts and its note says so), `descoped-v1` (withheld from v1 by owner direction; no row since FL-560 restored MusicGen) or `not-started` (not reachable), with `evidence` naming patches under `patches/`, commits or PRs. Web Studio rows require an admitted GPU and render worker, which the bundled local ML server provides by default. `node studio/tools/feature-manifest.mjs --check` requires a valid status on every row and evidence on every shipped row. `conformance.json` remains the authority for measured qualification.
 - `dependency-attribution.json` records preliminary dependency and asset review obligations plus a pinned 51-row package name/version/license projection from the provenance-bound Freecut lockfile. It is not a completed legal or redistribution approval.
 
 The provenance ledger was cross-checked against a temporary clean checkout of `walterlow/freecut@4d62e8082c5eb387a96275bcbd323d28f6e41a62`. The clean tree contained 2,646 files and matched every recorded path and SHA-256 digest. SHA-256 of the UTF-8 bytes of `JSON.stringify(files)` in recorded order is `a56d57c4bcd2c996c389bb7470216b185caa28de389def109bf4d86fd95e3adb`, covering every row whether or not a feature references it. The exact codeload URL is pinned, and its archive matched SHA-256 `b4224e5c219a6302586cbe2242e9e6d299dfd1878f1fcd0f2d77ea3db12a5d32`. This is source-identity evidence only, not execution or qualification evidence.
@@ -104,7 +104,7 @@ HDR pictures, Dolby decoding, float edits, licensed tools or device playback.
 
 ## Reproducible engine workspace
 
-Use Node 26.11.1 and npm 12.2.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.
+Use Node 22.23.4 and npm 12.2.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.
 
 The October 13, 2026 dependency overlay uses npm 12.2.0, React 19.3.0, Vite+ 1.1.0, Transformers.js 4.3.1 and stable ONNX Runtime Web 1.30.0. Vite+ bundles Vitest 5.0.3; its [official migration guide](https://viteplus.dev/guide/vitest-v5#entry-points-and-packages) requires the coverage provider at that exact version (registry latest is 5.0.4). Transformers.js constrains its own ONNX Runtime Web 1.31.0 development build; its matching JS/WASM pair is separate from the stable root runtime. `node --test studio/tools/runtime-pairs.test.mjs` checks installed payload identities and rejects mixed pairs.
 
@@ -191,6 +191,176 @@ CPU fake-device regressions exercise production monitor/meter, controller and
 mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
+
+Patch 0164 (FL-638) adds Stabilise. The Motion tab of one video clip has a Stabilise card: an
+Original / Stabilised preview, Smoothness (Gentle, Smooth, Locked off, cropping in 4, 7 and 12 percent),
+Stabilise clip, progress while the camera movement is analysed, then the level and crop with Turn off.
+The analysis is a job on the Frameleaf server, in Activity (`POST /studio/projects/{id}/stabilisations`;
+the card module is substituted by the adapter's `shims/stabilise-service.ts`). It decodes the clip's
+source window at up to 30 frames a second into 160-pixel grey pictures and measures each frame's shift
+and turn by block matching and a robust fit (`block-similarity-v1`), on the CPU, never on Frameleaf
+Cloud. The cumulative camera path is written into the clip as `stabilisation.motion` (protocol 2.4,
+schema `item.stabilisation`). The engine smooths it for the level (Gaussian, 0.33 s and 1 s; Locked off
+holds the mean) and draws the clip through the smoothed-minus-measured shift and turn, scaled by the
+crop and clipped to where the picture shows; a correction that would uncover an edge is reduced just
+enough that none shows (no edge fill). The canvas item renderer draws it in export and the canvas
+preview, and the live preview applies the same correction as a CSS transform; stabilised clips leave
+the GPU-direct paths for the canvas renderer. Changing the level applies at once with no new analysis,
+and each of apply, level and Turn off is one undo step. HDR clips are not offered Stabilise. Tests
+cover path smoothing, the crop coverage maths, the renderer transform at the clip's source time and
+the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
+path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
+parity and speed-ramp spans in the live preview remain open.
+Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
+the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
+embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
+FFT cross-correlation (`onset-xcorr-1ms-v1`), reported only when it clearly beats every other lag. Silent,
+unrelated and ambiguous recordings are flagged, never matched, and stay manually alignable in frames. The
+first and last thirds are aligned separately, so clock drift beyond one frame is reported instead of
+being hidden by one offset. Each window needs more than 10 s of sound, so recordings of 30 s or less are not checked for drift (one frame over 30 s would need a clock error above about 1,100 ppm). Create moves each angle (with its audio) so one frame shows the same moment
+everywhere, hides the angle tracks, mutes every camera's audio except the master's, and adds a Multicam
+program track on top with a video-only copy of the reference, all in one undo step. Selecting a program
+clip shows angle buttons (number keys 1–4 while focused). A cut replaces the program from the playhead to
+the next cut with that angle's matching source range, and is refused where the angle has no picture, with
+the missing range shown. Cuts are ordinary clips that can be trimmed. The group, offsets, reference and
+master audio are stored in `multicam` records on the tracks and program clips (protocol 12.9). Angles must
+play forward at normal speed and own their tracks. 
+Patch 0153 (FL-628) adds the follow-ups. Sync fits each drifting angle's clock (ratio and offset from the
+two windows), and Correct drift plays that angle and its audio at the fitted speed (within ±1%), so it stays
+within a frame across the recording. A selected audio clip that is not a camera's own can be the master
+audio: it is synced like an angle and every camera's sound is muted. The angle buttons show each angle's
+picture at the playhead from the cached filmstrip. Auditioning angles with sound and decoded export
+checks at cuts remain open.
+
+Patch 0168 (FL-640) adds word-by-word captions. Caption cues made from a transcript keep the
+transcript's word times (`words`, each linked to its stored word as `segmentIndex:wordIndex`), so a
+word corrected in the transcript is corrected in clip captions and placed caption segments, and trims
+and splits move the words with their cue. The Caption style card at the top of the captions section
+(`word-caption-style-card.tsx`) previews Vertical 9:16 or Original and stores a `wordLook` (Lines,
+Highlight, Word by word or One big word; highlight colour; Small, Medium or Large; Bottom, Middle or
+Top), writing size and position as the captions' own font size and height. The preview and export
+renderers draw the chosen style through the same pure model (`src/shared/typography/word-captions.ts`),
+in the captions' own title fonts. A cue without word times spreads its words by length. Subtitle files
+and embedded text tracks keep whole lines. A Vertical 9:16 export without a chosen look uses Highlight,
+Large, Middle (`tools/bundled-worker-word-captions.mjs`, called by the reframe). Tests cover word
+timing, the active word, each style through export paint and preview, the card, transcript
+correction and the vertical default. Browser journeys and pixel comparisons remain open.
+
+Patch 0152 (FL-627) extends motion tracking. The tracking box can be a separate clip, typically a
+rectangle drawn on the preview with the shape tool, while the target (a title, overlay or mask shape,
+which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
+tracking writes canvas positions. During tracking the source clip's timeline bar shows progress; the
+result marks the tracked range, or the lost range in red, until it is applied or discarded. Each applied
+track is recorded on the target as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames,
+lostFrames }]` (protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
+lost their tags: it deletes x, y, width and height keys at the recorded frames, leaving other keys
+alone. Tests cover the separate box, parented and invalid boxes, the lost-range overlay and
+remove-after-reopen. Preview/export pixel comparisons and browser journeys remain open.
+
+Patch 0148 (FL-596) adds motion tracking. The clip panel's Track motion section (one selected visual
+clip: title, shape, image or video overlay) uses that clip's own box at the playhead as the tracking box:
+the editor places it over the subject first. It is mapped into the chosen video's source pixels through
+the video's resolved transform. Videos that are rotated, cropped, corner-pinned, flipped, reversed or
+have animated transforms are refused, and so are targets with vector position/scale keys. Frames are
+decoded at 480 px wide from each timeline frame's mapped source time (VFR-safe) and tracked forward or
+backward, up to 900 frames, by normalised cross-correlation with a small-scale search
+(`ncc-scale-search-v1`). The first frame below 0.6 confidence and every later frame are marked lost,
+never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
+keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
+keeps the tracked part (or reseeds there and tracks a second segment), and existing position/size keys
+in the range block it until replacement is confirmed. Each application is one undo step, and in this
+patch Remove reads the keys' source tag, which saved graphs drop (protocol 13.2.4); patch 0152 adds
+item `motionTracks` records so Remove also works after saving and reopening. The synthetic 1080p path
+holds the centre within 5 px and size within 5% on at least 95% of frames, and an occlusion produces a
+lost interval. Rotation and perspective, mask-path tracking, preview/export pixel checks and browser
+journeys remain open.
+
+Patch 0151 (FL-626) matches colour through existing grades and in HDR. Instead of decoding source
+frames, each clip is rendered alone through the export renderer at a small size of its own aspect
+(`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own
+match, so the match lands after the grade and approximates the graded reference. SDR projects read the
+sRGB-encoded working values. HDR projects read the GPU float route's PQ BT.2020 signal, decoded to linear
+BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same
+solve applies, with values above reference white kept. HDR analysis without WebGPU is refused with an
+explanation. Results are now bound to the reference's source, timing and full grade and to the
+project's colour management as well as the target's, so changing any of them makes a proposal stale.
+The panel shows reference, before and after swatches (with values) at the chosen strength. Tests cover
+graded staleness and an HDR linear chart whose error falls by at least half. Browser rendering of the
+sampled frames and preview/export pixel comparisons remain open.
+
+Patch 0147 (FL-599) adds colour matching between shots. The video panel's Match colour section takes a
+reference clip and samples the frame at the playhead (or each clip's middle) from the source, downscaled,
+in the SDR working space. A match is an editable `gpu-exposure` then `gpu-temperature` pair after the
+clip's effects: because both act linearly on SDR working values, the exposure, temperature and tint that
+move the target's unclipped channel means onto the reference's solve three linear equations exactly
+(`mean-gain-wb-v1`). Clipped, flat and extreme proposals are flagged and not applied. Strength scales the
+three values from identity; zero removes the effects. The effects carry `colour-match:` ids and undeclared
+`matchStrength`/`matchSource` parameters (protocol 13.3.3), so a new match replaces the old one in place and
+reopens with its provenance. Results are bound to the clip's source, timing, sampled time and non-match
+effects, so stale results are skipped; apply, strength and remove are each one undo step. HDR projects,
+graded clips (enabled colour effects other than the match), a reference that is itself matched and reverse
+playback are refused. Synthetic 24-patch chart tests of the solve (not the renderer) require mean CIEDE2000 error to fall by at least half (sRGB to CIELAB D65). Matching through an
+existing grade, HDR working space, scope before/after review and browser/worker export parity remain open.
+
+Patch 0150 (FL-623) saves the loudness target and ceiling in the project (`timeline.masterLoudness`,
+protocol 3.2 table and schema) and adds an optional true-peak limiter at the ceiling as the last stage of
+the export mix, after master gain and automation. The limiter (`tp-lookahead-1.5ms-v1`) knows the whole
+mix, so it looks ahead without latency: each sample's required gain from its 4x-oversampled peak takes a
+±1.5 ms running minimum and a box average, which never exceeds what a peak needs, and release recovers
+over 50 ms; channels share one gain. While it is on, export mixes the whole range at once (no 30 s
+windows) and never copies audio packets. Preview routes the master through a Web Audio compressor set
+as a limiter at the ceiling only while the limiter is on (sample-peak, about 6 ms lookahead), so it
+approximates the export and adds no latency otherwise. The Match loudness section edits the target,
+ceiling and limiter as undoable project settings, and the export report checks against them. Tests
+hold the limited true peak within 0.2 dB of the ceiling at -0.3, -1 and -2 dBTP, keep quiet audio
+untouched and channels in step, and cover save, undo and serialization. Native clients must refuse to
+export a graph with the limiter on unless they apply it. Browser, worker and codec-overshoot checks
+remain open.
+
+Patch 0162 (FL-637) adds Clean up voice at the end of the Audio tab: one audio clip at a time, "Found
+in this clip" (wind, hum and buzz, background noise, room echo) from a quick look by the server, Light,
+Standard or Strong, a Before / After listen, and "Use the original sound". The work runs on the
+project's server: the ML server's `voice-cleanup` task (DeepFilterNet3 for wind, noise and echo; notches
+for mains hum) on this server or a computer at home, never Frameleaf Cloud. The cleaned window (with a
+second of handle each side) is kept with the project as an audio import, and the clip plays it by its
+media id, so preview and export need nothing new. What the clip played before is kept on the item as
+`voiceCleanup.original` (its `mediaId` stays a graph reference the resolver checks), so cleaning again
+always starts from the original. Apply and restore are one undo step each. The card's host lives in
+`studio/adapters/web/src/shims/voice-cleanup-service.ts`, substituted like the export dialogs; it calls
+the project's own Studio routes with the session cookie, so the frame protocol is unchanged.
+
+Patch 0145 (FL-598) adds dialogue loudness matching and an export loudness report. One BS.1770-4
+meter (K-weighting derived for any sample rate, 400 ms blocks with EBU R128 absolute and relative
+gates, true peak by 4x polyphase oversampling; `bs1770-4/r128-gating/tp-4x-v1`) runs in a worker for
+both. The audio panel's Match loudness section measures the selected clips' source ranges (a video's
+linked audio when it has one), shows loudness and true peak as the clip plays now, and suggests a
+change to the clip's static volume toward an editable -16 LUFS target and -1 dBTP ceiling. Gain
+envelopes, fades and ducking stay relative to that volume, so they keep their shape. Boost is capped at
++12 dB and the clip volume range at -60..+12 dB, both flagged; muted, silent, shorter-than-0.4 s and
+undecodable clips get no suggestion. Every result is bound to the clip's audible state, so an edit since
+measuring, or applying the same result twice, is refused as stale; approved changes apply in one undo
+step. The export dialog measures the decoded deliverable and reports LUFS and dBTP against the Studio
+defaults with a warning, never blocking; a failed measurement reads unknown. The calibrated tests cover
+EBU 3341 levels at 44.1, 48 and 96 kHz, gating, silence and inter-sample peaks. There is no master
+limiter: the export path keeps its existing soft clip above 0 dBFS, so a ceiling overshoot is reported,
+not prevented. The target is not saved in the project, and browser decode, worker export and
+codec-overshoot qualification remain open.
+
+Patch 0145 (FL-597) adds speed ramps and fixes freeze-frame sync. The clip panel's Speed ramp section
+takes points (a position in the clip's source and a speed from 0.25x to 4x) with linear or eased
+boundaries, shows the resulting duration and caption count, and applies in one undo step. The curve
+is integrated over source time and written as constant-speed segments every six output frames, with
+boundaries rounded independently from the exact integral, so there is no cumulative drift, and the last
+segment ends on the clip's own source end. Linked video and audio share every cut, attached source
+captions move with the source they describe, and timeline-authored text stays put. Neighbours keep
+their positions: a longer result that needs their room, a locked participant, a transition, keyframes,
+reverse playback or partly linked companions refuse without changing the project. Dialogue keeps its
+pitch through SoundTouch, with an option to mute it; frames are repeated or skipped and none are
+generated. Freeze frames now split the synchronised linked audio too, leaving silence for the hold
+instead of letting the audio run ahead, take their length in project frames, move later clips only on
+the tracks they touch, and refuse HDR sources (the held frame is an 8-bit PNG) and locked tracks.
+Engine unit tests cover integrated positions, fractional rates, linked cuts, captions, refusals and
+the freeze audio gap. Browser, worker export and preview/export parity remain unqualified.
 
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
@@ -421,6 +591,20 @@ Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-10
   probes and decodes the result back. Matrix/range conversion uses FFmpeg's libzimg
   `zscale` filter in both directions; an RGB round trip through `scale` alone can
   hide shifted native ten-bit Y/Cb/Cr codes.
+- **Bundled worker (FL-107).** The machine-learning container's Studio worker writes
+  `mp4-hevc-main10` as an HDR10 master (`hdr10` colour, or PQ sources kept) or an HLG
+  master (HLG sources kept). `tools/bundled-worker-hdr.mjs` streams the engine's
+  `renderFrameSignal` frames into the `hdr-master.mjs` encoder one at a time. A PQ master
+  renders twice: the first pass measures MaxCLL/MaxFALL, and the encoding pass must
+  measure the same light. Before upload the file is decoded back. Every frame must be
+  ten-bit 4:2:0 BT.2020 NCL limited range with the promised transfer, and the sampled
+  frames' luma must match the render. At admission the worker proves each transfer on its
+  own ffmpeg: a lossless patch fixture within the two-code limit, then a ten-bit ramp
+  through the production path. It advertises `mp4-hevc-main10+pq` / `+hlg` and its
+  colour precision only for the transfers that passed. The server offers an HLG export
+  only to a session naming `+hlg`, and a kept PQ picture only to one that verified HDR10.
+  HDR masters are written at the project size, with captions burned in. The sound comes
+  from the engine's ordinary render.
 
 Tests:
 
@@ -701,6 +885,22 @@ full audio and STU-305 acceptance remain open.
 
 Patch `0140-whisper-no-adapter-fallback.patch` checks for an available WebGPU adapter before the first Whisper model session. When none is available, it selects WASM directly: the pinned Transformers runtime retains a failed first-session promise, so trying an unavailable GPU first prevents the later WASM retry. The existing model, artifact verification, word timing and worker lifecycle remain in use. The real-worker browser check can require either backend with `STUDIO_WHISPER_BROWSER_EXPECT_BACKEND=wasm` or `webgpu`; both its initial and offline runs must execute that backend. Broader model and browser qualification remains separate.
 
+## Edit a clip by editing its transcript (FL-562)
+
+Patch `0144-transcript-editing.patch` replaces the engine's Transcript tab with the approved panel. It opens on the selected clip when it has speech, otherwise on the first clip in the timeline that has a transcript, and shows the clip's words (on-device Parakeet, Whisper fallback, word timings as stored per media) in speaker paragraphs with silence chips between them. Hovering a word shows its time in the movie. Selecting words and pressing Delete (or Cut) runs the engine's own transcript range removal, the split and ripple delete that silence and filler removal use, so the cut is one undo step and a graph edit like any other: a native client makes the same edit with `clip.split` at both ends and a ripple `clip.delete` (`adapters/web/test/transcript-editing.test.ts` checks the two graphs agree, picture and linked sound). Cut words stay in the text, crossed out; whether a word is cut is read from the timeline (the middle of its source span is covered by no piece of the clip), so undo, redo, reopen and other edits keep it right. Clicking a crossed-out word brings its cut back on its own with a ripple trim of the piece before it and a join (`clip.trimEnd` with ripple, then `clip.join`), folded into one undo step. "Remove silences" and "Remove filler words" run the shipped silence analysis and filler detection with their default settings and cut what is still in the clip. Speakers start as "Speaker 1" and are set and renamed by hand (no automatic People match, and no speaker detection model); speakers and corrected words are saved on the media's transcript, and a corrected word also updates the clip captions made from that transcript and the matching cues of placed transcript captions. The panel's words are host-translated through `context.strings` (`web/src/lib/frameleaf/studio/transcript-strings.ts`). The existing Freecut MIT notice covers the adapted sources and tests.
+
 ## Locked tracks refuse drags and adds (FL-450)
 
 Patch `0141-locked-track-drop-refusal.patch` makes a lock binding for a person's drags in the editor. Dragging library media, files, a compound clip or a timeline clip over a locked track (or one inside a locked layer group) shows a not-allowed cursor and no drop marker; releasing it adds, moves and duplicates nothing. A drag that would put any dragged clip, or a video's linked sound, on a locked track is refused the same way. Insert and overwrite edits that target a locked track give the same short message, `timeline.track.lockedTrackRefused`. A drag hovering a locked track is announced through a polite status region, and the refusal toast is announced by the editor's toaster. The host translates the message (`lockedTrackRefused` in the host strings, `frameleaf_studio_locked_track_refused`) and the adapter writes it over the engine's English after each language change. The graph command `clip.add` refuses the same inputs in the command layer (protocol 12.3.1). The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Cut out the subject (FL-639)
+
+The Edit inspector's **Cut out the subject** card (patch `0166-subject-cutout.patch`) follows one subject through a video clip: a person face recognition found in the clip, or the main subject. The server (`StudioCutoutService`, `/studio/projects/{id}/cutouts`) reads the part of the source the clip plays a few frames a second (at most 300 frames, clips up to five minutes) and sends the frames only to this server's machine learning or a computer at home, where the `subject-matte` task runs SAM2.1 video from the pinned photo-mask snapshots. The mattes come back as one grayscale PNG kept with the project through the ordinary import admission; the clip's `subjectCutout` names it, and the export worker receives it like any project file. The engine draws the clip through it in `features/export/utils/subject-cutout.ts`, which preview and export share; `studio/tools/subject-cutout.browser.mjs` reads the pixels back in Chromium. Add to subject / Take away paint points on the viewer and make the matte again from that frame on. Not yet: several subjects at once, cut-outs of stills on the timeline, and HDR projects (refused on the linear HDR route rather than drawn uncut).
+
+## Captions in other languages (FL-641)
+
+Patch `0170-caption-languages.patch` adds the approved Languages card below the Subtitle section of the clip inspector, shown whenever captions are selected. It lists the original captions (their language is chosen in the card, and fixed once a language is added) with their line count, and each translated language with its own line count. Translate sends the original lines, as text only, through the host (`translateCaptions`, frame protocol 9) to `POST /studio/projects/{id}/caption-translations`, which translates them with M2M100 418M on the first place in the processing order that can: this server, then a computer at home. Frameleaf Cloud has no translation workload yet, so it is never sent the text. Each language becomes its own caption track: one subtitle segment, on its own hidden track, holding the translated lines on the original lines' timing, with the original's look; its `source.translation` records the language, the language it came from and whether it goes with the export. Fixing an original line later does not change a translation; Translate again replaces it in place and keeps its settings. In the picture shows one language and hides the others: a translation's track is shown, original caption tracks that hold only captions are hidden, and transcript captions riding on a clip are switched off with their own `enabled`, so the clip stays visible. Review lines shows the original line beside each editable translated line. Make a voice-over speaks every translated line with the voices Studio already has (Kokoro in English, Supertonic for the other languages it speaks; Norwegian has captions only), puts the lines together at their captions' times without one talking over the next, imports the sound into the project's media and places it on its own voice track with everything else ducking 12 dB under it. Remove takes the language's track and its voice-over away. Every edit is one undo step. On a video export with captions, the language in the picture is burned in or carried as the subtitle track the export settings ask for, and every language ticked "Subtitle track in the export" is saved as its own SRT next to it (`web/src/lib/frameleaf/studio/caption-languages.ts`). The card's words are host-translated (`caption-language-strings.ts`). `adapters/web/test/caption-languages.test.ts` covers line collection, track building, the language in the picture, the timeline edits with undo, the voice-over mix and the strings. The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Add from your library inside Studio (FL-636)
+
+Patch `0160-library-view-in-media-bin.patch` gives the bin's Media / Scenes toggle a third view, Library, when the host registers one (`src/features/media-library/library-panel-registry.ts`); with nothing registered the bin is unchanged. The view itself is the adapter's (`adapters/web/src/library-finder.tsx`): a smart-search box with suggestions, All / Photos / Videos, named people as avatars, Place, When by month, Clear filters, a result count and the privacy note. The editor has no SDK, so it searches through three host services (`searchLibrary`, `libraryFacets`, `addLibraryAssets` in `host-contract.ts`, checked for shape in `frame-service-schema.ts`); the host runs the library Search's own smart and metadata searches, facets and month histogram (`web/src/lib/frameleaf/studio/library-search.ts`), scoped by the server to the person's library and partners' shared items, asks for Locked items only while the session is unlocked, and projects results with `toStudioAsset` after `isStudioEligibleAsset`. Pressing, dragging or adding a result adopts it: the host adds it to `StudioHostContext.assets`, the seeder puts it in the bin, Freecut's own media drop places a drag, and "Add at playhead" uses the canvas-drop placement. The server's resource resolver (FL-90) grants each placed item when the project is saved. Moments inside videos (phase 2) are not built. The view's words are host-translated through `context.strings` (`library-strings.ts`). The existing Freecut MIT notice covers the adapted sources and tests.

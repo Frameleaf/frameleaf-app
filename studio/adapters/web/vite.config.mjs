@@ -35,6 +35,10 @@ const substitutedModules = {
   '@/features/export/components/export-dialog': 'export-dialog.tsx',
   '@/features/export/components/exports-dialog': 'exports-dialog.tsx',
   '@/features/project-bundle/components/bundle-export-dialog': 'bundle-export-dialog.tsx',
+  // FL-638: Stabilise measures camera movement as a job on the Frameleaf server.
+  '@/features/editor/components/properties-sidebar/clip-panel/stabilise-service': 'stabilise-service.ts',
+  // FL-637: "Clean up voice" runs on the project's server, not in the editor.
+  '@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service': 'voice-cleanup-service.ts',
 }
 
 /** Feature rows this build implements and tests (FL-92's command rows); FL-85 owns the rest. */
@@ -126,6 +130,15 @@ const useAdapterWorkspace = () => ({
  * relative to `studio/`, the test directory.
  */
 const upstreamSuites = [
+  'engine/src/test/voice-music-mix.test.tsx',
+  'engine/src/features/export/utils/canvas-audio.test.ts',
+  'engine/src/runtime/composition-runtime/utils/preview-track-stage.test.ts',
+  'engine/src/features/settings/components/hotkey-editor-search.test.ts',
+  'engine/src/features/timeline/stores/actions/edit/trim-to-playhead.test.ts',
+  'engine/src/features/timeline/hooks/shortcuts/trim-to-playhead-shortcuts.test.tsx',
+  'engine/src/shared/timeline/chapter-text.test.ts',
+  'engine/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx',
+  'engine/src/test/caption-quality.test.tsx',
   'engine/src/infrastructure/storage/workspace-fs/**/*.test.ts',
   'engine/src/features/projects/**/*.test.{ts,tsx}',
   'engine/src/features/project-bundle/**/*.test.ts',
@@ -160,7 +173,7 @@ export default async () => ({
     alias: [
       // Freecut's own exports render in the browser and save into its workspace. In Frameleaf the
       // editor's Export, exports list and project bundle go to the host's export, Activity and
-      // portable-bundle paths instead (FL-88), so these three modules are substituted, never edited.
+      // portable-bundle paths instead (FL-88), so these modules are substituted, never edited (FL-637 adds the voice clean-up host).
       ...Object.entries(substitutedModules).map(([engineModule, shim]) => ({
         find: new RegExp(`^${engineModule.replaceAll('/', '\\/')}$`),
         replacement: path.join(here, 'src/shims', shim),

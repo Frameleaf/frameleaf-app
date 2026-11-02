@@ -1,3 +1,4 @@
+import { getAlbumInfo, LibraryScope, LibraryViewScope } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { page } from '$app/state';
@@ -20,11 +21,20 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { isSharedLink: false, authenticated: false, params: {} },
 }));
 vi.mock('$lib/utils/file-uploader', () => ({ fileUploadHandler: vi.fn().mockResolvedValue([]) }));
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  getAlbumInfo: vi.fn(),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
   page.url = new URL('https://example.test/albums/target-album');
+  Object.assign(page, {
+    route: { id: '/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]' },
+    params: { albumId: 'target-album' },
+    data: { album: { id: 'target-album', albumName: 'Drop target' } },
+  });
   Object.assign(authManager, { isSharedLink: false, authenticated: false, params: {} });
 });
 
@@ -222,4 +232,110 @@ it('stops requesting directory chunks when the destination changes', async () =>
       Reflect.deleteProperty(DataTransferItem.prototype, 'webkitGetAsEntry');
     }
   }
+});
+
+/** README point 30: the drop target shows only while files are dragged over the window, never at rest. */
+describe('drop target visibility and destination', () => {
+  const filesDrag = (types: string[] = ['Files']) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File(['photo'], 'dragged.png', { type: 'image/png' }));
+    Object.defineProperty(dataTransfer, 'types', { value: types });
+    return dataTransfer;
+  };
+
+  it('never shows at rest', () => {
+    render(DragDropUploadOverlay);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('counts enter and leave across the window, so moving between elements keeps it up', async () => {
+    render(DragDropUploadOverlay);
+    const dataTransfer = filesDrag();
+    const child = document.createElement('div');
+    document.body.append(child);
+    try {
+      await fireEvent.dragEnter(document.body, { dataTransfer });
+      await fireEvent.dragEnter(child, { dataTransfer });
+      await fireEvent.dragLeave(document.body, { dataTransfer });
+      expect(screen.getByRole('status')).toBeInTheDocument();
+      await fireEvent.dragLeave(child, { dataTransfer });
+      await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    } finally {
+      child.remove();
+    }
+  });
+
+  it('ignores drags that carry no files', async () => {
+    render(DragDropUploadOverlay);
+    await fireEvent.dragEnter(document.body, { dataTransfer: filesDrag(['text/plain']) });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('resets when the drag ends without a drop', async () => {
+    render(DragDropUploadOverlay);
+    const dataTransfer = filesDrag();
+    await fireEvent.dragEnter(document.body, { dataTransfer });
+    await fireEvent.dragEnter(document.body, { dataTransfer });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    await fireEvent.dragEnd(document.body, { dataTransfer });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    // A fresh drag starts from zero rather than from the abandoned count.
+    await fireEvent.dragEnter(document.body, { dataTransfer });
+    await fireEvent.dragLeave(document.body, { dataTransfer });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
+  it('names Boards and sends the files into Design on /pro', async () => {
+    page.url = new URL('https://example.test/pro');
+    Object.assign(page, { route: { id: '/(user)/pro/[[photos=photos]]/[[assetId=id]]' }, params: {}, data: {} });
+    render(DragDropUploadOverlay);
+    const file = new File(['photo'], 'board.png', { type: 'image/png' });
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    Object.defineProperty(dataTransfer, 'types', { value: ['Files'] });
+
+    await fireEvent.dragEnter(document.body, { dataTransfer });
+    expect(screen.getByRole('status')).toHaveTextContent('Drop to add to Boards');
+    await fireEvent.drop(document.body, { dataTransfer });
+    await waitFor(() =>
+      expect(fileUploadHandler).toHaveBeenCalledExactlyOnceWith({
+        files: [file],
+        albumId: undefined,
+        isLockedAssets: false,
+        libraryScope: LibraryScope.Design,
+      }),
+    );
+  });
+
+  it("names Boards' current collection and adds the files to it", async () => {
+    vi.mocked(getAlbumInfo).mockResolvedValue({ id: 'mood', albumName: 'Moodboard' } as never);
+    const query = {
+      version: 1,
+      text: '',
+      mode: 'text',
+      grouping: 'all',
+      view: 'photos',
+      filter: { libraryScope: LibraryViewScope.Design, albumIds: { any: ['mood'] } },
+    };
+    page.url = new URL(`https://example.test/pro?dq=${encodeURIComponent(JSON.stringify(query))}`);
+    Object.assign(page, { route: { id: '/(user)/pro/[[photos=photos]]/[[assetId=id]]' }, params: {}, data: {} });
+    render(DragDropUploadOverlay);
+    const file = new File(['photo'], 'mood.png', { type: 'image/png' });
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    Object.defineProperty(dataTransfer, 'types', { value: ['Files'] });
+
+    await fireEvent.dragEnter(document.body, { dataTransfer });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Drop to add to Moodboard'));
+    expect(getAlbumInfo).toHaveBeenCalledWith({ id: 'mood' });
+    await fireEvent.drop(document.body, { dataTransfer });
+    await waitFor(() =>
+      expect(fileUploadHandler).toHaveBeenCalledExactlyOnceWith({
+        files: [file],
+        albumId: 'mood',
+        isLockedAssets: false,
+        libraryScope: LibraryScope.Design,
+      }),
+    );
+  });
 });

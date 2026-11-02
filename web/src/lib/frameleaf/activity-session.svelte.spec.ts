@@ -78,6 +78,24 @@ describe('ActivitySession', () => {
     expect(session.runningCount).toBe(1);
   });
 
+  // FL-529: the next person to sign in on this browser never sees the last one's jobs.
+  it('forgets the list at sign-out, including an answer still on its way', async () => {
+    sdkMock.searchMediaOperations.mockResolvedValueOnce({ items: [operation()], total: 1 });
+    const session = new ActivitySession();
+    await session.refresh();
+
+    let answer!: (value: { items: MediaOperationDto[]; total: number }) => void;
+    sdkMock.searchMediaOperations.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never);
+    const late = session.refresh();
+    eventManager.emit('AuthLogout');
+    answer({ items: [operation()], total: 1 });
+    await late;
+
+    expect(session.operations).toEqual([]);
+    expect(session.loading).toBe(true);
+    expect(session.unreachable).toBe(false);
+  });
+
   it('stops polling once the last watcher leaves', async () => {
     vi.useFakeTimers();
     sdkMock.searchMediaOperations.mockResolvedValue({ items: [operation()], total: 1 });

@@ -109,6 +109,7 @@
   .mt-list {
     display: flex;
     flex-direction: column;
+    container: backup-list / inline-size;
   }
   .mt-empty {
     color: var(--fl-muted);

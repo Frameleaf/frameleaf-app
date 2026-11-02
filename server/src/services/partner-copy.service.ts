@@ -18,6 +18,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  LibraryScope,
   QueueName,
 } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -201,7 +202,13 @@ export class PartnerCopyService extends BaseService {
     partnerSharedById: string,
   ): Promise<string | undefined> {
     const source = await this.assetRepository.getById(sourceAssetId);
-    if (!source || source.deletedAt || source.status !== AssetStatus.Active || source.ownerId === targetOwnerId) {
+    if (
+      !source ||
+      source.libraryScope === LibraryScope.Design ||
+      source.deletedAt ||
+      source.status !== AssetStatus.Active ||
+      source.ownerId === targetOwnerId
+    ) {
       return;
     }
     // external-library files are never linked (spec §3.2); the motion part of a Live Photo is Hidden
@@ -696,7 +703,11 @@ export class PartnerCopyService extends BaseService {
    */
   protected async onAssetsBackfilled(sharedById: string, sharedWithId: string): Promise<void> {
     for (const albumId of await this.partnerOriginRepository.getOwnedAlbumIds(sharedById)) {
-      const copyId = await this.copyAlbum(albumId, sharedWithId, sharedById);
+      // a retried batch finds the album already copied: pass that copy on again, or a stop between the
+      // copy and its fan-out would leave downstream partners without it (both steps are idempotent)
+      const copyId =
+        (await this.copyAlbum(albumId, sharedWithId, sharedById)) ??
+        (await this.partnerOriginRepository.getCopyId('album', albumId, sharedWithId));
       if (copyId) {
         await queueAlbumCopies({ partner: this.partnerRepository, job: this.jobRepository }, sharedWithId, copyId);
       }

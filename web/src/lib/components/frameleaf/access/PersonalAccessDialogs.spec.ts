@@ -1,10 +1,11 @@
-import { Permission } from '@frameleaf/sdk';
+import { ApiKeyResponsePermission, Permission } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
 import PasswordDialog from '$lib/components/frameleaf/access/PasswordDialog.svelte';
 import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
 import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
+import { PURPOSE_PERMISSIONS } from '$lib/frameleaf/personal-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -94,6 +95,43 @@ describe('PinDialog (FL-67)', () => {
 });
 
 describe('ApiKeyDialog (FL-67)', () => {
+  it('names each purpose with who it suits; the browser extension is only a fallback (FL-622, FL-655)', () => {
+    render(ApiKeyDialog, { onClose: vi.fn() });
+
+    expect(
+      screen.getAllByRole('radio').map((radio) => radio.closest('label')?.querySelector('strong')?.textContent),
+    ).toEqual(
+      ['view', 'upload', 'view_upload', 'everything'].map(
+        (id) => `frameleaf_access_key_purpose_${id} · frameleaf_access_key_purpose_${id}_for`,
+      ),
+    );
+    expect(screen.getByText('frameleaf_access_key_browser_fallback')).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_access_key_browser_chosen_title')).not.toBeInTheDocument();
+  });
+  it('creates a browser capture key without silently granting general library access', async () => {
+    sdkMock.createApiKey.mockResolvedValue({
+      apiKey: {
+        id: 'capture-key',
+        name: 'Browser',
+        permissions: [],
+        designPermissions: [...PURPOSE_PERMISSIONS.capture],
+      },
+      secret: 'synthetic-capture-key',
+    } as never);
+    render(ApiKeyDialog, { onClose: vi.fn() });
+    await typeInto(screen.getByLabelText('frameleaf_access_key_name'), 'Browser');
+    // FL-655: under "For a browser that can't sign in"
+    await fireEvent.click(screen.getByText('frameleaf_access_key_browser_fallback'));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_access_key_browser_fallback_make' }));
+    expect(screen.getByRole('radio', { name: /frameleaf_access_key_purpose_capture/ })).toBeChecked();
+    expect(screen.getByText('frameleaf_access_key_browser_chosen_title')).toBeInTheDocument();
+    await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_access_key_create' }).at(-1)!);
+    await waitFor(() =>
+      expect(sdkMock.createApiKey).toHaveBeenCalledWith({
+        apiKeyCreateDto: { name: 'Browser', permissions: [Permission.CaptureCreate, Permission.CaptureCatalogRead] },
+      }),
+    );
+  });
   it('creates a key with the chosen permissions and shows its value once', async () => {
     sdkMock.createApiKey.mockResolvedValue({
       apiKey: { id: 'key-1', name: 'Importer', permissions: [Permission.AssetRead] },
@@ -106,7 +144,8 @@ describe('ApiKeyDialog (FL-67)', () => {
 
     await waitFor(() =>
       expect(sdkMock.createApiKey).toHaveBeenCalledWith({
-        apiKeyCreateDto: { name: 'Importer', permissions: [Permission.AssetRead] },
+        // FL-367: a new key starts as View only
+        apiKeyCreateDto: { name: 'Importer', permissions: [...PURPOSE_PERMISSIONS.view] },
       }),
     );
     expect(await screen.findByText('shown-once')).toBeInTheDocument();
@@ -117,9 +156,12 @@ describe('ApiKeyDialog (FL-67)', () => {
     const apiKey = {
       id: 'key-1',
       name: 'Script',
-      permissions: [Permission.AssetRead],
+      permissions: [ApiKeyResponsePermission.AssetRead],
+      designPermissions: [],
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastUsedAt: null,
+      signedInFrom: null,
     };
     render(ApiKeyDialog, { apiKey, onClose: vi.fn() });
 

@@ -13,6 +13,10 @@
  * Search and faces build one index for the library, so they run in one place and never "ask": their
  * "Frameleaf Cloud" is the home record routed to the Frameleaf Cloud destination (FL-455).
  * One saved record on the server is the follow-up; until then this module is the single reading.
+ *
+ * FL-456: a row can also follow the processing order (`FOLLOW`): its work runs on the first place in the
+ * order at the top of the page (this server, your computers, Frameleaf Cloud) that can take it. A row
+ * picked to one computer, Frameleaf Cloud or nowhere has its own one-place order instead.
  */
 import {
   CloudRouteMode,
@@ -48,6 +52,8 @@ export const ASK = 'ask';
 export const CLOUD = 'cloud';
 export const NONE = 'none';
 export const SAME = 'same';
+/** FL-456: the row follows the processing order. */
+export const FOLLOW = 'order';
 /** A row's choice: the id of a computer at home, or one of the words above. */
 export type RouteChoice = string;
 
@@ -93,11 +99,12 @@ const indexOnCloud = (kind: Exclude<WorkKind, 'render'>, facts: Pick<RouteFacts,
 const canGoToCloud = (kind: WorkKind, facts: Pick<RouteFacts, 'cloudOn'>) =>
   facts.cloudOn && !!mlWorkloads.find(({ id }) => id === kind)?.cloud && isRoutedWorkload(kind);
 
+/** FL-456: the workload follows the processing order (the server says so; an older server never does). */
+const followsOrder = (workload: MlWorkload, { routes }: Pick<RouteFacts, 'routes'>) =>
+  routes.find((route) => route.workload === workload)?.followsOrder === true;
+
 /** What a row is set to now, from both records. */
 export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts): RouteChoice => {
-  if (indexOnCloud(kind, facts)) {
-    return CLOUD;
-  }
   if (canGoToCloud(kind, facts) && isRoutedWorkload(kind)) {
     const mode = facts.cloudRouting?.[kind];
     if (mode === CloudRouteMode.Cloud) {
@@ -106,6 +113,12 @@ export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFac
     if (mode === CloudRouteMode.Both) {
       return ASK;
     }
+  }
+  if (followsOrder(ROW_WORKLOAD[kind], facts)) {
+    return FOLLOW;
+  }
+  if (indexOnCloud(kind, facts)) {
+    return CLOUD;
   }
   return homeRoute(ROW_WORKLOAD[kind], facts);
 };
@@ -125,10 +138,12 @@ export const choicesFor = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts)
     return [];
   }
   const current = currentChoice(kind, facts);
-  if (places.length === 1 && current === places[0]) {
+  if (places.length === 1 && (current === places[0] || current === FOLLOW)) {
     return [];
   }
-  return [...places, NONE];
+  // FL-456: offered only by a server that keeps a processing order (it says whether a row follows it)
+  const ordered = facts.routes.some((route) => route.followsOrder !== undefined);
+  return [...(ordered ? [FOLLOW] : []), ...places, NONE];
 };
 
 /** What a follower is set to: "same" while it runs where its row does. */
@@ -148,6 +163,8 @@ export type RouteWrites = {
   routes: { workload: MlWorkload; destinationId: string | null }[];
   /** Cloud-record values to set. */
   cloud: Partial<Record<RoutedWorkload, CloudRouteMode>>;
+  /** FL-456: workloads that follow the processing order again. */
+  follow: MlWorkload[];
 };
 
 /**
@@ -160,9 +177,16 @@ export const routeWrites = (
   followers: Partial<Record<Follower, RouteChoice>>,
   facts: RouteFacts,
 ): RouteWrites => {
-  const writes: RouteWrites = { routes: [], cloud: {} };
+  const writes: RouteWrites = { routes: [], cloud: {}, follow: [] };
   const setHome = (workload: MlWorkload, choice: RouteChoice) => {
-    if (homeRoute(workload, facts) !== choice) {
+    if (choice === FOLLOW) {
+      if (!followsOrder(workload, facts)) {
+        writes.follow.push(workload);
+      }
+      return;
+    }
+    // A row that follows the order may already run there; picking it pins it there.
+    if (followsOrder(workload, facts) || homeRoute(workload, facts) !== choice) {
       writes.routes.push({ workload, destinationId: choice === NONE ? null : choice });
     }
   };
@@ -176,7 +200,7 @@ export const routeWrites = (
       writes.cloud[kind] = mode;
     }
     const cloudId = choice === CLOUD ? cloudPlace(kind, facts)?.id : undefined;
-    if (cloudId && routedTo(ROW_WORKLOAD[kind], facts)?.id !== cloudId) {
+    if (cloudId && (followsOrder(ROW_WORKLOAD[kind], facts) || routedTo(ROW_WORKLOAD[kind], facts)?.id !== cloudId)) {
       writes.routes.push({ workload: ROW_WORKLOAD[kind], destinationId: cloudId });
     }
     if (choice === CLOUD || choice === ASK) {
@@ -192,12 +216,20 @@ export const routeWrites = (
 
   for (const follower of Object.keys(FOLLOWERS) as Follower[]) {
     const { workload, follows } = FOLLOWERS[follower];
+    if (followers[follower] === undefined && choices[follows] === undefined) {
+      // Nothing about it was picked: it stays as saved.
+      continue;
+    }
     const wanted = followers[follower] ?? followerChoice(follower, facts);
     if (wanted !== SAME) {
       setHome(workload, wanted);
       continue;
     }
     const leader = choices[follows] ?? currentChoice(follows, facts);
+    if (leader === FOLLOW) {
+      setHome(workload, FOLLOW);
+      continue;
+    }
     const home = leader === CLOUD || leader === ASK ? homeRoute(ROW_WORKLOAD[follows], facts) : leader;
     // A follower only goes where it is allowed to run; otherwise it stays where it was.
     if (allows(workload, home)) {
@@ -207,4 +239,5 @@ export const routeWrites = (
   return writes;
 };
 
-export const hasWrites = (writes: RouteWrites) => writes.routes.length > 0 || Object.keys(writes.cloud).length > 0;
+export const hasWrites = (writes: RouteWrites) =>
+  writes.routes.length > 0 || Object.keys(writes.cloud).length > 0 || writes.follow.length > 0;

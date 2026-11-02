@@ -1,0 +1,355 @@
+import { Kysely, sql } from 'kysely';
+import type { LibraryCursor } from 'src/utils/library-search-cursor.js';
+import { LibraryItemSearchDto } from 'src/dtos/library-search.dto.js';
+import { AlbumUserRole, AssetLockReason, AssetType, LibraryScope } from 'src/enum.js';
+import { AssetPaletteRepository } from 'src/repositories/asset-palette.repository.js';
+import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { rgbToOklab } from 'src/utils/asset-palette.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getActiveForkKyselyDB } from 'test/utils.js';
+
+let db: Kysely<DB>;
+beforeAll(async () => {
+  db = await getActiveForkKyselyDB();
+});
+afterAll(async () => {
+  await db?.destroy();
+});
+const setup = () => newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] }).ctx;
+const scope = (id: string) => ({ userIds: [id], lockedOwnerId: '', viewingUserId: id });
+
+const ALL = { assets: true, bookmarks: true };
+describe('mixed library search universe', () => {
+  it('counts both kinds and pages equal timestamps without losing microsecond precision or repeating IDs', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const auth = { user };
+    const repo = new BookmarkRepository(db);
+    const wanted: Array<{ id: string; kind: 'asset' | 'bookmark' }> = [];
+    const instant = '2026-10-28T12:00:00.123456Z';
+    for (let index = 0; index < 2; index++) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+      const bookmark = await repo.create(user.id, {
+        url: `https://example.org/${index}`,
+        title: `Reference ${index}`,
+        libraryScope: LibraryScope.Design,
+      });
+      await db
+        .updateTable('asset')
+        .set({ createdAt: sql<Date>`${instant}::timestamptz` })
+        .where('id', '=', asset.id)
+        .execute();
+      await db
+        .updateTable('bookmark')
+        .set({ createdAt: sql<Date>`${instant}::timestamptz` })
+        .where('id', '=', bookmark.id)
+        .execute();
+      wanted.push({ id: asset.id, kind: 'asset' }, { id: bookmark.id, kind: 'bookmark' });
+    }
+    wanted.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' }, limit: 1 });
+    const seen: typeof wanted = [];
+    let cursor: Extract<LibraryCursor, { mode: 'text' }> | undefined;
+    for (let index = 0; index < 4; index++) {
+      const result = await repo.searchLibrary(auth, request, scope(user.id), ALL, cursor);
+      expect(result.count).toBe(4);
+      expect(result.candidates[0].dateKey).toBe(instant);
+      const row = result.candidates[0];
+      seen.push({ id: row.id, kind: row.kind });
+      cursor = {
+        mode: 'text',
+        queryHash: 'a'.repeat(64),
+        id: row.id,
+        kind: row.kind,
+        after: { sort: 'added', value: row.dateKey },
+      };
+    }
+    expect(seen).toEqual(wanted);
+    expect((await repo.searchLibrary(auth, request, scope(user.id), ALL, cursor)).candidates).toEqual([]);
+  });
+  it('does not match another owner’s private bookmark notes in a shared album', async () => {
+    const ctx = setup();
+    const owner = await ctx.newUser();
+    const viewer = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const { album } = await ctx.newAlbum({ ownerId: owner.user.id });
+    await db
+      .insertInto('album_user')
+      .values({ albumId: album.id, userId: viewer.user.id, role: AlbumUserRole.Viewer })
+      .execute();
+    const bookmark = await repo.create(owner.user.id, {
+      url: 'https://example.org/reference',
+      title: 'Public reference',
+      note: 'private-project',
+      libraryScope: LibraryScope.Design,
+    });
+    await repo.addToAlbum({ user: owner.user }, album.id, [bookmark.id]);
+    const request = LibraryItemSearchDto.schema.parse({
+      query: 'private-project',
+      filter: { albumIds: { any: [album.id] } },
+    });
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), ALL)).count).toBe(1);
+    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), ALL)).count).toBe(0);
+    expect(
+      (
+        await repo.searchLibrary(
+          { user: viewer.user },
+          { ...request, query: 'Public reference' },
+          scope(viewer.user.id),
+          ALL,
+        )
+      ).count,
+    ).toBe(1);
+  });
+  it('matches only current, owned, visible bookmark previews and pages equal color ranks', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const foreign = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const palettes = new AssetPaletteRepository(db);
+    const wanted: Array<{ id: string; kind: 'asset' | 'bookmark' }> = [];
+    for (const variant of ['personal', 'design', 'foreign', 'locked', 'trashed', 'missing'] as const) {
+      let previewAssetId: string | null = null;
+      if (variant !== 'missing') {
+        const { asset } = await ctx.newAsset({
+          ownerId: variant === 'foreign' ? foreign.user.id : user.id,
+          libraryScope: variant === 'personal' ? LibraryScope.Personal : LibraryScope.Design,
+        });
+        previewAssetId = asset.id;
+        const source = await palettes.source(asset.id);
+        if (!source) throw new Error('Missing preview source');
+        await palettes.publish(asset.id, source.sourceRevision, {
+          version: 1,
+          sourceRevision: source.sourceRevision,
+          status: 'ready',
+          representative: 'image',
+          hasTransparency: true,
+          swatches: [{ hex: '#ff0000', weight: 1, oklab: rgbToOklab(1, 0, 0) }],
+        });
+        switch (variant) {
+          case 'locked': {
+            await db.insertInto('asset_lock').values({ assetId: asset.id, reason: AssetLockReason.Marked }).execute();
+            break;
+          }
+          case 'trashed': {
+            await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
+            break;
+          }
+          // a link's picture shows on its card only, never as an item of its own (FL-632)
+          // No default
+        }
+      }
+      const bookmark = await repo.create(user.id, {
+        url: `https://example.org/${variant}`,
+        title: variant,
+        libraryScope: LibraryScope.Design,
+        previewAssetId,
+      });
+      if (variant === 'personal' || variant === 'design') wanted.push({ id: bookmark.id, kind: 'bookmark' });
+    }
+    wanted.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+    const request = LibraryItemSearchDto.schema.parse({
+      filter: { libraryScope: 'design', color: { hex: '#ff0000' }, hasTransparency: { eq: true } },
+      sort: 'color',
+      limit: 1,
+    });
+    const seen: typeof wanted = [];
+    let cursor: Extract<LibraryCursor, { mode: 'text' }> | undefined;
+    for (let index = 0; index < wanted.length; index++) {
+      const result = await repo.searchLibrary({ user }, request, scope(user.id), ALL, cursor);
+      expect(result.count).toBe(wanted.length);
+      const row = result.candidates[0];
+      seen.push({ id: row.id, kind: row.kind });
+      cursor = {
+        mode: 'text',
+        queryHash: 'a'.repeat(64),
+        id: row.id,
+        kind: row.kind,
+        after: { sort: 'color', value: row.rank },
+      };
+    }
+    expect(seen).toEqual(wanted);
+    expect(
+      (
+        await repo.searchLibrary(
+          { user },
+          { ...request, filter: { ...request.filter, type: { eq: AssetType.Image } } },
+          scope(user.id),
+          ALL,
+        )
+      ).candidates.every(({ kind }) => kind === 'asset'),
+    ).toBe(true);
+  });
+  it('persists bookmark stars while excluding private preferences from shared filter counts', async () => {
+    const ctx = setup();
+    const owner = await ctx.newUser();
+    const viewer = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const starred = await repo.create(owner.user.id, {
+      url: 'https://example.org/starred',
+      title: 'Starred',
+      libraryScope: LibraryScope.Design,
+      rating: 4,
+    });
+    const unrated = await repo.create(owner.user.id, {
+      url: 'https://example.org/unrated',
+      title: 'Unrated',
+      libraryScope: LibraryScope.Design,
+    });
+    expect(unrated.rating).toBeNull();
+    const { album } = await ctx.newAlbum({ ownerId: owner.user.id });
+    await db
+      .insertInto('album_user')
+      .values({ albumId: album.id, userId: viewer.user.id, role: AlbumUserRole.Viewer })
+      .execute();
+    await repo.addToAlbum({ user: owner.user }, album.id, [starred.id]);
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design', rating: { eq: 4 } } });
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), ALL)).count).toBe(1);
+    expect(
+      (
+        await repo.searchLibrary(
+          { user: viewer.user },
+          { ...request, filter: { ...request.filter, albumIds: { any: [album.id] } } },
+          scope(viewer.user.id),
+          ALL,
+        )
+      ).count,
+    ).toBe(0);
+    expect((await repo.update({ user: owner.user }, starred.id, { rating: -1 })).rating).toBe(-1);
+    await expect(db.updateTable('bookmark').set({ rating: 0 }).where('id', '=', starred.id).execute()).rejects.toThrow(
+      'bookmark_rating_check',
+    );
+  });
+  it('uses one structured text predicate for media and bookmark titles/owner notes', async () => {
+    const ctx = setup();
+    const owner = await ctx.newUser();
+    const viewer = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const { asset } = await ctx.newAsset({
+      ownerId: owner.user.id,
+      libraryScope: LibraryScope.Design,
+      originalFileName: 'packaging.png',
+    });
+    const bookmark = await repo.create(owner.user.id, {
+      url: 'https://example.org/reference',
+      title: 'Reference',
+      note: 'packaging',
+      libraryScope: LibraryScope.Design,
+    });
+    const { album } = await ctx.newAlbum({ ownerId: owner.user.id }, [asset.id]);
+    await repo.addToAlbum({ user: owner.user }, album.id, [bookmark.id]);
+    await db
+      .insertInto('album_user')
+      .values({ albumId: album.id, userId: viewer.user.id, role: AlbumUserRole.Viewer })
+      .execute();
+    const request = LibraryItemSearchDto.schema.parse({
+      filter: { libraryScope: 'design', text: { contains: 'packaging' }, albumIds: { any: [album.id] } },
+    });
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), ALL)).count).toBe(2);
+    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), ALL)).count).toBe(1);
+  });
+  it('does not count bookmark rows when the current key lacks BookmarkRead', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    await repo.create(user.id, {
+      url: 'https://example.org/reference',
+      title: 'Reference',
+      libraryScope: LibraryScope.Design,
+    });
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' } });
+    expect(
+      (await repo.searchLibrary({ user }, request, scope(user.id), { assets: true, bookmarks: false })).count,
+    ).toBe(0);
+    expect((await repo.searchLibrary({ user }, request, scope(user.id), ALL)).count).toBe(1);
+  });
+  it('sorts by name and by rating across both kinds, paging without repeats (FL-622)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const auth = { user };
+    const repo = new BookmarkRepository(db);
+    const photo = await ctx.newAsset({
+      ownerId: user.id,
+      libraryScope: LibraryScope.Design,
+      originalFileName: 'b-lake.png',
+    });
+    const rejected = await ctx.newAsset({
+      ownerId: user.id,
+      libraryScope: LibraryScope.Design,
+      originalFileName: 'd-trail.png',
+    });
+    await ctx.newExif({ assetId: photo.asset.id, rating: 4 });
+    await ctx.newExif({ assetId: rejected.asset.id, rating: -1 });
+    const link = await repo.create(user.id, {
+      url: 'https://example.org/a',
+      title: 'A cabin',
+      libraryScope: LibraryScope.Design,
+    });
+    const unrated = await repo.create(user.id, {
+      url: 'https://example.org/c',
+      title: 'C fire',
+      libraryScope: LibraryScope.Design,
+    });
+    await db.updateTable('bookmark').set({ rating: 5 }).where('id', '=', link.id).execute();
+    const walk = async (sort: 'name' | 'rating') => {
+      const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' }, limit: 1, sort });
+      const seen: string[] = [];
+      let cursor: Extract<LibraryCursor, { mode: 'text' }> | undefined;
+      for (let index = 0; index < 5; index++) {
+        const [row] = (await repo.searchLibrary(auth, request, scope(user.id), ALL, cursor)).candidates;
+        if (!row) break;
+        seen.push(row.id);
+        cursor = {
+          mode: 'text',
+          queryHash: 'a'.repeat(64),
+          id: row.id,
+          kind: row.kind,
+          after: sort === 'name' ? { sort, value: row.nameKey } : { sort, value: row.rank },
+        };
+      }
+      return seen;
+    };
+    expect({ name: await walk('name'), rating: await walk('rating') }).toEqual({
+      name: [link.id, photo.asset.id, unrated.id, rejected.asset.id],
+      rating: [link.id, photo.asset.id, unrated.id, rejected.asset.id],
+    });
+  });
+  it('shows a saved link’s picture on its card, never as an item of its own (FL-632)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const { asset: picture } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const { asset: file } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const link = await repo.create(user.id, {
+      url: 'https://example.org/board',
+      title: 'Board',
+      previewAssetId: picture.id,
+      libraryScope: LibraryScope.Design,
+    });
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' } });
+    const result = await repo.searchLibrary({ user }, request, scope(user.id), ALL);
+    expect(result.count).toBe(2);
+    expect(result.candidates.map(({ id }) => id).toSorted()).toEqual([file.id, link.id].toSorted());
+  });
+  it('lists only saved links when media is left out, without scanning past them', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const link = await repo.create(user.id, {
+      url: 'https://example.org/links-only',
+      title: 'Links only',
+      libraryScope: LibraryScope.Design,
+    });
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' }, kinds: ['bookmark'] });
+    const linksOnly = await repo.searchLibrary({ user }, request, scope(user.id), { assets: false, bookmarks: true });
+    const mediaOnly = await repo.searchLibrary({ user }, request, scope(user.id), { assets: true, bookmarks: false });
+    expect({ links: linksOnly.candidates.map(({ id, kind }) => ({ id, kind })), media: mediaOnly.count }).toEqual({
+      links: [{ id: link.id, kind: 'bookmark' }],
+      media: 1,
+    });
+  });
+});

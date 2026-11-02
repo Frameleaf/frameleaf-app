@@ -1077,14 +1077,25 @@ where
   "tag"."id" in ($1)
   and "tag"."userId" = $2
   and (
-    not exists (
-      select
-        1
-      from
-        tag_closure
-        inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
-      where
-        tag_closure.id_ancestor = "tag"."id"
+    not (
+      exists (
+        select
+          1
+        from
+          tag_closure
+          inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
+        where
+          tag_closure.id_ancestor = "tag"."id"
+      )
+      or exists (
+        select
+          1
+        from
+          tag_closure
+          inner join bookmark_tag on bookmark_tag."tagId" = tag_closure.id_descendant
+        where
+          tag_closure.id_ancestor = "tag"."id"
+      )
     )
     or exists (
       select
@@ -1121,6 +1132,18 @@ where
           where
             asset_lock."assetId" = "tag_asset"."assetId"
         )
+    )
+    or exists (
+      select
+        1
+      from
+        tag_closure
+        inner join bookmark_tag on bookmark_tag."tagId" = tag_closure.id_descendant
+        inner join bookmark on bookmark.id = bookmark_tag."bookmarkId"
+      where
+        tag_closure.id_ancestor = "tag"."id"
+        and not false
+        and bookmark."isLocked" = false
     )
   )
 

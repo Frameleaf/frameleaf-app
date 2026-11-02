@@ -12,6 +12,7 @@ import { RenderWorkerRepository } from 'src/repositories/render-worker.repositor
 import { DB } from 'src/schema/index.js';
 import { BUNDLED_RENDER_WORKER_APPROVAL } from 'src/utils/bundled-render-worker.js';
 import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
+import { SDR_TEN_BIT_PROFILE } from 'src/utils/render-admission.js';
 import { seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -241,6 +242,32 @@ describe('bundled Studio worker claims (FL-408)', () => {
     const expected = { ...operation, settings: { ...operation.settings, format: 'webm-av1' } };
     expect(await sut.claimQueued({ ...claimOptions(operation, worker.id, session.id, token), expected })).toEqual({
       refused: RenderWorkerRefusalReason.CodecUnsupported,
+    });
+  });
+
+  it('leaves a sealed SDR Main10 export to a worker that writes 10-bit SDR, not one with HDR masters only (FL-674)', async () => {
+    const claimable = async (formats: string[]) => {
+      const { worker, secret } = await bundledWorker();
+      const input = admission(worker, secret, {
+        codecs: ['webcodecs-avc', 'webcodecs-aac', 'libx265'],
+        formats,
+        colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
+      });
+      const result = await sut.admitSession(input);
+      if (!result.admitted) throw new Error(`Expected admission, got ${result.reason}`);
+      const operation = await queueExport();
+      const settings = { ...operation.settings, format: 'mp4-hevc-main10' };
+      const snapshot = { engineDigest: engine, contract: { video: { minBitDepth: 10, transfer: null } } };
+      await db.updateTable('media_operation').set({ settings, snapshot }).where('id', '=', operation.id).execute();
+      return sut.claimQueued({
+        ...claimOptions(operation, worker.id, result.session.id, input.token),
+        expected: { ...operation, settings, snapshot },
+      });
+    };
+    const masters = ['mp4', 'mp4-hevc-main10', 'mp4-hevc-main10+pq', 'mp4-hevc-main10+hlg'];
+    expect(await claimable(masters)).toEqual({ refused: RenderWorkerRefusalReason.CodecUnsupported });
+    expect(await claimable([...masters, SDR_TEN_BIT_PROFILE])).toMatchObject({
+      operation: { status: MediaOperationStatus.Preparing },
     });
   });
 

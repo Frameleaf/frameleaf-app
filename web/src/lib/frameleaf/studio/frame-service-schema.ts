@@ -1,5 +1,18 @@
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
+import {
+  isStudioCaptionTranslationRequest,
+  type StudioCaptionTranslationRequest,
+  type StudioCaptionTranslationResult,
+} from './caption-languages';
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
+import {
+  isStudioCutoutClipId,
+  isStudioCutoutId,
+  isStudioCutoutRequest,
+  type StudioCutoutRequest,
+  type StudioCutoutState,
+  type StudioCutoutSubjectRef,
+} from './cutout';
 import {
   isStudioProjectImportUpload,
   isStudioPublicationId,
@@ -10,6 +23,11 @@ import type {
   StudioDraftResult,
   StudioEditorScope,
   StudioEditorCommitResult,
+  StudioAssetRef,
+  StudioLibraryFacets,
+  StudioLibraryQuery,
+  StudioLibraryResults,
+  StudioLibraryType,
   StudioProjectHandle,
   StudioProjectImportUpload,
   StudioProjectImportRef,
@@ -73,6 +91,43 @@ export const isStudioSourceRequest = (value: unknown): value is StudioSourceReso
   );
 };
 
+const LIBRARY_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const LIBRARY_TYPES: ReadonlySet<StudioLibraryType> = new Set(['all', 'photo', 'video']);
+/** The most ids one `addLibraryAssets` call may name: a multi-select drag, not the whole library. */
+export const STUDIO_LIBRARY_ADD_LIMIT = 50;
+/** The longest search text the host accepts; the Library view's box stops typing there. */
+export const STUDIO_LIBRARY_TEXT_LIMIT = 500;
+/** The last results page the frame may ask for; the host never offers a page after it. */
+export const STUDIO_LIBRARY_PAGE_LIMIT = 1000;
+
+/**
+ * Whether a Library view query from the frame has the shape the host accepts (FL-636). The frame is
+ * not trusted: unknown keys, a malformed month or person id, or an oversized text is refused before
+ * any search runs.
+ */
+export const isStudioLibraryQuery = (value: unknown): value is StudioLibraryQuery => {
+  if (!record(value) || !exact(value, ['text', 'type', 'personId', 'city', 'month', 'page'])) {
+    return false;
+  }
+  const text = (field: unknown, max: number) =>
+    field === undefined || field === null || (typeof field === 'string' && field.length <= max);
+  const absent = (field: unknown) => field === undefined || field === null;
+  return (
+    text(value.text, STUDIO_LIBRARY_TEXT_LIMIT) &&
+    (value.type === undefined || LIBRARY_TYPES.has(value.type as StudioLibraryType)) &&
+    (absent(value.personId) || id(value.personId)) &&
+    text(value.city, 200) &&
+    (absent(value.month) || (typeof value.month === 'string' && LIBRARY_MONTH.test(value.month))) &&
+    (value.page === undefined ||
+      (count(value.page) && (value.page as number) >= 1 && (value.page as number) <= STUDIO_LIBRARY_PAGE_LIMIT))
+  );
+};
+export const isStudioLibraryAssetIds = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.length <= STUDIO_LIBRARY_ADD_LIMIT &&
+  value.every((item) => id(item));
+
 /** Frozen names and tuple/result contract for peers built before closed source ownership. */
 export const STUDIO_FRAME_SERVICE_SCHEMA_V7 = Object.freeze({
   submitCommands: (args: unknown[]) => args.length === 1 && Array.isArray(args[0]),
@@ -93,7 +148,25 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V8 = Object.freeze({
   resolveStudioProjectSource: (args: unknown[]) =>
     args.length === 2 && isStudioSourceRequest(args[0]) && isStudioEditorScope(args[1]),
 });
+/**
+ * Protocol 9: translate caption lines on the processing order (FL-641), the bin's Library view (FL-636) and
+ * Cut out the subject (FL-639).
+ */
+export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
+  ...STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  translateCaptions: (args: unknown[]) => args.length === 1 && isStudioCaptionTranslationRequest(args[0]),
+  // Protocol 9 also carries the bin's Library view (FL-636). Additive: a frame that never calls them is unaffected, and a host
+  // without them answers that the library cannot be searched.
+  searchLibrary: (args: unknown[]) => args.length === 1 && isStudioLibraryQuery(args[0]),
+  libraryFacets: (args: unknown[]) => args.length === 0,
+  addLibraryAssets: (args: unknown[]) => args.length === 1 && isStudioLibraryAssetIds(args[0]),
+  // FL-639: Cut out the subject. Protocol 9, optional host services; an older host answers them as unknown.
+  listCutoutSubjects: (args: unknown[]) => args.length === 1 && isStudioCutoutClipId(args[0]),
+  startCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutRequest(args[0]),
+  readCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutId(args[0]),
+});
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
+  translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
   commitEditorDraft: {
     args: [graph: unknown, baseRevision: number, scope: StudioEditorScope];
     result: StudioEditorCommitResult;
@@ -107,8 +180,14 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
     args: [request: StudioSourceResolutionRequestDto, scope: StudioEditorScope];
     result: StudioSourceResolutionDto;
   };
+  searchLibrary: { args: [query: StudioLibraryQuery]; result: StudioLibraryResults };
+  libraryFacets: { args: []; result: StudioLibraryFacets };
+  addLibraryAssets: { args: [assetIds: string[]]; result: StudioAssetRef[] };
+  listCutoutSubjects: { args: [clipId: string]; result: StudioCutoutSubjectRef[] };
+  startCutout: { args: [request: StudioCutoutRequest]; result: StudioCutoutState };
+  readCutout: { args: [cutoutId: string]; result: StudioCutoutState };
 };
-export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V8;
+export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };
 export const isStudioFrameServiceName = (name: unknown): name is StudioFrameServiceName =>
-  typeof name === 'string' && Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, name);
+  typeof name === 'string' && Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V9, name);

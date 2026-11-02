@@ -30,6 +30,10 @@ The mode names express intention, not a fidelity guarantee.
 - `qualification.example.json` — the qualification evidence format. Copy it to
   `FRAMELEAF_RESTORATION_QUALIFICATION` (default `/restoration/config/qualification.json`).
   The example records are deliberately `pending`.
+- The worker runs as UID/GID 10001. On the host, the mounted config directory, the manifest,
+  the qualification file and the weights directory must be readable by that user (for example
+  `chown -R 10001:10001` them, or make the directories `0755` and the files `0644`). The
+  mounts stay read-only; only the `/restoration/work` volume is written.
 - `../Dockerfile.video-restoration` — the worker image, with an optional stage per
   isolated runtime.
 - `../frameleaf_ml/video_restoration/` — the worker: `models.py` (adapters and gate),

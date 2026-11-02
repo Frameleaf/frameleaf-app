@@ -15,6 +15,8 @@ const SOURCE_BOUND_KINDS = [
   MediaOperationKind.StudioReverseConform,
   MediaOperationKind.StudioPreview,
   MediaOperationKind.StudioPreviewStream,
+  // Transcription, stabilise and voice clean-up all read a library original.
+  MediaOperationKind.StudioTranscription,
 ] as const;
 
 /**
@@ -175,7 +177,7 @@ export class StudioRevocationService {
       // Streams first, so each records why it closed; the job pass then finds nothing of theirs left.
       () => this.streams.revokeForProjects(projectIds),
       async () => {
-        jobs = await this.cancelJobs(projectIds);
+        jobs = await this.cancelJobs(projectIds, undefined, assetIds);
       },
     ]);
     this.logger.log(
@@ -196,9 +198,29 @@ export class StudioRevocationService {
     if (failures.length > 1) throw new AggregateError(failures, 'Studio revocation failed');
   }
 
-  /** Cancel unfinished exports and previews; a claimed one waits for its worker to acknowledge. */
-  private async cancelJobs(projectIds: readonly string[], ownerId?: string): Promise<number> {
-    const unfinished = await this.operations.listUnfinishedForProjects(projectIds, SOURCE_BOUND_KINDS, ownerId);
+  /**
+   * Cancel unfinished exports and previews; a claimed one waits for its worker to acknowledge.
+   *
+   * With `removedAssetIds`, a clip job (transcription, stabilise, voice clean-up: one clip, its library
+   * source recorded as `assetId` when the job is queued) whose recorded source is another library asset
+   * keeps running. One with no recorded asset (a generated intermediate or an import, whose lineage the
+   * job does not record) still stops, as before. Exports and previews read the whole project and stop.
+   */
+  private async cancelJobs(
+    projectIds: readonly string[],
+    ownerId?: string,
+    removedAssetIds?: readonly string[],
+  ): Promise<number> {
+    const removed = removedAssetIds && new Set(removedAssetIds.map((id) => id.toLowerCase()));
+    const unfinished = (
+      await this.operations.listUnfinishedForProjects(projectIds, SOURCE_BOUND_KINDS, ownerId)
+    ).filter(
+      (operation) =>
+        !removed ||
+        operation.kind !== MediaOperationKind.StudioTranscription ||
+        operation.assetId === null ||
+        removed.has(operation.assetId.toLowerCase()),
+    );
     let cancelled = 0;
     for (const operation of unfinished) {
       try {

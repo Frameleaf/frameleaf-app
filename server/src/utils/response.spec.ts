@@ -1,7 +1,15 @@
+import { createServer, request } from 'node:http';
+import { AddressInfo } from 'node:net';
 import { Writable } from 'node:stream';
 import type { CookieOptions, Response } from 'express';
 import { AuthCookie } from 'src/enum.js';
-import { ClientDisconnectedError, respondWithCookie, respondWithoutCookie, waitForDrain } from 'src/utils/response.js';
+import {
+  ClientDisconnectedError,
+  respondWithCookie,
+  respondWithoutCookie,
+  waitForDrain,
+  writeInformation,
+} from 'src/utils/response.js';
 
 const createResponse = () => {
   const events: unknown[][] = [];
@@ -195,5 +203,40 @@ describe('waitForDrain', () => {
     for (const event of ['drain', 'close', 'finish', 'error']) {
       expect(stream.listenerCount(event)).toBe(0);
     }
+  });
+});
+
+describe(writeInformation.name, () => {
+  it('sends an interim response before the final one, with or without the native method', async () => {
+    const server = createServer((_, response) => {
+      writeInformation(response, 104, { Location: '/upload/1', 'Upload-Complete': '?0' });
+      response.end('done');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const interim: Array<{ statusCode: number; location: unknown }> = [];
+      const status = await new Promise<number | undefined>((resolve, reject) => {
+        const outgoing = request({ host: '127.0.0.1', port }, (response) => {
+          response.resume();
+          response.on('end', () => resolve(response.statusCode));
+        });
+        outgoing.on('information', ({ statusCode, headers }) => {
+          interim.push({ statusCode, location: headers.location });
+        });
+        outgoing.on('error', reject);
+        outgoing.end();
+      });
+      expect(interim).toEqual([{ statusCode: 104, location: '/upload/1' }]);
+      expect(status).toBe(200);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('refuses header values that would split the response', () => {
+    const response = { _writeRaw: vi.fn() } as never;
+    expect(() => writeInformation(response, 104, { Location: '/x\r\nSet-Cookie: a=b' })).toThrow();
+    expect((response as { _writeRaw: ReturnType<typeof vi.fn> })._writeRaw).not.toHaveBeenCalled();
   });
 });

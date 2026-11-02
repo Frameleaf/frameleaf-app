@@ -4,7 +4,11 @@ import { Writable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { JobName, QueueName, SyncEntityType } from 'src/enum.js';
-import { IMPORT_DERIVED_RUN_KIND, IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
+import {
+  IMPORT_DERIVED_RUN_KIND,
+  IMPORT_DERIVED_RUN_STAGES,
+  importDerivedRunId,
+} from 'src/immich-import/derived-work.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -26,7 +30,7 @@ it('starts the retained import regeneration during first setup once ready, resum
   const source = 'verified-source',
     configFingerprint = 'verified-config';
   const id = importDerivedRunId(source, configFingerprint);
-  const stages = [...IMPORT_DERIVED_STAGES.map(([, name]) => name), JobName.PersonGenerateThumbnail];
+  const stages = [...IMPORT_DERIVED_RUN_STAGES];
   const users = {
     hasAdmin: vi.fn().mockResolvedValue(false),
     getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),
@@ -254,6 +258,8 @@ it('waits for a fresh full integrity scan when the existing operation is increme
   try {
     const { user } = await ctx.newUser();
     await ctx.newAsset({ ownerId: user.id });
+    // Photos that survive only as untracked files in the upload folder still need the scan.
+    const { user: filesOnly } = await ctx.newUser();
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'eeeeeeeeffff';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
     delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
@@ -302,7 +308,11 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       value: { health: Record<string, string> };
     }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
     expect(state.rows[0].value.health).toEqual({ [user.id]: freshFull });
-    expect(mediaHealth.startMissingScan).toHaveBeenCalledTimes(2);
+    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: filesOnly.id } });
+    const owners = await sql<{
+      value: { owners: string[] };
+    }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
+    expect(owners.rows[0].value.owners.sort()).toEqual([user.id, filesOnly.id].sort());
   } finally {
     for (const [key, value] of [
       ['FRAMELEAF_MANAGER_INSTALLATION', previous.installation],

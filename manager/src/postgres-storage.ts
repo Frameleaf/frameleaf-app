@@ -120,7 +120,7 @@ export class PostgresStorage {
     private docker: Docker,
     private managerDirectory: string,
     readonly roots: string[],
-    private unraid: boolean,
+    readonly unraid: boolean,
   ) {}
   private async evidence(path: string, installationId?: string): Promise<FilesystemMount> {
     const [containers, compatibility, mountinfo] = await Promise.all([

@@ -130,6 +130,13 @@
     type StudioProjectStatus,
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
+  import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
+  import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
+  import { cutoutEngineStrings } from '$lib/frameleaf/studio/cutout-strings';
+  import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
+  import { voiceCleanupEngineStrings } from '$lib/frameleaf/studio/voice-cleanup-strings';
+  import { captionLanguageEngineStrings } from '$lib/frameleaf/studio/caption-language-strings';
+  import { libraryPanelStrings } from '$lib/frameleaf/studio/library-strings';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
   import type { Translations } from 'svelte-i18n';
@@ -550,6 +557,13 @@
       relinkReload: $t('frameleaf_studio_relink_reload'),
       relinkSaved: $t('frameleaf_studio_relink_saved'),
       lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
+      ...transcriptEngineStrings($t),
+      ...cutoutEngineStrings($t),
+      ...stabiliseEngineStrings($t),
+      ...captionStyleEngineStrings($t),
+      ...voiceCleanupEngineStrings($t),
+      ...captionLanguageEngineStrings($t),
+      ...libraryPanelStrings($t),
     },
   });
 
@@ -579,7 +593,13 @@
       return mounting.done;
     }
     const token = ++mountToken;
-    const done = startMount(token).finally(() => {
+    // Mounts run one at a time: an abandoned mount finishes its own teardown before the next
+    // engine starts on the same stage.
+    const previous = mounting?.done;
+    const done = (async () => {
+      await previous?.catch(() => {});
+      await startMount(token);
+    })().finally(() => {
       if (mounting?.token === token) {
         mounting = null;
       }
@@ -615,6 +635,10 @@
       const instance = await resolution.module.mount(stage, context(), {
         ...services,
         reportFatal: (error) => {
+          // A superseded mount must not fail the mount that replaced it.
+          if (token !== mountToken) {
+            return;
+          }
           services.reportFatal(error);
           dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
         },
@@ -627,6 +651,10 @@
       engine = instance;
       dispatch({ type: 'engine-mounted' });
     } catch (error) {
+      // An abandoned mount's failure must not fail the mount that replaced it.
+      if (token !== mountToken) {
+        return;
+      }
       dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
     }
   };
@@ -962,7 +990,7 @@
             <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} />
           {/snippet}
           {#if projectAvailable && onImportRetention}
-            <MenuItem onSelect={onImportRetention}>Import receipts</MenuItem>
+            <MenuItem onSelect={onImportRetention}>{$t('frameleaf_studio_receipts_title')}</MenuItem>
           {/if}
           {#if editorUp && onExportBundle}
             <MenuItem onSelect={onExportBundle}>

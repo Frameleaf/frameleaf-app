@@ -57,10 +57,11 @@ it('qualifies bounded own restore publication, current authority and actual larg
   expect(await realpath(mediaRoot)).toBe(mediaRoot);
   const container = process.env.FL234_SERVER_CONTAINER!;
   expect(container).toMatch(/^frameleaf-fl234-owner-restore-server-\d+$/);
-  const docker = '/Applications/Docker.app/Contents/Resources/bin/docker';
+  const docker = process.env.FL234_DOCKER_BIN ?? '/Applications/Docker.app/Contents/Resources/bin/docker';
+  const dockerContext = process.env.FL234_DOCKER_CONTEXT ?? 'desktop-linux';
   const inspect = await run(docker, [
     '--context',
-    'desktop-linux',
+    dockerContext,
     'inspect',
     '--format',
     '{{index .Config.Labels "com.docker.compose.project"}}',
@@ -451,7 +452,7 @@ it('qualifies bounded own restore publication, current authority and actual larg
   await check('real owned restart unloads the memory key and normal key unlock restores availability', async () => {
     const item = await asset('restart-key.png');
     const manifest = await seed([item]);
-    await run(docker, ['--context', 'desktop-linux', 'restart', container]);
+    await run(docker, ['--context', dockerContext, 'restart', container]);
     const deadline = Date.now() + 60_000;
     let ready = false;
     while (Date.now() < deadline) {
@@ -518,7 +519,7 @@ it('qualifies bounded own restore publication, current authority and actual larg
     ].join('');
     const monitor = spawn(
       docker,
-      ['--context', 'desktop-linux', 'exec', '-i', container, 'node', '-e', monitorProgram, item.path],
+      ['--context', dockerContext, 'exec', '-i', container, 'node', '-e', monitorProgram, item.path],
       { stdio: ['pipe', 'pipe', 'pipe'] },
     );
     let fdOutput = '';

@@ -14,9 +14,9 @@ const read = (name) => readFileSync(path.join(root, name), "utf8");
 const workflow = (name) => load(read(`.github/workflows/${name}.yml`));
 // Independent fixed oracles from the frozen publisher/mirror manifest audit; no live resolution.
 const images = {
-  node: "mirror.gcr.io/library/node@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0",
+  node: "mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf",
   studio:
-    "mirror.gcr.io/library/node@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404",
+    "mirror.gcr.io/library/node@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765",
   postgres:
     "mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06",
   python:
@@ -29,9 +29,9 @@ const images = {
     "mirror.gcr.io/tufin/oasdiff@sha256:6263a96dd2ef0726c54e21fea9b8e1607eac4841add0079324b424c1f52b819c",
 };
 const defaults = {
-  node: "node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0",
+  node: "node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf",
   studio:
-    "node:26.11.1-bookworm@sha256:f1233c415b41ffcf237c717b3dea92e9d4ea006e0e4c71edcb790605d74f5404",
+    "node:22.23.4-bookworm@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765",
   postgres:
     "docker.io/library/postgres:19beta4-bookworm@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06",
   python:
@@ -179,7 +179,7 @@ test("Dockerfile override seams preserve all original customer default identitie
         ? 1
         : 2,
     );
-    assert.doesNotMatch(source, /mirror.gcr.io/);
+    assert.doesNotMatch(source, /mirror\.gcr\.io/);
   }
   assert.ok(
     read("server/Dockerfile").includes(
@@ -201,7 +201,7 @@ test("Dockerfile override seams preserve all original customer default identitie
       2,
     );
   }
-  assert.doesNotMatch(ml, /mirror.gcr.io/);
+  assert.doesNotMatch(ml, /mirror\.gcr\.io/);
   assert.ok(
     read("docker/postgres/Dockerfile").includes(
       `ARG POSTGRES_IMAGE=${defaults.postgres}\n`,
@@ -248,7 +248,7 @@ test("native medium and both OpenAPI policy callers consume the explicit overrid
     setup,
     /\.withBuildArgs\(\s*process.env.FRAMELEAF_CI_POSTGRES_IMAGE\s*\? \{ POSTGRES_IMAGE: process.env.FRAMELEAF_CI_POSTGRES_IMAGE \}\s*: \{\},?\s*\)/,
   );
-  assert.doesNotMatch(setup, /mirror.gcr.io|RYUK_DISABLED/);
+  assert.doesNotMatch(setup, /mirror\.gcr\.io|RYUK_DISABLED/);
   const buildArgs = setup
     .match(/\.withBuildArgs\(\s*([\s\S]*?)\s*\)\s*\.build/)[1]
     .trim()

@@ -1610,27 +1610,25 @@ export class StudioResourceService extends BaseService {
 
   /**
    * FL-97 owner decision: which of these library assets have an HDR picture stream (PQ or HLG
-   * transfer, or Dolby Vision), as persisted by metadata extraction. Callers pass only ids the
-   * acting account resolved. Sorted for a stable response.
+   * transfer, or Dolby Vision), as persisted by metadata extraction, and which of them carry the PQ
+   * or the HLG transfer (FL-689: an export keeps an HDR picture only when every video shares one).
+   * Callers pass only ids the acting account resolved. Sorted for a stable response.
    */
-  async hdrLibraryAssets(ids: readonly string[]): Promise<string[]> {
+  async hdrLibrarySources(ids: readonly string[]): Promise<{ hdr: string[]; pq: string[]; hlg: string[] }> {
     const candidates = [...new Set(ids.filter((id) => isStudioUuid(id)))];
     if (candidates.length === 0) {
-      return [];
+      return { hdr: [], pq: [], hlg: [] };
     }
     const streams = await this.assetRepository.getVideoStreamsForDecode(candidates);
-    return [
-      ...new Set(
-        streams
-          .filter(
-            (stream) =>
-              stream.colorTransfer === ColorTransfer.Smpte2084 ||
-              stream.colorTransfer === ColorTransfer.AribStdB67 ||
-              stream.dvProfile !== null,
-          )
-          .map((stream) => stream.assetId),
-      ),
-    ].toSorted();
+    const assets = (keep: (stream: (typeof streams)[number]) => boolean) =>
+      [...new Set(streams.filter((stream) => keep(stream)).map((stream) => stream.assetId))].toSorted();
+    const pq = (stream: (typeof streams)[number]) => stream.colorTransfer === ColorTransfer.Smpte2084;
+    const hlg = (stream: (typeof streams)[number]) => stream.colorTransfer === ColorTransfer.AribStdB67;
+    return {
+      hdr: assets((stream) => pq(stream) || hlg(stream) || stream.dvProfile !== null),
+      pq: assets(pq),
+      hlg: assets(hlg),
+    };
   }
 
   /**

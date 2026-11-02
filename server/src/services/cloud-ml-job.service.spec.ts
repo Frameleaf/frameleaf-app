@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -41,6 +44,7 @@ import {
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -526,6 +530,25 @@ describe(CloudMlJobService.name, () => {
       expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(true);
     });
 
+    it('refuses an encrypted Locked original before preparing anything: its prepared copy would be on disk (FL-721)', async () => {
+      const dir = await fs.mkdtemp(join(tmpdir(), 'cloud-ml-locked-'));
+      const sealedOriginal = join(dir, 'Holiday.mp4');
+      await fs.writeFile(sealedOriginal, Buffer.concat([Buffer.from('FLLK'), Buffer.alloc(64)]));
+      try {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...source,
+          originalPath: sealedOriginal,
+        } as never);
+
+        await expect(sut.estimate(owner, preview(), now)).rejects.toThrow(BadRequestException);
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+        expect(mocks.media.probe).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
     it('prepares and sends nothing when the consent is older than the version the cloud requires (FL-201)', async () => {
       const stale = { ...cloud, consentVersion: '2026-09-01.1' };
       mocks.mlDestination.getAll.mockResolvedValue([stale]);
@@ -607,11 +630,39 @@ describe(CloudMlJobService.name, () => {
       expect(record.beforePath).toBe(first[1]);
     });
 
+    it('allows a fully promoted job with no wallet balance and approves only its net spending', async () => {
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(0));
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        promotion: {
+          campaignId: '00000000-0000-4000-8000-000000000001',
+          discountP50: sealed.cost.p50,
+          discountP90: sealed.cost.p90,
+          netP50: 0,
+          netP90: 0,
+          netHold: 0,
+          finalAtAdmission: true,
+        },
+      });
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0, refusal: null });
+      expect(estimates()[0]!.approved).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0 });
+      expect(sealed.cost.hold).toBeGreaterThan(0);
+    });
+
     it('refuses to send a job the AI Wallet cannot hold, without offering a lighter model', async () => {
-      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(1));
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+        ...wallet(1),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
 
       const estimate = await sut.estimate(owner, preview(), now);
-      expect(estimate.refusal).toMatchObject({ code: 'insufficient-credits' });
+      // FL-544: the refusal carries the one link that fixes it, so a gate can show one button
+      expect(estimate.refusal).toEqual({
+        code: 'insufficient-credits',
+        message: expect.stringContaining('Add AI credit first.'),
+        topUpUrl: 'https://frameleaf.cloud/wallet/top-up',
+      });
       expect(estimate.model.sku).toBe(FAITHFUL);
     });
 
@@ -1704,7 +1755,7 @@ describe(CloudMlJobService.name, () => {
         rendering();
         mocks.crypto.hashFileDigests.mockClear();
         mocks.crypto.hashFileDigests.mockImplementation((file) =>
-          Promise.try(() => {
+          tryPromise(() => {
             const path = file.toString();
             const cached = path.includes('/out-');
             const first = path.endsWith('out-v1-s0.mp4');

@@ -237,9 +237,9 @@ export const readinessLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'readines
     case MlWorkerReadiness.NotServing: {
       return 'admin.frameleaf_workers_state_not_serving';
     }
-    case MlWorkerReadiness.Cpu: {
-      return 'admin.frameleaf_workers_state_cpu';
-    }
+    // One label for a worker that serves its work: whether that is on the CPU is the Graphics line's to say.
+    // The hardware report can arrive a check later, and the pill must not flip when it does.
+    case MlWorkerReadiness.Cpu:
     case MlWorkerReadiness.ModelReady: {
       return render ? 'admin.frameleaf_workers_state_checked_in' : 'admin.frameleaf_workers_state_model_ready';
     }
@@ -248,11 +248,9 @@ export const readinessLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'readines
 
 export const readinessTone = (readiness: MlWorkerReadiness): 'teal' | 'blue' | 'warning' | 'danger' | 'neutral' => {
   switch (readiness) {
-    case MlWorkerReadiness.ModelReady: {
-      return 'teal';
-    }
+    case MlWorkerReadiness.ModelReady:
     case MlWorkerReadiness.Cpu: {
-      return 'blue';
+      return 'teal';
     }
     case MlWorkerReadiness.NotServing: {
       return 'warning';

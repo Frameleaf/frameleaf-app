@@ -1,3 +1,4 @@
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -7,11 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import { serverVersion } from 'src/constants.js';
+import { CloudAccountLinkSchema } from 'src/dtos/frameleaf-cloud.dto.js';
 import {
   AdminAuditAction,
   DatabaseLock,
   JobName,
   JobStatus,
+  MlAdmissionRefusal,
   NotificationLevel,
   PushEventType,
   SystemMetadataKey,
@@ -38,7 +41,7 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
-import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import {
   FakeCloud,
   FakeCloudAnswer,
@@ -51,7 +54,7 @@ import {
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
-import { ServiceMocks, newTestService } from 'test/utils.js';
+import { ServiceMocks, expectLocalisedSystemNotices, newTestService } from 'test/utils.js';
 
 /** The RFC 7638 kid of an Ed25519 private key. */
 const kidOf = (privateKey: KeyObject) => {
@@ -231,6 +234,8 @@ describe(FrameleafCloudService.name, () => {
   });
 
   afterEach(async () => {
+    // FL-406: every notice and push carries a system template whose English matches the supplied text
+    expectLocalisedSystemNotices(mocks.event.emit);
     await cloud.close();
     await rm(identityDir, { recursive: true, force: true });
   });
@@ -374,6 +379,49 @@ describe(FrameleafCloudService.name, () => {
       expect(pathsCalled()).toEqual(['POST /id/token']);
       expect(cloud.requests[0].form().get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code');
       expect(Date.parse(storedLink()!.pending!.nextPollAt)).toBeGreaterThan(Date.now());
+    });
+
+    it('clears a failed check once the cloud answers again while waiting', async () => {
+      let answer = { status: 503, body: { code: 'unavailable', message: 'down', retryable: true } } as {
+        status: number;
+        body: unknown;
+      };
+      serveLinking(() => answer);
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.lastError).toBeTruthy();
+      expect(storedLink()?.status).toBe('pending');
+
+      answer = { status: 400, body: { error: 'authorization_pending' } };
+      makeDue();
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'pending', lastError: null });
+      expect(storedLink()?.lastError).toBeUndefined();
+    });
+
+    it('ends the attempt when the cloud no longer accepts the code (invalid_grant)', async () => {
+      serveLinking(() => ({ status: 400, body: { error: 'invalid_grant' } }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'unlinked', linkResult: 'expired', pending: null });
+      expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('Get a new code') });
+    });
+
+    it('waits longer after a check that got no answer, as RFC 8628 asks, but not after a 5xx', async () => {
+      serveLinking(() => ({ status: 503, body: { code: 'unavailable', message: 'down', retryable: true } }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.pending?.intervalSeconds).toBe(5);
+
+      const requestOAuth = vi
+        .spyOn(FrameleafCloudRepository.prototype, 'requestOAuth')
+        .mockRejectedValueOnce(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'did not answer'));
+      makeDue();
+      await sut.getLink();
+      requestOAuth.mockRestore();
+      expect(storedLink()).toMatchObject({ status: 'pending', pending: { intervalSeconds: 10 } });
+      expect(Date.parse(storedLink()!.pending!.nextPollAt)).toBeGreaterThan(Date.now() + 9000);
     });
 
     it('adds five seconds to the interval on slow_down', async () => {
@@ -706,6 +754,236 @@ describe(FrameleafCloudService.name, () => {
     it('refuses to start a second link while linked', async () => {
       await linkNow();
       await expect(sut.startLink(authStub.admin)).rejects.toThrow('already linked');
+    });
+  });
+
+  describe('linking with a Frameleaf account during first-run setup (FL-708, FC-222)', () => {
+    const LINK = '/id/v1/instances/link-with-password';
+    /** The registration `POST /v1/instances` answers, as FC-222's 201 does, plus `account`. */
+    const linked = (request: FakeCloudRequest) => {
+      const { instance } = request.json();
+      const answer = cloudContractFixture('instance/register-response.json');
+      return {
+        status: 201,
+        body: {
+          ...answer,
+          instanceId: instance.instanceId,
+          oidc: { ...answer.oidc, issuer: `${cloud.url}/id`, clientId: instance.instanceId },
+          services: {},
+          owner: {
+            accountId: 'account-9',
+            email: 'ada@example.test',
+            label: 'Ada',
+            dataRegion: instance.dataRegion ?? 'na',
+          },
+          account: { id: 'account-9', label: 'Ada', region: instance.dataRegion ?? 'na', created: true },
+        },
+      };
+    };
+    const challenge = (kind: 'email-code' | 'second-factor') => ({
+      status: 202,
+      body: { challengeId: 'c'.repeat(43), kind, expiresIn: 600 },
+    });
+    const refuse = (status: number, code: string, extra: Record<string, unknown> = {}) => ({
+      status,
+      body: { code, message: `refused: ${code}`, retryable: false, requestId: 'req_1', ...extra },
+    });
+    const create = {
+      mode: 'create' as const,
+      email: 'ada@example.test',
+      password: 'a-password',
+      name: 'Ada',
+      consent: { tos: '2026-10-01.1', privacy: '2026-10-01.1' },
+    };
+    const signIn = { mode: 'sign-in' as const, email: 'ada@example.test', password: 'a-password' };
+    /** The requests that reached the routes (each first had the identity origin's nonce challenge). */
+    const linkRequests = () =>
+      cloud.requests.filter(({ path, dpop }) => path.startsWith(LINK) && dpop?.claims.nonce === 'id-nonce');
+
+    /** FC-222: a DPoP proof by the key being linked, for exactly this URL, with no Authorization header. */
+    const expectLinkProof = (request: FakeCloudRequest, path: string) => {
+      const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+      expect(request.headers.authorization).toBeUndefined();
+      expect(request.dpop!.claims).toMatchObject({ htm: 'POST', htu: `${cloud.url}${path}`, nonce: 'id-nonce' });
+      expect(request.dpop!.jkt).toBe(identity.kid);
+    };
+
+    beforeEach(() => {
+      // the identity origin always wants its own nonce (FC-222)
+      cloud.nonce = 'id-nonce';
+    });
+
+    it('creates an account, takes the emailed code and links straight away, with no approval code', async () => {
+      cloud.on(`POST ${LINK}`, () => challenge('email-code'));
+      cloud.on(`POST ${LINK}/${'c'.repeat(43)}/verify`, (request) =>
+        request.json().code === '123456'
+          ? linked(cloud.requests.find(({ path }) => path === LINK)!)
+          : refuse(400, 'code-invalid'),
+      );
+
+      const started = await sut.linkWithAccount(authStub.admin, create);
+      expect(started).toMatchObject({
+        outcome: 'code-needed',
+        challenge: { challengeId: 'c'.repeat(43), kind: 'email-code' },
+        refusal: null,
+        status: { state: 'unlinked' },
+      });
+      const [start] = linkRequests();
+      expectLinkProof(start, LINK);
+      expect(cloud.refusals).toContainEqual({ path: LINK, status: 401, code: 'use_dpop_nonce' });
+      expect(start.json()).toEqual({
+        mode: 'create',
+        email: 'ada@example.test',
+        password: 'a-password',
+        name: 'Ada',
+        consent: { tos: '2026-10-01.1', privacy: '2026-10-01.1' },
+        instance: expect.objectContaining({
+          instanceId: localInstanceId(),
+          version: expect.any(String),
+          capabilities: expect.any(Array),
+          jwk: expect.objectContaining({ kid: start.dpop!.jkt }),
+        }),
+      });
+      expect(start.json().instance).not.toHaveProperty('dataRegion');
+      expect(pathsCalled()).not.toContain('POST /id/device/auth');
+
+      const done = await sut.verifyAccountLink(authStub.admin, { challengeId: 'c'.repeat(43), code: '123456' });
+      expect(done).toMatchObject({
+        outcome: 'linked',
+        challenge: null,
+        status: { state: 'linked', account: expect.objectContaining({ label: 'Ada' }) },
+      });
+      expectLinkProof(linkRequests().at(-1)!, `${LINK}/${'c'.repeat(43)}/verify`);
+      expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-9', instanceId: localInstanceId() });
+      // the password is never kept
+      expect(JSON.stringify(metadata.values().toArray())).not.toContain('a-password');
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.CloudLinked, actorId: authStub.admin.user.id }),
+      ]);
+    });
+
+    it('signs in and links at once; another region is only used when the administrator chose it', async () => {
+      cloud.on(`POST ${LINK}`, (request) =>
+        request.json().instance.dataRegion === 'eu'
+          ? linked(request)
+          : refuse(409, 'region-mismatch', { data: { accountRegion: 'eu', requestedRegion: 'na' } }),
+      );
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).resolves.toMatchObject({
+        outcome: 'refused',
+        refusal: 'region-mismatch',
+        accountRegion: 'eu',
+        message: 'refused: region-mismatch',
+        status: { state: 'unlinked' },
+      });
+      expect(linkRequests()).toHaveLength(1);
+      await expect(sut.linkWithAccount(authStub.admin, { ...signIn, dataRegion: 'eu' })).resolves.toMatchObject({
+        outcome: 'linked',
+        accountRegion: null,
+        status: { state: 'linked', dataRegion: 'eu' },
+      });
+      expect(linkRequests()[1].json()).toMatchObject({ mode: 'sign-in', instance: { dataRegion: 'eu' } });
+      expect(linkRequests()[1].json()).not.toHaveProperty('name');
+    });
+
+    it('asks for the authenticator code when the account has one', async () => {
+      cloud.on(`POST ${LINK}`, () => challenge('second-factor'));
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).resolves.toMatchObject({
+        outcome: 'code-needed',
+        challenge: { kind: 'second-factor' },
+      });
+    });
+
+    it.each([
+      [refuse(401, 'invalid-credentials'), 'invalid-credentials'],
+      [refuse(409, 'email-taken'), 'email-taken'],
+      [refuse(422, 'password-too-short'), 'password-too-short'],
+      [refuse(422, 'request-invalid', { detail: 'password-breached' }), 'password-breached'],
+      [refuse(409, 'consent-version-outdated'), 'consent-outdated'],
+      [refuse(403, 'forbidden'), 'account-refused'],
+      [refuse(409, 'jwk_already_bound'), 'key-already-linked'],
+      [refuse(503, 'service-paused', { retryable: true }), 'paused'],
+      [{ ...refuse(500, 'internal'), status: 500 }, 'unavailable'],
+    ])('says why the cloud refused (%#), and leaves this server unlinked', async (answer, refusal) => {
+      cloud.on(`POST ${LINK}`, () => answer);
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).resolves.toMatchObject({
+        outcome: 'refused',
+        refusal,
+        status: { state: 'unlinked' },
+      });
+      expect(storedLink()?.status ?? 'unlinked').toBe('unlinked');
+      expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+    });
+
+    it('passes on how many codes are left, and when to try again', async () => {
+      cloud.on(`POST ${LINK}/abc/verify`, () => refuse(400, 'code-invalid', { data: { attemptsLeft: 3 } }));
+      await expect(
+        sut.verifyAccountLink(authStub.admin, { challengeId: 'abc', code: '000000' }),
+      ).resolves.toMatchObject({
+        refusal: 'code-invalid',
+        attemptsLeft: 3,
+      });
+      cloud.on(`POST ${LINK}/abc/verify`, () => ({
+        ...refuse(429, 'rate-limited'),
+        headers: { 'retry-after': '120' },
+      }));
+      await expect(
+        sut.verifyAccountLink(authStub.admin, { challengeId: 'abc', code: '000000' }),
+      ).resolves.toMatchObject({
+        refusal: 'rate-limited',
+        retryAfterSeconds: 120,
+      });
+      cloud.on(`POST ${LINK}/abc/verify`, () => refuse(404, 'not-found'));
+      await expect(
+        sut.verifyAccountLink(authStub.admin, { challengeId: 'abc', code: '000000' }),
+      ).resolves.toMatchObject({
+        refusal: 'code-expired',
+      });
+    });
+
+    it('is for first-run setup only: after setup, linking keeps the approval code', async () => {
+      metadata.set(SystemMetadataKey.FrameleafSetup, { completed: true });
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.verifyAccountLink(authStub.admin, { challengeId: 'abc', code: '1' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(sut.getAccountLinkConsents()).rejects.toBeInstanceOf(ForbiddenException);
+      expect(linkRequests()).toHaveLength(0);
+    });
+
+    it('never sends a password to a Frameleaf Cloud reached over plain HTTP, except on this machine', async () => {
+      const repository = (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository })
+        .frameleafCloudRepository;
+      const real = await repository.discovery(cloud.url);
+      vi.spyOn(repository, 'discovery').mockResolvedValue({ ...real, issuer: 'http://id.frameleaf.example' });
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(cloud.requests.filter(({ path }) => path.startsWith(LINK))).toHaveLength(0);
+    });
+
+    it('needs a name and the statements shown for a new account, in the request contract', () => {
+      expect(CloudAccountLinkSchema.safeParse(create).success).toBe(true);
+      expect(CloudAccountLinkSchema.safeParse({ ...create, consent: undefined }).success).toBe(false);
+      expect(CloudAccountLinkSchema.safeParse({ ...create, name: undefined }).success).toBe(false);
+      expect(CloudAccountLinkSchema.safeParse(signIn).success).toBe(true);
+    });
+
+    it('calls a missing start route unavailable, not an expired code', async () => {
+      cloud.on(`POST ${LINK}`, () => refuse(404, 'not-found'));
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).resolves.toMatchObject({ refusal: 'unavailable' });
+    });
+
+    it('reads the statements a new account agrees to, without a proof', async () => {
+      cloud.on('GET /id/v1/account/sign-up/consents', () => ({
+        status: 200,
+        body: {
+          tos: { version: '2026-10-01.1', text: 'I agree to the Terms.', document: { title: 'Terms' } },
+          privacy: { version: '2026-10-01.2', text: 'I read the privacy notice.', document: {} },
+        },
+      }));
+      await expect(sut.getAccountLinkConsents()).resolves.toEqual({
+        tos: { version: '2026-10-01.1', text: 'I agree to the Terms.' },
+        privacy: { version: '2026-10-01.2', text: 'I read the privacy notice.' },
+      });
+      expect(cloud.requests.find(({ path }) => path.endsWith('/consents'))!.dpop).toBeNull();
     });
   });
 
@@ -3362,6 +3640,56 @@ describe(FrameleafCloudService.name, () => {
         'POST /id/token',
         'POST /api/v1/instance/commands/s1/ack',
       ]);
+    });
+  });
+
+  describe('Sign in with Frameleaf people (FL-541)', () => {
+    const emma = { id: 'u-emma', name: 'Emma', email: 'emma@example.com' };
+    const sam = { id: 'u-sam', name: 'Sam', email: 'sam@example.com' };
+    beforeEach(() => {
+      mocks.user.getList.mockResolvedValue([sam, emma] as never);
+      mocks.frameleafAccount.listLinks.mockResolvedValue([{ userId: sam.id, email: 'sam@frameleaf.app' }]);
+      mocks.email.renderEmail.mockResolvedValue({ html: '<p/>', text: 'text' });
+    });
+
+    it('lists who has linked by name, those not linked first, and cannot remind without email', async () => {
+      await expect(sut.getSignInPeople()).resolves.toEqual({
+        people: [
+          { id: emma.id, name: 'Emma', email: emma.email, linked: false, frameleafEmail: null },
+          { id: sam.id, name: 'Sam', email: sam.email, linked: true, frameleafEmail: 'sam@frameleaf.app' },
+        ],
+        canRemind: false,
+      });
+      mocks.user.get.mockResolvedValue(emma as never);
+      await expect(sut.remindSignIn(authStub.admin, emma.id)).rejects.toThrow('Email and a public address');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.SendMail }));
+    });
+
+    it('emails a reminder to someone who has not linked, never to someone who has', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        notifications: { smtp: { enabled: true } },
+        server: { externalDomain: 'https://photos.example.com' },
+      });
+      clearConfigCache();
+      await expect(sut.getSignInPeople()).resolves.toMatchObject({ canRemind: true });
+
+      mocks.user.get.mockResolvedValue(sam as never);
+      await expect(sut.remindSignIn(authStub.admin, sam.id)).rejects.toThrow('already linked');
+
+      mocks.user.get.mockResolvedValue(emma as never);
+      await sut.remindSignIn(authStub.admin, emma.id);
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            displayName: 'Emma',
+            link: 'https://photos.example.com/user-settings?area=preferences&section=frameleaf-account',
+          }),
+        }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({ to: emma.email }),
+      });
     });
   });
 

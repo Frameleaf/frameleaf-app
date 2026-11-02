@@ -301,6 +301,17 @@ describe('SystemConfigDraftStore (FL-66)', () => {
     expect(store.notice).toEqual({ code: 'partial_saved' });
   });
 
+  it('shows no draft notice after saving some settings when nothing else is pending', async () => {
+    const store = createStore();
+    store.draft.ffmpeg.crf = 30;
+    save.mockImplementation(({ config }) => Promise.resolve(current(cloneConfig(config), 'r2')));
+
+    await expect(store.saveKeys(['ffmpeg'])).resolves.toBe(true);
+
+    expect(store.dirty).toBe(false);
+    expect(store.notice).toBeNull();
+  });
+
   it('keeps the draft when the email settings save fails', async () => {
     const store = createStore();
     store.draft.notifications.smtp.enabled = true;

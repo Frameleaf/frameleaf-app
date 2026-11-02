@@ -5,6 +5,7 @@ import {
   newestContainedRelease,
   transformRow,
   vectorCompatible,
+  withForkContent,
 } from 'src/immich-import/adapters.js';
 import { EmbeddingTransferEvidence } from 'src/immich-import/embeddings.js';
 
@@ -121,5 +122,36 @@ describe('frozen Immich adapters', () => {
     expect(vectorCompatible(vector, { ...evidence, destinationConfiguredModel: 'clip-b' })).toBe(false);
     expect(vectorCompatible('[0,1]', evidence)).toBe(false);
     expect(vectorCompatible(vector)).toBe(false);
+  });
+
+  it('reads pre-Frameleaf fork album nesting and smart albums only when the source has them', () => {
+    const upstream = frozenSource('2.7.5');
+    const column = (type: string) => ({ type, not_null: false, default: null, identity: '', generated: '' });
+    const structure = (tables: Record<string, Record<string, ReturnType<typeof column>>>) => ({
+      tables,
+      constraints: [],
+      uniqueIndexes: [],
+      enums: [],
+    });
+    const plain = withForkContent(upstream, structure({}));
+    expect(plain.tables.album.columns).not.toContain('parentId');
+    expect(plain.tables.smart_album).toBeUndefined();
+
+    const fork = withForkContent(
+      upstream,
+      structure({
+        album: { parentId: column('uuid'), icon: column('character varying'), sortOrder: column('double precision') },
+        smart_album_exclusion: { smartAlbumId: column('uuid'), assetId: column('uuid') },
+      }),
+    );
+    expect(fork.tables.album.columns).toEqual([...upstream.tables.album.columns, 'parentId', 'icon', 'sortOrder']);
+    expect(Object.keys(fork.tables.album.types)).toEqual(fork.tables.album.columns);
+    expect(fork.tables.smart_album_exclusion.key).toEqual(['smartAlbumId', 'assetId']);
+    // A partial or retyped fork table is not read.
+    expect(fork.tables.smart_album).toBeUndefined();
+    // The frozen shape is never mutated.
+    expect(upstream.tables.album.columns).not.toContain('parentId');
+    // 2.x views select the fork columns too.
+    if (fork.views.album) expect(fork.views.album).toContain('"parentId"');
   });
 });

@@ -476,7 +476,7 @@
         "properties": {
           "inverse": {
             "title": "Inverse",
-            "description": "When true will unarchive any archived assets",
+            "description": "When true will move any locked assets back to the timeline",
             "type": "boolean"
           }
         }
@@ -510,7 +510,7 @@
           "inverse": {
             "type": "boolean",
             "title": "Inverse",
-            "description": "Unfavorite by default, set to true to favorite instead",
+            "description": "Favorite by default, set to true to unfavorite instead",
             "default": false
           }
         }

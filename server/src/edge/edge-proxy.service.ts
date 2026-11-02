@@ -25,6 +25,7 @@ import {
   addressBucket,
 } from 'src/utils/frameleaf-remote-access.js';
 import { type FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
+import { writeInformation } from 'src/utils/response.js';
 
 /** How one connection reached the edge worker: the via tag and the visitor's own address. */
 export type EdgeArrival = { via: FrameleafVia; clientIp: string; host: string | null; buddyRecovery?: boolean };
@@ -263,12 +264,19 @@ export class EdgeProxyService {
       this.refuse(response, 403, 'This address only serves its Buddy vault.');
       return;
     }
+    const headers = upstreamHeaders(request.headers, arrival, secret);
+    // A chunked body goes on chunked. Unframed, Node would send a GET, HEAD, DELETE or OPTIONS body as
+    // raw bytes, and the API would read them on the pooled socket as a request of its own, without the
+    // via contract. A Content-Length body keeps its forwarded Content-Length.
+    if (request.headers['transfer-encoding'] !== undefined) {
+      headers['transfer-encoding'] = 'chunked';
+    }
     const outgoing = http.request({
       host,
       port,
       method: request.method,
       path: request.url,
-      headers: upstreamHeaders(request.headers, arrival, secret),
+      headers,
       agent: this.agent,
     });
     outgoing.on('information', (answer) => {
@@ -276,12 +284,7 @@ export class EdgeProxyService {
       if (answer.statusCode < 102 || response.destroyed || response.headersSent) {
         return;
       }
-      // Public in Node24.18; the pinned Node type package predates this method.
-      (
-        response as ServerResponse & {
-          writeInformation(statusCode: number, headers: OutgoingHttpHeaders): void;
-        }
-      ).writeInformation(answer.statusCode, downstreamHeaders(answer.headers));
+      writeInformation(response, answer.statusCode, downstreamHeaders(answer.headers));
     });
     outgoing.on('response', (answer) => {
       response.writeHead(answer.statusCode ?? 502, answer.statusMessage, downstreamHeaders(answer.headers));

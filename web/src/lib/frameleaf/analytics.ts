@@ -385,6 +385,7 @@ export const volumeSegments = (report: AnalyticsReportResponseDto, t: Translate)
 // ── Formatting ────────────────────────────────────────────────────────────
 
 const TB = 1000 ** 4;
+const MB = 1000 ** 2;
 
 /** The dashboard's number, size, date and duration formats for one locale (AnalyticsDashboard.jsx:7-28). */
 export const analyticsFormats = (locale: string | undefined, t: Translate) => {
@@ -395,15 +396,26 @@ export const analyticsFormats = (locale: string | undefined, t: Translate) => {
     new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
       new Date(`${value.slice(0, 10)}T00:00:00Z`),
     );
-  /** Bytes in GB, or TB from one terabyte up, as the prototype writes volume sizes (decimal, D5). */
+  /**
+   * Bytes in GB, TB from one terabyte up and MB under one gigabyte, as the prototype writes volume
+   * sizes (decimal, D5); a 20 MB file is never "0 GB".
+   */
   const size = (bytes: number) =>
     bytes >= TB
       ? t('frameleaf_analytics_tb', {
           value: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(bytes / TB),
         })
-      : t('frameleaf_analytics_gb', {
-          value: new Intl.NumberFormat(locale, { maximumFractionDigits: bytes >= 10 * GB ? 0 : 1 }).format(bytes / GB),
-        });
+      : bytes >= GB
+        ? t('frameleaf_analytics_gb', {
+            value: new Intl.NumberFormat(locale, { maximumFractionDigits: bytes >= 10 * GB ? 0 : 1 }).format(
+              bytes / GB,
+            ),
+          })
+        : t('frameleaf_analytics_mb', {
+            value: new Intl.NumberFormat(locale, { maximumFractionDigits: bytes >= 10 * MB ? 0 : 1 }).format(
+              bytes / MB,
+            ),
+          });
   const percent = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 : 0);
   const duration = (milliseconds: number) => {
     const seconds = Math.round(milliseconds / 1000);
@@ -595,9 +607,34 @@ export const dayRecords = (days: AnalyticsDayDto[]) => {
   return {
     busiest: busiest ? { date: busiest.date, count: busiest.captured } : null,
     streak: best.length > 0 ? best : null,
-    perDay: days.length > 0 ? Math.round(total / days.length) : 0,
+    // One decimal, so a library adding a photo every few days reads 0.3 a day, not 0.
+    perDay: days.length > 0 ? Math.round((total / days.length) * 10) / 10 : 0,
   };
 };
+
+/**
+ * Every photo as a 6×4 print: 0.3 mm thick and 152.4 mm along its long edge
+ * (AnalyticsDashboard.jsx:565-566). A small library is measured in cm and m rather than "0 m" and
+ * "0 km"; a value that still rounds to zero is for the caller to leave out.
+ */
+export const printRecords = (photos: number) => {
+  const oneDecimal = (value: number) => Math.round(value * 10) / 10;
+  const stackMm = photos * 0.3;
+  const lineMm = photos * 152.4;
+  return {
+    stack:
+      stackMm >= 1000
+        ? { unit: 'm' as const, value: oneDecimal(stackMm / 1000) }
+        : { unit: 'cm' as const, value: oneDecimal(stackMm / 10) },
+    line:
+      lineMm >= 1_000_000
+        ? { unit: 'km' as const, value: oneDecimal(lineMm / 1_000_000) }
+        : { unit: 'm' as const, value: oneDecimal(lineMm / 1000) },
+  };
+};
+
+/** A message that ends in a date whose own abbreviation ends in a full stop ("11:34 a.m.") gets one, not two. */
+export const oneFullStop = (text: string) => text.replaceAll(/\.\.(\s|$)/g, '.$1');
 
 /** The dashboard's breakdown tables, each adding up to `breakdownTotal` (or its photos/videos share). */
 const insightTables = (insights: AnalyticsInsightsDto, t: Translate): AnalyticsTable[] => {

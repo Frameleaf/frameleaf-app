@@ -343,7 +343,8 @@
   display: flex;
   justify-content: space-between;
   color: var(--fl-muted);
-  font-size: var(--fl-font-micro);
+  /* FL-708 P5: explanatory text is at least 12px. */
+  font-size: var(--fl-font-small);
   font-weight: 400;
 }
 .auth-screen .auth-checks {
@@ -365,6 +366,12 @@
 }
 .auth-screen .auth-checks li.met svg {
   color: var(--fl-teal);
+}
+/* FL-708 item 19: one length rule, then a hint instead of character-class rules. */
+.auth-screen .auth-checks-hint {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
 }
 
 /* PIN entry */

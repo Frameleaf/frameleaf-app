@@ -7,6 +7,8 @@
 import { createHash } from 'node:crypto';
 import { prepareSidecarPlan } from '../runtime/subtitle-sidecar.mjs';
 import { TEN_BIT_FORMATS, bundledFormat, formatMismatch } from './bundled-worker-formats.mjs';
+import { HDR_MASTER_ENCODER, HDR_MASTER_FORMAT, hdrEvidenceToken } from './bundled-worker-hdr.mjs';
+import { ReframeRefusal, reframeGraph, reframeOf } from './bundled-worker-reframe.mjs';
 
 export const BUNDLED_RECIPE = 'frameleaf-bundled-worker-v2';
 
@@ -149,12 +151,47 @@ export const sealedCaptions = (graph, range, cadence, seal) => {
   return plan.content;
 };
 
+/** FL-107: what an HDR master file is: HEVC Main10 in MP4 (`mp4-hevc-main10`). */
+export const HDR_MASTER_TARGET = Object.freeze({
+  kind: 'video',
+  container: 'mp4',
+  muxer: 'mp4',
+  extension: '.mp4',
+  textTrack: 'mov_text',
+  faststart: true,
+  codec: 'hevc',
+  encoders: [HDR_MASTER_ENCODER],
+});
+
+/**
+ * FL-107: the HDR master this claim asks for, or null for an SDR export. HDR10 is `hdr10` colour (or
+ * `preserve` of PQ sources) with its declared mastering display; HLG is `preserve` of HLG sources.
+ * Both are written only as `mp4-hevc-main10`.
+ */
+export const hdrMasterOf = (format, color, contract) => {
+  const transfer = contract?.video?.transfer;
+  if (format !== HDR_MASTER_FORMAT || !transfer) return null;
+  if (transfer === 'smpte2084' && (color === 'hdr10' || color === 'preserve')) {
+    return { transfer: 'pq', mastering: contract.video.mastering ?? null };
+  }
+  if (transfer === 'arib-std-b67' && color === 'preserve') return { transfer: 'hlg', mastering: null };
+  return null;
+};
+
+const validMastering = (mastering) =>
+  Number.isFinite(mastering?.maxNits) &&
+  Number.isFinite(mastering?.minNits) &&
+  mastering.minNits >= 0 &&
+  mastering.maxNits > mastering.minNits;
+
 /** The format this claim asks for, or why the bundled worker cannot write it. */
 const targetFormat = (format) => {
   if (Object.hasOwn(TEN_BIT_FORMATS, format)) {
     refuse(
       'needs_10bit',
-      `${format} promises a 10-bit picture and the bundled Studio worker renders 8-bit SDR. Choose ${TEN_BIT_FORMATS[format]}, or use a render worker that verified 10-bit output.`,
+      format === HDR_MASTER_FORMAT
+        ? `${format} promises a 10-bit picture, and the bundled Studio worker writes 10-bit only as an HDR10 or HLG master. Choose ${TEN_BIT_FORMATS[format]} for an SDR project.`
+        : `${format} promises a 10-bit picture and the bundled Studio worker renders 8-bit SDR. Choose ${TEN_BIT_FORMATS[format]}, or use a render worker that verified 10-bit output.`,
     );
   }
   const target = bundledFormat(format);
@@ -192,6 +229,27 @@ const captionsOf = (claim, target, contract) => {
   return { mode: subtitleMode };
 };
 
+/** FL-563: the sealed framing of a vertical or square export, or null for the project's own shape. */
+const shapedFraming = (settings, target) => {
+  try {
+    const reframe = reframeOf(settings);
+    if (reframe && target.kind !== 'video') refuse('reframe_invalid', 'Only a video export has a shape.');
+    return reframe;
+  } catch (error) {
+    if (error instanceof ReframeRefusal) refuse(error.code, error.message);
+    throw error;
+  }
+};
+
+const derivedGraph = (graph, reframe) => {
+  try {
+    return reframeGraph(graph, reframe).graph;
+  } catch (error) {
+    if (error instanceof ReframeRefusal) refuse(error.code, error.message);
+    throw error;
+  }
+};
+
 /**
  * The render recipe for one claim. Throws `BundledRefusal` for anything this worker cannot render.
  * `softwareRenderer` is what its conformance check reported for the renderer it will use;
@@ -199,8 +257,12 @@ const captionsOf = (claim, target, contract) => {
  */
 export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
   if (claim.kind !== 'studio_export') refuse('unsupported_kind', 'The bundled Studio worker renders Studio exports only.');
-  const graph = claim.snapshot?.studio?.graph;
-  if (!graph?.metadata || !Array.isArray(graph.timeline?.items) || !Array.isArray(graph.timeline?.tracks)) {
+  const projectGraph = claim.snapshot?.studio?.graph;
+  if (
+    !projectGraph?.metadata ||
+    !Array.isArray(projectGraph.timeline?.items) ||
+    !Array.isArray(projectGraph.timeline?.tracks)
+  ) {
     refuse('invalid_graph', 'The export has no immutable project graph.');
   }
   if (typeof claim.artifactInputDigest !== 'string' || !/^[a-f0-9]{64}$/.test(claim.artifactInputDigest)) {
@@ -209,25 +271,69 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
   const { format, color, resolution, quality = 'high', audio = 'preserve', range } = claim.settings ?? {};
   const contract = claim.snapshot?.contract;
   if (contract?.image) refuse('unsupported_format', 'Still-image exports need a dedicated render worker.');
-  const target = targetFormat(format);
-  if (color !== 'preserve') refuse('unsupported_color', 'The bundled Studio worker exports SDR only (colour: preserve).');
-  if (!contract?.video || contract.video.transfer !== null || contract.video.minBitDepth !== 8) {
-    refuse('hdr_unsupported', 'This export keeps an HDR picture; the bundled Studio worker renders 8-bit SDR only.');
+  const hdr = hdrMasterOf(format, color, contract);
+  if (!hdr && (color === 'hdr10' || color === 'dolby-vision')) {
+    refuse(
+      'unsupported_color',
+      color === 'hdr10'
+        ? 'The bundled Studio worker writes HDR10 only as MP4 · HEVC Main10. Choose that format.'
+        : 'The bundled Studio worker cannot write Dolby Vision.',
+    );
+  }
+  const target = hdr ? { id: format, ...HDR_MASTER_TARGET } : targetFormat(format);
+  if (hdr) {
+    if (contract.video.minBitDepth !== 10) refuse('invalid_contract', 'An HDR master promises a 10-bit picture.');
+    if (hdr.transfer === 'pq' && !validMastering(hdr.mastering)) {
+      refuse('invalid_mastering', 'An HDR10 export needs the mastering display it was graded on.');
+    }
+  } else {
+    if (color !== 'preserve') refuse('unsupported_color', `Unknown colour handling ${color}.`);
+    if (!contract?.video || contract.video.transfer !== null || contract.video.minBitDepth !== 8) {
+      refuse(
+        'hdr_unsupported',
+        'This export keeps an HDR picture, which the bundled Studio worker writes only as MP4 · HEVC Main10. Choose that format.',
+      );
+    }
   }
   if (!Object.hasOwn(VIDEO_BITRATES, quality)) refuse('unsupported_quality', `Unknown export quality ${quality}.`);
   if (audio !== 'preserve' && audio !== 'stereo') refuse('unsupported_audio', `Unknown audio handling ${audio}.`);
   if (target.kind === 'audio' && !contract.audio) {
     refuse('no_audio', 'This project has no sound to export. Add audio, or export a video.');
   }
-  const encoder = writers ? writers[target.id] : target.encoders[0];
-  if (!encoder) refuse('unsupported_format', `This machine-learning container cannot write ${target.id}; its admission check did not verify it.`);
+  const writerKey = hdr ? hdrEvidenceToken(hdr.transfer) : target.id;
+  const encoder = writers ? writers[writerKey] : target.encoders[0];
+  if (!encoder) {
+    refuse(
+      'unsupported_format',
+      hdr
+        ? `This machine-learning container cannot write ${hdr.transfer === 'pq' ? 'HDR10' : 'HLG'} masters; its admission check did not verify them.`
+        : `This machine-learning container cannot write ${target.id}; its admission check did not verify it.`,
+    );
+  }
   const captions = captionsOf(claim, target, contract);
+  if (hdr && (captions.mode === 'sidecar' || captions.mode === 'embedded')) {
+    refuse('subtitles_unsupported', 'Captions as a file or a track need an SDR video format.');
+  }
+  if (
+    hdr &&
+    captions.mode === 'off' &&
+    timelinesOf(projectGraph).some((timeline) => (timeline?.items ?? []).some((item) => item.type === 'subtitle'))
+  ) {
+    refuse('subtitles_unsupported', 'An HDR master draws the project captions into the picture; turn captions on, or remove them.');
+  }
 
   for (const key of ['width', 'height']) {
-    if (!Number.isSafeInteger(graph.metadata[key]) || graph.metadata[key] <= 0 || graph.metadata[key] > 16_384) {
+    if (
+      !Number.isSafeInteger(projectGraph.metadata[key]) ||
+      projectGraph.metadata[key] <= 0 ||
+      projectGraph.metadata[key] > 16_384
+    ) {
       refuse('invalid_graph', 'The project canvas is invalid.');
     }
   }
+  // FL-563: a vertical or square export renders a graph derived from the project's, never the project.
+  const reframe = shapedFraming(claim.settings, target);
+  const graph = reframe ? derivedGraph(projectGraph, reframe) : projectGraph;
   const cadence = parseRational(claim.snapshot?.timing?.cadence);
   const timeBase = parseRational(claim.snapshot?.timing?.timeBase);
   if (!cadence || !timeBase) refuse('invalid_timing', 'The export snapshot declares no exact cadence and time base.');
@@ -237,17 +343,39 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
   const frames = bounds.outPoint - bounds.inPoint;
   const endTicks = frameTicks(frames, cadence, timeBase);
   if (endTicks === null) refuse('invalid_timing', 'The export range is not a whole number of time-base ticks.');
+  // Captions are sealed from the project graph; reframing moves where they are drawn, not their words.
   const captionText = captions.mode === 'sidecar' || captions.mode === 'embedded'
-    ? sealedCaptions(graph, range, cadence, captions.mode === 'sidecar' ? captions.seal : captions.seal.source)
+    ? sealedCaptions(projectGraph, range, cadence, captions.mode === 'sidecar' ? captions.seal : captions.seal.source)
     : null;
 
   // One engine pass writes MP4/H.264 with nothing to add; every other format is a second ffmpeg pass.
-  const pass = target.id === 'mp4-h264' && captions.mode !== 'embedded' ? 'engine' : encoder === 'copy' ? 'remux' : 'encode';
+  // FL-107: an HDR master is the engine's float route encoded by ffmpeg (`hdr`).
+  const pass = hdr
+    ? 'hdr'
+    : target.id === 'mp4-h264' && captions.mode !== 'embedded'
+      ? 'engine'
+      : encoder === 'copy'
+        ? 'remux'
+        : 'encode';
   const fps = cadence.num / cadence.den;
+  // A shaped export is rendered at its sealed size: the crop of the frame is scaled to fill it.
   const dimensions =
     target.kind === 'audio'
       ? outputDimensions(graph.metadata, '720p', SOUND_ONLY_PICTURE_SHORT_SIDE)
-      : outputDimensions(graph.metadata, resolution);
+      : reframe
+        ? { ...reframe.output }
+        : outputDimensions(graph.metadata, resolution);
+  if (hdr && reframe) {
+    refuse('hdr_resolution', 'A vertical or square export is written in SDR; choose another format or the original shape.');
+  }
+  if (hdr && (dimensions.width !== graph.metadata.width || dimensions.height !== graph.metadata.height)) {
+    refuse(
+      'hdr_resolution',
+      `An HDR master is written at the project size (${graph.metadata.width}×${graph.metadata.height}); choose a resolution that does not scale it down.`,
+    );
+  }
+  // The HDR picture comes from the float route; the engine's own encode then only carries the sound.
+  const engineDimensions = hdr ? outputDimensions(graph.metadata, '720p', SOUND_ONLY_PICTURE_SHORT_SIDE) : dimensions;
   const settings = {
     mode: 'video',
     codec: 'avc',
@@ -256,17 +384,26 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
     quality,
     // Captions in a file or a track are not drawn into the picture; ordinary titles still are.
     ...(captions.mode !== undefined && { subtitleMode: captions.mode === 'burn' ? 'burn' : 'off' }),
-    resolution: dimensions,
+    resolution: engineDimensions,
     fps,
-    videoBitrate: pass === 'encode' ? masterBitrate(dimensions, fps) : VIDEO_BITRATES[quality],
+    videoBitrate: pass === 'encode' ? masterBitrate(dimensions, fps) : hdr ? VIDEO_BITRATES.low : VIDEO_BITRATES[quality],
     audioBitrate: pass === 'engine' ? 192_000 : 320_000,
   };
-  const output = { format: target.id, encoder, pass, captions: captions.mode ?? null };
+  const output = {
+    format: target.id,
+    encoder,
+    pass,
+    captions: captions.mode ?? null,
+    ...(hdr && { hdr: { transfer: hdr.transfer, mastering: hdr.mastering } }),
+    ...(reframe && { shape: reframe.shape }),
+  };
   const configDigest = digest(JSON.stringify({ recipe: BUNDLED_RECIPE, settings, output, audio, range: range ?? null }));
   const historyDigest = digest(JSON.stringify(graph));
   return {
     graph,
     settings,
+    dimensions,
+    hdr: hdr ? { ...hdr, cadence: `${cadence.num}/${cadence.den}` } : null,
     target,
     encoder,
     pass,
@@ -279,6 +416,7 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
     bounds,
     timebase: claim.snapshot.timing.timeBase,
     endTicks: String(endTicks),
+    shape: reframe?.shape ?? 'original',
     configDigest,
     historyDigest,
     chunkKey: digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`),
@@ -310,7 +448,10 @@ export const outputMismatch = (recipe, probed) => {
   const expected = recipe.contractAudio;
   const sound = recipe.target.kind === 'audio';
   const mismatch = formatMismatch(recipe.target, probed, {
-    ...(!sound && { width: recipe.settings.resolution.width, height: recipe.settings.resolution.height }),
+    ...(!sound && {
+      width: (recipe.dimensions ?? recipe.settings.resolution).width,
+      height: (recipe.dimensions ?? recipe.settings.resolution).height,
+    }),
     audio: !!expected,
     textTrack: recipe.captions.mode === 'embedded',
   });

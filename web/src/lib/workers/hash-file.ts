@@ -59,6 +59,31 @@ export async function hashFile(file: File, algorithm: HashAlgorithm = 'SHA-256')
 }
 
 /**
+ * SHA-256 and SHA-1 of one file in a single read (FL-529): the web upload pre-check needs both,
+ * because rows adopted from Immich keep a SHA-1 checksum. Same WASM-then-JS fallback as `hashFile`.
+ */
+export async function hashFileBoth(file: File): Promise<{ sha256: string; sha1: string }> {
+  try {
+    const [sha256Hasher, sha1Hasher] = await Promise.all([createSHA256(), createSHA1()]);
+    sha256Hasher.init();
+    sha1Hasher.init();
+    await hashChunks(file, (chunk) => {
+      sha256Hasher.update(chunk);
+      sha1Hasher.update(chunk);
+    });
+    return { sha256: sha256Hasher.digest(), sha1: sha1Hasher.digest() };
+  } catch {
+    const sha256Hasher = sha256.create();
+    const sha1Hasher = sha1.create();
+    await hashChunks(file, (chunk) => {
+      sha256Hasher.update(chunk);
+      sha1Hasher.update(chunk);
+    });
+    return { sha256: bytesToHex(sha256Hasher.digest()), sha1: bytesToHex(sha1Hasher.digest()) };
+  }
+}
+
+/**
  * Picks the hash algorithm matching a server-returned hex checksum's length, then hashes the
  * file with it. Useful when comparing a locally-computed checksum against an existing asset:
  * legacy assets have SHA-1 (40 hex chars), new assets have SHA-256 (64 hex chars).
@@ -68,7 +93,8 @@ export async function hashFileMatching(file: File, referenceHex: string): Promis
   return hashFile(file, algorithm);
 }
 
-type HashFileMessage = { file: File; algorithm?: HashAlgorithm };
+/** `both` answers `{ sha256, sha1 }` from one read instead of a single digest. */
+type HashFileMessage = { file: File; algorithm?: HashAlgorithm; both?: boolean };
 
 const isHashFileMessage = (data: unknown): data is HashFileMessage => {
   return (
@@ -86,8 +112,9 @@ if (inWorkerScope) {
     const payload = event.data;
     const file = isHashFileMessage(payload) ? payload.file : payload;
     const algorithm = isHashFileMessage(payload) ? payload.algorithm : undefined;
+    const both = isHashFileMessage(payload) && !!payload.both;
 
-    void hashFile(file, algorithm)
+    void (both ? hashFileBoth(file) : hashFile(file, algorithm))
       .then((result) => postMessage({ result }))
       .catch((error: unknown) => postMessage({ error: error instanceof Error ? error.message : String(error) }));
   });

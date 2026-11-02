@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { SearchFacetField, SearchFacetsResponseDto, SearchHistogramGranularity } from 'src/dtos/search.dto.js';
-import { AssetMetadataKey, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetMetadataKey, AssetType, AssetVisibility, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -260,6 +260,61 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     expect(counts(unlocked, SearchFacetField.People)).toEqual([
       { value: person.personGroupId, label: 'Kept Private', count: 1 },
     ]);
+  });
+
+  it('counts each pet over its confirmed observations only, and names no pet kept Locked (FL-58)', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const db = ctx.database;
+    const newPet = (name: string, isHidden = false) =>
+      db
+        .insertInto('pet')
+        .values({ ownerId: user.id, name, birthDate: null, featuredAssetId: null, isHidden })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    const observe = (petId: string, assetId: string, state: PetObservationState) =>
+      db
+        .insertInto('pet_observation')
+        .values({
+          petId,
+          assetId,
+          state,
+          boundingBoxX1: null,
+          boundingBoxX2: null,
+          boundingBoxY1: null,
+          boundingBoxY2: null,
+          imageWidth: null,
+          imageHeight: null,
+        })
+        .execute();
+    const max = await newPet('Max');
+    const hidden = await newPet('Hidden', true);
+    const [first, second, rejected] = [
+      await newItem(ctx, user.id),
+      await newItem(ctx, user.id),
+      await newItem(ctx, user.id),
+    ];
+    await observe(max.id, first.id, PetObservationState.Confirmed);
+    await observe(max.id, second.id, PetObservationState.Confirmed);
+    await observe(max.id, rejected.id, PetObservationState.Rejected);
+    await observe(hidden.id, first.id, PetObservationState.Confirmed);
+
+    const facets = await sut.searchFacets(factory.auth({ user }), { facets: [SearchFacetField.Pets] });
+    expect(counts(facets, SearchFacetField.Pets)).toEqual([{ value: max.id, label: 'Max', count: 2 }]);
+
+    const hiddenContent = {
+      userId: user.id,
+      includeNsfw: false,
+      personIds: [],
+      tagIds: [],
+      petIds: [max.id],
+      scope: 'owned' as const,
+    };
+    const locked = await sut.searchFacets(
+      { ...factory.auth({ user }), hiddenContent },
+      { facets: [SearchFacetField.Pets] },
+    );
+    expect(counts(locked, SearchFacetField.Pets)).toEqual([]);
   });
 
   it('counts smart search results up to the cap, with the same privacy rules', async () => {

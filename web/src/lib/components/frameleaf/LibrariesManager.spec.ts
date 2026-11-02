@@ -121,6 +121,19 @@ describe('LibrariesManager (FL-78)', () => {
     expect(sdkMock.cancelLibraryScan).toHaveBeenCalledWith({ id: 'lib-1' });
   });
 
+  it('reads the list once more when the last scan ends, so its sizes are current', async () => {
+    const { refresh, rerender, rows, library } = setup(scanOf({}));
+    expect(refresh).not.toHaveBeenCalled();
+
+    const done = scanOf({ status: MediaOperationStatus.Completed, finishedAt: new Date().toISOString() });
+    await rerender({
+      rows: rows.map((row) => ({ ...row, scan: done })),
+      libraries: [{ ...library, scan: done }],
+    });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('does not poll when nothing is scanning', async () => {
     vi.useFakeTimers();
     const { refresh } = setup(null);
@@ -132,7 +145,7 @@ describe('LibrariesManager (FL-78)', () => {
     sdkMock.scanLibrary.mockResolvedValue(undefined as never);
     setup(null, { selectedKey: null });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Scan 1 library' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Check 1 folder now' }));
 
     expect(sdkMock.scanLibrary).toHaveBeenCalledWith({ id: 'lib-1' });
   });
@@ -146,11 +159,16 @@ describe('LibrariesManager (FL-78)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_libraries_error_scan);
   });
 
-  it('opens the add form from the header, over the list', async () => {
+  it('opens Add a folder of photos as a page of its own, in four steps (FL-539)', async () => {
     setup(null, { selectedKey: null });
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_add }));
 
-    expect(screen.getByRole('heading', { name: en.frameleaf_libraries_form_create_title })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: en.frameleaf_addfolder_title, level: 1 })).toBeInTheDocument();
+    for (const step of [en.frameleaf_addfolder_step1, en.frameleaf_addfolder_step2, en.frameleaf_addfolder_step3]) {
+      expect(screen.getByRole('heading', { name: step })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('switch', { name: en.frameleaf_addfolder_first })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: en.frameleaf_addfolder_add })).toBeDisabled();
   });
 });

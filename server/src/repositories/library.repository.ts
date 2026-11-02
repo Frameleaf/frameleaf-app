@@ -70,6 +70,28 @@ export class LibraryRepository {
       .execute();
   }
 
+  /** Items in each library, counted as its statistics' `total`: photos and videos, no hidden or Locked media. */
+  async getAssetCounts(ids: string[]): Promise<Map<string, number>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select((eb) => ['asset.libraryId', eb.fn.countAll<number>().as('count')])
+      .where(
+        'asset.libraryId',
+        'in',
+        ids.map((id) => asUuid(id)),
+      )
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.type', 'in', [AssetType.Image, AssetType.Video])
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .where(isNotLocked('asset'))
+      .groupBy('asset.libraryId')
+      .execute();
+    return new Map(rows.map((row) => [row.libraryId!, Number(row.count)]));
+  }
+
   @GenerateSql()
   getAllDeleted() {
     return this.db

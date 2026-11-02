@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { type LockedKeyFile, generateKeyPair, unwrapKey, wrapKey } from '@frameleaf/locked-crypto';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -6,6 +7,7 @@ import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AdminAuditAction, AuthCookie, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { OAuthProfileFactory } from 'test/factories/oauth-profile.factory.js';
@@ -42,10 +44,17 @@ describe(AuthService.name, () => {
 
     mocks.oauth.authorize.mockResolvedValue({ url: 'http://test', state: 'state', codeVerifier: 'codeVerifier' });
     mocks.oauth.getLogoutEndpoint.mockResolvedValue('http://end-session-endpoint');
+    // FL-721: no Locked key file and no PIN unlock unless a test sets them up
+    mocks.lockedKey.read.mockResolvedValue(null);
+    mocks.lockedKey.exists.mockResolvedValue(false);
+    mocks.lockedKey.write.mockResolvedValue();
+    mocks.lockedKey.delete.mockResolvedValue();
+    mocks.session.getPinUnlockedUntil.mockResolvedValue(null);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    lockedKeys.clear();
   });
 
   it('should be defined', () => {
@@ -75,6 +84,19 @@ describe(AuthService.name, () => {
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps an imported account inactive even when a password is present', async () => {
+      const user = Object.assign(UserFactory.create({ password: 'destination-password-hash' }), {
+        importClaimPending: true,
+      });
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.crypto.compareBcrypt.mockResolvedValue(true);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await expect(sut.login(dto, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.crypto.compareBcrypt).toHaveBeenCalledTimes(1);
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
     it('should successfully log the user in', async () => {
       const user = UserFactory.create({ password: 'immich_password' });
       const session = SessionFactory.create();
@@ -94,6 +116,66 @@ describe(AuthService.name, () => {
       expect(mocks.session.create).toHaveBeenCalledWith(expect.objectContaining({ userId: user.id }), user.password);
 
       expect(mocks.user.getByEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('password link (FL-538)', () => {
+    it('says who a usable link is for, and refuses one that is not', async () => {
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+      mocks.user.getByPasswordLink.mockResolvedValueOnce({
+        id: 'u1',
+        name: 'Alex',
+        email: 'alex@example.test',
+        importClaimPending: false,
+      });
+      await expect(sut.checkPasswordLink({ token: 'token' })).resolves.toEqual({
+        name: 'Alex',
+        email: 'alex@example.test',
+      });
+      expect(mocks.crypto.hashSha256).toHaveBeenCalledWith('token');
+      expect(mocks.user.getByPasswordLink).toHaveBeenCalledWith(Buffer.from('digest'));
+
+      mocks.user.getByPasswordLink.mockResolvedValueOnce(void 0);
+      await expect(sut.checkPasswordLink({ token: 'used' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('activates an imported owner through the atomic credential cleanup', async () => {
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+      mocks.user.getByPasswordLink.mockResolvedValue({
+        id: 'u1',
+        name: 'Alex',
+        email: 'alex@example.test',
+        importClaimPending: true,
+      });
+      mocks.user.redeemImportedAccountClaim.mockResolvedValue({ id: 'u1', email: 'alex@example.test' });
+      await sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' });
+      expect(mocks.user.redeemImportedAccountClaim).toHaveBeenCalledWith(Buffer.from('digest'), 'hashed');
+      expect(mocks.user.redeemPasswordLink).not.toHaveBeenCalled();
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', { userId: 'u1', invalidateSessions: true });
+    });
+
+    it('sets the chosen password once and signs every session out', async () => {
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from('digest'));
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+      mocks.user.getByPasswordLink.mockResolvedValue({
+        id: 'u1',
+        name: 'Alex',
+        email: 'alex@example.test',
+        importClaimPending: false,
+      });
+      mocks.user.redeemPasswordLink.mockResolvedValueOnce({ id: 'u1', email: 'alex@example.test' });
+
+      await sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' });
+
+      expect(mocks.user.redeemPasswordLink).toHaveBeenCalledWith(Buffer.from('digest'), 'hashed');
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', { userId: 'u1', invalidateSessions: true });
+
+      // a link used in between (a race) is refused
+      mocks.user.redeemPasswordLink.mockResolvedValueOnce(void 0);
+      await expect(sut.redeemPasswordLink({ token: 'token', newPassword: 'a-long-password' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 
@@ -534,7 +616,10 @@ describe(AuthService.name, () => {
         name: 'immich admin',
       });
 
-      expect(mocks.user.create).toHaveBeenCalled();
+      // The administrator chose the password, so it is not one to change at first sign-in.
+      expect(mocks.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isAdmin: true, shouldChangePassword: false }),
+      );
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
         expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:web' }),
       ]);
@@ -1228,6 +1313,28 @@ describe(AuthService.name, () => {
       expect(mocks.apiKey.getKey).toHaveBeenCalledWith(Buffer.from('auth_token (hashed)'));
     });
 
+    it('records when an API key was last used, at most every few minutes (FL-367)', async () => {
+      const authUser = UserFactory.create();
+      const authApiKey = ApiKeyFactory.create({ permissions: [Permission.All] });
+      mocks.apiKey.getKey.mockResolvedValue({ ...authApiKey, user: authUser });
+      mocks.systemMetadata.get.mockResolvedValue({});
+      const request = () =>
+        sut.authenticate({
+          headers: { 'x-api-key': 'auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        });
+
+      await request();
+      await request();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(1);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.ApiKeyLastUsed, {
+        [authApiKey.id]: expect.any(String),
+      });
+    });
+
     it('should throw an error if api key has insufficient permissions', async () => {
       const authUser = UserFactory.create();
       const authApiKey = ApiKeyFactory.create({ permissions: [] });
@@ -1488,6 +1595,24 @@ describe(AuthService.name, () => {
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { oauthId: profile.sub });
     });
 
+    it.each(['subject', 'email'])('refuses an unclaimed imported owner matched by %s before linking', async (match) => {
+      const user = UserFactory.create({ importClaimPending: true });
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create() });
+      if (match === 'subject') mocks.user.getByOAuthId.mockResolvedValue(user);
+      else mocks.user.getByEmail.mockResolvedValue(user);
+      await expect(
+        sut.callback(
+          { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foobar' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
     it('should store the OAuth bearer token on the new session', async () => {
       const user = UserFactory.create();
       const profile = OAuthProfileFactory.create();
@@ -1712,6 +1837,26 @@ describe(AuthService.name, () => {
       );
 
       expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_000_000_000 }));
+    });
+
+    it('uses "Space for new people" when the provider sends no quota (FL-516)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        ...systemConfigStub.oauthWithStorageQuota,
+        user: { newUserStorageQuota: 200 },
+      });
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create({}) });
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.create.mockResolvedValue(UserFactory.create({ oauthId: 'oauth-id' }));
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.callback(
+        { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+        {},
+        loginDetails,
+      );
+
+      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 200_000_000_000 }));
     });
 
     it('should ignore a negative quota', async () => {
@@ -2247,6 +2392,30 @@ describe(AuthService.name, () => {
       vi.useRealTimers();
     });
 
+    it('unlocks for the account’s "Lock again after" choice (FL-517)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const user = UserFactory.create();
+      const auth = AuthFactory.from(user).session().build();
+
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => Promise.resolve(`${a} (hashed)` === b));
+      mocks.session.elevate.mockResolvedValue(true);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { lockedPin: { relockMinutes: 15 } } },
+      ]);
+
+      await sut.unlockSession(auth, { pinCode: '123456' });
+
+      expect(mocks.session.elevate).toHaveBeenCalledWith(
+        auth.session!.id,
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        new Date('2026-05-08T12:15:00.000Z'),
+      );
+      vi.useRealTimers();
+    });
+
     it('does not elevate when the PIN or password changed after the check (FL-34)', async () => {
       const auth = AuthFactory.from().session().build();
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
@@ -2682,6 +2851,216 @@ describe(AuthService.name, () => {
           auth: { user },
         });
       });
+    });
+  });
+  describe('Locked encryption (FL-721)', () => {
+    const PIN = '123456';
+    const pinKeyFile = async (userId: string, encrypting = true) => {
+      const { publicKey, privateKey } = generateKeyPair();
+      const file = await wrapKey(
+        {
+          format: 'frameleaf-locked-key/1',
+          userId,
+          label: 'Taylor',
+          publicKey: publicKey.toString('base64'),
+          mode: 'pin',
+          encrypting,
+          createdAt: '2026-10-31T00:00:00.000Z',
+          updatedAt: '2026-10-31T00:00:00.000Z',
+        },
+        privateKey,
+        'pin',
+        PIN,
+      );
+      return { file, privateKey, publicKey };
+    };
+    const encryptionOn = (userId: string) =>
+      mocks.lockedEncryption.get.mockResolvedValue({
+        userId,
+        mode: 'pin',
+        status: 'on',
+        askAgainHours: 72,
+        recoveryKeyCreatedAt: new Date(),
+        enabledAt: new Date(),
+      });
+
+    beforeEach(() => {
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: `${PIN} (hashed)`, password: 'password (hashed)' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => Promise.resolve(`${String(a)} (hashed)` === b));
+      mocks.user.setPinCodeAndLockSessions.mockResolvedValue(true);
+    });
+
+    it('resetPinCode is refused with "use your recovery key" while encryption is on', async () => {
+      const auth = AuthFactory.from().session().build();
+      encryptionOn(auth.user.id);
+
+      await expect(sut.resetPinCode(auth, { password: 'password' })).rejects.toThrow(ConflictException);
+      await expect(sut.resetPinCode(auth, { password: 'password' })).rejects.toThrow(/recovery key/);
+      expect(mocks.user.setPinCodeAndLockSessions).not.toHaveBeenCalled();
+    });
+
+    it('changePinCode in PIN mode re-wraps the key file', async () => {
+      const auth = AuthFactory.from().session().build();
+      encryptionOn(auth.user.id);
+      const { file } = await pinKeyFile(auth.user.id);
+      mocks.lockedKey.read.mockResolvedValue(file);
+
+      await sut.changePinCode(auth, { pinCode: PIN, newPinCode: '654321' });
+
+      expect(mocks.lockedKey.write).toHaveBeenCalledTimes(1);
+      const written = mocks.lockedKey.write.mock.calls[0][0];
+      expect(written.publicKey).toBe(file.publicKey);
+      await expect(unwrapKey(written, 'pin', '654321')).resolves.toHaveLength(32);
+      expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
+        auth.user.id,
+        expect.anything(),
+        '654321 (hashed)',
+      );
+    }, 20_000);
+
+    it('changePinCode puts the key file back when the PIN is not stored', async () => {
+      const auth = AuthFactory.from().session().build();
+      encryptionOn(auth.user.id);
+      const { file } = await pinKeyFile(auth.user.id);
+      let stored = file;
+      mocks.lockedKey.read.mockImplementation(() => Promise.resolve(stored));
+      mocks.lockedKey.write.mockImplementation((written) => {
+        stored = written;
+        return Promise.resolve();
+      });
+      mocks.user.setPinCodeAndLockSessions.mockResolvedValue(false);
+
+      await expect(sut.changePinCode(auth, { pinCode: PIN, newPinCode: '654321' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mocks.lockedKey.write).toHaveBeenLastCalledWith(file);
+    }, 20_000);
+
+    it('setupPinCode gives a person with no key file a PIN-only key pair (spec §4.1)', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: null, password: 'password (hashed)' });
+      mocks.user.get.mockResolvedValue({ name: 'Taylor' } as never);
+
+      await sut.setupPinCode(auth, { pinCode: PIN });
+
+      const written: LockedKeyFile = mocks.lockedKey.write.mock.calls[0][0];
+      expect(written).toMatchObject({ userId: auth.user.id, mode: 'pin', encrypting: false });
+      await expect(unwrapKey(written, 'pin', PIN)).resolves.toHaveLength(32);
+    }, 20_000);
+
+    it('unlockSession in PIN mode loads the key until pinExpiresAt', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+      const auth = AuthFactory.from().session().build();
+      encryptionOn(auth.user.id);
+      const { file } = await pinKeyFile(auth.user.id);
+      mocks.lockedKey.read.mockResolvedValue(file);
+      mocks.session.elevate.mockResolvedValue(true);
+      mocks.session.getPinUnlockedUntil.mockResolvedValue(new Date('2026-10-31T13:00:00.000Z'));
+
+      await sut.unlockSession(auth, { pinCode: PIN });
+
+      expect(mocks.session.elevate).toHaveBeenCalledWith(
+        auth.session!.id,
+        auth.user.id,
+        expect.anything(),
+        new Date('2026-10-31T13:00:00.000Z'),
+      );
+      expect(lockedKeys.has(auth.user.id)).toBe(true);
+      expect(lockedKeys.expiresAt(auth.user.id)).toEqual(new Date('2026-10-31T13:00:00.000Z'));
+    }, 20_000);
+
+    it('unlockSession still unlocks when the key file cannot be read', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.lockedKey.read.mockRejectedValue(new SyntaxError('bad json'));
+      mocks.lockedKey.exists.mockResolvedValue(true);
+      mocks.session.elevate.mockResolvedValue(true);
+
+      await expect(sut.unlockSession(auth, { pinCode: PIN })).resolves.toBeUndefined();
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(lockedKeys.has(auth.user.id)).toBe(false);
+    });
+
+    it('lockSession drops a PIN-mode key once no elevated session remains', async () => {
+      const auth = AuthFactory.from().session().build();
+      const { file, publicKey, privateKey } = await pinKeyFile(auth.user.id);
+      lockedKeys.load(auth.user.id, publicKey, privateKey, new Date(Date.now() + 60 * 60 * 1000));
+      mocks.lockedKey.read.mockResolvedValue(file);
+      mocks.session.update.mockResolvedValue(SessionFactory.create());
+
+      await sut.lockSession(auth);
+
+      expect(lockedKeys.has(auth.user.id)).toBe(false);
+    });
+
+    it('lockSession still succeeds and drops the key when the key file cannot be read', async () => {
+      const auth = AuthFactory.from().session().build();
+      const { publicKey, privateKey } = await pinKeyFile(auth.user.id);
+      lockedKeys.load(auth.user.id, publicKey, privateKey, new Date(Date.now() + 60 * 60 * 1000));
+      mocks.lockedKey.read.mockRejectedValue(new SyntaxError('bad json'));
+      mocks.lockedKey.exists.mockResolvedValue(true);
+      mocks.session.update.mockResolvedValue(SessionFactory.create());
+
+      await expect(sut.lockSession(auth)).resolves.toBeUndefined();
+      expect(lockedKeys.has(auth.user.id)).toBe(false);
+    });
+
+    it('two PIN changes at once leave a key file the stored PIN opens', async () => {
+      const auth = AuthFactory.from().session().build();
+      encryptionOn(auth.user.id);
+      let stored: LockedKeyFile = (await pinKeyFile(auth.user.id)).file;
+      let pinHash = `${PIN} (hashed)`;
+      mocks.lockedKey.read.mockImplementation(() => Promise.resolve(structuredClone(stored)));
+      mocks.lockedKey.write.mockImplementation((file) => {
+        stored = structuredClone(file);
+        return Promise.resolve();
+      });
+      mocks.user.getForPinCode.mockImplementation(() => Promise.resolve({ pinCode: pinHash, password: '' }));
+      mocks.user.setPinCodeAndLockSessions.mockImplementation((_id, verified, hashed) => {
+        // conditional on the credentials the check read, as in the repository
+        if (verified.pinCode !== pinHash) {
+          return Promise.resolve(false);
+        }
+        pinHash = hashed!;
+        return Promise.resolve(true);
+      });
+
+      const outcomes = await Promise.allSettled([
+        sut.changePinCode(auth, { pinCode: PIN, newPinCode: '111111' }),
+        sut.changePinCode(auth, { pinCode: PIN, newPinCode: '222222' }),
+      ]);
+
+      expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      const pin = pinHash.replace(' (hashed)', '');
+      expect(['111111', '222222']).toContain(pin);
+      await expect(unwrapKey(stored, 'pin', pin)).resolves.toHaveLength(32);
+    }, 30_000);
+
+    it('refreshPinExpiry extending an elevated session also extends the loaded key expiresAt', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const user = UserFactory.create();
+      const { file, publicKey, privateKey } = await pinKeyFile(user.id);
+      lockedKeys.load(user.id, publicKey, privateKey, new Date('2026-05-08T12:01:00.000Z'));
+      mocks.lockedKey.read.mockResolvedValue(file);
+      mocks.session.getByToken.mockResolvedValue({
+        id: newUuid(),
+        updatedAt: new Date('2026-05-08T12:00:00.000Z'),
+        user,
+        isPendingSyncReset: false,
+        pinExpiresAt: new Date('2026-05-08T12:01:00.000Z'),
+        appVersion: null,
+        oauthSid: null,
+      } as never);
+      mocks.session.refreshPinExpiry.mockResolvedValue(true);
+
+      await sut.authenticate({
+        headers: { cookie: 'immich_access_token=auth_token' },
+        queryParams: {},
+        metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+      });
+
+      expect(lockedKeys.expiresAt(user.id)).toEqual(new Date('2026-05-08T13:00:00.000Z'));
     });
   });
 });

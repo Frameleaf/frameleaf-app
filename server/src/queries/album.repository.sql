@@ -389,6 +389,8 @@ rollback
 
 -- AlbumRepository.create
 begin
+SELECT
+  pg_advisory_xact_lock(hashtextextended ('frameleaf:album-hierarchy', 0))
 with
   "album" as (
     insert into

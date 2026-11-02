@@ -1,0 +1,2955 @@
+diff --git a/src/features/editor/components/properties-sidebar/index.tsx b/src/features/editor/components/properties-sidebar/index.tsx
+--- a/src/features/editor/components/properties-sidebar/index.tsx
++++ b/src/features/editor/components/properties-sidebar/index.tsx
+@@ -24,6 +24,7 @@
+ import type { TimelineItem } from '@/types/timeline'
+ import { CanvasPanel } from './canvas-panel'
+ import { CaptionQualityPanel } from './caption-quality-panel'
++import { VoiceMusicPanel } from './voice-music-panel'
+ import { useSettingsStore } from '@/features/editor/deps/settings'
+ import {
+   EDITOR_LAYOUT_CSS_VALUES,
+@@ -343,6 +344,7 @@
+               }
+             >
+               <CaptionQualityPanel />
++              <VoiceMusicPanel />
+               {selectedTransitionId ? (
+                 <Suspense fallback={null}>
+                   <LazyTransitionPanel />
+diff --git a/src/features/editor/components/properties-sidebar/voice-music-panel.tsx b/src/features/editor/components/properties-sidebar/voice-music-panel.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/voice-music-panel.tsx
+@@ -0,0 +1,251 @@
++import { useEffect, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { AudioLines } from 'lucide-react'
++import { Button } from '@/components/ui/button'
++import {
++  useItemsStore,
++  useTimelineStore,
++  useCompositionsStore,
++  useCompositionNavigationStore,
++} from '@/features/editor/deps/timeline-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { PropertySection } from './components'
++import {
++  applyVoiceMusicMix,
++  auditionVoiceMusicMix,
++  captureVoiceMixState,
++  reviewVoiceMusicMix,
++  voiceMixBinding,
++  VoiceMixError,
++  type VoiceMixPlan,
++  type VoiceMixSettings,
++} from '../../utils/voice-music-mix'
++
++export function VoiceMusicPanel() {
++  const { t } = useTranslation()
++  const tracks = useItemsStore((state) => state.tracks)
++  // Bind the review to the complete current graph, including nested sources and automation.
++  useTimelineStore((state) => state.items)
++  useTimelineStore((state) => state.keyframes)
++  useTimelineStore((state) => state.transitions)
++  useTimelineStore((state) => state.fps)
++  useCompositionsStore((state) => state.compositions)
++  useCompositionNavigationStore((state) => state.activeCompositionId)
++  usePlaybackStore((state) => state.busAudioEq)
++  usePlaybackStore((state) => state.masterLoudness)
++  usePlaybackStore((state) => state.masterGainEnvelope)
++  usePlaybackStore((state) => state.masterBusDb)
++  usePlaybackStore((state) => state.masterBusMuted)
++  const binding = voiceMixBinding(captureVoiceMixState())
++  const [settings, setSettings] = useState<VoiceMixSettings>({
++    dialogueTrackIds: [],
++    musicTrackIds: [],
++    duckDb: -12,
++    targetLufs: -16,
++    attackSec: 0.08,
++    releaseSec: 0.25,
++  })
++  const [plan, setPlan] = useState<VoiceMixPlan | null>(null)
++  const [busy, setBusy] = useState(false)
++  const [feedback, setFeedback] = useState('')
++  const controller = useRef<AbortController | null>(null)
++  const sound = useRef<AudioBufferSourceNode | null>(null)
++  const context = useRef<AudioContext | null>(null)
++  const stop = () => {
++    controller.current?.abort()
++    controller.current = null
++    sound.current?.stop()
++    sound.current = null
++    void context.current?.close().catch(() => {})
++    context.current = null
++  }
++  useEffect(() => () => stop(), [binding])
++  if (plan && plan.binding !== binding) {
++    setBusy(false)
++    setPlan(null)
++    setFeedback(t('voiceMix.stale'))
++  }
++  const update = (change: Partial<VoiceMixSettings>) => {
++    stop()
++    setBusy(false)
++    setPlan(null)
++    setFeedback('')
++    setSettings((previous) => ({ ...previous, ...change }))
++  }
++  const errorText = (error: unknown) =>
++    t(`voiceMix.${error instanceof VoiceMixError ? error.message : 'failed'}`)
++  const review = async () => {
++    stop()
++    const request = new AbortController()
++    controller.current = request
++    setBusy(true)
++    setFeedback('')
++    try {
++      const result = await reviewVoiceMusicMix(captureVoiceMixState(), settings, request.signal)
++      if (!request.signal.aborted) setPlan(result)
++    } catch (error) {
++      if (!request.signal.aborted) setFeedback(errorText(error))
++    } finally {
++      if (!request.signal.aborted) setBusy(false)
++    }
++  }
++  const audition = async () => {
++    if (!plan) return
++    stop()
++    usePlaybackStore.getState().pause()
++    const request = new AbortController()
++    controller.current = request
++    setBusy(true)
++    setFeedback(t('voiceMix.preparing'))
++    try {
++      const audioContext = new AudioContext()
++      context.current = audioContext
++      await audioContext.resume()
++      const audio = await auditionVoiceMusicMix(plan, request.signal)
++      if (request.signal.aborted) return
++      if (!audio) throw new VoiceMixError('noAudio')
++      const buffer = audioContext.createBuffer(
++        audio.channels,
++        audio.samples[0]!.length,
++        audio.sampleRate,
++      )
++      audio.samples.forEach((samples, channel) => buffer.getChannelData(channel).set(samples))
++      const source = audioContext.createBufferSource()
++      source.buffer = buffer
++      const monitor = audioContext.createGain()
++      const playback = usePlaybackStore.getState()
++      monitor.gain.value = playback.muted ? 0 : playback.volume
++      source.connect(monitor)
++      monitor.connect(audioContext.destination)
++      sound.current = source
++      source.onended = () => {
++        if (!request.signal.aborted) {
++          setBusy(false)
++          setFeedback(t('voiceMix.finished'))
++        }
++      }
++      source.start()
++      setFeedback(t('voiceMix.playing'))
++    } catch (error) {
++      if (!request.signal.aborted) {
++        setFeedback(errorText(error))
++        setBusy(false)
++        stop()
++      }
++    }
++  }
++  return (
++    <PropertySection title={t('voiceMix.title')} icon={AudioLines} defaultOpen={false}>
++      <section aria-label={t('voiceMix.title')} className="space-y-3 text-xs">
++        <p className="text-muted-foreground">{t('voiceMix.note')}</p>
++        <p className="text-muted-foreground">{t('voiceMix.range')}</p>
++        {(['dialogueTrackIds', 'musicTrackIds'] as const).map((role) => (
++          <fieldset key={role} className="space-y-1">
++            <legend className="font-medium">{t(`voiceMix.${role}`)}</legend>
++            {tracks
++              .filter((track) => !track.isGroup)
++              .map((track) => (
++                <label key={track.id} className="flex gap-2 items-center">
++                  <input
++                    type="checkbox"
++                    checked={settings[role].includes(track.id)}
++                    onChange={(event) =>
++                      update({
++                        [role]: event.target.checked
++                          ? [...settings[role], track.id]
++                          : settings[role].filter((id) => id !== track.id),
++                      })
++                    }
++                  />
++                  {track.name}
++                </label>
++              ))}
++          </fieldset>
++        ))}
++        {(
++          [
++            { key: 'targetLufs', min: -36, max: -6, step: 1 },
++            { key: 'duckDb', min: -36, max: -1, step: 1 },
++            { key: 'attackSec', min: 0, max: 2, step: 0.01 },
++            { key: 'releaseSec', min: 0, max: 5, step: 0.01 },
++          ] as const
++        ).map(({ key, ...range }) => (
++          <label key={key} className="flex justify-between gap-2 items-center">
++            {t(`voiceMix.${key}`)}
++            <input
++              type="number"
++              {...range}
++              value={Number.isFinite(settings[key]) ? settings[key] : ''}
++              onChange={(event) =>
++                update({ [key]: event.target.value === '' ? NaN : Number(event.target.value) })
++              }
++              className="w-20 rounded border p-1 bg-background"
++            />
++          </label>
++        ))}
++        {plan && (
++          <div className="space-y-2" aria-label={t('voiceMix.review')}>
++            <p>
++              {t('voiceMix.duckChange', {
++                db: settings.duckDb,
++                attack: settings.attackSec,
++                release: settings.releaseSec,
++              })}
++            </p>
++            <ul>
++              {plan.changes.map((change) => (
++                <li key={change.id}>
++                  {t('voiceMix.change', {
++                    label: change.label,
++                    lufs: change.measuredLufs.toFixed(1),
++                    before: change.beforeGain.toFixed(1),
++                    after: change.afterGain.toFixed(1),
++                    gain: change.gainDb.toFixed(1),
++                  })}
++                </li>
++              ))}
++            </ul>
++            <p className="text-muted-foreground">{t('voiceMix.preserved')}</p>
++          </div>
++        )}
++        <div className="flex flex-wrap gap-2">
++          <Button size="sm" disabled={busy} onClick={() => void review()}>
++            {t('voiceMix.review')}
++          </Button>
++          <Button size="sm" disabled={busy || !plan} onClick={() => void audition()}>
++            {t('voiceMix.audition')}
++          </Button>
++          <Button
++            size="sm"
++            disabled={busy || !plan || plan.binding !== binding}
++            onClick={() => {
++              try {
++                if (plan) applyVoiceMusicMix(plan)
++                setPlan(null)
++                setFeedback(t('voiceMix.applied'))
++              } catch (error) {
++                setFeedback(errorText(error))
++              }
++            }}
++          >
++            {t('voiceMix.apply')}
++          </Button>
++          {busy && (
++            <Button
++              size="sm"
++              variant="outline"
++              onClick={() => {
++                stop()
++                setBusy(false)
++                setFeedback(t('voiceMix.cancelled'))
++              }}
++            >
++              {t('voiceMix.cancel')}
++            </Button>
++          )}
++        </div>
++        <p role="status">{feedback}</p>
++      </section>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/deps/export-contract.ts b/src/features/editor/deps/export-contract.ts
+--- a/src/features/editor/deps/export-contract.ts
++++ b/src/features/editor/deps/export-contract.ts
+@@ -12,3 +12,12 @@
+ export { RenderQueueRunner } from '@/features/export/components/render-queue-runner'
+ export { RenderQueuePersistence } from '@/features/export/components/render-queue-persistence'
+ export { useRenderQueueStore } from '@/features/export/stores/render-queue-store'
++
++/** Load the same PCM mixer used by delivery only when a mix is reviewed or auditioned. */
++export async function loadVoiceMixRenderer() {
++  const [composition, audio] = await Promise.all([
++    import('@/features/export/utils/timeline-to-composition'),
++    import('@/features/export/utils/canvas-audio'),
++  ])
++  return { build: composition.convertTimelineToComposition, render: audio.processAudio }
++}
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -44,6 +44,7 @@
+ } from '@/features/timeline/stores/actions/edit/voice-cleanup-actions'
+ export {
+   analyzeClipLoudness,
++  loudnessBinding,
+   DEFAULT_CEILING_DBTP,
+   DEFAULT_TARGET_LUFS,
+   resolveAudibleItems,
+diff --git a/src/features/editor/utils/voice-music-mix.ts b/src/features/editor/utils/voice-music-mix.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/utils/voice-music-mix.ts
+@@ -0,0 +1,294 @@
++import type { TimelineItem, AudioItem } from '@/types/timeline'
++import type { LoudnessMeasurement } from '@/shared/utils/loudness'
++import { measureLoudnessInWorker } from '@/shared/utils/loudness'
++import { resolveEffectiveTrackStates } from '@/shared/utils/subtitle-sidecar.mjs'
++import {
++  getLinkedAudioCompanion,
++  getLinkedCompositionAudioCompanion,
++} from '@/shared/utils/linked-media'
++import { clampAudioEqGainDb } from '@/shared/utils/audio-eq'
++import { usePlaybackStore } from '@/shared/state/playback'
++import {
++  useItemsStore,
++  useKeyframesStore,
++  useCompositionsStore,
++  useCompositionNavigationStore,
++  useTimelineSettingsStore,
++  useTimelineStore,
++  executeTimelineCommand,
++  suggestLoudnessMatch,
++  loudnessBinding,
++} from '../deps/timeline-store'
++import { loadVoiceMixRenderer } from '../deps/export-contract'
++
++export interface VoiceMixSettings {
++  dialogueTrackIds: string[]
++  musicTrackIds: string[]
++  duckDb: number
++  targetLufs: number
++  attackSec: number
++  releaseSec: number
++}
++export type VoiceMixState = ReturnType<typeof captureVoiceMixState>
++export interface VoiceMixPlan {
++  binding: string
++  settings: VoiceMixSettings
++  changes: {
++    id: string
++    label: string
++    measuredLufs: number
++    gainDb: number
++    beforeGain: number
++    afterGain: number
++  }[]
++  items: TimelineItem[]
++}
++export class VoiceMixError extends Error {}
++function refuse(key: string): never {
++  throw new VoiceMixError(key)
++}
++
++export function captureVoiceMixState() {
++  const { items, tracks } = useItemsStore.getState()
++  const activeId = useCompositionNavigationStore.getState().activeCompositionId
++  const composition = activeId
++    ? useCompositionsStore.getState().getComposition(activeId)
++    : undefined
++  const playback = usePlaybackStore.getState()
++  return {
++    items,
++    tracks,
++    keyframes: useKeyframesStore.getState().keyframes,
++    transitions: useTimelineStore.getState().transitions,
++    compositions: useCompositionsStore.getState().compositions,
++    fps: composition?.fps ?? useTimelineSettingsStore.getState().fps,
++    activeId,
++    duration:
++      composition?.durationInFrames ??
++      items.reduce((end, item) => Math.max(end, item.from + item.durationInFrames), 0),
++    busAudioEq: composition?.busAudioEq ?? playback.busAudioEq,
++    masterBusDb: playback.masterBusDb,
++    masterBusMuted: playback.masterBusMuted,
++    masterGainEnvelope: playback.masterGainEnvelope,
++    masterLoudness: playback.masterLoudness,
++  }
++}
++export const voiceMixBinding = (state: VoiceMixState) => JSON.stringify(state)
++
++export function voiceMixParticipants(state: VoiceMixState, settings: VoiceMixSettings) {
++  if (!settings.dialogueTrackIds.length || !settings.musicTrackIds.length) refuse('selectTracks')
++  if (settings.dialogueTrackIds.some((id) => settings.musicTrackIds.includes(id)))
++    refuse('separateTracks')
++  if (
++    ![settings.duckDb, settings.targetLufs, settings.attackSec, settings.releaseSec].every(
++      Number.isFinite,
++    ) ||
++    settings.duckDb < -36 ||
++    settings.duckDb >= 0 ||
++    settings.targetLufs < -36 ||
++    settings.targetLufs > -6 ||
++    settings.attackSec < 0 ||
++    settings.attackSec > 2 ||
++    settings.releaseSec < 0 ||
++    settings.releaseSec > 5 ||
++    !Number.isFinite(state.fps) ||
++    state.fps <= 0 ||
++    !Number.isSafeInteger(state.duration) ||
++    state.duration <= 0
++  )
++    refuse('invalidSettings')
++  const effective = resolveEffectiveTrackStates(state.tracks)
++  // shortcut: export ignores solo, allow solo review when preview/export share audible-track resolution.
++  if (effective.some((track) => track.solo)) refuse('solo')
++  const resolve = (ids: string[]) => {
++    for (const id of ids) {
++      const track = effective.find((candidate) => candidate.id === id)
++      if (!track || track.muted || track.visible === false) refuse('inaudible')
++      if (track.locked) refuse('locked')
++    }
++    const selected = new Map<string, TimelineItem>()
++    for (const item of state.items.filter((candidate) => ids.includes(candidate.trackId))) {
++      if (!['audio', 'video', 'composition'].includes(item.type) || item.muted) continue
++      const audible =
++        item.type === 'video'
++          ? (getLinkedAudioCompanion(state.items, item) ?? (item.embeddedAudioMuted ? null : item))
++          : item.type === 'composition'
++            ? (getLinkedCompositionAudioCompanion(state.items, item) ?? item)
++            : item
++      if (!audible || audible.muted) continue
++      const track = effective.find((candidate) => candidate.id === audible.trackId)
++      if (!track || track.muted || track.visible === false) refuse('inaudible')
++      if (
++        track.locked ||
++        (item.linkedGroupId &&
++          state.items.some(
++            (linked) =>
++              linked.linkedGroupId === item.linkedGroupId &&
++              effective.find((t) => t.id === linked.trackId)?.locked,
++          ))
++      )
++        refuse('locked')
++      const visit = (id: string, seen = new Set<string>()) => {
++        if (seen.has(id)) refuse('noAudio')
++        const nested = state.compositions.find((candidate) => candidate.id === id)
++        if (!nested) refuse('noAudio')
++        const nestedTracks = resolveEffectiveTrackStates(nested.tracks)
++        if (nestedTracks.some((track) => track.solo)) refuse('solo')
++        if (nestedTracks.some((track) => track.locked)) refuse('locked')
++        for (const child of nested.items)
++          if (child.compositionId) visit(child.compositionId, new Set([...seen, id]))
++      }
++      if (audible.compositionId) visit(audible.compositionId)
++      selected.set(audible.id, audible)
++    }
++    if (!selected.size) refuse('noAudio')
++    return [...selected.values()]
++  }
++  const dialogue = resolve(settings.dialogueTrackIds)
++  const music = resolve(settings.musicTrackIds)
++  if (dialogue.some((item) => music.some((other) => item.id === other.id))) refuse('separateTracks')
++  return { dialogue, music, musicTrackIds: [...new Set(music.map((item) => item.trackId))] }
++}
++
++async function renderVoiceMix(
++  state: VoiceMixState,
++  items: TimelineItem[],
++  signal?: AbortSignal,
++  analysis = false,
++  window?: { from: number; end: number },
++) {
++  const renderer = await loadVoiceMixRenderer()
++  const composition = renderer.build(
++    structuredClone(state.tracks),
++    structuredClone(items),
++    structuredClone(state.transitions),
++    state.fps,
++    1920,
++    1080,
++    window?.from ?? null,
++    window ? window.end - 1 : null,
++    structuredClone(state.keyframes),
++    undefined,
++    structuredClone(state.busAudioEq),
++    analysis ? 0 : state.masterBusDb,
++    analysis ? false : state.masterBusMuted,
++    analysis ? [] : [...(state.masterGainEnvelope ?? [])],
++    analysis ? undefined : (state.masterLoudness ?? undefined),
++  )
++  // Active sequences may have authored blank tail after the final source.
++  if (!window) composition.durationInFrames = state.duration
++  return renderer.render(composition, signal)
++}
++
++export async function reviewVoiceMusicMix(
++  state: VoiceMixState,
++  settings: VoiceMixSettings,
++  signal?: AbortSignal,
++): Promise<VoiceMixPlan> {
++  const { dialogue, musicTrackIds } = voiceMixParticipants(state, settings)
++  const changes: VoiceMixPlan['changes'] = []
++  const replacements = new Map<string, TimelineItem>()
++  for (const item of dialogue) {
++    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError')
++    // EQ bypass or animated output trim cannot safely receive a static additive match.
++    if (
++      item.audioEqEnabled === false ||
++      state.keyframes.some(
++        (entry) =>
++          entry.itemId === item.id && JSON.stringify(entry).includes('audioEqOutputGainDb'),
++      )
++    )
++      refuse('outputGain')
++    const audio = await renderVoiceMix(state, [item], signal, true, {
++      from: Math.max(0, item.from),
++      end: Math.min(state.duration, item.from + item.durationInFrames),
++    })
++    if (!audio) refuse('noAudio')
++    const measured = await measureLoudnessInWorker(
++      { sampleRate: audio.sampleRate, channels: audio.samples },
++      signal,
++    )
++    const change = voiceMixLoudnessChange(item, measured, settings.targetLufs)
++    changes.push(change)
++    replacements.set(item.id, {
++      ...item,
++      audioEqOutputGainDb: change.afterGain,
++      audioDucking: {
++        duckOthersDb: settings.duckDb,
++        attackSec: settings.attackSec,
++        releaseSec: settings.releaseSec,
++        targetTrackIds: musicTrackIds,
++      },
++    })
++  }
++  return {
++    binding: voiceMixBinding(state),
++    settings: structuredClone(settings),
++    changes,
++    items: state.items.map((item) => replacements.get(item.id) ?? item),
++  }
++}
++
++export function voiceMixLoudnessChange(
++  item: TimelineItem,
++  measurement: LoudnessMeasurement,
++  targetLufs: number,
++) {
++  if (measurement.integratedLufs == null || !Number.isFinite(measurement.integratedLufs))
++    refuse('silent')
++  const beforeGain = item.audioEqOutputGainDb ?? 0
++  if (
++    !Number.isFinite(beforeGain) ||
++    (measurement.truePeakDbtp != null && !Number.isFinite(measurement.truePeakDbtp))
++  )
++    refuse('invalidSettings')
++  // Reuse the matcher's boost cap; true-peak headroom also limits the reviewed boost.
++  const audible = { ...item, type: 'audio', volume: 0 } as AudioItem
++  const suggestion = suggestLoudnessMatch(
++    audible,
++    { itemId: item.id, label: item.label, binding: loudnessBinding(audible), measurement },
++    targetLufs,
++    -1,
++  )!
++  const gain = Math.min(
++    suggestion.gainDb,
++    measurement.truePeakDbtp == null ? 0 : -1 - measurement.truePeakDbtp,
++  )
++  const afterGain = Math.floor(clampAudioEqGainDb(beforeGain + gain) * 10) / 10
++  return {
++    id: item.id,
++    label: item.label,
++    measuredLufs: measurement.integratedLufs,
++    gainDb: afterGain - beforeGain,
++    beforeGain,
++    afterGain,
++  }
++}
++
++export function applyVoiceMusicMix(plan: VoiceMixPlan): void {
++  const state = captureVoiceMixState()
++  if (voiceMixBinding(state) !== plan.binding) refuse('stale')
++  voiceMixParticipants(state, plan.settings)
++  executeTimelineCommand('APPLY_VOICE_MUSIC_MIX', () => {
++    const store = useItemsStore.getState()
++    for (const change of plan.changes) {
++      const item = plan.items.find((candidate) => candidate.id === change.id)!
++      store._updateItem(item.id, {
++        audioEqOutputGainDb: item.audioEqOutputGainDb,
++        audioDucking: item.audioDucking,
++      })
++    }
++    useTimelineSettingsStore.getState().markDirty()
++  })
++}
++
++/** Render a detached candidate; cancellation never needs to restore a mutated timeline. */
++export async function auditionVoiceMusicMix(plan: VoiceMixPlan, signal: AbortSignal) {
++  const state = captureVoiceMixState()
++  if (voiceMixBinding(state) !== plan.binding) refuse('stale')
++  const from = Math.max(0, Math.min(state.duration - 1, usePlaybackStore.getState().currentFrame))
++  return renderVoiceMix(state, plan.items, signal, false, {
++    from,
++    end: Math.min(state.duration, from + Math.round(state.fps * 15)),
++  })
++}
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -2063,3 +2063,31 @@
+  const controller=new AbortController();controller.abort()
+  await expect(getAudioOutputChannelCount(composition,controller.signal)).rejects.toThrow('Audio processing cancelled')
+ })
++
++
++it('FL-736 rendered speech/music PCM matches the sample-clock preview duck envelope without altering authored gain', async () => {
++  const { TrackGainProcessor } = await import('@/shared/utils/track-audio')
++  const voice = makeAudioItem({ id: 'voice-reviewed', trackId: 'voice', from: 30, durationInFrames: 30,
++    src: 'blob:voice-reviewed', mediaId: 'voice-reviewed', audioEqOutputGainDb: 6, audioDucking: { duckOthersDb: -12, attackSec: .1, releaseSec: .2, targetTrackIds: ['music'] } })
++  const music = makeAudioItem({ id: 'music-reviewed', trackId: 'music', durationInFrames: 90,
++    src: 'blob:music-reviewed', mediaId: 'music-reviewed', volume: -6 })
++  const composition: CompositionInputProps = { fps: 30, durationInFrames: 90,
++    tracks: [makeTrack({ id: 'voice', order: 0, items: [voice] }), makeTrack({ id: 'music', order: 1, items: [music] })] }
++  const sources = collectDuckingSources(composition, 30)
++  const processor = new TrackGainProcessor('voice-music', 'ctx')
++  expect(processor.replace({ revision: 1, stages: [], ducking: { sources, segment: { itemId: music.id, trackId: music.trackId } }, epoch: {
++    rootId: 'voice-music', contextId: 'ctx', generation: 1, contextTime: 0, frame: 0, num: 30, den: 1,
++    rate: 1, running: true, loop: false, firstFrame: 0, lastFrame: 89, gainDb: 0, muted: false, points: [],
++  } })).toBe(true)
++  const rendered = await processAudio(composition)
++  expect(rendered).not.toBeNull()
++  const input = new Float32Array(48000 * 3).fill(.1 * 10 ** (-6 / 20))
++  const output = new Float32Array(input.length)
++  processor.process([input], [output], 0, 48000)
++  for (const frame of [10, 31.5, 45, 63, 75]) {
++    const sample = Math.round(frame / 30 * 48000)
++    const speech = frame >= 30 && frame < 60 ? .1 * 10 ** (6 / 20) : 0
++    expect(rendered!.samples[0]![sample]).toBeCloseTo(output[sample]! + speech, 5)
++  }
++  expect(music.volume).toBe(-6)
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1,3 +1,4 @@
++import { applyDucking, collectDuckingSources as collectSharedDuckingSources, resolveCompositionWrapper, mapNestedItemWindow, buildNestedWrapper, type DuckingSource } from '@/shared/utils/audio-ducking'
+ import { applyTrackGain, validateTrackStages, type TrackGainStage } from '@/shared/utils/track-audio'
+ import { applyMasterGain } from '@/shared/utils/master-audio'
+ import { limitTruePeak } from '@/shared/utils/true-peak-limiter'
+@@ -12,7 +13,6 @@
+ import type {
+   VideoItem,
+   AudioItem,
+-  AudioDuckingSettings,
+   CompositionItem,
+   TimelineItem,
+   TimelineTrack,
+@@ -25,7 +25,6 @@
+ import { resolveTransitionWindows } from '@/shared/timeline/transitions/transition-planner'
+ import {
+   normalizeCompositionFps,
+-  mapSourceWindowOverlap,
+   timelineToSourceFrames,
+   sourceToTimelineFrames,
+ } from '@/features/export/deps/timeline-frame'
+@@ -628,139 +627,6 @@
+   totalFrames: number
+ }
+ 
+-/** The wrapper composition item's timing, resolved once per expansion. */
+-interface CompositionWrapperTiming {
+-  compFrom: number
+-  wrapperSpeed: number
+-  wrapperSourceFps: number
+-  sourceOffset: number
+-  wrapperSourceEnd: number
+-  isReversed: boolean
+-}
+-
+-function resolveCompositionWrapper(
+-  compositionItem: { from: number; durationInFrames: number } & Partial<{
+-    speed: number
+-    sourceFps: number
+-    sourceStart: number
+-    trimStart: number
+-    sourceEnd: number
+-    isReversed: boolean
+-  }>,
+-  fps: number,
+-  fallbackSourceFps=fps,
+-): CompositionWrapperTiming {
+-  const wrapperSpeed = compositionItem.speed ?? 1
+-  const wrapperSourceFps = normalizeCompositionFps(compositionItem.sourceFps,normalizeCompositionFps(fallbackSourceFps,30))
+-  const sourceOffset = compositionItem.sourceStart ?? compositionItem.trimStart ?? 0
+-  return {
+-    isReversed: compositionItem.isReversed === true,
+-    compFrom: compositionItem.from,
+-    wrapperSpeed,
+-    wrapperSourceFps,
+-    sourceOffset,
+-    wrapperSourceEnd:
+-      compositionItem.sourceEnd ??
+-      sourceOffset +
+-        timelineToSourceFrames(
+-          compositionItem.durationInFrames,
+-          wrapperSpeed,
+-          fps,
+-          wrapperSourceFps,
+-        ),
+-  }
+-}
+-
+-/** One nested item's visible window, expressed in PARENT timeline frames. */
+-interface NestedItemWindow {
+-  overlapStart: number
+-  overlapEnd: number
+-  effectiveStart: number
+-  effectiveEnd: number
+-  effectiveDuration: number
+-  effectiveSourceStart: number
+-  effectiveSourceFps: number
+-}
+-
+-/**
+- * Map a sub-composition item into parent-timeline coordinates, honouring the
+- * wrapper's trim, speed and source fps. Returns null when the item falls
+- * entirely outside the wrapper's visible source range.
+- *
+- * Shared on purpose. The audio mix and the ducking-source scan both have to
+- * agree on where a nested item sits, and a second implementation is how they
+- * would silently drift apart — a source could be expanded into the mix while
+- * not being seen as a duck source, which is precisely the bug this fixes.
+- */
+-function mapNestedItemWindow(
+-  subItem: TimelineItem,
+-  wrapper: CompositionWrapperTiming,
+-  fps: number,
+-): NestedItemWindow | null {
+-  const { compFrom, wrapperSpeed, wrapperSourceFps, sourceOffset, wrapperSourceEnd } = wrapper
+-  const mapping = mapSourceWindowOverlap({itemStart:subItem.from,itemDuration:subItem.durationInFrames,
+-    wrapperDuration:sourceToTimelineFrames(wrapperSourceEnd-sourceOffset,wrapperSpeed,wrapperSourceFps,fps),
+-    wrapperSpeed,wrapperSourceFps,wrapperSourceStart:sourceOffset,wrapperSourceEnd,
+-    wrapperIsReversed:wrapper.isReversed,timelineFps:fps,fallbackSourceFps:wrapperSourceFps})
+-  if (!mapping) return null
+-  const {overlapStart,overlapEnd}=mapping
+-  const effectiveStart=compFrom+mapping.mappedFrom
+-  const effectiveEnd=compFrom+mapping.mappedEnd
+-  const effectiveDuration=mapping.mappedDuration
+-
+-  const baseSourceStart = subItem.sourceStart ?? subItem.trimStart ?? 0
+-  const sourceFps=normalizeCompositionFps(subItem.sourceFps,(subItem.compositionId ? useCompositionsStore.getState().getComposition(subItem.compositionId)?.fps : undefined)??wrapperSourceFps)
+-  const effectiveSourceStart=subItem.isReversed
+-    ? (subItem.sourceEnd??baseSourceStart+timelineToSourceFrames(subItem.durationInFrames,subItem.speed??1,wrapperSourceFps,sourceFps))-timelineToSourceFrames(overlapEnd-subItem.from,subItem.speed??1,wrapperSourceFps,sourceFps)
+-    : baseSourceStart+timelineToSourceFrames(overlapStart-subItem.from,subItem.speed??1,wrapperSourceFps,sourceFps)
+-
+-  return {
+-    overlapStart,
+-    overlapEnd,
+-    effectiveStart,
+-    effectiveEnd,
+-    effectiveDuration,
+-    effectiveSourceStart,
+-    effectiveSourceFps:sourceFps,
+-  }
+-}
+-
+-/**
+- * Rebuild a nested composition item as a wrapper expressed in PARENT coordinates.
+- *
+- * Shared with the duck-source scan for the same reason the window mapping is: the
+- * `sourceEnd` remap in particular is easy to omit, and omitting it makes a
+- * clipped intermediate composition report a different window on each side.
+- */
+-function buildNestedWrapper(
+-  subItem: TimelineItem,
+-  window: NestedItemWindow,
+-  wrapper: CompositionWrapperTiming,
+-): CompositionItem | (AudioItem & { compositionId: string }) {
+-  const { wrapperSpeed, wrapperSourceFps } = wrapper
+-  return {
+-    ...subItem,
+-    from: window.effectiveStart,
+-    durationInFrames: window.effectiveDuration,
+-    speed: (subItem.speed ?? 1) * wrapperSpeed,
+-    isReversed: (subItem.isReversed === true) !== wrapper.isReversed,
+-    sourceStart: window.effectiveSourceStart,
+-    sourceFps: window.effectiveSourceFps,
+-    ...(subItem.sourceEnd !== undefined && {
+-      sourceEnd: Math.max(
+-        window.effectiveSourceStart + 1,
+-        subItem.sourceEnd -
+-          timelineToSourceFrames(
+-            subItem.isReversed ? window.overlapStart - subItem.from : subItem.from + subItem.durationInFrames - window.overlapEnd,
+-            subItem.speed ?? 1,
+-            wrapperSourceFps,
+-            window.effectiveSourceFps,
+-          ),
+-      ),
+-    }),
+-  } as CompositionItem | (AudioItem & { compositionId: string })
+-}
+-
+ function appendCompositionAudioSegments(params: {
+   segments: AudioSegment[]
+   track: CompositionInputProps['tracks'][number]
+@@ -802,7 +668,7 @@
+     const subTrack = subComp.tracks.find((candidate) => candidate.id === subItem.trackId)
+     const subTrackMuted = (subTrack?.muted ?? false) || subItem.muted === true
+     const trackGainStages=[...wrapperTrackStages,...(subTrack?[{trackId:subTrack.id,points:subTrack.gainEnvelope??[],gainDb:subTrack.volume??0,muted:subTrack.muted===true,offset:ownerOffset,scale:ownerScale}]:[])]
+-    const window = mapNestedItemWindow(subItem, wrapper, fps)
++    const window = mapNestedItemWindow(subItem, wrapper, fps, (id) => useCompositionsStore.getState().getComposition(id))
+     if (!window) continue
+     const { overlapStart, overlapEnd, effectiveStart, effectiveDuration } = window
+ 
+@@ -1561,202 +1427,9 @@
+ // so the source itself and out-of-scope tracks stay untouched.
+ // ---------------------------------------------------------------------------
+ 
+-const DUCKING_DEFAULT_ATTACK_SEC = 0.08
+-const DUCKING_DEFAULT_RELEASE_SEC = 0.25
+-
+-export interface DuckingSource {
+-  itemId: string
+-  trackId: string
+-  /** Audible span on the timeline, in project frames. */
+-  startFrame: number
+-  endFrame: number
+-  /** Attenuation while audible, dB (negative). */
+-  duckDb: number
+-  attackFrames: number
+-  releaseFrames: number
+-  /** Restrict ducking to these tracks (default: every other track). */
+-  targetTrackIds?: string[]
+-}
+-
+-type DuckSourceCandidate = CompositionInputProps['tracks'][number]['items'][number] & {
+-  audioDucking?: AudioDuckingSettings
+-  embeddedAudioMuted?: boolean
+-}
+-
+-/** Map one item to a duck source, or null when it cannot duck anything. */
+-function duckingSourceFromItem(
+-  item: DuckSourceCandidate,
+-  trackId: string,
+-  fps: number,
+-  /** Parent-timeline window, for items reached through a pre-composition. */
+-  window?: { startFrame: number; endFrame: number },
+-): DuckingSource | null {
+-  if (item.muted === true) return null
+-  const ducking = item.audioDucking
+-  if (!ducking || !(ducking.duckOthersDb < 0)) return null
+-  const carriesAudio = item.type === 'audio' || (item.type === 'video' && !item.embeddedAudioMuted)
+-  if (!carriesAudio) return null
+-  return {
+-    itemId: item.id,
+-    trackId,
+-    startFrame: window?.startFrame ?? item.from,
+-    endFrame: window?.endFrame ?? item.from + item.durationInFrames,
+-    duckDb: ducking.duckOthersDb,
+-    attackFrames: (ducking.attackSec ?? DUCKING_DEFAULT_ATTACK_SEC) * fps,
+-    releaseFrames: (ducking.releaseSec ?? DUCKING_DEFAULT_RELEASE_SEC) * fps,
+-    ...(ducking.targetTrackIds ? { targetTrackIds: ducking.targetTrackIds } : {}),
+-  }
+-}
+-
+-/**
+- * Collect duck sources nested inside a pre-composition, in PARENT timeline frames.
+- *
+- * The mix expands nested composition audio, so a source living one level down is
+- * audible; scanning only the root tracks would leave it audible but not ducking,
+- * making the same arrangement sound different at root level and inside a
+- * pre-comp. The window mapping is shared with `appendCompositionAudioSegments`
+- * so the two cannot disagree about where a nested item sits.
+- */
+-function collectNestedDuckingSources(
+-  compositionItem: CompositionItem | (AudioItem & { compositionId: string }),
+-  rootTrackId: string,
+-  fps: number,
+-  visited: ReadonlySet<string>,
+-): DuckingSource[] {
+-  if (compositionItem.muted === true || visited.has(compositionItem.compositionId)) return []
+-  const subComp = useCompositionsStore.getState().getComposition(compositionItem.compositionId)
+-  if (!subComp) return []
+-
+-  const wrapper = resolveCompositionWrapper(compositionItem, fps,subComp.fps??fps)
+-  const nestedVisited = new Set(visited)
+-  nestedVisited.add(compositionItem.compositionId)
+-
+-  const sources: DuckingSource[] = []
+-  for (const subItem of subComp.items) {
+-    const subTrack = subComp.tracks.find((candidate) => candidate.id === subItem.trackId)
+-    // Only `muted` silences a nested track — the expansion above ignores `visible`,
+-    // so excluding hidden tracks here would leave audible sources not ducking.
+-    if (subTrack?.muted === true) continue
+-
+-    const window = mapNestedItemWindow(subItem, wrapper, fps)
+-    if (!window) continue
+-
+-    if (subItem.type === 'composition' || isCompositionAudioItem(subItem)) {
+-      // A composition-backed AudioItem can carry `audioDucking` of its own, and it
+-      // is audible in its own right — collect it as well as descending.
+-      if (
+-        subItem.type === 'composition' &&
+-        getLinkedCompositionAudioCompanion(subComp.items, subItem)
+-      )
+-        continue
+-      const wrapperSource = duckingSourceFromItem(
+-        subItem as DuckSourceCandidate,
+-        rootTrackId,
+-        fps,
+-        { startFrame: window.effectiveStart, endFrame: window.effectiveEnd },
+-      )
+-      if (wrapperSource) sources.push(wrapperSource)
+-      sources.push(
+-        ...collectNestedDuckingSources(
+-          buildNestedWrapper(subItem, window, wrapper),
+-          rootTrackId,
+-          fps,
+-          nestedVisited,
+-        ),
+-      )
+-      continue
+-    }
+-
+-    // Nested sources belong to the ROOT track: that is the track their audio is
+-    // mixed onto, so it is also what "never duck yourself" must compare against.
+-    const source = duckingSourceFromItem(subItem as DuckSourceCandidate, rootTrackId, fps, {
+-      startFrame: window.effectiveStart,
+-      endFrame: window.effectiveEnd,
+-    })
+-    if (source) sources.push(source)
+-  }
+-  return sources
+-}
+-
+-/** Collect duck-source windows from composition items carrying `audioDucking`. */
+-export function collectDuckingSources(
+-  composition: CompositionInputProps,
+-  fps: number,
+-): DuckingSource[] {
+-  const timelineItems = composition.tracks.flatMap((track) => track.items ?? [])
+-  return composition.tracks
+-    .filter((track) => track.visible !== false && track.muted !== true)
+-    .flatMap((track) =>
+-      (track.items ?? []).flatMap((item) => {
+-        if (item.type === 'composition' && getLinkedCompositionAudioCompanion(timelineItems, item))
+-          return []
+-        // The item's own `audioDucking` counts even when it is a composition
+-        // wrapper — it is audible in its own right — so collect it either way
+-        // and additionally descend when it wraps a pre-comp.
+-        const own = duckingSourceFromItem(item as DuckSourceCandidate, track.id, fps)
+-        const sources = own ? [own] : []
+-        if (item.type === 'composition' || isCompositionAudioItem(item)) {
+-          sources.push(
+-            ...collectNestedDuckingSources(
+-              item as CompositionItem | (AudioItem & { compositionId: string }),
+-              track.id,
+-              fps,
+-              new Set<string>(),
+-            ),
+-          )
+-        }
+-        return sources
+-      }),
+-    )
+-}
+-
+-/** Piecewise duck gain of one source at a timeline frame, in dB (0 = no duck). */
+-function duckingSourceGainDb(frame: number, source: DuckingSource): number {
+-  if (frame < source.startFrame || frame > source.endFrame + source.releaseFrames) return 0
+-  if (frame < source.startFrame + source.attackFrames) {
+-    const progress = (frame - source.startFrame) / source.attackFrames
+-    return source.duckDb * progress
+-  }
+-  if (frame <= source.endFrame) return source.duckDb
+-  const progress = (frame - source.endFrame) / source.releaseFrames
+-  return source.duckDb * (1 - progress)
+-}
+-
+-/**
+- * Multiply the ducking envelope into one channel of a target segment.
+- * `segmentStartFrame` is the absolute timeline frame of `samples[0]` (same
+- * mapping as `applyAnimatedVolume`). The source item never ducks itself;
+- * overlapping sources take the deepest (minimum dB) gain.
+- */
+-export function applyDucking(
+-  samples: Float32Array,
+-  sources: readonly DuckingSource[],
+-  segment: { itemId: string; trackId: string },
+-  segmentStartFrame: number,
+-  fps: number,
+-  sampleRate: number,
+-): Float32Array {
+-  const spanFrames = (samples.length / sampleRate) * fps
+-  const applicable = sources.filter(
+-    (source) =>
+-      source.itemId !== segment.itemId &&
+-      (!source.targetTrackIds || source.targetTrackIds.includes(segment.trackId)) &&
+-      source.startFrame < segmentStartFrame + spanFrames &&
+-      source.endFrame + source.releaseFrames > segmentStartFrame,
+-  )
+-  if (applicable.length === 0) return samples
+-
+-  const output = new Float32Array(samples.length)
+-  for (let i = 0; i < samples.length; i++) {
+-    const frame = segmentStartFrame + (i / sampleRate) * fps
+-    let db = 0
+-    for (const source of applicable) {
+-      const sourceDb = duckingSourceGainDb(frame, source)
+-      if (sourceDb < db) db = sourceDb
+-    }
+-    output[i] = db === 0 ? samples[i]! : samples[i]! * dbToGain(db)
+-  }
+-  return output
++export { applyDucking } from '@/shared/utils/audio-ducking'
++export function collectDuckingSources(composition: CompositionInputProps, fps: number): DuckingSource[] {
++  return collectSharedDuckingSources(composition, fps, (id) => useCompositionsStore.getState().getComposition(id))
+ }
+ 
+ /**
+@@ -3188,3 +2861,5 @@
+   const segments = await getActiveAudioSegments(composition, normalizeCompositionFps(composition.fps, 30))
+   return segments.length > 0
+ }
++
++export type { DuckingSource } from '@/shared/utils/audio-ducking'
+diff --git a/src/features/timeline/utils/source-calculations.ts b/src/features/timeline/utils/source-calculations.ts
+--- a/src/features/timeline/utils/source-calculations.ts
++++ b/src/features/timeline/utils/source-calculations.ts
+@@ -1,319 +1,2 @@
+-import { cadenceFromFps } from '@/shared/utils/audio-clock-cadence'
+-import type { TimelineItem } from '@/types/timeline'
+-
+-/**
+- * Core utilities for source/timeline frame conversions.
+- *
+- * Terminology:
+- * - Timeline frames: Frames as they appear on the timeline (affected by speed)
+- * - Source frames: Actual frames in the source media file
+- * - Speed: Playback rate (1 = normal, 2 = 2x faster, 0.5 = half speed)
+- *
+- * Relationships:
+- * - sourceFrames = timelineFrames * speed
+- * - timelineFrames = sourceFrames / speed
+- */
+-
+-// Speed constraints
+-export const MIN_SPEED = 0.1
+-export const MAX_SPEED = 16
+-export const DEFAULT_SPEED = 1
+-const DEFAULT_TIMELINE_FPS = 30
+-
+-function normalizeFps(fps: number | undefined, fallback: number): number {
+-  if (fps === undefined || !Number.isFinite(fps) || fps <= 0) return fallback
+-  return fps
+-}
+-
+-
+-/** Runtime composition clocks use the admitted exact broadcast fraction; edit quantizers stay unchanged. */
+-export function normalizeCompositionFps(fps:number|undefined,fallback:number):number {
+- const value=normalizeFps(fps,fallback)
+- try{const {num,den}=cadenceFromFps(value);return num/den}catch{return value}
+-}
+-
+-/**
+- * Extract source properties from a media item with defaults.
+- */
+-interface SourceProperties {
+-  sourceStart: number
+-  sourceEnd: number | undefined
+-  sourceDuration: number | undefined
+-  sourceFps: number | undefined
+-  speed: number
+-}
+-
+-export function getSourceProperties(item: TimelineItem): SourceProperties {
+-  if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'composition') {
+-    return {
+-      sourceStart: 0,
+-      sourceEnd: undefined,
+-      sourceDuration: undefined,
+-      sourceFps: undefined,
+-      speed: DEFAULT_SPEED,
+-    }
+-  }
+-
+-  return {
+-    sourceStart: item.sourceStart ?? 0,
+-    sourceEnd: item.sourceEnd,
+-    sourceDuration: item.sourceDuration,
+-    sourceFps: item.sourceFps,
+-    speed: item.speed ?? DEFAULT_SPEED,
+-  }
+-}
+-
+-/**
+- * Convert timeline frames to source frames.
+- * Use Math.round to minimize floating-point errors.
+- */
+-export function timelineToSourceFrames(
+-  timelineFrames: number,
+-  speed: number,
+-  timelineFps: number = DEFAULT_TIMELINE_FPS,
+-  sourceFps: number = timelineFps,
+-): number {
+-  const safeTimelineFps = normalizeFps(timelineFps, DEFAULT_TIMELINE_FPS)
+-  const safeSourceFps = normalizeFps(sourceFps, safeTimelineFps)
+-  const timelineSeconds = timelineFrames / safeTimelineFps
+-  return Math.round(timelineSeconds * safeSourceFps * speed)
+-}
+-
+-/**
+- * Convert source frames to timeline frames.
+- * Use Math.floor to ensure we don't exceed source bounds.
+- */
+-export function sourceToTimelineFrames(
+-  sourceFrames: number,
+-  speed: number,
+-  sourceFps: number = DEFAULT_TIMELINE_FPS,
+-  timelineFps: number = sourceFps,
+-): number {
+-  const safeSourceFps = normalizeFps(sourceFps, DEFAULT_TIMELINE_FPS)
+-  const safeTimelineFps = normalizeFps(timelineFps, safeSourceFps)
+-  const sourceSeconds = sourceFrames / safeSourceFps
+-  return Math.floor((sourceSeconds * safeTimelineFps) / speed)
+-}
+-
+-export interface SourceWindowOverlapMapping {
+-  overlapStart: number
+-  overlapEnd: number
+-  mappedFrom: number
+-  mappedEnd: number
+-  mappedDuration: number
+-  clippedStartFrames: number
+-  clippedEndFrames: number
+-  wrapperSpeed: number
+-  wrapperSourceFps: number
+-}
+-
+-export function mapSourceWindowOverlap(params: {
+-  itemStart: number
+-  itemDuration: number
+-  wrapperDuration: number
+-  wrapperSpeed?: number
+-  wrapperSourceFps?: number
+-  wrapperSourceStart: number
+-  wrapperSourceEnd?: number
+-  wrapperIsReversed?: boolean
+-  timelineFps: number
+-  fallbackSourceFps: number
+-}): SourceWindowOverlapMapping | null {
+-  const wrapperSpeed = params.wrapperSpeed ?? DEFAULT_SPEED
+-  const wrapperSourceFps = normalizeCompositionFps(params.wrapperSourceFps,normalizeCompositionFps(params.fallbackSourceFps,DEFAULT_TIMELINE_FPS))
+-  const wrapperSourceEnd =
+-    params.wrapperSourceEnd ??
+-    params.wrapperSourceStart +
+-      timelineToSourceFrames(
+-        params.wrapperDuration,
+-        wrapperSpeed,
+-        params.timelineFps,
+-        wrapperSourceFps,
+-      )
+-  const itemEnd = params.itemStart + params.itemDuration
+-  const overlapStart = Math.max(params.itemStart, params.wrapperSourceStart)
+-  const overlapEnd = Math.min(itemEnd, wrapperSourceEnd)
+-
+-  if (overlapEnd <= overlapStart) {
+-    return null
+-  }
+-
+-  const mapDistance=(frames:number):number=>{
+-    try{const source=cadenceFromFps(wrapperSourceFps),timeline=cadenceFromFps(params.timelineFps)
+-      return Math.floor(frames*timeline.num*source.den/(wrapperSpeed*source.num*timeline.den))
+-    }catch{return sourceToTimelineFrames(frames,wrapperSpeed,wrapperSourceFps,params.timelineFps)}
+-  }
+-  const mappedFrom=mapDistance(params.wrapperIsReversed ? wrapperSourceEnd-overlapEnd : overlapStart-params.wrapperSourceStart)
+-  const mappedEnd=mapDistance(params.wrapperIsReversed ? wrapperSourceEnd-overlapStart : overlapEnd-params.wrapperSourceStart)
+-
+-  return {
+-    overlapStart,
+-    overlapEnd,
+-    mappedFrom,
+-    mappedEnd,
+-    mappedDuration: Math.max(1, mappedEnd - mappedFrom),
+-    clippedStartFrames: overlapStart - params.itemStart,
+-    clippedEndFrames: itemEnd - overlapEnd,
+-    wrapperSpeed,
+-    wrapperSourceFps,
+-  }
+-}
+-
+-/**
+- * Calculate available source frames from current position to end.
+- */
+-export function getAvailableSourceFrames(sourceDuration: number, sourceStart: number): number {
+-  return Math.max(0, sourceDuration - sourceStart)
+-}
+-
+-/**
+- * Calculate max timeline duration based on available source frames.
+- */
+-export function getMaxTimelineDuration(
+-  sourceDuration: number,
+-  sourceStart: number,
+-  speed: number,
+-  sourceFps: number = DEFAULT_TIMELINE_FPS,
+-  timelineFps: number = sourceFps,
+-): number {
+-  const available = getAvailableSourceFrames(sourceDuration, sourceStart)
+-  return sourceToTimelineFrames(available, speed, sourceFps, timelineFps)
+-}
+-
+-/**
+- * Calculate max extension towards source start (in timeline frames).
+- */
+-export function getMaxStartExtension(
+-  sourceStart: number,
+-  speed: number,
+-  sourceFps: number = DEFAULT_TIMELINE_FPS,
+-  timelineFps: number = sourceFps,
+-): number {
+-  return sourceToTimelineFrames(sourceStart, speed, sourceFps, timelineFps)
+-}
+-
+-/**
+- * Calculate speed from source duration and desired timeline duration.
+- */
+-export function calculateSpeed(
+-  sourceDuration: number,
+-  timelineDuration: number,
+-  sourceFps: number = DEFAULT_TIMELINE_FPS,
+-  timelineFps: number = sourceFps,
+-): number {
+-  if (timelineDuration <= 0) return DEFAULT_SPEED
+-  const safeSourceFps = normalizeFps(sourceFps, DEFAULT_TIMELINE_FPS)
+-  const safeTimelineFps = normalizeFps(timelineFps, safeSourceFps)
+-  return (sourceDuration * safeTimelineFps) / (timelineDuration * safeSourceFps)
+-}
+-
+-/**
+- * Clamp speed to valid range and round to 2 decimal places.
+- */
+-/**
+- * Clamp speed to valid range without rounding.
+- * Speed is stored with full precision for accurate calculations.
+- * UI should format to 2 decimal places for display only.
+- */
+-export function clampSpeed(speed: number): number {
+-  return Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed))
+-}
+-
+-/**
+- * Validate that a seek position is within source bounds.
+- */
+-export function isValidSeekPosition(
+-  seekFrame: number,
+-  sourceDuration: number | undefined,
+-): boolean {
+-  if (sourceDuration === undefined) return true
+-  return seekFrame >= 0 && seekFrame < sourceDuration
+-}
+-
+-/**
+- * Validate that playback won't exceed source duration.
+- * @param tolerance Number of frames tolerance for floating-point errors
+- */
+-export function isWithinSourceBounds(
+-  sourceStart: number,
+-  timelineDuration: number,
+-  speed: number,
+-  sourceDuration: number | undefined,
+-  tolerance: number = 2,
+-  timelineFps: number = DEFAULT_TIMELINE_FPS,
+-  sourceFps: number = timelineFps,
+-): boolean {
+-  if (sourceDuration === undefined) return true
+-  const sourceFramesNeeded = timelineToSourceFrames(timelineDuration, speed, timelineFps, sourceFps)
+-  const sourceEnd = sourceStart + sourceFramesNeeded
+-  return sourceEnd <= sourceDuration + tolerance
+-}
+-
+-/**
+- * Calculate safe trim position that doesn't exceed source bounds.
+- */
+-export function getSafeTrimBefore(
+-  trimBefore: number,
+-  timelineDuration: number,
+-  speed: number,
+-  sourceDuration: number | undefined,
+-  timelineFps: number = DEFAULT_TIMELINE_FPS,
+-  sourceFps: number = timelineFps,
+-): number {
+-  if (sourceDuration === undefined || sourceDuration <= 0) return trimBefore
+-
+-  const sourceFramesNeeded = timelineToSourceFrames(timelineDuration, speed, timelineFps, sourceFps)
+-  const maxTrimBefore = Math.max(0, sourceDuration - sourceFramesNeeded)
+-
+-  return Math.min(trimBefore, maxTrimBefore)
+-}
+-
+-/**
+- * Check if an item is a media item (has source properties).
+- */
+-export function isMediaItem(item: TimelineItem): item is TimelineItem & {
+-  type: 'video' | 'audio' | 'composition'
+-  sourceDuration?: number
+-  sourceStart?: number
+-  sourceEnd?: number
+-  sourceFps?: number
+-  speed?: number
+-} {
+-  return item.type === 'video' || item.type === 'audio' || item.type === 'composition'
+-}
+-
+-/**
+- * Calculate source boundaries for split items.
+- * Returns source positions for left and right items after a split.
+- */
+-interface SplitSourceBoundaries {
+-  left: { sourceEnd: number }
+-  right: { sourceStart: number; sourceEnd: number }
+-}
+-
+-export function calculateSplitSourceBoundaries(
+-  sourceStart: number,
+-  leftDuration: number,
+-  rightDuration: number,
+-  speed: number,
+-  timelineFps: number = DEFAULT_TIMELINE_FPS,
+-  sourceFps: number = timelineFps,
+-): SplitSourceBoundaries {
+-  const leftSourceFrames = timelineToSourceFrames(leftDuration, speed, timelineFps, sourceFps)
+-  const totalSourceFrames = timelineToSourceFrames(
+-    leftDuration + rightDuration,
+-    speed,
+-    timelineFps,
+-    sourceFps,
+-  )
+-
+-  return {
+-    left: {
+-      sourceEnd: sourceStart + leftSourceFrames,
+-    },
+-    right: {
+-      sourceStart: sourceStart + leftSourceFrames,
+-      sourceEnd: sourceStart + totalSourceFrames,
+-    },
+-  }
+-}
++// Compatibility export: timing math is shared by timeline, preview worklets and export.
++export * from '@/shared/utils/source-calculations'
+diff --git a/src/i18n/locales/partials/de/voice-music.json b/src/i18n/locales/partials/de/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/de/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "Stimme über Musik",
++    "note": "Spuren wählen, Mischung prüfen und vor dem Anwenden anhören. Master und Limiter bleiben unverändert.",
++    "dialogueTrackIds": "Dialogspuren",
++    "musicTrackIds": "Musikspuren",
++    "targetLufs": "Dialogziel (LUFS)",
++    "duckDb": "Musikabsenkung (dB)",
++    "attackSec": "Anstieg (Sekunden)",
++    "releaseSec": "Abklingen (Sekunden)",
++    "review": "Mischung prüfen",
++    "audition": "15 Sekunden anhören",
++    "apply": "Geprüfte Mischung anwenden",
++    "cancel": "Anhören abbrechen",
++    "preserved": "Clippegel, Blenden und Keyframes bleiben erhalten. Der EQ-Ausgangspegel des Dialogs wird angepasst und dessen Absenkung ersetzt.",
++    "duckChange": "Absenkung: {{db}} dB; Anstieg {{attack}} s, Abklingen {{release}} s.",
++    "change": "{{label}}: {{lufs}} LUFS; Ausgang {{before}} → {{after}} dB (Änderung {{gain}} dB).",
++    "preparing": "Hörprobe ab Abspielkopf wird vorbereitet…",
++    "playing": "Geprüfte Mischung läuft.",
++    "finished": "Hörprobe beendet.",
++    "cancelled": "Hörprobe abgebrochen. Zeitleiste unverändert.",
++    "applied": "Mischung als ein rückgängig machbarer Schritt angewendet.",
++    "selectTracks": "Eine Dialogspur und eine Musikspur wählen.",
++    "separateTracks": "Dialog und Musik benötigen getrennte Quellen.",
++    "invalidSettings": "Pegel und Zeiteinstellungen prüfen.",
++    "inaudible": "Eine Quelle ist stumm, ausgeblendet oder durch Solo ausgeschlossen.",
++    "locked": "Eine Quelle oder verknüpfte Begleitspur ist gesperrt.",
++    "noAudio": "Keine hörbare Quelle auf einer gewählten Spur.",
++    "outputGain": "Dialog-EQ aktivieren und Ausgangspegelanimation entfernen. Andere EQ-Einstellungen bleiben erhalten.",
++    "silent": "Dialog ist stumm oder zu kurz.",
++    "stale": "Sequenz geändert. Mischung erneut prüfen.",
++    "failed": "Mischung konnte nicht vorbereitet werden. Quellen prüfen.",
++    "solo": "Solo vor der Mischungsprüfung ausschalten.",
++    "range": "Die Hörprobe spielt bis zu 15 Sekunden ab dem Abspielkopf, nicht die gesamte Sequenz."
++  }
++}
+diff --git a/src/i18n/locales/partials/en/voice-music.json b/src/i18n/locales/partials/en/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/en/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "Voice over music",
++    "note": "Choose dialogue and music tracks, review loudness matches and audition before applying. Existing master and limiter settings stay unchanged.",
++    "dialogueTrackIds": "Dialogue tracks",
++    "musicTrackIds": "Music tracks",
++    "targetLufs": "Dialogue target (LUFS)",
++    "duckDb": "Music ducking (dB)",
++    "attackSec": "Attack (seconds)",
++    "releaseSec": "Release (seconds)",
++    "review": "Review mix",
++    "audition": "Audition 15 seconds",
++    "apply": "Apply reviewed mix",
++    "cancel": "Cancel audition",
++    "preserved": "Clip gains, fades and keyframes stay unchanged. Dialogue EQ output trim is adjusted; authored ducking is replaced only on reviewed dialogue items.",
++    "duckChange": "Music attenuation: {{db}} dB; attack {{attack}} s, release {{release}} s.",
++    "change": "{{label}}: {{lufs}} LUFS; output trim {{before}} → {{after}} dB (change {{gain}} dB).",
++    "preparing": "Rendering audition from the playhead…",
++    "playing": "Playing reviewed mix.",
++    "finished": "Audition finished.",
++    "cancelled": "Audition cancelled. Timeline unchanged.",
++    "applied": "Mix applied as one undoable edit.",
++    "selectTracks": "Choose at least one dialogue track and one music track.",
++    "separateTracks": "Dialogue and music must use separate audible sources.",
++    "invalidSettings": "Use valid ducking, loudness and timing settings.",
++    "inaudible": "A selected source is muted, hidden or excluded by solo. Review track audibility first.",
++    "locked": "A selected source or linked companion is locked.",
++    "noAudio": "No audible source could be rendered on a selected track.",
++    "outputGain": "Enable dialogue EQ output and remove output-trim animation before matching. Other authored EQ stays unchanged.",
++    "silent": "Dialogue is silent or too short to measure.",
++    "stale": "The sequence changed. Review the mix again.",
++    "failed": "Could not prepare this mix. Check source availability and try again.",
++    "solo": "Turn off solo before reviewing this mix.",
++    "range": "Audition plays up to 15 seconds from the playhead, not the whole sequence."
++  }
++}
+diff --git a/src/i18n/locales/partials/es/voice-music.json b/src/i18n/locales/partials/es/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/es/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "Voz sobre música",
++    "note": "Elige las pistas, revisa y escucha la mezcla antes de aplicarla. Los ajustes del máster y del limitador no cambian.",
++    "dialogueTrackIds": "Pistas de diálogo",
++    "musicTrackIds": "Pistas de música",
++    "targetLufs": "Objetivo del diálogo (LUFS)",
++    "duckDb": "Atenuación musical (dB)",
++    "attackSec": "Ataque (segundos)",
++    "releaseSec": "Liberación (segundos)",
++    "review": "Revisar mezcla",
++    "audition": "Escuchar 15 segundos",
++    "apply": "Aplicar mezcla revisada",
++    "cancel": "Cancelar escucha",
++    "preserved": "Se conservan ganancias, fundidos y fotogramas clave. Se ajusta la salida EQ del diálogo y se sustituye su atenuación existente.",
++    "duckChange": "Atenuación: {{db}} dB; ataque {{attack}} s, liberación {{release}} s.",
++    "change": "{{label}}: {{lufs}} LUFS; salida {{before}} → {{after}} dB (cambio {{gain}} dB).",
++    "preparing": "Preparando escucha desde el cabezal…",
++    "playing": "Reproduciendo mezcla revisada.",
++    "finished": "Escucha terminada.",
++    "cancelled": "Escucha cancelada. Montaje sin cambios.",
++    "applied": "Mezcla aplicada en una acción reversible.",
++    "selectTracks": "Elige una pista de diálogo y una de música.",
++    "separateTracks": "Diálogo y música necesitan fuentes distintas.",
++    "invalidSettings": "Revisa los ajustes de ganancia y tiempo.",
++    "inaudible": "Una fuente está silenciada, oculta o excluida por solo.",
++    "locked": "Una fuente o su compañero vinculado está bloqueado.",
++    "noAudio": "No se pudo renderizar audio en una pista elegida.",
++    "outputGain": "Activa el EQ del diálogo y elimina la animación de salida. Los demás ajustes EQ se conservan.",
++    "silent": "Diálogo silencioso o demasiado corto.",
++    "stale": "La secuencia cambió. Revisa la mezcla de nuevo.",
++    "failed": "No se pudo preparar la mezcla. Revisa las fuentes.",
++    "solo": "Desactiva solo antes de revisar la mezcla.",
++    "range": "La escucha reproduce hasta 15 segundos desde el cabezal, no toda la secuencia."
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/voice-music.json b/src/i18n/locales/partials/fr/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "Voix sur musique",
++    "note": "Choisissez les pistes, vérifiez le mix et écoutez avant d’appliquer. Les réglages du master et du limiteur restent inchangés.",
++    "dialogueTrackIds": "Pistes de dialogue",
++    "musicTrackIds": "Pistes musicales",
++    "targetLufs": "Cible du dialogue (LUFS)",
++    "duckDb": "Atténuation musicale (dB)",
++    "attackSec": "Attaque (secondes)",
++    "releaseSec": "Relâchement (secondes)",
++    "review": "Vérifier le mix",
++    "audition": "Écouter 15 secondes",
++    "apply": "Appliquer le mix vérifié",
++    "cancel": "Annuler l’écoute",
++    "preserved": "Les gains, fondus et images clés sont conservés. Le gain de sortie EQ du dialogue est ajusté ; son atténuation existante est remplacée.",
++    "duckChange": "Atténuation : {{db}} dB ; attaque {{attack}} s, relâchement {{release}} s.",
++    "change": "{{label}} : {{lufs}} LUFS ; sortie {{before}} → {{after}} dB (écart {{gain}} dB).",
++    "preparing": "Préparation de l’écoute depuis la tête de lecture…",
++    "playing": "Lecture du mix vérifié.",
++    "finished": "Écoute terminée.",
++    "cancelled": "Écoute annulée. Montage inchangé.",
++    "applied": "Mix appliqué en une action annulable.",
++    "selectTracks": "Choisissez une piste de dialogue et une piste musicale.",
++    "separateTracks": "Le dialogue et la musique doivent utiliser des sources distinctes.",
++    "invalidSettings": "Vérifiez les réglages de gain et de durée.",
++    "inaudible": "Une source est muette, masquée ou exclue par un solo.",
++    "locked": "Une source ou son élément lié est verrouillé.",
++    "noAudio": "Aucune source audible sur une piste sélectionnée.",
++    "outputGain": "Activez l’EQ du dialogue et retirez l’animation du gain de sortie. Les autres réglages EQ sont conservés.",
++    "silent": "Dialogue muet ou trop court.",
++    "stale": "La séquence a changé. Vérifiez à nouveau le mix.",
++    "failed": "Impossible de préparer le mix. Vérifiez les sources.",
++    "solo": "Désactivez le solo avant de vérifier le mix.",
++    "range": "L’écoute couvre au plus 15 secondes depuis la tête de lecture, pas toute la séquence."
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/voice-music.json b/src/i18n/locales/partials/ja/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "声と音楽のミックス",
++    "note": "トラックを選択し、確認・試聴してから適用します。マスターとリミッターの設定は変わりません。",
++    "dialogueTrackIds": "会話トラック",
++    "musicTrackIds": "音楽トラック",
++    "targetLufs": "会話の目標（LUFS）",
++    "duckDb": "音楽の減衰（dB）",
++    "attackSec": "アタック（秒）",
++    "releaseSec": "リリース（秒）",
++    "review": "ミックスを確認",
++    "audition": "15秒試聴",
++    "apply": "確認済みミックスを適用",
++    "cancel": "試聴を中止",
++    "preserved": "クリップゲイン、フェード、キーフレームは保持されます。会話のEQ出力を調整し、既存のダッキングを置き換えます。",
++    "duckChange": "減衰：{{db}} dB、アタック {{attack}} 秒、リリース {{release}} 秒。",
++    "change": "{{label}}：{{lufs}} LUFS、出力 {{before}} → {{after}} dB（変化 {{gain}} dB）。",
++    "preparing": "再生ヘッドからの試聴を準備中…",
++    "playing": "確認済みミックスを再生中。",
++    "finished": "試聴が終了しました。",
++    "cancelled": "試聴を中止しました。タイムラインは変更されていません。",
++    "applied": "1回の取り消し可能な操作で適用しました。",
++    "selectTracks": "会話と音楽のトラックをそれぞれ選択してください。",
++    "separateTracks": "会話と音楽には別々の音源が必要です。",
++    "invalidSettings": "ゲインと時間の設定を確認してください。",
++    "inaudible": "選択した音源がミュート、非表示、またはソロで除外されています。",
++    "locked": "選択した音源かリンクした音源がロックされています。",
++    "noAudio": "選択したトラックに再生可能な音源がありません。",
++    "outputGain": "会話EQを有効にし、出力ゲインのアニメーションを削除してください。他のEQ設定は保持されます。",
++    "silent": "会話が無音か短すぎます。",
++    "stale": "シーケンスが変更されました。再度確認してください。",
++    "failed": "ミックスを準備できません。音源を確認してください。",
++    "solo": "確認前にソロを解除してください。",
++    "range": "試聴は再生ヘッドから最大15秒で、シーケンス全体ではありません。"
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/voice-music.json b/src/i18n/locales/partials/ko/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "음성 및 음악 믹스",
++    "note": "트랙을 선택하고 검토 및 미리 듣기 후 적용하세요. 마스터와 리미터 설정은 유지됩니다.",
++    "dialogueTrackIds": "대화 트랙",
++    "musicTrackIds": "음악 트랙",
++    "targetLufs": "대화 목표 (LUFS)",
++    "duckDb": "음악 감쇠 (dB)",
++    "attackSec": "어택 (초)",
++    "releaseSec": "릴리스 (초)",
++    "review": "믹스 검토",
++    "audition": "15초 미리 듣기",
++    "apply": "검토한 믹스 적용",
++    "cancel": "미리 듣기 취소",
++    "preserved": "클립 게인, 페이드, 키프레임은 유지됩니다. 대화 EQ 출력을 조정하고 기존 더킹을 교체합니다.",
++    "duckChange": "감쇠: {{db}} dB, 어택 {{attack}}초, 릴리스 {{release}}초.",
++    "change": "{{label}}: {{lufs}} LUFS, 출력 {{before}} → {{after}} dB (변화 {{gain}} dB).",
++    "preparing": "재생 헤드부터 미리 듣기 준비 중…",
++    "playing": "검토한 믹스 재생 중.",
++    "finished": "미리 듣기 완료.",
++    "cancelled": "미리 듣기를 취소했습니다. 타임라인은 유지됩니다.",
++    "applied": "되돌릴 수 있는 하나의 작업으로 적용했습니다.",
++    "selectTracks": "대화 트랙과 음악 트랙을 선택하세요.",
++    "separateTracks": "대화와 음악은 서로 다른 음원이어야 합니다.",
++    "invalidSettings": "게인과 시간 설정을 확인하세요.",
++    "inaudible": "선택한 음원이 음소거, 숨김 또는 솔로로 제외되었습니다.",
++    "locked": "선택한 음원이나 연결된 음원이 잠겨 있습니다.",
++    "noAudio": "선택한 트랙에 재생 가능한 음원이 없습니다.",
++    "outputGain": "대화 EQ를 켜고 출력 게인 애니메이션을 제거하세요. 다른 EQ 설정은 유지됩니다.",
++    "silent": "대화가 무음이거나 너무 짧습니다.",
++    "stale": "시퀀스가 변경되었습니다. 믹스를 다시 검토하세요.",
++    "failed": "믹스를 준비하지 못했습니다. 음원을 확인하세요.",
++    "solo": "믹스 검토 전에 솔로를 끄세요.",
++    "range": "미리 듣기는 전체 시퀀스가 아닌 재생 헤드부터 최대 15초입니다."
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/voice-music.json b/src/i18n/locales/partials/pt-BR/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "Voz sobre música",
++    "note": "Escolha as faixas, revise e ouça antes de aplicar. Os ajustes do master e do limitador permanecem iguais.",
++    "dialogueTrackIds": "Faixas de diálogo",
++    "musicTrackIds": "Faixas de música",
++    "targetLufs": "Alvo do diálogo (LUFS)",
++    "duckDb": "Atenuação da música (dB)",
++    "attackSec": "Ataque (segundos)",
++    "releaseSec": "Liberação (segundos)",
++    "review": "Revisar mixagem",
++    "audition": "Ouvir 15 segundos",
++    "apply": "Aplicar mixagem revisada",
++    "cancel": "Cancelar audição",
++    "preserved": "Ganhos, fades e quadros-chave são preservados. A saída EQ do diálogo é ajustada e sua atenuação existente é substituída.",
++    "duckChange": "Atenuação: {{db}} dB; ataque {{attack}} s, liberação {{release}} s.",
++    "change": "{{label}}: {{lufs}} LUFS; saída {{before}} → {{after}} dB (variação {{gain}} dB).",
++    "preparing": "Preparando audição a partir do cursor…",
++    "playing": "Reproduzindo mixagem revisada.",
++    "finished": "Audição concluída.",
++    "cancelled": "Audição cancelada. Linha do tempo inalterada.",
++    "applied": "Mixagem aplicada em uma ação reversível.",
++    "selectTracks": "Escolha uma faixa de diálogo e uma de música.",
++    "separateTracks": "Diálogo e música precisam de fontes diferentes.",
++    "invalidSettings": "Revise os ajustes de ganho e tempo.",
++    "inaudible": "Uma fonte está muda, oculta ou excluída pelo solo.",
++    "locked": "Uma fonte ou seu par vinculado está bloqueado.",
++    "noAudio": "Nenhuma fonte audível na faixa escolhida.",
++    "outputGain": "Ative o EQ do diálogo e remova a animação da saída. Os outros ajustes EQ são preservados.",
++    "silent": "Diálogo silencioso ou curto demais.",
++    "stale": "A sequência mudou. Revise a mixagem novamente.",
++    "failed": "Não foi possível preparar a mixagem. Verifique as fontes.",
++    "solo": "Desative o solo antes de revisar a mixagem.",
++    "range": "A audição reproduz até 15 segundos a partir do cursor, não a sequência inteira."
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/voice-music.json b/src/i18n/locales/partials/tr/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "Müzik üzerinde ses",
++    "note": "Kanalları seçin, miksi inceleyin ve uygulamadan önce dinleyin. Ana çıkış ve sınırlayıcı ayarları değişmez.",
++    "dialogueTrackIds": "Konuşma kanalları",
++    "musicTrackIds": "Müzik kanalları",
++    "targetLufs": "Konuşma hedefi (LUFS)",
++    "duckDb": "Müzik kısma (dB)",
++    "attackSec": "Atak (saniye)",
++    "releaseSec": "Bırakma (saniye)",
++    "review": "Miksi incele",
++    "audition": "15 saniye dinle",
++    "apply": "İncelenen miksi uygula",
++    "cancel": "Dinlemeyi iptal et",
++    "preserved": "Klip kazançları, geçişler ve anahtar kareler korunur. Konuşma EQ çıkışı ayarlanır, mevcut kısma ayarları değiştirilir.",
++    "duckChange": "Kısma: {{db}} dB; atak {{attack}} sn, bırakma {{release}} sn.",
++    "change": "{{label}}: {{lufs}} LUFS; çıkış {{before}} → {{after}} dB (değişim {{gain}} dB).",
++    "preparing": "Oynatma başından dinleme hazırlanıyor…",
++    "playing": "İncelenen miks çalıyor.",
++    "finished": "Dinleme bitti.",
++    "cancelled": "Dinleme iptal edildi. Zaman çizelgesi değişmedi.",
++    "applied": "Miks tek bir geri alınabilir işlemle uygulandı.",
++    "selectTracks": "Bir konuşma ve bir müzik kanalı seçin.",
++    "separateTracks": "Konuşma ve müzik farklı kaynaklar kullanmalıdır.",
++    "invalidSettings": "Kazanç ve zaman ayarlarını kontrol edin.",
++    "inaudible": "Seçili kaynak sessiz, gizli veya solo nedeniyle dışlanmış.",
++    "locked": "Seçili kaynak ya da bağlı eşi kilitli.",
++    "noAudio": "Seçili kanalda duyulabilir kaynak yok.",
++    "outputGain": "Konuşma EQ’sunu açın ve çıkış kazancı animasyonunu kaldırın. Diğer EQ ayarları korunur.",
++    "silent": "Konuşma sessiz veya çok kısa.",
++    "stale": "Dizi değişti. Miksi yeniden inceleyin.",
++    "failed": "Miks hazırlanamadı. Kaynakları kontrol edin.",
++    "solo": "Miksi incelemeden önce soloyu kapatın.",
++    "range": "Dinleme tüm diziyi değil, oynatma başından en fazla 15 saniyeyi çalar."
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/voice-music.json b/src/i18n/locales/partials/zh/voice-music.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/voice-music.json
+@@ -0,0 +1,36 @@
++{
++  "voiceMix": {
++    "title": "人声与音乐混音",
++    "note": "选择轨道，检查并试听后应用。主输出和限制器设置保持不变。",
++    "dialogueTrackIds": "对白轨道",
++    "musicTrackIds": "音乐轨道",
++    "targetLufs": "对白目标（LUFS）",
++    "duckDb": "音乐衰减（dB）",
++    "attackSec": "起音（秒）",
++    "releaseSec": "释放（秒）",
++    "review": "检查混音",
++    "audition": "试听15秒",
++    "apply": "应用已检查的混音",
++    "cancel": "取消试听",
++    "preserved": "保留片段增益、淡入淡出和关键帧。调整对白EQ输出并替换其原有闪避设置。",
++    "duckChange": "衰减：{{db}} dB；起音 {{attack}} 秒，释放 {{release}} 秒。",
++    "change": "{{label}}：{{lufs}} LUFS；输出 {{before}} → {{after}} dB（变化 {{gain}} dB）。",
++    "preparing": "正在从播放头准备试听…",
++    "playing": "正在播放已检查的混音。",
++    "finished": "试听结束。",
++    "cancelled": "已取消试听。时间线未更改。",
++    "applied": "已作为一次可撤销操作应用混音。",
++    "selectTracks": "请选择对白和音乐轨道。",
++    "separateTracks": "对白和音乐需要不同音源。",
++    "invalidSettings": "请检查增益和时间设置。",
++    "inaudible": "所选音源已静音、隐藏或被独奏排除。",
++    "locked": "所选音源或其链接音源已锁定。",
++    "noAudio": "所选轨道没有可播放的音源。",
++    "outputGain": "请启用对白EQ并移除输出增益动画。其他EQ设置保持不变。",
++    "silent": "对白无声或太短。",
++    "stale": "序列已更改。请重新检查混音。",
++    "failed": "无法准备混音。请检查音源。",
++    "solo": "请关闭独奏后再检查混音。",
++    "range": "试听从播放头开始最多15秒，并非整个序列。"
++  }
++}
+diff --git a/src/runtime/composition-runtime/deps/stores-contract.ts b/src/runtime/composition-runtime/deps/stores-contract.ts
+--- a/src/runtime/composition-runtime/deps/stores-contract.ts
++++ b/src/runtime/composition-runtime/deps/stores-contract.ts
+@@ -15,3 +15,7 @@
+ export { useDebugStore } from '@/features/editor/stores/debug-store'
+ 
+ export { useProjectStore } from '@/features/projects/stores/project-store'
++
++export { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++export { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store'
++export { useItemsStore } from '@/features/timeline/stores/items-store'
+diff --git a/src/runtime/composition-runtime/utils/preview-track-stage.test.ts b/src/runtime/composition-runtime/utils/preview-track-stage.test.ts
+--- a/src/runtime/composition-runtime/utils/preview-track-stage.test.ts
++++ b/src/runtime/composition-runtime/utils/preview-track-stage.test.ts
+@@ -96,6 +96,46 @@
+     expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(0)
+     ack()
+   }
++  // FL-736: ducking alone must publish through the same sample-clock stage, without a gain curve.
++  useItemsStore.setState({
++    tracks: [
++      { ...track, gainEnvelope: [] } as never,
++      { id: 'voice', visible: true, muted: false } as never,
++    ],
++    items: [
++      { id: 'clip', trackId: 'a1', type: 'audio', from: 0, durationInFrames: 90 } as never,
++      {
++        id: 'speech',
++        trackId: 'voice',
++        type: 'audio',
++        from: 30,
++        durationInFrames: 30,
++        audioDucking: {
++          duckOthersDb: -12,
++          attackSec: 0.1,
++          releaseSec: 0.2,
++          targetTrackIds: ['a1'],
++        },
++      } as never,
++    ],
++  })
++  expect(latest().stages).toEqual([])
++  expect(latest().ducking).toMatchObject({
++    segment: { itemId: 'clip', trackId: 'a1' },
++    sources: [
++      {
++        itemId: 'speech',
++        startFrame: 30,
++        endFrame: 60,
++        duckDb: -12,
++        attackFrames: 3,
++        releaseFrames: 6,
++        targetTrackIds: ['a1'],
++      },
++    ],
++  })
++  ack()
++  expect(gates[0]!.gain.setValueAtTime.mock.lastCall![0]).toBe(1)
+   // A terminal processor failure must invalidate an already matching pending ACK.
+   const terminal = latest()
+   ;(nodes[0]!.onprocessorerror as () => void)()
+diff --git a/src/runtime/composition-runtime/utils/preview-track-stage.ts b/src/runtime/composition-runtime/utils/preview-track-stage.ts
+--- a/src/runtime/composition-runtime/utils/preview-track-stage.ts
++++ b/src/runtime/composition-runtime/utils/preview-track-stage.ts
+@@ -1,7 +1,13 @@
++import {
++  useItemsStore,
++  useCompositionsStore,
++  useTimelineSettingsStore,
++  useCompositionNavigationStore,
++} from '../deps/stores'
++import type { TimelineTrack } from '@/types/timeline'
++import { collectDuckingSources } from '@/shared/utils/audio-ducking'
++import { resolveEffectiveTrackStates } from '@/shared/utils/subtitle-sidecar.mjs'
+ import type { Clock } from '@/runtime/composition-runtime/deps/player'
+-import { useItemsStore } from '@/features/timeline/stores/items-store'
+-import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
+-import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
+ import { resolveTrackGainStages, type TrackAudioEpoch } from '@/shared/utils/track-audio'
+ import moduleUrl from '../worklets/track-gain-processor.worklet.ts?worker&url'
+ const modules = new WeakMap<AudioContext, Promise<void>>()
+@@ -34,22 +40,53 @@
+     const anchor = clock.getAudioTransportSnapshot()
+     if (anchor.context !== context || !anchor.contextId) return
+     let stages
++    let ducking: TrackAudioEpoch['ducking']
+     try {
+       const state = useItemsStore.getState()
++      const compositions = useCompositionsStore.getState()
++      const activeId = useCompositionNavigationStore.getState().activeCompositionId
++      const fps =
++        (activeId ? compositions.getComposition(activeId)?.fps : undefined) ??
++        useTimelineSettingsStore.getState().fps
++      const rootItem = state.items.find((item) => item.id === itemId || ancestors.includes(item.id))
++      if (rootItem) {
++        const audible = (sourceTracks: TimelineTrack[]) => {
++          const resolved = resolveEffectiveTrackStates(sourceTracks)
++          const hasSolo = resolved.some((track) => track.solo)
++          return resolved.map((track) =>
++            hasSolo && !track.solo ? { ...track, muted: true } : track,
++          )
++        }
++        const tracks = audible(state.tracks).map((track) => ({
++          ...track,
++          items: state.items.filter((item) => item.trackId === track.id),
++        }))
++        const sources = collectDuckingSources({ fps, tracks }, fps, (id) => {
++          const composition = compositions.getComposition(id)
++          return composition ? { ...composition, tracks: audible(composition.tracks) } : undefined
++        })
++        const applicable = sources.filter(
++          (source) =>
++            source.itemId !== itemId &&
++            (!source.targetTrackIds || source.targetTrackIds.includes(rootItem.trackId)),
++        )
++        if (applicable.length)
++          ducking = { sources: applicable, segment: { itemId, trackId: rootItem.trackId } }
++      }
+       stages = resolveTrackGainStages(
+         state.items,
+         state.tracks,
+         useCompositionsStore.getState().compositions,
+         itemId,
+         ancestors,
+-        useTimelineSettingsStore.getState().fps,
++        fps,
+       )
+     } catch {
+       pending = null
+       input.disconnect()
+       return
+     }
+-    if (!stages.length) {
++    if (!stages.length && !ducking) {
+       input.disconnect()
+       processor?.disconnect()
+       input.connect(gate)
+@@ -151,6 +188,7 @@
+         points: [],
+       },
+       stages,
++      ducking,
+     }
+     processor.port.postMessage(pending)
+   }
+diff --git a/src/shared/utils/audio-ducking.ts b/src/shared/utils/audio-ducking.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/audio-ducking.ts
+@@ -0,0 +1,410 @@
++import type {
++  AudioItem,
++  CompositionItem,
++  TimelineItem,
++  TimelineTrack,
++  AudioDuckingSettings,
++} from '@/types/timeline'
++import type { CompositionInputProps } from '@/types/export'
++import {
++  normalizeCompositionFps,
++  mapSourceWindowOverlap,
++  timelineToSourceFrames,
++  sourceToTimelineFrames,
++} from './source-calculations'
++import { getLinkedCompositionAudioCompanion, isCompositionAudioItem } from './linked-media'
++export type CompositionResolver = (
++  id: string,
++) => { items: TimelineItem[]; tracks: TimelineTrack[]; fps?: number } | undefined
++const dbToGain = (db: number) => 10 ** (db / 20)
++/** The wrapper composition item's timing, resolved once per expansion. */
++export interface CompositionWrapperTiming {
++  compFrom: number
++  wrapperSpeed: number
++  wrapperSourceFps: number
++  sourceOffset: number
++  wrapperSourceEnd: number
++  isReversed: boolean
++}
++
++export function resolveCompositionWrapper(
++  compositionItem: { from: number; durationInFrames: number } & Partial<{
++    speed: number
++    sourceFps: number
++    sourceStart: number
++    trimStart: number
++    sourceEnd: number
++    isReversed: boolean
++  }>,
++  fps: number,
++  fallbackSourceFps = fps,
++): CompositionWrapperTiming {
++  const wrapperSpeed = compositionItem.speed ?? 1
++  const wrapperSourceFps = normalizeCompositionFps(
++    compositionItem.sourceFps,
++    normalizeCompositionFps(fallbackSourceFps, 30),
++  )
++  const sourceOffset = compositionItem.sourceStart ?? compositionItem.trimStart ?? 0
++  return {
++    isReversed: compositionItem.isReversed === true,
++    compFrom: compositionItem.from,
++    wrapperSpeed,
++    wrapperSourceFps,
++    sourceOffset,
++    wrapperSourceEnd:
++      compositionItem.sourceEnd ??
++      sourceOffset +
++        timelineToSourceFrames(
++          compositionItem.durationInFrames,
++          wrapperSpeed,
++          fps,
++          wrapperSourceFps,
++        ),
++  }
++}
++
++/** One nested item's visible window, expressed in PARENT timeline frames. */
++export interface NestedItemWindow {
++  overlapStart: number
++  overlapEnd: number
++  effectiveStart: number
++  effectiveEnd: number
++  effectiveDuration: number
++  effectiveSourceStart: number
++  effectiveSourceFps: number
++}
++
++/**
++ * Map a sub-composition item into parent-timeline coordinates, honouring the
++ * wrapper's trim, speed and source fps. Returns null when the item falls
++ * entirely outside the wrapper's visible source range.
++ *
++ * Shared on purpose. The audio mix and the ducking-source scan both have to
++ * agree on where a nested item sits, and a second implementation is how they
++ * would silently drift apart — a source could be expanded into the mix while
++ * not being seen as a duck source, which is precisely the bug this fixes.
++ */
++export function mapNestedItemWindow(
++  subItem: TimelineItem,
++  wrapper: CompositionWrapperTiming,
++  fps: number,
++  resolve: CompositionResolver,
++): NestedItemWindow | null {
++  const { compFrom, wrapperSpeed, wrapperSourceFps, sourceOffset, wrapperSourceEnd } = wrapper
++  const mapping = mapSourceWindowOverlap({
++    itemStart: subItem.from,
++    itemDuration: subItem.durationInFrames,
++    wrapperDuration: sourceToTimelineFrames(
++      wrapperSourceEnd - sourceOffset,
++      wrapperSpeed,
++      wrapperSourceFps,
++      fps,
++    ),
++    wrapperSpeed,
++    wrapperSourceFps,
++    wrapperSourceStart: sourceOffset,
++    wrapperSourceEnd,
++    wrapperIsReversed: wrapper.isReversed,
++    timelineFps: fps,
++    fallbackSourceFps: wrapperSourceFps,
++  })
++  if (!mapping) return null
++  const { overlapStart, overlapEnd } = mapping
++  const effectiveStart = compFrom + mapping.mappedFrom
++  const effectiveEnd = compFrom + mapping.mappedEnd
++  const effectiveDuration = mapping.mappedDuration
++
++  const baseSourceStart = subItem.sourceStart ?? subItem.trimStart ?? 0
++  const sourceFps = normalizeCompositionFps(
++    subItem.sourceFps,
++    (subItem.compositionId ? resolve(subItem.compositionId)?.fps : undefined) ?? wrapperSourceFps,
++  )
++  const effectiveSourceStart = subItem.isReversed
++    ? (subItem.sourceEnd ??
++        baseSourceStart +
++          timelineToSourceFrames(
++            subItem.durationInFrames,
++            subItem.speed ?? 1,
++            wrapperSourceFps,
++            sourceFps,
++          )) -
++      timelineToSourceFrames(
++        overlapEnd - subItem.from,
++        subItem.speed ?? 1,
++        wrapperSourceFps,
++        sourceFps,
++      )
++    : baseSourceStart +
++      timelineToSourceFrames(
++        overlapStart - subItem.from,
++        subItem.speed ?? 1,
++        wrapperSourceFps,
++        sourceFps,
++      )
++
++  return {
++    overlapStart,
++    overlapEnd,
++    effectiveStart,
++    effectiveEnd,
++    effectiveDuration,
++    effectiveSourceStart,
++    effectiveSourceFps: sourceFps,
++  }
++}
++
++/**
++ * Rebuild a nested composition item as a wrapper expressed in PARENT coordinates.
++ *
++ * Shared with the duck-source scan for the same reason the window mapping is: the
++ * `sourceEnd` remap in particular is easy to omit, and omitting it makes a
++ * clipped intermediate composition report a different window on each side.
++ */
++export function buildNestedWrapper(
++  subItem: TimelineItem,
++  window: NestedItemWindow,
++  wrapper: CompositionWrapperTiming,
++): CompositionItem | (AudioItem & { compositionId: string }) {
++  const { wrapperSpeed, wrapperSourceFps } = wrapper
++  return {
++    ...subItem,
++    from: window.effectiveStart,
++    durationInFrames: window.effectiveDuration,
++    speed: (subItem.speed ?? 1) * wrapperSpeed,
++    isReversed: (subItem.isReversed === true) !== wrapper.isReversed,
++    sourceStart: window.effectiveSourceStart,
++    sourceFps: window.effectiveSourceFps,
++    ...(subItem.sourceEnd !== undefined && {
++      sourceEnd: Math.max(
++        window.effectiveSourceStart + 1,
++        subItem.sourceEnd -
++          timelineToSourceFrames(
++            subItem.isReversed
++              ? window.overlapStart - subItem.from
++              : subItem.from + subItem.durationInFrames - window.overlapEnd,
++            subItem.speed ?? 1,
++            wrapperSourceFps,
++            window.effectiveSourceFps,
++          ),
++      ),
++    }),
++  } as CompositionItem | (AudioItem & { compositionId: string })
++}
++
++const DUCKING_DEFAULT_ATTACK_SEC = 0.08
++const DUCKING_DEFAULT_RELEASE_SEC = 0.25
++
++export interface DuckingSource {
++  itemId: string
++  trackId: string
++  /** Audible span on the timeline, in project frames. */
++  startFrame: number
++  endFrame: number
++  /** Attenuation while audible, dB (negative). */
++  duckDb: number
++  attackFrames: number
++  releaseFrames: number
++  /** Restrict ducking to these tracks (default: every other track). */
++  targetTrackIds?: string[]
++}
++
++type DuckSourceCandidate = CompositionInputProps['tracks'][number]['items'][number] & {
++  audioDucking?: AudioDuckingSettings
++  embeddedAudioMuted?: boolean
++}
++
++/** Map one item to a duck source, or null when it cannot duck anything. */
++function duckingSourceFromItem(
++  item: DuckSourceCandidate,
++  trackId: string,
++  fps: number,
++  /** Parent-timeline window, for items reached through a pre-composition. */
++  window?: { startFrame: number; endFrame: number },
++): DuckingSource | null {
++  if (item.muted === true) return null
++  const ducking = item.audioDucking
++  if (!ducking || !(ducking.duckOthersDb < 0)) return null
++  const carriesAudio =
++    item.type === 'audio' ||
++    item.type === 'composition' ||
++    (item.type === 'video' && !item.embeddedAudioMuted)
++  if (!carriesAudio) return null
++  return {
++    itemId: item.id,
++    trackId,
++    startFrame: window?.startFrame ?? item.from,
++    endFrame: window?.endFrame ?? item.from + item.durationInFrames,
++    duckDb: ducking.duckOthersDb,
++    attackFrames: (ducking.attackSec ?? DUCKING_DEFAULT_ATTACK_SEC) * fps,
++    releaseFrames: (ducking.releaseSec ?? DUCKING_DEFAULT_RELEASE_SEC) * fps,
++    ...(ducking.targetTrackIds ? { targetTrackIds: ducking.targetTrackIds } : {}),
++  }
++}
++
++/**
++ * Collect duck sources nested inside a pre-composition, in PARENT timeline frames.
++ *
++ * The mix expands nested composition audio, so a source living one level down is
++ * audible; scanning only the root tracks would leave it audible but not ducking,
++ * making the same arrangement sound different at root level and inside a
++ * pre-comp. The window mapping is shared with `appendCompositionAudioSegments`
++ * so the two cannot disagree about where a nested item sits.
++ */
++function collectNestedDuckingSources(
++  compositionItem: CompositionItem | (AudioItem & { compositionId: string }),
++  rootTrackId: string,
++  fps: number,
++  visited: ReadonlySet<string>,
++  resolve: CompositionResolver,
++): DuckingSource[] {
++  if (compositionItem.muted === true || visited.has(compositionItem.compositionId)) return []
++  const subComp = resolve(compositionItem.compositionId)
++  if (!subComp) return []
++
++  const wrapper = resolveCompositionWrapper(compositionItem, fps, subComp.fps ?? fps)
++  const nestedVisited = new Set(visited)
++  nestedVisited.add(compositionItem.compositionId)
++
++  const sources: DuckingSource[] = []
++  for (const subItem of subComp.items) {
++    const subTrack = subComp.tracks.find((candidate) => candidate.id === subItem.trackId)
++    // Only `muted` silences a nested track — the expansion above ignores `visible`,
++    // so excluding hidden tracks here would leave audible sources not ducking.
++    if (subTrack?.muted === true) continue
++
++    const window = mapNestedItemWindow(subItem, wrapper, fps, resolve)
++    if (!window) continue
++
++    if (subItem.type === 'composition' || isCompositionAudioItem(subItem)) {
++      // A composition-backed AudioItem can carry `audioDucking` of its own, and it
++      // is audible in its own right — collect it as well as descending.
++      if (
++        subItem.type === 'composition' &&
++        getLinkedCompositionAudioCompanion(subComp.items, subItem)
++      )
++        continue
++      const wrapperSource = duckingSourceFromItem(
++        subItem as DuckSourceCandidate,
++        rootTrackId,
++        fps,
++        { startFrame: window.effectiveStart, endFrame: window.effectiveEnd },
++      )
++      if (wrapperSource) sources.push(wrapperSource)
++      sources.push(
++        ...collectNestedDuckingSources(
++          buildNestedWrapper(subItem, window, wrapper),
++          rootTrackId,
++          fps,
++          nestedVisited,
++          resolve,
++        ),
++      )
++      continue
++    }
++
++    // Nested sources belong to the ROOT track: that is the track their audio is
++    // mixed onto, so it is also what "never duck yourself" must compare against.
++    const source = duckingSourceFromItem(subItem as DuckSourceCandidate, rootTrackId, fps, {
++      startFrame: window.effectiveStart,
++      endFrame: window.effectiveEnd,
++    })
++    if (source) sources.push(source)
++  }
++  return sources
++}
++
++/** Collect duck-source windows from composition items carrying `audioDucking`. */
++export function collectDuckingSources(
++  composition: CompositionInputProps,
++  fps: number,
++  resolve: CompositionResolver,
++): DuckingSource[] {
++  const timelineItems = composition.tracks.flatMap((track) => track.items ?? [])
++  return composition.tracks
++    .filter((track) => track.visible !== false && track.muted !== true)
++    .flatMap((track) =>
++      (track.items ?? []).flatMap((item) => {
++        if (item.type === 'composition' && getLinkedCompositionAudioCompanion(timelineItems, item))
++          return []
++        // The item's own `audioDucking` counts even when it is a composition
++        // wrapper — it is audible in its own right — so collect it either way
++        // and additionally descend when it wraps a pre-comp.
++        const own = duckingSourceFromItem(item as DuckSourceCandidate, track.id, fps)
++        const sources = own ? [own] : []
++        if (item.type === 'composition' || isCompositionAudioItem(item)) {
++          sources.push(
++            ...collectNestedDuckingSources(
++              item as CompositionItem | (AudioItem & { compositionId: string }),
++              track.id,
++              fps,
++              new Set<string>(),
++              resolve,
++            ),
++          )
++        }
++        return sources
++      }),
++    )
++}
++
++/** Piecewise duck gain of one source at a timeline frame, in dB (0 = no duck). */
++export function duckingSourceGainDb(frame: number, source: DuckingSource): number {
++  if (frame < source.startFrame || frame > source.endFrame + source.releaseFrames) return 0
++  if (frame < source.startFrame + source.attackFrames) {
++    const progress = (frame - source.startFrame) / source.attackFrames
++    return source.duckDb * progress
++  }
++  if (frame <= source.endFrame) return source.duckDb
++  const progress = (frame - source.endFrame) / source.releaseFrames
++  return source.duckDb * (1 - progress)
++}
++
++/**
++ * Multiply the ducking envelope into one channel of a target segment.
++ * `segmentStartFrame` is the absolute timeline frame of `samples[0]` (same
++ * mapping as `applyAnimatedVolume`). The source item never ducks itself;
++ * overlapping sources take the deepest (minimum dB) gain.
++ */
++export function applyDucking(
++  samples: Float32Array,
++  sources: readonly DuckingSource[],
++  segment: { itemId: string; trackId: string },
++  segmentStartFrame: number,
++  fps: number,
++  sampleRate: number,
++): Float32Array {
++  const spanFrames = (samples.length / sampleRate) * fps
++  const applicable = sources.filter(
++    (source) =>
++      source.itemId !== segment.itemId &&
++      (!source.targetTrackIds || source.targetTrackIds.includes(segment.trackId)) &&
++      source.startFrame < segmentStartFrame + spanFrames &&
++      source.endFrame + source.releaseFrames > segmentStartFrame,
++  )
++  if (applicable.length === 0) return samples
++
++  const output = new Float32Array(samples.length)
++  for (let i = 0; i < samples.length; i++) {
++    const frame = segmentStartFrame + (i / sampleRate) * fps
++    const db = duckingGainDbAtFrame(sources, segment, frame)
++    output[i] = db === 0 ? samples[i]! : samples[i]! * dbToGain(db)
++  }
++  return output
++}
++
++export function duckingGainDbAtFrame(
++  sources: readonly DuckingSource[],
++  segment: { itemId: string; trackId: string },
++  frame: number,
++): number {
++  let db = 0
++  for (const source of sources) {
++    if (
++      source.itemId === segment.itemId ||
++      (source.targetTrackIds && !source.targetTrackIds.includes(segment.trackId))
++    )
++      continue
++    db = Math.min(db, duckingSourceGainDb(frame, source))
++  }
++  return db
++}
+diff --git a/src/shared/utils/source-calculations.ts b/src/shared/utils/source-calculations.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/source-calculations.ts
+@@ -0,0 +1,319 @@
++import { cadenceFromFps } from '@/shared/utils/audio-clock-cadence'
++import type { TimelineItem } from '@/types/timeline'
++
++/**
++ * Core utilities for source/timeline frame conversions.
++ *
++ * Terminology:
++ * - Timeline frames: Frames as they appear on the timeline (affected by speed)
++ * - Source frames: Actual frames in the source media file
++ * - Speed: Playback rate (1 = normal, 2 = 2x faster, 0.5 = half speed)
++ *
++ * Relationships:
++ * - sourceFrames = timelineFrames * speed
++ * - timelineFrames = sourceFrames / speed
++ */
++
++// Speed constraints
++export const MIN_SPEED = 0.1
++export const MAX_SPEED = 16
++export const DEFAULT_SPEED = 1
++const DEFAULT_TIMELINE_FPS = 30
++
++function normalizeFps(fps: number | undefined, fallback: number): number {
++  if (fps === undefined || !Number.isFinite(fps) || fps <= 0) return fallback
++  return fps
++}
++
++
++/** Runtime composition clocks use the admitted exact broadcast fraction; edit quantizers stay unchanged. */
++export function normalizeCompositionFps(fps:number|undefined,fallback:number):number {
++ const value=normalizeFps(fps,fallback)
++ try{const {num,den}=cadenceFromFps(value);return num/den}catch{return value}
++}
++
++/**
++ * Extract source properties from a media item with defaults.
++ */
++interface SourceProperties {
++  sourceStart: number
++  sourceEnd: number | undefined
++  sourceDuration: number | undefined
++  sourceFps: number | undefined
++  speed: number
++}
++
++export function getSourceProperties(item: TimelineItem): SourceProperties {
++  if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'composition') {
++    return {
++      sourceStart: 0,
++      sourceEnd: undefined,
++      sourceDuration: undefined,
++      sourceFps: undefined,
++      speed: DEFAULT_SPEED,
++    }
++  }
++
++  return {
++    sourceStart: item.sourceStart ?? 0,
++    sourceEnd: item.sourceEnd,
++    sourceDuration: item.sourceDuration,
++    sourceFps: item.sourceFps,
++    speed: item.speed ?? DEFAULT_SPEED,
++  }
++}
++
++/**
++ * Convert timeline frames to source frames.
++ * Use Math.round to minimize floating-point errors.
++ */
++export function timelineToSourceFrames(
++  timelineFrames: number,
++  speed: number,
++  timelineFps: number = DEFAULT_TIMELINE_FPS,
++  sourceFps: number = timelineFps,
++): number {
++  const safeTimelineFps = normalizeFps(timelineFps, DEFAULT_TIMELINE_FPS)
++  const safeSourceFps = normalizeFps(sourceFps, safeTimelineFps)
++  const timelineSeconds = timelineFrames / safeTimelineFps
++  return Math.round(timelineSeconds * safeSourceFps * speed)
++}
++
++/**
++ * Convert source frames to timeline frames.
++ * Use Math.floor to ensure we don't exceed source bounds.
++ */
++export function sourceToTimelineFrames(
++  sourceFrames: number,
++  speed: number,
++  sourceFps: number = DEFAULT_TIMELINE_FPS,
++  timelineFps: number = sourceFps,
++): number {
++  const safeSourceFps = normalizeFps(sourceFps, DEFAULT_TIMELINE_FPS)
++  const safeTimelineFps = normalizeFps(timelineFps, safeSourceFps)
++  const sourceSeconds = sourceFrames / safeSourceFps
++  return Math.floor((sourceSeconds * safeTimelineFps) / speed)
++}
++
++export interface SourceWindowOverlapMapping {
++  overlapStart: number
++  overlapEnd: number
++  mappedFrom: number
++  mappedEnd: number
++  mappedDuration: number
++  clippedStartFrames: number
++  clippedEndFrames: number
++  wrapperSpeed: number
++  wrapperSourceFps: number
++}
++
++export function mapSourceWindowOverlap(params: {
++  itemStart: number
++  itemDuration: number
++  wrapperDuration: number
++  wrapperSpeed?: number
++  wrapperSourceFps?: number
++  wrapperSourceStart: number
++  wrapperSourceEnd?: number
++  wrapperIsReversed?: boolean
++  timelineFps: number
++  fallbackSourceFps: number
++}): SourceWindowOverlapMapping | null {
++  const wrapperSpeed = params.wrapperSpeed ?? DEFAULT_SPEED
++  const wrapperSourceFps = normalizeCompositionFps(params.wrapperSourceFps,normalizeCompositionFps(params.fallbackSourceFps,DEFAULT_TIMELINE_FPS))
++  const wrapperSourceEnd =
++    params.wrapperSourceEnd ??
++    params.wrapperSourceStart +
++      timelineToSourceFrames(
++        params.wrapperDuration,
++        wrapperSpeed,
++        params.timelineFps,
++        wrapperSourceFps,
++      )
++  const itemEnd = params.itemStart + params.itemDuration
++  const overlapStart = Math.max(params.itemStart, params.wrapperSourceStart)
++  const overlapEnd = Math.min(itemEnd, wrapperSourceEnd)
++
++  if (overlapEnd <= overlapStart) {
++    return null
++  }
++
++  const mapDistance=(frames:number):number=>{
++    try{const source=cadenceFromFps(wrapperSourceFps),timeline=cadenceFromFps(params.timelineFps)
++      return Math.floor(frames*timeline.num*source.den/(wrapperSpeed*source.num*timeline.den))
++    }catch{return sourceToTimelineFrames(frames,wrapperSpeed,wrapperSourceFps,params.timelineFps)}
++  }
++  const mappedFrom=mapDistance(params.wrapperIsReversed ? wrapperSourceEnd-overlapEnd : overlapStart-params.wrapperSourceStart)
++  const mappedEnd=mapDistance(params.wrapperIsReversed ? wrapperSourceEnd-overlapStart : overlapEnd-params.wrapperSourceStart)
++
++  return {
++    overlapStart,
++    overlapEnd,
++    mappedFrom,
++    mappedEnd,
++    mappedDuration: Math.max(1, mappedEnd - mappedFrom),
++    clippedStartFrames: overlapStart - params.itemStart,
++    clippedEndFrames: itemEnd - overlapEnd,
++    wrapperSpeed,
++    wrapperSourceFps,
++  }
++}
++
++/**
++ * Calculate available source frames from current position to end.
++ */
++export function getAvailableSourceFrames(sourceDuration: number, sourceStart: number): number {
++  return Math.max(0, sourceDuration - sourceStart)
++}
++
++/**
++ * Calculate max timeline duration based on available source frames.
++ */
++export function getMaxTimelineDuration(
++  sourceDuration: number,
++  sourceStart: number,
++  speed: number,
++  sourceFps: number = DEFAULT_TIMELINE_FPS,
++  timelineFps: number = sourceFps,
++): number {
++  const available = getAvailableSourceFrames(sourceDuration, sourceStart)
++  return sourceToTimelineFrames(available, speed, sourceFps, timelineFps)
++}
++
++/**
++ * Calculate max extension towards source start (in timeline frames).
++ */
++export function getMaxStartExtension(
++  sourceStart: number,
++  speed: number,
++  sourceFps: number = DEFAULT_TIMELINE_FPS,
++  timelineFps: number = sourceFps,
++): number {
++  return sourceToTimelineFrames(sourceStart, speed, sourceFps, timelineFps)
++}
++
++/**
++ * Calculate speed from source duration and desired timeline duration.
++ */
++export function calculateSpeed(
++  sourceDuration: number,
++  timelineDuration: number,
++  sourceFps: number = DEFAULT_TIMELINE_FPS,
++  timelineFps: number = sourceFps,
++): number {
++  if (timelineDuration <= 0) return DEFAULT_SPEED
++  const safeSourceFps = normalizeFps(sourceFps, DEFAULT_TIMELINE_FPS)
++  const safeTimelineFps = normalizeFps(timelineFps, safeSourceFps)
++  return (sourceDuration * safeTimelineFps) / (timelineDuration * safeSourceFps)
++}
++
++/**
++ * Clamp speed to valid range and round to 2 decimal places.
++ */
++/**
++ * Clamp speed to valid range without rounding.
++ * Speed is stored with full precision for accurate calculations.
++ * UI should format to 2 decimal places for display only.
++ */
++export function clampSpeed(speed: number): number {
++  return Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed))
++}
++
++/**
++ * Validate that a seek position is within source bounds.
++ */
++export function isValidSeekPosition(
++  seekFrame: number,
++  sourceDuration: number | undefined,
++): boolean {
++  if (sourceDuration === undefined) return true
++  return seekFrame >= 0 && seekFrame < sourceDuration
++}
++
++/**
++ * Validate that playback won't exceed source duration.
++ * @param tolerance Number of frames tolerance for floating-point errors
++ */
++export function isWithinSourceBounds(
++  sourceStart: number,
++  timelineDuration: number,
++  speed: number,
++  sourceDuration: number | undefined,
++  tolerance: number = 2,
++  timelineFps: number = DEFAULT_TIMELINE_FPS,
++  sourceFps: number = timelineFps,
++): boolean {
++  if (sourceDuration === undefined) return true
++  const sourceFramesNeeded = timelineToSourceFrames(timelineDuration, speed, timelineFps, sourceFps)
++  const sourceEnd = sourceStart + sourceFramesNeeded
++  return sourceEnd <= sourceDuration + tolerance
++}
++
++/**
++ * Calculate safe trim position that doesn't exceed source bounds.
++ */
++export function getSafeTrimBefore(
++  trimBefore: number,
++  timelineDuration: number,
++  speed: number,
++  sourceDuration: number | undefined,
++  timelineFps: number = DEFAULT_TIMELINE_FPS,
++  sourceFps: number = timelineFps,
++): number {
++  if (sourceDuration === undefined || sourceDuration <= 0) return trimBefore
++
++  const sourceFramesNeeded = timelineToSourceFrames(timelineDuration, speed, timelineFps, sourceFps)
++  const maxTrimBefore = Math.max(0, sourceDuration - sourceFramesNeeded)
++
++  return Math.min(trimBefore, maxTrimBefore)
++}
++
++/**
++ * Check if an item is a media item (has source properties).
++ */
++export function isMediaItem(item: TimelineItem): item is TimelineItem & {
++  type: 'video' | 'audio' | 'composition'
++  sourceDuration?: number
++  sourceStart?: number
++  sourceEnd?: number
++  sourceFps?: number
++  speed?: number
++} {
++  return item.type === 'video' || item.type === 'audio' || item.type === 'composition'
++}
++
++/**
++ * Calculate source boundaries for split items.
++ * Returns source positions for left and right items after a split.
++ */
++interface SplitSourceBoundaries {
++  left: { sourceEnd: number }
++  right: { sourceStart: number; sourceEnd: number }
++}
++
++export function calculateSplitSourceBoundaries(
++  sourceStart: number,
++  leftDuration: number,
++  rightDuration: number,
++  speed: number,
++  timelineFps: number = DEFAULT_TIMELINE_FPS,
++  sourceFps: number = timelineFps,
++): SplitSourceBoundaries {
++  const leftSourceFrames = timelineToSourceFrames(leftDuration, speed, timelineFps, sourceFps)
++  const totalSourceFrames = timelineToSourceFrames(
++    leftDuration + rightDuration,
++    speed,
++    timelineFps,
++    sourceFps,
++  )
++
++  return {
++    left: {
++      sourceEnd: sourceStart + leftSourceFrames,
++    },
++    right: {
++      sourceStart: sourceStart + leftSourceFrames,
++      sourceEnd: sourceStart + totalSourceFrames,
++    },
++  }
++}
+diff --git a/src/shared/utils/track-audio.ts b/src/shared/utils/track-audio.ts
+--- a/src/shared/utils/track-audio.ts
++++ b/src/shared/utils/track-audio.ts
+@@ -1,3 +1,4 @@
++import { duckingGainDbAtFrame, type DuckingSource } from './audio-ducking'
+ import { masterGainAtFrame, validateMasterGainEnvelope, type MasterGainPoint } from './master-audio'
+ import {
+   cadenceFromFps,
+@@ -63,6 +64,7 @@
+   epoch: MasterAudioEpoch
+   revision: number
+   stages: readonly TrackGainStage[]
++  ducking?: { sources: DuckingSource[]; segment: { itemId: string; trackId: string } }
+ }
+ export class TrackGainProcessor {
+   private current: TrackAudioEpoch | null = null
+@@ -79,7 +81,34 @@
+     try {
+       const epoch = validateMasterEpoch(value.epoch)
+       if (epoch.rootId !== this.rootId || epoch.contextId !== this.contextId) return false
+-      this.current = { epoch, revision: value.revision, stages: validateTrackStages(value.stages) }
++      if (
++        value.ducking &&
++        (!Array.isArray(value.ducking.sources) ||
++          value.ducking.sources.length > 16384 ||
++          typeof value.ducking.segment?.itemId !== 'string' ||
++          typeof value.ducking.segment?.trackId !== 'string' ||
++          value.ducking.sources.some(
++            (s) =>
++              !Number.isFinite(s.startFrame) ||
++              !Number.isFinite(s.endFrame) ||
++              s.endFrame <= s.startFrame ||
++              !Number.isFinite(s.duckDb) ||
++              s.duckDb > 0 ||
++              s.duckDb < -60 ||
++              !Number.isFinite(s.attackFrames) ||
++              s.attackFrames < 0 ||
++              !Number.isFinite(s.releaseFrames) ||
++              s.releaseFrames < 0 ||
++              (s.targetTrackIds && !s.targetTrackIds.every((id) => typeof id === 'string')),
++          ))
++      )
++        return false
++      this.current = {
++        epoch,
++        revision: value.revision,
++        stages: validateTrackStages(value.stages),
++        ducking: value.ducking,
++      }
+       return true
+     } catch {
+       return false
+@@ -100,7 +129,11 @@
+         (firstSample + i) / sampleRate >= current.epoch.contextTime &&
+         (current.epoch.loop ||
+           (frame >= current.epoch.firstFrame && frame < current.epoch.lastFrame + 1))
+-          ? trackGainAtRootFrame(current.stages, frame)
++          ? trackGainAtRootFrame(current.stages, frame) *
++            (current.ducking
++              ? 10 **
++                (duckingGainDbAtFrame(current.ducking.sources, current.ducking.segment, frame) / 20)
++              : 1)
+           : 0
+       for (let c = 0; c < output.length; c++) output[c]![i] = (input[c]?.[i] ?? 0) * gain
+     }
+@@ -189,11 +222,12 @@
+       )
+         continue
+       const sourceFps = item.sourceFps ?? child.fps ?? ownerFps
+-      const sourceCadence=cadenceFromFps(sourceFps)
+-      const ownerCadence=cadenceFromFps(ownerFps)
++      const sourceCadence = cadenceFromFps(sourceFps)
++      const ownerCadence = cadenceFromFps(ownerFps)
+       const speed = item.speed ?? 1
+       if (!Number.isFinite(speed) || speed <= 0) throw new Error('Unsupported track owner map')
+-      const ratio = speed*sourceCadence.num*ownerCadence.den/(sourceCadence.den*ownerCadence.num)
++      const ratio =
++        (speed * sourceCadence.num * ownerCadence.den) / (sourceCadence.den * ownerCadence.num)
+       const start = item.sourceStart ?? item.trimStart ?? 0
+       const end = item.sourceEnd ?? start + item.durationInFrames * ratio
+       const localScale = item.isReversed ? -ratio : ratio
+diff --git a/src/test/voice-music-mix.test.tsx b/src/test/voice-music-mix.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/test/voice-music-mix.test.tsx
+@@ -0,0 +1,270 @@
++import { cleanup, fireEvent, render, within, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { VoiceMusicPanel } from '@/features/editor/components/properties-sidebar/voice-music-panel'
++import {
++  captureVoiceMixState,
++  voiceMixParticipants,
++  reviewVoiceMusicMix,
++  applyVoiceMusicMix,
++  voiceMixLoudnessChange,
++  auditionVoiceMusicMix,
++  type VoiceMixSettings,
++} from '@/features/editor/utils/voice-music-mix'
++import {
++  useItemsStore,
++  useTimelineCommandStore,
++  useKeyframesStore,
++} from '@/features/editor/deps/timeline-store'
++import {
++  makeTimelineTrack,
++  makeTimelineVideoItem,
++  resetTimelineCompositionTestState,
++} from '@/features/timeline/test-helpers'
++import { LOUDNESS_ALGORITHM, type LoudnessMeasurement } from '@/shared/utils/loudness'
++import { usePlaybackStore } from '@/shared/state/playback'
++import type { TimelineItem } from '@/types/timeline'
++const mocks = vi.hoisted(() => ({ build: vi.fn(), render: vi.fn(), measure: vi.fn() }))
++vi.mock('@/features/editor/deps/export-contract', () => ({
++  loadVoiceMixRenderer: async () => ({ build: mocks.build, render: mocks.render }),
++}))
++vi.mock('@/shared/utils/loudness', async (original) => ({
++  ...(await original<typeof import('@/shared/utils/loudness')>()),
++  measureLoudnessInWorker: mocks.measure,
++}))
++const settings: VoiceMixSettings = {
++  dialogueTrackIds: ['dialogue'],
++  musicTrackIds: ['music'],
++  targetLufs: -16,
++  duckDb: -12,
++  attackSec: 0.08,
++  releaseSec: 0.25,
++}
++const measure: LoudnessMeasurement = {
++  algorithm: LOUDNESS_ALGORITHM,
++  integratedLufs: -22,
++  truePeakDbtp: -12,
++  durationSeconds: 2,
++  channelCount: 2,
++}
++const audio = (id: string, trackId: string): TimelineItem =>
++  ({
++    ...makeTimelineVideoItem({ id, trackId, volume: -3 }),
++    type: 'audio',
++    audioEqOutputGainDb: 2,
++  }) as TimelineItem
++beforeEach(() => {
++  resetTimelineCompositionTestState()
++  mocks.build
++    .mockReset()
++    .mockImplementation((tracks, items, _transitions, fps, _w, _h, from, end) => ({
++      tracks,
++      items,
++      fps,
++      durationInFrames: end == null ? 60 : end - from + 1,
++    }))
++  mocks.render
++    .mockReset()
++    .mockResolvedValue({ samples: [new Float32Array(48000)], channels: 1, sampleRate: 48000 })
++  mocks.measure.mockReset().mockResolvedValue(measure)
++  useItemsStore
++    .getState()
++    .setTracks([
++      makeTimelineTrack({ id: 'dialogue', name: 'Dialogue', order: 0 }),
++      makeTimelineTrack({ id: 'music', name: 'Music', order: 1 }),
++    ])
++  useItemsStore.getState().setItems([audio('voice', 'dialogue'), audio('bed', 'music')])
++})
++afterEach(() => {
++  cleanup()
++  vi.unstubAllGlobals()
++})
++
++describe('reviewed voice/music command', () => {
++  it('reviews actual rendered PCM, applies one undo step and preserves authored gains, fades, keyframes and master settings', async () => {
++    const curve = {
++      itemId: 'voice',
++      properties: [
++        {
++          property: 'volume',
++          keyframes: [
++            { frame: 0, value: -3 },
++            { frame: 30, value: -8 },
++          ],
++        },
++      ],
++    } as never
++    useKeyframesStore.getState().setKeyframes([curve])
++    const before = captureVoiceMixState()
++    const plan = await reviewVoiceMusicMix(before, settings)
++    expect(mocks.render).toHaveBeenCalledOnce()
++    expect(mocks.measure.mock.calls[0]![0].channels).toBe(
++      mocks.render.mock.results[0]!.value instanceof Promise
++        ? (await mocks.render.mock.results[0]!.value).samples
++        : null,
++    )
++    expect(captureVoiceMixState()).toEqual(before)
++    expect(plan.changes[0]).toMatchObject({
++      measuredLufs: -22,
++      gainDb: 6,
++      beforeGain: 2,
++      afterGain: 8,
++    })
++    applyVoiceMusicMix(plan)
++    const after = captureVoiceMixState()
++    expect(after.items[0]).toMatchObject({
++      volume: -3,
++      audioEqOutputGainDb: 8,
++      audioDucking: { duckOthersDb: -12, targetTrackIds: ['music'] },
++    })
++    expect(after.items[1]).toEqual(before.items[1])
++    expect(after.keyframes).toEqual(before.keyframes)
++    expect(after.masterLoudness).toEqual(before.masterLoudness)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    useTimelineCommandStore.getState().undo()
++    expect(captureVoiceMixState()).toEqual(before)
++    useTimelineCommandStore.getState().redo()
++    expect(captureVoiceMixState()).toEqual(after)
++    expect(() => applyVoiceMusicMix(plan)).toThrow('stale')
++  })
++  it.each(['missing', 'same', 'muted', 'solo', 'locked', 'hidden'])(
++    'refuses %s selection atomically',
++    async (reason) => {
++      const state = captureVoiceMixState()
++      const options = structuredClone(settings)
++      if (reason === 'missing') options.musicTrackIds = []
++      if (reason === 'same') options.musicTrackIds = ['dialogue']
++      if (reason === 'muted')
++        state.tracks = state.tracks.map((track) => ({ ...track, muted: true }))
++      if (reason === 'solo') state.tracks = state.tracks.map((track) => ({ ...track, solo: true }))
++      if (reason === 'locked')
++        state.tracks = state.tracks.map((track) => ({ ...track, locked: true }))
++      if (reason === 'hidden')
++        state.tracks = state.tracks.map((track) => ({ ...track, visible: false }))
++      const graph = useItemsStore.getState()
++      await expect(reviewVoiceMusicMix(state, options)).rejects.toThrow()
++      expect(useItemsStore.getState()).toBe(graph)
++      expect(mocks.render).not.toHaveBeenCalled()
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++  it('resolves linked audio once and refuses locks on its visual companion and effective parent group', () => {
++    const voice = audio('voice', 'dialogue')
++    const linked = { ...voice, linkedGroupId: 'linked' }
++    const visual = makeTimelineVideoItem({
++      id: 'visual',
++      trackId: 'video',
++      linkedGroupId: 'linked',
++      embeddedAudioMuted: true,
++    })
++    useItemsStore.getState().setItems([linked, visual, audio('bed', 'music')])
++    useItemsStore
++      .getState()
++      .setTracks([
++        ...captureVoiceMixState().tracks,
++        makeTimelineTrack({ id: 'video', name: 'Video', order: 2 }),
++      ])
++    const state = captureVoiceMixState()
++    expect(
++      voiceMixParticipants(state, {
++        ...settings,
++        dialogueTrackIds: ['dialogue', 'video'],
++      }).dialogue.map((item) => item.id),
++    ).toEqual(['voice'])
++    state.tracks = state.tracks.map((track) => ({ ...track, locked: track.id === 'video' }))
++    expect(() => voiceMixParticipants(state, settings)).toThrow('locked')
++    const group = makeTimelineTrack({
++      id: 'group',
++      name: 'Group',
++      order: 3,
++      isGroup: true,
++      locked: true,
++    })
++    state.tracks = [
++      ...state.tracks.map((track) => ({ ...track, locked: false, parentTrackId: 'group' })),
++      group,
++    ]
++    expect(() => voiceMixParticipants(state, settings)).toThrow('locked')
++  })
++  it('handles composition wrappers without changing nested items and refuses nested solo/locks/cycles', () => {
++    const state = captureVoiceMixState()
++    state.items = [
++      {
++        ...audio('voice', 'dialogue'),
++        type: 'composition',
++        compositionId: 'nested',
++      } as TimelineItem,
++      state.items[1]!,
++    ]
++    const nested = {
++      id: 'nested',
++      fps: 60,
++      items: [audio('child', 'nested-audio')],
++      tracks: [makeTimelineTrack({ id: 'nested-audio', name: 'Child', order: 0 })],
++    } as never
++    state.compositions = [nested]
++    expect(voiceMixParticipants(state, settings).dialogue[0]?.id).toBe('voice')
++    state.compositions[0]!.tracks[0]!.solo = true
++    expect(() => voiceMixParticipants(state, settings)).toThrow('solo')
++    state.compositions[0]!.tracks[0]!.solo = false
++    state.compositions[0]!.tracks[0]!.locked = true
++    expect(() => voiceMixParticipants(state, settings)).toThrow('locked')
++  })
++  it('caps matching for peak headroom, preserves trim and refuses silent/bypassed/animated-output sources', async () => {
++    expect(
++      voiceMixLoudnessChange(
++        audio('voice', 'dialogue'),
++        { ...measure, integratedLufs: -40, truePeakDbtp: -3 },
++        -16,
++      ),
++    ).toMatchObject({ gainDb: 2, afterGain: 4 })
++    expect(() =>
++      voiceMixLoudnessChange(audio('voice', 'dialogue'), { ...measure, integratedLufs: null }, -16),
++    ).toThrow('silent')
++    const state = captureVoiceMixState()
++    state.items = state.items.map((item) => ({ ...item, audioEqEnabled: false }))
++    await expect(reviewVoiceMusicMix(state, settings)).rejects.toThrow('outputGain')
++  })
++  it('auditions only a detached 15-second playhead range and invalidates on any graph change', async () => {
++    const plan = await reviewVoiceMusicMix(captureVoiceMixState(), settings)
++    usePlaybackStore.getState().setCurrentFrame(15)
++    const before = captureVoiceMixState()
++    await auditionVoiceMusicMix(plan, new AbortController().signal)
++    expect(mocks.build.mock.lastCall?.slice(6, 8)).toEqual([15, 59])
++    expect(captureVoiceMixState()).toEqual(before)
++    useItemsStore.getState().setTracks(before.tracks.map((track) => ({ ...track, locked: true })))
++    await expect(auditionVoiceMusicMix(plan, new AbortController().signal)).rejects.toThrow('stale')
++  })
++})
++
++it('reviews and cancels real audition playback without mutating graph/history', async () => {
++  const source = { connect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null }
++  const close = vi.fn().mockResolvedValue(undefined)
++  class Context {
++    resume = vi.fn().mockResolvedValue(undefined)
++    close = close
++    destination = {}
++    createGain = () => ({ gain: { value: 1 }, connect: vi.fn() })
++    createBuffer = () => ({ getChannelData: () => new Float32Array(48000) })
++    createBufferSource = () => source
++  }
++  vi.stubGlobal('AudioContext', Context)
++  const ui = render(<VoiceMusicPanel />)
++  fireEvent.click(ui.getByRole('button', { name: 'Voice over music' }))
++  fireEvent.click(
++    within(ui.getByRole('group', { name: 'Dialogue tracks' })).getByLabelText('Dialogue'),
++  )
++  fireEvent.click(within(ui.getByRole('group', { name: 'Music tracks' })).getByLabelText('Music'))
++  const before = captureVoiceMixState()
++  const history = useTimelineCommandStore.getState()
++  fireEvent.click(ui.getByRole('button', { name: 'Review mix' }))
++  await waitFor(() => expect(ui.getByRole('button', { name: 'Audition 15 seconds' })).toBeEnabled())
++  expect(ui.getByText(/output trim 2.0 → 8.0 dB/)).toBeInTheDocument()
++  fireEvent.click(ui.getByRole('button', { name: 'Audition 15 seconds' }))
++  await waitFor(() => expect(source.start).toHaveBeenCalledOnce())
++  fireEvent.click(ui.getByRole('button', { name: 'Cancel audition' }))
++  expect(source.stop).toHaveBeenCalledOnce()
++  expect(close).toHaveBeenCalledOnce()
++  expect(captureVoiceMixState()).toEqual(before)
++  expect(useTimelineCommandStore.getState()).toBe(history)
++  expect(ui.getByRole('status')).toHaveTextContent('Audition cancelled. Timeline unchanged.')
++})

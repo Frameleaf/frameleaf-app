@@ -35,6 +35,11 @@ bind_address = f"{bind_host}:{non_prefixed_settings.frameleaf_port}"
 # FL-408: the bundled Studio render worker runs beside inference, in its own process
 studio_worker = start_studio_worker()
 
+# on i915, Intel's runtime submits every allocation in the process with each run it gives OpenVINO's GPU plugin
+if any(driver.resolve().name == "i915" for driver in Path("/sys/class/drm").glob("renderD*/device/driver")):
+    os.environ.setdefault("NEOReadDebugKeys", "1")
+    os.environ.setdefault("EnableDirectSubmission", "0")
+
 # The image's allocator preload applies to the inference workers only; Chromium in the Studio worker
 # must not load it.
 inference_env = os.environ.copy()

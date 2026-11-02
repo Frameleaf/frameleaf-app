@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Updateable } from 'kysely';
 import { cloneDeep, get, isEqual, omit } from 'lodash-es';
 import { DateTime } from 'luxon';
@@ -13,6 +13,8 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
+  LockedRulesCountResponseDto,
+  LockedRulesDraftDto,
   type PreferencesAudience,
   UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
@@ -41,6 +43,7 @@ import {
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
@@ -95,6 +98,10 @@ export const describePreferenceChanges = (before: FrameleafUserPreferences, afte
 
 @Injectable()
 export class UserService extends BaseService {
+  /** FL-721: your own response says whether you have Locked encryption on. */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
   async search(auth: AuthDto): Promise<UserResponseDto[]> {
     const config = await this.getConfig({ withCache: false });
 
@@ -122,7 +129,12 @@ export class UserService extends BaseService {
       systemMetadataRepository: this.systemMetadataRepository,
     });
     const serverRole = getServerRole(user.isAdmin, link, linked ? cloudLink?.accountId : undefined);
-    return { ...mapUserAdmin(user), serverRole, canUpload: canUploadWith(auth.apiKey?.permissions) };
+    const lockedEncryption = await this.lockedEncryption.isOn(user.id);
+    return {
+      ...mapUserAdmin({ ...user, lockedEncryption }),
+      serverRole,
+      canUpload: canUploadWith(auth.apiKey?.permissions),
+    };
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
@@ -153,12 +165,26 @@ export class UserService extends BaseService {
 
     const updatedUser = await this.userRepository.update(user.id, update);
 
-    return mapUserAdmin(updatedUser);
+    return mapUserAdmin({ ...updatedUser, lockedEncryption: await this.lockedEncryption.isOn(updatedUser.id) });
   }
 
   async getMyPreferences(auth: AuthDto): Promise<UserPreferencesResponseDto> {
     const metadata = await this.userRepository.getMetadata(auth.user.id);
     return mapPreferences(getPreferences(metadata), preferencesAudience(auth));
+  }
+
+  /**
+   * FL-541: how many of your photos and videos a draft of your Locked rules keeps Locked, before it is
+   * saved. Like editing the rules, it needs an unlocked session.
+   */
+  async countLockedRules(auth: AuthDto, dto: LockedRulesDraftDto): Promise<LockedRulesCountResponseDto> {
+    if (!auth.session?.hasElevatedPermission) {
+      throw new ForbiddenException(LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE);
+    }
+    if (dto.tagIds.length + dto.personIds.length + dto.petIds.length === 0) {
+      return { photos: 0, videos: 0 };
+    }
+    return this.assetRepository.countLockedRuleMatches({ userId: auth.user.id, ...dto });
   }
 
   /**
@@ -192,6 +218,7 @@ export class UserService extends BaseService {
       await this.sessionRepository.requestSyncResetForUser(auth.user.id);
     }
     await this.recordPreferenceHistory(auth, previous, updated);
+    this.websocketRepository.clientSend('on_speech_index_change', auth.user.id);
 
     return mapPreferences(updated, preferencesAudience(auth));
   }
@@ -508,6 +535,18 @@ export class UserService extends BaseService {
       await this.jobRepository.queueAll(originalJobs);
     }
 
+    await this.albumRepository.deleteAll(user.id);
+    await this.albumUserRepository.forgetRecipient(user.id);
+    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
+    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
+    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
+      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
+    }
+    await this.userRepository.delete(user, true);
+
+    // The sweep runs once the account's own rows are gone: its Studio exports, media operation
+    // attempts and other rows still name its files until the account row cascades, and would keep
+    // them. ponytail: a sweep that fails from here leaves strays for Library Care's integrity check.
     // FL-44 (FN-304): media folders can hold files other accounts still reference — a deduplicated
     // original or derivative, a fork mapping's upstream path, a retained render. Each file goes
     // through the same reference-guarded delete as FileDelete, and only emptied folders are removed.
@@ -529,15 +568,6 @@ export class UserService extends BaseService {
       this.logger.warn(`Removing user from filesystem: ${folder}`);
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
-
-    await this.albumRepository.deleteAll(user.id);
-    await this.albumUserRepository.forgetRecipient(user.id);
-    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
-    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
-    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
-      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
-    }
-    await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);
   }

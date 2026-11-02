@@ -1,6 +1,7 @@
 // FL-105 / FL-408: the bundled worker's container × codec matrix, encoded for real with this
 // machine's ffmpeg from a tiny synthetic master and read back with ffprobe.
 import assert from 'node:assert/strict';
+import { REFRAME_PROFILE } from './bundled-worker-reframe.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -35,6 +36,7 @@ const MEDIA = Buffer.from('the granted source bytes');
 
 const encoders = listedNames((await execFileAsync('ffmpeg', ['-hide_banner', '-encoders'])).stdout);
 const muxers = listedNames((await execFileAsync('ffmpeg', ['-hide_banner', '-muxers'])).stdout);
+const filters = listedNames((await execFileAsync('ffmpeg', ['-hide_banner', '-filters'])).stdout);
 const writable = (format) =>
   muxers.has(format.muxer) && format.encoders.some((name) => name === 'copy' || encoders.has(name));
 
@@ -163,8 +165,23 @@ describe('bundled worker admission evidence', () => {
     assert.equal(evidence.writers['mkv-h264'], 'copy');
     for (const track of ['mov_text', 'subrip', 'webvtt']) assert.ok(evidence.codecs.includes(track), track);
     assert.ok(evidence.formats.includes(SIDECAR_PROFILE) && evidence.formats.includes(EMBEDDED_PROFILE));
-    // Never the 10-bit formats: the bundled worker renders an 8-bit picture.
-    for (const id of ['mp4-hevc-main10', 'webm-av1', 'prores-422-hq']) assert.ok(!evidence.formats.includes(id));
+    // FL-563: vertical and square exports are offered with its video writers.
+    assert.ok(evidence.formats.includes(REFRAME_PROFILE));
+    // Never 10-bit AV1 or ProRes 422 HQ: the bundled worker writes 10-bit only as an HDR master (FL-107).
+    for (const id of ['webm-av1', 'prores-422-hq']) assert.ok(!evidence.formats.includes(id));
+    if (encoders.has('libx265') && filters.has('zscale')) {
+      assert.ok(evidence.formats.includes('mp4-hevc-main10'));
+      for (const transfer of ['pq', 'hlg']) {
+        assert.ok(evidence.formats.includes(`mp4-hevc-main10+${transfer}`), evidence.refused[`mp4-hevc-main10+${transfer}`]);
+        assert.equal(evidence.writers[`mp4-hevc-main10+${transfer}`], 'libx265');
+      }
+      assert.deepEqual(evidence.colorPrecision, { maxBitDepth: 10, hdr10: true, dolbyVision: false });
+    } else {
+      assert.ok(!evidence.formats.includes('mp4-hevc-main10'));
+      assert.equal(evidence.colorPrecision, null);
+    }
+    // The server accepts at most 32 format tokens per session.
+    assert.ok(evidence.formats.length <= 32, `${evidence.formats.length} format tokens`);
   });
 
   it('does not advertise a format whose encoder this ffmpeg lacks, and says why', async () => {
@@ -182,6 +199,24 @@ describe('bundled worker admission evidence', () => {
     }
     assert.ok(!evidence.codecs.includes('libx265'));
     assert.ok(evidence.formats.includes('mkv-h264'));
+    // No HDR master without the HEVC Main10 encoder (FL-107).
+    assert.ok(!evidence.formats.some((id) => id.startsWith('mp4-hevc-main10')));
+    assert.equal(evidence.colorPrecision, null);
+    assert.match(evidence.refused['mp4-hevc-main10+pq'], /no libx265 encoder/);
+  });
+
+  it('offers no HDR master when this ffmpeg cannot convert to BT.2020 (no zscale)', async () => {
+    const wrapper = path.join(folder, 'ffmpeg-without-zscale');
+    await writeFile(
+      wrapper,
+      `#!/bin/sh\nif [ "$2" = "-filters" ]; then ffmpeg "$@" | grep -v zscale; exit 0; fi\nexec ffmpeg "$@"\n`,
+    );
+    await chmod(wrapper, 0o755);
+    const evidence = await probeExportMatrix({ master, ffmpeg: wrapper });
+    assert.ok(!evidence.formats.some((id) => id.startsWith('mp4-hevc-main10')));
+    assert.equal(evidence.colorPrecision, null);
+    assert.match(evidence.refused['mp4-hevc-main10+hlg'], /zscale/);
+    if (encoders.has('libx265')) assert.ok(evidence.formats.includes('mp4-hevc'), 'SDR HEVC is unaffected');
   });
 });
 

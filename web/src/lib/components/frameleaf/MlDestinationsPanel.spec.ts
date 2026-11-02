@@ -147,7 +147,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
   it('never offers an unconsented cloud destination in a route picker, even for work it allows', () => {
     render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
 
-    const faceRoute = screen.getByLabelText('Face recognition') as HTMLSelectElement;
+    const faceRoute = screen.getByLabelText('Faces & identity') as HTMLSelectElement;
     const offered = [...faceRoute.options].map((option) => option.value);
     expect(offered).toContain(destination().id);
     expect(offered).not.toContain(cloud.id);
@@ -165,7 +165,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     };
     render(MlDestinationsPanel, { destinations: [destination(), consented], routes });
 
-    for (const label of ['Search and similarity', 'Face recognition']) {
+    for (const label of ['Visual search', 'Faces & identity']) {
       const picker = screen.getByLabelText(label) as HTMLSelectElement;
       expect(picker.multiple).toBe(false);
       expect([...picker.options].map((option) => option.value)).toEqual(['', destination().id, consented.id]);
@@ -241,7 +241,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(within(after).getByText('Consent needed')).toBeInTheDocument();
     expect(within(after).queryByRole('button', { name: 'Revoke consent' })).not.toBeInTheDocument();
     expect(within(after).getByRole('button', { name: 'Review consent' })).toBeInTheDocument();
-    const faceRoute = screen.getByLabelText('Face recognition') as HTMLSelectElement;
+    const faceRoute = screen.getByLabelText('Faces & identity') as HTMLSelectElement;
     expect([...faceRoute.options].map((option) => option.value)).not.toContain(cloud.id);
   });
 
@@ -279,7 +279,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     sdkMock.setMlWorkloadRoute.mockResolvedValue({ routes });
     render(MlDestinationsPanel, { destinations: [destination(), cloud], routes });
 
-    const faceRoute = screen.getByLabelText('Face recognition') as HTMLSelectElement;
+    const faceRoute = screen.getByLabelText('Faces & identity') as HTMLSelectElement;
     await fireEvent.change(faceRoute, { target: { value: '' } });
 
     await waitFor(() =>
@@ -320,7 +320,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     expect(within(dialog).queryByLabelText('URL')).not.toBeInTheDocument();
     // Faces are offered only while Frameleaf Cloud runs this server's own face model (FL-455); restoration
     // and descriptions may share Frameleaf Cloud.
-    expect(within(dialog).queryByLabelText('Face recognition')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Faces & identity')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('Restoration (creative)')).toBeEnabled();
     // jsdom miscounts the 0.01 step of a whole-dollar budget, so the form is submitted directly.
     await fireEvent.submit(dialog.querySelector('form')!);
@@ -340,8 +340,8 @@ describe('MlDestinationsPanel (FL-110)', () => {
     const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
     await fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit destination' });
-    expect(within(dialog).getByLabelText('Face recognition')).toBeEnabled();
-    expect(within(dialog).queryByLabelText('Search and similarity')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Faces & identity')).toBeEnabled();
+    expect(within(dialog).queryByLabelText('Visual search')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Text in photos')).not.toBeInTheDocument();
   });
 
@@ -350,9 +350,9 @@ describe('MlDestinationsPanel (FL-110)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add home-network worker' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add destination' });
-    await fireEvent.click(within(dialog).getByLabelText('Face recognition'));
+    await fireEvent.click(within(dialog).getByLabelText('Faces & identity'));
 
     expect(within(dialog).getByLabelText('Restoration (faithful)')).toBeDisabled();
-    expect(within(dialog).getByLabelText('Search and similarity')).toBeEnabled();
+    expect(within(dialog).getByLabelText('Visual search')).toBeEnabled();
   });
 });

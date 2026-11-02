@@ -1,0 +1,78 @@
+{
+  "operation": "ALTER TABLE public.api_albumthing_cover_photos INHERIT public.api_albumthing_photos",
+  "rowCounts": {
+    "before": 1,
+    "after": 2
+  },
+  "patch": {
+    "inheritance": [
+      {
+        "child": "api_albumthing_cover_photos",
+        "parent": "api_albumthing_photos",
+        "position": "1",
+        "child_schema": "public",
+        "parent_schema": "public"
+      }
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "local": true,
+        "default": null,
+        "identity": "d",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "table_name": "api_albumthing_cover_photos",
+        "inherited_count": "1"
+      },
+      {
+        "name": "albumthing_id",
+        "type": "integer",
+        "local": true,
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "table_name": "api_albumthing_cover_photos",
+        "inherited_count": "1"
+      },
+      {
+        "name": "photo_id",
+        "type": "uuid",
+        "local": true,
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "table_name": "api_albumthing_cover_photos",
+        "inherited_count": "1"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "api_albumthing_cover_photos_albumthing_id_not_null",
+        "type": "n",
+        "local": true,
+        "validated": true,
+        "definition": "NOT NULL albumthing_id",
+        "no_inherit": false,
+        "table_name": "api_albumthing_cover_photos",
+        "inherited_count": "1"
+      },
+      {
+        "name": "api_albumthing_cover_photos_id_not_null",
+        "type": "n",
+        "local": true,
+        "validated": true,
+        "definition": "NOT NULL id",
+        "no_inherit": false,
+        "table_name": "api_albumthing_cover_photos",
+        "inherited_count": "1"
+      }
+    ]
+  }
+}

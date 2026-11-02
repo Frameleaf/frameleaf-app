@@ -21,12 +21,7 @@ let assetId: string;
 let frameId: string;
 beforeEach(async () => {
   db = await getKyselyDB();
-  for (const table of [
-    'smart_search',
-    'smart_search_description',
-    'asset_video_duplicate_frame',
-    'video_moment_frame_embedding',
-  ])
+  for (const table of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'])
     await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
   repository = new DesktopClipIndexRepository(db);
   const user = await mediumFactory.userWithClusterGroup(db);
@@ -58,17 +53,12 @@ const write = (table: string, key: string | null, target: Kysely<DB> = db) => {
   );
 };
 
-it('admits an empty exact space once and fences incompatible or forged writes in all four stores', async () => {
+it('admits an empty exact space once and fences incompatible or forged writes in all three stores', async () => {
   const active = await repository.admit(space.spaceKey);
   expect(active.revisionId).toMatch(/^[a-f0-9-]{36}$/);
   expect((await repository.admit(space.spaceKey)).revisionId).toBe(active.revisionId);
   await expect(repository.admit(spaces[1].spaceKey)).rejects.toThrow('desktop_clip_index_changed');
-  for (const table of [
-    'smart_search',
-    'smart_search_description',
-    'asset_video_duplicate_frame',
-    'video_moment_frame_embedding',
-  ]) {
+  for (const table of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding']) {
     await expect(write(table, null)).rejects.toThrow();
     await expect(write(table, spaces[1].visualModelKey)).rejects.toThrow();
     await expect(
@@ -153,6 +143,10 @@ it('fences an admitted binding after physical vector dimensions change', async (
 
 it('preserves existing vectors and timestamps through an unadmitted downgrade and upgrade', async () => {
   const { up, down } = await import('src/schema/migrations/2100000002999-DesktopClipIndex.js');
+  // FL-651 dropped the video duplicate frame store; bring it back for the older migration
+  const fingerprints = await import('src/schema/migrations/2100000003033-VideoTimelineFingerprint.js');
+  await db.transaction().execute((tx) => fingerprints.down(tx));
+  await sql`ALTER TABLE asset_video_duplicate_frame ALTER COLUMN embedding TYPE vector(768)`.execute(db);
   await db.transaction().execute((tx) => down(tx));
   const stores = [
     'smart_search',

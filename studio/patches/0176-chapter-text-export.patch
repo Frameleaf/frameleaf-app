@@ -1,0 +1,620 @@
+--- /dev/null
++++ b/src/shared/timeline/chapter-text.ts
+@@ -0,0 +1,70 @@
++import type { ProjectMarker } from '@/types/timeline'
++
++export type ChapterIssue = {
++  reason:
++    | 'invalidSequence'
++    | 'tooFew'
++    | 'firstZero'
++    | 'blankName'
++    | 'outOfBounds'
++    | 'duplicateSecond'
++    | 'shortInterval'
++  index?: number
++}
++
++function timestamp(seconds: number): string {
++  const hours = Math.floor(seconds / 3600)
++  const minutes = Math.floor(seconds / 60) % 60
++  const tail = `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
++  return hours ? `${hours}:${tail}` : tail
++}
++
++/** Read-only export: unnamed markers are errors, never generated chapter titles. */
++export function buildChapterText(
++  markers: readonly ProjectMarker[],
++  fps: number,
++  durationInFrames: number,
++) {
++  const issues: ChapterIssue[] = []
++  const durationSeconds = durationInFrames / fps
++  if (
++    !Number.isFinite(fps) ||
++    fps <= 0 ||
++    !Number.isSafeInteger(durationInFrames) ||
++    durationInFrames <= 0 ||
++    !Number.isSafeInteger(Math.floor(durationSeconds))
++  ) {
++    return { text: '', issues: [{ reason: 'invalidSequence' } as ChapterIssue] }
++  }
++  const sorted = [...markers].sort((a, b) => a.frame - b.frame)
++  if (sorted.length < 3) issues.push({ reason: 'tooFew' })
++  if (sorted.length && sorted[0]!.frame !== 0) issues.push({ reason: 'firstZero' })
++  const seen = new Set<number>()
++  const lines = sorted.map((marker, i) => {
++    const index = i + 1
++    const label = (marker.label ?? '').replace(/[\r\n\u0085\u2028\u2029]+/gu, ' ').trim()
++    if (!label) issues.push({ reason: 'blankName', index })
++    if (
++      !Number.isSafeInteger(marker.frame) ||
++      marker.frame < 0 ||
++      marker.frame >= durationInFrames
++    ) {
++      issues.push({ reason: 'outOfBounds', index })
++      return ''
++    }
++    const seconds = Math.floor(marker.frame / fps)
++    if (seen.has(seconds)) issues.push({ reason: 'duplicateSecond', index })
++    seen.add(seconds)
++    const next = sorted[i + 1]
++    const endSeconds = next ? Math.floor(next.frame / fps) : durationSeconds
++    // Validate authored spacing as well as the whole-second text viewers consume.
++    if (
++      ((next?.frame ?? durationInFrames) - marker.frame) / fps < 10 ||
++      endSeconds - seconds < 10
++    ) {
++      issues.push({ reason: 'shortInterval', index })
++    }
++    return `${timestamp(seconds)} ${label}`
++  })
++  return { text: issues.length ? '' : lines.join('\n'), issues }
++}
+--- /dev/null
++++ b/src/shared/timeline/chapter-text.test.ts
+@@ -0,0 +1,64 @@
++// @vitest-environment node
++import { describe, expect, it } from 'vite-plus/test'
++import { buildChapterText } from './chapter-text'
++import type { ProjectMarker } from '@/types/timeline'
++
++const marker = (frame: number, label = 'Chapter'): ProjectMarker => ({
++  id: String(frame),
++  frame,
++  label,
++  color: '#fff',
++})
++const chapters = [marker(0, 'Start'), marker(300, 'Middle'), marker(600, 'End')]
++const reasons = (markers = chapters, fps = 30, duration = 900) =>
++  buildChapterText(markers, fps, duration).issues.map((issue) => issue.reason)
++
++describe('YouTube chapter text', () => {
++  it('sorts a copy, sanitizes line separators, preserves Unicode and does not mutate authored markers', () => {
++    const input = Object.freeze([
++      Object.freeze(marker(600, '東京 😀')),
++      Object.freeze(marker(0, ' Intro\r\nPart\u2028one ')),
++      Object.freeze(marker(300, 'Café')),
++    ])
++    expect(buildChapterText(input, 30, 900)).toEqual({
++      text: '00:00 Intro Part one\n00:10 Café\n00:20 東京 😀',
++      issues: [],
++    })
++    expect(input.map((m) => m.frame)).toEqual([600, 0, 300])
++  })
++  it('maps fractional FPS using current sequence rate and formats hour timestamps', () => {
++    expect(
++      buildChapterText([marker(0), marker(300), marker(108000)], 30000 / 1001, 108600).text,
++    ).toBe('00:00 Chapter\n00:10 Chapter\n1:00:03 Chapter')
++  })
++  it('requires three named markers and actual frame zero, never fills names or moves frames', () => {
++    expect(reasons([])).toContain('tooFew')
++    expect(reasons(chapters.slice(0, 2))).toContain('tooFew')
++    expect(reasons([marker(1), ...chapters.slice(1)])).toContain('firstZero')
++    expect(reasons([marker(0, ' \n '), ...chapters.slice(1)])).toContain('blankName')
++    expect(buildChapterText([marker(0, ''), ...chapters.slice(1)], 30, 900).text).toBe('')
++  })
++  it('rejects duplicate whole-second timestamps and intervals below ten seconds', () => {
++    expect(reasons([marker(0), marker(1), marker(600)])).toContain('duplicateSecond')
++    expect(reasons([marker(0), marker(299), marker(600)])).toContain('shortInterval')
++    expect(reasons(chapters, 30, 899)).toContain('shortInterval')
++    expect(reasons()).toEqual([])
++    // Integer-second output must also retain a ten-second interval.
++    expect(reasons([marker(0), marker(329), marker(628)], 30, 1000)).toContain('shortInterval')
++  })
++  it.each([-1, 900, NaN, Infinity, 0.5])(
++    'rejects out-of-bounds or invalid marker frame %s',
++    (frame) => {
++      expect(reasons([...chapters, marker(frame)])).toContain('outOfBounds')
++    },
++  )
++  it.each([0, -1, NaN, Infinity, Number.MIN_VALUE])('rejects invalid FPS %s', (fps) => {
++    expect(reasons(chapters, fps)).toContain('invalidSequence')
++  })
++  it.each([0, -1, NaN, Infinity, 900.5, Number.MAX_VALUE])(
++    'rejects invalid duration %s',
++    (duration) => {
++      expect(reasons(chapters, 30, duration)).toContain('invalidSequence')
++    },
++  )
++})
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.tsx
+@@ -0,0 +1,123 @@
++import { useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Button } from '@/components/ui/button'
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogHeader,
++  DialogTitle,
++} from '@/components/ui/dialog'
++import {
++  useCompositionsStore,
++  useCompositionNavigationStore,
++  useTimelineStore,
++} from '@/features/editor/deps/timeline-store'
++import { buildChapterText } from '@/shared/timeline/chapter-text'
++
++export function ChapterExport() {
++  const { t } = useTranslation()
++  const markers = useTimelineStore((s) => s.markers)
++  const fps = useTimelineStore((s) => s.fps)
++  const rootDuration = useTimelineStore((s) =>
++    s.items.reduce((end, item) => Math.max(end, item.from + item.durationInFrames), 0),
++  )
++  const activeId = useCompositionNavigationStore((s) => s.activeCompositionId)
++  const composition = useCompositionsStore((s) =>
++    activeId ? s.compositionById[activeId] : undefined,
++  )
++  const result = buildChapterText(
++    markers,
++    composition?.fps ?? fps,
++    composition?.durationInFrames ?? rootDuration,
++  )
++  const [open, setOpen] = useState(false)
++  const [feedback, setFeedback] = useState('')
++  const [busy, setBusy] = useState(false)
++
++  async function copy() {
++    setBusy(true)
++    try {
++      await navigator.clipboard.writeText(result.text)
++      setFeedback(t('chapterExport.copied'))
++    } catch {
++      setFeedback(t('chapterExport.copyFailed'))
++    } finally {
++      setBusy(false)
++    }
++  }
++
++  function download() {
++    let url: string | undefined
++    const link = document.createElement('a')
++    try {
++      url = URL.createObjectURL(new Blob([result.text], { type: 'text/plain;charset=utf-8' }))
++      link.href = url
++      link.download = 'chapters.txt'
++      document.body.append(link)
++      link.click()
++      setFeedback(t('chapterExport.downloadStarted'))
++    } catch {
++      setFeedback(t('chapterExport.downloadFailed'))
++    } finally {
++      link.remove()
++      // Keep the blob alive until the browser has consumed the download request.
++      if (url) {
++        const objectUrl = url
++        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
++      }
++    }
++  }
++
++  return (
++    <>
++      <Button
++        variant="outline"
++        size="sm"
++        className="w-full text-xs"
++        onClick={() => {
++          setFeedback('')
++          setOpen(true)
++        }}
++      >
++        {t('chapterExport.title')}
++      </Button>
++      <Dialog open={open} onOpenChange={setOpen}>
++        <DialogContent>
++          <DialogHeader>
++            <DialogTitle>{t('chapterExport.title')}</DialogTitle>
++            <DialogDescription>{t('chapterExport.description')}</DialogDescription>
++          </DialogHeader>
++          {result.issues.length ? (
++            <ul
++              className="max-h-60 overflow-auto text-sm space-y-2"
++              aria-label={t('chapterExport.validation')}
++            >
++              {result.issues.map((issue, index) => (
++                <li key={index}>{t(`chapterExport.${issue.reason}`, { index: issue.index })}</li>
++              ))}
++            </ul>
++          ) : (
++            <textarea
++              aria-label={t('chapterExport.preview')}
++              readOnly
++              value={result.text}
++              className="h-60 w-full resize-y border rounded p-2 font-mono text-sm"
++            />
++          )}
++          <div className="flex gap-2">
++            <Button disabled={!!result.issues.length || busy} onClick={() => void copy()}>
++              {t('chapterExport.copy')}
++            </Button>
++            <Button disabled={!!result.issues.length} onClick={download}>
++              {t('chapterExport.download')}
++            </Button>
++          </div>
++          <p role="status" className="text-sm">
++            {feedback}
++          </p>
++        </DialogContent>
++      </Dialog>
++    </>
++  )
++}
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx
+@@ -0,0 +1,117 @@
++import { fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react'
++import { beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { ChapterExport } from './chapter-export'
++
++const state = vi.hoisted(() => ({
++  timeline: {
++    fps: 30,
++    items: [{ from: 0, durationInFrames: 900 }],
++    markers: [
++      { id: 'a', frame: 0, label: 'Intro 😀', color: '#fff' },
++      { id: 'b', frame: 300, label: 'Middle', color: '#fff' },
++      { id: 'c', frame: 600, label: 'End', color: '#fff' },
++    ],
++  },
++  navigation: { activeCompositionId: null as string | null },
++  compositions: {
++    compositionById: {} as Record<string, { fps: number; durationInFrames: number }>,
++  },
++}))
++vi.mock('@/features/editor/deps/timeline-store', () => ({
++  useTimelineStore: (selector: (s: typeof state.timeline) => unknown) => selector(state.timeline),
++  useCompositionNavigationStore: (selector: (s: typeof state.navigation) => unknown) =>
++    selector(state.navigation),
++  useCompositionsStore: (selector: (s: typeof state.compositions) => unknown) =>
++    selector(state.compositions),
++}))
++
++const open = () => {
++  const result = render(<ChapterExport />)
++  fireEvent.click(screen.getByRole('button', { name: 'Export YouTube chapters' }))
++  return result
++}
++
++describe('chapter export controls', () => {
++  beforeEach(() => {
++    state.timeline.markers[0]!.label = 'Intro 😀'
++    state.navigation.activeCompositionId = null
++    state.compositions.compositionById = {}
++    vi.stubGlobal('navigator', {
++      ...navigator,
++      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
++    })
++  })
++  afterEach(() => {
++    cleanup()
++    vi.restoreAllMocks()
++    vi.unstubAllGlobals()
++  })
++
++  it('previews and copies the active markers without modifying timeline state', async () => {
++    const before = structuredClone(state)
++    open()
++    const text = '00:00 Intro 😀\n00:10 Middle\n00:20 End'
++    expect(screen.getByRole('textbox', { name: 'Chapter text preview' })).toHaveValue(text)
++    fireEvent.click(screen.getByRole('button', { name: 'Copy text' }))
++    await waitFor(() =>
++      expect(screen.getByRole('status')).toHaveTextContent('Chapter text copied.'),
++    )
++    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text)
++    expect(state).toEqual(before)
++  })
++  it('recomputes validation when marker names change and blocks invalid copy/download', () => {
++    const view = open()
++    state.timeline.markers[0]!.label = ''
++    view.rerender(<ChapterExport />)
++    expect(screen.getByText('Marker 1 needs a chapter name.')).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Copy text' })).toBeDisabled()
++    expect(screen.getByRole('button', { name: 'Download text' })).toBeDisabled()
++    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
++  })
++  it('uses active sequence duration and FPS instead of the root timeline', () => {
++    state.navigation.activeCompositionId = 'sequence'
++    state.compositions.compositionById.sequence = { fps: 60, durationInFrames: 1800 }
++    open()
++    expect(
++      screen.getByText('Chapter 1 must last at least ten seconds, including the final chapter.'),
++    ).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Copy text' })).toBeDisabled()
++  })
++  it('explains clipboard denial with manual copy/download recovery', async () => {
++    vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('denied'))
++    open()
++    fireEvent.click(screen.getByRole('button', { name: 'Copy text' }))
++    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Could not copy.'))
++    expect(screen.getByRole('textbox')).toBeInTheDocument()
++  })
++  it('downloads a local UTF-8 text blob and releases its URL', () => {
++    vi.useFakeTimers()
++    const create = vi.fn().mockReturnValue('blob:chapters')
++    const revoke = vi.fn()
++    vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: revoke })
++    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
++    open()
++    fireEvent.click(screen.getByRole('button', { name: 'Download text' }))
++    const blob = create.mock.calls[0]![0] as Blob
++    expect(blob.type).toBe('text/plain;charset=utf-8')
++    expect(blob.size).toBe(
++      new TextEncoder().encode('00:00 Intro 😀\n00:10 Middle\n00:20 End').length,
++    )
++    expect(click).toHaveBeenCalledOnce()
++    expect(screen.getByRole('status')).toHaveTextContent('Download requested.')
++    vi.runOnlyPendingTimers()
++    expect(revoke).toHaveBeenCalledWith('blob:chapters')
++    vi.useRealTimers()
++  })
++  it('explains download failures and leaves copy available', () => {
++    vi.stubGlobal('URL', {
++      createObjectURL: vi.fn().mockImplementation(() => {
++        throw new Error('blocked')
++      }),
++    })
++    open()
++    fireEvent.click(screen.getByRole('button', { name: 'Download text' }))
++    expect(screen.getByRole('status')).toHaveTextContent('Could not start the download.')
++    expect(screen.getByRole('button', { name: 'Copy text' })).toBeEnabled()
++  })
++})
+--- /dev/null
++++ b/src/i18n/locales/partials/de/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "YouTube-Kapitel exportieren",
++    "description": "Vorschau der benannten Marker der aktiven Sequenz. Zeiten werden auf ganze Sekunden abgerundet. Lokal kopieren oder herunterladen, ohne Upload oder Änderungen.",
++    "validation": "Kapitelprüfung",
++    "preview": "Vorschau des Kapiteltexts",
++    "copy": "Text kopieren",
++    "download": "Text herunterladen",
++    "copied": "Kapiteltext kopiert.",
++    "copyFailed": "Kopieren fehlgeschlagen. Vorschautext auswählen und manuell kopieren oder herunterladen.",
++    "downloadStarted": "Download angefordert. Prüfen Sie die Downloads Ihres Browsers.",
++    "downloadFailed": "Download konnte nicht gestartet werden. Kopieren Sie den Vorschautext.",
++    "invalidSequence": "Die aktive Sequenz benötigt eine gültige positive Bildrate und Dauer.",
++    "tooFew": "Fügen Sie mindestens drei benannte Kapitelmarker hinzu.",
++    "firstZero": "Der erste Marker muss bei Bild null (00:00) liegen. Es wurden keine Marker verschoben.",
++    "blankName": "Marker {{index}} benötigt einen Namen.",
++    "outOfBounds": "Marker {{index}} hat eine ungültige Bildposition oder liegt außerhalb der Sequenz.",
++    "duplicateSecond": "Marker {{index}} hat denselben Sekundenzeitstempel wie ein anderer Marker.",
++    "shortInterval": "Kapitel {{index}} muss mindestens zehn Sekunden dauern, auch das letzte Kapitel."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/en/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "Export YouTube chapters",
++    "description": "Preview chapter text from the active sequence’s named markers. Times use whole seconds rounded down. Copy or download locally; nothing is uploaded or changed.",
++    "validation": "Chapter validation",
++    "preview": "Chapter text preview",
++    "copy": "Copy text",
++    "download": "Download text",
++    "copied": "Chapter text copied.",
++    "copyFailed": "Could not copy. Select the preview text and copy it manually, or download the text.",
++    "downloadStarted": "Download requested. Check your browser’s downloads.",
++    "downloadFailed": "Could not start the download. Copy the preview text instead.",
++    "invalidSequence": "The active sequence needs a valid positive frame rate and duration before exporting chapters.",
++    "tooFew": "Add at least three named chapter markers.",
++    "firstZero": "The first marker must be at frame zero (00:00). Authored markers have not been moved.",
++    "blankName": "Marker {{index}} needs a chapter name.",
++    "outOfBounds": "Marker {{index}} has an invalid frame or is outside the sequence.",
++    "duplicateSecond": "Marker {{index}} shares a whole-second timestamp with another marker.",
++    "shortInterval": "Chapter {{index}} must last at least ten seconds, including the final chapter."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/es/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "Exportar capítulos de YouTube",
++    "description": "Vista previa de los marcadores con nombre de la secuencia activa. Los tiempos se redondean al segundo inferior. Copia y descarga locales, sin subir ni modificar nada.",
++    "validation": "Validación de capítulos",
++    "preview": "Vista previa del texto de capítulos",
++    "copy": "Copiar texto",
++    "download": "Descargar texto",
++    "copied": "Texto de capítulos copiado.",
++    "copyFailed": "No se pudo copiar. Selecciona el texto y cópialo manualmente, o descárgalo.",
++    "downloadStarted": "Descarga solicitada. Revisa las descargas del navegador.",
++    "downloadFailed": "No se pudo iniciar la descarga. Copia el texto de la vista previa.",
++    "invalidSequence": "La secuencia activa necesita una tasa de fotogramas y una duración positivas y válidas.",
++    "tooFew": "Añade al menos tres marcadores de capítulo con nombre.",
++    "firstZero": "El primer marcador debe estar en el fotograma cero (00:00). No se han movido los marcadores.",
++    "blankName": "El marcador {{index}} necesita un nombre.",
++    "outOfBounds": "El marcador {{index}} tiene un fotograma no válido o está fuera de la secuencia.",
++    "duplicateSecond": "El marcador {{index}} comparte una marca de segundo con otro marcador.",
++    "shortInterval": "El capítulo {{index}} debe durar al menos diez segundos, incluido el último capítulo."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "Exporter les chapitres YouTube",
++    "description": "Aperçu des marqueurs nommés de la séquence active. Les temps sont arrondis à la seconde inférieure. Copie et téléchargement locaux, sans envoi ni modification.",
++    "validation": "Validation des chapitres",
++    "preview": "Aperçu du texte des chapitres",
++    "copy": "Copier le texte",
++    "download": "Télécharger le texte",
++    "copied": "Texte des chapitres copié.",
++    "copyFailed": "Copie impossible. Sélectionnez et copiez le texte manuellement, ou téléchargez-le.",
++    "downloadStarted": "Téléchargement demandé. Vérifiez les téléchargements du navigateur.",
++    "downloadFailed": "Téléchargement impossible. Copiez le texte de l’aperçu.",
++    "invalidSequence": "La séquence active doit avoir une cadence et une durée positives valides.",
++    "tooFew": "Ajoutez au moins trois marqueurs de chapitre nommés.",
++    "firstZero": "Le premier marqueur doit être à l’image zéro (00:00). Aucun marqueur n’a été déplacé.",
++    "blankName": "Le marqueur {{index}} doit avoir un nom.",
++    "outOfBounds": "Le marqueur {{index}} a une image invalide ou se trouve hors de la séquence.",
++    "duplicateSecond": "Le marqueur {{index}} partage une seconde avec un autre marqueur.",
++    "shortInterval": "Le chapitre {{index}} doit durer au moins dix secondes, y compris le dernier chapitre."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "YouTubeチャプターを書き出す",
++    "description": "アクティブなシーケンスの名前付きマーカーからチャプターテキストをプレビューします。時刻は秒単位で切り捨てます。コピーとダウンロードはローカルのみで、アップロードや変更は行いません。",
++    "validation": "チャプターの検証",
++    "preview": "チャプターテキストのプレビュー",
++    "copy": "テキストをコピー",
++    "download": "テキストをダウンロード",
++    "copied": "チャプターテキストをコピーしました。",
++    "copyFailed": "コピーできませんでした。プレビューのテキストを選択して手動でコピーするか、ダウンロードしてください。",
++    "downloadStarted": "ダウンロードを要求しました。ブラウザーのダウンロードを確認してください。",
++    "downloadFailed": "ダウンロードを開始できませんでした。プレビューのテキストをコピーしてください。",
++    "invalidSequence": "アクティブなシーケンスには、有効な正のフレームレートと長さが必要です。",
++    "tooFew": "名前付きチャプターマーカーを3個以上追加してください。",
++    "firstZero": "最初のマーカーはフレーム0（00:00）に配置してください。マーカーは移動していません。",
++    "blankName": "マーカー{{index}}に名前を付けてください。",
++    "outOfBounds": "マーカー{{index}}のフレームが無効か、シーケンスの範囲外です。",
++    "duplicateSecond": "マーカー{{index}}の秒単位の時刻が別のマーカーと重複しています。",
++    "shortInterval": "最後のチャプターも含め、チャプター{{index}}は10秒以上必要です。"
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "YouTube 챕터 내보내기",
++    "description": "활성 시퀀스의 이름이 있는 마커로 챕터 텍스트를 미리 봅니다. 시간은 초 단위로 내림합니다. 로컬 복사 및 다운로드만 수행하며 업로드하거나 변경하지 않습니다.",
++    "validation": "챕터 검증",
++    "preview": "챕터 텍스트 미리 보기",
++    "copy": "텍스트 복사",
++    "download": "텍스트 다운로드",
++    "copied": "챕터 텍스트를 복사했습니다.",
++    "copyFailed": "복사할 수 없습니다. 미리 보기 텍스트를 선택하여 직접 복사하거나 다운로드하세요.",
++    "downloadStarted": "다운로드를 요청했습니다. 브라우저 다운로드를 확인하세요.",
++    "downloadFailed": "다운로드를 시작할 수 없습니다. 미리 보기 텍스트를 복사하세요.",
++    "invalidSequence": "활성 시퀀스에 유효한 양수 프레임 속도와 길이가 필요합니다.",
++    "tooFew": "이름이 있는 챕터 마커를 3개 이상 추가하세요.",
++    "firstZero": "첫 마커는 0번 프레임(00:00)에 있어야 합니다. 마커는 이동하지 않았습니다.",
++    "blankName": "마커 {{index}}에 이름이 필요합니다.",
++    "outOfBounds": "마커 {{index}}의 프레임이 잘못되었거나 시퀀스 범위를 벗어났습니다.",
++    "duplicateSecond": "마커 {{index}}의 초 단위 시간이 다른 마커와 겹칩니다.",
++    "shortInterval": "마지막 챕터를 포함하여 챕터 {{index}}은(는) 10초 이상이어야 합니다."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "Exportar capítulos do YouTube",
++    "description": "Prévia dos marcadores nomeados da sequência ativa. Os tempos são arredondados para o segundo inferior. Copie ou baixe localmente, sem envio ou alterações.",
++    "validation": "Validação dos capítulos",
++    "preview": "Prévia do texto dos capítulos",
++    "copy": "Copiar texto",
++    "download": "Baixar texto",
++    "copied": "Texto dos capítulos copiado.",
++    "copyFailed": "Não foi possível copiar. Selecione e copie o texto manualmente ou baixe-o.",
++    "downloadStarted": "Download solicitado. Confira os downloads do navegador.",
++    "downloadFailed": "Não foi possível iniciar o download. Copie o texto da prévia.",
++    "invalidSequence": "A sequência ativa precisa de uma taxa de quadros e duração positivas e válidas.",
++    "tooFew": "Adicione pelo menos três marcadores de capítulo com nome.",
++    "firstZero": "O primeiro marcador deve estar no quadro zero (00:00). Os marcadores não foram movidos.",
++    "blankName": "O marcador {{index}} precisa de um nome.",
++    "outOfBounds": "O marcador {{index}} tem um quadro inválido ou está fora da sequência.",
++    "duplicateSecond": "O marcador {{index}} compartilha o mesmo segundo com outro marcador.",
++    "shortInterval": "O capítulo {{index}} deve durar pelo menos dez segundos, incluindo o último capítulo."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "YouTube bölümlerini dışa aktar",
++    "description": "Etkin dizinin adlandırılmış işaretçilerinden bölüm metni önizlemesi. Zamanlar tam saniyeye aşağı yuvarlanır. Yerel kopyalama ve indirme; yükleme veya değişiklik yapılmaz.",
++    "validation": "Bölüm doğrulaması",
++    "preview": "Bölüm metni önizlemesi",
++    "copy": "Metni kopyala",
++    "download": "Metni indir",
++    "copied": "Bölüm metni kopyalandı.",
++    "copyFailed": "Kopyalanamadı. Önizleme metnini seçip elle kopyalayın veya indirin.",
++    "downloadStarted": "İndirme istendi. Tarayıcınızın indirmelerini kontrol edin.",
++    "downloadFailed": "İndirme başlatılamadı. Önizleme metnini kopyalayın.",
++    "invalidSequence": "Etkin dizi için geçerli pozitif kare hızı ve süre gerekiyor.",
++    "tooFew": "En az üç adlandırılmış bölüm işaretçisi ekleyin.",
++    "firstZero": "İlk işaretçi sıfırıncı karede (00:00) olmalı. İşaretçiler taşınmadı.",
++    "blankName": "{{index}}. işaretçinin bir adı olmalı.",
++    "outOfBounds": "{{index}}. işaretçinin karesi geçersiz veya dizi dışında.",
++    "duplicateSecond": "{{index}}. işaretçi başka bir işaretçiyle aynı tam saniyede.",
++    "shortInterval": "Son bölüm dahil {{index}}. bölüm en az on saniye sürmeli."
++  }
++}
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/chapter-export.json
+@@ -0,0 +1,21 @@
++{
++  "chapterExport": {
++    "title": "导出 YouTube 章节",
++    "description": "预览当前序列中命名标记的章节文本。时间向下取整到秒。仅在本地复制或下载，不会上传或更改任何内容。",
++    "validation": "章节验证",
++    "preview": "章节文本预览",
++    "copy": "复制文本",
++    "download": "下载文本",
++    "copied": "已复制章节文本。",
++    "copyFailed": "无法复制。请选择预览文本手动复制，或下载文本。",
++    "downloadStarted": "已请求下载。请检查浏览器下载列表。",
++    "downloadFailed": "无法开始下载。请复制预览文本。",
++    "invalidSequence": "当前序列需要有效的正帧率和时长。",
++    "tooFew": "请添加至少三个已命名的章节标记。",
++    "firstZero": "第一个标记必须位于第零帧（00:00）。标记未被移动。",
++    "blankName": "标记 {{index}} 需要章节名称。",
++    "outOfBounds": "标记 {{index}} 的帧无效或超出序列范围。",
++    "duplicateSecond": "标记 {{index}} 与另一个标记的整秒时间重复。",
++    "shortInterval": "包括最后一个章节在内，章节 {{index}} 必须至少持续十秒。"
++  }
++}
+--- a/src/features/editor/components/properties-sidebar/marker-panel/marker-list.tsx
++++ b/src/features/editor/components/properties-sidebar/marker-panel/marker-list.tsx
+@@ -8,6 +8,7 @@
+ import { formatTimecodeDotFrames } from '@/shared/utils/time-utils'
+ import { resolveMarkerNames } from '@/shared/timeline/marker-names'
+ import { PropertySection } from '../components'
++import { ChapterExport } from './chapter-export'
+ 
+ /**
+  * List of all project markers, sorted by frame. Provides the global "manage
+@@ -63,6 +64,7 @@
+ 
+   return (
+     <PropertySection title={t('editor.markerList.title')} icon={MapPin} defaultOpen={defaultOpen}>
++      <ChapterExport />
+       {sortedMarkers.length === 0 ? (
+         <div className="px-2 py-3 text-center">
+           <p className="text-xs text-muted-foreground">{t('editor.markerList.empty')}</p>

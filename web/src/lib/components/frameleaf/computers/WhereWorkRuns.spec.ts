@@ -3,6 +3,8 @@ import {
   CloudRouteMode,
   MediaOperationKind,
   MlDestinationKind,
+  MlProcessingSource,
+  MlProcessingSourceState,
   MlWorkload,
   MlWorkerReadiness,
   StartWith,
@@ -259,5 +261,62 @@ describe('Where work runs (FL-364)', () => {
     expect(
       within(row('Descriptions & tags')).getByRole('option', { name: 'Office PC (not answering)' }),
     ).toBeInTheDocument();
+  });
+
+  describe('the order to try (FL-456)', () => {
+    const sources = [
+      { source: MlProcessingSource.Local, state: MlProcessingSourceState.Ready, ready: 1, total: 1 },
+      { source: MlProcessingSource.Desktops, state: MlProcessingSourceState.NotAnswering, ready: 0, total: 2 },
+      { source: MlProcessingSource.Cloud, state: MlProcessingSourceState.NeedsPermission, ready: 0, total: 1 },
+    ];
+    const order = [MlProcessingSource.Local, MlProcessingSource.Desktops, MlProcessingSource.Cloud];
+
+    beforeEach(() => {
+      sdkMock.getMlProcessingOrder.mockResolvedValue({ order, workloads: [], sources });
+      sdkMock.setMlProcessingOrder.mockImplementation(({ mlProcessingOrderUpdateDto }) =>
+        Promise.resolve({ order: mlProcessingOrderUpdateDto.order, workloads: [], sources }),
+      );
+      sdkMock.getMlWorkloadRoutes.mockResolvedValue({
+        routes: Object.entries(HOME).map(([workload, destinationId]) => ({
+          workload,
+          destinationId,
+          followsOrder: true,
+        })),
+      } as never);
+    });
+
+    it('lists each place in order with what it can do now', async () => {
+      render(WhereWorkRuns);
+
+      expect(await screen.findByRole('heading', { name: 'Order to try' })).toBeInTheDocument();
+      expect(row('1. This server')).toHaveTextContent('Ready');
+      expect(row('2. Your computers')).toHaveTextContent('Not answering');
+      expect(row('2. Your computers')).toHaveTextContent('0 of 2 ready');
+      expect(row('3. Frameleaf Cloud')).toHaveTextContent('Needs your permission');
+      expect(screen.getByRole('button', { name: 'Move This server up' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Move Frameleaf Cloud down' })).toBeDisabled();
+      // rows that follow the order say so
+      expect(within(row('Faces & identity')).getByText('First available, in order')).toBeInTheDocument();
+    });
+
+    it('saves a new order with the rest of the page', async () => {
+      render(WhereWorkRuns);
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Move Frameleaf Cloud up' }));
+      expect(row('2. Frameleaf Cloud')).toBeInTheDocument();
+      expect(
+        screen.getByText('New work will try This server, Frameleaf Cloud, and Your computers, in that order.'),
+      ).toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await waitFor(() =>
+        expect(sdkMock.setMlProcessingOrder).toHaveBeenCalledWith({
+          mlProcessingOrderUpdateDto: {
+            order: [MlProcessingSource.Local, MlProcessingSource.Cloud, MlProcessingSource.Desktops],
+          },
+        }),
+      );
+      expect(sdkMock.setMlWorkloadRoute).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { AlbumIconSchema } from 'src/dtos/album.dto.js';
+import { SearchFilterSchema } from 'src/dtos/search.dto.js';
 import {
   ClassificationMatchDecision,
   ClassificationMatchDecisionSchema,
@@ -43,6 +44,7 @@ const day = z
   .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), { error: 'Not a valid date' });
 
 const criteriaShape = {
+  filter: SearchFilterSchema.nullable().optional(),
   personIds: z.array(z.uuidv4()).max(50).describe('Match any of these people'),
   tagIds: z.array(z.uuidv4()).max(50).describe('Match any of these tags, or a tag beneath one of them'),
   takenAfter: day.nullable().describe('Taken on or after this day (YYYY-MM-DD)'),
@@ -58,6 +60,7 @@ const criteriaShape = {
 };
 
 const withCriteriaDefaults = {
+  filter: criteriaShape.filter,
   personIds: criteriaShape.personIds.default([]),
   tagIds: criteriaShape.tagIds.default([]),
   takenAfter: criteriaShape.takenAfter.default(null),
@@ -101,6 +104,7 @@ const ClassificationRuleCreateSchema = z
 
 const ClassificationRuleUpdateSchema = z
   .object({
+    filter: criteriaShape.filter,
     personIds: criteriaShape.personIds.optional(),
     tagIds: criteriaShape.tagIds.optional(),
     takenAfter: criteriaShape.takenAfter.optional(),

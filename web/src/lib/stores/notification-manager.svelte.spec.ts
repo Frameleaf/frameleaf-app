@@ -86,7 +86,10 @@ it('clears the previous account immediately on login and reads the new account',
 it.each(['read', 'read-all', 'dismiss'] as const)('does not let a pending refresh undo a local %s', async (action) => {
   notificationManager.notifications = [notification('a'), notification('b')];
   const response = deferred<NotificationDto[]>();
-  sdkMock.getNotifications.mockReturnValueOnce(response.promise);
+  // The read the write cancelled runs again once the write is done, and sees the write.
+  sdkMock.getNotifications
+    .mockReturnValueOnce(response.promise)
+    .mockResolvedValueOnce(action === 'read-all' ? [] : [notification('b')]);
   sdkMock.deleteNotification.mockResolvedValueOnce(undefined as never);
   const pending = notificationManager.refresh();
   const signal = sdkMock.getNotifications.mock.calls[0][1]?.signal;
@@ -101,6 +104,7 @@ it.each(['read', 'read-all', 'dismiss'] as const)('does not let a pending refres
   await pending;
   expect(notificationManager.notifications.map(({ id }) => id)).toEqual(action === 'read-all' ? [] : ['b']);
   expect(signal?.aborted).toBe(true);
+  expect(sdkMock.getNotifications).toHaveBeenCalledTimes(2);
 });
 
 it('ignores stale request errors while preserving error handling for the current request', async () => {

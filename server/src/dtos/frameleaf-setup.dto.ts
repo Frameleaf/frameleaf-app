@@ -32,6 +32,12 @@ const FrameleafSetupChoicesSchema = z
       .meta({ id: 'FrameleafSetupModelTier' })
       .optional()
       .describe('Model tier'),
+    modelChosen: z.boolean().optional().describe('Whether the administrator chose the model on the tier step'),
+    keptModel: z
+      .string()
+      .max(200)
+      .optional()
+      .describe('The search model "keep current model" named, saved with that choice (no tier)'),
     processing: z
       .enum(['local', 'cloud', 'later'])
       .meta({ id: 'FrameleafSetupProcessing' })

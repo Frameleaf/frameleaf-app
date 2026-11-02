@@ -4,8 +4,10 @@ import os
 import re
 import threading
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from functools import cache
 from hashlib import sha256
+from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, cast
@@ -17,7 +19,7 @@ from huggingface_hub import snapshot_download
 from PIL import Image
 
 from frameleaf_ml.config import HUGGING_FACE_HOST, log, model_repository_url, model_source, model_source_token, settings
-from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.florence_manifest import florence_manifest, verify_florence_snapshot
 from frameleaf_ml.schemas import ImageDescriptionAcceleration, ModelTask, ModelType
 
@@ -99,9 +101,103 @@ OPENVINO_MODEL_ALIASES = {
     "Qwen/Qwen2.5-VL-3B-Instruct": "llmware/qwen2.5-vl-3b-ov",
     "Qwen/Qwen2.5-VL-7B-Instruct": "llmware/qwen2.5-vl-7b-ov",
 }
+OPENVINO_GENAI_MISSING = "openvino-genai is required for image description models"
+
+
+@cache
+def openvino_genai_importable() -> bool:
+    """Whether OpenVINO GenAI really imports here (it can be found yet fail to load), probed once."""
+    try:
+        import_module("openvino_genai")
+    except ImportError:
+        return False
+    return True
+
+
 DEFAULT_OPENVINO_MAX_IMAGE_EDGE = 512
 PHI_OPENVINO_IMAGE_TAG = "<|image_1|>"
 QWEN_OPENVINO_IMAGE_TAG = "<|vision_start|><|image_pad|><|vision_end|>"
+
+# Words that never make a useful tag on their own (FL-659). Descriptions are
+# prose, so splitting them into words yields pronouns, prepositions, numbers,
+# colours, positions and describing verbs ("her", "behind", "four", "white",
+# "front", "wearing", "image"). Keep nouns: "dog", "beach", "table", "car".
+# Mirrored in server/src/utils/description-tag-stop-words.ts, which removes filler tags made
+# before this list (FL-667); a server test fails when the two copies differ.
+TAG_STOP_WORDS = frozenset(
+    {
+        # articles, conjunctions, determiners, quantifiers
+        *"the and but nor yet for are was were has had have been being does did not also than then".split(),
+        *"this that these those there here what which who whom whose when where while why how".split(),
+        *"all any each every both either neither few many much more most other others another some such".split(),
+        *"only own same just very too quite rather really almost nearly mostly mainly partly several".split(),
+        *"its it's one ones none nothing something someone somebody anything anyone everything everyone".split(),
+        # pronouns
+        *"you your yours she her hers him his they them their theirs our ours ourselves themselves".split(),
+        *"himself herself itself yourself myself".split(),
+        # prepositions and positions
+        *"about above across after against along alongside amid among around atop before behind below".split(),
+        *"beneath beside besides between beyond by down during except from inside into near nearby".split(),
+        *"off onto out outside over past per since through throughout toward towards under underneath".split(),
+        *"until upon via with within without top bottom front back side sides left right middle center".split(),
+        *"centre corner edge foreground background distance upper lower far close away together".split(),
+        # numbers and counting words
+        *"two three four five six seven eight nine ten eleven twelve twenty thirty hundred thousand".split(),
+        *"first second third fourth fifth last single double pair couple group number".split(),
+        # colours and plain adjectives
+        *"white black grey gray red blue green yellow orange purple pink brown beige gold silver".split(),
+        *"dark light bright colorful colourful large small big little tall short long wide old new".split(),
+        *"young various different several visible clear blurry full empty other".split(),
+        # describing verbs and photo-framing words
+        *"can could will would should may might must shall appears appear appearing seems seem".split(),
+        *"wearing standing sitting holding looking showing shown seen looks wears holds stands sits".split(),
+        *"shows depicts depicting featuring features captured taken placed located visible displayed".split(),
+        *"image images photo photos photograph picture pictures shot scene view frame closeup close-up".split(),
+        *"overall likely possibly perhaps something like looks kind type part parts area areas".split(),
+    }
+)
+TAG_MIN_LENGTH = 3
+TAG_LIMIT = 20
+
+
+def _label_tag(label: str) -> str | None:
+    """A detector label as one tag: it already names a thing, so only its form is checked."""
+    tag = re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", label.lower().strip())).strip("-")
+    if len(tag) < TAG_MIN_LENGTH or any(char.isdigit() for char in tag):
+        return None
+    return tag
+
+
+def _word_tag(word: str) -> str | None:
+    """A word of free text as a tag, or None for filler, numbers and contractions."""
+    word = word.strip("'_-")
+    if word.endswith("'s"):
+        word = word[:-2]
+    # A contraction ("don't", "they're") or any word with a digit ("3d-rendering", "a4") is never a tag.
+    if "'" in word or any(char.isdigit() for char in word):
+        return None
+    tag = re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", word)).strip("-")
+    if len(tag) < TAG_MIN_LENGTH or tag in TAG_STOP_WORDS:
+        return None
+    return tag
+
+
+def tags_from_text(text: str, labels: Iterable[str] = ()) -> list[str]:
+    """
+    Searchable tags: detector `labels` first (kept whole, even when a label is also a colour such as
+    "orange"), then single words of free text without filler words, numbers or duplicates.
+    """
+    candidates = [_label_tag(label) for label in labels]
+    # Whole words only, so a digit anywhere in a word drops the word rather than leaving a fragment.
+    candidates += [_word_tag(word) for word in re.findall(r"[a-z0-9][a-z0-9_'-]*", text.lower())]
+    tags: list[str] = []
+    for tag in candidates:
+        if tag and tag not in tags:
+            tags.append(tag)
+            if len(tags) >= TAG_LIMIT:
+                break
+    return tags
+
 
 NSFW_TAGS = {
     "adult-nudity",
@@ -248,6 +344,15 @@ class ImageDescriptionModel(InferenceModel):
         session = getattr(self, "session", None)
         return str(session["device"]) if isinstance(session, dict) else self.device
 
+    def missing_runtime(self) -> str | None:
+        # Florence runs on torch, which the CPU and CUDA images ship. Every other family runs through
+        # OpenVINO GenAI unless CUDA was chosen, and only the OpenVINO image installs it (FL-676).
+        if florence_manifest(self.hf_model_name) or self.acceleration != ImageDescriptionAcceleration.OPENVINO:
+            return None
+        if find_spec("openvino_genai") is None or not openvino_genai_importable():
+            return OPENVINO_GENAI_MISSING
+        return None
+
     def configure(self, **kwargs: Any) -> None:
         if "acceleration" in kwargs:
             acceleration = self._resolve_acceleration(self._acceleration(kwargs["acceleration"]))
@@ -282,8 +387,8 @@ class ImageDescriptionModel(InferenceModel):
             return
         # The CPU image has no OpenVINO GenAI: fail before downloading gigabytes it can't load, so the
         # server moves straight on to its Florence fallback, which runs on the CPU image's torch.
-        if self.acceleration == ImageDescriptionAcceleration.OPENVINO and find_spec("openvino_genai") is None:
-            raise ImportError("openvino-genai is required for image description models")
+        if reason := self.missing_runtime():
+            raise ModelRuntimeUnavailable(reason)
         self._check_custom_florence_trust()
         endpoint = model_repository_url()
         snapshot_download(
@@ -304,7 +409,7 @@ class ImageDescriptionModel(InferenceModel):
         try:
             import openvino_genai
         except ImportError as error:
-            raise ImportError("openvino-genai is required for image description models") from error
+            raise ModelRuntimeUnavailable(OPENVINO_GENAI_MISSING) from error
 
         return openvino_genai.VLMPipeline(str(self.cache_dir), device)
 
@@ -512,7 +617,8 @@ class ImageDescriptionModel(InferenceModel):
             "objects": objects,
             "visible_text": visible_text,
             "context": "",
-            "tags": self._tags_from_text(" ".join([description, *objects, *visible_text])),
+            # Detector labels are the most reliable tags, so they fill the tag budget first.
+            "tags": self._tags_from_text(" ".join([description, *visible_text]), labels=objects),
         }
 
     def _run_florence_task(self, task_prompt: str, image: Image.Image) -> dict[str, Any]:
@@ -700,12 +806,12 @@ class ImageDescriptionModel(InferenceModel):
                         description,
                         environment,
                         context,
-                        *objects,
                         *visible_text,
                         *self._signal_indicators(safety),
                         *self._signal_indicators(medical),
                     ]
-                )
+                ),
+                labels=objects,
             )
         tags = self._augment_tags(tags, safety, medical)
 
@@ -825,27 +931,28 @@ class ImageDescriptionModel(InferenceModel):
         safety: dict[str, Any],
         medical: dict[str, Any],
     ) -> list[str]:
-        normalized = [self._normalize_tag(tag) for tag in tags]
-        tag_set = {tag for tag in normalized if tag}
-
+        # Order matters: the response keeps only the first 20 tags. Safety and medical tags go first so
+        # they are never cut, then the tags in the order given (detector labels before caption words).
+        signal_tags: list[str] = []
         has_strong_nsfw_tag = False
         if safety.get("is_nsfw_likely") and safety.get("confidence") == "high":
             for indicator in self._signal_indicators(safety):
                 tag = self._normalize_tag(indicator)
                 if tag in NSFW_TAGS:
-                    tag_set.add(tag)
+                    signal_tags.append(tag)
                     has_strong_nsfw_tag = True
         if has_strong_nsfw_tag:
-            tag_set.add("nsfw")
+            signal_tags.append("nsfw")
 
         if medical.get("is_medical_likely"):
-            tag_set.add("medical")
+            signal_tags.append("medical")
             for indicator in self._signal_indicators(medical):
                 tag = self._normalize_tag(indicator)
                 if tag in MEDICAL_TAGS:
-                    tag_set.add(tag)
+                    signal_tags.append(tag)
 
-        return sorted(tag_set)
+        ordered = [*signal_tags, *(self._normalize_tag(tag) for tag in tags)]
+        return list(dict.fromkeys(tag for tag in ordered if tag))
 
     def _list_of_strings(self, value: Any) -> list[str]:
         if not isinstance(value, list):
@@ -857,34 +964,8 @@ class ImageDescriptionModel(InferenceModel):
             return []
         return [item for item in value if isinstance(item, dict)]
 
-    def _tags_from_text(self, text: str) -> list[str]:
-        stop_words = {
-            "about",
-            "after",
-            "also",
-            "and",
-            "are",
-            "around",
-            "from",
-            "has",
-            "have",
-            "into",
-            "near",
-            "that",
-            "the",
-            "their",
-            "there",
-            "this",
-            "with",
-        }
-        tags: list[str] = []
-        for word in re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", text.lower()):
-            if word in stop_words or word in tags:
-                continue
-            tags.append(self._normalize_tag(word))
-            if len(tags) >= 20:
-                break
-        return tags
+    def _tags_from_text(self, text: str, labels: Iterable[str] = ()) -> list[str]:
+        return tags_from_text(text, labels)
 
     def _normalize_tag(self, tag: str) -> str:
         return re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", tag.lower().strip())).strip("-")

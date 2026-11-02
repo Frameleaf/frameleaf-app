@@ -26,7 +26,7 @@
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, Textarea, toastManager } from '@frameleaf/ui';
   import { mdiPencilOutline, mdiShimmer } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { fromAction } from 'svelte/attachments';
 
@@ -36,9 +36,11 @@
     /** How the stored description got there, from the enrichment card's review. */
     review?: DescriptionReview | null;
     onAssetRefresh?: (asset: AssetResponseDto) => void;
+    /** FL-707 item 13: the description's AI evidence (who wrote it, rewrite, clear), under the editor. */
+    evidence?: Snippet;
   }
 
-  let { asset, isOwner, review = null, onAssetRefresh }: Props = $props();
+  let { asset, isOwner, review = null, onAssetRefresh, evidence }: Props = $props();
 
   const source = $derived(review?.source ?? 'none');
   /** "Written by AI · model · 87% confident", as the template's badge title. */
@@ -180,6 +182,7 @@
         onReload={inlineEditRecovery(failure) === 'reload' ? () => handlePromiseError(reload()) : undefined}
       />
     {/if}
+    {@render evidence?.()}
   </section>
 {:else}
   <section>

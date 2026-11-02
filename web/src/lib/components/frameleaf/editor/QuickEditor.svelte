@@ -985,12 +985,14 @@
   };
   const loadRevision = (revision: AssetDevelopRevisionResponseDto | null) => {
     sourceRevisionId = revision?.id;
-    change(
-      openingRecipe(
+    // A recipe with no opaque part (Original, or a plain version) must not keep the one loaded before it.
+    change({
+      opaqueRecipe: undefined,
+      ...openingRecipe(
         revision ? { currentRevisionId: revision.id, revisions: [revision] } : null,
         asset.imageEncoding?.dynamicRange === 'hdr' && !isRawName(asset.originalFileName),
       ),
-    );
+    });
     if (tool === 'versions') {
       tool = 'adjust';
     }

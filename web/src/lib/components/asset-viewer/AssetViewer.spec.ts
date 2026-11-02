@@ -1111,6 +1111,51 @@ describe('AssetViewer', () => {
 
       expect(onNavigateToAsset).not.toHaveBeenCalled();
     });
+
+    it('leaves arrow keys to a focused slider, select or number field', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      for (const html of ['<input type="range" />', '<select></select>', '<input type="number" />']) {
+        const host = document.createElement('div');
+        host.innerHTML = html;
+        document.body.append(host);
+        for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']) {
+          expect(await fireEvent.keyDown(host.firstElementChild!, { key })).toBe(true);
+        }
+        host.remove();
+      }
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
+
+    it('leaves arrow keys to an open dialog', async () => {
+      const { current, nextAsset } = buildAssets();
+      const onNavigateToAsset = vi.fn().mockResolvedValue(undefined);
+
+      renderWithTooltips(AssetViewer, {
+        cursor: { current, nextAsset },
+        showNavigation: true,
+        onNavigateToAsset,
+      });
+
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      document.body.append(dialog);
+      await fireEvent.keyDown(document, { key: 'ArrowRight' });
+      dialog.remove();
+      await Promise.resolve();
+
+      expect(onNavigateToAsset).not.toHaveBeenCalled();
+    });
   });
 
   it('puts the Live badge on a Live Photo (V-16)', () => {
@@ -1363,11 +1408,13 @@ describe('AssetViewer', () => {
     });
 
     // V-13 / V-12: the footer with the position.
-    it('draws the footer with the position in the collection', () => {
+    it('draws the footer and one position counter, beside the file name (FL-707 item 14)', () => {
       const { viewer } = renderImage({ position: { index: 2, total: 40 } });
       const footer = viewer.querySelector('[data-testid="viewer-footer"]')!;
       expect(footer).not.toBeNull();
-      expect(footer.querySelector('[data-testid="viewer-position"]')).toHaveAttribute('aria-live', 'polite');
+      expect(footer.querySelector('[data-testid="viewer-position"]')).toBeNull();
+      expect(viewer.querySelectorAll('[data-testid="viewer-title-position"]')).toHaveLength(1);
+      expect(viewer.querySelector('[data-testid="viewer-title-position"]')).toHaveAttribute('aria-live', 'polite');
     });
   });
 

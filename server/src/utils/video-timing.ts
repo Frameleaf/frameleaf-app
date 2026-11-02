@@ -126,7 +126,12 @@ export const resolveOriginTicks = (packets: Pick<VideoPacketInfo, 'keyframePts' 
   }
 
   const keyframePts = packets.keyframePts ?? [];
-  return keyframePts.length > 0 ? Math.min(...keyframePts) : 0;
+  // A loop, not Math.min(...), so a long video's keyframe list cannot overflow the argument limit.
+  let origin = keyframePts.length > 0 ? keyframePts[0] : 0;
+  for (const pts of keyframePts) {
+    if (pts < origin) origin = pts;
+  }
+  return origin;
 };
 
 /**

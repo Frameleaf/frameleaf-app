@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import StudioRenderProgress from '$lib/components/frameleaf/StudioRenderProgress.svelte';
+  import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -390,6 +392,8 @@
     </div>
   </header>
 
+  <SpokenWordsActivity />
+
   {#if activitySession.unreachable}
     <div class="fla-offline" role="status">
       <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
@@ -500,6 +504,15 @@
             · <span class="fla-error">{item.error}</span>
           {/if}
         </p>
+        {#if item.renderProgress}
+          <StudioRenderProgress
+            progress={item.renderProgress}
+            startedAt={item.startedAt}
+            finishedAt={item.finishedAt}
+            active={item.running && (item.stage === 'starting' || item.stage === 'running')}
+            online={!activitySession.unreachable}
+          />
+        {/if}
         {#if item.cloud && item.stage === 'starting'}
           <p class="fla-status">
             {$t('frameleaf_activity_cloud_start_note', { values: { workers: item.cloud.plannedWorkers } })}
@@ -507,6 +520,11 @@
         {/if}
         {#if item.bulk && item.bulk.retried > 0}
           <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
+        {/if}
+        {#if item.encryptedWithOlderKey}
+          <p class="fla-status">
+            {$t('frameleaf_le_activity_older_key', { values: { count: item.encryptedWithOlderKey } })}
+          </p>
         {/if}
       </div>
 
@@ -644,12 +662,12 @@
     padding: 32px 36px 48px;
     color: var(--fl-text);
   }
+  /* P4 (review-1030-shell.css): the filters sit on their own row, in line with the content. */
   .fla-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     gap: 16px;
-    flex-wrap: wrap;
     margin-bottom: 20px;
     max-width: 900px;
   }
@@ -670,7 +688,6 @@
   }
   .fla-head-text {
     min-width: 0;
-    flex: 1 1 320px;
   }
   /* activity.css `.fla-intro`: what the page is for, above the counts. */
   .fla-intro {
@@ -690,7 +707,6 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    padding-top: 6px;
   }
   .fla-filters {
     display: inline-flex;

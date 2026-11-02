@@ -6,8 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -33,24 +32,32 @@ import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
+  AssetStatus,
   AssetType,
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
   JobName,
+  LibraryScope,
   Permission,
   StorageFolder,
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
-import { requireUploadAccess } from 'src/utils/access.js';
+import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
-import { FileDownloadResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
+import {
+  FileDownloadResponse,
+  getFileNameWithoutExtension,
+  getFilenameExtension,
+  lockedViewerOf,
+} from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -59,6 +66,7 @@ import {
   OriginalPurpose,
   getOriginalLocationPolicies,
 } from 'src/utils/partner-location.js';
+import { getPreferences, isTrashReuploadOpen } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -81,8 +89,131 @@ export class AssetMediaService extends BaseService {
     if (!assetId) {
       return;
     }
+    // Its original is gone, or (FL-556) the account lets uploads bring photos back from the Trash:
+    // let the file come, the upload restores the photo.
+    const checksums = [fromChecksum(checksum)];
+    if (
+      (await this.lostOriginalMatches(auth, checksums)).length > 0 ||
+      (await this.trashedMatches(auth, checksums)).length > 0
+    ) {
+      return;
+    }
 
     return { id: assetId, status: AssetMediaStatus.DUPLICATE };
+  }
+
+  /**
+   * Media health: the owner's assets with these bytes whose original file is gone. Those are not
+   * duplicates of a re-upload; the upload restores them. Empty when any match still has its file
+   * (a real duplicate), or for trashed, hidden, external or shared-link matches.
+   */
+  private async lostOriginalMatches(auth: AuthDto, checksums: Buffer[], { includeHidden = false } = {}) {
+    if (auth.sharedLink) {
+      return [];
+    }
+    const options = includeHidden ? undefined : this.getDuplicateCheckOptions(auth);
+    const matches = options
+      ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options)
+      : await this.assetRepository.getByChecksums(auth.user.id, checksums);
+    const present = await Promise.all(
+      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
+    );
+    if (matches.length === 0 || present.some(Boolean)) {
+      return [];
+    }
+    return matches.filter((match) => !match.deletedAt && !match.libraryId && !match.isExternal);
+  }
+
+  /**
+   * FL-556: while the account lets uploads bring photos back from the Trash, its own photos in the Trash
+   * with these bytes. Empty when the window is closed, or when a photo outside the Trash already has
+   * them (a real duplicate). Photos awaiting removal and photos this session may not see stay put.
+   */
+  private async trashedMatches(auth: AuthDto, checksums: Buffer[]) {
+    if (auth.sharedLink || !isTrashReuploadOpen(getPreferences(await this.userRepository.getMetadata(auth.user.id)))) {
+      return [];
+    }
+    const options = this.getDuplicateCheckOptions(auth);
+    const matches = options
+      ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options)
+      : await this.assetRepository.getByChecksums(auth.user.id, checksums);
+    if (matches.some(({ deletedAt }) => !deletedAt)) {
+      return [];
+    }
+    return matches.filter(
+      ({ status, libraryId, isExternal }) => status === AssetStatus.Trashed && !libraryId && !isExternal,
+    );
+  }
+
+  /**
+   * A re-upload puts a photo back, keeping its albums, faces and history:
+   * - FL-556, while the account allows it: a photo in the Trash with these bytes leaves the Trash, and
+   *   takes the upload as its file only if its own is gone;
+   * - a lost original goes back under the asset it belonged to. Hidden photos (Locked, or hidden by this
+   *   session's content settings) are repaired too, but their id is only returned when this session may
+   *   see them.
+   * `fileUsed` says whether the uploaded file became the photo's original.
+   */
+  async restoreLostOriginal(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
+    const checksums = [file.checksum, ...(file.legacyChecksum ? [file.legacyChecksum] : [])];
+    for (const asset of await this.trashedMatches(auth, checksums)) {
+      let sequenced: string[] = [];
+      const [restored] = await this.trashRepository.restoreAll([asset.id], auth, (ids) => {
+        sequenced = ids;
+      });
+      if (!restored) {
+        continue;
+      }
+      // As the Trash's own restore announces it (TrashService.afterChange).
+      if (sequenced.length > 0) {
+        await this.trashRepository.enqueueLocalEffects();
+      } else {
+        await this.eventRepository.emit('AssetRestoreAll', { assetIds: [restored], userId: auth.user.id });
+      }
+      this.logger.log(`Upload brought asset ${restored} back from the Trash`);
+      const fileUsed =
+        !(await this.storageRepository.checkFileExists(asset.originalPath)) &&
+        (await this.restoreOriginalFrom(asset, dto, file, checksums));
+      return { id: restored, visible: true, fileUsed };
+    }
+    const lost = await this.lostOriginalMatches(auth, checksums, { includeHidden: true });
+    if (lost.length === 0) {
+      return;
+    }
+    for (const asset of lost) {
+      if (await this.restoreOriginalFrom(asset, dto, file, checksums)) {
+        const options = this.getDuplicateCheckOptions(auth);
+        const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
+        return { id: asset.id, visible: visible.some(({ id }) => id === asset.id), fileUsed: true };
+      }
+    }
+  }
+
+  private async restoreOriginalFrom(
+    asset: { id: string; originalPath: string },
+    dto: AssetMediaCreateDto,
+    file: UploadFile,
+    checksums: Buffer[],
+  ) {
+    const sha1 = file.legacyChecksum ?? (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1;
+    const restored = await this.physicalFileRepository.restoreLostOriginal({
+      assetId: asset.id,
+      expectedOriginalPath: asset.originalPath,
+      originalPath: file.originalPath,
+      sha1,
+      sha256: checksums[0],
+      sizeInBytes: file.size,
+      reason: 'restored_by_upload',
+    });
+    if (restored) {
+      await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+      await this.jobRepository.queueAll([
+        { name: JobName.SidecarCheck, data: { id: asset.id, source: 'upload' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: asset.id, source: 'upload' } },
+      ]);
+      this.logger.log(`Upload restored the lost original of asset ${asset.id}`);
+    }
+    return restored;
   }
 
   canUploadFile({ auth, fieldName, file, body }: UploadRequest): true {
@@ -92,6 +223,8 @@ export class AssetMediaService extends BaseService {
 
     switch (fieldName) {
       case UploadFieldName.ASSET_DATA: {
+        // FL-538: refused before any bytes are kept, on every path that uploads a photo or video
+        requireUploadsNotPaused(requireUploadAccess(auth));
         if (mimeTypes.isAsset(filename)) {
           return true;
         }
@@ -160,6 +293,7 @@ export class AssetMediaService extends BaseService {
       ids: [auth.user.id],
     });
 
+    requireUploadsNotPaused(auth);
     this.requireQuota(auth, file.size);
 
     return {
@@ -177,6 +311,7 @@ export class AssetMediaService extends BaseService {
 
         type: mimeTypes.assetType(file.originalPath),
         isFavorite: dto.isFavorite,
+        libraryScope: dto.libraryScope ?? LibraryScope.Personal,
         duration: dto.duration || null,
         // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
         // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked
@@ -237,10 +372,14 @@ export class AssetMediaService extends BaseService {
     // linked to that file and the upload released; new content becomes its own primary file. FL-412: only
     // a stored file proven to hold the same bytes replaces the upload's own copy.
     const expected = { checksum: file.checksum, sizeInBytes: file.size };
+    const checks = storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+      this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
+    );
     const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, {
-      ...storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
-        this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
-      ),
+      ...checks,
+      // FL-721 (spec §6.1): a sealed Locked file never stands in for an upload; the upload keeps its own
+      // file (the repository already leaves encrypted files out; this holds for one sealed meanwhile)
+      verify: async (path) => ((await isLockedPath(path)) ? null : checks.verify(path)),
       untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
       ...(options.quotaCharged && { ingestion: options.ingestion }),
     });
@@ -283,6 +422,19 @@ export class AssetMediaService extends BaseService {
     let asset: Asset | undefined;
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
+      const restored = await this.restoreLostOriginal(auth, dto, file);
+      if (restored) {
+        // The photo kept its own file (it only left the Trash): the upload is not needed.
+        const unused = [...(restored.fileUsed ? [] : [file.originalPath]), sidecarFile?.originalPath].filter(Boolean);
+        if (unused.length > 0) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: unused } });
+        }
+        // ponytail: reported as created (the file was taken), so every client keeps working unchanged.
+        // A photo this session may not see answers exactly like a hidden duplicate: no id, no hint.
+        return restored.visible
+          ? { id: restored.id, status: AssetMediaStatus.CREATED }
+          : { id: '00000000-0000-0000-0000-000000000000', status: AssetMediaStatus.DUPLICATE };
+      }
       if (prepared.asset.livePhotoVideoId) {
         const published = await this.assetRepository.createLivePhotoUpload(prepared.asset, prepared.lock);
         asset = published.asset;
@@ -378,7 +530,8 @@ export class AssetMediaService extends BaseService {
           message: 'HDR HEIC export is unavailable',
         });
       const checksum = Buffer.from(source.checksum);
-      const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-photo-export-'));
+      // FL-721 (spec §8): a sealed source's full-size export is written inside the locked tmpfs folder
+      const folder = await makeWorkDir('photo-export', await isLockedPath(filePath));
       const heic = dto.format === 'hdr-heic';
       const output = path.join(folder, heic ? 'still_hdr.heic' : 'still.jpg');
       const release = () =>
@@ -386,7 +539,12 @@ export class AssetMediaService extends BaseService {
           this.logger.warn('Unable to remove a temporary still export');
         });
       try {
-        await this.mediaRepository.exportPhotoStill(filePath, output, dto.format, checksum, signal);
+        // FL-721: a sealed original is exported from a plain copy, for a viewer allowed its key
+        await withPlainCopy(
+          filePath,
+          (input) => this.mediaRepository.exportPhotoStill(input, output, dto.format!, checksum, signal),
+          { viewerId: lockedViewerOf(auth) },
+        );
         signal?.throwIfAborted();
         await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
         const current = await this.assetRepository.getById(id);
@@ -466,7 +624,8 @@ export class AssetMediaService extends BaseService {
 
     switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {
-        return new FileDownloadResponse(response);
+        // FL-721: an encrypted Locked file is decrypted for this viewer (`sendFile`)
+        return new FileDownloadResponse({ ...response, viewerId: response.viewerId ?? lockedViewerOf(auth) });
       }
 
       case OriginalLocationPolicy.Refuse: {
@@ -549,6 +708,7 @@ export class AssetMediaService extends BaseService {
           path: developedPath,
           contentType: mimeTypes.lookup(developedPath),
           cacheControl: CacheControl.PrivateWithoutCache,
+          viewerId: lockedViewerOf(auth),
         });
       }
     }
@@ -574,6 +734,7 @@ export class AssetMediaService extends BaseService {
           fileName: `${base}_${type}.jpg`,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithoutCache,
+          viewerId: lockedViewerOf(auth),
         });
       }
       if (dto.dynamicRange === 'hdr') throw new NotFoundException('HDR rendition is unavailable for this still');
@@ -585,7 +746,8 @@ export class AssetMediaService extends BaseService {
       // Missing edit evidence must not permit a redirect to unedited pixels.
       // eslint-disable-next-line unicorn/no-unnecessary-boolean-comparison
       (!dto.edited || (dto.dynamicRange && dto.dynamicRange !== 'hdr' && isEdited === false && !dto.faceSource)) &&
-      imageEncoding?.dynamicRange === 'sdr'
+      // Never inspected (no HDR processing, or an import from before it) was always served as upstream.
+      (imageEncoding ? imageEncoding.dynamicRange === 'sdr' : !hdrEnabled)
     ) {
       // FL-161: through the relay the original is refused unless an administrator allowed it, so the
       // viewer gets the preview instead of a redirect it cannot follow
@@ -622,6 +784,7 @@ export class AssetMediaService extends BaseService {
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
+      viewerId: lockedViewerOf(auth),
     });
 
     // FL-54: a fullsize preview extracted from a RAW before generation-time stripping still carries the
@@ -645,6 +808,7 @@ export class AssetMediaService extends BaseService {
       fileName: `${id}-${version.id}.mp4`,
       contentType: 'video/mp4',
       cacheControl: CacheControl.PrivateWithCache,
+      viewerId: lockedViewerOf(auth),
     });
   }
 
@@ -694,10 +858,11 @@ export class AssetMediaService extends BaseService {
 
   async bulkUploadCheck(auth: AuthDto, dto: AssetBulkUploadCheckDto): Promise<AssetBulkUploadCheckResponseDto> {
     const checksums: Buffer[] = dto.assets.map((asset) => fromChecksum(asset.checksum));
-    // Clients hash with SHA-1 while this fork persists SHA-256, so resolve the
-    // sent digests through the SHA-1 recorded at upload. Translating to the
-    // stored digest (rather than matching separately) keeps the duplicate
-    // lookup on the single filtered query, hidden-content rules included.
+    // Frameleaf's apps send SHA-256, matched as stored. Upstream Immich clients
+    // hash with SHA-1, so resolve those digests through the SHA-1 recorded at
+    // upload or by the checksum check. Translating to the stored digest
+    // (rather than matching separately) keeps the duplicate lookup on the
+    // single filtered query, hidden-content rules included.
     const translations = await this.forkSchemaRepository.getChecksumTranslations(auth.user.id, checksums);
     const lookups = [...checksums, ...translations.map(({ checksum }) => checksum)];
     const duplicateOptions = this.getDuplicateCheckOptions(auth);
@@ -706,8 +871,24 @@ export class AssetMediaService extends BaseService {
       : await this.assetRepository.getByChecksums(auth.user.id, lookups);
     const checksumMap: Record<string, { id: string; isTrashed: boolean }> = {};
 
-    for (const { id, deletedAt, checksum } of results) {
-      checksumMap[checksum.toString('hex')] = { id, isTrashed: !!deletedAt };
+    // Media health: a match whose original is gone is accepted, so the upload can restore it. So is a
+    // photo in the Trash while the account lets uploads bring them back (FL-556).
+    const trashOpen = isTrashReuploadOpen(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
+    const present = await Promise.all(
+      results.map(async ({ originalPath, deletedAt, status, libraryId, isExternal }) => {
+        if (libraryId || isExternal) {
+          return true;
+        }
+        if (deletedAt) {
+          return !(trashOpen && status === AssetStatus.Trashed);
+        }
+        return this.storageRepository.checkFileExists(originalPath);
+      }),
+    );
+    for (const [index, { id, deletedAt, checksum }] of results.entries()) {
+      if (present[index]) {
+        checksumMap[checksum.toString('hex')] = { id, isTrashed: !!deletedAt };
+      }
     }
 
     for (const { sha1, checksum } of translations) {

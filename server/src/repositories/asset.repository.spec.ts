@@ -3,6 +3,7 @@ import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
@@ -39,7 +40,7 @@ describe('Live Photo asset-edit transaction', () => {
         const connection = ++connections;
         return Promise.resolve({
           executeQuery: (query: { sql: string; parameters: readonly unknown[] }) =>
-            Promise.try(() => {
+            tryPromise(() => {
               queries.push({ ...query, connection });
               if (query.sql.includes('for update nowait') && contended)
                 throw Object.assign(new Error('busy'), { code: '55P03' });
@@ -102,7 +103,7 @@ describe('Live Photo asset-edit transaction', () => {
       const error = Object.assign(new Error('write failed'), { code });
       await expect(
         sut.withLivePhotoUpdate('photo', null, () =>
-          Promise.try(() => {
+          tryPromise(() => {
             throw error;
           }),
         ),
@@ -168,7 +169,8 @@ describe('Live Photo upload publication', () => {
       expect(keys.map((query) => query.parameters)).toEqual([['motion'], ['new']]);
       const insert = f.queries.findIndex((query) => query.sql.startsWith('insert into "asset"'));
       expect(f.queries.findIndex((query) => query.sql.includes('for update nowait'))).toBeLessThan(insert);
-      expect(f.queries[insert + 1].sql).toContain('update "asset"');
+      // the paired video's scope is read first, so the hide is the first update after the insert
+      expect(f.queries.slice(insert + 1).some((query) => query.sql.includes('update "asset"'))).toBe(true);
       expect(f.queries.at(-1)!.sql).toBe('commit');
     } finally {
       await f.db.destroy();
@@ -238,6 +240,23 @@ describe('Live Photo upload publication', () => {
       expect(f.queries.some((query) => query.sql.startsWith('with "asset"'))).toBe(false);
     } finally {
       await f.db.destroy();
+    }
+  });
+});
+
+describe('calendar page SQL bounds', () => {
+  it('limits the SQL selection before aggregating the calendar response', async () => {
+    const { db, queries } = scriptedKysely(() => ({ rows: [{ assets: '{"id":[]}' }] }));
+    try {
+      const auth = { user: { id: '00000000-0000-4000-8000-000000000001' } } as import('src/dtos/auth.dto.js').AuthDto;
+      await new AssetRepository(db).getTimeBucket('2024-01-01', { userIds: [auth.user.id] }, auth, { take: 2 });
+      const query = queries.at(-1)!;
+      const limit = /limit \$(\d+)/.exec(query.sql);
+      expect(limit, 'the database must bound the selection, not slice a full response').not.toBeNull();
+      expect(query.parameters[Number(limit![1]) - 1]).toBe(2);
+      expect(query.sql.indexOf('limit ')).toBeLessThan(query.sql.indexOf('"agg" as'));
+    } finally {
+      await db.destroy();
     }
   });
 });

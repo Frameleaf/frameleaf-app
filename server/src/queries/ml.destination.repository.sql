@@ -34,7 +34,7 @@ delete from "ml_destination"
 where
   "id" = $1
 
--- MlDestinationRepository.getRoutes
+-- MlDestinationRepository.getStoredRoutes
 select
   *
 from
@@ -42,7 +42,7 @@ from
 order by
   "workload" asc
 
--- MlDestinationRepository.getRoute
+-- MlDestinationRepository.getStoredRoute
 select
   *
 from

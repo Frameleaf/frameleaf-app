@@ -223,7 +223,17 @@ test("Takeout offset conflicts retain the server response for resume recovery", 
   );
 });
 
-test("new publication enums preserve existing public enum exports", () => {
+test("new feature enums preserve existing public enum exports", () => {
+  assert.deepEqual(
+    { ...sdk.Provider },
+    {
+      CpuExecutionProvider: "CPUExecutionProvider",
+      CudaExecutionProvider: "CUDAExecutionProvider",
+      CoreMlExecutionProvider: "CoreMLExecutionProvider",
+      OpenVinoExecutionProvider: "OpenVINOExecutionProvider",
+      MiGraphXExecutionProvider: "MIGraphXExecutionProvider",
+    },
+  );
   assert.deepEqual(
     { ...sdk.Evidence },
     {

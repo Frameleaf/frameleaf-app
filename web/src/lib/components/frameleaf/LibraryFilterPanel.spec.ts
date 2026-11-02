@@ -15,6 +15,19 @@ vi.mock('$lib/components/frameleaf/FilterPanel.svelte', async () => ({
 describe('LibraryFilterPanel counts', () => {
   afterEach(() => authManager.reset());
 
+  it('does not label media-only facet counts as counts of mixed items', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.searchFacets.mockClear();
+      const query = emptyDiscoveryQuery();
+      render(LibraryFilterPanel, { query, countQuery: query, mediaCounts: false, onChange: vi.fn(), onClose: vi.fn() });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(sdkMock.searchFacets).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keep the timeline default with Include archived items on', async () => {
     authManager.setUser({ id: 'user-1' } as never);
     authManager.setPreferences({

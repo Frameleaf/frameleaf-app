@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { AssetFileType, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility, JobName, PhysicalFileType, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim } from 'src/queue/types.js';
@@ -23,6 +23,13 @@ const consume = async <T>(generator: AsyncIterableIterator<T>) => {
 
 let defaultDatabase: Kysely<DB>;
 
+// Tests that assert over whole tables use their own database; destroy its pool when the test ends.
+const isolatedDatabase = async () => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  return db;
+};
+
 const setup = (db?: Kysely<DB>) => {
   const { ctx } = newMediumService(BaseService, {
     database: db || defaultDatabase,
@@ -36,9 +43,77 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
+afterAll(async () => {
+  await defaultDatabase?.destroy();
+});
+
 describe(AssetJobRepository.name, () => {
+  it('counts what each reading feature has read and the copies beside the originals (FL-521)', async () => {
+    const { ctx, sut } = setup(await isolatedDatabase());
+    const { user } = await ctx.newUser();
+    const { asset: read } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: unread } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: video } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, duration: 90_000 });
+    const { asset: noPreview } = await ctx.newAsset({ ownerId: user.id });
+    for (const asset of [read, unread, video, noPreview]) {
+      await ctx.newJobStatus({ assetId: asset.id });
+    }
+    await sql`update "asset_job_status" set
+      "facesRecognizedAt" = case when "assetId" = ${read.id} then now() else null end,
+      "ocrAt" = case when "assetId" = ${read.id} then now() else null end`.execute(ctx.database);
+    for (const asset of [read, unread, video]) {
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `/p/${asset.id}.jpg` });
+    }
+    await ctx.newAssetFile({ assetId: video.id, type: AssetFileType.EncodedVideo, path: `/v/${video.id}.mp4` });
+    const embedding = `[${Array.from({ length: 768 }, () => 0.01).join(',')}]`;
+    await sql`insert into "smart_search" ("assetId", "embedding") values (${read.id}, ${embedding})`.execute(
+      ctx.database,
+    );
+    await sql`insert into "asset_metadata" ("assetId", "key", "value")
+      values (${read.id}, 'ml-enrichment', jsonb_build_object('description', jsonb_build_object('status', 'success')))
+      on conflict ("assetId", "key") do update set "value" = excluded."value"`.execute(ctx.database);
+
+    await expect(sut.countFeatureProgress()).resolves.toEqual({
+      search: [1, 3],
+      faces: [1, 3],
+      text: [1, 2],
+      captions: [1, 3],
+      locked: [0, 2],
+    });
+    await expect(sut.countMediaCopies()).resolves.toEqual({
+      photos: 3,
+      withoutPreview: 1,
+      videos: 1,
+      withCopy: 1,
+      // FL-537: how long the videos are, for "about N MB a minute"
+      videoMs: 90_000,
+      copyMs: 90_000,
+      // FL-630: a copy with no recorded file has no size yet
+      copyBytes: 0,
+      unsizedCopies: 1,
+    });
+
+    // FL-630: once the copy's file is recorded, its size is the space copies take, counted once
+    // however many copies share the file (here the edited copy of the same video)
+    await ctx.newAssetFile({
+      assetId: video.id,
+      type: AssetFileType.EncodedVideo,
+      path: `/v/${video.id}.mp4`,
+      isEdited: true,
+    });
+    await sql`insert into "physical_file" ("type", "checksum", "sizeInBytes", "path", "canonicalAssetId")
+      values (${PhysicalFileType.EncodedVideo}, ${Buffer.from('copy')}, 5000, ${`/v/${video.id}.mp4`}, ${video.id})`.execute(
+      ctx.database,
+    );
+    await sql`update "asset_file" f set "physicalFileId" = p.id from "physical_file" p
+      where p.path = f.path and f."assetId" = ${video.id}`.execute(ctx.database);
+    await expect(sut.countMediaCopies()).resolves.toEqual(
+      expect.objectContaining({ withCopy: 1, copyBytes: 5000, unsizedCopies: 0 }),
+    );
+  });
+
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {
-    const { ctx, sut } = setup(await getKyselyDB());
+    const { ctx, sut } = setup(await isolatedDatabase());
     const { user } = await ctx.newUser();
     const assets = [];
     for (const options of [
@@ -76,7 +151,7 @@ describe(AssetJobRepository.name, () => {
   });
 
   it('backfills missing original HDR renditions without selecting edited, hidden, SDR or complete sources', async () => {
-    const { ctx, sut } = setup(await getKyselyDB());
+    const { ctx, sut } = setup(await isolatedDatabase());
     const { user } = await ctx.newUser();
     const assets = [];
     for (const options of [{}, {}, { isEdited: true }, { visibility: AssetVisibility.Hidden }, {}]) {

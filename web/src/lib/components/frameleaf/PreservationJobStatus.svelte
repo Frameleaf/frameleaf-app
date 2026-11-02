@@ -6,6 +6,7 @@
    * not a second copy of its state.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import { mediaOperationKindKey } from '$lib/frameleaf/activity';
   import { isOperationActive } from '$lib/frameleaf/preservation';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -65,7 +66,7 @@
 
 <div class="job" aria-live="polite">
   <p class="line">
-    <span>{$t(`frameleaf_activity_kind_${operation.kind}`)}</span>
+    <span>{$t(mediaOperationKindKey(operation))}</span>
     <span class="status">
       {#if pausing}
         {$t('frameleaf_activity_status_pausing')}

@@ -24,16 +24,22 @@
   const tileWidth = 76;
   const tileHeight = 56;
   let strip = $state<HTMLElement>();
-  let settled = false;
+  let centredOn: string | undefined;
 
   // Keep the open item in view as the viewer moves through the collection: at once on open, gliding after.
+  // The list can grow around it after the strip opens (LIB-02: it opened with a few neighbours, the rest of
+  // the month came after and the strip stayed at its start), so it is centred again, at once, when it does.
   $effect(() => {
+    const id = currentAssetId;
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    currentAssetId;
-    strip
-      ?.querySelector('[aria-current="true"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: settled ? motionScrollBehavior() : 'auto' });
-    settled = true;
+    assets.length;
+    const current = strip?.querySelector('[aria-current="true"]');
+    if (!current) {
+      return;
+    }
+    const glide = centredOn !== undefined && centredOn !== id;
+    current.scrollIntoView({ block: 'nearest', inline: 'center', behavior: glide ? motionScrollBehavior() : 'auto' });
+    centredOn = id;
   });
 </script>
 
@@ -69,7 +75,10 @@
   }
 
   /* Green means "this one", here as everywhere else: the open item is at full strength inside an accent ring. */
+  /* Positioned, so the thumbnail's layers scroll with the strip: unpositioned, they stayed where the strip
+     started and took the clicks meant for the thumbnail under them once it had scrolled (LIB-02). */
   .fl-strip-tile {
+    position: relative;
     flex-shrink: 0;
     overflow: hidden;
     border-radius: var(--fl-radius-control);

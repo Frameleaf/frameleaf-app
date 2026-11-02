@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Operations } from '../src/operations.js';
 import { compareReleases } from '../src/release-order.js';
 import { Store } from '../src/store.js';
+import { Refusal } from '../src/contracts.js';
 import {
   navSection,
   newerReleases,
@@ -112,4 +113,93 @@ test('navigation highlights the section an installed server operation belongs to
   assert.equal(navSection('restore', false), 'welcome');
   assert.equal(navSection('progress', false, 'install'), 'welcome');
   assert.equal(navSection('phone', true), 'welcome');
+});
+
+// Issue 626: a failed update keeps the operation lock, so Resume must move off a withdrawn release.
+test('resuming an update whose release was withdrawn retries with the newest offered release', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-retarget-'));
+  const store = new Store(directory);
+  try {
+    const release = (tag: string) => ({
+      nas: {
+        tag,
+        platforms: ['linux/amd64'],
+        images: {
+          postgres: tag === 'frameleaf-v1.1.19' ? 'postgres:20' : 'postgres:19',
+        },
+      },
+    });
+    await mkdir(join(directory, 'stack'));
+    await writeFile(
+      join(directory, 'stack', 'compose.json'),
+      JSON.stringify({ services: { database: { image: 'postgres:19' } } }),
+    );
+    // 1.1.19 changes PostgreSQL, which needs a restore rather than an update.
+    const offered = new Set([
+      'frameleaf-v1.1.16',
+      'frameleaf-v1.1.18',
+      'frameleaf-v1.1.19',
+    ]);
+    const acquired: string[] = [];
+    const releases = {
+      eligible: async (tag: string) => {
+        if (!offered.has(tag)) throw new Refusal('release_not_eligible');
+      },
+      // Publication order, not version order: a 1.1.18 backport published after 1.1.19.
+      available: async () => [
+        { tag: 'frameleaf-v1.1.18' },
+        { tag: 'frameleaf-v1.1.19' },
+        { tag: 'frameleaf-v1.1.16' },
+      ],
+      acquire: async (tag: string) => (acquired.push(tag), release(tag)),
+    };
+    const operations = new Operations(
+      store,
+      {} as never,
+      releases as never,
+      {} as never,
+      [],
+      {} as never,
+    );
+    const retarget = (operation: unknown, review: unknown) =>
+      (operations as any).retargetWithdrawnUpdate(operation, review);
+    const { operation } = store.start('update', 'k', { reviewId: 'r' });
+    operation.completed = [
+      'download-images',
+      'stop-application',
+      'database-checkpoint',
+    ];
+    operation.receipts['database-checkpoint'] = 'snapshot';
+    store.save(operation);
+    const review = {
+      current: { release: 'frameleaf-v1.1.16' },
+      platform: 'linux/amd64',
+      release: release('frameleaf-v1.1.17'),
+    };
+
+    const retargeted = await retarget(operation, review);
+    assert.equal(retargeted.release.nas.tag, 'frameleaf-v1.1.18');
+    assert.equal(retargeted.current.release, 'frameleaf-v1.1.16');
+    assert.deepEqual(operation.completed, [
+      'stop-application',
+      'database-checkpoint',
+    ]);
+    assert.equal(operation.receipts['database-checkpoint'], 'snapshot');
+    assert.equal(
+      store.get<any>('update:r').release.nas.tag,
+      'frameleaf-v1.1.18',
+    );
+
+    // A release that is still offered is retried as it is.
+    assert.equal(await retarget(operation, retargeted), retargeted);
+    assert.deepEqual(acquired, ['frameleaf-v1.1.19', 'frameleaf-v1.1.18']);
+    offered.delete('frameleaf-v1.1.18');
+    await assert.rejects(
+      retarget(operation, retargeted),
+      /release_not_eligible/,
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
 });

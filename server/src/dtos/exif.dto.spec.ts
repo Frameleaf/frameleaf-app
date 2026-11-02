@@ -62,4 +62,10 @@ describe('EXIF response projection', () => {
       isRejected: false,
     });
   });
+  it('projects a legacy stored rating of 0 as unrated', () => {
+    expect(ExifResponseSchema.parse(mapExif(AssetExifFactory.create({ rating: 0 })))).toMatchObject({
+      rating: null,
+      isRejected: false,
+    });
+  });
 });

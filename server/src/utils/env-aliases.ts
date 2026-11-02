@@ -149,7 +149,7 @@ export const readAliasedEnv = (name: AliasedEnvName, env: Env = process.env): st
 
   const legacy = legacyOf.get(name);
   const legacyValue = legacy === undefined ? undefined : env[legacy];
-  return isSet(legacyValue) ? legacyValue : value;
+  return isSet(legacyValue) ? legacyValue : undefined;
 };
 
 /** For validation messages: which name a value really came from. */

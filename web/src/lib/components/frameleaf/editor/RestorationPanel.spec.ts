@@ -98,6 +98,39 @@ describe('RestorationPanel Use in Studio (FL-115)', () => {
   });
 });
 
+describe('RestorationPanel polling', () => {
+  it('does not start polling again when a list read lands after the panel is gone', async () => {
+    const busy = {
+      assetId: asset.id,
+      currentRestorationId: null,
+      items: [item({ status: AssetRestorationStatus.Restoring, hasResult: false })],
+    };
+    sdkMock.getAssetRestorationOptions.mockResolvedValue({ assetId: asset.id, destinations: [] } as never);
+    sdkMock.getAssetRestorations.mockResolvedValueOnce(busy);
+    vi.useFakeTimers();
+    try {
+      const { unmount } = render(RestorationPanel, { asset, onCompare: vi.fn() });
+      await vi.advanceTimersByTimeAsync(0);
+      const reads = sdkMock.getAssetRestorations.mock.calls.length;
+
+      // The next poll is on its way when the panel closes.
+      let answer: (value: typeof busy) => void = () => {};
+      sdkMock.getAssetRestorations.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(sdkMock.getAssetRestorations).toHaveBeenCalledTimes(reads + 1);
+
+      unmount();
+      sdkMock.getAssetRestorations.mockResolvedValue(busy);
+      answer(busy);
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      expect(sdkMock.getAssetRestorations).toHaveBeenCalledTimes(reads + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('RestorationPanel Smooth motion (FL-162, FL-159)', () => {
   const smoothOptions = (overrides: Record<string, unknown> = {}) =>
     ({

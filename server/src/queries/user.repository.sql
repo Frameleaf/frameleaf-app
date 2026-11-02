@@ -20,6 +20,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -60,6 +62,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -100,6 +104,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -162,6 +168,51 @@ where
   "user"."id" = $1
   and "user"."deletedAt" is null
 
+-- UserRepository.getByPasswordLink
+select
+  "id",
+  "name",
+  "email",
+  "importClaimPending"
+from
+  "user"
+where
+  "passwordLinkHash" = $1
+  and "passwordLinkExpiresAt" > now()
+  and "deletedAt" is null
+  and "status" = $2
+
+-- UserRepository.redeemPasswordLink
+update "user"
+set
+  "password" = $1,
+  "shouldChangePassword" = $2,
+  "passwordLinkHash" = $3,
+  "passwordLinkExpiresAt" = $4,
+  "updatedAt" = $5
+where
+  "importClaimPending" = $6
+  and "passwordLinkHash" = $7
+  and "passwordLinkExpiresAt" > now()
+  and "deletedAt" is null
+  and "status" = $8
+returning
+  "id",
+  "email"
+
+-- UserRepository.setPasswordLink
+update "user"
+set
+  "passwordLinkHash" = $1,
+  "passwordLinkExpiresAt" = $2
+where
+  "id" = $3::uuid
+  and "email" = $4
+  and "deletedAt" is null
+  and "status" = $5
+returning
+  "id"
+
 -- UserRepository.getByEmail
 select
   "id",
@@ -182,6 +233,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -221,7 +274,9 @@ select
   "shouldChangePassword",
   "storageLabel",
   "quotaSizeInBytes",
-  "quotaUsageInBytes"
+  "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending"
 from
   "user"
 where
@@ -248,6 +303,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -296,6 +353,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -335,6 +394,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
+  "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { MIN_PASSWORD_LENGTH } from 'src/dtos/auth.dto.js';
 
 /**
  * FL-292 (NAPI-012): why setting up a new server from the Frameleaf app (or its first-run page) was
@@ -69,7 +70,10 @@ const FrameleafSetupLinkResponseSchema = z
 const FrameleafSetupAdminSchema = z
   .object({
     email: z.email().describe('The administrator’s email'),
-    password: z.string().min(8).describe('The administrator’s password (min 8 characters)'),
+    password: z
+      .string()
+      .min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters`)
+      .describe(`The administrator’s password (min ${MIN_PASSWORD_LENGTH} characters)`),
     name: z.string().trim().min(1).max(200).describe('The administrator’s name'),
   })
   .meta({ id: 'FrameleafSetupAdminDto' });

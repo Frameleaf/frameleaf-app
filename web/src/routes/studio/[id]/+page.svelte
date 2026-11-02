@@ -3,4 +3,5 @@
   import PhotographyStudio from '$lib/components/frameleaf/PhotographyStudio.svelte';
 </script>
 
-{#key page.params.id}<PhotographyStudio ownerId={page.params.id!} />{/key}
+<!-- FL-702: `id` is the website's address (/studio/<slug>); links made earlier carry the owner's id. -->
+{#key page.params.id}<PhotographyStudio site={page.params.id!} />{/key}

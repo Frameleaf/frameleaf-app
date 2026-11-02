@@ -37,6 +37,7 @@
   };
 
   let { filename, date, size, version, expectedVersion, open = $bindable(false), onClose }: Props = $props();
+  const confirmId = $props.id();
 
   const compatibility = $derived(backupVersionCompatibility(version, expectedVersion));
   const blocked = $derived(compatibility === 'newer');
@@ -122,10 +123,10 @@
       <input type="checkbox" bind:checked={backupFirst} disabled={restoring} />
       {$t('admin.frameleaf_maintenance_restore_backup_first')}
     </label>
-    <label class="confirm-field" for="frameleaf-maintenance-restore-confirm">
+    <label class="confirm-field" for={confirmId}>
       {$t('admin.frameleaf_maintenance_restore_confirm_type_label')}
       <input
-        id="frameleaf-maintenance-restore-confirm"
+        id={confirmId}
         type="text"
         autocomplete="off"
         spellcheck="false"

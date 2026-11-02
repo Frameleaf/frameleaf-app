@@ -56,6 +56,7 @@ const connection = (overrides: Partial<ICloudConnectionResponseDto> = {}): IClou
     includeHidden: false,
     recoverExternalAsManaged: false,
     intervalHours: 24,
+    automatic: true,
     concurrency: 1,
     stagingBytes: 20 * 1024 ** 3,
   },
@@ -281,7 +282,7 @@ describe('ICloudSyncPanel', () => {
   it('asks consent before hidden photos, then unlocks before saving', async () => {
     mocks.getAuthStatus.mockResolvedValue({ isElevated: false });
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_include_hidden }));
+    await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_icloud_hidden }));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
     await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_icloud_consent_confirm }));
     await waitFor(() =>
@@ -304,11 +305,22 @@ describe('ICloudSyncPanel', () => {
     mocks.getAuthStatus.mockResolvedValue({ isElevated: true });
     mocks.updateICloudConnection.mockResolvedValue(connection());
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    expect(screen.getByRole('checkbox', { name: en.frameleaf_icloud_include_hidden })).toBeChecked();
+    expect(screen.getByRole('switch', { name: en.frameleaf_icloud_hidden })).toHaveAttribute('aria-checked', 'true');
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
     await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
     expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.includeHidden).toBe(true);
     expect(sessionStorage.getItem('frameleaf.icloud.pending-save')).toBeNull();
+  });
+
+  it('checks by itself or only when asked, per connection (FL-539)', async () => {
+    mocks.updateICloudConnection.mockResolvedValue(connection());
+    render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
+    expect(screen.getByText(en.frameleaf_icloud_check_auto_help)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_check_manual }));
+    expect(screen.getByText(en.frameleaf_icloud_check_manual_help)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
+    await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
+    expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.automatic).toBe(false);
   });
 
   it('controls the durable run it shows', async () => {

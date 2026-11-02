@@ -14,6 +14,7 @@ import {
   readManifestSection,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { isLockedKeyUserId } from 'src/utils/locked-backup.js';
 
 /**
  * Cloud backup retention, verification sampling and manifest reading (FL-164, CLD-302). Pure functions:
@@ -214,6 +215,15 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
   ) {
     throw new Error('This backup manifest names a file without a valid checksum.');
   }
+  // FL-721: the key files, checked as the profile images are; a key file names its owner's user id
+  const lockedKeys = manifest.lockedKeys ?? {};
+  if (
+    typeof lockedKeys !== 'object' ||
+    Array.isArray(lockedKeys) ||
+    Object.entries(lockedKeys).some(([userId, file]) => !isLockedKeyUserId(userId) || !isFile(file))
+  ) {
+    throw new Error('This backup manifest names a file without a valid checksum.');
+  }
   const database = manifest.database ?? null;
   if (database && (typeof database.key !== 'string' || !isSha256Hex(database.sha256))) {
     throw new Error('This backup manifest names a database dump without a valid checksum.');
@@ -222,6 +232,7 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     for (const file of [
       ...Object.values(manifest.assets).flatMap((asset) => asset.files),
       ...Object.values(profiles),
+      ...Object.values(lockedKeys),
     ]) {
       if (!file.objectKey || clientBackupContext('validation', file.objectKey, manifest.instanceId)?.kind !== 'object')
         throw new Error('Invalid encrypted backup manifest reference');
@@ -229,9 +240,11 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     if (database && clientBackupContext('validation', database.key, manifest.instanceId)?.kind !== 'database')
       throw new Error('Invalid encrypted backup database reference');
   } else if (
-    [...Object.values(manifest.assets).flatMap((asset) => asset.files), ...Object.values(profiles)].some(
-      (file) => file.objectKey !== undefined,
-    )
+    [
+      ...Object.values(manifest.assets).flatMap((asset) => asset.files),
+      ...Object.values(profiles),
+      ...Object.values(lockedKeys),
+    ].some((file) => file.objectKey !== undefined)
   ) {
     throw new Error('Legacy manifest contains client-format references');
   }
@@ -248,6 +261,7 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
           Object.entries(manifest.assets).map(([id, asset]) => [id, { owner: asset.owner, files: asset.files }]),
         ),
     profiles,
+    ...(Object.keys(lockedKeys).length > 0 && { lockedKeys }),
     albums: v2 ? readManifestSection(manifest.albums, cloudBackupAlbumSchema) : {},
     people: v2 ? readManifestSection(manifest.people, cloudBackupPersonSchema) : {},
   };
@@ -265,7 +279,7 @@ export const manifestReferences = (manifest: CloudBackupManifest) => {
       storageKeys.set(file.sha256, keys);
     }
   }
-  for (const file of Object.values(manifest.profiles)) {
+  for (const file of [...Object.values(manifest.profiles), ...Object.values(manifest.lockedKeys ?? {})]) {
     objects.set(file.sha256, file.size);
     const keys = storageKeys.get(file.sha256) ?? new Set<string>();
     keys.add(manifestFileObjectKey(file));

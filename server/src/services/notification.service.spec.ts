@@ -7,6 +7,7 @@ import {
   AssetFileType,
   JobName,
   JobStatus,
+  LibraryScope,
   NotificationLevel,
   NotificationType,
   PushEventType,
@@ -14,6 +15,7 @@ import {
 } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -288,7 +290,7 @@ describe(NotificationService.name, () => {
       const failure = new Error('Remote configuration reconciliation failed');
       const reconcile = vi.fn().mockRejectedValue(failure);
       Reflect.set(mocks.websocket, 'awaitConfigUpdate', reconcile);
-      await expect(Promise.try(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
+      await expect(tryPromise(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
         failure,
       );
     });
@@ -349,6 +351,7 @@ describe(NotificationService.name, () => {
   describe('onJobError (FL-71)', () => {
     beforeEach(() => {
       mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.notification.deleteByDedupeKey.mockResolvedValue([]);
     });
 
     it.each([
@@ -370,6 +373,53 @@ describe(NotificationService.name, () => {
 
       expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), '[redacted]');
       expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('hunter2-secret');
+    });
+
+    it('tells the admin a library data snapshot did not finish, in plain words that open Backup (FL-657)', async () => {
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+      const error = new Error('spawn /usr/lib/postgresql/19/bin/pg_dump ENOENT');
+
+      await sut.onJobError({ job: { name: JobName.DatabaseBackup, data: {} }, error });
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: NotificationType.BackupFailed,
+          level: NotificationLevel.Error,
+          title: 'Library data snapshot didn’t finish',
+          data: { kind: 'library-snapshot-failed', dedupeKey: 'library-snapshot-failed' },
+        }),
+      );
+      // A retry of the same snapshot replaces the earlier notice instead of adding a second one.
+      expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(expect.any(String), 'library-snapshot-failed');
+      expect(mocks.notification.deleteByDedupeKey.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.notification.create.mock.invocationCallOrder[0],
+      );
+      const notice = JSON.stringify(mocks.notification.create.mock.calls);
+      expect(notice).not.toContain('pg_dump');
+      expect(notice).not.toContain('DatabaseBackup');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('pg_dump'), expect.any(String), '{}');
+    });
+
+    it('removes the notice once a library data snapshot finishes, and ignores other jobs (FL-657)', async () => {
+      const admin = UserFactory.create({ isAdmin: true });
+      mocks.user.getAdmin.mockResolvedValue(admin);
+
+      await sut.onJobSuccess({ job: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } } as never);
+      expect(mocks.notification.deleteByDedupeKey).not.toHaveBeenCalled();
+
+      await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
+      expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(admin.id, 'library-snapshot-failed');
+      // Nothing was removed, so open lists need not read again.
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+
+      // A stale notice was removed: open lists are told to read again, so it leaves them too.
+      mocks.notification.deleteByDedupeKey.mockResolvedValue([notificationStub.albumEvent] as never);
+      await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_notification',
+        admin.id,
+        expect.objectContaining({ id: notificationStub.albumEvent.id }),
+      );
     });
 
     it('still logs the data of other jobs', async () => {
@@ -410,6 +460,21 @@ describe(NotificationService.name, () => {
   });
 
   describe('onAssetMetadataExtracted', () => {
+    it('routes designer updates away from legacy personal clients', async () => {
+      const asset = AssetFactory.create({ libraryScope: LibraryScope.Design });
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([{ ...getForAsset(asset), faces: [] }]);
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'LibraryAssetUpdateV1',
+        asset.ownerId,
+        expect.objectContaining({ id: asset.id }),
+      );
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
+        'on_asset_update',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
     it('keeps the landmarks in the update a location edit sends back (LIB-12)', async () => {
       const asset = AssetFactory.from().exif({ latitude: 51.4254, longitude: -116.1773 }).build();
       const landmark = { id: 'Q41858', name: 'Banff National Park', kind: 'park' };
@@ -424,6 +489,32 @@ describe(NotificationService.name, () => {
         'on_asset_update',
         asset.ownerId,
         expect.objectContaining({ id: asset.id, landmarks: [{ ...landmark, icon: undefined }] }),
+      );
+    });
+
+    it('sends the saved capture time, zone and people after a date edit (LIB-02)', async () => {
+      const dateTimeOriginal = new Date('2026-06-22T23:30:00.000Z');
+      const asset = AssetFactory.from()
+        .exif({ dateTimeOriginal, timeZone: 'America/Edmonton' })
+        .face({}, (face) => face.person({ name: 'Jamie' }))
+        .build();
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([getForAsset(asset)] as never);
+      mocks.search.getAssetLandmarks.mockResolvedValue([]);
+
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith([asset.id], asset.ownerId);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        asset.ownerId,
+        expect.objectContaining({
+          id: asset.id,
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: dateTimeOriginal.toISOString(),
+            timeZone: 'America/Edmonton',
+          }),
+          people: [expect.objectContaining({ name: 'Jamie' })],
+        }),
       );
     });
   });

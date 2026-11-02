@@ -81,6 +81,7 @@ import {
   CloudUploadTarget,
   FrameleafCloudError,
   clipResultSchema,
+  cloudCustomerCost,
   cloudErrorCode,
   estimateUsable,
   faceResultSchema,
@@ -256,10 +257,14 @@ export class CloudLibraryBatchService extends BaseService {
       } catch (error) {
         jobSignal()?.throwIfAborted();
         this.logger.error(`Smart search or faces batch ${claim.operation.id} failed: ${errorMessage(error)}`);
-        await this.mediaOperationRepository.fail(claim.operation.id, claim.claimToken, {
+        const outcome = await this.mediaOperationRepository.fail(claim.operation.id, claim.claimToken, {
           error: errorMessage(error),
           errorCode: 'cloud_library_failed',
         });
+        if (outcome === 'failed') {
+          const snapshot = parseCloudLibrarySnapshot(claim.operation.snapshot);
+          await this.handBack({ snapshot, result: parseCloudLibraryResult(claim.operation.result, snapshot.assetIds) });
+        }
       }
     }
   }
@@ -531,6 +536,13 @@ export class CloudLibraryBatchService extends BaseService {
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
     run.result = { ...run.result, items };
+    // A photo whose preview could not be made ready for the cloud is still one this server's own job can read.
+    await this.backToTheirJobs(
+      items
+        .filter((item) => item.refused === 'unsupported' || item.refused === 'prepare-failed')
+        .map(({ assetId }) => ({ workload: snapshot.workload, assetId })),
+      true,
+    );
     const inputs = items.filter((item) => !item.refused);
     if (inputs.length === 0) {
       await this.finishEmpty(run);
@@ -559,16 +571,16 @@ export class CloudLibraryBatchService extends BaseService {
         expiresAt: estimate.expiresAt,
         modelRev: estimate.modelRev,
         computeSku: estimate.computeSku,
-        p50Usd: estimate.cost.p50,
-        p90Usd: estimate.cost.p90,
-        holdUsd: estimate.cost.hold,
+        p50Usd: cloudCustomerCost(estimate).p50,
+        p90Usd: cloudCustomerCost(estimate).p90,
+        holdUsd: cloudCustomerCost(estimate).hold,
         startupUsd: estimate.cost.startup,
         request,
         attemptedAt: null,
       },
       waiting: null,
     };
-    await this.preflight(run, gateway, estimate.cost.hold);
+    await this.preflight(run, gateway, cloudCustomerCost(estimate).hold);
     if (await this.save(run)) {
       await this.submit(run, gateway);
     }
@@ -1457,13 +1469,27 @@ export class CloudLibraryBatchService extends BaseService {
         run.operation.id,
         run.claimToken,
         { error: refusal.message, errorCode: refusal.code },
-        { retry: refusal.transient },
+        // the batch resumes by its phase, cloud job and idempotency key, so its one retry repeats nothing
+        { retry: refusal.transient, resumable: true },
       );
-      if (outcome === 'failed' && !run.result.job) {
-        // nothing was sent: the photos wait for their own jobs' next run wherever they are routed then
+      if (outcome === 'failed') {
         this.logger.log(`Smart search or faces batch ${run.operation.id} was refused: ${refusal.message}`);
+        await this.handBack(run);
       }
     }
+  }
+
+  /**
+   * A batch that failed for good made nothing for its photos, and their own jobs no longer hold them (they
+   * left the queue when the batch was made): they run on this server instead, as a refused result does (FL-455).
+   */
+  private async handBack({ snapshot, result }: Pick<BatchRun, 'snapshot' | 'result'>) {
+    await this.backToTheirJobs(
+      result.items
+        .filter((item) => !item.outcome && !item.refused)
+        .map(({ assetId }) => ({ workload: snapshot.workload, assetId })),
+      true,
+    );
   }
 
   /** Write the batch's result; false when the claim is gone or a cancel arrived (then it is handled). */

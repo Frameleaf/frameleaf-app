@@ -386,14 +386,17 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       await expect(crypto.compareBcrypt(f.pin, String(owner.pinCode))).resolves.toBe(true);
       await expect(crypto.compareBcrypt('000000', String(owner.pinCode))).resolves.toBe(false);
       expect(await f.destination.db.query('SELECT id,"ownerId","originalPath",visibility FROM public.asset')).toEqual([
-        { id: f.asset, ownerId: f.owner, originalPath: f.targetPath, visibility: 'locked' },
+        { id: f.asset, ownerId: f.owner, originalPath: f.targetPath, visibility: 'timeline' },
+      ]);
+      expect(await f.destination.db.query('SELECT "assetId",reason FROM public.asset_lock')).toEqual([
+        { assetId: f.asset, reason: 'frameleaf-locked-folder' },
       ]);
       expect(
         await f.destination.db.query(`SELECT a.id,a."albumThumbnailAssetId",aa."assetId",au."userId",au.role
       FROM public.album a JOIN public.album_asset aa ON aa."albumId"=a.id JOIN public.album_user au ON au."albumId"=a.id ORDER BY au.role::text`),
       ).toEqual([
-        { id: f.album, albumThumbnailAssetId: f.asset, assetId: f.asset, userId: f.owner, role: 'owner' },
-        { id: f.album, albumThumbnailAssetId: f.asset, assetId: f.asset, userId: f.reader, role: 'viewer' },
+        { id: f.album, albumThumbnailAssetId: null, assetId: f.asset, userId: f.owner, role: 'owner' },
+        { id: f.album, albumThumbnailAssetId: null, assetId: f.asset, userId: f.reader, role: 'viewer' },
       ]);
       expect(
         await f.destination.db.query(

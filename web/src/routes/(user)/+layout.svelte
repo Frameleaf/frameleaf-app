@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import AppCard from '$lib/components/frameleaf/AppCard.svelte';
   import UploadCover from '$lib/components/frameleaf/DragDropUploadOverlay.svelte';
+  import GetCloudHost from '$lib/components/frameleaf/cloud/GetCloudHost.svelte';
   import { arrivedFromSetup, offerNextSteps } from '$lib/components/timeline/next-steps.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -52,6 +53,8 @@
 <UploadCover />
 <!-- The phone "Get the app" sheet: it opens only on the Photos library (rules in app-card.ts). -->
 <AppCard />
+<!-- FL-544: the Get Frameleaf Cloud sheet, opened from any cloud gate. -->
+<GetCloudHost />
 
 <style>
   :root {

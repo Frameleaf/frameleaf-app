@@ -56,7 +56,7 @@
     mdiShimmer,
     mdiTagRemove,
   } from '@mdi/js';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -69,9 +69,14 @@
      * Manual/Generated badge without fetching the enrichment a second time.
      */
     onDescriptionReview?: (review: DescriptionReview | null) => void;
+    /**
+     * FL-707 item 13: the description editor, drawn here so the description's AI evidence (passed
+     * in, undefined when there is none) sits beneath it, before the sensitive-content band.
+     */
+    descriptionEditor?: Snippet<[Snippet | undefined]>;
   }
 
-  let { asset, isOwner, onAssetRefresh, onAssetSuppressed, onDescriptionReview }: Props = $props();
+  let { asset, isOwner, onAssetRefresh, onAssetSuppressed, onDescriptionReview, descriptionEditor }: Props = $props();
 
   let enrichment = $state<AssetImageEnrichmentResponseDto>();
   let isLoading = $state(false);
@@ -86,6 +91,8 @@
 
   const description = $derived(descriptionReview(asset, enrichment));
   const sensitivity = $derived(sensitivityReview(enrichment));
+  /** The sensitive-content band: while the check loads, and once there is a result to show. */
+  const showSensitivity = $derived(canReview && (isLoading || (!!enrichment && !!sensitivity)));
 
   const loadEnrichment = async (assetId: string) => {
     // Cancel any previous in-flight enrichment request — when the user
@@ -286,9 +293,8 @@
         .filter(Boolean)
         .join(' · ');
     }
-    return description.source === 'manual'
-      ? $t('frameleaf_info_written_by_you')
-      : $t('frameleaf_info_description_none');
+    // With no description the editor's placeholder already says so (FL-707 item 13: shown once).
+    return description.source === 'manual' ? $t('frameleaf_info_written_by_you') : '';
   });
 
   /** How the sensitive-content check was made (MediaViewer.jsx:2729-2737). */
@@ -298,9 +304,8 @@
     }
     const review = enrichment.nsfwDetection.review;
     return [
-      sensitivity.state === 'missing' && !review
-        ? $t('frameleaf_info_not_checked')
-        : $t('frameleaf_info_checked_by_ai'),
+      // One status (FL-707 item 13): the pill already says "Not checked", so nothing repeats it here.
+      sensitivity.state === 'missing' && !review ? null : $t('frameleaf_info_checked_by_ai'),
       sensitivity.state === 'missing' ? null : enrichment.nsfwDetection.modelName,
       sensitivity.scorePercent === null
         ? null
@@ -338,194 +343,194 @@
   });
 </script>
 
-{#if canReview}
+<!--
+  FL-707 item 13 (MediaViewer.jsx EnrichmentCard): the description is shown once, by the editor, with
+  its AI evidence beneath it; the sensitive-content check is its own band with a single status.
+-->
+{#snippet failureNotice()}
+  {#if failure}
+    <ViewerInlineEditError
+      failure={failure.kind}
+      busy={activeAction !== null}
+      onRetry={failure.kind === 'network' || failure.kind === 'unknown'
+        ? () => handlePromiseError(failure!.run())
+        : undefined}
+      onReload={failure.kind === 'stale' ? () => handlePromiseError(reload()) : undefined}
+    />
+  {/if}
+{/snippet}
+
+{#snippet evidence()}
+  {#if canReview && enrichment && description}
+    <div class="fl-enrich-row fl-enrich-evidence" data-testid="frameleaf-enrichment-description">
+      {#if descriptionDetail || description.suggestion}
+        <span class={['fl-enrich-icon', aiDescription && 'ai']} aria-hidden="true">
+          <Icon icon={aiDescription ? mdiShimmer : mdiPencilOutline} size="15" />
+        </span>
+      {/if}
+      <div class="fl-enrich-text">
+        {#if descriptionDetail}
+          <span>{descriptionDetail}</span>
+        {/if}
+        {#if description.suggestion}
+          <span class="fl-enrich-suggestion" data-testid="frameleaf-description-suggestion">
+            {description.suggestion}
+          </span>
+        {/if}
+        {#if description.error}
+          <span class="fl-enrich-error">{description.error}</span>
+        {/if}
+        {#if enrichment.description.staleReason}
+          <!-- FL-59: the generated text no longer matches its original, names or prompt. -->
+          <span class="fl-enrich-stale" data-testid="frameleaf-description-stale">
+            {$t(staleReasonKey[enrichment.description.staleReason])}
+          </span>
+        {/if}
+      </div>
+      <div class="fl-enrich-actions">
+        {#if description.canAccept}
+          <button
+            type="button"
+            disabled={activeAction !== null}
+            aria-busy={activeAction === 'accept-description'}
+            onclick={acceptDescription}
+          >
+            {$t('frameleaf_info_accept_description')}
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="fl-icon"
+          aria-label={$t('frameleaf_info_rewrite_description')}
+          title={$t('frameleaf_info_rewrite')}
+          disabled={activeAction !== null}
+          aria-busy={activeAction === AssetImageEnrichmentAction.RerunImageDescription}
+          onclick={() => runAction(AssetImageEnrichmentAction.RerunImageDescription)}
+        >
+          <Icon icon={mdiRefresh} size="14" aria-hidden />
+        </button>
+        {#if enrichment.description.appliedTags || enrichment.nsfwDetection.appliedTags}
+          <button
+            type="button"
+            class="fl-icon"
+            aria-label={$t('clear_tags')}
+            title={$t('clear_tags')}
+            disabled={activeAction !== null}
+            aria-busy={activeAction === AssetImageEnrichmentAction.ClearGeneratedTags}
+            onclick={() => runAction(AssetImageEnrichmentAction.ClearGeneratedTags)}
+          >
+            <Icon icon={mdiTagRemove} size="14" aria-hidden />
+          </button>
+        {/if}
+        {#if description.source !== 'none'}
+          <button
+            type="button"
+            class="fl-icon"
+            aria-label={$t('clear_description')}
+            title={$t('clear')}
+            disabled={activeAction !== null}
+            aria-busy={activeAction === 'clear-description' ||
+              activeAction === AssetImageEnrichmentAction.ClearGeneratedDescription}
+            onclick={clearDescription}
+          >
+            <Icon icon={mdiClose} size="14" aria-hidden />
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+  {#if canReview && !showSensitivity}
+    {@render failureNotice()}
+  {/if}
+{/snippet}
+
+{#if descriptionEditor}
+  {@render descriptionEditor(evidence)}
+{:else}
+  <!-- Without an editor beside it (a spec, another host), the evidence stands on its own. -->
+  {@render evidence()}
+{/if}
+
+{#if showSensitivity}
   <section
-    class="fl-enrichment"
-    aria-label={$t('frameleaf_info_enrichment_label')}
+    class="fl-sensitivity"
+    aria-label={$t('frameleaf_info_sensitive_content')}
     data-testid="frameleaf-enrichment-card"
   >
-    <div class="fl-enrich-head">
-      <span class="fl-ai-mark" aria-hidden="true"><Icon icon={mdiShimmer} size="14" /></span>
-      <h3>{$t('frameleaf_info_enrichment')}</h3>
-      {#if isLoading}
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_sensitive_content')}</h3>
+      {#if sensitivity}
+        <em class={['fl-pill', sensitivity.tone]} data-testid="frameleaf-sensitivity-state">{stateLabel}</em>
+      {:else if isLoading}
         <LoadingSpinner />
       {/if}
     </div>
 
-    {#if enrichment && (description || sensitivity)}
-      <div class="fl-enrich-list">
-        {#if description}
-          <div class="fl-enrich-row" data-testid="frameleaf-enrichment-description">
-            <span class={['fl-enrich-icon', aiDescription && 'ai']} aria-hidden="true">
-              <Icon icon={aiDescription ? mdiShimmer : mdiPencilOutline} size="15" />
-            </span>
-            <div class="fl-enrich-text">
-              <strong>{$t('frameleaf_info_description')}</strong>
-              <span>{descriptionDetail}</span>
-              {#if description.suggestion}
-                <span class="fl-enrich-suggestion" data-testid="frameleaf-description-suggestion">
-                  {description.suggestion}
-                </span>
-              {/if}
-              {#if description.error}
-                <span class="fl-enrich-error">{description.error}</span>
-              {/if}
-              {#if enrichment.description.staleReason}
-                <!-- FL-59: the generated text no longer matches its original, names or prompt. -->
-                <span class="fl-enrich-stale" data-testid="frameleaf-description-stale">
-                  {$t(staleReasonKey[enrichment.description.staleReason])}
-                </span>
-              {/if}
-            </div>
-            <div class="fl-enrich-actions">
-              {#if description.canAccept}
-                <button
-                  type="button"
-                  disabled={activeAction !== null}
-                  aria-busy={activeAction === 'accept-description'}
-                  onclick={acceptDescription}
-                >
-                  {$t('frameleaf_info_accept_description')}
-                </button>
-              {/if}
-              <button
-                type="button"
-                class="fl-icon"
-                aria-label={$t('frameleaf_info_rewrite_description')}
-                title={$t('frameleaf_info_rewrite')}
-                disabled={activeAction !== null}
-                aria-busy={activeAction === AssetImageEnrichmentAction.RerunImageDescription}
-                onclick={() => runAction(AssetImageEnrichmentAction.RerunImageDescription)}
-              >
-                <Icon icon={mdiRefresh} size="14" aria-hidden />
-              </button>
-              {#if enrichment.description.appliedTags || enrichment.nsfwDetection.appliedTags}
-                <button
-                  type="button"
-                  class="fl-icon"
-                  aria-label={$t('clear_tags')}
-                  title={$t('clear_tags')}
-                  disabled={activeAction !== null}
-                  aria-busy={activeAction === AssetImageEnrichmentAction.ClearGeneratedTags}
-                  onclick={() => runAction(AssetImageEnrichmentAction.ClearGeneratedTags)}
-                >
-                  <Icon icon={mdiTagRemove} size="14" aria-hidden />
-                </button>
-              {/if}
-              {#if description.source !== 'none'}
-                <button
-                  type="button"
-                  class="fl-icon"
-                  aria-label={$t('clear_description')}
-                  title={$t('clear')}
-                  disabled={activeAction !== null}
-                  aria-busy={activeAction === 'clear-description' ||
-                    activeAction === AssetImageEnrichmentAction.ClearGeneratedDescription}
-                  onclick={clearDescription}
-                >
-                  <Icon icon={mdiClose} size="14" aria-hidden />
-                </button>
-              {/if}
-            </div>
-          </div>
+    {#if enrichment && sensitivity}
+      <div class="fl-enrich-row" data-testid="frameleaf-enrichment-sensitivity">
+        {#if sensitivityDetail}
+          <span class={['fl-enrich-icon', sensitivity.tone]} aria-hidden="true">
+            <Icon
+              icon={sensitivity.state === 'needs-review' ? mdiShieldAlertOutline : mdiShieldCheckOutline}
+              size="15"
+            />
+          </span>
         {/if}
-
-        {#if sensitivity}
-          <div class="fl-enrich-row" data-testid="frameleaf-enrichment-sensitivity">
-            <span class={['fl-enrich-icon', sensitivity.tone]} aria-hidden="true">
-              <Icon
-                icon={sensitivity.state === 'needs-review' ? mdiShieldAlertOutline : mdiShieldCheckOutline}
-                size="15"
-              />
-            </span>
-            <div class="fl-enrich-text">
-              <strong>
-                {$t('frameleaf_info_sensitive_content')}
-                <em class={['fl-pill', sensitivity.tone]} data-testid="frameleaf-sensitivity-state">{stateLabel}</em>
-              </strong>
-              <span data-testid="frameleaf-sensitivity-detail">{sensitivityDetail}</span>
-              {#if sensitivity.error}
-                <span class="fl-enrich-error">{sensitivity.error}</span>
-              {/if}
-            </div>
-            <div class="fl-enrich-actions">
-              {#if sensitivity.state === 'needs-review'}
-                <button
-                  type="button"
-                  disabled={activeAction !== null}
-                  aria-busy={activeAction === AssetImageEnrichmentAction.AcceptNsfwResult}
-                  onclick={() => runAction(AssetImageEnrichmentAction.AcceptNsfwResult)}
-                >
-                  {$t('accept')}
-                </button>
-              {/if}
-              <button
-                type="button"
-                disabled={activeAction !== null}
-                aria-busy={activeAction === AssetImageEnrichmentAction.MarkSafe ||
-                  activeAction === AssetImageEnrichmentAction.MarkNsfw}
-                onclick={() =>
-                  runAction(
-                    sensitivity.marked ? AssetImageEnrichmentAction.MarkSafe : AssetImageEnrichmentAction.MarkNsfw,
-                  )}
-              >
-                {sensitivity.marked ? $t('frameleaf_info_unmark_sensitive') : $t('frameleaf_info_mark_sensitive')}
-              </button>
-              <button
-                type="button"
-                class="fl-icon"
-                aria-label={$t('frameleaf_info_check_again')}
-                title={$t('frameleaf_info_check_again_short')}
-                disabled={activeAction !== null}
-                aria-busy={activeAction === AssetImageEnrichmentAction.RerunNsfwDetection}
-                onclick={() => runAction(AssetImageEnrichmentAction.RerunNsfwDetection)}
-              >
-                <Icon icon={mdiRefresh} size="14" aria-hidden />
-              </button>
-            </div>
-          </div>
-        {/if}
+        <div class="fl-enrich-text">
+          {#if sensitivityDetail}
+            <span data-testid="frameleaf-sensitivity-detail">{sensitivityDetail}</span>
+          {/if}
+          {#if sensitivity.error}
+            <span class="fl-enrich-error">{sensitivity.error}</span>
+          {/if}
+        </div>
+        <div class="fl-enrich-actions">
+          {#if sensitivity.state === 'needs-review'}
+            <button
+              type="button"
+              disabled={activeAction !== null}
+              aria-busy={activeAction === AssetImageEnrichmentAction.AcceptNsfwResult}
+              onclick={() => runAction(AssetImageEnrichmentAction.AcceptNsfwResult)}
+            >
+              {$t('accept')}
+            </button>
+          {/if}
+          <button
+            type="button"
+            disabled={activeAction !== null}
+            aria-busy={activeAction === AssetImageEnrichmentAction.MarkSafe ||
+              activeAction === AssetImageEnrichmentAction.MarkNsfw}
+            onclick={() =>
+              runAction(sensitivity.marked ? AssetImageEnrichmentAction.MarkSafe : AssetImageEnrichmentAction.MarkNsfw)}
+          >
+            {sensitivity.marked ? $t('frameleaf_info_unmark_sensitive') : $t('frameleaf_info_mark_sensitive')}
+          </button>
+          <button
+            type="button"
+            class="fl-icon"
+            aria-label={$t('frameleaf_info_check_again')}
+            title={$t('frameleaf_info_check_again_short')}
+            disabled={activeAction !== null}
+            aria-busy={activeAction === AssetImageEnrichmentAction.RerunNsfwDetection}
+            onclick={() => runAction(AssetImageEnrichmentAction.RerunNsfwDetection)}
+          >
+            <Icon icon={mdiRefresh} size="14" aria-hidden />
+          </button>
+        </div>
       </div>
     {/if}
-
-    {#if failure}
-      <ViewerInlineEditError
-        failure={failure.kind}
-        busy={activeAction !== null}
-        onRetry={failure.kind === 'network' || failure.kind === 'unknown'
-          ? () => handlePromiseError(failure!.run())
-          : undefined}
-        onReload={failure.kind === 'stale' ? () => handlePromiseError(reload()) : undefined}
-      />
-    {/if}
+    {@render failureNotice()}
   </section>
 {/if}
 
 <style>
-  /* The grouped Enrichment card (media-viewer.css:1060-1210, apple-style.css:917-930). */
-  .fl-enrichment {
-    margin: 16px 16px 0;
-    padding: 12px;
-    border-radius: var(--fl-radius-card);
-    background: color-mix(in srgb, var(--fl-viewer-text) 4%, transparent);
-  }
-
-  .fl-enrich-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .fl-enrich-head h3 {
-    flex: 1;
-    margin: 0;
-    font-size: 12px;
-    font-weight: 600;
+  /* FL-707 item 13 (review-1030-library.css): the evidence sits under the editor, the check is a band. */
+  .fl-enrich-row.fl-enrich-evidence {
+    min-height: 0;
+    padding: var(--fl-space-2) 0 0;
   }
 
   /* The AI mark: a sparkle on the one reserved indigo. */
-  .fl-ai-mark,
   .fl-enrich-icon {
     display: inline-grid;
     flex: none;
@@ -533,32 +538,13 @@
     color: var(--fl-viewer-text);
   }
 
-  .fl-ai-mark {
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
-    background: var(--fl-ai);
-    color: var(--fl-ai-text);
-  }
-
-  .fl-enrich-list {
-    display: grid;
-    overflow: hidden;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--fl-viewer-text) 4%, transparent);
-  }
-
   .fl-enrich-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
-    min-height: 52px;
-    padding: 8px 8px 8px 10px;
-  }
-
-  .fl-enrich-row + .fl-enrich-row {
-    border-top: 1px solid var(--fl-viewer-border);
+    min-height: 44px;
+    padding: 0;
   }
 
   .fl-enrich-icon {
@@ -595,17 +581,9 @@
     min-width: 0;
   }
 
-  .fl-enrich-text strong {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 550;
-  }
-
   .fl-enrich-text span {
     color: var(--fl-on-material-muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
     overflow-wrap: anywhere;
   }

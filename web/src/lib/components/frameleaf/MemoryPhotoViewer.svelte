@@ -5,6 +5,7 @@
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { AssetMediaSize } from '@frameleaf/sdk';
   import DelayedLoadingSpinner from '$lib/components/DelayedLoadingSpinner.svelte';
+  import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import { onMount } from 'svelte';
   import { motionFade } from '$lib/frameleaf/motion';
 
@@ -25,6 +26,7 @@
 
   let assetFileUrl: string = $state('');
   let imageLoaded: boolean = $state(false);
+  let imageError: boolean = $state(false);
   let loader = $state<HTMLImageElement>();
 
   const onLoadCallback = () => {
@@ -33,27 +35,42 @@
     onImageLoad();
   };
 
+  /** A picture that cannot load shows as broken, and the player moves on as it would after a load. */
+  const onErrorCallback = () => {
+    imageError = true;
+    onImageLoad();
+  };
+
   onMount(() => {
     if (loader?.complete) {
-      onLoadCallback();
+      // A finished image with no width failed to decode.
+      if (loader.naturalWidth > 0) {
+        onLoadCallback();
+      } else {
+        onErrorCallback();
+      }
     }
     loader?.addEventListener('load', onLoadCallback);
+    loader?.addEventListener('error', onErrorCallback);
     return () => {
       loader?.removeEventListener('load', onLoadCallback);
+      loader?.removeEventListener('error', onErrorCallback);
     };
   });
 
   const imageLoaderUrl = $derived(getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview }));
 </script>
 
-{#if !imageLoaded}
+{#if !imageLoaded && !imageError}
   <!-- svelte-ignore a11y_missing_attribute -->
   <img bind:this={loader} style="display:none" src={imageLoaderUrl} aria-hidden="true" />
 {/if}
 
-{#if !imageLoaded}
+{#if imageError}
+  <BrokenAsset class="size-full rounded-2xl" />
+{:else if !imageLoaded}
   <DelayedLoadingSpinner />
-{:else if imageLoaded}
+{:else}
   <div transition:motionFade={{ duration: assetViewerFadeDuration }} class="size-full">
     <img
       class="size-full rounded-2xl object-contain transition-all {motionClass}"

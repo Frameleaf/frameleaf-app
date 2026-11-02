@@ -24,6 +24,14 @@ const AvatarUpdateSchema = z
   .optional()
   .meta({ id: 'AvatarUpdate' });
 
+// Clients (the photography-studio suite) is opt-in: off, it sits under Tools; on, it joins the top bar.
+const ClientsUpdateSchema = z
+  .object({
+    enabled: z.boolean().optional().describe('Whether Clients is in use and shown in the top bar'),
+  })
+  .optional()
+  .meta({ id: 'ClientsUpdate' });
+
 const MemoriesUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether memories are enabled'),
@@ -120,6 +128,18 @@ const PurchaseUpdateSchema = z
   .optional()
   .meta({ id: 'PurchaseUpdate' });
 
+const TrashUpdateSchema = z
+  .object({
+    reuploadUntil: z
+      .string()
+      .optional()
+      .describe(
+        'Until when uploading a photo that is in the Trash brings it back instead of reporting a duplicate (empty to turn off; at most 24 hours ahead)',
+      ),
+  })
+  .optional()
+  .meta({ id: 'TrashPreferencesUpdate' });
+
 const CastUpdateSchema = z
   .object({
     gCastEnabled: z.boolean().optional().describe('Whether Google Cast is enabled'),
@@ -132,6 +152,20 @@ const CastUpdateSchema = z
   })
   .optional()
   .meta({ id: 'CastUpdate' });
+
+const LockedPinUpdateSchema = z
+  .object({
+    relockMinutes: z
+      .int()
+      .min(5)
+      .max(60)
+      .refine((minutes) => [5, 15, 60].includes(minutes), { message: 'relockMinutes must be 5, 15 or 60' })
+      .optional()
+      .describe('How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes'),
+  })
+  .optional()
+  .describe('Locked PIN preferences (FL-517). Only the account itself can change them')
+  .meta({ id: 'LockedPinUpdate' });
 
 const SuppressionScopeSchema = z.enum(['owned', 'visible']).meta({ id: 'SuppressionScope' });
 
@@ -146,6 +180,26 @@ const SuppressionUpdateSchema = z
   })
   .optional()
   .meta({ id: 'SuppressionUpdate' });
+
+/** FL-541: a draft of the Locked rules, counted before it is saved. */
+const LockedRulesDraftSchema = z
+  .object({
+    tagIds: z.array(z.uuidv4()).max(1000).describe('Tag IDs the draft locks'),
+    personIds: z.array(z.uuidv4()).max(1000).describe('Person IDs the draft locks'),
+    petIds: z.array(z.uuidv4()).max(1000).describe('Pet IDs the draft locks'),
+  })
+  .meta({ id: 'LockedRulesDraftDto' });
+
+export class LockedRulesDraftDto extends createZodDto(LockedRulesDraftSchema) {}
+
+const LockedRulesCountResponseSchema = z
+  .object({
+    photos: z.int().min(0).describe('Your photos the draft would keep Locked'),
+    videos: z.int().min(0).describe('Your videos the draft would keep Locked'),
+  })
+  .meta({ id: 'LockedRulesCountResponseDto' });
+
+export class LockedRulesCountResponseDto extends createZodDto(LockedRulesCountResponseSchema) {}
 
 const PrivacyUpdateSchema = z
   .object({
@@ -200,15 +254,18 @@ const UserPreferencesUpdateSchema = z
     download: DownloadUpdateSchema,
     emailNotifications: EmailNotificationsUpdateSchema,
     folders: FoldersUpdateSchema,
+    clients: ClientsUpdateSchema,
     memories: MemoriesUpdateSchema,
     people: PeopleUpdateSchema,
     privacy: PrivacyUpdateSchema,
     purchase: PurchaseUpdateSchema,
+    trash: TrashUpdateSchema,
     ratings: RatingsUpdateSchema,
     search: SearchPreferencesUpdateSchema,
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
+    lockedPin: LockedPinUpdateSchema,
     savedSearches: SavedSearchesUpdateSchema.meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     expectedRevision: z
       .string()
@@ -231,6 +288,12 @@ const FoldersResponseSchema = z
     sidebarWeb: z.boolean().describe('Whether folders appear in web sidebar'),
   })
   .meta({ id: 'FoldersResponse' });
+
+const ClientsResponseSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether Clients is in use and shown in the top bar'),
+  })
+  .meta({ id: 'ClientsResponse' });
 
 const MemoriesResponseSchema = z
   .object({
@@ -308,6 +371,14 @@ const PurchaseResponseSchema = z
   })
   .meta({ id: 'PurchaseResponse' });
 
+const TrashResponseSchema = z
+  .object({
+    reuploadUntil: z
+      .string()
+      .describe('Until when uploading a photo that is in the Trash brings it back (empty when off)'),
+  })
+  .meta({ id: 'TrashPreferencesResponse' });
+
 const CastResponseSchema = z
   .object({
     gCastEnabled: z
@@ -338,11 +409,19 @@ const RecentlyAddedResponseSchema = z
   })
   .meta({ id: 'RecentlyAddedResponse' });
 
+const LockedPinResponseSchema = z
+  .object({
+    relockMinutes: z.int().describe('How long Locked photos stay open after the PIN unlocks them, in minutes'),
+  })
+  .meta({ id: 'LockedPinResponse' });
+
 const UserPreferencesResponseSchema = z
   .object({
     notifications: NotificationLocalePreferencesSchema.optional(),
     albums: AlbumsResponseSchema,
     folders: FoldersResponseSchema,
+    // always sent; optional in the schema so clients built before Clients existed keep compiling
+    clients: ClientsResponseSchema.optional(),
     memories: MemoriesResponseSchema,
     people: PeopleResponseSchema,
     privacy: PrivacyResponseSchema,
@@ -353,8 +432,11 @@ const UserPreferencesResponseSchema = z
     emailNotifications: EmailNotificationsResponseSchema,
     download: DownloadResponseSchema,
     purchase: PurchaseResponseSchema,
+    trash: TrashResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
+    // always sent; optional in the schema so older clients keep compiling (FL-517)
+    lockedPin: LockedPinResponseSchema.optional(),
     // always sent; optional in the schema so clients built before FL-49 keep compiling
     savedSearches: z
       .array(SavedSearchSchema)

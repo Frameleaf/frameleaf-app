@@ -57,7 +57,8 @@ export class SessionRepository {
             .selectFrom('user')
             .select(columns.authUser)
             .whereRef('user.id', '=', 'session.userId')
-            .where('user.deletedAt', 'is', null),
+            .where('user.deletedAt', 'is', null)
+            .where('user.importClaimPending', '=', false),
         ).as('user'),
       ])
       .where('session.token', '=', token)
@@ -93,6 +94,7 @@ export class SessionRepository {
         .where('user.id', '=', dto.userId)
         .where('user.password', '=', expectedPassword)
         .where('user.deletedAt', 'is', null)
+        .where('user.importClaimPending', '=', false)
         .forShare()
         .executeTakeFirst();
       if (!user) {
@@ -127,6 +129,23 @@ export class SessionRepository {
       .returning('id')
       .executeTakeFirst();
     return !!result;
+  }
+
+  /**
+   * FL-721: when the last PIN unlock of this account ends: the latest `pinExpiresAt` of its
+   * unexpired sessions that are elevated now, or null when none is. A PIN-mode Locked key stays
+   * loaded until then (spec §4.3).
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getPinUnlockedUntil(userId: string): Promise<Date | null> {
+    const result = await this.db
+      .selectFrom('session')
+      .select((eb) => eb.fn.max('pinExpiresAt').as('until'))
+      .where('userId', '=', asUuid(userId))
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+      .executeTakeFirst();
+    return result?.until ? new Date(result.until) : null;
   }
 
   /**

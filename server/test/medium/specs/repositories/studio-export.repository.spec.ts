@@ -213,6 +213,59 @@ const expectRefusal = async (promise: Promise<unknown>, code: string) => {
 };
 
 describe(StudioExportRepository.name, () => {
+  it('serializes concurrent delivery retries and rejects a reused batch key with changed payload', async () => {
+    const context = setup();
+    const { user } = await context.ctx.newUser();
+    const project = await context.projects.create({ ownerId: user.id, name: 'Delivery batch' });
+    const operation = {
+      ownerId: user.id,
+      kind: MediaOperationKind.StudioExport,
+      destination: MediaOperationDestination.Local,
+      destinationDetail: null,
+      label: 'Delivery batch',
+      assetId: null,
+      resultAssetId: null,
+      retryOfId: null,
+      projectId: project.id,
+      revisionId: 'revision-3',
+      snapshot: { kind: 'studio-export', batchKey: 'batch', batchDigest: 'reviewed', requestKey: 'landscape' },
+      settings: { shape: 'landscape' },
+      estimate: null,
+      maxAttempts: 3,
+    };
+    const version = {
+      ownerId: user.id,
+      projectId: project.id,
+      revision: 3,
+      revisionDigest: 'revision-3',
+      destination: MediaOperationDestination.Local,
+      settings: { shape: 'landscape' },
+    };
+    const [first, second] = await Promise.all([
+      context.sut.createWithRender(operation, version),
+      context.sut.createWithRender(operation, version),
+    ]);
+    expect(first.operation.id).toBe(second.operation.id);
+    expect(first.version.id).toBe(second.version.id);
+    const next = await context.sut.createWithRender(
+      { ...operation, snapshot: { ...operation.snapshot, requestKey: 'square' } },
+      version,
+    );
+    expect(next.operation.id).not.toBe(first.operation.id);
+    await expect(
+      context.sut.createWithRender(
+        { ...operation, snapshot: { ...operation.snapshot, requestKey: 'vertical', batchDigest: 'changed' } },
+        version,
+      ),
+    ).rejects.toThrow('This batch key');
+    const rows = await defaultDatabase
+      .selectFrom('media_operation')
+      .select('id')
+      .where('projectId', '=', project.id)
+      .execute();
+    expect(rows).toHaveLength(2);
+  });
+
   describe('durable publication follow-ups', () => {
     const schedule = (name: JobName) => async (tx: Transaction<DB>, assetId: string) => {
       await new SqlQueueStore(defaultDatabase).enqueue(

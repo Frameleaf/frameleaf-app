@@ -457,7 +457,25 @@ describe(MaintenanceWorkerService.name, () => {
       await sut.setAction(restore);
 
       expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
+      sut.releaseEnd();
       expect(() => sut.claimAction(restore)).not.toThrow();
+    });
+
+    it('refuses a restore while an End request is pending, until that End is released', () => {
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction({ action: MaintenanceAction.End });
+      expect(() => sut.claimAction(restore)).toThrowError(ConflictException);
+      sut.releaseEnd();
+      expect(() => sut.claimAction(restore)).not.toThrow();
+    });
+
+    it('refuses a second End while one is pending, so its cleanup cannot release the first', () => {
+      const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
+      sut.claimAction({ action: MaintenanceAction.End });
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).toThrowError(ConflictException);
+      expect(() => sut.claimAction(restore)).toThrowError(ConflictException);
+      sut.releaseEnd();
+      expect(() => sut.claimAction({ action: MaintenanceAction.End })).not.toThrow();
     });
 
     it('publishes the terminal restore error only after its reservation is released', async () => {

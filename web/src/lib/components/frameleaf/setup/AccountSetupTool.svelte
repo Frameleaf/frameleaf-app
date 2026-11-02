@@ -31,7 +31,7 @@
   import { Route } from '$lib/route';
   import { lang } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { convertBCP47, langs } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
   import { getFrameleafAccountLink, setUserOnboarding, updateMyPreferences, updateMyUser } from '@frameleaf/sdk';
   import { Icon, modalManager, themeManager, ThemePreference } from '@frameleaf/ui';
   import {
@@ -60,10 +60,7 @@
   let name = $state(user.name);
   let theme = $state<'dark' | 'light'>(themeManager.value === 'light' ? 'light' : 'dark');
   // The saved language may be a regional tag (en-US) the language files don't have; match its base.
-  const codes = langs.map((entry) => convertBCP47(entry.code));
-  let language = $state(
-    codes.find((code) => code === $lang) ?? codes.find((code) => code === $lang.split('-', 1)[0]) ?? 'en',
-  );
+  let language = $state(languageCodeFor($lang) ?? 'en');
   let albums = $state(preferences.emailNotifications.albumUpdate);
   let email = $state(preferences.emailNotifications.enabled);
   let memories = $state(preferences.memories.enabled);
@@ -192,7 +189,7 @@
   <div class="auth-field">
     <label for="frs-tool-language">{$t('language')}</label>
     <select id="frs-tool-language" bind:value={language}>
-      {#each langs as entry (entry.code)}
+      {#each languageChoices($lang, language) as entry (entry.code)}
         <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}
     </select>

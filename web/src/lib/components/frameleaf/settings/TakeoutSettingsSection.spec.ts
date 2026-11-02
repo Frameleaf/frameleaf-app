@@ -94,6 +94,15 @@ describe('TakeoutSettingsSection', () => {
     expect(sdkMock.getTakeoutImport).toHaveBeenCalledWith({ id: 'import-1' });
   });
 
+  it('says so when an import cannot be read, instead of offering a new one', async () => {
+    sdkMock.getTakeoutImport.mockRejectedValue(new Error('offline'));
+    at('area=backup&section=takeout&workflow=import&import=import-1');
+    render(TakeoutSettingsSection);
+    const dialog = screen.getByRole('dialog', { name: en.frameleaf_takeout_title });
+    expect(await within(dialog).findByText(en.frameleaf_takeout_error_generic)).toBeInTheDocument();
+    expect(within(dialog).queryByText(en.frameleaf_takeout_all_files_title)).toBeNull();
+  });
+
   it('closes back to the section, keeping the rest of the address', async () => {
     at('area=backup&section=takeout&workflow=import&scope=all');
     render(TakeoutSettingsSection);

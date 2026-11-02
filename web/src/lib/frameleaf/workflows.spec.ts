@@ -204,9 +204,9 @@ describe('workflowProblems', () => {
     storedSecrets,
   });
 
-  it('reports an unavailable trigger instead of inventing a schedule', () => {
+  it('reports an unavailable trigger on an older server', () => {
     expect(workflowProblems(draft([], 'Schedule'), methods, triggers)).toEqual([
-      { message: expect.stringContaining('Scheduled workflows are not supported') },
+      { message: 'This trigger is unavailable.' },
     ]);
   });
 

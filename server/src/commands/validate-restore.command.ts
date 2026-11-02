@@ -2,6 +2,17 @@ import { Command, CommandRunner } from 'nest-commander';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { CliService } from 'src/services/cli.service.js';
 
+/** Manager offline restore authority, shared by validate-restore and restore-state so the two cannot drift. */
+export const hasManagerRestoreAuthority = (env: NodeJS.ProcessEnv = process.env): boolean => {
+  const operationId = env.FRAMELEAF_MANAGER_RESTORE_OPERATION_ID ?? '';
+  return (
+    env.FRAMELEAF_MANAGER_ORIGIN === 'restored_library' &&
+    /^[a-f0-9]{12}$/.test(env.FRAMELEAF_MANAGER_INSTALLATION ?? '') &&
+    /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(operationId) &&
+    operationId !== '00000000-0000-0000-0000-000000000000'
+  );
+};
+
 /** Inspect an offline restored database without initialization, migrations, or worker startup. */
 @Command({ name: 'validate-restore', description: 'Validate a restored canonical database without changing it' })
 export class ValidateRestoreCommand extends CommandRunner {
@@ -16,12 +27,7 @@ export class ValidateRestoreCommand extends CommandRunner {
     try {
       const installationId = process.env.FRAMELEAF_MANAGER_INSTALLATION;
       const operationId = process.env.FRAMELEAF_MANAGER_RESTORE_OPERATION_ID;
-      if (
-        process.env.FRAMELEAF_MANAGER_ORIGIN !== 'restored_library' ||
-        !/^[a-f0-9]{12}$/.test(installationId ?? '') ||
-        !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(operationId ?? '') ||
-        operationId === '00000000-0000-0000-0000-000000000000'
-      ) {
+      if (!hasManagerRestoreAuthority()) {
         throw new Error('Manager offline restore authority required');
       }
       await this.repository.assertFrameleafDatabase();

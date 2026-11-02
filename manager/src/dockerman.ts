@@ -5,6 +5,8 @@ import { publishFile } from './files.js';
 
 export const UNRAID_ICON = 'https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png';
 export const DOCKERMAN_TEMPLATES = '/run/frameleaf-host/templates-user';
+const SERVICES = ['database', 'frameleaf-server', 'frameleaf-machine-learning'];
+const LAN_DISCOVERY = 'frameleaf-lan-discovery';
 
 type DockerManContainer = {
   Name: string;
@@ -99,14 +101,15 @@ export function dockermanTemplate(container: DockerManContainer): string {
 export async function saveDockermanTemplates(containers: DockerManContainer[], project: string, directory = DOCKERMAN_TEMPLATES): Promise<void> {
   if (!/^frameleaf-[a-f0-9]{12}$/.test(project)) throw new Refusal('dockerman_container_identity');
   // Validate the entire set before touching host templates; never overwrite an unrelated container.
-  const templates = containers.map((container) => {
+  const templates = containers.flatMap((container) => {
     const service = container.Config.Labels['com.docker.compose.service'];
     const name = container.Name.replace(/^\//, '');
     if (container.Config.Labels['com.docker.compose.project'] !== project ||
       container.Config.Labels['app.frameleaf.manager'] !== project.slice('frameleaf-'.length) ||
-      !['database', 'frameleaf-server', 'frameleaf-machine-learning'].includes(service) || name !== `${project}-${service}-1`)
+      ![...SERVICES, LAN_DISCOVERY].includes(service) || name !== `${project}-${service}-1`)
       throw new Refusal('dockerman_container_identity');
-    return [join(directory, `my-${name}.xml`), dockermanTemplate(container)];
+    // The LAN companion's entrypoint, user, read-only root and host network do not survive a template; Manager owns it.
+    return service === LAN_DISCOVERY ? [] : [[join(directory, `my-${name}.xml`), dockermanTemplate(container)]];
   });
   for (const [destination, body] of templates) {
     const temporary = `${destination}.partial`;
@@ -114,7 +117,7 @@ export async function saveDockermanTemplates(containers: DockerManContainer[], p
     await writeFile(temporary, body, { mode: 0o600, flag: 'wx' });
     await publishFile(temporary, destination);
   }
-  for (const service of ['database', 'frameleaf-server', 'frameleaf-machine-learning']) {
+  for (const service of SERVICES) {
     const path = join(directory, `my-${project}-${service}-1.xml`);
     if (!templates.some(([destination]) => destination === path)) await rm(path, { force: true });
   }

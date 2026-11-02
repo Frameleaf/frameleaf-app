@@ -81,8 +81,9 @@ class OcrModelFile(NamedTuple):
     """Where an OCR model file lives on the model source.
 
     `repo` is a repository under the model source organisation, and the file is
-    `<detection|recognition>/model.onnx` in it. `sha256` pins the exact PP-OCRv5
-    export (RapidOCR 3.8.0 ONNX), so a mirror that serves other bytes is rejected.
+    `<detection|recognition>/model.onnx` in it. `sha256` pins the exact export
+    (RapidOCR's ONNX: 3.8.0 for PP-OCRv5, 3.10.0 for PP-OCRv6), so a mirror that
+    serves other bytes is rejected.
     """
 
     repo: str
@@ -99,6 +100,11 @@ def _ocr_lang(lang: str, sha256: str) -> tuple[OcrModelFile, OcrModelFile]:
     return _OCR_DET_MOBILE, OcrModelFile(f"{lang}__PP-OCRv5_mobile", sha256)
 
 
+def _ocr_v6(size: str, detection_sha256: str, recognition_sha256: str) -> tuple[OcrModelFile, OcrModelFile]:
+    """PP-OCRv6 ships a detector and a recogniser per size; both files live in `frameleaf/PP-OCRv6_<size>`."""
+    return OcrModelFile(f"PP-OCRv6_{size}", detection_sha256), OcrModelFile(f"PP-OCRv6_{size}", recognition_sha256)
+
+
 # The one place an OCR model name maps to its (detection, recognition) files on the model source.
 # Language variants share the Chinese/English detector and only differ in the recogniser.
 _PADDLE_MODELS: dict[str, tuple[OcrModelFile, OcrModelFile]] = {
@@ -112,6 +118,23 @@ _PADDLE_MODELS: dict[str, tuple[OcrModelFile, OcrModelFile]] = {
     "KOREAN__PP-OCRv5_mobile": _ocr_lang("KOREAN", "cd6e2ea50f6943ca7271eb8c56a877a5a90720b7047fe9c41a2e541a25773c9b"),
     "LATIN__PP-OCRv5_mobile": _ocr_lang("LATIN", "b20bd37c168a570f583afbc8cd7925603890efbcdc000a59e22c269d160b5f5a"),
     "TH__PP-OCRv5_mobile": _ocr_lang("TH", "de541dd83161c241ff426f7ecfd602a0ba77d686cf3ab9a6c255ea82fd08006e"),
+    # PP-OCRv6 (multilingual: Chinese, Japanese, English and Latin-script languages; tiny has no Japanese).
+    # Pinned to RapidOCR 3.10.0's ONNX exports (its default_models.yaml), which embed their character set.
+    "PP-OCRv6_tiny": _ocr_v6(
+        "tiny",
+        "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5",
+        "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b",
+    ),
+    "PP-OCRv6_small": _ocr_v6(
+        "small",
+        "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+        "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+    ),
+    "PP-OCRv6_medium": _ocr_v6(
+        "medium",
+        "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2",
+        "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+    ),
 }
 
 
@@ -149,6 +172,7 @@ def get_inpaint_model_file(model_name: str) -> InpaintModelFile | None:
 
 
 SUPPORTED_PROVIDERS = [
+    "nv_tensorrt_rtx",
     "CUDAExecutionProvider",
     "MIGraphXExecutionProvider",
     "OpenVINOExecutionProvider",
@@ -291,3 +315,46 @@ def get_transcribe_model_file(model_name: str) -> TranscribeModelFile | None:
 
 def default_transcribe_model(gpu: bool) -> str:
     return next(name for name, model in _TRANSCRIBE_MODELS.items() if model.gpu == gpu)
+
+
+class MusicModelFile(NamedTuple):
+    """Where the music model lives on the model source: ONNX files under `audio/` in `frameleaf/<repo>`.
+
+    `files` pins every file by SHA-256, so a mirror that serves other bytes is rejected.
+    """
+
+    repo: str
+    files: tuple[tuple[str, str], ...]
+    source: str
+
+
+# The name the server asks for when it wants new music for a Studio movie (FL-561).
+MUSIC_MODEL_ALIAS = "frameleaf-music"
+
+# Make a movie (FL-561, owner decision 2026-10-26): MusicGen small (CC-BY-NC-4.0; personal use on the
+# user's own server, a home-network worker or a Frameleaf Cloud container, FL-451) as the 8-bit ONNX
+# export the Studio engine already admits (studio/rights-approval.json, model:Xenova/musicgen-small at
+# 6a8096dabfff72909ef5eae41461408e29ae20fd). The Frameleaf model mirror serves each file unchanged
+# under frameleaf/musicgen-small/audio/.
+_MUSIC_MODELS: dict[str, MusicModelFile] = {
+    "musicgen-small": MusicModelFile(
+        "musicgen-small",
+        (
+            ("audio/tokenizer.json", "a45ba2af379e1d559dbbdf176bb6a338945019534a20e15e07d22bbd0a7544b3"),
+            ("audio/text_encoder.onnx", "336afda84d24205409f20e71da691e5c21585e32aa86e3e38d73543ac6d481fc"),
+            ("audio/decoder_model_merged.onnx", "9dade5431ef5f3690cde7449d8e881b2d596d1ee5c6472752787d7d470d67091"),
+            ("audio/encodec_decode.onnx", "847918300a85c9a8f93333f482c5740e07c4e2599faed839bbec73fd0d588073"),
+        ),
+        "Xenova/musicgen-small@6a8096dabfff72909ef5eae41461408e29ae20fd",
+    ),
+}
+
+
+def resolve_music_model(model_name: str) -> str:
+    """The concrete music model a request names; the alias is MusicGen small."""
+    name = clean_name(model_name)
+    return "musicgen-small" if name == MUSIC_MODEL_ALIAS else name
+
+
+def get_music_model_file(model_name: str) -> MusicModelFile | None:
+    return _MUSIC_MODELS.get(resolve_music_model(model_name))

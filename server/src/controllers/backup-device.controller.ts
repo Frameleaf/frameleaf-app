@@ -62,7 +62,7 @@ export class BackupDeviceController {
   @Endpoint({
     summary: 'Start own device inventory reconciliation',
     description:
-      'Requires a current elevated session and no active hidden-content filter.256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.',
+      'Requires a current elevated session and no active hidden-content filter. 256 indexed bucket digests of sorted unique raw SHA256 bytes, maximum 2000 hashes per bucket. Differing buckets require complete hash lists. Snapshot database inventory excludes offline/last-checked-missing originals; not a fresh filesystem check.',
     history: new HistoryBuilder().added('v3'),
   })
   startBackupReconciliation(
@@ -79,7 +79,7 @@ export class BackupDeviceController {
   @Endpoint({
     summary: 'Reconcile one complete differing bucket',
     description:
-      'Up to2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns409 and may be retried. No completed audit until every differing bucket is validated.',
+      'Up to 2000 distinct SHA256 hashes matching original count/digest and first-byte bucket. Server extras never count as device missing. Changed server inventory refuses continuation; start a new run. Repeated validated bucket requests do not double-count; a concurrent snapshot conflict returns 409 and may be retried. No completed audit until every differing bucket is validated.',
     history: new HistoryBuilder().added('v3'),
   })
   reconcileBackupBucket(

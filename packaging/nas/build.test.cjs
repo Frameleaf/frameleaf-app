@@ -252,12 +252,11 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     const ixValues = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     for (const tag of ['latest', 'latest-cuda', 'latest-rocm', 'latest-openvino']) assert(ixValues.includes(`tag: ${tag}\n`), tag);
     // FL-291: the stop timeout must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
-    assert(unraidServer.includes('<ExtraParams>--stop-timeout=10</ExtraParams>'));
-    assert(
-      read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml').includes(
-        'server_container.set_grace_period(10)',
-      ),
-    );
+    // FL-721: and /dev/shm holds decrypted copies of encrypted Locked files (Docker's 64 MB default is too small)
+    assert(unraidServer.includes('<ExtraParams>--stop-timeout=10 --shm-size=2g</ExtraParams>'));
+    const truenasCompose = read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml');
+    assert(truenasCompose.includes('server_container.set_grace_period(10)'));
+    assert(truenasCompose.includes('server_container.set_shm_size_mb(2048)'));
     // FL-300: Frameleaf serves no metrics, so the app neither asks for metrics ports nor sets their variables
     for (const name of ['questions.yaml', 'templates/docker-compose.yaml', 'templates/test_values/basic-values.yaml']) {
       assert(!/metrics/i.test(read(`truenas/ix-dev/community/frameleaf/${name}`)), `${name} still mentions metrics`);

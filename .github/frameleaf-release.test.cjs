@@ -17,6 +17,7 @@ const {
   requireTestQualification,
   chooseTag,
   previousReleaseTag,
+  releaseNotesBody,
   deployTestImages,
   verifyImage,
   createBundle,
@@ -657,6 +658,28 @@ test("release notes compare from the previous app release, never a manager relea
   );
 });
 
+test("release notes lead with the user summary and the Jira issues, then build evidence", () => {
+  const body = releaseNotesBody({
+    summary: "\nDeleting a user now removes all of their files.\n",
+    messages: [
+      "FL-569 fix: purge every file a deleted user owned (#516)\n\nbody FL-1",
+      "FL-10, FC-2: share links (#515)",
+      "Merge branch 'main'",
+    ],
+    evidence: "Source: abc\n",
+  });
+  assert.equal(
+    body,
+    "## What's improved\n\nDeleting a user now removes all of their files.\n\n" +
+      "## Jira issues resolved\n\n- FL-569: fix: purge every file a deleted user owned (#516)\n- FL-10, FC-2: share links (#515)\n\n" +
+      "Source: abc",
+  );
+  assert.match(
+    releaseNotesBody({ summary: "x", messages: [], evidence: "e" }),
+    /resolved\n\nNone\n\ne$/,
+  );
+});
+
 test("independent versions are immutable and only the same source can resume", () => {
   assert.equal(chooseTag("1.0.0", [], [], sha), "frameleaf-v1.0.0");
   assert.equal(chooseTag("1.1.0-rc.1", [], [], sha), "frameleaf-v1.1.0-rc.1");
@@ -797,10 +820,16 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
     assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);
     for (const [name, original] of originals) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
-      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged.
+      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged, except a
+      // comment naming the exact tag above FRAMELEAF_VERSION=latest.
       assert.equal(
         bundled,
-        original,
+        name === "example.env"
+          ? original.replace(
+              /^FRAMELEAF_VERSION=latest$/m,
+              `# This release: FRAMELEAF_VERSION=${tag}\n$&`,
+            )
+          : original,
         `${name}: bundle must not pin the release`,
       );
       assert.equal(
@@ -1645,4 +1674,41 @@ test("a rollout without a percentage is refused instead of offering the release 
       /Rollout must be a whole percentage from 0 to 100/,
     );
   assert.deepEqual(writes, []);
+});
+
+test("a withdrawal without a restore tag or reason is refused before any release lookup", async (t) => {
+  const tag = "frameleaf-v3.2.0-2";
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    calls.push(String(url));
+    return new Response(
+      JSON.stringify({ id: 2, draft: false, body: "Notes" }),
+      {
+        status: 200,
+      },
+    );
+  });
+  const base = {
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    ACTION: "withdraw",
+    RELEASE_TAG: tag,
+    RESTORE_TAG: "frameleaf-v3.2.0-1",
+    REASON: "Broken upgrade",
+    DRY_RUN: "false",
+  };
+  for (const [change, message] of [
+    [{ RESTORE_TAG: undefined }, /Give the release tag to restore/],
+    [{ RESTORE_TAG: "latest" }, /Give the release tag to restore/],
+    [{ RESTORE_TAG: tag }, /Restore another release than the one withdrawn/],
+    [{ REASON: undefined }, /A withdrawal needs a reason/],
+    [{ REASON: " " }, /A withdrawal needs a reason/],
+    [{ REASON: "x".repeat(301) }, /at most 300 characters/],
+  ])
+    await assert.rejects(
+      releaseFlags({ ...base, ...change }, {}, () =>
+        assert.fail("must not run"),
+      ),
+      message,
+    );
+  assert.deepEqual(calls, []);
 });

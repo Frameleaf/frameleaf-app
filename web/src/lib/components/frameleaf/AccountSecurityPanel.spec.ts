@@ -13,10 +13,17 @@ import en from '../../../../../i18n/en.json';
  */
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'admin-id' } } }));
+const flags = vi.hoisted(() => ({ email: false }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
 
 vi.mock('@frameleaf/sdk', async () => {
   const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
-  return { ...sdk, deleteUserSessionAdmin: vi.fn(), getUserPinCodeStateAdmin: vi.fn() };
+  return {
+    ...sdk,
+    deleteUserSessionAdmin: vi.fn(),
+    getUserPinCodeStateAdmin: vi.fn(),
+    sendUserPasswordLinkAdmin: vi.fn(),
+  };
 });
 
 vi.mock('@frameleaf/ui', async () => {
@@ -44,6 +51,7 @@ const session = (overrides: Partial<SessionResponseDto> = {}): SessionResponseDt
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  flags.email = false;
   addMessages('dev', en);
   const { deleteUserSessionAdmin, getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
   vi.mocked(deleteUserSessionAdmin).mockResolvedValue(undefined as never);
@@ -87,6 +95,24 @@ describe('AccountSecurityPanel (FL-76)', () => {
     expect(screen.getByRole('button', { name: en.frameleaf_users_device_revoke })).toBeInTheDocument();
   });
 
+  it('emails a link to choose a password, only once email is set up and after a confirmation (FL-538)', async () => {
+    const { modalManager, toastManager } = await import('@frameleaf/ui');
+    const { sendUserPasswordLinkAdmin } = await import('@frameleaf/sdk');
+    vi.mocked(sendUserPasswordLinkAdmin).mockResolvedValue(undefined as never);
+    vi.mocked(modalManager.show).mockResolvedValue(true as never);
+
+    const { unmount } = render(AccountSecurityPanel, { user, sessions: [] });
+    expect(screen.queryByRole('button', { name: en.frameleaf_users_password_link })).toBeNull();
+    unmount();
+
+    flags.email = true;
+    render(AccountSecurityPanel, { user, sessions: [] });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_password_link }));
+
+    await waitFor(() => expect(sendUserPasswordLinkAdmin).toHaveBeenCalledWith({ id: 'target-id' }));
+    expect(toastManager.primary).toHaveBeenCalledWith(expect.stringContaining(user.email));
+  });
+
   it('shows whether a sign-in provider is connected (CC-31)', () => {
     render(AccountSecurityPanel, { user: { ...user, oauthId: 'oidc|123' }, sessions: [] });
 
@@ -127,6 +153,21 @@ describe('AccountSecurityPanel (FL-76)', () => {
       expect(modalManager.show).toHaveBeenCalledWith(expect.anything(), { user, mode: 'clear', hasPin: true });
       await waitFor(() => expect(getUserPinCodeStateAdmin).toHaveBeenCalledTimes(2));
       expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeEnabled();
+    });
+
+    it('the admin page disables Clear their PIN for a user with lockedEncryption (FL-721)', async () => {
+      const { getUserPinCodeStateAdmin } = await import('@frameleaf/sdk');
+      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true });
+      const encrypted = userAdminFactory.build({ id: 'morgan-id', name: 'Morgan', lockedEncryption: true });
+      render(AccountSecurityPanel, { user: encrypted, sessions: [] });
+
+      expect(
+        await screen.findByText(
+          'Morgan has encrypted their Locked files, so only they can reset their PIN, with their recovery key.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeDisabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeDisabled();
     });
 
     it('keeps both actions when the state cannot be read', async () => {

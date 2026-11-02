@@ -11,6 +11,7 @@ Public contract — KEEP IN SYNC WITH ``server/src/repositories/machine-learning
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -172,6 +173,51 @@ def _nvidia_smi() -> dict[str, Any] | None:
     return {"name": parts[0], "memoryTotalBytes": memory, "driver": parts[2]}
 
 
+def _rocm_smi() -> list[dict[str, Any]]:
+    """Name and memory of the AMD GPUs rocm-smi lists, when it is in the image (the ROCm image has it)."""
+    binary = shutil.which("rocm-smi")
+    if binary is None:
+        return []
+    try:
+        output = subprocess.run(
+            [binary, "--showproductname", "--showmeminfo", "vram", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        cards = json.loads(output.stdout) if output.returncode == 0 and output.stdout.strip() else {}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    gpus: list[dict[str, Any]] = []
+    for key in sorted(card for card in cards if card.startswith("card")):
+        card = cards[key]
+        if not isinstance(card, dict):
+            continue
+        name = card.get("Card Series") or card.get("Device Name") or card.get("Card Model") or key
+        try:
+            memory: int | None = int(card.get("VRAM Total Memory (B)") or 0) or None
+        except (TypeError, ValueError):
+            memory = None
+        gpus.append({"name": str(name), "vendor": "AMD", "memoryTotalBytes": memory})
+    return gpus
+
+
+def _amd_gpus(render_nodes: list[dict[str, Any]], sys_drm: Path = Path("/sys/class/drm")) -> list[dict[str, Any]]:
+    """The AMD GPUs MIGraphX runs on when torch is not installed to name them: rocm-smi first, else the AMD
+    render nodes passed in, named by the kernel's product name or their gfx target."""
+    gpus = _rocm_smi()
+    if gpus:
+        return gpus
+    targets = (rocm_facts() or {}).get("gfxTargets") or []
+    for index, node in enumerate(entry for entry in render_nodes if entry.get("vendor") == "AMD"):
+        name = _read(sys_drm / node["node"] / "device" / "product_name")
+        if not name:
+            name = f"AMD {targets[index]}" if index < len(targets) else "AMD GPU"
+        gpus.append({"name": name, "vendor": "AMD", "memoryTotalBytes": node.get("memoryTotalBytes")})
+    return gpus
+
+
 def _compute_capability() -> str | None:
     """CUDA compute capability of the first GPU, such as "7.5" (bf16 and FlashAttention need 8.0)."""
     try:
@@ -262,8 +308,9 @@ def container_report(providers: list[str], openvino_device_ids: list[str]) -> di
             None,
             "CUDA",
         )
-    if not gpus and "ROCMExecutionProvider" in providers:
-        backend = "ROCm"
+    if not gpus and ("MIGraphXExecutionProvider" in providers or "ROCMExecutionProvider" in providers):
+        # ONNX Runtime on ROCm without torch: the provider names no device, so the GPUs are read from the driver
+        gpus, backend = _amd_gpus(render_nodes), "ROCm"
     if not gpus and backend is None:
         gpus = _openvino_gpus(openvino_device_ids)
         backend = "OpenVINO" if gpus else "CPU"

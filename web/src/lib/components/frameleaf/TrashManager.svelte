@@ -1,5 +1,6 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
+  import { DateTime } from 'luxon';
   /**
    * Your trash (FL-47), ported from the design template's `TrashManager.jsx`.
    *
@@ -17,6 +18,7 @@
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -24,8 +26,7 @@
   import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
   import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
   import { animateFlip, canAnimate, dock, leave } from '$lib/frameleaf/motion';
-  import { OpenQueryParam } from '$lib/constants';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import {
     allSelected,
@@ -38,16 +39,19 @@
     TRASH_MAX_PAGE_SIZE,
     TRASH_PAGE_SIZE,
     TRASH_SELECTION_LIMIT,
+    TRASH_SOON_DAYS,
     trashAgeLabel,
+    trashGoingWithin,
+    trashTimeLeft,
     trashTypeFilter,
     withoutIds,
     type TrashMediaFilter,
   } from '$lib/frameleaf/trash';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { Route } from '$lib/route';
   import { websocketEvents, type AssetLocalEffectsV1 } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
@@ -70,6 +74,7 @@
     mdiCheckCircleOutline,
     mdiClose,
     mdiDeleteOutline,
+    mdiDeleteRestore,
     mdiMagnify,
     mdiMovieOpenOutline,
   } from '@mdi/js';
@@ -95,7 +100,8 @@
   let query = $state('');
   let appliedQuery = $state('');
   let media = $state<TrashMediaFilter>('all');
-  let sort = $state<TrashItemSort>(TrashItemSort.Recent);
+  // FL-519: what goes first leads, so nothing is lost by surprise.
+  let sort = $state<TrashItemSort>(TrashItemSort.Soonest);
 
   let selected = $state<string[]>([]);
   let notice = $state('');
@@ -169,12 +175,9 @@
       }
     });
 
-  const retentionValue = $derived(
-    trashEnabled ? $t('frameleaf_trash_summary_days', { values: { count: days } }) : $t('frameleaf_trash_disabled'),
-  );
-  const retentionLabel = $derived(
-    trashEnabled ? $t('frameleaf_trash_summary_retention') : $t('frameleaf_trash_summary_disabled'),
-  );
+  /** FL-539: the day the next item goes for good, as the prototype says it ("Thursday, 14 November"). */
+  const dayOf = (iso: string) =>
+    DateTime.fromISO(iso, { locale: $locale }).toLocaleString({ weekday: 'long', month: 'long', day: 'numeric' });
 
   const fetchPage = (page: number, size: number) =>
     getTrashItems({
@@ -183,6 +186,7 @@
       sort,
       ...(appliedQuery.trim() && { query: appliedQuery.trim() }),
       ...(trashTypeFilter(media) && { $type: trashTypeFilter(media) }),
+      ...(trashGoingWithin(media) !== undefined && { goingWithinDays: trashGoingWithin(media) }),
     });
 
   /**
@@ -499,6 +503,17 @@
     return $t(key, { values });
   };
 
+  /** FL-519: "4 days left" and the day it goes, or "Goes tonight" while the Trash is off. */
+  const leftOf = (row: TrashItemResponseDto) => (trashEnabled ? trashTimeLeft(row.trashedAt, days) : null);
+  const leftText = (daysLeft: number) =>
+    daysLeft === 0
+      ? $t('frameleaf_trash_goes_tonight')
+      : $t('frameleaf_trash_days_left', { values: { count: daysLeft } });
+  const removedText = (removedOn: Date) =>
+    $t('frameleaf_trash_removed_on', {
+      values: { date: removedOn.toLocaleDateString($locale, { weekday: 'short', month: 'short', day: 'numeric' }) },
+    });
+
   const sizeText = (row: TrashItemResponseDto) =>
     row.fileSizeInByte === null ? $t('frameleaf_trash_size_unknown') : formatBytes(row.fileSizeInByte);
 
@@ -556,20 +571,44 @@
 </script>
 
 <section class="trash-manager" aria-label={$t('frameleaf_trash_label')}>
-  <div class="tm-summary">
-    <div>
-      <strong>{available.toLocaleString($locale)}</strong>
-      <span>{$t('frameleaf_trash_summary_items')}</span>
+  <!-- FL-539: the prototype's Hero (trash.jsx) in place of the three summary numbers -->
+  {#if summary && trashEnabled}
+    <Hero
+      label={$t('frameleaf_trash_hero_label')}
+      icon={available > 0 ? mdiDeleteRestore : mdiDeleteOutline}
+      title={available > 0
+        ? $t('frameleaf_trash_hero_title', { values: { count: available } })
+        : $t('frameleaf_trash_hero_empty_title')}
+      body={available > 0
+        ? `${$t('frameleaf_trash_hero_body', { values: { days } })}${
+            summary.nextGoesAt
+              ? ` ${$t('frameleaf_trash_hero_next', { values: { date: dayOf(summary.nextGoesAt) } })}`
+              : ''
+          } ${$t('frameleaf_trash_hero_size', { values: { size: formatBytes(summary.bytes) } })}`
+        : $t('frameleaf_trash_hero_empty_body', { values: { days } })}
+    >
+      {#snippet actions()}
+        {#if authManager.user.isAdmin}
+          <Button onclick={() => void goto(commandCenterUrl('storage', 'trash'))}>
+            {$t('frameleaf_trash_hero_change')}
+          </Button>
+        {/if}
+      {/snippet}
+    </Hero>
+  {/if}
+
+  {#if !trashEnabled && actionable > 0}
+    <!-- FL-519: with the Trash off, what is still here goes tonight; say so first, with the way out. -->
+    <div class="tm-off" role="status">
+      <div>
+        <strong>{$t('frameleaf_trash_off_title')}</strong>
+        <p>{$t('frameleaf_trash_off_body', { values: { count: actionable } })}</p>
+      </div>
+      <Button variant="primary" disabled={busy} onclick={() => void restore(null)}>
+        {$t('frameleaf_trash_restore_all', { values: { count: actionable } })}
+      </Button>
     </div>
-    <div>
-      <strong>{formatBytes(summary?.bytes ?? 0)}</strong>
-      <span>{$t('frameleaf_trash_summary_sizes')}</span>
-    </div>
-    <div>
-      <strong>{retentionValue}</strong>
-      <span>{retentionLabel}</span>
-    </div>
-  </div>
+  {/if}
 
   <p class="tm-retention">
     {trashEnabled
@@ -596,6 +635,7 @@
       {$t('frameleaf_trash_media')}
       <select bind:value={media} onchange={resetView}>
         <option value="all">{$t('frameleaf_trash_media_all')}</option>
+        <option value="soon">{$t('frameleaf_trash_media_soon', { values: { count: TRASH_SOON_DAYS } })}</option>
         <option value="image">{$t('frameleaf_trash_media_photos')}</option>
         <option value="video">{$t('frameleaf_trash_media_videos')}</option>
       </select>
@@ -603,16 +643,13 @@
     <label>
       {$t('frameleaf_trash_sort')}
       <select bind:value={sort} onchange={resetView}>
+        <option value={TrashItemSort.Soonest}>{$t('frameleaf_trash_sort_soonest')}</option>
         <option value={TrashItemSort.Recent}>{$t('frameleaf_trash_sort_recent')}</option>
         <option value={TrashItemSort.Size}>{$t('frameleaf_trash_sort_size')}</option>
         <option value={TrashItemSort.Name}>{$t('frameleaf_trash_sort_name')}</option>
       </select>
     </label>
-    {#if authManager.user.isAdmin}
-      <Button onclick={() => void goto(Route.systemSettings({ isOpen: OpenQueryParam.TRASH }))}>
-        {$t('frameleaf_trash_retention_settings')}
-      </Button>
-    {/if}
+    <!-- FL-539: "Change how long items are kept" now sits on the Hero, as in the prototype -->
   </div>
 
   {#if error && !reviewOpen}
@@ -714,6 +751,15 @@
           <strong>{row.originalFileName}</strong>
           <span>{sizeText(row)} · {kindText(row)}</span>
           <small>{ageText(row)}</small>
+          {#if !row.isOffline}
+            {@const left = leftOf(row)}
+            {#if !trashEnabled}
+              <span class="tm-left soon">{$t('frameleaf_trash_goes_tonight')}</span>
+            {:else if left}
+              <span class="tm-left" class:soon={left.daysLeft <= TRASH_SOON_DAYS}>{leftText(left.daysLeft)}</span>
+              <small>{removedText(left.removedOn)}</small>
+            {/if}
+          {/if}
           {#if row.isOffline}
             <!-- No checkbox and no Restore here on purpose: the library scan owns this item. -->
             <span class="tm-badge">{$t('frameleaf_trash_offline_badge')}</span>
@@ -771,6 +817,9 @@
       <strong>{$t('frameleaf_trash_manage_all')}</strong>
       <p>
         {$t('frameleaf_trash_manage_all_help', { values: { count: actionable } })}
+        {#if actionable > 0 && summary}
+          {$t('frameleaf_trash_frees', { values: { size: formatBytes(summary.freesBytes) } })}
+        {/if}
         {#if !sessionAccess.isElevated}
           {$t('frameleaf_trash_manage_all_locked')}
         {/if}
@@ -876,6 +925,34 @@
 </Dialog>
 
 <style>
+  .tm-off {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3);
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 var(--fl-space-4);
+    padding: var(--fl-space-4);
+    border: 1px solid color-mix(in srgb, var(--fl-danger, #d70015) 35%, transparent);
+    border-radius: var(--fl-radius-md, 12px);
+    background: color-mix(in srgb, var(--fl-danger, #d70015) 7%, transparent);
+  }
+  .tm-off p {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+  }
+  .tm-left {
+    justify-self: start;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--fl-success, #248a3d);
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .tm-left.soon {
+    color: var(--fl-warning, #b25000);
+  }
   .trash-manager {
     min-width: 0;
     color: var(--fl-text);
@@ -884,24 +961,6 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.6;
-  }
-  .tm-summary {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 20px;
-    padding: 23px 0 10px;
-  }
-  .tm-summary strong {
-    display: block;
-    font-size: 25px;
-    font-weight: 550;
-    font-variant-numeric: var(--fl-numeric);
-  }
-  .tm-summary span {
-    display: block;
-    margin-top: 7px;
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
   }
   .trash-manager .tm-retention {
     max-width: 850px;
@@ -1182,15 +1241,6 @@
     gap: 8px;
   }
   @media (max-width: 700px) {
-    .tm-summary {
-      gap: 10px;
-    }
-    .tm-summary strong {
-      font-size: 20px;
-    }
-    .tm-summary span {
-      line-height: 1.5;
-    }
     .tm-toolbar {
       flex-wrap: wrap;
     }

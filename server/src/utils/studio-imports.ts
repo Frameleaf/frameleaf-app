@@ -90,6 +90,36 @@ const unplaceable =
 const cubeKeyword =
   /^(TITLE|LUT_3D_SIZE|LUT_1D_SIZE|DOMAIN_MIN|DOMAIN_MAX|LUT_3D_INPUT_RANGE|LUT_1D_INPUT_RANGE)(?:[ \t]|$)/;
 
+/**
+ * An SVG opens with an optional XML declaration, any comments and an optional SVG doctype before
+ * `<svg`. Read step by step: a single regular expression for the comments backtracks exponentially.
+ */
+const isSvgHead = (text: string) => {
+  let rest = text;
+  if (/^<\?xml/i.test(rest)) {
+    const end = rest.indexOf('>');
+    if (end === -1) {
+      return false;
+    }
+    rest = rest.slice(end + 1).trimStart();
+  }
+  while (rest.startsWith('<!--')) {
+    const end = rest.indexOf('-->', 4);
+    if (end === -1) {
+      return false;
+    }
+    rest = rest.slice(end + 3).trimStart();
+  }
+  if (/^<!DOCTYPE svg/i.test(rest)) {
+    const end = rest.indexOf('>');
+    if (end === -1) {
+      return false;
+    }
+    rest = rest.slice(end + 1).trimStart();
+  }
+  return /^<svg[\s>]/i.test(rest);
+};
+
 const textHead = (bytes: Uint8Array) => {
   let text = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, 1024));
   if (text.codePointAt(0) === 0xfe_ff) {
@@ -160,7 +190,7 @@ export function sniffStudioImport(head: Uint8Array, declared: string | undefined
     return { contentType: 'image/gif', kind: 'image', extension: '.gif' };
   }
   const text = textHead(head);
-  if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE svg[^>]*>\s*)?<svg[\s>]/i.test(text)) {
+  if (isSvgHead(text)) {
     return { contentType: 'image/svg+xml', kind: 'vector', extension: '.svg' };
   }
   if (text.startsWith('{')) {

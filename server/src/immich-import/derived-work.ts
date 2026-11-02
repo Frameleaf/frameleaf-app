@@ -16,6 +16,16 @@ export const IMPORT_DERIVED_STAGES = [
   ['face-detection', JobName.AssetDetectFaces],
 ] as const;
 
+/** Every stage a derived run holds: the per-asset stages, people thumbnails and (FL-414) identical files. */
+export const IMPORT_DERIVED_RUN_STAGES = [
+  ...IMPORT_DERIVED_STAGES.map(([, stage]) => stage),
+  JobName.PersonGenerateThumbnail,
+  JobName.IdenticalFilesCheck,
+] as const;
+
+/** FL-414: the import's one identical-files item; the run itself covers the whole server. */
+export const IMPORT_IDENTICAL_FILES_ITEM = 'identical-files';
+
 /** The same verified journal must resolve the same run even after a lost commit acknowledgement. */
 export const importDerivedRunId = (sourceFingerprint: string, configFingerprint: string): string =>
   v5(JSON.stringify([IMPORT_DERIVED_RUN_KIND, sourceFingerprint, configFingerprint]), v5.URL);
@@ -160,6 +170,24 @@ export async function transferImportedWork(
       and i.selection = ${JSON.stringify(personIntent.data)}::text::jsonb || p.data || jsonb_build_object('id', p.id)
   ) limit 1`.execute(db);
   if (missingPeople.length > 0) throw new ImportRefused('DERIVED_PERSON_WORK_MANIFEST_MISMATCH');
+
+  // FL-414: once the import is activated, the identical-files run (FL-413) reads every file again,
+  // stores identical files once, merges identical photos and recovers orphans into Recovered Media.
+  // One item for the whole server, frozen here like every stage, so the importer still changes no files.
+  const identicalIntent = intentFor(JobName.IdenticalFilesCheck);
+  identicalIntent.data = { ...identicalIntent.data, importRunId: runId };
+  await freezeSelection(
+    db,
+    identicalIntent,
+    db.selectNoFrom(sql<string>`${sql.lit(IMPORT_IDENTICAL_FILES_ITEM)}`.as('id')),
+    undefined,
+    runId,
+    readiness,
+  );
+  const { rows: identical } = await sql`select 1 from job_run_item i join job_selection s on s.id = i."selectionId"
+    where i."runId" = ${runId}::uuid and i.stage = ${identicalIntent.name} and s."capturedAt" is not null
+      and i."itemKey" = ${IMPORT_IDENTICAL_FILES_ITEM} limit 1`.execute(db);
+  if (identical.length === 0) throw new ImportRefused('DERIVED_IDENTICAL_FILES_MANIFEST_MISMATCH');
   await sql`analyze (skip_locked) job_run_item, job_selection, job_selection_run`.execute(db);
 
   const stageNames = sql.join(

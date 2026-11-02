@@ -256,6 +256,19 @@ describe('transformOcrBoundingBox', () => {
       expect(result.y4).toBeCloseTo(0.2, 5);
     });
 
+    it('should order corners by the sum of several rotations', () => {
+      const twice: AssetEditActionItem[] = [
+        { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+        { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+      ];
+      const once: AssetEditActionItem[] = [{ action: AssetEditAction.Rotate, parameters: { angle: 180 } }];
+      const result = transformOcrBoundingBox(baseOcr, twice, baseDimensions);
+      const expected = transformOcrBoundingBox(baseOcr, once, baseDimensions);
+      for (const key of ['x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'x4', 'y4'] as const) {
+        expect(result[key]).toBeCloseTo(expected[key], 5);
+      }
+    });
+
     it('should rotate 180 degrees and reorder points', () => {
       const edits: AssetEditActionItem[] = [{ action: AssetEditAction.Rotate, parameters: { angle: 180 } }];
       const result = transformOcrBoundingBox(baseOcr, edits, baseDimensions);

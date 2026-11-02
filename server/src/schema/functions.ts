@@ -486,3 +486,52 @@ export const desktop_clip_producer_guard = registerFunction({
       RETURN NEW;
     END`,
 });
+
+// Returning to personal must re-send metadata cleared by an older client's asset deletion.
+export const asset_library_scope_refresh = registerFunction({
+  name: 'asset_library_scope_refresh',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE asset_exif SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_edit SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_face SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_metadata SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_ocr SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END`,
+});
+
+export const album_library_scope_refresh = registerFunction({
+  name: 'album_library_scope_refresh',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE album_asset SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+    UPDATE album_user SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END`,
+});
+
+/** Coordinate changes invalidate both saved suggestions and in-flight adoption identities. */
+export const photo_location_invalidate = registerFunction({
+  name: 'photo_location_invalidate',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF OLD.latitude IS DISTINCT FROM NEW.latitude OR OLD.longitude IS DISTINCT FROM NEW.longitude THEN
+        DELETE FROM public.asset_location_insight WHERE "assetId" = NEW."assetId";
+      ELSIF OLD."gpsAccuracyM" IS DISTINCT FROM NEW."gpsAccuracyM"
+        OR COALESCE('latitude' = ANY(OLD."lockedProperties"), false) IS DISTINCT FROM COALESCE('latitude' = ANY(NEW."lockedProperties"), false) THEN
+        DELETE FROM public.asset_location_insight WHERE "assetId" = NEW."assetId" AND NOT dismissed;
+      ELSE RETURN NULL;
+      END IF;
+      DELETE FROM public.photo_location_scan_item WHERE "assetId" = NEW."assetId";
+      RETURN NULL;
+    END;`,
+});

@@ -6,6 +6,10 @@
    * "Dismiss" and is not shown again (`next-steps.svelte.ts`).
    *
    * Those three places are the server's, so only an administrator is offered the card.
+   *
+   * UI review 2026-10-30 #7 (prototype `NextStepsRow.jsx`): on phones the card is one row, so the
+   * photos start on the first screen. The row names the card and how many suggestions it holds,
+   * opens to the three of them, and dismisses the card for good like the card's own close button.
    */
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import { dismissNextSteps, nextStepsOffered } from '$lib/components/timeline/next-steps.svelte';
@@ -15,8 +19,20 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { Icon } from '@frameleaf/ui';
-  import { mdiChevronRight, mdiClose, mdiCloudUploadOutline, mdiProgressClock, mdiShieldCheckOutline } from '@mdi/js';
+  import {
+    mdiCheckCircleOutline,
+    mdiChevronDown,
+    mdiChevronRight,
+    mdiClose,
+    mdiCloudUploadOutline,
+    mdiProgressClock,
+    mdiShieldCheckOutline,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
+
+  const phone = new MediaQuery('max-width: 700px');
+  let expanded = $state(false);
 
   const userId = $derived(authManager.authenticated && authManager.user.isAdmin ? authManager.user.id : undefined);
   const show = $derived(nextStepsOffered(userId));
@@ -47,7 +63,46 @@
   ]);
 </script>
 
-{#if show && userId}
+{#if show && userId && phone.current}
+  <section class="fl-next-steps-row" aria-label={$t('frameleaf_next_steps_title')} data-testid="frameleaf-next-steps">
+    <div class="fl-nsr-row">
+      <button
+        type="button"
+        class="fl-nsr-main"
+        aria-expanded={expanded}
+        aria-controls="fl-next-steps-list"
+        onclick={() => (expanded = !expanded)}
+      >
+        <Icon icon={mdiCheckCircleOutline} size="18" aria-hidden />
+        <span class="fl-nsr-text">
+          <strong>{$t('frameleaf_next_steps_title')}</strong> · {$t('frameleaf_next_steps_summary', {
+            values: { count: steps.length },
+          })}
+        </span>
+        <Icon icon={mdiChevronDown} size="16" aria-hidden class="fl-nsr-chevron" />
+      </button>
+      <IconButton label={$t('frameleaf_next_steps_dismiss')} onclick={() => dismissNextSteps(userId)}>
+        <Icon icon={mdiClose} size="18" />
+      </IconButton>
+    </div>
+    {#if expanded}
+      <ul id="fl-next-steps-list" class="fl-nsr-list">
+        {#each steps as step (step.id)}
+          <li>
+            <a href={step.href} data-step={step.id}>
+              <Icon icon={step.icon} size="18" aria-hidden />
+              <span class="fl-nsr-step">
+                <strong>{step.title}</strong>
+                <small>{step.body}</small>
+              </span>
+              <Icon icon={mdiChevronRight} size="16" aria-hidden />
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+{:else if show && userId}
   <section
     class="fl-next-steps"
     aria-labelledby="fl-next-steps-title"
@@ -159,5 +214,84 @@
   }
   :global([dir='rtl']) a > :global(svg:last-child) {
     scale: -1 1;
+  }
+
+  /* Phones: one row (review-1030-shell.css `.nsr`). */
+  .fl-next-steps-row {
+    margin: var(--fl-space-3) 0 0;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-panel);
+    color: var(--fl-text);
+  }
+  .fl-nsr-row {
+    display: flex;
+    align-items: center;
+  }
+  .fl-nsr-main {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--fl-space-2);
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 var(--fl-space-3);
+    border: 0;
+    background: none;
+    color: var(--fl-muted);
+    font-size: 13px;
+    text-align: start;
+  }
+  .fl-nsr-main > :global(svg:first-child) {
+    flex: none;
+    color: var(--fl-accent);
+  }
+  .fl-nsr-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fl-nsr-text strong {
+    color: var(--fl-text);
+    font-weight: 600;
+  }
+  .fl-nsr-main :global(.fl-nsr-chevron) {
+    flex: none;
+    transition: rotate var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-nsr-main[aria-expanded='true'] :global(.fl-nsr-chevron) {
+    rotate: 180deg;
+  }
+  ul.fl-nsr-list {
+    display: grid;
+    gap: 0;
+    padding: 0 var(--fl-space-2) var(--fl-space-2);
+  }
+  .fl-nsr-list a {
+    gap: var(--fl-space-3);
+    min-height: 44px;
+    padding: var(--fl-space-2);
+    background: none;
+    color: var(--fl-muted);
+  }
+  .fl-nsr-list a > :global(svg:first-child) {
+    flex: none;
+    color: var(--fl-accent);
+  }
+  .fl-nsr-step {
+    display: grid;
+    flex: 1;
+    gap: 2px;
+    min-width: 0;
+  }
+  .fl-nsr-step strong {
+    color: var(--fl-text);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .fl-nsr-step small {
+    font-size: 12px;
   }
 </style>

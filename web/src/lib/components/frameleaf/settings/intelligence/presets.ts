@@ -59,14 +59,17 @@ export const TEXT_DETAIL_NORMAL = 736;
 export const TEXT_DETAIL_SMALL_PRINT = 1280;
 
 /**
- * The text-reading models the server can load, grouped by the languages each reads. Only the
- * Chinese, Japanese and English group has a larger model.
+ * The text-reading models the server can load, grouped by the languages each reads. The Chinese,
+ * Japanese and English group and the multilingual PP-OCRv6 group have a larger model.
  */
-export type TextLanguage = 'latin' | 'english' | 'cjk' | 'korean' | 'cyrillic' | 'greek' | 'thai';
+export type TextLanguage =
+  'latin' | 'english' | 'cjk' | 'multilingual' | 'chinese_latin' | 'korean' | 'cyrillic' | 'greek' | 'thai';
 export const TEXT_LANGUAGES: readonly TextLanguage[] = [
   'latin',
   'english',
   'cjk',
+  'multilingual',
+  'chinese_latin',
   'korean',
   'cyrillic',
   'greek',
@@ -77,6 +80,10 @@ export const TEXT_MODELS: readonly { value: string; language: TextLanguage; larg
   { value: 'EN__PP-OCRv5_mobile', language: 'english' },
   { value: 'PP-OCRv5_mobile', language: 'cjk' },
   { value: 'PP-OCRv5_server', language: 'cjk', large: true },
+  // PP-OCRv6: one multilingual model in three sizes (upstream 3df38fe7f2); tiny reads no Japanese.
+  { value: 'PP-OCRv6_small', language: 'multilingual' },
+  { value: 'PP-OCRv6_medium', language: 'multilingual', large: true },
+  { value: 'PP-OCRv6_tiny', language: 'chinese_latin' },
   { value: 'KOREAN__PP-OCRv5_mobile', language: 'korean' },
   { value: 'ESLAV__PP-OCRv5_mobile', language: 'cyrillic' },
   { value: 'EL__PP-OCRv5_mobile', language: 'greek' },

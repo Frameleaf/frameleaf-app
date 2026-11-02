@@ -28,8 +28,11 @@ def coreml(tmp_path, monkeypatch):
         def add_free_dimension_override_by_name(self, name, size):
             self.overrides[name] = size
 
+        def add_session_config_entry(self, key, value):
+            pass
+
     class Session:
-        def __init__(self, model, *, providers, provider_options, sess_options):
+        def __init__(self, model, *, providers, provider_options, sess_options, disabled_optimizers=()):
             assert not observer.active
             self.providers, self.options = providers, sess_options
             self.provider_options = provider_options

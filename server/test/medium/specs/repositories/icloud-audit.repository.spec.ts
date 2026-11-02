@@ -795,7 +795,9 @@ describe(ICloudAuditRepository.name, () => {
       });
       await entered.promise;
       let changed = false;
+      let pid = 0;
       const writing = db.connection().execute(async (writer) => {
+        pid = (await sql<{ pid: number }>`SELECT pg_backend_pid()::int AS pid`.execute(writer)).rows[0].pid;
         if (change === 'cancel') {
           await sql`UPDATE media_operation SET "cancelRequestedAt"=clock_timestamp() WHERE id=${fixture.authority.operationId}::uuid`.execute(
             writer,
@@ -807,7 +809,15 @@ describe(ICloudAuditRepository.name, () => {
         changed = true;
       });
       try {
-        await new Promise((resolve) => setImmediate(resolve));
+        let blocked = false;
+        for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+          if (pid)
+            blocked = (
+              await sql<{ blocked: boolean }>`SELECT cardinality(pg_blocking_pids(${pid}))>0 AS blocked`.execute(db)
+            ).rows[0].blocked;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(blocked).toBe(true);
         expect(changed).toBe(false);
       } finally {
         release.resolve();

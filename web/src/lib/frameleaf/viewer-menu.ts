@@ -23,7 +23,7 @@ import type { Translations } from 'svelte-i18n';
  * - The accept, rerun and clear enrichment actions stay in the information panel's Enrichment card
  *   (FL-36), where the score and review state they act on are visible, as the template draws them.
  * - The template's `lock`/`unlock` pair is one entry, `set-visibility-locked`, labelled Mark or
- *   Unmark Sensitive (FL-34).
+ *   Unlock (FL-34).
  */
 
 /** Every action the Frameleaf viewer menu can offer. Mirrors the prototype's `VIEWER_ACTIONS`. */
@@ -201,7 +201,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
           'add-to-album',
           hasAlbumContext && canEditAlbum && 'remove-from-album',
           isOwner && !isLocked && (isArchived ? 'unarchive' : 'archive'),
-          // Mark or Unmark Sensitive (FL-34): the lock, metadata on the asset, which keeps its albums.
+          // Lock or Unlock (FL-34): the lock, metadata on the asset, which keeps its albums.
           isOwner && 'set-visibility-locked',
         ]),
       },

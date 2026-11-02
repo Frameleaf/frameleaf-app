@@ -4,12 +4,15 @@ import { mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import {
+  TRASH_REUPLOAD_WINDOW_MS,
   assertPreferencesRevision,
   changesLockedRules,
   getPreferences,
   getPreferencesPartial,
   getPreferencesRevision,
+  isTrashReuploadOpen,
   mergePreferences,
+  relockMinutesOf,
   restrictPreferencesUpdate,
   withoutStoredLockedRuleIds,
 } from 'src/utils/preferences.js';
@@ -83,6 +86,24 @@ describe('preferences (FL-77 admin casting permission)', () => {
     it('does not change unrelated groups', () => {
       const preferences = getPreferences(stored({ memories: { enabled: false } }));
       expect(mapPreferences(preferences).memories).toEqual(preferences.memories);
+    });
+  });
+
+  describe('Lock again after (FL-517)', () => {
+    it('lasts an hour unless the account chose 5 or 15 minutes', () => {
+      expect(relockMinutesOf(getPreferences([]))).toBe(60);
+      expect(relockMinutesOf(getPreferences(stored({ lockedPin: { relockMinutes: 15 } })))).toBe(15);
+      expect(relockMinutesOf(getPreferences(stored({ lockedPin: { relockMinutes: 7 } })))).toBe(60);
+    });
+
+    it('is the account’s own choice: an administrator cannot change it', () => {
+      const current = getPreferences([]);
+      expect(restrictPreferencesUpdate(current, { lockedPin: { relockMinutes: 5 } }, 'admin')).not.toHaveProperty(
+        'lockedPin',
+      );
+      expect(restrictPreferencesUpdate(current, { lockedPin: { relockMinutes: 5 } }, 'user').lockedPin).toEqual({
+        relockMinutes: 5,
+      });
     });
   });
 
@@ -435,5 +456,28 @@ describe('navigation defaults (FL-30 / FL-146)', () => {
     expect(getPreferencesPartial(preferences)).toEqual({ folders: { sidebarWeb: false } });
     preferences.folders.sidebarWeb = true;
     expect(getPreferencesPartial(preferences)).toEqual({});
+  });
+});
+
+describe('re-uploading from the Trash (FL-556)', () => {
+  it('opens for at most a day, whatever the client sent, and closes when the time passes', () => {
+    const before = Date.now();
+    const merged = mergePreferences(
+      getPreferences([]),
+      { trash: { reuploadUntil: new Date(before + 7 * TRASH_REUPLOAD_WINDOW_MS).toISOString() } },
+      'user',
+    );
+    const until = Date.parse(merged.trash.reuploadUntil);
+    expect(until).toBeGreaterThanOrEqual(before + TRASH_REUPLOAD_WINDOW_MS);
+    expect(until).toBeLessThanOrEqual(Date.now() + TRASH_REUPLOAD_WINDOW_MS);
+    expect(isTrashReuploadOpen(merged)).toBe(true);
+    expect(isTrashReuploadOpen(merged, until + 1)).toBe(false);
+    expect(isTrashReuploadOpen(getPreferences([]))).toBe(false);
+  });
+
+  it("is the account owner's choice, never an administrator's", () => {
+    const reuploadUntil = new Date(Date.now() + 60_000).toISOString();
+    const merged = mergePreferences(getPreferences([]), { trash: { reuploadUntil } }, 'admin');
+    expect(merged.trash.reuploadUntil).toBe('');
   });
 });

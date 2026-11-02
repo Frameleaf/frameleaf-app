@@ -1,0 +1,984 @@
+diff --git a/src/config/hotkeys.ts b/src/config/hotkeys.ts
+--- a/src/config/hotkeys.ts
++++ b/src/config/hotkeys.ts
+@@ -14,6 +14,11 @@
+   GO_TO_END: "end",
+   NEXT_SNAP_POINT: "down",
+   PREVIOUS_SNAP_POINT: "up",
++
++  TRIM_BEFORE_PLAYHEAD: "q",
++  TRIM_AFTER_PLAYHEAD: "w",
++  RIPPLE_TRIM_BEFORE_PLAYHEAD: "shift+q",
++  RIPPLE_TRIM_AFTER_PLAYHEAD: "shift+w",
+ 
+   // Timeline editing
+   SPLIT_AT_PLAYHEAD_ALT: "alt+c",
+@@ -298,6 +303,11 @@
+   RIPPLE_DELETE: "Ripple delete selected items",
+   RIPPLE_DELETE_ALT: "Ripple delete selected items (alternative)",
+   FREEZE_FRAME: "Insert freeze frame at playhead",
++  TRIM_BEFORE_PLAYHEAD: "Remove before playhead",
++  TRIM_AFTER_PLAYHEAD: "Remove after playhead",
++  RIPPLE_TRIM_BEFORE_PLAYHEAD: "Ripple remove before playhead",
++  RIPPLE_TRIM_AFTER_PLAYHEAD: "Ripple remove after playhead",
++
+   LINK_AUDIO_VIDEO: "Link selected clips",
+   UNLINK_AUDIO_VIDEO: "Unlink selected clips",
+   TOGGLE_LINKED_SELECTION: "Toggle linked selection",
+diff --git a/src/features/settings/components/hotkey-editor-sections.ts b/src/features/settings/components/hotkey-editor-sections.ts
+--- a/src/features/settings/components/hotkey-editor-sections.ts
++++ b/src/features/settings/components/hotkey-editor-sections.ts
+@@ -127,6 +127,11 @@
+         labelKey: "projects.settings.hotkeys.items.splitAtPlayhead",
+         keys: ["SPLIT_AT_PLAYHEAD_ALT"],
+       },
++      { labelKey: "trimToPlayhead.before", keys: ["TRIM_BEFORE_PLAYHEAD"] },
++      { labelKey: "trimToPlayhead.after", keys: ["TRIM_AFTER_PLAYHEAD"] },
++      { labelKey: "trimToPlayhead.rippleBefore", keys: ["RIPPLE_TRIM_BEFORE_PLAYHEAD"] },
++      { labelKey: "trimToPlayhead.rippleAfter", keys: ["RIPPLE_TRIM_AFTER_PLAYHEAD"] },
++
+       {
+         labelKey: "projects.settings.hotkeys.items.joinSelectedClips",
+         keys: ["JOIN_ITEMS"],
+diff --git a/src/features/timeline/components/timeline-item/item-context-menu.tsx b/src/features/timeline/components/timeline-item/item-context-menu.tsx
+--- a/src/features/timeline/components/timeline-item/item-context-menu.tsx
++++ b/src/features/timeline/components/timeline-item/item-context-menu.tsx
+@@ -13,6 +13,8 @@
+ } from '@/components/ui/context-menu'
+ import type { LazyContextMenuEventInit } from '../../utils/lazy-context-menu'
+ import { captureContextMenuEventInit, replayContextMenuEvent } from '../../utils/lazy-context-menu'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { trimSelectedToPlayhead } from '../../stores/actions/edit/trim-actions'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useGradeClipboardStore } from '@/shared/state/grade-clipboard'
+ import { useItemsStore } from '../../stores/items-store'
+@@ -295,6 +297,7 @@
+         </span>
+       </ContextMenuTrigger>
+       <ContextMenuContent>
++        <PlayheadTrimActions t={t} hotkeys={hotkeys} />
+         <JoinActions t={t} hotkeys={hotkeys} {...joinActions} />
+         {linkActions && <LinkActions t={t} hotkeys={hotkeys} {...linkActions} />}
+         <KeyframeActions
+@@ -709,3 +712,55 @@
+     </>
+   )
+ }
++
++function PlayheadTrimActions({ t, hotkeys }: ItemContextMenuSectionProps) {
++  const ids = useSelectionStore((state) => state.selectedItemIds)
++  const frame = usePlaybackStore((state) => state.currentFrame)
++  const items = useItemsStore((state) => state.items)
++  const enabled = ids.some((id) =>
++    items.some(
++      (item) => item.id === id && item.from < frame && frame < item.from + item.durationInFrames,
++    ),
++  )
++  return (
++    <>
++      <ContextMenuItem
++        disabled={!enabled}
++        onSelect={() => trimSelectedToPlayhead(ids, frame, 'start', false)}
++      >
++        {t('trimToPlayhead.before')}
++        <ContextMenuShortcut>
++          {formatHotkeyBinding(hotkeys.TRIM_BEFORE_PLAYHEAD)}
++        </ContextMenuShortcut>
++      </ContextMenuItem>
++      <ContextMenuItem
++        disabled={!enabled}
++        onSelect={() => trimSelectedToPlayhead(ids, frame, 'end', false)}
++      >
++        {t('trimToPlayhead.after')}
++        <ContextMenuShortcut>
++          {formatHotkeyBinding(hotkeys.TRIM_AFTER_PLAYHEAD)}
++        </ContextMenuShortcut>
++      </ContextMenuItem>
++      <ContextMenuItem
++        disabled={!enabled}
++        onSelect={() => trimSelectedToPlayhead(ids, frame, 'start', true)}
++      >
++        {t('trimToPlayhead.rippleBefore')}
++        <ContextMenuShortcut>
++          {formatHotkeyBinding(hotkeys.RIPPLE_TRIM_BEFORE_PLAYHEAD)}
++        </ContextMenuShortcut>
++      </ContextMenuItem>
++      <ContextMenuItem
++        disabled={!enabled}
++        onSelect={() => trimSelectedToPlayhead(ids, frame, 'end', true)}
++      >
++        {t('trimToPlayhead.rippleAfter')}
++        <ContextMenuShortcut>
++          {formatHotkeyBinding(hotkeys.RIPPLE_TRIM_AFTER_PLAYHEAD)}
++        </ContextMenuShortcut>
++      </ContextMenuItem>
++      <ContextMenuSeparator />
++    </>
++  )
++}
+diff --git a/src/features/timeline/hooks/shortcuts/trim-to-playhead-shortcuts.test.tsx b/src/features/timeline/hooks/shortcuts/trim-to-playhead-shortcuts.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/hooks/shortcuts/trim-to-playhead-shortcuts.test.tsx
+@@ -0,0 +1,107 @@
++import { act, fireEvent, render } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { HOTKEYS, HOTKEY_OPTIONS, sanitizeHotkeyOverrides } from '@/config/hotkeys'
++import { useEditorStore } from '@/shared/state/editor'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { useSelectionStore } from '@/shared/state/selection'
++import { useTimelineStore } from '../../stores/timeline-store'
++import { useTimelineCommandStore } from '../../stores/timeline-command-store'
++import { useKeyframeSelectionStore } from '../../stores/keyframe-selection-store'
++import { useEditingShortcuts } from './use-editing-shortcuts'
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++
++const { register } = vi.hoisted(() => ({ register: vi.fn() }))
++vi.mock('react-hotkeys-hook', async (importOriginal) => {
++  const original = await importOriginal<typeof import('react-hotkeys-hook')>()
++  return {
++    ...original,
++    useHotkeys: (...args: Parameters<typeof original.useHotkeys>) => {
++      register(...args)
++      return original.useHotkeys(...args)
++    },
++  }
++})
++function Harness() {
++  useEditingShortcuts({})
++  return <input aria-label="Editor input" />
++}
++const commands = [
++  'TRIM_BEFORE_PLAYHEAD',
++  'TRIM_AFTER_PLAYHEAD',
++  'RIPPLE_TRIM_BEFORE_PLAYHEAD',
++  'RIPPLE_TRIM_AFTER_PLAYHEAD',
++] as const
++const original = {
++  id: 'clip',
++  trackId: 'v',
++  type: 'video',
++  src: 'blob:test',
++  label: 'clip',
++  from: 0,
++  durationInFrames: 60,
++} as TimelineItem
++function registration(key: (typeof commands)[number]) {
++  return register.mock.calls.find(([binding]) => binding === HOTKEYS[key])!
++}
++
++describe('trim to playhead shortcut ownership', () => {
++  beforeEach(() => {
++    register.mockClear()
++    useTimelineStore.setState({
++      items: [original],
++      tracks: [
++        {
++          id: 'v',
++          name: 'Video',
++          order: 0,
++          height: 80,
++          locked: false,
++          syncLock: false,
++          items: [],
++        } as unknown as TimelineTrack,
++      ],
++      transitions: [],
++      keyframes: [],
++      markers: [],
++    })
++    useTimelineCommandStore.getState().clearHistory()
++    useSelectionStore.setState({ selectedItemIds: ['clip'], editKeyframePanelOpen: false })
++    useEditorStore.setState({
++      keyframeEditorShortcutScopeActive: false,
++      transcriptEditorShortcutScopeActive: false,
++    })
++    useKeyframeSelectionStore.setState({ selectedKeyframes: [] })
++    usePlaybackStore.setState({ currentFrame: 20, previewFrame: 40 })
++  })
++  it.each(commands)('registers configurable %s and disables typing surfaces', (key) => {
++    render(<Harness />)
++    const [, callback, options] = registration(key)
++    expect(options).toMatchObject({ ...HOTKEY_OPTIONS, enableOnContentEditable: false })
++    expect(sanitizeHotkeyOverrides({ [key]: 'alt+shift+9' })).toEqual({ [key]: 'alt+shift+9' })
++    act(() => callback({ preventDefault: vi.fn() }))
++    const item = useTimelineStore.getState().items[0]!
++    expect(item.durationInFrames).toBe(key.includes('BEFORE') ? 40 : 20)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  })
++  it.each(['transcript', 'keyframe', 'keyframePanel'])(
++    'yields all trims to the %s editor',
++    (owner) => {
++      useEditorStore.setState({
++        transcriptEditorShortcutScopeActive: owner === 'transcript',
++        keyframeEditorShortcutScopeActive: owner === 'keyframe',
++      })
++      useSelectionStore.setState({ editKeyframePanelOpen: owner === 'keyframePanel' })
++      render(<Harness />)
++      for (const key of commands) act(() => registration(key)[1]({ preventDefault: vi.fn() }))
++      expect(useTimelineStore.getState().items).toEqual([original])
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    },
++  )
++  it('never binds a timeline edit directly to a typing control', () => {
++    const { getByLabelText } = render(<Harness />)
++    const input = getByLabelText('Editor input')
++    input.focus()
++    fireEvent.keyDown(input, { key: 'q' })
++    expect(useTimelineStore.getState().items).toEqual([original])
++  })
++})
+diff --git a/src/features/timeline/hooks/shortcuts/use-editing-shortcuts.ts b/src/features/timeline/hooks/shortcuts/use-editing-shortcuts.ts
+--- a/src/features/timeline/hooks/shortcuts/use-editing-shortcuts.ts
++++ b/src/features/timeline/hooks/shortcuts/use-editing-shortcuts.ts
+@@ -3,6 +3,7 @@
+  */
+ 
+ import { useCallback } from 'react'
++import { trimSelectedToPlayhead } from '../../stores/actions/edit/trim-actions'
+ import { useHotkeys } from 'react-hotkeys-hook'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useEditorStore } from '@/shared/state/editor'
+@@ -78,6 +79,65 @@
+     [selectedItemIds, items, updateItemsTransformMap],
+   )
+ 
++  useHotkeys(
++    hotkeys.TRIM_BEFORE_PLAYHEAD,
++    (event) => {
++      if (deleteOwnedByPanel || editKeyframePanelOpen) return
++      event.preventDefault()
++      trimSelectedToPlayhead(
++        selectedItemIds,
++        usePlaybackStore.getState().currentFrame,
++        'start',
++        false,
++      )
++    },
++    { ...HOTKEY_OPTIONS, enableOnContentEditable: false },
++    [deleteOwnedByPanel, editKeyframePanelOpen, selectedItemIds],
++  )
++
++  useHotkeys(
++    hotkeys.TRIM_AFTER_PLAYHEAD,
++    (event) => {
++      if (deleteOwnedByPanel || editKeyframePanelOpen) return
++      event.preventDefault()
++      trimSelectedToPlayhead(
++        selectedItemIds,
++        usePlaybackStore.getState().currentFrame,
++        'end',
++        false,
++      )
++    },
++    { ...HOTKEY_OPTIONS, enableOnContentEditable: false },
++    [deleteOwnedByPanel, editKeyframePanelOpen, selectedItemIds],
++  )
++
++  useHotkeys(
++    hotkeys.RIPPLE_TRIM_BEFORE_PLAYHEAD,
++    (event) => {
++      if (deleteOwnedByPanel || editKeyframePanelOpen) return
++      event.preventDefault()
++      trimSelectedToPlayhead(
++        selectedItemIds,
++        usePlaybackStore.getState().currentFrame,
++        'start',
++        true,
++      )
++    },
++    { ...HOTKEY_OPTIONS, enableOnContentEditable: false },
++    [deleteOwnedByPanel, editKeyframePanelOpen, selectedItemIds],
++  )
++
++  useHotkeys(
++    hotkeys.RIPPLE_TRIM_AFTER_PLAYHEAD,
++    (event) => {
++      if (deleteOwnedByPanel || editKeyframePanelOpen) return
++      event.preventDefault()
++      trimSelectedToPlayhead(selectedItemIds, usePlaybackStore.getState().currentFrame, 'end', true)
++    },
++    { ...HOTKEY_OPTIONS, enableOnContentEditable: false },
++    [deleteOwnedByPanel, editKeyframePanelOpen, selectedItemIds],
++  )
++
+   // Editing: Delete - Delete selected items, marker, or transition
+   useHotkeys(
+     hotkeys.DELETE_SELECTED,
+diff --git a/src/features/timeline/stores/actions/edit/trim-actions.ts b/src/features/timeline/stores/actions/edit/trim-actions.ts
+--- a/src/features/timeline/stores/actions/edit/trim-actions.ts
++++ b/src/features/timeline/stores/actions/edit/trim-actions.ts
+@@ -9,7 +9,12 @@
+   getSynchronizedLinkedCounterpartPairForEdit,
+   getSynchronizedLinkedItemsForEdit,
+ } from '../linked-edit'
+-import { getAttachedCaptionItemIds } from '../../../utils/linked-items'
++import {
++  getAttachedCaptionItemIds,
++  getLinkedItems,
++  expandItemIdsWithAttachedCaptions,
++} from '../../../utils/linked-items'
++import { isTrackSyncLockEnabled } from '../../../utils/track-sync-lock'
+ import { computeClampedSlipDelta } from '../../../utils/slip-utils'
+ import { computeSlideContinuitySourceDelta } from '../../../utils/slide-utils'
+ import { clampSlideDeltaToPreserveKeyframes } from '../../../utils/slide-keyframe-constraints'
+@@ -18,9 +23,10 @@
+   clampRippleTrimDeltaToPreserveEditState,
+   clampRollingTrimDeltaToPreserveEditState,
+ } from '../../../utils/trim-edit-constraints'
+-import { clampToAdjacentItems, clampTrimAmount } from '../../../utils/trim-utils'
++import { clampToAdjacentItems, clampTrimAmount, calculateTrimSourceUpdate } from '../../../utils/trim-utils'
+ import { getTransitionLinkedIds } from '../../items-store-indexes'
+ import {
++  canAddTransition,
+   clampSlideDeltaToPreserveTransitions,
+   clampSlipDeltaToPreserveTransitions,
+ } from '../../../utils/transition-utils'
+@@ -38,6 +44,7 @@
+ interface SynchronizedTrimOptions {
+   forceLinked?: boolean
+   itemIds?: readonly string[]
++  deferTransitionRepairs?: boolean
+ }
+ 
+ function getSynchronizedTrimItems(
+@@ -246,9 +253,200 @@
+     ? trimAttachedCaptionsToClipBounds(synchronizedItems.map((item) => item.id))
+     : []
+   const affectedIds = synchronizedItems.map((item) => item.id)
+-  applyTransitionRepairs(affectedIds)
++  if (!options.deferTransitionRepairs) applyTransitionRepairs(affectedIds)
+   requestPostEditWarmForItems([...affectedIds, ...affectedCaptionIds])
+   useTimelineSettingsStore.getState().markDirty()
++}
++
++/** Trim only the explicitly selected crossing clips, preserving each linked group's offsets. */
++export function trimSelectedToPlayhead(
++  ids: readonly string[],
++  frame: number,
++  handle: 'start' | 'end',
++  ripple = false,
++): boolean {
++  if (!Number.isSafeInteger(frame) || ids.length === 0) return false
++  const { items, tracks, itemById } = useItemsStore.getState()
++  const selected = [...new Set(ids)]
++    .map((id) => itemById[id])
++    .filter(
++      (item): item is TimelineItem =>
++        !!item && item.from < frame && frame < item.from + item.durationInFrames,
++    )
++  if (selected.length === 0) return false
++  const groups: Array<{ anchor: TimelineItem; members: TimelineItem[]; delta: number }> = []
++  const planned = new Map<string, number>()
++  const fps = useTimelineSettingsStore.getState().fps
++  const transitions = useTransitionsStore.getState().transitions
++  const keyframes = useKeyframesStore.getState().keyframesByItemId
++  for (const anchor of selected) {
++    const delta =
++      handle === 'start' ? frame - anchor.from : frame - anchor.from - anchor.durationInFrames
++    if (planned.has(anchor.id)) {
++      if (planned.get(anchor.id) !== delta) return false
++      continue
++    }
++    const members = getLinkedItems(items, anchor.id)
++    const memberIds = new Set(members.map((item) => item.id))
++    for (const item of members) {
++      if (planned.has(item.id) && planned.get(item.id) !== delta) return false
++      if (
++        clampTrimAmount(item, handle, delta, fps).clampedAmount !== delta ||
++        clampToAdjacentItems(item, handle, delta, items, getTransitionLinkedIds(item.id)) !== delta
++      )
++        return false
++      if (
++        ripple &&
++        clampRippleTrimDeltaToPreserveEditState(
++          item,
++          handle,
++          delta,
++          items,
++          transitions,
++          keyframes,
++          fps,
++          memberIds,
++          false,
++        ) !== delta
++      )
++        return false
++      planned.set(item.id, delta)
++    }
++    groups.push({ anchor, members, delta })
++  }
++  const editedTracks = new Set(
++    items.filter((item) => planned.has(item.id)).map((item) => item.trackId),
++  )
++  const trackEdits = new Map<string, { end: number; shift: number; neighborIds: Set<string> }>()
++  const intervals: Array<{ start: number; end: number }> = []
++  if (ripple) {
++    for (const { members, delta } of groups) {
++      for (const item of members) {
++        // Simultaneous overlapping trims on one lane have no unambiguous ripple order.
++        if (trackEdits.has(item.trackId)) return false
++        const end = item.from + item.durationInFrames
++        const shift = handle === 'start' ? -delta : delta
++        trackEdits.set(item.trackId, {
++          end,
++          shift,
++          neighborIds: new Set(
++            transitions
++              .filter((transition) => transition.leftClipId === item.id)
++              .map((transition) => transition.rightClipId),
++          ),
++        })
++        intervals.push(
++          handle === 'start'
++            ? { start: item.from, end: item.from + delta }
++            : { start: end + shift, end },
++        )
++      }
++    }
++  }
++  const moved = new Map<string, number>()
++  if (ripple) {
++    for (const item of items) {
++      const edit = trackEdits.get(item.trackId)
++      if (planned.has(item.id)) {
++        if (handle === 'start') moved.set(item.id, -planned.get(item.id)!)
++      } else if (edit && (item.from >= edit.end || edit.neighborIds.has(item.id))) {
++        moved.set(item.id, edit.shift)
++      }
++    }
++    // Captions and linked downstream clips follow their owner even with sync lock disabled.
++    for (const [id, shift] of [...moved]) {
++      for (const linked of getLinkedItems(items, id)) {
++        if (moved.has(linked.id) && moved.get(linked.id) !== shift) return false
++        moved.set(linked.id, shift)
++      }
++    }
++    for (const [id, shift] of [...moved]) {
++      for (const captionId of getAttachedCaptionItemIds(items, id)) moved.set(captionId, shift)
++    }
++  }
++  const trimmedCaptions = new Set(
++    [...planned.keys()].flatMap((id) => getAttachedCaptionItemIds(items, id)),
++  )
++  const preview = new Map(
++    items.map((item) => {
++      const delta = planned.get(item.id)
++      const duration = delta === undefined ? item.durationInFrames : item.durationInFrames + (handle === 'start' ? -delta : delta)
++      const next = delta === undefined ? { ...item } : {
++        ...item, durationInFrames: duration,
++        from: item.from + (handle === 'start' ? delta : 0),
++        ...calculateTrimSourceUpdate(item, handle, delta, duration, fps),
++      }
++      next.from += moved.get(item.id) ?? 0
++      return [item.id, next] as const
++    }),
++  )
++  if ([...preview.values()].some((item) => item.from < 0 && !trimmedCaptions.has(item.id)))
++    return false
++  for (const transition of transitions) {
++    if (
++      ![transition.leftClipId, transition.rightClipId].some(
++        (id) => planned.has(id) || moved.has(id),
++      )
++    )
++      continue
++    const left = preview.get(transition.leftClipId)
++    const right = preview.get(transition.rightClipId)
++    if (
++      left &&
++      right &&
++      !canAddTransition(left, right, transition.durationInFrames, transition.alignment, fps).canAdd
++    )
++      return false
++  }
++  const affectedIds = new Set(
++    expandItemIdsWithAttachedCaptions(items, [...planned.keys(), ...moved.keys()]),
++  )
++  const syncExcluded = editedTracks
++  const firstRemoval = Math.min(...intervals.map((interval) => interval.start))
++  const participants = items.filter(
++    (item) =>
++      affectedIds.has(item.id) ||
++      (ripple &&
++        !syncExcluded.has(item.trackId) &&
++        isTrackSyncLockEnabled(tracks.find((track) => track.id === item.trackId)) &&
++        item.from + item.durationInFrames > firstRemoval),
++  )
++  if (hasLockedEditParticipants(participants)) return false
++  execute(
++    ripple ? 'RIPPLE_TRIM_TO_PLAYHEAD' : 'TRIM_TO_PLAYHEAD',
++    () => {
++      for (const { anchor, members, delta } of groups) {
++        applySynchronizedTrim(anchor.id, handle, delta, {
++          itemIds: members.map((item) => item.id),
++          deferTransitionRepairs: true,
++        })
++      }
++      if (ripple) {
++        const fresh = useItemsStore.getState()
++        fresh._moveItems(
++          [...moved].flatMap(([id, shift]) => {
++            const item = fresh.itemById[id]
++            return item ? [{ id, from: item.from + shift }] : []
++          }),
++        )
++        const result = propagateRemovedIntervalsToSyncLockedTracks({
++          editedTrackIds: syncExcluded,
++          intervals,
++          excludedItemIds: affectedIds,
++        })
++        if (result.removedIds.length > 0) {
++          useTransitionsStore.getState()._removeTransitionsForItems(result.removedIds)
++          useKeyframesStore.getState()._removeKeyframesForItems(result.removedIds)
++        }
++        applyTransitionRepairs([...affectedIds, ...result.affectedIds], new Set(result.removedIds))
++        requestPostEditWarmForItems([...affectedIds, ...result.affectedIds])
++      } else {
++        applyTransitionRepairs([...affectedIds])
++      }
++    },
++    { ids: [...ids], frame, handle },
++  )
++  return true
+ }
+ 
+ export function trimItemStart(
+@@ -725,9 +923,19 @@
+               candidate.from === counterpartEnd,
+           ) ?? rightCounterpart)
+         : null
+-      if (hasLockedEditParticipants([
+-        item, leftNeighbor, rightNeighbor, synchronizedCounterpart, cpLeftAdj, cpRightAdj,
+-      ].filter((candidate): candidate is TimelineItem => candidate !== null))) return
++      if (
++        hasLockedEditParticipants(
++          [
++            item,
++            leftNeighbor,
++            rightNeighbor,
++            synchronizedCounterpart,
++            cpLeftAdj,
++            cpRightAdj,
++          ].filter((candidate): candidate is TimelineItem => candidate !== null),
++        )
++      )
++        return
+       const timelineFps = useTimelineSettingsStore.getState().fps
+       let clampedSlideDelta = clampSlideParticipantDelta(
+         slideDelta,
+diff --git a/src/features/timeline/stores/actions/edit/trim-to-playhead.test.ts b/src/features/timeline/stores/actions/edit/trim-to-playhead.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/trim-to-playhead.test.ts
+@@ -0,0 +1,235 @@
++// @vitest-environment node
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import { useTimelineStore } from '../../timeline-store'
++import { useItemsStore } from '../../items-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { addTransition } from '../transition-actions'
++import { useTransitionsStore } from '../../transitions-store'
++import { useEditorStore } from '@/shared/state/editor'
++import { trimSelectedToPlayhead } from './trim-actions'
++
++const track = (id: string, overrides: Partial<TimelineTrack> = {}): TimelineTrack => ({
++  id,
++  name: id,
++  height: 80,
++  order: 0,
++  locked: false,
++  syncLock: true,
++  visible: true,
++  muted: false,
++  solo: false,
++  items: [],
++  ...overrides,
++})
++const clip = (id: string, trackId = 'v', overrides: Partial<VideoItem> = {}): VideoItem => ({
++  id,
++  trackId,
++  type: 'video',
++  label: id,
++  src: 'blob:test',
++  from: 10,
++  durationInFrames: 60,
++  sourceStart: 20,
++  sourceEnd: 140,
++  sourceDuration: 300,
++  sourceFps: 60,
++  speed: 1,
++  ...overrides,
++})
++function load(items: TimelineItem[], tracks = [track('v'), track('a'), track('other')]) {
++  useTimelineStore.setState({ items, tracks, transitions: [], keyframes: [], markers: [] })
++  useTimelineCommandStore.getState().clearHistory()
++}
++const item = (id: string) => useItemsStore.getState().itemById[id]!
++
++describe('trim selected to playhead', () => {
++  beforeEach(() => {
++    useEditorStore.setState({ linkedSelectionEnabled: false })
++    useTimelineSettingsStore.setState({ fps: 30 })
++    load([clip('v')])
++  })
++  it.each(['start', 'end'] as const)(
++    'trims %s at exact source frames, with one undo and redo',
++    (handle) => {
++      const original = useItemsStore.getState().items
++      expect(trimSelectedToPlayhead(['v'], 30, handle)).toBe(true)
++      expect([
++        item('v').from,
++        item('v').durationInFrames,
++        item('v').sourceStart,
++        item('v').sourceEnd,
++      ]).toEqual(handle === 'start' ? [30, 40, 60, 140] : [10, 20, 20, 60])
++      const after = useItemsStore.getState().items
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      useTimelineCommandStore.getState().undo()
++      expect(useItemsStore.getState().items).toEqual(original)
++      useTimelineCommandStore.getState().redo()
++      expect(useItemsStore.getState().items).toEqual(after)
++    },
++  )
++  it.each([10, 70, NaN, 30.5])('refuses boundary/invalid frame %s without history', (frame) => {
++    expect(trimSelectedToPlayhead(['v'], frame, 'start')).toBe(false)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it('does not edit unselected clips or invent a selection', () => {
++    load([clip('v'), clip('a', 'a')])
++    expect(trimSelectedToPlayhead([], 30, 'start')).toBe(false)
++    expect(trimSelectedToPlayhead(['v'], 30, 'start')).toBe(true)
++    expect(item('a').from).toBe(10)
++  })
++  it('trims each linked pair once, including different source offsets with linked selection disabled', () => {
++    load([
++      clip('v', 'v', { linkedGroupId: 'pair' }),
++      clip('a', 'a', { linkedGroupId: 'pair', sourceStart: 40, sourceEnd: 160 }),
++    ])
++    expect(trimSelectedToPlayhead(['v', 'a', 'v'], 30, 'start')).toBe(true)
++    expect([item('v').sourceStart, item('a').sourceStart]).toEqual([60, 80])
++    expect([item('v').durationInFrames, item('a').durationInFrames]).toEqual([40, 40])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++  })
++  it('refuses a whole multi-selection when any linked participant is locked', () => {
++    load(
++      [
++        clip('v', 'v', { linkedGroupId: 'pair' }),
++        clip('a', 'a', { linkedGroupId: 'pair' }),
++        clip('b', 'other'),
++      ],
++      [track('v'), track('a', { locked: true }), track('other')],
++    )
++    expect(trimSelectedToPlayhead(['b', 'v'], 30, 'start')).toBe(false)
++    expect(item('b').from).toBe(10)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it.each(['start', 'end'] as const)(
++    'ripples %s on multiple selected lanes once and sync lanes once',
++    (handle) => {
++      load([
++        clip('v'),
++        clip('a', 'a'),
++        clip('tail-v', 'v', { from: 70 }),
++        clip('tail-a', 'a', { from: 70 }),
++        clip('sync', 'other', { from: 90 }),
++      ])
++      const original = useItemsStore.getState().items
++      expect(trimSelectedToPlayhead(['v', 'a'], 30, handle, true)).toBe(true)
++      const shift = handle === 'start' ? -20 : -40
++      expect([item('v').from, item('a').from]).toEqual([10, 10])
++      expect([item('tail-v').from, item('tail-a').from, item('sync').from]).toEqual([
++        70 + shift,
++        70 + shift,
++        90 + shift,
++      ])
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++      useTimelineCommandStore.getState().undo()
++      expect(useItemsStore.getState().items).toEqual(original)
++    },
++  )
++  it('refuses ripple when a downstream linked move would edit a locked lane', () => {
++    load(
++      [
++        clip('v'),
++        clip('tail-v', 'v', { from: 70, linkedGroupId: 'tail' }),
++        clip('tail-a', 'a', { from: 70, linkedGroupId: 'tail' }),
++      ],
++      [track('v'), track('a', { locked: true })],
++    )
++    expect(trimSelectedToPlayhead(['v'], 30, 'start', true)).toBe(false)
++    expect(item('v').from).toBe(10)
++  })
++  it('keeps attached caption bounds and shifts them with a ripple start trim', () => {
++    const caption = {
++      id: 'caption',
++      type: 'text',
++      trackId: 'a',
++      from: 15,
++      durationInFrames: 50,
++      label: 'Caption',
++      text: 'Caption',
++      color: '#fff',
++      textRole: 'caption',
++      captionSource: { type: 'transcript', clipId: 'v', mediaId: 'media' },
++    } as TimelineItem
++    load([clip('v'), caption])
++    expect(trimSelectedToPlayhead(['v'], 30, 'start', true)).toBe(true)
++    expect([item('caption').from, item('caption').durationInFrames]).toEqual([10, 35])
++    useTimelineCommandStore.getState().undo()
++    expect([item('caption').from, item('caption').durationInFrames]).toEqual([15, 50])
++  })
++  it('refuses inherited locks on a sync lane before trimming any selected item', () => {
++    load(
++      [clip('v'), clip('sync', 'a', { from: 90 })],
++      [
++        track('v'),
++        track('group', { isGroup: true, locked: true }),
++        track('a', { parentTrackId: 'group' }),
++      ],
++    )
++    expect(trimSelectedToPlayhead(['v'], 30, 'start', true)).toBe(false)
++    expect(item('v').from).toBe(10)
++    expect(item('sync').from).toBe(90)
++  })
++  it('ripples unrelated items sharing the attached caption lane without moving captions twice', () => {
++    const caption = {
++      id: 'caption',
++      type: 'text',
++      trackId: 'a',
++      from: 15,
++      durationInFrames: 50,
++      label: 'Caption',
++      text: 'Caption',
++      color: '#fff',
++      textRole: 'caption',
++      captionSource: { type: 'transcript', clipId: 'v', mediaId: 'media' },
++    } as TimelineItem
++    load([clip('v'), caption, clip('later', 'a', { from: 90 })])
++    expect(trimSelectedToPlayhead(['v'], 30, 'start', true)).toBe(true)
++    expect(item('caption').from).toBe(10)
++    expect(item('later').from).toBe(70)
++  })
++  it('refuses atomically when a linked member cannot reach the requested boundary', () => {
++    load([
++      clip('v', 'v', { linkedGroupId: 'pair' }),
++      clip('a', 'a', { linkedGroupId: 'pair', durationInFrames: 10 }),
++      clip('b', 'other'),
++    ])
++    expect(trimSelectedToPlayhead(['b', 'v'], 30, 'start')).toBe(false)
++    expect(item('b').from).toBe(10)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it('removes the shared leading interval only once for selected clips of different lengths', () => {
++    load([
++      clip('v'),
++      clip('a', 'a', { durationInFrames: 100, sourceEnd: 220 }),
++      clip('sync', 'other', { from: 150 }),
++    ])
++    expect(trimSelectedToPlayhead(['v', 'a'], 30, 'start', true)).toBe(true)
++    expect([item('v').durationInFrames, item('a').durationInFrames, item('sync').from]).toEqual([
++      40, 80, 130,
++    ])
++    useTimelineCommandStore.getState().undo()
++    expect(item('sync').from).toBe(150)
++    useTimelineCommandStore.getState().redo()
++    expect(item('sync').from).toBe(130)
++  })
++
++  it('preserves a transition while ripple closes the temporary trim gap', () => {
++    load([clip('v'), clip('tail', 'v', { from: 70, sourceStart: 60, sourceEnd: 180 })])
++    addTransition('v', 'tail', 'crossfade', 6)
++    const transitions = useTransitionsStore.getState().transitions
++    expect(transitions).toHaveLength(1)
++    useTimelineCommandStore.getState().clearHistory()
++    expect(trimSelectedToPlayhead(['v'], 50, 'end', true)).toBe(true)
++    expect(item('tail').from).toBe(50)
++    expect(useTransitionsStore.getState().transitions).toEqual(transitions)
++  })
++  it('refuses an ordinary trim that would detach a transition', () => {
++    load([clip('v'), clip('tail', 'v', { from: 70, sourceStart: 60, sourceEnd: 180 })])
++    addTransition('v', 'tail', 'crossfade', 6)
++    useTimelineCommandStore.getState().clearHistory()
++    expect(trimSelectedToPlayhead(['v'], 50, 'end')).toBe(false)
++    expect(item('v').durationInFrames).toBe(60)
++    expect(useTransitionsStore.getState().transitions).toHaveLength(1)
++  })
++})
+diff --git a/src/features/timeline/stores/actions/sync-lock-ripple.ts b/src/features/timeline/stores/actions/sync-lock-ripple.ts
+--- a/src/features/timeline/stores/actions/sync-lock-ripple.ts
++++ b/src/features/timeline/stores/actions/sync-lock-ripple.ts
+@@ -298,6 +298,7 @@
+ function removeItemsOnTrackInterval(
+   trackId: string,
+   interval: TimeInterval,
++  excludedItemIds?: ReadonlySet<string>,
+ ): RipplePropagationResult {
+   const store = useItemsStore.getState()
+   const affectedIds: string[] = []
+@@ -307,6 +308,7 @@
+     .items.filter(
+       (item) =>
+         item.trackId === trackId &&
++        !excludedItemIds?.has(item.id) &&
+         item.from < interval.end &&
+         item.from + item.durationInFrames > interval.start,
+     )
+@@ -389,6 +391,7 @@
+ export function propagateRemovedIntervalsToSyncLockedTracks(params: {
+   editedTrackIds: Set<string>
+   intervals: TimeInterval[]
++  excludedItemIds?: ReadonlySet<string>
+ }): RipplePropagationResult {
+   const intervals = normalizeIntervals(params.intervals)
+   if (intervals.length === 0) {
+@@ -409,11 +412,19 @@
+       const intervalLength = currentInterval.end - currentInterval.start
+       if (intervalLength <= 0) continue
+ 
+-      const overlapResult = removeItemsOnTrackInterval(trackId, currentInterval)
++      const overlapResult = removeItemsOnTrackInterval(
++        trackId,
++        currentInterval,
++        params.excludedItemIds,
++      )
+       affectedIds.push(...overlapResult.affectedIds)
+       removedIds.push(...overlapResult.removedIds)
+       affectedIds.push(
+-        ...shiftTrackItems(trackId, (item) => item.from >= currentInterval.end, -intervalLength),
++        ...shiftTrackItems(
++          trackId,
++          (item) => !params.excludedItemIds?.has(item.id) && item.from >= currentInterval.end,
++          -intervalLength,
++        ),
+       )
+ 
+       removedFrames += intervalLength
+diff --git a/src/i18n/locales/de.json b/src/i18n/locales/de.json
+--- a/src/i18n/locales/de.json
++++ b/src/i18n/locales/de.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "Vor Abspielposition entfernen",
++    "after": "Nach Abspielposition entfernen",
++    "rippleBefore": "Vor Abspielposition mit Lückenschluss entfernen",
++    "rippleAfter": "Nach Abspielposition mit Lückenschluss entfernen"
++  },
+   "appShell": {
+     "newVersionAvailable": "Eine neue Version ist verfügbar. Speichere deine Arbeit und lade neu.",
+     "saveAndReload": "Speichern und neu laden",
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "Remove before playhead",
++    "after": "Remove after playhead",
++    "rippleBefore": "Ripple remove before playhead",
++    "rippleAfter": "Ripple remove after playhead"
++  },
+   "appShell": {
+     "newVersionAvailable": "A new version is available. Save your work and reload.",
+     "saveAndReload": "Save & Reload",
+diff --git a/src/i18n/locales/es.json b/src/i18n/locales/es.json
+--- a/src/i18n/locales/es.json
++++ b/src/i18n/locales/es.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "Eliminar antes del cabezal",
++    "after": "Eliminar después del cabezal",
++    "rippleBefore": "Eliminar antes del cabezal cerrando huecos",
++    "rippleAfter": "Eliminar después del cabezal cerrando huecos"
++  },
+   "appShell": {
+     "newVersionAvailable": "Hay una nueva versión disponible. Guarda tu trabajo y vuelve a cargar.",
+     "saveAndReload": "Guardar y recargar",
+diff --git a/src/i18n/locales/fr.json b/src/i18n/locales/fr.json
+--- a/src/i18n/locales/fr.json
++++ b/src/i18n/locales/fr.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "Supprimer avant la tête de lecture",
++    "after": "Supprimer après la tête de lecture",
++    "rippleBefore": "Supprimer avant la tête de lecture et raccorder",
++    "rippleAfter": "Supprimer après la tête de lecture et raccorder"
++  },
+   "appShell": {
+     "newVersionAvailable": "Une nouvelle version est disponible. Enregistrez votre travail et rechargez.",
+     "saveAndReload": "Enregistrer et recharger",
+diff --git a/src/i18n/locales/ja.json b/src/i18n/locales/ja.json
+--- a/src/i18n/locales/ja.json
++++ b/src/i18n/locales/ja.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "再生ヘッドより前を削除",
++    "after": "再生ヘッドより後を削除",
++    "rippleBefore": "再生ヘッドより前をリップル削除",
++    "rippleAfter": "再生ヘッドより後をリップル削除"
++  },
+   "appShell": {
+     "newVersionAvailable": "新しいバージョンが利用可能です。作業を保存して再読み込みしてください。",
+     "saveAndReload": "保存して再読み込み",
+diff --git a/src/i18n/locales/ko.json b/src/i18n/locales/ko.json
+--- a/src/i18n/locales/ko.json
++++ b/src/i18n/locales/ko.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "재생 헤드 이전 제거",
++    "after": "재생 헤드 이후 제거",
++    "rippleBefore": "재생 헤드 이전 리플 제거",
++    "rippleAfter": "재생 헤드 이후 리플 제거"
++  },
+   "appShell": {
+     "newVersionAvailable": "새 버전이 있습니다. 작업을 저장하고 다시 로드하세요.",
+     "saveAndReload": "저장하고 다시 로드",
+diff --git a/src/i18n/locales/pt-BR.json b/src/i18n/locales/pt-BR.json
+--- a/src/i18n/locales/pt-BR.json
++++ b/src/i18n/locales/pt-BR.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "Remover antes do cursor de reprodução",
++    "after": "Remover após o cursor de reprodução",
++    "rippleBefore": "Remover antes do cursor e fechar espaço",
++    "rippleAfter": "Remover após o cursor e fechar espaço"
++  },
+   "appShell": {
+     "newVersionAvailable": "Uma nova versão está disponível. Salve seu trabalho e recarregue.",
+     "saveAndReload": "Salvar e recarregar",
+diff --git a/src/i18n/locales/tr.json b/src/i18n/locales/tr.json
+--- a/src/i18n/locales/tr.json
++++ b/src/i18n/locales/tr.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "Oynatma kafasından öncesini kaldır",
++    "after": "Oynatma kafasından sonrasını kaldır",
++    "rippleBefore": "Oynatma kafasından öncesini boşluğu kapatarak kaldır",
++    "rippleAfter": "Oynatma kafasından sonrasını boşluğu kapatarak kaldır"
++  },
+   "appShell": {
+     "newVersionAvailable": "Yeni bir sürüm mevcut. Çalışmanızı kaydedip yeniden yükleyin.",
+     "saveAndReload": "Kaydet ve Yeniden Yükle",
+diff --git a/src/i18n/locales/zh.json b/src/i18n/locales/zh.json
+--- a/src/i18n/locales/zh.json
++++ b/src/i18n/locales/zh.json
+@@ -1,4 +1,10 @@
+ {
++  "trimToPlayhead": {
++    "before": "移除播放头之前的部分",
++    "after": "移除播放头之后的部分",
++    "rippleBefore": "波纹移除播放头之前的部分",
++    "rippleAfter": "波纹移除播放头之后的部分"
++  },
+   "appShell": {
+     "newVersionAvailable": "有新版本可用。请保存你的工作并重新加载。",
+     "saveAndReload": "保存并重新加载",

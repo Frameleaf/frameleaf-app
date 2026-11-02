@@ -30,7 +30,7 @@ import {
 import { type FakeCloud, type FakeCloudAnswer, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { type ServiceMocks, newTestService } from 'test/utils.js';
+import { type ServiceMocks, expectLocalisedSystemNotices, newTestService } from 'test/utils.js';
 
 const SIGN_IN_ID = '0b6f4c6e-3d0b-4f0e-9d0b-0a1b2c3d4e5f';
 const REFRESH = 'refresh-token-FIXTURE-ONLY';
@@ -493,8 +493,10 @@ describe(MailConnectionService.name, () => {
         expect.objectContaining({
           title: 'Email stopped: sign in to Gmail again',
           dedupeKey: 'frameleaf-mail:needs-sign-in',
+          systemTemplate: { version: 1, key: 'mail-needs-sign-in', args: { provider: 'Gmail' } },
         }),
       );
+      expectLocalisedSystemNotices(mocks.event.emit);
       // nothing more is asked of the cloud until an administrator signs in again
       await expect(mailAccessToken(mailDeps(), MailSignInProvider.Gmail)).rejects.toBeInstanceOf(MailNeedsSignInError);
       expect(calls('token')).toHaveLength(1);

@@ -41,6 +41,12 @@ const repositoryFor = (db: Kysely<any>) => {
     label: 'import person fixture',
     handler: vi.fn(),
   };
+  repository['handlers'][JobName.IdenticalFilesCheck] = {
+    queueName: QueueName.StorageTemplateMigration,
+    jobName: JobName.IdenticalFilesCheck,
+    label: 'import identical files fixture',
+    handler: vi.fn(),
+  };
   return repository;
 };
 
@@ -74,6 +80,9 @@ const observe = (
 };
 
 afterEach(() => vi.unstubAllEnvs());
+
+/** FL-414: the import's one identical-files item; the per-asset counts below leave it out. */
+const IDENTICAL = JobName.IdenticalFilesCheck;
 
 describe('offline import derived-work durable ownership', () => {
   let db: Kysely<any>;
@@ -109,9 +118,9 @@ describe('offline import derived-work durable ownership', () => {
         pending: number;
         jobs: number;
       }>`select (select count(*)::int from job_run) runs,
-    (select count(*)::int from job_selection) stages,
-    (select count(distinct "rootItemKey")::int from job_run_item) roots,
-    (select count(*)::int from job_run_item) memberships,
+    (select count(*)::int from job_selection where stage <> ${IDENTICAL}) stages,
+    (select count(distinct "rootItemKey")::int from job_run_item where stage <> ${IDENTICAL}) roots,
+    (select count(*)::int from job_run_item where stage <> ${IDENTICAL}) memberships,
     (select count(*)::int from frameleaf_immich_import_work where dispatched_at is not null) acknowledged,
     (select count(*)::int from frameleaf_immich_import_work where dispatched_at is null) pending,
     (select count(*)::int from job) jobs`.execute(db)
@@ -132,10 +141,11 @@ describe('offline import derived-work durable ownership', () => {
     expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
       expect.objectContaining({
         id: runId,
-        total: 2,
+        // two assets with four stages each, and the identical-files item (FL-414)
+        total: 3,
         enumerationDone: true,
         state: 'unavailable',
-        stageTotals: expect.objectContaining({ total: 8, waiting: 8 }),
+        stageTotals: expect.objectContaining({ total: 9, waiting: 9 }),
       }),
     ]);
     expect(await repositoryFor(db).dispatchImportedWork()).toBe(runId);
@@ -146,6 +156,20 @@ describe('offline import derived-work durable ownership', () => {
       where stage = ${JobName.PersonGenerateThumbnail}`.execute(db)
       ).rows,
     ).toEqual([{ state: 'ready', captured: true }]);
+    // FL-414: the identical-files stage is frozen with the import run and admitted with it
+    expect(
+      (
+        await sql`select s.state, s.queue, i."itemKey", i.selection from job_selection s
+      join job_run_item i on i."selectionId" = s.id where s.stage = ${IDENTICAL}`.execute(db)
+      ).rows,
+    ).toEqual([
+      {
+        state: 'ready',
+        queue: QueueName.StorageTemplateMigration,
+        itemKey: 'identical-files',
+        selection: { id: 'identical-files', importRunId: runId },
+      },
+    ]);
   });
 
   const managerConfig = (): ImportConfig => {
@@ -225,7 +249,7 @@ describe('offline import derived-work durable ownership', () => {
     for (const queue of queues) expect(await store.feedManifest(queue)).toBe(0);
     expect(await repositoryFor(db).dispatchImportedWork(config)).toBe(id);
     expect((await sql`select state, "capturedAt" is not null as captured from job_selection`.execute(db)).rows).toEqual(
-      Array.from({ length: 5 }, () => ({ state: 'enumerating', captured: true })),
+      Array.from({ length: 6 }, () => ({ state: 'enumerating', captured: true })),
     );
     const prepared = (await sql`select selection, "enumerationDone" from job_run`.execute(db)).rows;
     expect(prepared).toEqual([
@@ -637,15 +661,16 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
         { importPaths: [fixture.config.mediaRoots[0].target] },
       ]);
       expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
-        expect.objectContaining({
-          enumerationDone: true,
-          total: 0,
-          ...(mode === 'independent-copy' && { state: 'completed' }),
-        }),
+        // FL-414: only the identical-files item, which still recovers orphans in an empty library
+        expect.objectContaining({ enumerationDone: true, total: 1 }),
       ]);
       expect(
+        (await sql`select stage, "itemKey", selection->>'importRunId' as "importRunId" from job_run_item`.execute(db))
+          .rows,
+      ).toEqual([{ stage: IDENTICAL, itemKey: 'identical-files', importRunId: expect.any(String) }]);
+      expect(
         (await sql`select state, count(*)::int as count from job_selection group by state`.execute(db)).rows,
-      ).toEqual([{ state: mode === 'manager-in-place' ? 'enumerating' : 'ready', count: 5 }]);
+      ).toEqual([{ state: mode === 'manager-in-place' ? 'enumerating' : 'ready', count: 6 }]);
       expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
     } finally {
       await db?.destroy();
@@ -786,15 +811,14 @@ it.each(['independent-copy', 'manager-in-place'] as const)(
       if (mode === 'manager-in-place') {
         expect(
           (await sql`select state, count(*)::int as count from job_selection group by state`.execute(db)).rows,
-        ).toEqual([{ state: 'enumerating', count: 5 }]);
+        ).toEqual([{ state: 'enumerating', count: 6 }]);
         expect(await new SqlQueueStore(db).feedManifest(QueueName.ThumbnailGeneration)).toBe(0);
       }
       expect((await sql`select id from job`.execute(db)).rows).toEqual([]);
       expect(
         (
-          await sql`select count(*)::int as count from job_run_item where stage != ${JobName.PersonGenerateThumbnail}`.execute(
-            db,
-          )
+          await sql`select count(*)::int as count from job_run_item
+            where stage != ${JobName.PersonGenerateThumbnail} and stage != ${IDENTICAL}`.execute(db)
         ).rows,
       ).toEqual([{ count: 4 }]);
     } finally {
@@ -824,8 +848,9 @@ it('verifies and activates a real offline source after durable transfer while al
     expect(await new SqlQueueStore(db).listRuns(10, 0)).toEqual([
       expect.objectContaining({
         id: state.derivedRunId,
-        total: 1,
-        stageTotals: expect.objectContaining({ total: 4 }),
+        // one asset with its four stages, and the identical-files item (FL-414)
+        total: 2,
+        stageTotals: expect.objectContaining({ total: 5 }),
         enumerationDone: true,
       }),
     ]);

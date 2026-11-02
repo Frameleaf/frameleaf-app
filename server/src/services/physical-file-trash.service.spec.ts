@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AssetLockReason, ChecksumAlgorithm, JobName, MetadataKey } from 'src/enum.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
@@ -23,9 +23,15 @@ const entry = {
 describe(PhysicalFileTrashService.name, () => {
   let sut: PhysicalFileTrashService;
   let mocks: ServiceMocks;
+  /** FL-416: the server owner, the first administrator; the admin stub unless a test says otherwise. */
+  let ownerId: string;
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PhysicalFileTrashService));
+    ownerId = authStub.admin.user.id;
+    mocks.user.getAdmins.mockImplementation(() =>
+      Promise.resolve([{ id: ownerId }, { id: 'second-admin-id' }] as never),
+    );
   });
 
   it('runs the same recovery at startup and nightly cleanup', async () => {
@@ -56,6 +62,7 @@ describe(PhysicalFileTrashService.name, () => {
           return { ...entry, wasLocked };
         });
         for (const auth of [authStub.admin, authStub.adminWithElevatedPermission, ordinaryOwner]) {
+          ownerId = auth.user.id;
           await expect(sut.restore(auth, entry.id)).rejects.toBeInstanceOf(NotFoundException);
           await expect(sut.purge(auth, entry.id)).rejects.toBeInstanceOf(NotFoundException);
         }
@@ -75,6 +82,7 @@ describe(PhysicalFileTrashService.name, () => {
         mocks.user.get.mockResolvedValue({ id: entry.lastOwnerId, name: 'Owner' } as never);
         mocks.storage.stat.mockResolvedValue({ mtime: new Date() } as never);
         mocks.asset.create.mockResolvedValue({ id: 'restored-id', ownerId: entry.lastOwnerId } as never);
+        ownerId = entry.lastOwnerId;
         await expect(sut.restore(elevatedOwner, entry.id)).resolves.toEqual({ assetId: 'restored-id' });
         expect(mocks.asset.create.mock.calls[0][1]).toEqual({
           reason: AssetLockReason.Marked,
@@ -86,6 +94,7 @@ describe(PhysicalFileTrashService.name, () => {
       mocks.physicalFileTrash.list.mockResolvedValue({ items: [], total: 0, totalBytes: 0 });
       await sut.list(authStub.admin, { page: 1, size: 50 });
       expect(mocks.physicalFileTrash.list).toHaveBeenLastCalledWith({ skip: 0, take: 50, lockedOwnerId: undefined });
+      ownerId = entry.lastOwnerId;
       await sut.list(elevatedOwner, { page: 1, size: 50 });
       expect(mocks.physicalFileTrash.list).toHaveBeenLastCalledWith({
         skip: 0,
@@ -105,6 +114,74 @@ describe(PhysicalFileTrashService.name, () => {
       mocks.asset.create.mockResolvedValue({ id: 'restored-id', ownerId: entry.lastOwnerId } as never);
       await expect(sut.restore(authStub.admin, entry.id)).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('server owner only (FL-416)', () => {
+    const secondAdmin = { ...authStub.admin, user: { ...authStub.admin.user, id: 'second-admin-id' } };
+    const member = authStub.user1;
+
+    it.each([
+      ['a second administrator', secondAdmin],
+      ['a member', member],
+    ])('refuses %s every Unused files action', async (_label, auth) => {
+      mocks.physicalFileTrash.getById.mockResolvedValue(entry);
+      await expect(sut.list(auth, { page: 1, size: 50 })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.restore(auth, entry.id)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.purge(auth, entry.id)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.empty(auth)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.physicalFileTrash.list).not.toHaveBeenCalled();
+      expect(mocks.physicalFileTrash.untrash).not.toHaveBeenCalled();
+      expect(mocks.physicalFileTrash.purge).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('refuses a shared link even when it belongs to the first administrator', async () => {
+      const shared = { ...authStub.admin, sharedLink: { id: 'link-id' } } as never;
+      await expect(sut.list(shared, { page: 1, size: 50 })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('takes the oldest administrator as the owner', async () => {
+      ownerId = 'second-admin-id';
+      mocks.physicalFileTrash.list.mockResolvedValue({ items: [], total: 0, totalBytes: 0 });
+      await expect(sut.list(authStub.admin, { page: 1, size: 50 })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.list(secondAdmin, { page: 1, size: 50 })).resolves.toEqual({
+        items: [],
+        total: 0,
+        totalBytes: 0,
+      });
+    });
+  });
+
+  describe('empty', () => {
+    const second = { ...entry, id: 'trash-2', path: '/data/file-trash/2/IMG_0002.jpg', sizeInBytes: 766 };
+
+    it('deletes every file it holds and answers the files and space that came back', async () => {
+      mocks.physicalFileTrash.list
+        .mockResolvedValueOnce({ items: [entry, second], total: 2, totalBytes: 2000 })
+        .mockResolvedValueOnce({ items: [], total: 0, totalBytes: 0 });
+      mocks.physicalFileTrash.purge.mockImplementation(async (id, unlink) => {
+        const current = id === entry.id ? entry : second;
+        await unlink(current.path, current);
+        return current;
+      });
+
+      await expect(sut.empty(authStub.admin)).resolves.toEqual({ files: 2, bytes: 2000, kept: 0 });
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(entry.path);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(second.path);
+      expect(mocks.physicalFileTrash.list).toHaveBeenNthCalledWith(1, { skip: 0, take: 200, lockedOwnerId: undefined });
+    });
+
+    it('passes over a file it cannot delete and carries on with the rest', async () => {
+      mocks.physicalFileTrash.list
+        .mockResolvedValueOnce({ items: [entry, second], total: 2, totalBytes: 2000 })
+        .mockResolvedValueOnce({ items: [], total: 1, totalBytes: 1234 });
+      mocks.physicalFileTrash.purge.mockImplementation((id) =>
+        id === entry.id ? Promise.reject(new Error('EBUSY')) : Promise.resolve(second),
+      );
+
+      await expect(sut.empty(authStub.admin)).resolves.toEqual({ files: 1, bytes: 766, kept: 1 });
+      expect(mocks.physicalFileTrash.list).toHaveBeenLastCalledWith({ skip: 1, take: 200, lockedOwnerId: undefined });
     });
   });
 

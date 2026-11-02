@@ -29,6 +29,8 @@
 {% do server_container.set_user(values.run_as.user, values.run_as.group) %}
 {# FL-291: must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default); running jobs finish or go back to waiting first #}
 {% do server_container.set_grace_period(10) %}
+{# FL-721: encrypted Locked files are decrypted into /dev/shm (RAM); Docker's 64 MB default is too small for videos #}
+{% do server_container.set_shm_size_mb(2048) %}
 {% do server_container.healthcheck.set_custom_test(["CMD", "frameleaf-healthcheck"]) %}
 {% do server_container.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
 

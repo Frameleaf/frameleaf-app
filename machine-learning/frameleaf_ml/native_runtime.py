@@ -111,6 +111,9 @@ def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> Fas
             yield
 
     app = FastAPI(lifespan=lifespan)
+    from .inference_executor import InferenceBusy
+
+    app.add_exception_handler(InferenceBusy, main.inference_busy)
     app.get("/ping")(main.ping)
 
     @app.post("/predict", dependencies=[Depends(main.update_state)])

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { BigIntStats, constants } from 'node:fs';
-import { FileHandle, open, realpath, stat } from 'node:fs/promises';
+import { FileHandle, lstat, open, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { ImportMediaPolicy, ImportRefused, MediaRootMap } from 'src/immich-import/types.js';
 
@@ -95,6 +95,52 @@ export const verifyMediaRoots = async (roots: MediaRootMap[], policy?: ImportMed
     }
   }
 };
+
+export type LostOriginalReason = 'missing' | 'changed' | 'unmapped';
+const UNMAPPED = new Set(['AMBIGUOUS_OR_UNMAPPED_MEDIA_ROOT', 'UNSAFE_MEDIA_PATH', 'MEDIA_ROOT_ESCAPE']);
+export const isUnmappedPath = (error: unknown): boolean => error instanceof ImportRefused && UNMAPPED.has(error.code);
+
+/**
+ * Why an asset original can be imported without a verified file, or null when the import must stop.
+ * The item is always kept: Library Care's post-import scan reports it, and a re-upload restores it.
+ * - missing: Immich itself had already lost the file (shown there as unavailable);
+ * - changed: the file no longer matches the checksum Immich recorded;
+ * - unmapped: the path is outside every configured media folder.
+ * Copy-safety refusals (symlink escapes, shared inodes, an uncopied file) still stop the import.
+ * ponytail: an empty or absent root reads as unmounted, never as "every original lost".
+ */
+export const lostOriginalReason = async (
+  error: unknown,
+  path: string,
+  roots: MediaRootMap[],
+  policy?: ImportMediaPolicy,
+): Promise<LostOriginalReason | null> => {
+  const code = error instanceof ImportRefused ? error.code : (error as NodeJS.ErrnoException).code;
+  if (code === 'ORIGINAL_CHECKSUM_MISMATCH') return 'changed';
+  if (isUnmappedPath(error)) return 'unmapped';
+  if (code !== 'ENOENT') return null;
+  const { root } = mapMediaPath(path, roots, policy);
+  const mounted = (dir: string) =>
+    readdir(dir)
+      .then((entries) => entries.length > 0)
+      .catch(() => false);
+  const [source, target, present] = await Promise.all([
+    mounted(root.source),
+    mounted(root.target),
+    lstat(path)
+      .then(() => true)
+      .catch((error: NodeJS.ErrnoException) => error.code !== 'ENOENT'),
+  ]);
+  return source && target && !present ? 'missing' : null;
+};
+
+/** Where a kept original points after import: its mapped destination, or its Immich path when unmapped. */
+export const lostOriginalPath = (
+  path: string,
+  reason: LostOriginalReason,
+  roots: MediaRootMap[],
+  policy?: ImportMediaPolicy,
+): string => (reason === 'unmapped' ? path : mapMediaPath(path, roots, policy).target);
 
 export const pathChecksum = (path: string): string => createHash('sha1').update(`path:${path}`).digest('hex');
 const sameFile = (left: BigIntStats, right: BigIntStats): boolean => left.dev === right.dev && left.ino === right.ino;

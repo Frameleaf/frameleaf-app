@@ -94,6 +94,8 @@ export async function admit({ client, trust, conformance, engineDigest, memoryBy
       gpuWorkingBudgetEvidence: null,
       codecs: conformance.codecs,
       formats: conformance.formats,
+      // FL-107: present only when this container wrote and decoded back a ten-bit HDR master.
+      ...(conformance.colorPrecision && { colorPrecision: conformance.colorPrecision }),
     },
     { signal },
   );

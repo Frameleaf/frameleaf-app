@@ -135,6 +135,13 @@ export class Security {
   cookie(res: Response, session: string): void {
     res.cookie(COOKIE, session, { secure: true, httpOnly: true, sameSite: 'strict', path: '/', maxAge: LIFETIME });
   }
+  private signedIn(req: Request): boolean {
+    try {
+      return !!this.session(req);
+    } catch {
+      return false;
+    }
+  }
   session(req: Request): { hash: string; csrf: string } {
     const value = (req.headers.cookie ?? '')
       .split(';')
@@ -172,7 +179,9 @@ export class Security {
       const write = !['GET', 'HEAD'].includes(req.method);
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);
       const credential = ['administrator', 'backup-key', 'export'].some((path) => req.path === `/manager-api/${path}`);
-      this.limit(req.socket.remoteAddress ?? 'unknown', write && (publicRoute || credential) ? 'login' : 'api');
+      const scope = write && (publicRoute || credential) ? 'login' : 'api';
+      // A signed-in session's own calls (the UI polls dashboard every 10 s) never spend the anonymous budget.
+      if (scope === 'login' || !this.signedIn(req)) this.limit(req.socket.remoteAddress ?? 'unknown', scope);
       if (write && (req.headers.origin !== origin || !req.is('application/json')))
         throw new Refusal('invalid_origin', 403);
       if (!publicRoute) {

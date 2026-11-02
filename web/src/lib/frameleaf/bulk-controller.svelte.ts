@@ -212,6 +212,10 @@ export class BulkController {
     if (removed.length > 0) {
       this.#dispatch({ type: 'mutated', removedIds: removed });
     }
+    // Adding to an album finishes with those items (LIB-04): they leave the selection, failures stay.
+    if (action === 'add-to-album' && result.succeeded.length > 0) {
+      this.#dispatch({ type: 'select-group', ids: result.succeeded, checked: false });
+    }
   }
 
   /**

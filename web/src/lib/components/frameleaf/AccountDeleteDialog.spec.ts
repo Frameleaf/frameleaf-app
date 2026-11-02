@@ -28,11 +28,13 @@ describe('AccountDeleteDialog (FL-76 CC-32)', () => {
   it('asks for the typed email before the recoverable delete', async () => {
     render(AccountDeleteDialog, { user, onClose: vi.fn() });
 
-    expect(screen.getByRole('dialog', { name: 'Delete account' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Remove this person' })).toBeInTheDocument();
     expect(
-      screen.getByText(/Grace Hopper will lose access\. Their account can be restored for 7 days/),
+      screen.getByText(
+        /Grace Hopper is signed out everywhere and can’t sign in again\. Their photos and videos, albums and edits are kept for 7 days/,
+      ),
     ).toBeInTheDocument();
-    const submit = screen.getByRole('button', { name: 'Delete account' });
+    const submit = screen.getByRole('button', { name: 'Remove this person' });
     expect(submit).toBeDisabled();
 
     await fireEvent.input(screen.getByLabelText('Type the account email to confirm'), {

@@ -1,4 +1,5 @@
 import {
+  StudioRenderStage,
   CloudMlJobActivityStage,
   CloudMlJobPurpose,
   CloudMlJobStage,
@@ -27,11 +28,13 @@ import {
   isUnfinishedCloudWork,
   matchesActivityFilter,
   mediaOperationEdit,
+  mediaOperationKindKey,
   mediaOperationPauseState,
   mediaOperationStage,
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
+import en from '../../../../i18n/en.json';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -96,6 +99,27 @@ describe('fromMediaOperation', () => {
     expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Lan })).destinationKey).toBe(
       'frameleaf_activity_destination_lan',
     );
+  });
+
+  it('counts restored Locked items encrypted with an older key, only when there are some (FL-721)', () => {
+    expect(fromMediaOperation(operation({ encryptedWithOlderKey: 3 })).encryptedWithOlderKey).toBe(3);
+    expect(fromMediaOperation(operation({ encryptedWithOlderKey: 0 }))).not.toHaveProperty('encryptedWithOlderKey');
+    expect(fromMediaOperation(operation({ encryptedWithOlderKey: null }))).not.toHaveProperty('encryptedWithOlderKey');
+  });
+
+  describe('Studio clip jobs that share a kind (FL-637)', () => {
+    it('names a voice clean-up by its work, not by the shared captions kind', () => {
+      const voice = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'voice-cleanup' });
+      expect(fromMediaOperation(voice).kindKey).toBe('frameleaf_activity_kind_studio_voice_cleanup');
+      expect(mediaOperationKindKey(voice)).toBe('frameleaf_activity_kind_studio_voice_cleanup');
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioTranscription })).kindKey).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+      expect(mediaOperationKindKey(operation({ kind: MediaOperationKind.StudioTranscription, studioWork: null }))).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+      expect(en.frameleaf_activity_kind_studio_voice_cleanup).toBe('Clean up voice');
+    });
   });
 
   describe('edits the server renders (FL-43)', () => {
@@ -290,6 +314,25 @@ describe('fromMediaOperation', () => {
   it('reads a fresh queued job as queued', () => {
     expect(fromMediaOperation(operation({ status: MediaOperationStatus.Queued })).statusKey).toBe(
       'frameleaf_activity_status_queued',
+    );
+  });
+});
+
+describe('Studio clip jobs that share the captions kind (FL-638)', () => {
+  it('names a stabilise job Stabilise, not Captions', () => {
+    const stabilise = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'stabilise' });
+    expect(fromMediaOperation(stabilise).kindKey).toBe('frameleaf_activity_kind_studio_stabilise');
+    expect(mediaOperationKindKey(stabilise)).toBe('frameleaf_activity_kind_studio_stabilise');
+  });
+
+  it('keeps Captions for a transcription and the kind for an unknown or absent Studio work', () => {
+    for (const studioWork of [null, undefined, 'something-new']) {
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioTranscription, studioWork })).kindKey).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+    }
+    expect(mediaOperationKindKey({ kind: MediaOperationKind.StudioExport, studioWork: null })).toBe(
+      'frameleaf_activity_kind_studio_export',
     );
   });
 });
@@ -677,7 +720,7 @@ describe('the status line (FL-30, prototype `statusText`)', () => {
   const formatDuration = (seconds: number) => `${seconds}s`;
   const started = Date.parse('2026-09-22T09:50:00.000Z');
   const item = (overrides: Partial<ReturnType<typeof fromMediaOperation>> = {}) => ({
-    ...fromMediaOperation(operation()),
+    ...fromMediaOperation(operation({ kind: MediaOperationKind.Restoration })),
     startedAt: started,
     ...overrides,
   });
@@ -767,7 +810,16 @@ describe('Studio renders, server estimates and completion (FL-104)', () => {
 
   it("prefers the server's measured estimate and says the finished size", () => {
     const running = fromMediaOperation(
-      operation({ progress: 10, estimate: { seconds: 125.2, sizeBytes: '12000000', cloudCost: null } }),
+      operation({
+        progress: 10,
+        estimate: { seconds: 125.2, sizeBytes: '12000000', cloudCost: null },
+        renderProgress: {
+          stage: StudioRenderStage.Rendering,
+          lastProgressAt: new Date().toISOString(),
+          framesPerSecond: 25,
+          remainingRenderSeconds: 125.2,
+        },
+      }),
     );
     expect(activityEtaSeconds(running, Date.now())).toBe(126);
     expect(running.sizeBytes).toBe(12_000_000);

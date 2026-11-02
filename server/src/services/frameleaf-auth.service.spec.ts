@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import { FrameleafTokenExchangeErrorCode } from 'src/dtos/frameleaf-auth.dto.js';
-import { AdminAuditAction, DatabaseLock, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, JobStatus, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -15,11 +15,13 @@ import { UNVERIFIED_EMAIL_MESSAGE } from 'src/services/auth.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { type ExchangeTokenOptions, mintExchangeToken } from 'test/fixtures/frameleaf-token-exchange.js';
+import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { ServiceMocks, type ServiceOverrides, newTestService } from 'test/utils.js';
 
 const loginDetails = { isSecure: true, clientIp: '127.0.0.1', deviceOS: '', deviceType: '', appVersion: null };
@@ -409,6 +411,21 @@ describe(FrameleafAuthService.name, () => {
       });
     });
 
+    it.each(['subject', 'email'])('refuses an unclaimed imported owner matched by %s before linking', async (match) => {
+      const user = UserFactory.create({ email: 'remote@example.test', importClaimPending: true });
+      if (match === 'subject') {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+        mocks.user.get.mockResolvedValue(user);
+      } else {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
+        mocks.user.getByEmail.mockResolvedValue(user);
+      }
+      await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('must be claimed');
+      expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
     it('links an existing account by its verified email', async () => {
       const existing = UserFactory.create({ email: 'remote@example.test' });
       mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
@@ -630,7 +647,10 @@ describe(FrameleafAuthService.name, () => {
         metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
         const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'admin' } });
         await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toMatchObject({
-          response: expect.objectContaining({ code: 'frameleaf_exchange_no_access' }),
+          response: expect.objectContaining({
+            code: 'frameleaf_exchange_no_access',
+            message: 'Your Frameleaf account does not have access to this server',
+          }),
         });
         expect(mocks.user.create).not.toHaveBeenCalled();
       });
@@ -664,6 +684,17 @@ describe(FrameleafAuthService.name, () => {
         newAccount();
         await sut.exchangeToken({ token: await mint() }, loginDetails);
         expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GB }));
+      });
+
+      it('uses "Space for new people" when it is set, over the older invited default (FL-516)', async () => {
+        metadata.set(SystemMetadataKey.SystemConfig, {
+          user: { newUserStorageQuota: 200 },
+          frameleafCloud: { signIn: { invitedStorageQuota: 5 } },
+        });
+        clearConfigCache();
+        newAccount();
+        await sut.exchangeToken({ token: await mint() }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 200 * GB }));
       });
 
       it('never caps the server owner', async () => {
@@ -701,6 +732,30 @@ describe(FrameleafAuthService.name, () => {
         );
       });
     });
+
+    it.each(['subject', 'email'])(
+      'explains an unclaimed imported owner matched by %s on native sign-in',
+      async (match) => {
+        const user = UserFactory.create({ email: 'remote@example.test', importClaimPending: true });
+        if (match === 'subject') {
+          mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+          mocks.user.get.mockResolvedValue(user);
+        } else {
+          mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
+          mocks.user.getByEmail.mockResolvedValue(user);
+        }
+        await expect(sut.exchangeToken({ token: await mint() }, loginDetails)).rejects.toMatchObject({
+          status: 400,
+          response: {
+            code: FrameleafTokenExchangeErrorCode.AccountConflict,
+            message: 'This account must be claimed before signing in',
+          },
+        });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('accepts an EdDSA-signed token and links an existing account by its verified email', async () => {
       const existing = UserFactory.create({ email: 'remote@example.test' });
@@ -1228,6 +1283,28 @@ describe(FrameleafAuthService.name, () => {
           }),
         );
         expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', admin.id, expect.anything());
+      });
+
+      it('tells each other administrator in their own language (FL-406)', async () => {
+        const { user, admin, auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { notifications: { locale: 'en-XA' } } },
+        ]);
+        NOTIFICATION_CATALOGS['en-XA'] = (localeFixtures.catalogs as NotificationCatalogs)['en-XA'];
+        try {
+          await sut.link(auth, callbackDto, {});
+        } finally {
+          delete NOTIFICATION_CATALOGS['en-XA'];
+        }
+        expect(mocks.user.getMetadata).toHaveBeenCalledWith(admin.id);
+        expect(mocks.notification.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: admin.id,
+            title: '[Fixture New administrator]',
+            description: `[Fixture ${user.name} became an administrator through Frameleaf Cloud]`,
+          }),
+        );
       });
 
       it('changes no role for a share that is not admin', async () => {

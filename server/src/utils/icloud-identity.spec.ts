@@ -80,6 +80,7 @@ describe('iCloud source identity (FL-296)', () => {
     expect(
       metadataAgrees({ ...item, creationDate: '2026-06-01T10:00:05Z' }, assetFields, masterFields, decodedName),
     ).toBe(false);
+    expect(metadataAgrees({ ...item, creationDate: 'not a date' }, assetFields, masterFields, decodedName)).toBe(false);
     expect(metadataAgrees({ ...item, uti: 'public.jpeg' }, assetFields, masterFields, decodedName)).toBe(false);
     expect(metadataAgrees({ ...item, pixelWidth: 100 }, assetFields, masterFields, decodedName)).toBe(false);
     // without a filename and date nothing is corroborated

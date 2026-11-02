@@ -4,10 +4,11 @@
  * they can be tested on their own. Every action goes to the account's own endpoints; nothing here
  * stores a password, PIN, key or activation key.
  */
-import { Permission, type SessionResponseDto } from '@frameleaf/sdk';
+import { Permission, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
+import { MIN_PASSWORD_LENGTH } from '$lib/frameleaf/auth-password';
 
-/** The server's minimum for a new password (`ChangePasswordDto`). */
-export const PASSWORD_MIN_LENGTH = 8;
+/** The server's minimum for a new password (`ChangePasswordDto`): the one password rule (FL-708). */
+export const PASSWORD_MIN_LENGTH = MIN_PASSWORD_LENGTH;
 export const PASSWORD_MAX_LENGTH = 256;
 export const API_KEY_NAME_MAX_LENGTH = 100;
 
@@ -61,6 +62,12 @@ export const canSubmitPin = (
 };
 
 /** Every grantable permission except full access, in the server's order. */
+/** Every permission a key holds; design permissions are reported in their own field. */
+export const keyPermissions = (key: ApiKeyResponseDto): Permission[] => [
+  ...(key.permissions as string[] as Permission[]),
+  ...((key.designPermissions ?? []) as string[] as Permission[]),
+];
+
 export const INDIVIDUAL_PERMISSIONS: readonly Permission[] = Object.values(Permission).filter(
   (permission) => permission !== Permission.All,
 );
@@ -78,6 +85,53 @@ export const normalizeKeyPermissions = (selected: Permission[]): Permission[] =>
     return [Permission.All];
   }
   return unique;
+};
+
+/**
+ * FL-367: what a new key is for, in place of choosing from every permission. Each purpose is a
+ * fixed list of existing permissions; "View only" does not download originals (defaulted on FL-367,
+ * the owner's question is open), and "View and upload" may not change albums.
+ *
+ * `capture` is the "Browser extension" purpose (FL-622, `ApiKeys.jsx`): it saves images, links and
+ * screenshots into Boards and lists the collections and tags to file them, and cannot see photos.
+ * The order is the prototype's, with the browser extension just before Everything.
+ */
+export type KeyPurpose = 'view' | 'upload' | 'capture' | 'view-upload' | 'everything';
+export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'capture', 'everything'];
+/**
+ * FL-655: the purposes New key lists. Save to Frameleaf signs in with your account, so a "Browser
+ * extension" key sits apart, under "For a browser that can't sign in", and is listed only once chosen.
+ */
+export const listedKeyPurposes = (current: KeyPurpose | 'custom'): readonly KeyPurpose[] =>
+  KEY_PURPOSES.filter((purpose) => purpose !== 'capture' || current === 'capture');
+const VIEW_PERMISSIONS: readonly Permission[] = [
+  Permission.AssetRead,
+  Permission.AssetView,
+  Permission.AlbumRead,
+  Permission.TimelineRead,
+  Permission.MemoryRead,
+  Permission.PersonRead,
+  Permission.TagRead,
+  Permission.StackRead,
+  Permission.MapRead,
+];
+export const PURPOSE_PERMISSIONS: Readonly<Record<KeyPurpose, readonly Permission[]>> = {
+  view: VIEW_PERMISSIONS,
+  upload: [Permission.AssetUpload],
+  capture: [Permission.CaptureCreate, Permission.CaptureCatalogRead],
+  'view-upload': [...VIEW_PERMISSIONS, Permission.AssetUpload],
+  everything: [Permission.All],
+};
+
+/** The purpose a set of permissions matches exactly, or `custom` for anything else. */
+export const keyPurpose = (permissions: readonly Permission[]): KeyPurpose | 'custom' => {
+  const chosen = new Set(permissions);
+  return (
+    KEY_PURPOSES.find((purpose) => {
+      const wanted = PURPOSE_PERMISSIONS[purpose];
+      return wanted.length === chosen.size && wanted.every((permission) => chosen.has(permission));
+    }) ?? 'custom'
+  );
 };
 
 /** The permissions a key can grant that remove things, which the editor warns about. */

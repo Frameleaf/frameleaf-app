@@ -337,7 +337,12 @@ describe(HardwareCheckService.name, () => {
 
   it('shows enrolled render workers and restoration workers from what they reported', async () => {
     mocks.renderWorker.listWorkers.mockResolvedValue([
-      { id: '0195e2a0-0000-7000-8000-00000000aaa1', name: 'Studio PC', status: RenderWorkerStatus.Active },
+      {
+        id: '0195e2a0-0000-7000-8000-00000000aaa1',
+        name: 'Studio PC',
+        status: RenderWorkerStatus.Active,
+        lastSeenAt: new Date(),
+      },
       { id: 'render-2', name: 'Old laptop', status: RenderWorkerStatus.Active },
       { id: 'render-3', name: 'Gone', status: RenderWorkerStatus.Revoked },
     ] as never);
@@ -403,6 +408,17 @@ describe(HardwareCheckService.name, () => {
         gpu: { present: true, visible: true, usable: false },
       }),
     ]);
+
+    // FL-589: a session outlives a worker that stopped; one not seen for over ten minutes is not answering.
+    mocks.renderWorker.listWorkers.mockResolvedValue([
+      {
+        id: '0195e2a0-0000-7000-8000-00000000aaa1',
+        name: 'Studio PC',
+        status: RenderWorkerStatus.Active,
+        lastSeenAt: new Date(Date.now() - 11 * 60 * 1000),
+      },
+    ] as never);
+    expect((await sut.runCheck()).workers[0]).toMatchObject({ reachable: false, gpu: { usable: null } });
   });
 
   it('records throughput per workload, timing descriptions on this server only', async () => {
@@ -421,7 +437,9 @@ describe(HardwareCheckService.name, () => {
       protocol: 'restoration-v1',
       workloads: [MlWorkload.RestorationFaithful],
       gpus: [{ name: 'NVIDIA GeForce RTX 4090', memoryTotalBytes: 24 * 1024 ** 3, driverVersion: '560.35' }],
-      models: [{ state: 'available', measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 4 }] }],
+      models: [
+        { state: 'available', mode: 'faithful', measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 4 }] },
+      ],
       configurationProblems: [],
       checkedAt: '2026-09-27T00:00:00.000Z',
     } as never);
@@ -438,7 +456,8 @@ describe(HardwareCheckService.name, () => {
       ['upscale', 'no-local-runner'],
       ['restoration', 'qualification'],
       ['studio', 'no-local-worker'],
-      ['interpolation', 'no-local-runner'],
+      // The worker is not allowed to run Smooth motion, so nothing here runs it.
+      ['interpolation', 'no-local-worker'],
     ]);
     expect(benchmark!.workloads[0]).toMatchObject({
       unit: 'photo',
@@ -448,6 +467,47 @@ describe(HardwareCheckService.name, () => {
       fallbackFrom: null,
     });
     expect(benchmark!.workloads[2]).toMatchObject({ unit: 'frame', perHour: 14_400, worker: 'Workshop GPU' });
+  });
+
+  it('records Smooth motion from the RIFE model the restoration worker measured (FL-162)', async () => {
+    vi.spyOn(
+      sut as unknown as { selectMlDestination: () => Promise<MlSelection> },
+      'selectMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Clip));
+    mocks.machineLearning.describeImageRun.mockRejectedValue(new Error('no description model'));
+    mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
+    const smooth = { ...mlDestinationStub.lan, workloads: [MlWorkload.RestorationFaithful, MlWorkload.Interpolation] };
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, smooth]);
+    mocks.machineLearning.getRestorationModels.mockResolvedValue({
+      protocol: 'restoration-v1',
+      workloads: [MlWorkload.RestorationFaithful, MlWorkload.Interpolation],
+      gpus: [{ name: 'NVIDIA GeForce RTX 4090', memoryTotalBytes: 24 * 1024 ** 3, driverVersion: '560.35' }],
+      models: [
+        { state: 'available', mode: 'faithful', measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 4 }] },
+        {
+          state: 'available',
+          mode: 'smooth_motion',
+          measured: [{ gpu: 'NVIDIA GeForce RTX 4090', framesPerSecond: 60 }],
+        },
+      ],
+      configurationProblems: [],
+      checkedAt: '2026-09-27T00:00:00.000Z',
+    } as never);
+
+    const { benchmark } = await sut.runBenchmark();
+
+    expect(benchmark!.workloads.find((entry) => entry.workload === 'restoration')).toMatchObject({
+      source: 'qualification',
+      perHour: 14_400,
+    });
+    expect(benchmark!.workloads.find((entry) => entry.workload === 'interpolation')).toMatchObject({
+      source: 'qualification',
+      unit: 'frame',
+      perHour: 216_000,
+      runsOn: 'gpu',
+      worker: 'Workshop GPU',
+      unavailable: null,
+    });
   });
 
   it('records the fallback model and the device the worker ran it on, not the GPUs present (FL-427)', async () => {

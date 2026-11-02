@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import gc
 import importlib.util
 import os
@@ -6,10 +7,9 @@ import secrets
 import signal
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Any, AsyncGenerator, Callable, Iterator
+from typing import Any, AsyncGenerator, Callable
 from zipfile import BadZipFile
 
 import onnxruntime as ort
@@ -22,16 +22,36 @@ from pydantic import ValidationError
 from starlette.formparsers import MultiPartParser
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
-from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
-from frameleaf_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav
+from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
+from frameleaf_ml.models.musicgen import MusicGenModel
+from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
+from frameleaf_ml.models.subject_matte import SubjectMatteModel
+from frameleaf_ml.models.transcribe import (
+    AudioFormatError,
+    TranscribeModel,
+    read_wav,
+    transcription_identity,
+    wav_memory_bytes,
+)
 from frameleaf_ml.models.transforms import decode_pil
+from frameleaf_ml.models.translate import MAX_LINE_CHARS, MAX_LINES, TranslateModel
+from frameleaf_ml.models.voice_cleanup import (
+    MODEL_NOISES,
+    VoiceAudioError,
+    VoiceCleanupModel,
+    read_voice_wav,
+    voice_memory_bytes,
+)
+from frameleaf_ml.sessions.ort import flush_denormals
 
 from .config import PreloadModelData, log, model_source, settings
 from .env_aliases import read_env
 from .hardware_report import container_report
+from .inference_executor import InferenceBusy, InferenceExecutor
 from .models.cache import ModelCache
 from .producer_binding import BoundPredictor
 from .schemas import (
@@ -48,15 +68,19 @@ from .schemas import (
     T,
     validate_options,
 )
+from .transcription_memory import AudioMemoryBudget
 
 MultiPartParser.spool_max_size = 2**26  # spools to disk if payload is 64 MiB or larger
 
 model_cache = ModelCache(revalidate=settings.model_ttl > 0)
 bound_predictor = BoundPredictor()
-thread_pool: ThreadPoolExecutor | None = None
+audio_memory_budget = AudioMemoryBudget(settings.transcription_max_memory_mb * 1024 * 1024)
+thread_pool: InferenceExecutor | None = None
 lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
+# Hands the memory a burst of requests used back to the system shortly after the last one finishes.
+release: asyncio.TimerHandle | None = None
 
 
 @asynccontextmanager
@@ -72,14 +96,16 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     try:
+        flush_denormals()  # for work that runs on the event loop's own thread
         if settings.request_threads > 0:
             # asyncio is a huge bottleneck for performance, so we use a thread pool to run blocking code
-            thread_pool = ThreadPoolExecutor(settings.request_threads) if settings.request_threads > 0 else None
+            thread_pool = InferenceExecutor(settings.request_threads, initializer=flush_denormals)
             log.info(f"Initialized request thread pool with {settings.request_threads} threads.")
         if settings.model_ttl > 0 and settings.model_ttl_poll_s > 0:
             asyncio.ensure_future(idle_shutdown_task())
         if settings.preload is not None:
             await preload_models(settings.preload)
+            allocator.release()
         yield
     finally:
         # IMPORTANT ordering for actual GPU memory release:
@@ -96,6 +122,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
                 thread_pool.shutdown(wait=True)
             except Exception as error:
                 log.warning(f"Failed to shut down thread pool during shutdown: {error}")
+        bound_predictor.close()
         # Drop strong references held by the cache so Torch/OpenVINO sessions
         # (which may hold multi-GB of pinned GPU memory) are eligible for GC
         # before the worker is respawned. Without this, `del model` only
@@ -105,6 +132,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as error:
             log.warning(f"Failed to clear model cache during shutdown: {error}")
         gc.collect()
+        allocator.release()
         # If torch is present, also drop any cached CUDA allocator state.
         try:
             import torch
@@ -129,6 +157,10 @@ async def preload_models(preload: PreloadModelData) -> None:
         for model_name in model_string.split(","):
             model_name = model_name.strip()
             model = await model_cache.get(model_name, model_type, model_task)
+            if isinstance(model, InferenceModel) and (reason := await _missing_runtime(model)) is not None:
+                # Startup must not fail on a model this container can't run; requests for it are refused.
+                log.warning(f"Not preloading '{model_name}': {reason}.")
+                continue
             await load(model)
 
     if preload.clip.textual is not None:
@@ -173,14 +205,19 @@ async def preload_models(preload: PreloadModelData) -> None:
         )
 
 
-def update_state() -> Iterator[None]:
-    global active_requests, last_called
+async def update_state() -> AsyncGenerator[None, None]:
+    global active_requests, last_called, release
     active_requests += 1
     last_called = time.time()
+    if release is not None:
+        release.cancel()
+        release = None
     try:
         yield
     finally:
         active_requests -= 1
+        if not active_requests:
+            release = asyncio.get_running_loop().call_later(5, allocator.release)
 
 
 def get_entries(entries: str = Form()) -> InferenceEntries:
@@ -345,7 +382,8 @@ def hardware() -> ORJSONResponse:
     torch_cuda_available, cuda_device_count = _torch_cuda_info()
     preferred_acceleration = ImageDescriptionAcceleration.AUTO
 
-    if torch_cuda_available or "CUDAExecutionProvider" in providers:
+    # The CUDA provider is compiled into the -cuda image whether or not a GPU was passed in.
+    if torch_cuda_available:
         preferred_acceleration = ImageDescriptionAcceleration.CUDA
     elif "OpenVINOExecutionProvider" in providers and openvino_device_ids:
         preferred_acceleration = ImageDescriptionAcceleration.OPENVINO
@@ -392,6 +430,37 @@ def _torch_cuda_info() -> tuple[bool, int]:
     return True, torch.cuda.device_count()
 
 
+@app.exception_handler(InferenceBusy)
+async def inference_busy(_: Request, __: Exception) -> JSONResponse:
+    return JSONResponse({"detail": "ml_worker_busy"}, status_code=503, headers={"Retry-After": "30"})
+
+
+# Models this container was asked for but can never run, logged once each instead of a traceback per photo.
+_missing_runtime_logged: set[str] = set()
+_missing_runtime_lock = threading.Lock()
+
+
+async def _missing_runtime(model: InferenceModel) -> str | None:
+    # The first check may import a native runtime; keep it off the event loop (and out of the inference
+    # pool, which refuses work when full). The answer is cached after that.
+    return await asyncio.to_thread(model.missing_runtime)
+
+
+def _refuse_missing_runtime(model_name: str, reason: str) -> None:
+    with _missing_runtime_lock:
+        first = model_name not in _missing_runtime_logged
+        _missing_runtime_logged.add(model_name)
+    if first:
+        log.warning(f"Model '{model_name}' can't run in this container ({reason}); refusing requests for it.")
+    raise ModelRuntimeUnavailable(reason)
+
+
+@app.exception_handler(ModelRuntimeUnavailable)
+async def model_runtime_unavailable(_: Request, error: Exception) -> JSONResponse:
+    # FL-676: a stable code the server recognises, so it moves to its fallback model and stops asking.
+    return JSONResponse({"detail": "model_runtime_unavailable", "reason": str(error)}, status_code=422)
+
+
 @app.post("/predict-bound", dependencies=[Depends(update_state)])
 async def predict_bound(
     binding: str = Form(), image: bytes | None = File(default=None), text: str | None = Form(default=None)
@@ -400,6 +469,8 @@ async def predict_bound(
         raise HTTPException(422, "Exactly one inference input required")
     try:
         result = await run(bound_predictor.predict, binding, image, text)
+    except InferenceBusy:
+        raise
     except Exception as error:
         raise HTTPException(409, "model_identity_unavailable") from error
     return ORJSONResponse(result)
@@ -433,6 +504,19 @@ async def predict(
     return ORJSONResponse(response)
 
 
+@app.get("/transcribe/info")
+def transcribe_info() -> ORJSONResponse:
+    try:
+        identity = transcription_identity()
+        # Without downloads the identity is only real once its verified files are staged; otherwise the server
+        # would advance its index to a model /transcribe cannot load.
+        if not settings.model_downloads and not TranscribeModel(identity["model"]).cached:
+            raise ModelUnavailableError("Transcription model is not staged")
+        return ORJSONResponse(identity)
+    except ModelUnavailableError as error:
+        raise HTTPException(503, "Transcription model unavailable") from error
+
+
 @app.post("/transcribe")
 async def transcribe(
     entries: InferenceEntries = Depends(get_entries),
@@ -451,29 +535,52 @@ async def transcribe(
         raise HTTPException(400, "A transcription request names exactly one transcribe entry")
     entry = without_deps[0]
     try:
-        samples = await run(read_wav, audio.file)
+        size = await run(wav_memory_bytes, audio.file)
+        reservation = audio_memory_budget.reserve(size)
     except AudioFormatError as error:
         raise HTTPException(400, str(error)) from error
-    model = await model_cache.get(
-        entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
-    )
-    model = await load(model)
-    assert isinstance(model, TranscribeModel)
-    language = entry["options"].get("language")
-    if language is not None and language not in model.languages:
-        raise HTTPException(400, f"Whisper does not know the language '{language}'")
-    items = model.stream(samples, **entry["options"])
+    global active_requests, last_called
+    active_requests += 1
+    last_called = time.time()
+    released = False
+
+    def release_request() -> None:
+        nonlocal released
+        global active_requests
+        if not released:
+            released = True
+            active_requests -= 1
+            reservation.release()
+
+    samples = None
+    try:
+        samples = await reservation.run(thread_pool, read_wav, audio.file)
+        model = await model_cache.get(
+            entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
+        )
+        model = await load(model)
+        assert isinstance(model, TranscribeModel)
+        language = entry["options"].get("language")
+        if language is not None and language not in model.languages:
+            raise HTTPException(400, f"Whisper does not know the language '{language}'")
+        items = model.stream(samples, **entry["options"])
+        reservation.set_cleanup(items.close)
+    except AudioFormatError as error:
+        samples = None
+        release_request()
+        raise HTTPException(400, str(error)) from error
+    except BaseException:
+        samples = None
+        release_request()
+        raise
 
     async def body() -> AsyncGenerator[bytes, None]:
-        global active_requests, last_called
-        # Counted here, not by a dependency: the stream outlives the handler, and an idle shutdown
-        # must not stop a transcription that is still running.
-        active_requests += 1
+        global last_called
         try:
             while True:
                 last_called = time.time()
                 try:
-                    item = await run(next, items, None)
+                    item = await reservation.run(thread_pool, next, items, None)
                 except Exception as error:
                     log.error(f"Transcription failed: {error}")
                     yield orjson.dumps({"type": "error", "message": "Transcription failed"}) + b"\n"
@@ -483,10 +590,289 @@ async def transcribe(
                 yield orjson.dumps(item) + b"\n"
             yield orjson.dumps({"type": "done"}) + b"\n"
         finally:
+            release_request()
+
+    class ReservedAudioStream(StreamingResponse):
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            try:
+                await super().__call__(scope, receive, send)
+            finally:
+                # A send failure can precede the first iteration of body().
+                release_request()
+
+    return ReservedAudioStream(body(), media_type="application/x-ndjson")
+
+
+# Audio bytes per `audio` line of a music answer, before base64.
+MUSIC_CHUNK_BYTES = 512 * 1024
+
+
+@app.post("/music")
+async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingResponse:
+    """Make a movie (FL-561): new music from a prompt with MusicGen small.
+
+    The request names one entry, `{"music": {"audio": {"modelName": "frameleaf-music", "options": {"prompt",
+    "duration", "seed"?}}}}`. Problems found before any work starts are HTTP errors (422 bad options, 503
+    no model). Otherwise the answer is newline-delimited JSON: `progress` lines (`done` of `total` decoder
+    steps), then `info` (sample rate, seconds), the 16-bit mono WAV as base64 `audio` lines in order, then
+    `done` (or `error`). Closing the connection stops the work at the next decoder step.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.MUSIC:
+        raise HTTPException(400, "A music request names exactly one music entry")
+    entry = without_deps[0]
+    options = dict(entry["options"])
+    model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+    model = await load(model)
+    assert isinstance(model, MusicGenModel)
+    items = model.stream(**options)
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, as for /transcribe: the stream outlives the handler.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except Exception as error:
+                    log.error(f"Music generation failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Music generation failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                if item["type"] != "audio":
+                    yield orjson.dumps(item) + b"\n"
+                    continue
+                wav: bytes = item["wav"]
+                yield (
+                    orjson.dumps({"type": "info", "sampleRate": item["sampleRate"], "seconds": item["seconds"]}) + b"\n"
+                )
+                for start in range(0, len(wav), MUSIC_CHUNK_BYTES):
+                    chunk = base64.b64encode(wav[start : start + MUSIC_CHUNK_BYTES]).decode("ascii")
+                    yield orjson.dumps({"type": "audio", "data": chunk}) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
             try:
                 items.close()
             except ValueError:
-                # Still decoding in the thread pool after a disconnect; it is never advanced again.
+                # Still writing in the thread pool after a disconnect; it is never advanced again.
+                pass
+            active_requests -= 1
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+@app.post("/voice-cleanup")
+async def voice_cleanup(
+    entries: InferenceEntries = Depends(get_entries),
+    audio: UploadFile = File(),
+) -> StreamingResponse:
+    """Studio "Clean up voice" (FL-637): look at or clean one clip's sound (48 kHz mono 16-bit PCM WAV).
+
+    The request names one entry, `{"voice-cleanup": {"audio": {"modelName": "frameleaf-voice-cleanup",
+    "options": {"mode", "strength"?, "noises"?, "humHz"?}}}}`. Problems found before any work starts are
+    HTTP errors (400 bad audio, 422 bad options, 503 no model). Otherwise the answer is newline-delimited
+    JSON. For `analyze`: one `analysis` line (`noises`, `humHz`), then `done`. For `clean`: `progress`
+    lines, `info` (sample rate, seconds), the cleaned WAV as base64 `audio` lines in order, then `done`
+    (or `error`). Closing the connection stops the work at the next 30-second run of the model.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.VOICE_CLEANUP:
+        raise HTTPException(400, "A voice clean-up request names exactly one voice-cleanup entry")
+    entry = without_deps[0]
+    try:
+        size = await run(voice_memory_bytes, audio.file)
+        reservation = audio_memory_budget.reserve(size)
+    except VoiceAudioError as error:
+        raise HTTPException(400, str(error)) from error
+    global active_requests, last_called
+    active_requests += 1
+    last_called = time.time()
+    released = False
+
+    def release_request() -> None:
+        nonlocal released
+        global active_requests
+        if not released:
+            released = True
+            active_requests -= 1
+            reservation.release()
+
+    try:
+        samples = await reservation.run(thread_pool, read_voice_wav, audio.file)
+        model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+        # Only the noises the model removes load it, so a worker without it can still analyse and remove hum.
+        if entry["options"].get("mode") != "analyze" and MODEL_NOISES & set(entry["options"].get("noises", [])):
+            model = await load(model)
+        assert isinstance(model, VoiceCleanupModel)
+        items = model.stream(samples, **entry["options"])
+        reservation.set_cleanup(items.close)
+    except VoiceAudioError as error:
+        release_request()
+        raise HTTPException(400, str(error)) from error
+    except BaseException:
+        release_request()
+        raise
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global last_called
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await reservation.run(thread_pool, next, items, None)
+                except Exception as error:
+                    log.error(f"Voice clean-up failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Voice clean-up failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                if item["type"] != "audio":
+                    yield orjson.dumps(item) + b"\n"
+                    continue
+                wav: bytes = item["wav"]
+                yield (
+                    orjson.dumps({"type": "info", "sampleRate": item["sampleRate"], "seconds": item["seconds"]}) + b"\n"
+                )
+                for start in range(0, len(wav), MUSIC_CHUNK_BYTES):
+                    chunk = base64.b64encode(wav[start : start + MUSIC_CHUNK_BYTES]).decode("ascii")
+                    yield orjson.dumps({"type": "audio", "data": chunk}) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            release_request()
+
+    class ReservedAudioStream(StreamingResponse):
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            try:
+                await super().__call__(scope, receive, send)
+            finally:
+                release_request()
+
+    return ReservedAudioStream(body(), media_type="application/x-ndjson")
+
+
+# The largest `lines` field the server can send: MAX_LINES lines of MAX_LINE_CHARS characters, each
+# character at most 6 bytes once JSON-escaped (`\uXXXX`), plus quotes, commas and brackets. Starlette's
+# default 1 MiB form part limit would refuse a long project's captions.
+TRANSLATE_FORM_PART_BYTES = MAX_LINES * (MAX_LINE_CHARS * 6 + 3) + 2
+
+
+@app.post("/translate")
+async def translate(request: Request) -> ORJSONResponse:
+    """Studio captions in other languages (FL-641): caption lines translated with M2M100 418M.
+
+    The request names one entry, `{"translate": {"textual": {"modelName": "frameleaf-translate", "options":
+    {"source", "target"}}}}`, and `lines`, a JSON array of the caption lines as text. Only text is sent. The
+    answer is `{"model", "translations"}`: one translation per line, in order. Problems are HTTP errors (400
+    bad lines or language, 422 bad options, 503 no model or runtime).
+    """
+    async with request.form(max_files=0, max_fields=2, max_part_size=TRANSLATE_FORM_PART_BYTES) as form:
+        raw_entries, lines = form.get("entries"), form.get("lines")
+    if not isinstance(raw_entries, str):
+        raise HTTPException(422, "Invalid request format.")
+    if not isinstance(lines, str):
+        raise HTTPException(400, "The lines must be a JSON array of text")
+    without_deps, with_deps = get_entries(raw_entries)
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.TRANSLATE:
+        raise HTTPException(400, "A translation request names exactly one translate entry")
+    entry = without_deps[0]
+    try:
+        texts = orjson.loads(lines)
+    except orjson.JSONDecodeError as error:
+        raise HTTPException(400, "The lines must be a JSON array of text") from error
+    if (
+        not isinstance(texts, list)
+        or len(texts) > MAX_LINES
+        or not all(isinstance(text, str) and len(text) <= MAX_LINE_CHARS for text in texts)
+    ):
+        raise HTTPException(400, f"Send at most {MAX_LINES} lines of at most {MAX_LINE_CHARS} characters")
+    options = dict(entry["options"])
+    model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+    try:
+        model = await load(model)
+    except HTTPException as error:
+        # After repeated failed loads `load` answers 500; for translation that still means "this worker
+        # cannot translate now" (503), so the server tries the next place in the processing order.
+        if error.status_code == 500:
+            raise HTTPException(503, error.detail) from error
+        raise
+    assert isinstance(model, TranslateModel)
+    global active_requests, last_called
+    active_requests += 1
+    last_called = time.time()
+    try:
+        result = await run(model.predict, texts, **options)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    finally:
+        active_requests -= 1
+    return ORJSONResponse(result)
+
+
+@app.post("/subject-matte")
+async def subject_matte(
+    entries: InferenceEntries = Depends(get_entries),
+    frames: list[UploadFile] = File(),
+) -> StreamingResponse:
+    """Cut out the subject in a video (FL-639): SAM2.1 video follows one subject through a clip.
+
+    The request names one entry, `{"subject-matte": {"visual": {"modelName": "frameleaf-florence2-sam2.1",
+    "options": {"seedKind", "seedBox"?, "points"?, "matteWidth", "matteHeight"}}}}`, and sends the clip's
+    frames in order as `frames` parts (JPEG or PNG, every one the same size). Problems found before any
+    work starts are HTTP errors (400 bad frames, 422 bad options, 503 no model or runtime). Otherwise the
+    answer is newline-delimited JSON: `progress` lines, a `frame` line per frame (its matte as a base64
+    grayscale PNG), then `done` (or `error`). Closing the connection stops the work at the next frame.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.SUBJECT_MATTE:
+        raise HTTPException(400, "A cut-out request names exactly one subject-matte entry")
+    if not 1 <= len(frames) <= SUBJECT_MATTE_MAX_FRAMES:
+        raise HTTPException(400, f"A cut-out needs between 1 and {SUBJECT_MATTE_MAX_FRAMES} frames")
+    entry = without_deps[0]
+    options = dict(entry["options"])
+    device = options.pop("device", None)
+    try:
+        images = [await run(decode_pil, await frame.read()) for frame in frames]
+    except Exception as error:
+        raise HTTPException(400, "A cut-out frame is not an image") from error
+    sizes = {image.size for image in images}
+    if len(sizes) != 1 or min(next(iter(sizes))) <= 0:
+        raise HTTPException(400, "Every cut-out frame must be the same, non-empty size")
+    model = await model_cache.get(
+        entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **({"device": device} if device else {})
+    )
+    model = await load(model)
+    assert isinstance(model, SubjectMatteModel)
+    items = model.stream(images, **options)
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, as for /music: the stream outlives the handler.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except ValueError as error:
+                    # The server reads at most 512 characters of a message (its stream schema).
+                    yield orjson.dumps({"type": "error", "message": str(error)[:512]}) + b"\n"
+                    return
+                except Exception as error:
+                    log.error(f"Cut-out failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Cut-out failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                yield orjson.dumps(item) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            try:
+                items.close()
+            except ValueError:
+                # Still running in the thread pool after a disconnect; it is never advanced again.
                 pass
             active_requests -= 1
 
@@ -503,6 +889,8 @@ async def run_inference(
         model = await model_cache.get(
             entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
         )
+        if isinstance(model, InferenceModel) and (reason := await _missing_runtime(model)) is not None:
+            _refuse_missing_runtime(entry["name"], reason)
         inputs: list[Any] = [payload]
         if entry["task"] == ModelTask.INPAINT:
             if mask is None:
@@ -519,10 +907,16 @@ async def run_inference(
         outputs[model.identity] = output
         response[entry["task"]] = output
 
+    capacity = asyncio.Semaphore(max(1, settings.request_threads))
+
+    async def admitted(entry: InferenceEntry) -> None:
+        async with capacity:
+            await _run_inference(entry)
+
     without_deps, with_deps = entries
-    await asyncio.gather(*[_run_inference(entry) for entry in without_deps])
+    await asyncio.gather(*[admitted(entry) for entry in without_deps])
     if with_deps:
-        await asyncio.gather(*[_run_inference(entry) for entry in with_deps])
+        await asyncio.gather(*[admitted(entry) for entry in with_deps])
     if isinstance(payload, Image):
         response["imageHeight"], response["imageWidth"] = payload.height, payload.width
 
@@ -544,9 +938,16 @@ async def load(model: InferenceModel) -> InferenceModel:
         with lock:
             if model.loaded:
                 return model
+            retry_at = getattr(model, "load_retry_at", None)
+            if retry_at is not None:
+                if time.monotonic() < retry_at:
+                    raise HTTPException(503, f"Model '{model.model_name}' is cooling down after a load failure")
+                model.load_attempts = 0
+                model.load_retry_at = None
 
             def attempt() -> InferenceModel:
                 if model.load_attempts > 1:
+                    model.load_retry_at = time.monotonic() + 30.0
                     raise HTTPException(500, f"Failed to load model '{model.model_name}'")
                 try:
                     model.load()
@@ -563,20 +964,27 @@ async def load(model: InferenceModel) -> InferenceModel:
                 return model
 
             try:
-                return attempt()
+                try:
+                    return attempt()
+                except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:
+                    if not settings.model_downloads:
+                        model.load_retry_at = time.monotonic() + 30.0
+                        raise HTTPException(
+                            503, "Staged model failed to load; repair it with the model-staging command"
+                        ) from error
+                    log.warning(
+                        f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. "
+                        "Clearing cache."
+                    )
+                    model.clear_cache()
+                    return attempt()
             except ModelUnavailableError as error:
                 # A missing model is a configuration problem; clearing the cache cannot fix it.
                 raise HTTPException(503, str(error)) from error
-            except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:
-                if not settings.model_downloads:
-                    raise HTTPException(
-                        503, "Staged model failed to load; repair it with the model-staging command"
-                    ) from error
-                log.warning(
-                    f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache."
-                )
-                model.clear_cache()
-                return attempt()
+            except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile):
+                # Cache hits extend TTL, so failed instances need a bounded recovery window of their own.
+                model.load_retry_at = time.monotonic() + 30.0
+                raise
 
     return await run(_load, model)
 
@@ -587,6 +995,7 @@ async def idle_shutdown_task() -> None:
             last_called is not None
             and not active_requests
             and not lock.locked()
+            and not (thread_pool is not None and thread_pool.busy)
             and time.time() - last_called > settings.model_ttl
         ):
             log.info("Shutting down due to inactivity.")

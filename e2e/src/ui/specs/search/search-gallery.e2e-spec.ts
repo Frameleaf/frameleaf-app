@@ -38,6 +38,7 @@ test.describe('search gallery-viewer', () => {
     adminUserId = faker.string.uuid();
     testContext.adminId = adminUserId;
     timelineRestData = generateTimelineData({ ...createDefaultTimelineConfig(), ownerId: adminUserId });
+    assets.length = 0;
     for (const timeBucket of timelineRestData.buckets.values()) {
       assets.push(...timeBucket);
     }

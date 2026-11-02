@@ -1,0 +1,1710 @@
+Subject: Add speed ramps and keep freeze frames in sync with linked audio
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/speed-ramp-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/speed-ramp-section.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/speed-ramp-section.tsx
+@@ -0,0 +1,182 @@
++import { useMemo, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Gauge, Plus, Trash2 } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import {
++  applySpeedRamp,
++  previewSpeedRamp,
++  useTimelineStore,
++  MAX_RAMP_SPEED,
++  MIN_RAMP_SPEED,
++  type SpeedRampEasing,
++  type SpeedRampPoint,
++} from '@/features/editor/deps/timeline-store'
++import { useEditorStore } from '@/shared/state/editor'
++import { PropertySection, PropertyRow } from '../components'
++
++const DEFAULT_POINTS: SpeedRampPoint[] = [
++  { position: 0, speed: 1 },
++  { position: 0.5, speed: 0.5 },
++  { position: 1, speed: 1 },
++]
++
++function formatDuration(frames: number, fps: number): string {
++  return `${frames}f (${(frames / fps).toFixed(2)}s)`
++}
++
++/**
++ * Speed ramp editor (FL-597). Points are positions in the clip's source and
++ * speeds; Apply writes the integrated curve as matching constant-speed
++ * segments of the clip and its linked audio in one undoable edit.
++ */
++export function SpeedRampSection({ itemId }: { itemId: string }) {
++  const { t } = useTranslation()
++  const fps = useTimelineStore((s) => s.fps)
++  // Re-evaluate when anything the preview reads changes: clips, tracks (locks), transitions, keyframes, linking.
++  const items = useTimelineStore((s) => s.items)
++  const tracks = useTimelineStore((s) => s.tracks)
++  const transitions = useTimelineStore((s) => s.transitions)
++  const keyframes = useTimelineStore((s) => s.keyframes)
++  const linkedSelection = useEditorStore((s) => s.linkedSelectionEnabled)
++  const [points, setPoints] = useState<SpeedRampPoint[]>(DEFAULT_POINTS)
++  const [easing, setEasing] = useState<SpeedRampEasing>('ease')
++  const [muteLinkedAudio, setMuteLinkedAudio] = useState(false)
++
++  const preview = useMemo(
++    () => previewSpeedRamp(itemId, { points, easing }),
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++    [itemId, points, easing, items, tracks, transitions, keyframes, linkedSelection, fps],
++  )
++
++  const updatePoint = (index: number, change: Partial<SpeedRampPoint>) => {
++    setPoints((current) => current.map((point, i) => (i === index ? { ...point, ...change } : point)))
++  }
++
++  const addPoint = () => {
++    setPoints((current) => {
++      const sorted = [...current].sort((a, b) => a.position - b.position)
++      // Insert in the widest gap so the new point never duplicates a position.
++      let gapIndex = 0
++      for (let i = 1; i < sorted.length - 1; i += 1) {
++        if (sorted[i + 1]!.position - sorted[i]!.position > sorted[gapIndex + 1]!.position - sorted[gapIndex]!.position) {
++          gapIndex = i
++        }
++      }
++      const left = sorted[gapIndex]!
++      const right = sorted[gapIndex + 1]!
++      const position = Math.round(((left.position + right.position) / 2) * 1000) / 1000
++      return [...sorted, { position, speed: (left.speed + right.speed) / 2 }].sort((a, b) => a.position - b.position)
++    })
++  }
++
++  const apply = () => {
++    const refusal = applySpeedRamp(itemId, { points, easing, muteLinkedAudio })
++    if (refusal) {
++      toast.warning(t(`editor.videoSection.speedRamp.refusal.${refusal}`))
++    } else {
++      toast.success(t('editor.videoSection.speedRamp.applied'))
++    }
++  }
++
++  return (
++    <PropertySection title={t('editor.videoSection.speedRamp.title')} icon={Gauge} defaultOpen={false}>
++      {points.map((point, index) => (
++        <PropertyRow key={index} label={t('editor.videoSection.speedRamp.point', { n: index + 1 })}>
++          <div className="flex items-center gap-1 w-full">
++            <Input
++              type="number"
++              aria-label={t('editor.videoSection.speedRamp.position', { n: index + 1 })}
++              className="h-7 min-w-0 flex-1 px-2 text-xs"
++              min={0}
++              max={100}
++              step={1}
++              value={Math.round(point.position * 1000) / 10}
++              onChange={(event) => updatePoint(index, { position: Number(event.target.value) / 100 })}
++            />
++            <span className="text-xs text-muted-foreground">%</span>
++            <Input
++              type="number"
++              aria-label={t('editor.videoSection.speedRamp.speed', { n: index + 1 })}
++              className="h-7 min-w-0 flex-1 px-2 text-xs"
++              min={MIN_RAMP_SPEED}
++              max={MAX_RAMP_SPEED}
++              step={0.05}
++              value={point.speed}
++              onChange={(event) => updatePoint(index, { speed: Number(event.target.value) })}
++            />
++            <span className="text-xs text-muted-foreground">x</span>
++            <Button
++              variant="ghost"
++              size="icon"
++              className="h-7 w-7 flex-shrink-0"
++              disabled={points.length <= 2}
++              onClick={() => setPoints((current) => current.filter((_, i) => i !== index))}
++              title={t('editor.videoSection.speedRamp.removePoint', { n: index + 1 })}
++              aria-label={t('editor.videoSection.speedRamp.removePoint', { n: index + 1 })}
++            >
++              <Trash2 className="w-3.5 h-3.5" />
++            </Button>
++          </div>
++        </PropertyRow>
++      ))}
++
++      <PropertyRow label={t('editor.videoSection.speedRamp.easing')}>
++        <div className="flex items-center gap-1 w-full" role="radiogroup" aria-label={t('editor.videoSection.speedRamp.easing')}>
++          {(['linear', 'ease'] as const).map((value) => (
++            <Button
++              key={value}
++              role="radio"
++              aria-checked={easing === value}
++              variant={easing === value ? 'secondary' : 'ghost'}
++              size="sm"
++              className="h-7 flex-1 text-xs"
++              onClick={() => setEasing(value)}
++            >
++              {t(`editor.videoSection.speedRamp.${value}`)}
++            </Button>
++          ))}
++        </div>
++      </PropertyRow>
++
++      <PropertyRow label={t('editor.videoSection.speedRamp.muteAudio')}>
++        <input
++          type="checkbox"
++          aria-label={t('editor.videoSection.speedRamp.muteAudio')}
++          checked={muteLinkedAudio}
++          onChange={(event) => setMuteLinkedAudio(event.target.checked)}
++        />
++      </PropertyRow>
++
++      <div className="space-y-2 px-1 py-2 text-xs" aria-live="polite">
++        {preview.ok ? (
++          <>
++            <p>
++              {t('editor.videoSection.speedRamp.duration', {
++                from: formatDuration(preview.oldDurationInFrames, fps),
++                to: formatDuration(preview.plan.durationInFrames, fps),
++              })}
++            </p>
++            {preview.captionCount > 0 && (
++              <p>{t('editor.videoSection.speedRamp.captions', { count: preview.captionCount })}</p>
++            )}
++          </>
++        ) : (
++          <p className="text-destructive">{t(`editor.videoSection.speedRamp.refusal.${preview.reason}`)}</p>
++        )}
++        <p className="text-muted-foreground">{t('editor.videoSection.speedRamp.sampling')}</p>
++      </div>
++
++      <div className="flex items-center gap-2 px-1 pb-2">
++        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={addPoint}>
++          <Plus className="w-3.5 h-3.5 mr-1" />
++          {t('editor.videoSection.speedRamp.addPoint')}
++        </Button>
++        <Button size="sm" className="h-7 flex-1 text-xs" disabled={!preview.ok} onClick={apply}>
++          {t('editor.videoSection.speedRamp.apply')}
++        </Button>
++      </div>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
+@@ -28,6 +28,7 @@ import {
+   resolveAnimatedCrop,
+ } from '@/features/editor/deps/keyframes'
+ import { PropertySection, PropertyRow, SliderInput } from '../components'
++import { SpeedRampSection } from './speed-ramp-section'
+ import { getMixedValue } from '../utils'
+ import {
+   cropPixelsToRatio,
+@@ -617,6 +618,8 @@ export function VideoSection({ items }: VideoSectionProps) {
+         </PropertySection>
+       )}
+ 
++      {videoItems.length === 1 && items.length <= 2 && <SpeedRampSection itemId={videoItems[0]!.id} />}
++
+       <PropertySection title={t('editor.videoSection.cropping')} icon={Crop} defaultOpen={true}>
+         <PropertyRow label={t('editor.videoSection.cropLeft')}>
+           <div className="flex items-center gap-1 w-full">
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -25,6 +25,14 @@ export {
+   type RetimePolicy,
+ } from '@/features/timeline/utils/project-retime'
+ export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
++export {
++  applySpeedRamp,
++  previewSpeedRamp,
++  MAX_RAMP_SPEED,
++  MIN_RAMP_SPEED,
++  type SpeedRampEasing,
++  type SpeedRampPoint,
++} from '@/features/timeline/stores/actions/edit/speed-ramp-actions'
+ export {
+   addCompositionControl,
+   removeCompositionControl,
+diff --git a/src/features/timeline/stores/actions/edit/freeze-frame-actions.test.ts b/src/features/timeline/stores/actions/edit/freeze-frame-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/freeze-frame-actions.test.ts
+@@ -0,0 +1,109 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { AudioItem, TimelineTrack, VideoItem } from '@/types/timeline'
++
++const media = vi.hoisted(() => ({ colorTransfer: undefined as string | undefined }))
++
++vi.mock('mediabunny', () => ({
++  ALL_FORMATS: [],
++  BlobSource: class {},
++  Input: class {
++    getPrimaryVideoTrack = async () => ({ displayWidth: 4, displayHeight: 2 })
++    dispose() {}
++  },
++  CanvasSink: class {
++    getCanvas = async () => ({ canvas: { convertToBlob: async () => new Blob(['png']) } })
++  },
++}))
++vi.mock('@/features/timeline/deps/media-library-store', () => ({
++  useMediaLibraryStore: {
++    getState: () => ({
++      mediaById: { 'media-1': { id: 'media-1', fps: 30, colorTransfer: media.colorTransfer } },
++      currentProjectId: 'project-1',
++      prependMediaItem: () => {},
++    }),
++  },
++}))
++vi.mock('@/features/timeline/deps/media-library-service', () => ({
++  importMediaLibraryService: async () => ({
++    mediaLibraryService: {
++      getMediaFile: async () => new Blob(['video']),
++      importGeneratedImage: async () => ({ id: 'frame-media' }),
++      deleteMediaFromProject: async () => {},
++    },
++  }),
++}))
++vi.mock('@/infrastructure/browser/blob-url-manager', () => ({
++  blobUrlManager: { acquire: () => 'blob:frame', release: () => {} },
++}))
++
++const { useItemsStore } = await import('../../items-store')
++const { useTransitionsStore } = await import('../../transitions-store')
++const { useTimelineCommandStore } = await import('../../timeline-command-store')
++const { useTimelineSettingsStore } = await import('../../timeline-settings-store')
++const { useEditorStore } = await import('@/shared/state/editor')
++const { insertFreezeFrame } = await import('./freeze-frame-actions')
++
++function track(id: string, order: number, locked = false): TimelineTrack {
++  return {
++    id, name: id, order, height: 80, locked, syncLock: true, visible: true, muted: false,
++    solo: false, volume: 0, items: [], kind: id.startsWith('a') ? 'audio' : 'video',
++  } as TimelineTrack
++}
++
++const base = { mediaId: 'media-1', linkedGroupId: 'group-1', sourceStart: 0, sourceEnd: 90, sourceDuration: 300, sourceFps: 30, speed: 1 }
++const video = { id: 'video-1', type: 'video', trackId: 'v1', from: 0, durationInFrames: 90, label: 'v', src: 'blob:v', ...base } as VideoItem
++const audio = { id: 'audio-1', type: 'audio', trackId: 'a1', from: 0, durationInFrames: 90, label: 'a', src: 'blob:a', ...base } as AudioItem
++const music = { id: 'music', type: 'audio', trackId: 'a2', from: 0, durationInFrames: 300, label: 'm', src: 'blob:m', mediaId: 'm' } as AudioItem
++const later = { ...audio, id: 'later-audio', linkedGroupId: undefined, from: 100, durationInFrames: 30 } as AudioItem
++
++describe('insertFreezeFrame', () => {
++  beforeEach(() => {
++    media.colorTransfer = undefined
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    useItemsStore.getState().setTracks([track('v1', 0), track('a1', 1), track('a2', 2)])
++    useItemsStore.getState().setItems([video, audio, music, later])
++    useTransitionsStore.getState().setTransitions([])
++  })
++
++  it('holds the frame for the authored duration with silent linked audio', async () => {
++    expect(await insertFreezeFrame('video-1', 30, 12)).toBe(true)
++
++    const items = useItemsStore.getState().items
++    const still = items.find((item) => item.type === 'image')!
++    expect(still).toMatchObject({ trackId: 'v1', from: 30, durationInFrames: 12 })
++
++    const onTrack = (trackId: string) => items.filter((item) => item.trackId === trackId)
++      .map((item) => [item.from, item.durationInFrames]).sort((a, b) => a[0]! - b[0]!)
++    expect(onTrack('v1')).toEqual([[0, 30], [30, 12], [42, 60]])
++    // Linked audio splits with the video and leaves a silent 12-frame gap.
++    expect(onTrack('a1')).toEqual([[0, 30], [42, 60], [112, 30]])
++    // Independent music on another track continues.
++    expect(useItemsStore.getState().itemById['music']).toMatchObject({ from: 0, durationInFrames: 300 })
++
++    // Right halves stay linked to each other, not to the left halves.
++    const rights = items.filter((item) => item.from === 42)
++    expect(rights).toHaveLength(2)
++    expect(rights[0]!.linkedGroupId).toBe(rights[1]!.linkedGroupId)
++    expect(useItemsStore.getState().itemById['video-1']!.linkedGroupId).not.toBe(rights[0]!.linkedGroupId)
++  })
++
++  it('refuses HDR sources without changing the project', async () => {
++    media.colorTransfer = 'pq'
++    expect(await insertFreezeFrame('video-1', 30, 12)).toBe(false)
++    expect(useItemsStore.getState().items).toHaveLength(4)
++  })
++
++  it('refuses when a clip it would move is locked', async () => {
++    useItemsStore.getState().setTracks([track('v1', 0), track('a1', 1, true), track('a2', 2)])
++    expect(await insertFreezeFrame('video-1', 30, 12)).toBe(false)
++    expect(useItemsStore.getState().items).toHaveLength(4)
++  })
++
++  it('refuses a non-positive duration', async () => {
++    expect(await insertFreezeFrame('video-1', 30, 0)).toBe(false)
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts b/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts
+--- a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts
++++ b/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts
+@@ -1,25 +1,36 @@
+ import type { ImageItem } from '@/types/timeline'
++import { toast } from 'sonner'
++import { i18n } from '@/i18n'
+ import { useItemsStore } from '../../items-store'
+-import { useTransitionsStore } from '../../transitions-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+ import { importMediaLibraryService } from '@/features/timeline/deps/media-library-service'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+ import { execute, applyTransitionRepairs, getLogger } from '../shared'
++import { getSynchronizedLinkedItemsForEdit, hasLockedEditParticipants } from '../linked-edit'
++import { applySplitBookkeeping, type SplitResultEntry } from '../split-bookkeeping'
+ import { timelineToSourceFrames } from '../../../utils/source-calculations'
+-import { isInTransitionOverlap } from './shared'
++import { isInTransitionOverlap, isLinkedSelectionEnabled } from './shared'
+ 
+ /**
+  * Insert a freeze frame at the playhead position.
+  *
+  * Extracts the video frame at the current playhead, stores it as a media entry,
+- * splits the video clip at the playhead, and inserts a still image between the halves.
++ * splits the video clip and its linked audio at the playhead, and inserts a
++ * still image of `durationInFrames` project frames between the video halves.
++ * The linked audio is silent for the hold (FL-597); the right halves and later
++ * clips on the same tracks move together so picture and sound stay in sync.
++ * Clips on other tracks keep their positions.
+  *
+  * This is async because frame extraction requires mediabunny. The timeline
+  * mutations are batched in a single command for undo/redo atomicity.
+  */
+-export async function insertFreezeFrame(itemId: string, playheadFrame: number): Promise<boolean> {
++export async function insertFreezeFrame(
++  itemId: string,
++  playheadFrame: number,
++  durationInFrames?: number,
++): Promise<boolean> {
+   const items = useItemsStore.getState().items
+   const item = items.find((i) => i.id === itemId)
+   if (!item || item.type !== 'video') return false
+@@ -35,6 +46,23 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+   }
+ 
+   const fps = useTimelineSettingsStore.getState().fps
++  const freezeDurationFrames = durationInFrames ?? Math.round(fps * 2)
++  if (!Number.isInteger(freezeDurationFrames) || freezeDurationFrames < 1) return false
++
++  // Every linked participant must span the playhead; the hold shifts them and later clips on their tracks.
++  const participants = getSynchronizedLinkedItemsForEdit(items, itemId, isLinkedSelectionEnabled())
++  if (participants.some((p) => playheadFrame <= p.from || playheadFrame >= p.from + p.durationInFrames)) {
++    return false
++  }
++  const participantIds = new Set(participants.map((p) => p.id))
++  const touchedTrackIds = new Set(participants.map((p) => p.trackId))
++  const downstream = items.filter(
++    (i) => touchedTrackIds.has(i.trackId) && !participantIds.has(i.id) && i.from >= playheadFrame,
++  )
++  if (hasLockedEditParticipants([...participants, ...downstream])) {
++    toast.warning(i18n.t('editor.videoSection.freezeFrame.locked'))
++    return false
++  }
+   const speed = item.speed ?? 1
+   const sourceStart = item.sourceStart ?? 0
+   const sourceFps = item.sourceFps ?? fps
+@@ -49,6 +77,11 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+     getLogger().error('[insertFreezeFrame] Media not found for item:', item.mediaId)
+     return false
+   }
++  // The held frame is stored as an 8-bit PNG; an HDR source would lose its signal.
++  if (media.colorTransfer !== undefined && media.colorTransfer !== 'sdr') {
++    toast.warning(i18n.t('editor.videoSection.freezeFrame.hdr'))
++    return false
++  }
+ 
+   // Calculate timestamp in seconds for frame extraction
+   const mediaFps = media.fps || 30
+@@ -148,29 +181,28 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+     // Prepend the media item to the store only after execute() succeeds so a
+     // failed _splitItem (e.g. the source clip was removed between validation
+     // and execute) doesn't leave an orphaned entry in the media library UI.
+-    const freezeDurationFrames = Math.round(fps * 2) // 2 seconds
+-
+     const success = execute<boolean>(
+       'INSERT_FREEZE_FRAME',
+       (): boolean => {
+-        // Split the video at playhead
+-        const splitResult = useItemsStore.getState()._splitItem(itemId, playheadFrame)
+-        if (!splitResult) {
++        const store = useItemsStore.getState()
++        // Re-read later clips: the frame extraction above was async.
++        const later = store.items.filter((i) =>
++          touchedTrackIds.has(i.trackId) && !participantIds.has(i.id) && i.from >= playheadFrame)
++        if (hasLockedEditParticipants(later)) return false
++        const splitResults = participants
++          .map((p) => ({
++            originalId: p.id,
++            originalLinkedGroupId: p.linkedGroupId,
++            result: store._splitItem(p.id, playheadFrame),
++          }))
++          .filter((entry): entry is SplitResultEntry => entry.result !== null)
++        const anchorSplit = splitResults.find((entry) => entry.originalId === itemId)?.result
++        if (!anchorSplit || splitResults.length !== participants.length) {
+           getLogger().error('[insertFreezeFrame] Split failed')
+           return false
+         }
+-
+-        const { leftItem, rightItem } = splitResult
+-
+-        // Update transitions pointing to split item
+-        const transitions = useTransitionsStore.getState().transitions
+-        const updatedTransitions = transitions.map((t) => {
+-          if (t.leftClipId === itemId) {
+-            return { ...t, leftClipId: rightItem.id }
+-          }
+-          return t
+-        })
+-        useTransitionsStore.getState().setTransitions(updatedTransitions)
++        applySplitBookkeeping(splitResults)
++        const { leftItem, rightItem } = anchorSplit
+ 
+         // Create ImageItem for the freeze frame
+         const freezeFrameItem: ImageItem = {
+@@ -187,29 +219,13 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+           transform: item.transform ? { ...item.transform } : undefined,
+         }
+ 
+-        useItemsStore.getState()._addItem(freezeFrameItem)
+-
+-        // Shift the right half forward by freeze frame duration
+-        const newRightFrom = rightItem.from + freezeDurationFrames
+-        useItemsStore.getState()._moveItem(rightItem.id, newRightFrom)
+-
+-        // Also shift all items on same track that come after the right half
+-        const allItems = useItemsStore.getState().items
+-        const itemsToShift = allItems.filter(
+-          (i) =>
+-            i.trackId === item.trackId &&
+-            i.id !== rightItem.id &&
+-            i.id !== leftItem.id &&
+-            i.id !== freezeFrameItem.id &&
+-            i.from > playheadFrame,
+-        )
+-
+-        for (const shiftItem of itemsToShift) {
+-          useItemsStore.getState()._moveItem(shiftItem.id, shiftItem.from + freezeDurationFrames)
+-        }
++        // Shift right halves and later clips on the touched tracks; the audio gap is the silent hold.
++        const shifted = [...splitResults.map((entry) => entry.result.rightItem), ...later]
++        store._moveItems(shifted.map((i) => ({ id: i.id, from: i.from + freezeDurationFrames })))
++        store._addItem(freezeFrameItem)
+ 
+         // Repair transitions
+-        applyTransitionRepairs([leftItem.id, rightItem.id])
++        applyTransitionRepairs([leftItem.id, rightItem.id, ...shifted.map((i) => i.id)])
+ 
+         // Select the freeze frame item
+         useSelectionStore.getState().selectItems([freezeFrameItem.id])
+diff --git a/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.ts b/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.ts
+@@ -0,0 +1,215 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { AudioItem, TextItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTransitionsStore } from '../../transitions-store'
++import { useKeyframesStore } from '../../keyframes-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { useEditorStore } from '@/shared/state/editor'
++import { timelineToSourceFrames } from '../../../utils/source-calculations'
++import { applySpeedRamp, previewSpeedRamp, type SpeedRampRequest } from './speed-ramp-actions'
++
++function track(id: string, order: number, overrides: Partial<TimelineTrack> = {}): TimelineTrack {
++  return {
++    id, name: id, order, height: 80, locked: false, syncLock: true, visible: true,
++    muted: false, solo: false, volume: 0, items: [], kind: id.startsWith('a') ? 'audio' : 'video',
++    ...overrides,
++  } as TimelineTrack
++}
++
++const video = (overrides: Partial<VideoItem> = {}): VideoItem => ({
++  id: 'video-1', type: 'video', trackId: 'v1', from: 30, durationInFrames: 90, label: 'clip.mp4',
++  src: 'blob:video', mediaId: 'media-1', linkedGroupId: 'group-1', originId: 'origin-1',
++  sourceStart: 30, sourceEnd: 120, sourceDuration: 300, sourceFps: 30, speed: 1, ...overrides,
++} as VideoItem)
++
++const audio = (overrides: Partial<AudioItem> = {}): AudioItem => ({
++  id: 'audio-1', type: 'audio', trackId: 'a1', from: 30, durationInFrames: 90, label: 'clip.wav',
++  src: 'blob:audio', mediaId: 'media-1', linkedGroupId: 'group-1', originId: 'origin-1',
++  sourceStart: 30, sourceEnd: 120, sourceDuration: 300, sourceFps: 30, speed: 1, ...overrides,
++} as AudioItem)
++
++const caption = (overrides: Partial<TextItem> = {}): TextItem => ({
++  id: 'caption-1', type: 'text', trackId: 'c1', from: 60, durationInFrames: 15, label: 'Hi',
++  text: 'Hi', color: '#fff', textRole: 'caption',
++  captionSource: { type: 'transcript', clipId: 'video-1', mediaId: 'media-1' }, ...overrides,
++} as TextItem)
++
++const slowMiddle: SpeedRampRequest = {
++  points: [{ position: 0, speed: 1 }, { position: 0.5, speed: 0.5 }, { position: 1, speed: 1 }],
++  easing: 'ease',
++}
++
++function ramped(type: TimelineItem['type']): Array<VideoItem | AudioItem> {
++  return useItemsStore.getState().items
++    .filter((item): item is VideoItem | AudioItem => item.type === type && item.originId === 'origin-1')
++    .sort((a, b) => a.from - b.from)
++}
++
++describe('speed ramps', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    useItemsStore.getState().setTracks([track('v1', 0), track('a1', 1), track('c1', 2)])
++    useItemsStore.getState().setItems([video(), audio()])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++  })
++
++  it('writes matching constant-speed segments for the clip and its linked audio', () => {
++    const preview = previewSpeedRamp('video-1', slowMiddle)
++    expect(preview.ok).toBe(true)
++    if (!preview.ok) return
++
++    expect(applySpeedRamp('video-1', slowMiddle)).toBeNull()
++
++    const videos = ramped('video')
++    const audios = ramped('audio')
++    expect(videos.length).toBeGreaterThan(2)
++    expect(videos.map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd]))
++      .toEqual(audios.map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd]))
++    expect(videos[0]!.id).toBe('video-1')
++    expect(videos[0]!.from).toBe(30)
++    expect(videos[0]!.sourceStart).toBe(30)
++    expect(videos.at(-1)!.sourceEnd).toBe(120)
++    const end = videos.at(-1)!.from + videos.at(-1)!.durationInFrames
++    expect(end - 30).toBe(preview.plan.durationInFrames)
++    // Slowing the middle makes the clip longer.
++    expect(preview.plan.durationInFrames).toBeGreaterThan(90)
++
++    // Each video segment is linked to exactly its audio segment.
++    for (const [index, segment] of videos.entries()) {
++      expect(segment.linkedGroupId).toBeDefined()
++      expect(audios[index]!.linkedGroupId).toBe(segment.linkedGroupId)
++    }
++    // Source frames shown never go backwards across segment boundaries.
++    let previous = -1
++    for (const segment of videos) {
++      for (let offset = 0; offset < segment.durationInFrames; offset += 1) {
++        const frame = segment.sourceStart! + timelineToSourceFrames(offset, segment.speed!, 30, 30)
++        expect(frame).toBeGreaterThanOrEqual(previous)
++        previous = frame
++      }
++    }
++  })
++
++  it('applies as one undoable edit', () => {
++    applySpeedRamp('video-1', slowMiddle)
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items.map((item) => item.id).sort()).toEqual(['audio-1', 'video-1'])
++    expect(useItemsStore.getState().itemById['video-1']).toMatchObject({ from: 30, durationInFrames: 90, speed: 1 })
++  })
++
++  it('mutes linked audio when asked', () => {
++    applySpeedRamp('video-1', { ...slowMiddle, muteLinkedAudio: true })
++    expect(ramped('audio').every((item) => item.muted === true)).toBe(true)
++    expect(ramped('video').every((item) => item.muted !== true)).toBe(true)
++  })
++
++  it('moves attached source captions with the source they describe', () => {
++    useItemsStore.getState().setItems([video(), audio(), caption(), caption({
++      id: 'title-1', textRole: undefined, captionSource: undefined, from: 60, durationInFrames: 15,
++    })])
++    // Speeding everything up 2x halves caption offsets within the clip.
++    const fast: SpeedRampRequest = { points: [{ position: 0, speed: 2 }, { position: 1, speed: 2 }], easing: 'linear' }
++    applySpeedRamp('video-1', fast)
++    const itemById = useItemsStore.getState().itemById
++    expect(itemById['caption-1']).toMatchObject({ from: 45 })
++    expect(Math.abs(itemById['caption-1']!.durationInFrames - 8)).toBeLessThanOrEqual(1)
++    // Timeline-authored text stays where it was authored.
++    expect(itemById['title-1']).toMatchObject({ from: 60, durationInFrames: 15 })
++  })
++
++  it('keeps neighbours in place and refuses when the result needs their room', () => {
++    useItemsStore.getState().setItems([video(), audio(), video({
++      id: 'next', from: 125, linkedGroupId: undefined, originId: 'other', sourceStart: 0, sourceEnd: 30, durationInFrames: 30,
++    })])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBe('needs-room')
++    expect(useItemsStore.getState().items).toHaveLength(3)
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
++  it('leaves a gap when the ramp makes the clip shorter', () => {
++    useItemsStore.getState().setItems([video(), audio(), video({
++      id: 'next', from: 120, linkedGroupId: undefined, originId: 'other', sourceStart: 0, sourceEnd: 30, durationInFrames: 30,
++    })])
++    applySpeedRamp('video-1', { points: [{ position: 0, speed: 2 }, { position: 1, speed: 3 }], easing: 'linear' })
++    expect(useItemsStore.getState().itemById['next']).toMatchObject({ from: 120 })
++  })
++
++  it.each([
++    ['locked', () => useItemsStore.getState().setTracks([track('v1', 0), track('a1', 1, { locked: true }), track('c1', 2)])],
++    ['reversed', () => useItemsStore.getState().setItems([video({ isReversed: true }), audio({ isReversed: true })])],
++    ['transition', () => useTransitionsStore.getState().setTransitions([
++      { id: 't', leftClipId: 'other', rightClipId: 'video-1', durationInFrames: 10 } as never,
++    ])],
++    ['unsynchronized-links', () => useItemsStore.getState().setItems([video(), audio({ from: 31 })])],
++  ])('refuses %s without changing the project', (reason, arrange) => {
++    arrange()
++    const before = structuredClone(useItemsStore.getState().items)
++    expect(applySpeedRamp('video-1', slowMiddle)).toBe(reason)
++    expect(useItemsStore.getState().items).toEqual(before)
++  })
++
++  it('refuses an invalid curve', () => {
++    expect(applySpeedRamp('video-1', { points: [{ position: 0, speed: 0 }, { position: 1, speed: 1 }], easing: 'linear' }))
++      .toBe('invalid-ramp')
++  })
++})
++
++describe('speed ramps: edges and captions (review)', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    useItemsStore.getState().setTracks([track('v1', 0), track('a1', 1), track('c1', 2)])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++  })
++
++  it('keeps fades only at the outer edges of the ramped range', () => {
++    useItemsStore.getState().setItems([
++      video({ fadeIn: 0.5, fadeOut: 0.5 }),
++      audio({ audioFadeIn: 0.25, audioFadeOut: 0.25 }),
++    ])
++    applySpeedRamp('video-1', slowMiddle)
++    const videos = ramped('video')
++    const audios = ramped('audio')
++    expect(videos[0]).toMatchObject({ fadeIn: 0.5, fadeOut: undefined })
++    expect(videos.at(-1)).toMatchObject({ fadeIn: undefined, fadeOut: 0.5 })
++    expect(videos.slice(1, -1).every((item) => item.fadeIn === undefined && item.fadeOut === undefined)).toBe(true)
++    expect(audios[0]).toMatchObject({ audioFadeIn: 0.25, audioFadeOut: undefined })
++    expect(audios.at(-1)).toMatchObject({ audioFadeIn: undefined, audioFadeOut: 0.25 })
++  })
++
++  it('refuses when a moved caption would land on another item on its track', () => {
++    useItemsStore.getState().setItems([
++      video(), audio(),
++      caption({ from: 110, durationInFrames: 10 }),
++      caption({ id: 'title-1', textRole: undefined, captionSource: undefined, from: 140, durationInFrames: 20 }),
++    ])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBe('needs-room')
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
++  it('refuses linked companions whose source lengths differ', () => {
++    useItemsStore.getState().setItems([video(), audio({ sourceEnd: 90 })])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBe('unsynchronized-links')
++  })
++
++  it('hands a caption to the segment it lands in, so ramping another segment leaves it alone', () => {
++    useItemsStore.getState().setItems([video(), audio(), caption({ from: 110, durationInFrames: 5 })])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBeNull()
++    const before = useItemsStore.getState().itemById['caption-1'] as TextItem
++    const owner = ramped('video').find((segment) => before.from >= segment.from && before.from < segment.from + segment.durationInFrames)!
++    expect(owner.id).not.toBe('video-1')
++    expect(before.captionSource?.clipId).toBe(owner.id)
++
++    const fast: SpeedRampRequest = { points: [{ position: 0, speed: 2 }, { position: 1, speed: 2 }], easing: 'linear' }
++    expect(applySpeedRamp('video-1', fast)).toBeNull()
++    expect(useItemsStore.getState().itemById['caption-1']).toMatchObject({ from: before.from, durationInFrames: before.durationInFrames })
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts b/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts
+@@ -0,0 +1,247 @@
++import type { AudioItem, TextItem, TimelineItem, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTransitionsStore } from '../../transitions-store'
++import { useKeyframesStore } from '../../keyframes-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { useSelectionStore } from '@/shared/state/selection'
++import { execute } from '../shared'
++import { getSynchronizedLinkedItemsForEdit, hasLockedEditParticipants } from '../linked-edit'
++import { getAttachedCaptionItemIds, getLinkedItems } from '../../../utils/linked-items'
++import {
++  planSpeedRamp,
++  toSourceSegments,
++  type SpeedRampEasing,
++  type SpeedRampPlan,
++  type SpeedRampPoint,
++} from '../../../utils/speed-ramp'
++import { isLinkedSelectionEnabled, requestPostEditWarmForItems } from './shared'
++
++export { MAX_RAMP_SPEED, MIN_RAMP_SPEED, type SpeedRampEasing, type SpeedRampPoint } from '../../../utils/speed-ramp'
++
++export type SpeedRampRefusal =
++  | 'not-found'
++  | 'unsupported-clip'
++  | 'reversed'
++  | 'unsynchronized-links'
++  | 'locked'
++  | 'transition'
++  | 'keyframes'
++  | 'needs-room'
++  | 'invalid-ramp'
++
++export type SpeedRampPreview =
++  | { ok: true; plan: SpeedRampPlan; oldDurationInFrames: number; captionCount: number }
++  | { ok: false; reason: SpeedRampRefusal }
++
++export interface SpeedRampRequest {
++  points: readonly SpeedRampPoint[]
++  easing: SpeedRampEasing
++  /** Mute the linked audio segments instead of retiming dialogue audibly. */
++  muteLinkedAudio?: boolean
++}
++
++type RampableItem = VideoItem | AudioItem
++
++function isRampable(item: TimelineItem): item is RampableItem {
++  return item.type === 'video' || item.type === 'audio'
++}
++
++function hasKeyframes(itemId: string): boolean {
++  const record = useKeyframesStore.getState().keyframesByItemId[itemId]
++  return !!record?.properties.some((property) => property.keyframes.length > 0)
++}
++
++function sourceSecondsOf(item: RampableItem, fps: number): number | null {
++  const sourceFps = item.sourceFps ?? fps
++  if (item.sourceEnd === undefined) return null
++  const frames = item.sourceEnd - (item.sourceStart ?? 0)
++  return frames > 0 ? frames / sourceFps : null
++}
++
++/** Validate a ramp against the current project without changing it. */
++export function previewSpeedRamp(itemId: string, request: SpeedRampRequest): SpeedRampPreview {
++  const items = useItemsStore.getState().items
++  const anchor = items.find((item) => item.id === itemId)
++  if (!anchor) return { ok: false, reason: 'not-found' }
++  if (!isRampable(anchor)) return { ok: false, reason: 'unsupported-clip' }
++
++  const participants = getSynchronizedLinkedItemsForEdit(items, itemId, isLinkedSelectionEnabled())
++  if (participants.some((item) => !isRampable(item))) return { ok: false, reason: 'unsupported-clip' }
++  if (participants.some((item) => item.isReversed === true)) return { ok: false, reason: 'reversed' }
++  const synchronized = participants.length === getLinkedItems(items, itemId).length || !isLinkedSelectionEnabled()
++  if (!synchronized || participants.some((item) => item.from !== anchor.from || item.durationInFrames !== anchor.durationInFrames)) {
++    return { ok: false, reason: 'unsynchronized-links' }
++  }
++
++  const fps = useTimelineSettingsStore.getState().fps
++  const sourceSeconds = sourceSecondsOf(anchor, fps)
++  if (sourceSeconds === null || participants.some((item) => sourceSecondsOf(item as RampableItem, fps) === null)) {
++    return { ok: false, reason: 'unsupported-clip' }
++  }
++  // One curve is planned from the anchor's source length; a companion of another length would not follow it.
++  if (participants.some((item) => Math.abs(sourceSecondsOf(item as RampableItem, fps)! - sourceSeconds) > 1 / fps)) {
++    return { ok: false, reason: 'unsynchronized-links' }
++  }
++
++  const captionIds = participants.flatMap((item) => getAttachedCaptionItemIds(items, item.id))
++  const captions = items.filter((item) => captionIds.includes(item.id))
++  if (hasLockedEditParticipants([...participants, ...captions])) return { ok: false, reason: 'locked' }
++
++  const participantIds = new Set(participants.map((item) => item.id))
++  if (useTransitionsStore.getState().transitions.some(
++    (transition) => participantIds.has(transition.leftClipId) || participantIds.has(transition.rightClipId),
++  )) {
++    return { ok: false, reason: 'transition' }
++  }
++  if (participants.some((item) => hasKeyframes(item.id))) return { ok: false, reason: 'keyframes' }
++
++  let plan: SpeedRampPlan
++  try {
++    plan = planSpeedRamp({ sourceSeconds, fps, points: request.points, easing: request.easing })
++  } catch {
++    return { ok: false, reason: 'invalid-ramp' }
++  }
++
++  // Neighbours keep their positions: a longer result needs free room on every touched track.
++  const oldEnd = anchor.from + anchor.durationInFrames
++  const newEnd = anchor.from + plan.durationInFrames
++  if (newEnd > oldEnd) {
++    const trackIds = new Set(participants.map((item) => item.trackId))
++    const blocked = items.some((item) =>
++      trackIds.has(item.trackId)
++      && !participantIds.has(item.id)
++      && item.from < newEnd
++      && item.from + item.durationInFrames > oldEnd)
++    if (blocked) return { ok: false, reason: 'needs-room' }
++  }
++  // Moved captions must also land in free space on their own tracks.
++  const captionIdSet = new Set(captions.map((caption) => caption.id))
++  const toNewFrame = captionFrameMapper(anchor, plan, fps)
++  for (const caption of captions) {
++    const from = toNewFrame(caption.from)
++    const end = toNewFrame(caption.from + caption.durationInFrames)
++    if (end <= from) continue
++    const overlaps = items.some((item) =>
++      item.trackId === caption.trackId
++      && !captionIdSet.has(item.id)
++      && !participantIds.has(item.id)
++      && item.from < end
++      && item.from + item.durationInFrames > from)
++    if (overlaps) return { ok: false, reason: 'needs-room' }
++  }
++
++  return { ok: true, plan, oldDurationInFrames: anchor.durationInFrames, captionCount: captions.length }
++}
++
++/**
++ * Apply a speed ramp as one undoable edit: the clip and its linked companions
++ * become matching constant-speed segments, and attached source captions move
++ * with the source they describe. Returns the refusal reason, or null.
++ */
++export function applySpeedRamp(itemId: string, request: SpeedRampRequest): SpeedRampRefusal | null {
++  const preview = previewSpeedRamp(itemId, request)
++  if (!preview.ok) return preview.reason
++  const { plan } = preview
++
++  execute(
++    'APPLY_SPEED_RAMP',
++    () => {
++      const store = useItemsStore.getState()
++      const fps = useTimelineSettingsStore.getState().fps
++      const items = store.items
++      const participants = getSynchronizedLinkedItemsForEdit(items, itemId, isLinkedSelectionEnabled())
++        .filter(isRampable)
++      const anchor = participants.find((item) => item.id === itemId)!
++      const linked = participants.length > 1
++
++      // Shared timeline cuts keep linked video and audio segments in step.
++      const segmentsByItem = toSourceSegments(plan, participants.map((item) => ({
++        sourceStart: item.sourceStart ?? 0,
++        sourceEnd: item.sourceEnd!,
++        sourceFps: item.sourceFps ?? fps,
++      })), fps)
++      const groupIds = segmentsByItem[0]!.map(() => (linked ? crypto.randomUUID() : undefined))
++      // Segment 0 keeps the clip's id; the others are new clips.
++      const segmentIds = participants.map((item, participantIndex) =>
++        segmentsByItem[participantIndex]!.map((_, index) => (index === 0 ? item.id : crypto.randomUUID())))
++
++      // Captions move with the source they describe and belong to the segment they now start in, so a
++      // later ramp of one segment finds only its own captions.
++      const toNewFrame = captionFrameMapper(anchor, plan, fps)
++      participants.forEach((item, participantIndex) => {
++        for (const captionId of getAttachedCaptionItemIds(items, item.id)) {
++          const caption = items.find((candidate) => candidate.id === captionId) as TextItem | undefined
++          if (!caption) continue
++          const from = toNewFrame(caption.from)
++          const end = toNewFrame(caption.from + caption.durationInFrames)
++          if (end <= from) {
++            store._removeItems([caption.id])
++            continue
++          }
++          const segment = segmentsByItem[participantIndex]!.findIndex((candidate) =>
++            from >= anchor.from + candidate.offset && from < anchor.from + candidate.offset + candidate.durationInFrames)
++          const clipId = segment > 0 ? segmentIds[participantIndex]![segment]! : item.id
++          store._updateItem(caption.id, {
++            from, durationInFrames: end - from,
++            ...(caption.captionSource && clipId !== item.id && { captionSource: { ...caption.captionSource, clipId } }),
++          })
++        }
++      })
++
++      const added: TimelineItem[] = []
++      const selected: string[] = []
++      participants.forEach((item, participantIndex) => {
++        const segments = segmentsByItem[participantIndex]!
++        const originId = item.originId ?? item.id
++        segments.forEach((segment, index) => {
++          // Fades belong to the outer edges of the ramped range, not to every segment.
++          const first = index === 0
++          const last = index === segments.length - 1
++          const geometry: Partial<RampableItem> = {
++            ...(!first && { fadeIn: undefined, audioFadeIn: undefined }),
++            ...(!last && { fadeOut: undefined, audioFadeOut: undefined }),
++            from: anchor.from + segment.offset,
++            durationInFrames: segment.durationInFrames,
++            sourceStart: segment.sourceStart,
++            sourceEnd: segment.sourceEnd,
++            speed: segment.speed,
++            originId,
++            // A lone participant no longer plays in sync with former companions.
++            linkedGroupId: linked ? groupIds[index] : undefined,
++            ...(request.muteLinkedAudio && item.type === 'audio' ? { muted: true } : {}),
++          }
++          if (index === 0) {
++            store._updateItem(item.id, geometry)
++          } else {
++            added.push({ ...item, ...geometry, id: segmentIds[participantIndex]![index]! } as TimelineItem)
++          }
++        })
++        selected.push(item.id)
++      })
++      if (added.length > 0) store._addItems(added)
++
++      requestPostEditWarmForItems([...participants.map((item) => item.id), ...added.map((item) => item.id)])
++      useSelectionStore.getState().selectItems(selected)
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { itemId, points: request.points.map((point) => ({ ...point })), easing: request.easing, muteLinkedAudio: request.muteLinkedAudio === true },
++  )
++  return null
++}
++
++/**
++ * Captions: old timeline frame -> source seconds (at the clip's current constant speed) -> ramped frame.
++ * Frames outside the clip are not clamped onto it: before it they stay, after it they keep their
++ * place (or move out with a longer clip), so a caption crossing a cut keeps its other part.
++ */
++function captionFrameMapper(anchor: RampableItem, plan: SpeedRampPlan, fps: number): (frame: number) => number {
++  const sourceFps = anchor.sourceFps ?? fps
++  const speed = anchor.speed ?? 1
++  const sourceSeconds = (anchor.sourceEnd! - (anchor.sourceStart ?? 0)) / sourceFps
++  const oldEnd = anchor.from + anchor.durationInFrames
++  return (frame) => {
++    if (frame <= anchor.from) return frame
++    if (frame > oldEnd) return frame + Math.max(0, plan.durationInFrames - anchor.durationInFrames)
++    return anchor.from + Math.round(plan.offsetAt(Math.min(((frame - anchor.from) / fps) * speed, sourceSeconds)))
++  }
++}
+diff --git a/src/features/timeline/utils/speed-ramp.test.ts b/src/features/timeline/utils/speed-ramp.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/utils/speed-ramp.test.ts
+@@ -0,0 +1,102 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { planSpeedRamp, SpeedRampError, toSourceSegments, type SpeedRampPoint } from './speed-ramp'
++import { timelineToSourceFrames } from './source-calculations'
++
++const constant = (speed: number): SpeedRampPoint[] => [
++  { position: 0, speed },
++  { position: 1, speed },
++]
++
++/** Source frame the engine shows at a timeline offset inside the ramped segments. */
++function shownSourceFrame(
++  segments: ReturnType<typeof toSourceSegments>[number],
++  offset: number,
++  fps: number,
++  sourceFps: number,
++): number {
++  const segment = segments.find((s) => offset >= s.offset && offset < s.offset + s.durationInFrames)!
++  return segment.sourceStart + timelineToSourceFrames(offset - segment.offset, segment.speed, fps, sourceFps)
++}
++
++describe('planSpeedRamp', () => {
++  it.each([0.25, 1, 4])('reproduces constant %sx timing', (speed) => {
++    const plan = planSpeedRamp({ sourceSeconds: 4, fps: 30, points: constant(speed), easing: 'linear' })
++    expect(plan.durationInFrames).toBe(Math.round((4 / speed) * 30))
++    const [segments] = toSourceSegments(plan, [{ sourceStart: 0, sourceEnd: 120, sourceFps: 30 }], 30)
++    for (let frame = 0; frame < plan.durationInFrames; frame += 1) {
++      expect(Math.abs(shownSourceFrame(segments!, frame, 30, 30) - frame * speed)).toBeLessThanOrEqual(1)
++    }
++  })
++
++  it('places a linear ramp at the integrated source positions without drift', () => {
++    // Speed 1 -> 2 linearly over source position p in [0, 1] of 10 s: v(s) = 1 + s / 10.
++    // Timeline time t(s) = 10 ln(1 + s / 10), so s(t) = 10 (e^(t / 10) - 1).
++    const fps = 30
++    const plan = planSpeedRamp({
++      sourceSeconds: 10,
++      fps,
++      points: [{ position: 0, speed: 1 }, { position: 1, speed: 2 }],
++      easing: 'linear',
++    })
++    expect(plan.durationInFrames).toBe(Math.round(10 * Math.log(2) * fps))
++    const [segments] = toSourceSegments(plan, [{ sourceStart: 0, sourceEnd: 300, sourceFps: fps }], fps)
++    const scale = plan.durationInFrames / fps / (10 * Math.log(2))
++    for (let frame = 0; frame < plan.durationInFrames; frame += 1) {
++      const expected = 10 * (Math.exp(frame / fps / scale / 10) - 1) * fps
++      // Within one output frame of source at the fastest speed (2 source frames).
++      expect(Math.abs(shownSourceFrame(segments!, frame, fps, fps) - expected)).toBeLessThanOrEqual(2)
++    }
++    // The last segment ends exactly on the source end.
++    expect(segments!.at(-1)!.sourceEnd).toBe(300)
++  })
++
++  it.each([24000 / 1001, 30000 / 1001])('keeps segments contiguous and monotonic at %s fps', (fps) => {
++    const plan = planSpeedRamp({
++      sourceSeconds: 7.3,
++      fps,
++      points: [{ position: 0, speed: 4 }, { position: 0.4, speed: 0.25 }, { position: 1, speed: 1.5 }],
++      easing: 'ease',
++    })
++    const [video, audio] = toSourceSegments(plan, [
++      { sourceStart: 12, sourceEnd: 12 + Math.round(7.3 * 25), sourceFps: 25 },
++      { sourceStart: 18, sourceEnd: 18 + Math.round(7.3 * 37.5), sourceFps: 37.5 },
++    ], fps)
++    for (const segments of [video!, audio!]) {
++      expect(segments[0]!.offset).toBe(0)
++      expect(segments.reduce((sum, s) => sum + s.durationInFrames, 0)).toBe(plan.durationInFrames)
++      for (const [index, segment] of segments.entries()) {
++        expect(segment.sourceEnd).toBeGreaterThan(segment.sourceStart)
++        if (index > 0) {
++          expect(segment.sourceStart).toBe(segments[index - 1]!.sourceEnd)
++          expect(segment.offset).toBe(segments[index - 1]!.offset + segments[index - 1]!.durationInFrames)
++        }
++      }
++    }
++    // Linked participants share every cut.
++    expect(video!.map((s) => s.offset)).toEqual(audio!.map((s) => s.offset))
++  })
++
++  it('maps source positions to timeline offsets and back', () => {
++    const plan = planSpeedRamp({
++      sourceSeconds: 5,
++      fps: 25,
++      points: [{ position: 0, speed: 0.5 }, { position: 1, speed: 3 }],
++      easing: 'ease',
++    })
++    for (const seconds of [0, 0.7, 2.5, 4.9, 5]) {
++      expect(plan.sourceSecondsAt(plan.offsetAt(seconds))).toBeCloseTo(seconds, 3)
++    }
++  })
++
++  it.each([
++    [[{ position: 0, speed: 1 }], 'too-few-points'],
++    [[{ position: 0, speed: 1 }, { position: 0, speed: 2 }], 'invalid-point'],
++    [[{ position: 0, speed: 1 }, { position: 1.2, speed: 2 }], 'invalid-point'],
++    [[{ position: 0, speed: 0 }, { position: 1, speed: 2 }], 'speed-out-of-range'],
++    [[{ position: 0, speed: 1 }, { position: 1, speed: 5 }], 'speed-out-of-range'],
++    [[{ position: 0, speed: Number.NaN }, { position: 1, speed: 1 }], 'speed-out-of-range'],
++  ])('refuses %j', (points, reason) => {
++    expect(() => planSpeedRamp({ sourceSeconds: 1, fps: 30, points, easing: 'linear' }))
++      .toThrowError(new SpeedRampError(reason as SpeedRampError['reason']))
++  })
++})
+diff --git a/src/features/timeline/utils/speed-ramp.ts b/src/features/timeline/utils/speed-ramp.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/utils/speed-ramp.ts
+@@ -0,0 +1,216 @@
++/**
++ * Speed ramps (FL-597).
++ *
++ * A ramp is a speed curve over a clip's source range. It is applied by
++ * integrating the curve and writing the result as ordinary constant-speed
++ * segments, so preview, export, audio stretching, thumbnails and the native
++ * graph read it without a new timing model. Each segment boundary is placed
++ * from the exact integral, so rounding never accumulates across segments.
++ */
++
++export const MIN_RAMP_SPEED = 0.25
++export const MAX_RAMP_SPEED = 4
++/** Output frames per constant-speed segment. */
++const RAMP_SEGMENT_FRAMES = 6
++
++export type SpeedRampEasing = 'linear' | 'ease'
++
++export interface SpeedRampPoint {
++  /** Position in the clip's source range, 0 (first source frame) to 1 (last). */
++  position: number
++  speed: number
++}
++
++export interface SpeedRampSegment {
++  /** Timeline frames from the start of the ramped clip. */
++  offset: number
++  durationInFrames: number
++  /** Source seconds from the clip's source start. */
++  sourceStartSeconds: number
++  sourceEndSeconds: number
++}
++
++export interface SpeedRampPlan {
++  durationInFrames: number
++  segments: SpeedRampSegment[]
++  /** Source seconds (from source start) shown at a timeline offset in frames. */
++  sourceSecondsAt: (offsetFrames: number) => number
++  /** Timeline offset in frames at which a source position (seconds) is shown. */
++  offsetAt: (sourceSeconds: number) => number
++}
++
++export type SpeedRampCurveRefusal =
++  | 'too-few-points'
++  | 'invalid-point'
++  | 'speed-out-of-range'
++  | 'empty-source'
++
++export class SpeedRampError extends Error {
++  constructor(readonly reason: SpeedRampCurveRefusal) {
++    super(`Speed ramp refused: ${reason}`)
++  }
++}
++
++const TABLE_STEPS = 4096
++
++function validateSpeedRampPoints(points: readonly SpeedRampPoint[]): SpeedRampPoint[] {
++  if (points.length < 2) throw new SpeedRampError('too-few-points')
++  const sorted = [...points].sort((a, b) => a.position - b.position)
++  for (const [index, point] of sorted.entries()) {
++    if (!Number.isFinite(point.position) || point.position < 0 || point.position > 1) {
++      throw new SpeedRampError('invalid-point')
++    }
++    if (index > 0 && point.position === sorted[index - 1]!.position) {
++      throw new SpeedRampError('invalid-point')
++    }
++    if (!Number.isFinite(point.speed) || point.speed < MIN_RAMP_SPEED || point.speed > MAX_RAMP_SPEED) {
++      throw new SpeedRampError('speed-out-of-range')
++    }
++  }
++  return sorted
++}
++
++function speedAt(points: readonly SpeedRampPoint[], easing: SpeedRampEasing, position: number): number {
++  const first = points[0]!
++  const last = points[points.length - 1]!
++  if (position <= first.position) return first.speed
++  if (position >= last.position) return last.speed
++  let index = 1
++  while (points[index]!.position < position) index += 1
++  const left = points[index - 1]!
++  const right = points[index]!
++  const linear = (position - left.position) / (right.position - left.position)
++  const t = easing === 'ease' ? linear * linear * (3 - 2 * linear) : linear
++  return left.speed + (right.speed - left.speed) * t
++}
++
++/**
++ * Plan a ramp over `sourceSeconds` of source for a project at `fps`.
++ * Timeline time is the integral of 1/speed over source time.
++ */
++export function planSpeedRamp(params: {
++  sourceSeconds: number
++  fps: number
++  points: readonly SpeedRampPoint[]
++  easing: SpeedRampEasing
++  segmentFrames?: number
++}): SpeedRampPlan {
++  const { sourceSeconds, fps, easing } = params
++  if (!(sourceSeconds > 0) || !Number.isFinite(sourceSeconds) || !(fps > 0)) {
++    throw new SpeedRampError('empty-source')
++  }
++  const points = validateSpeedRampPoints(params.points)
++  const segmentFrames = Math.max(1, Math.round(params.segmentFrames ?? RAMP_SEGMENT_FRAMES))
++
++  // timeAt[i]: timeline seconds at source position i / TABLE_STEPS (trapezoid on 1/speed).
++  const timeAt = new Float64Array(TABLE_STEPS + 1)
++  const step = sourceSeconds / TABLE_STEPS
++  let previousInverse = 1 / speedAt(points, easing, 0)
++  for (let i = 1; i <= TABLE_STEPS; i += 1) {
++    const inverse = 1 / speedAt(points, easing, i / TABLE_STEPS)
++    timeAt[i] = timeAt[i - 1]! + ((previousInverse + inverse) / 2) * step
++    previousInverse = inverse
++  }
++  const naturalSeconds = timeAt[TABLE_STEPS]!
++  const durationInFrames = Math.max(1, Math.round(naturalSeconds * fps))
++  // Stretch the curve by < half a frame so the last frame lands on the source end.
++  const scale = durationInFrames / fps / naturalSeconds
++
++  const offsetAt = (source: number): number => {
++    const clamped = Math.min(sourceSeconds, Math.max(0, source))
++    const exact = clamped / step
++    const index = Math.min(TABLE_STEPS - 1, Math.floor(exact))
++    const fraction = exact - index
++    const seconds = timeAt[index]! + (timeAt[index + 1]! - timeAt[index]!) * fraction
++    return seconds * scale * fps
++  }
++
++  const sourceSecondsAt = (offsetFrames: number): number => {
++    const target = Math.min(naturalSeconds, Math.max(0, offsetFrames / fps / scale))
++    let low = 0
++    let high = TABLE_STEPS
++    while (high - low > 1) {
++      const middle = (low + high) >> 1
++      if (timeAt[middle]! <= target) low = middle
++      else high = middle
++    }
++    const span = timeAt[high]! - timeAt[low]!
++    const fraction = span > 0 ? (target - timeAt[low]!) / span : 0
++    return (low + fraction) * step
++  }
++
++  const segments: SpeedRampSegment[] = []
++  for (let offset = 0; offset < durationInFrames; offset += segmentFrames) {
++    const end = Math.min(durationInFrames, offset + segmentFrames)
++    segments.push({
++      offset,
++      durationInFrames: end - offset,
++      sourceStartSeconds: sourceSecondsAt(offset),
++      sourceEndSeconds: end === durationInFrames ? sourceSeconds : sourceSecondsAt(end),
++    })
++  }
++  return { durationInFrames, segments, sourceSecondsAt, offsetAt }
++}
++
++export interface SpeedRampSourceSegment {
++  offset: number
++  durationInFrames: number
++  sourceStart: number
++  sourceEnd: number
++  speed: number
++}
++
++export interface SpeedRampSource {
++  sourceStart: number
++  /** The item's own source end; the last segment ends exactly here. */
++  sourceEnd: number
++  sourceFps: number
++}
++
++/**
++ * Express plan segments in each participant's integer source frames, with
++ * shared timeline cuts so linked video and audio stay aligned. Boundaries are
++ * rounded independently from the exact integral; a cut is dropped when it
++ * would leave any participant a segment without a source frame. Speed is
++ * chosen so each segment ends exactly on its rounded source boundary.
++ */
++export function toSourceSegments(
++  plan: SpeedRampPlan,
++  sources: readonly SpeedRampSource[],
++  fps: number,
++): SpeedRampSourceSegment[][] {
++  const boundary = (source: SpeedRampSource, seconds: number) =>
++    source.sourceStart + Math.round(seconds * source.sourceFps)
++  const cuts = [0]
++  let previous = sources.map((source) => source.sourceStart)
++  for (const segment of plan.segments.slice(1)) {
++    const next = sources.map((source) => boundary(source, segment.sourceStartSeconds))
++    // Keep the cut only if both sides hold at least one source frame for everyone.
++    if (next.every((value, index) => value > previous[index]! && value < sources[index]!.sourceEnd)) {
++      cuts.push(segment.offset)
++      previous = next
++    }
++  }
++  cuts.push(plan.durationInFrames)
++
++  return sources.map((source) => {
++    const segments: SpeedRampSourceSegment[] = []
++    for (let index = 0; index < cuts.length - 1; index += 1) {
++      const offset = cuts[index]!
++      const end = cuts[index + 1]!
++      const sourceStart = index === 0 ? source.sourceStart : boundary(source, plan.sourceSecondsAt(offset))
++      const sourceEnd = end === plan.durationInFrames
++        ? source.sourceEnd
++        : boundary(source, plan.sourceSecondsAt(end))
++      const durationInFrames = end - offset
++      segments.push({
++        offset,
++        durationInFrames,
++        sourceStart,
++        sourceEnd,
++        speed: ((sourceEnd - sourceStart) / source.sourceFps) / (durationInFrames / fps),
++      })
++    }
++    return segments
++  })
++}
+diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
+--- a/src/i18n/locales/partials/de/editor.json
++++ b/src/i18n/locales/partials/de/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "Geschwindigkeit zuruecksetzen",
+       "resetToZero": "Auf null zuruecksetzen",
+       "softness": "Weichheit",
+-      "speed": "Geschwindigkeit"
++      "speed": "Geschwindigkeit",
++      "speedRamp": {
++        "title": "Geschwindigkeitsrampe",
++        "point": "Punkt {{n}}",
++        "position": "Position von Punkt {{n}} in der Quelle",
++        "speed": "Geschwindigkeit von Punkt {{n}}",
++        "removePoint": "Punkt {{n}} entfernen",
++        "addPoint": "Punkt hinzufügen",
++        "easing": "Übergänge",
++        "linear": "Linear",
++        "ease": "Weich",
++        "muteAudio": "Verknüpften Ton stummschalten",
++        "duration": "Dauer: {{from}} → {{to}}",
++        "captions_one": "{{count}} Untertitel folgt der Quelle",
++        "captions_other": "{{count}} Untertitel folgen der Quelle",
++        "sampling": "Bei Geschwindigkeitsänderungen werden Frames wiederholt oder übersprungen; es entstehen keine neuen Frames. Sprache behält ihre Tonhöhe.",
++        "apply": "Rampe anwenden",
++        "applied": "Geschwindigkeitsrampe angewendet",
++        "refusal": {
++          "not-found": "Wähle einen Clip aus.",
++          "unsupported-clip": "Geschwindigkeitsrampen gelten für Video- und Audioclips mit bekanntem Quellbereich.",
++          "reversed": "Stelle den Clip zuerst wieder auf Vorwärtswiedergabe.",
++          "unsynchronized-links": "Verknüpfte Clips müssen gemeinsam beginnen und enden. Trenne oder richte sie zuerst aus.",
++          "locked": "Entsperre die Spuren dieses Clips und seiner Untertitel.",
++          "transition": "Entferne zuerst die Übergänge dieses Clips.",
++          "keyframes": "Entferne zuerst die Keyframes dieses Clips.",
++          "needs-room": "Der Clip braucht mehr Platz. Verschiebe den nächsten Clip oder nutze zuerst Ripple.",
++          "invalid-ramp": "Nutze mindestens zwei Punkte an verschiedenen Positionen mit 0,25x bis 4x."
++        }
++      },
++      "freezeFrame": {
++        "locked": "Entsperre die Spuren, die dieses Standbild verschieben würde.",
++        "hdr": "Standbilder sind für HDR-Video noch nicht verfügbar."
++      }
+     },
+     "mediaSidebar": {
+       "media": "Medien",
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -685,7 +685,40 @@
+       "resetSpeed": "Reset Speed",
+       "resetToZero": "Reset to zero",
+       "softness": "Softness",
+-      "speed": "Speed"
++      "speed": "Speed",
++      "speedRamp": {
++        "title": "Speed ramp",
++        "point": "Point {{n}}",
++        "position": "Point {{n}} position in the source",
++        "speed": "Point {{n}} speed",
++        "removePoint": "Remove point {{n}}",
++        "addPoint": "Add point",
++        "easing": "Boundaries",
++        "linear": "Linear",
++        "ease": "Eased",
++        "muteAudio": "Mute linked audio",
++        "duration": "Duration: {{from}} → {{to}}",
++        "captions_one": "{{count}} caption follows the source",
++        "captions_other": "{{count}} captions follow the source",
++        "sampling": "Frames are repeated or skipped as the speed changes; no new frames are generated. Dialogue keeps its pitch.",
++        "apply": "Apply ramp",
++        "applied": "Speed ramp applied",
++        "refusal": {
++          "not-found": "Select a clip.",
++          "unsupported-clip": "Speed ramps work on video and audio clips with a known source range.",
++          "reversed": "Reverse the clip back to forward playback first.",
++          "unsynchronized-links": "Linked clips must start and end together. Unlink or align them first.",
++          "locked": "Unlock the tracks this clip and its captions use.",
++          "transition": "Remove the transitions on this clip first.",
++          "keyframes": "Remove keyframes from this clip first.",
++          "needs-room": "The ramped clip needs more room. Move the next clip or use ripple first.",
++          "invalid-ramp": "Use at least two points at different positions, with speeds from 0.25x to 4x."
++        }
++      },
++      "freezeFrame": {
++        "locked": "Unlock the tracks this freeze frame would move.",
++        "hdr": "Freeze frames aren't available for HDR video yet."
++      }
+     },
+     "mediaSidebar": {
+       "media": "Media",
+diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
+--- a/src/i18n/locales/partials/es/editor.json
++++ b/src/i18n/locales/partials/es/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "Restablecer velocidad",
+       "resetToZero": "Restablecer a cero",
+       "softness": "Suavidad",
+-      "speed": "Velocidad"
++      "speed": "Velocidad",
++      "speedRamp": {
++        "title": "Rampa de velocidad",
++        "point": "Punto {{n}}",
++        "position": "Posición del punto {{n}} en el origen",
++        "speed": "Velocidad del punto {{n}}",
++        "removePoint": "Quitar punto {{n}}",
++        "addPoint": "Añadir punto",
++        "easing": "Transiciones",
++        "linear": "Lineal",
++        "ease": "Suavizada",
++        "muteAudio": "Silenciar audio vinculado",
++        "duration": "Duración: {{from}} → {{to}}",
++        "captions_one": "{{count}} subtítulo sigue al origen",
++        "captions_other": "{{count}} subtítulos siguen al origen",
++        "sampling": "Al cambiar la velocidad se repiten u omiten fotogramas; no se generan fotogramas nuevos. El diálogo conserva su tono.",
++        "apply": "Aplicar rampa",
++        "applied": "Rampa de velocidad aplicada",
++        "refusal": {
++          "not-found": "Selecciona un clip.",
++          "unsupported-clip": "Las rampas de velocidad funcionan en clips de vídeo y audio con un rango de origen conocido.",
++          "reversed": "Vuelve primero el clip a reproducción hacia delante.",
++          "unsynchronized-links": "Los clips vinculados deben empezar y terminar juntos. Desvincúlalos o alinéalos primero.",
++          "locked": "Desbloquea las pistas de este clip y sus subtítulos.",
++          "transition": "Quita primero las transiciones de este clip.",
++          "keyframes": "Quita primero los fotogramas clave de este clip.",
++          "needs-room": "El clip necesita más espacio. Mueve el siguiente clip o usa primero el desplazamiento.",
++          "invalid-ramp": "Usa al menos dos puntos en posiciones distintas, con velocidades de 0,25x a 4x."
++        }
++      },
++      "freezeFrame": {
++        "locked": "Desbloquea las pistas que movería esta imagen congelada.",
++        "hdr": "Las imágenes congeladas aún no están disponibles para vídeo HDR."
++      }
+     },
+     "mediaSidebar": {
+       "media": "Medios",
+diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
+--- a/src/i18n/locales/partials/fr/editor.json
++++ b/src/i18n/locales/partials/fr/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "Reinitialiser la vitesse",
+       "resetToZero": "Remettre a zero",
+       "softness": "Douceur",
+-      "speed": "Vitesse"
++      "speed": "Vitesse",
++      "speedRamp": {
++        "title": "Rampe de vitesse",
++        "point": "Point {{n}}",
++        "position": "Position du point {{n}} dans la source",
++        "speed": "Vitesse du point {{n}}",
++        "removePoint": "Supprimer le point {{n}}",
++        "addPoint": "Ajouter un point",
++        "easing": "Transitions",
++        "linear": "Linéaire",
++        "ease": "Adoucie",
++        "muteAudio": "Couper l’audio lié",
++        "duration": "Durée : {{from}} → {{to}}",
++        "captions_one": "{{count}} sous-titre suit la source",
++        "captions_other": "{{count}} sous-titres suivent la source",
++        "sampling": "Les images sont répétées ou sautées selon la vitesse ; aucune image nouvelle n’est créée. Les dialogues gardent leur hauteur.",
++        "apply": "Appliquer la rampe",
++        "applied": "Rampe de vitesse appliquée",
++        "refusal": {
++          "not-found": "Sélectionnez un clip.",
++          "unsupported-clip": "Les rampes de vitesse s’appliquent aux clips vidéo et audio dont la plage source est connue.",
++          "reversed": "Remettez d’abord le clip en lecture avant.",
++          "unsynchronized-links": "Les clips liés doivent commencer et finir ensemble. Déliez-les ou alignez-les d’abord.",
++          "locked": "Déverrouillez les pistes de ce clip et de ses sous-titres.",
++          "transition": "Supprimez d’abord les transitions de ce clip.",
++          "keyframes": "Supprimez d’abord les images clés de ce clip.",
++          "needs-room": "Le clip a besoin de plus de place. Déplacez le clip suivant ou utilisez d’abord le décalage.",
++          "invalid-ramp": "Utilisez au moins deux points à des positions différentes, entre 0,25x et 4x."
++        }
++      },
++      "freezeFrame": {
++        "locked": "Déverrouillez les pistes que cet arrêt sur image déplacerait.",
++        "hdr": "Les arrêts sur image ne sont pas encore disponibles pour la vidéo HDR."
++      }
+     },
+     "mediaSidebar": {
+       "media": "Médias",
+diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
+--- a/src/i18n/locales/partials/ja/editor.json
++++ b/src/i18n/locales/partials/ja/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "速度をリセット",
+       "resetToZero": "ゼロにリセット",
+       "softness": "ソフトさ",
+-      "speed": "速度"
++      "speed": "速度",
++      "speedRamp": {
++        "title": "スピードランプ",
++        "point": "ポイント {{n}}",
++        "position": "ポイント {{n}} のソース内の位置",
++        "speed": "ポイント {{n}} の速度",
++        "removePoint": "ポイント {{n}} を削除",
++        "addPoint": "ポイントを追加",
++        "easing": "境界",
++        "linear": "リニア",
++        "ease": "イーズ",
++        "muteAudio": "リンクされたオーディオをミュート",
++        "duration": "長さ: {{from}} → {{to}}",
++        "captions_one": "{{count}} 件の字幕がソースに追従します",
++        "captions_other": "{{count}} 件の字幕がソースに追従します",
++        "sampling": "速度の変化に応じてフレームが繰り返されるかスキップされます。新しいフレームは生成されません。音声のピッチは保たれます。",
++        "apply": "ランプを適用",
++        "applied": "スピードランプを適用しました",
++        "refusal": {
++          "not-found": "クリップを選択してください。",
++          "unsupported-clip": "スピードランプはソース範囲がわかっている動画・音声クリップで使えます。",
++          "reversed": "先にクリップを順再生に戻してください。",
++          "unsynchronized-links": "リンクされたクリップは開始と終了をそろえる必要があります。先にリンク解除または整列してください。",
++          "locked": "このクリップと字幕のトラックのロックを解除してください。",
++          "transition": "先にこのクリップのトランジションを削除してください。",
++          "keyframes": "先にこのクリップのキーフレームを削除してください。",
++          "needs-room": "クリップにはもっとスペースが必要です。次のクリップを移動するか、先にリップルを使ってください。",
++          "invalid-ramp": "異なる位置に2つ以上のポイントを置き、速度は0.25x〜4xにしてください。"
++        }
++      },
++      "freezeFrame": {
++        "locked": "このフリーズフレームで動くトラックのロックを解除してください。",
++        "hdr": "HDR 動画ではフリーズフレームをまだ使えません。"
++      }
+     },
+     "mediaSidebar": {
+       "media": "メディア",
+diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
+--- a/src/i18n/locales/partials/ko/editor.json
++++ b/src/i18n/locales/partials/ko/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "속도 재설정",
+       "resetToZero": "0으로 재설정",
+       "softness": "부드러움",
+-      "speed": "속도"
++      "speed": "속도",
++      "speedRamp": {
++        "title": "속도 램프",
++        "point": "포인트 {{n}}",
++        "position": "소스에서 포인트 {{n}} 위치",
++        "speed": "포인트 {{n}} 속도",
++        "removePoint": "포인트 {{n}} 제거",
++        "addPoint": "포인트 추가",
++        "easing": "경계",
++        "linear": "선형",
++        "ease": "부드럽게",
++        "muteAudio": "연결된 오디오 음소거",
++        "duration": "길이: {{from}} → {{to}}",
++        "captions_one": "자막 {{count}}개가 소스를 따라갑니다",
++        "captions_other": "자막 {{count}}개가 소스를 따라갑니다",
++        "sampling": "속도가 바뀌면 프레임이 반복되거나 건너뜁니다. 새 프레임은 생성되지 않습니다. 대사의 음높이는 유지됩니다.",
++        "apply": "램프 적용",
++        "applied": "속도 램프를 적용했습니다",
++        "refusal": {
++          "not-found": "클립을 선택하세요.",
++          "unsupported-clip": "속도 램프는 소스 범위를 아는 비디오 및 오디오 클립에서 사용할 수 있습니다.",
++          "reversed": "먼저 클립을 정방향 재생으로 되돌리세요.",
++          "unsynchronized-links": "연결된 클립은 함께 시작하고 끝나야 합니다. 먼저 연결을 해제하거나 정렬하세요.",
++          "locked": "이 클립과 자막이 사용하는 트랙의 잠금을 해제하세요.",
++          "transition": "먼저 이 클립의 전환 효과를 제거하세요.",
++          "keyframes": "먼저 이 클립의 키프레임을 제거하세요.",
++          "needs-room": "클립에 공간이 더 필요합니다. 다음 클립을 옮기거나 먼저 리플을 사용하세요.",
++          "invalid-ramp": "서로 다른 위치에 포인트를 두 개 이상 두고 속도는 0.25x~4x로 설정하세요."
++        }
++      },
++      "freezeFrame": {
++        "locked": "이 정지 프레임이 옮길 트랙의 잠금을 해제하세요.",
++        "hdr": "HDR 비디오에서는 아직 정지 프레임을 사용할 수 없습니다."
++      }
+     },
+     "mediaSidebar": {
+       "media": "미디어",
+diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
+--- a/src/i18n/locales/partials/pt-BR/editor.json
++++ b/src/i18n/locales/partials/pt-BR/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "Redefinir velocidade",
+       "resetToZero": "Redefinir para zero",
+       "softness": "Suavidade",
+-      "speed": "Velocidade"
++      "speed": "Velocidade",
++      "speedRamp": {
++        "title": "Rampa de velocidade",
++        "point": "Ponto {{n}}",
++        "position": "Posição do ponto {{n}} na origem",
++        "speed": "Velocidade do ponto {{n}}",
++        "removePoint": "Remover ponto {{n}}",
++        "addPoint": "Adicionar ponto",
++        "easing": "Transições",
++        "linear": "Linear",
++        "ease": "Suavizada",
++        "muteAudio": "Silenciar áudio vinculado",
++        "duration": "Duração: {{from}} → {{to}}",
++        "captions_one": "{{count}} legenda acompanha a origem",
++        "captions_other": "{{count}} legendas acompanham a origem",
++        "sampling": "Quadros são repetidos ou pulados conforme a velocidade muda; nenhum quadro novo é gerado. O diálogo mantém o tom.",
++        "apply": "Aplicar rampa",
++        "applied": "Rampa de velocidade aplicada",
++        "refusal": {
++          "not-found": "Selecione um clipe.",
++          "unsupported-clip": "Rampas de velocidade funcionam em clipes de vídeo e áudio com intervalo de origem conhecido.",
++          "reversed": "Volte o clipe para reprodução normal primeiro.",
++          "unsynchronized-links": "Clipes vinculados precisam começar e terminar juntos. Desvincule ou alinhe-os primeiro.",
++          "locked": "Desbloqueie as faixas deste clipe e das legendas.",
++          "transition": "Remova primeiro as transições deste clipe.",
++          "keyframes": "Remova primeiro os quadros-chave deste clipe.",
++          "needs-room": "O clipe precisa de mais espaço. Mova o próximo clipe ou use o deslocamento primeiro.",
++          "invalid-ramp": "Use pelo menos dois pontos em posições diferentes, com velocidades de 0,25x a 4x."
++        }
++      },
++      "freezeFrame": {
++        "locked": "Desbloqueie as faixas que este quadro congelado moveria.",
++        "hdr": "Quadros congelados ainda não estão disponíveis para vídeo HDR."
++      }
+     },
+     "mediaSidebar": {
+       "media": "Mídia",
+diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
+--- a/src/i18n/locales/partials/tr/editor.json
++++ b/src/i18n/locales/partials/tr/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "Hızı sıfırla",
+       "resetToZero": "Sıfıra ayarla",
+       "softness": "Yumuşaklık",
+-      "speed": "Hız"
++      "speed": "Hız",
++      "speedRamp": {
++        "title": "Hız rampası",
++        "point": "Nokta {{n}}",
++        "position": "Nokta {{n}} kaynak konumu",
++        "speed": "Nokta {{n}} hızı",
++        "removePoint": "Nokta {{n}} kaldır",
++        "addPoint": "Nokta ekle",
++        "easing": "Geçişler",
++        "linear": "Doğrusal",
++        "ease": "Yumuşak",
++        "muteAudio": "Bağlı sesi kapat",
++        "duration": "Süre: {{from}} → {{to}}",
++        "captions_one": "{{count}} altyazı kaynağı izler",
++        "captions_other": "{{count}} altyazı kaynağı izler",
++        "sampling": "Hız değiştikçe kareler tekrarlanır veya atlanır; yeni kare üretilmez. Konuşmanın perdesi korunur.",
++        "apply": "Rampayı uygula",
++        "applied": "Hız rampası uygulandı",
++        "refusal": {
++          "not-found": "Bir klip seçin.",
++          "unsupported-clip": "Hız rampaları kaynak aralığı bilinen video ve ses kliplerinde çalışır.",
++          "reversed": "Önce klibi ileri oynatmaya döndürün.",
++          "unsynchronized-links": "Bağlı klipler birlikte başlayıp bitmelidir. Önce bağlantıyı kaldırın veya hizalayın.",
++          "locked": "Bu klibin ve altyazılarının kullandığı izlerin kilidini açın.",
++          "transition": "Önce bu klipteki geçişleri kaldırın.",
++          "keyframes": "Önce bu klipteki anahtar kareleri kaldırın.",
++          "needs-room": "Klibin daha fazla yere ihtiyacı var. Sonraki klibi taşıyın veya önce kaydırma kullanın.",
++          "invalid-ramp": "Farklı konumlarda en az iki nokta kullanın; hız 0,25x ile 4x arasında olmalı."
++        }
++      },
++      "freezeFrame": {
++        "locked": "Bu dondurulmuş karenin taşıyacağı izlerin kilidini açın.",
++        "hdr": "Dondurulmuş kareler HDR video için henüz kullanılamıyor."
++      }
+     },
+     "mediaSidebar": {
+       "media": "Medya",
+diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
+--- a/src/i18n/locales/partials/zh/editor.json
++++ b/src/i18n/locales/partials/zh/editor.json
+@@ -674,7 +674,40 @@
+       "resetSpeed": "重置速度",
+       "resetToZero": "重置为零",
+       "softness": "柔和度",
+-      "speed": "速度"
++      "speed": "速度",
++      "speedRamp": {
++        "title": "速度渐变",
++        "point": "点 {{n}}",
++        "position": "点 {{n}} 在源中的位置",
++        "speed": "点 {{n}} 的速度",
++        "removePoint": "移除点 {{n}}",
++        "addPoint": "添加点",
++        "easing": "边界",
++        "linear": "线性",
++        "ease": "缓动",
++        "muteAudio": "将链接的音频静音",
++        "duration": "时长：{{from}} → {{to}}",
++        "captions_one": "{{count}} 条字幕跟随源",
++        "captions_other": "{{count}} 条字幕跟随源",
++        "sampling": "速度变化时会重复或跳过帧，不会生成新帧。对白保持原有音高。",
++        "apply": "应用渐变",
++        "applied": "已应用速度渐变",
++        "refusal": {
++          "not-found": "请选择一个片段。",
++          "unsupported-clip": "速度渐变适用于源范围已知的视频和音频片段。",
++          "reversed": "请先将片段恢复为正向播放。",
++          "unsynchronized-links": "链接的片段必须同时开始和结束。请先取消链接或对齐。",
++          "locked": "请解锁此片段及其字幕所在的轨道。",
++          "transition": "请先移除此片段上的转场。",
++          "keyframes": "请先移除此片段的关键帧。",
++          "needs-room": "片段需要更多空间。请移动下一个片段或先使用波纹编辑。",
++          "invalid-ramp": "请至少在不同位置设置两个点，速度为 0.25x 到 4x。"
++        }
++      },
++      "freezeFrame": {
++        "locked": "请解锁此定格画面会移动的轨道。",
++        "hdr": "HDR 视频暂不支持定格画面。"
++      }
+     },
+     "mediaSidebar": {
+       "media": "媒体",

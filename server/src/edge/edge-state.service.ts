@@ -13,6 +13,7 @@ import type {
   FrameleafRemoteAccess,
   FrameleafRemoteEnrollment,
 } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import { type BuddyRecoveryScope, buddyRecoveryHost, readBuddyRecovery } from 'src/edge/buddy-recovery.js';
 import { type EdgeCertificateKind, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
@@ -61,6 +62,7 @@ import {
   wildcardNames,
 } from 'src/utils/frameleaf-remote-access.js';
 import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
+import { localNotificationText } from 'src/utils/preferences.js';
 
 type RemoteSettings = SystemConfig['frameleafCloud']['remoteAccess'];
 
@@ -890,12 +892,16 @@ export class EdgeStateService {
     // the stored notices are deduplicated for 24 hours; this only spares the lookup on every pass
     this.relayNoticeAt = now;
     const problem = relay.lastError ? ` The last problem was: ${relay.lastError}` : '';
+    const disconnectedSince = String(relay.disconnectedSince);
     try {
       await this.notifyAdmins({
         title: 'Remote access relay disconnected',
         description:
-          `This server has not been connected to the Frameleaf relay since ${relay.disconnectedSince}. ` +
+          `This server has not been connected to the Frameleaf relay since ${disconnectedSince}. ` +
           `It keeps trying; at home it works as before.${problem}`,
+        systemTemplate: relay.lastError
+          ? { version: 1, key: 'relay-disconnected-error', args: { since: disconnectedSince, error: relay.lastError } }
+          : { version: 1, key: 'relay-disconnected', args: { since: disconnectedSince } },
         dedupeKey: RELAY_NOTICE_KEY,
       });
     } catch (error) {
@@ -1169,12 +1175,21 @@ export class EdgeStateService {
   ) {
     const which = kind === 'wildcard' ? 'this server’s Frameleaf address' : 'your custom domain';
     const expires = facts ? ` The current certificate works until ${facts.notAfter.slice(0, 10)}.` : '';
+    const args = { error: String(issuance.lastError), nextAttemptAt: String(issuance.nextAttemptAt) };
+    const wildcard = kind === 'wildcard';
     try {
       await this.notifyAdmins({
         title: 'Remote access certificate could not be renewed',
         description:
           `The certificate for ${which} could not be issued (${issuance.lastError}). ` +
           `It is retried automatically, next at ${issuance.nextAttemptAt}.${expires}`,
+        systemTemplate: facts
+          ? {
+              version: 1,
+              key: wildcard ? 'edge-certificate-address-expiring' : 'edge-certificate-domain-expiring',
+              args: { ...args, until: facts.notAfter.slice(0, 10) },
+            }
+          : { version: 1, key: wildcard ? 'edge-certificate-address' : 'edge-certificate-domain', args },
         dedupeKey: `${CERTIFICATE_NOTICE_KEY}:${kind}`,
       });
     } catch (error) {
@@ -1183,18 +1198,27 @@ export class EdgeStateService {
   }
 
   /** The same deduplicated system notice the API sends (`NotificationService.notifyAdmins`), without the live push. */
-  private async notifyAdmins(notice: { title: string; description: string; dedupeKey: string }) {
+  private async notifyAdmins(notice: {
+    title: string;
+    description: string;
+    systemTemplate: SystemNotificationTemplate;
+    dedupeKey: string;
+  }) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     for (const admin of await this.userRepository.getAdmins()) {
       if (await this.notificationRepository.findRecentByDedupeKey(admin.id, notice.dedupeKey, since)) {
         continue;
       }
+      const { title, body } = await localNotificationText(this.userRepository, admin.id, notice.systemTemplate, {
+        title: notice.title,
+        body: notice.description,
+      });
       await this.notificationRepository.create({
         userId: admin.id,
         type: NotificationType.SystemMessage,
         level: NotificationLevel.Warning,
-        title: notice.title,
-        description: notice.description,
+        title,
+        description: body,
         data: { dedupeKey: notice.dedupeKey },
       });
     }

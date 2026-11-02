@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetVisibility, ChecksumAlgorithm, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  AssetVisibility,
+  ChecksumAlgorithm,
+  LibraryScope,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
   PreservationItem,
@@ -20,6 +26,7 @@ import { libraryAssetFromFile } from 'src/utils/library-scan.js';
 import {
   PRESERVATION_FORMAT,
   PRESERVATION_SCHEMA_VERSION,
+  PreservationAlbumsSchema,
   PreservationEntry,
   PreservationPackageError,
   PreservationSidecar,
@@ -70,6 +77,8 @@ describe(PreservationWorkerService.name, () => {
 
   const sidecarOf = (sourceAssetId: string, overrides: Partial<PreservationSidecar> = {}): PreservationSidecar => ({
     schemaVersion: PRESERVATION_SCHEMA_VERSION,
+    libraryScope: LibraryScope.Personal,
+    sources: [],
     sourceAssetId,
     originalFileName: 'lake.jpg',
     type: 'IMAGE',
@@ -162,6 +171,10 @@ describe(PreservationWorkerService.name, () => {
       beginItemAttempt: vi.fn(),
       finishItem: vi.fn(),
       getExportAsset: vi.fn(),
+      getAssetSources: vi.fn().mockResolvedValue([]),
+      appendRestoredSources: vi.fn(),
+      getRestoreById: vi.fn(),
+      restoreBookmark: vi.fn().mockResolvedValue(undefined),
       findByChecksum: vi.fn().mockResolvedValue([]),
       updateRestoreItem: vi.fn(),
       getLibraryState: vi.fn().mockResolvedValue(library()),
@@ -471,6 +484,24 @@ describe(PreservationWorkerService.name, () => {
         // Only the owner's own decisions travel: no recognized-text lines, boxes or scores.
         expect(sidecar).not.toHaveProperty('ocr');
         expect(written).not.toMatch(/"(boxScore|textScore|ocr)"/);
+      });
+
+      it('exports workspace and credential-free capture attribution', async () => {
+        repository.getAssetSources.mockResolvedValue([
+          {
+            captureId: newUuid(),
+            pageUrl: 'https://example.com/art?token=private#fragment',
+            title: 'Artwork',
+            capturedAt: new Date('2026-01-01'),
+          },
+        ]);
+        const sidecar = (await worker().buildSidecar(ownerId, exportAsset({ libraryScope: 'design' }), {
+          sha1,
+          sha256,
+        })) as PreservationSidecar;
+        expect(sidecar.libraryScope).toBe('design');
+        expect(sidecar.sources).toEqual([expect.objectContaining({ pageUrl: 'https://example.com/art' })]);
+        expect(JSON.stringify(sidecar)).not.toContain('token=');
       });
 
       it('keeps every located decision out when a crop meets unknown image geometry', async () => {
@@ -1010,7 +1041,143 @@ describe(PreservationWorkerService.name, () => {
     });
   });
 
+  describe('Pro workspace metadata', () => {
+    it('uploads a Design original in its workspace before publication', async () => {
+      const created = newUuid();
+      const item = restoreItemOf();
+      item.sidecar = { ...item.sidecar, schemaVersion: 2, libraryScope: 'design', sources: [] };
+      assetMedia.uploadAsset.mockResolvedValue({ id: created, status: AssetMediaStatus.CREATED });
+      await worker().restoreItem(contextOf(), item);
+      expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ libraryScope: 'design' }),
+        expect.anything(),
+      );
+    });
+
+    it('appends source records through the owner-checked repository on restore', async () => {
+      const item = restoreItemOf();
+      const assetId = newUuid();
+      const source = {
+        captureId: newUuid(),
+        pageUrl: 'https://example.com/art',
+        title: 'Artwork',
+        capturedAt: '2026-01-01T00:00:00.000Z',
+      };
+      await worker().applyMetadata(contextOf(), item, assetId, false, {
+        ...sidecarOf(item.sourceAssetId),
+        sources: [source],
+      });
+      expect(repository.appendRestoredSources).toHaveBeenCalledWith(ownerId, assetId, [source]);
+    });
+
+    it('keeps an existing workspace by default and restores it only when replacement was chosen', async () => {
+      const item = restoreItemOf();
+      const sidecar = { ...sidecarOf(item.sourceAssetId), schemaVersion: 2, libraryScope: 'design', sources: [] };
+      repository.getLibraryState.mockResolvedValue(library({ libraryScope: 'personal' }));
+      await worker().applyMetadata(contextOf(), item, newUuid(), false, sidecar);
+      expect(assets.update).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ libraryScope: 'design' }),
+      );
+      await worker().applyMetadata(contextOf({ conflictDefault: 'replace' }), item, newUuid(), false, sidecar);
+      expect(assets.update).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ libraryScope: 'design' }),
+      );
+    });
+  });
+
+  describe('bookmark restoration checkpoints', () => {
+    it('checks the replay cursor once and stops at a bounded cancellation checkpoint', async () => {
+      const bookmarks = Array.from({ length: 51 }, () => ({
+        id: newUuid(),
+        url: 'https://example.com/art',
+        title: 'Art',
+        note: null,
+        rating: null,
+        libraryScope: LibraryScope.Design,
+        isArchived: false,
+        isLocked: false,
+        previewAssetId: null,
+        albumIds: [],
+        tags: [],
+        source: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      }));
+      repository.getRestoreById.mockResolvedValue({ ownerId, summary: null });
+      const checkpoint = vi.fn().mockResolvedValue(false);
+      const context = contextOf();
+      const identity = newUuid();
+      await expect(worker().restoreBookmarks(context, identity, bookmarks, checkpoint)).resolves.toBe(false);
+      expect(repository.restoreBookmark).toHaveBeenCalledTimes(50);
+      expect(repository.getRestoreById).toHaveBeenCalledTimes(1);
+      repository.restoreBookmark.mockClear();
+      checkpoint.mockResolvedValue(true);
+      repository.getRestoreById.mockResolvedValue({
+        ownerId,
+        summary: { bookmarkAfter: bookmarks.toSorted((a, b) => a.id.localeCompare(b.id))[49].id },
+      });
+      await expect(worker().restoreBookmarks(context, identity, bookmarks, checkpoint)).resolves.toBe(true);
+      expect(repository.restoreBookmark).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('restore relationships', () => {
+    it('creates nested albums and collections under the mapped parent, in parent-first order', async () => {
+      const root = newUuid();
+      const middle = newUuid();
+      const leaf = newUuid();
+      const source = (id: string, parentId: string | null, kind: 'album' | 'collection') => ({
+        id,
+        parentId,
+        kind,
+        name: id,
+        description: '',
+        icon: null,
+        order: null,
+      });
+      const mapped = (await worker().ensureAlbums(ownerId, newUuidV7(), [
+        source(leaf, middle, 'collection'),
+        source(middle, root, 'album'),
+        source(root, null, 'collection'),
+      ])) as Map<string, string>;
+      expect(albumRepository.create.mock.calls.map(([album]) => [album.id, album.parentId])).toEqual([
+        [mapped.get(root), null],
+        [mapped.get(middle), mapped.get(root)],
+        [mapped.get(leaf), mapped.get(middle)],
+      ]);
+    });
+
+    it('does not flatten a child when its parent could not be restored', async () => {
+      const root = newUuid();
+      const child = newUuid();
+      repository.albumExists.mockResolvedValueOnce(true).mockResolvedValue(false);
+      const mapped = (await worker().ensureAlbums(ownerId, newUuidV7(), [
+        { id: root, parentId: null, kind: 'collection', name: 'Root', description: '', icon: null, order: null },
+        { id: child, parentId: root, kind: 'album', name: 'Child', description: '', icon: null, order: null },
+      ])) as Map<string, string>;
+      expect(mapped.size).toBe(0);
+      expect(albumRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an overdeep package before creating any albums', async () => {
+      const albums = Array.from({ length: 33 }, (_, index) => ({
+        id: String(index),
+        parentId: index === 0 ? null : String(index - 1),
+        kind: 'album',
+        name: String(index),
+        description: '',
+        icon: null,
+        order: null,
+      }));
+      await expect(worker().ensureAlbums(ownerId, newUuidV7(), albums)).rejects.toThrow('32 levels');
+      expect(repository.getOwnedAlbum).not.toHaveBeenCalled();
+      expect(albumRepository.create).not.toHaveBeenCalled();
+    });
+
     it('finds an album from an earlier restore of the same package instead of creating another', async () => {
       const albumId = newUuid();
       repository.getOwnedAlbum.mockImplementation((_owner: string, id: string) =>
@@ -1179,6 +1346,65 @@ describe(PreservationWorkerService.name, () => {
       return { entries, index, manifest };
     };
 
+    it('requires album workspace metadata to agree with the package version', async () => {
+      const album = {
+        id: newUuid(),
+        name: 'Design',
+        description: '',
+        kind: 'album',
+        parentId: null,
+        icon: null,
+        order: null,
+      };
+      const read = (schemaVersion: number, scope?: string) => {
+        const bytes = preservationJson([{ ...album, ...(scope ? { libraryScope: scope } : {}) }]);
+        const source = memorySource(new Map([['albums.json', bytes]]));
+        const manifest = {
+          ...buildPackage(0).manifest,
+          schemaVersion,
+          files: { 'albums.json': { sha256: hash(bytes).sha256, bytes: bytes.length } },
+        };
+        return worker().readCollection(source, manifest, 'albums.json', PreservationAlbumsSchema);
+      };
+      await expect(read(1)).resolves.toHaveLength(1);
+      await expect(read(2, 'design')).resolves.toHaveLength(1);
+      await expect(read(2)).rejects.toThrow('version');
+      await expect(read(1, 'design')).rejects.toThrow('version');
+    });
+
+    it('validates digested bookmark organization and lock declarations before restoration', async () => {
+      const bookmark = {
+        id: newUuid(),
+        url: 'https://example.com/art',
+        title: 'Reference',
+        note: null,
+        rating: null,
+        libraryScope: LibraryScope.Design,
+        isArchived: false,
+        isLocked: false,
+        previewAssetId: null,
+        albumIds: [],
+        tags: [],
+        source: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      };
+      const read = (overrides: Record<string, unknown> = {}, count = 1) => {
+        const bytes = preservationJson([{ ...bookmark, ...overrides }]);
+        const base = buildPackage(0).manifest;
+        const manifest = {
+          ...base,
+          counts: { ...base.counts, bookmarks: count },
+          files: { ...base.files, 'bookmarks.json': { sha256: hash(bytes).sha256, bytes: bytes.length } },
+        };
+        return worker().readBookmarks(memorySource(new Map([['bookmarks.json', bytes]])), manifest, [], []);
+      };
+      await expect(read()).resolves.toHaveLength(1);
+      await expect(read({ albumIds: [newUuid()] })).rejects.toThrow('album');
+      await expect(read({ tags: ['Unknown'] })).rejects.toThrow('tag');
+      await expect(read({ isLocked: true })).rejects.toThrow('Locked');
+      await expect(read({}, 2)).rejects.toThrow('count');
+    });
+
     const operationOf = (kind: MediaOperationKind, snapshot: Record<string, unknown>, owner = ownerId) =>
       ({
         id: newUuidV7(),
@@ -1294,6 +1520,39 @@ describe(PreservationWorkerService.name, () => {
         expect(source.close).toHaveBeenCalledOnce();
       });
 
+      it('renews the claim while one verify step runs longer than its lease', async () => {
+        vi.useFakeTimers();
+        try {
+          const built = buildPackage(1);
+          useSource(built.entries);
+          const found = packageOf({ origin: 'upload' });
+          repository.getPackageById.mockResolvedValue(found);
+          const started = Promise.withResolvers<void>();
+          const release = Promise.withResolvers<void>();
+          const read = source.readDocument.getMockImplementation()!;
+          source.readDocument.mockImplementationOnce(async (name: string, maxBytes: number) => {
+            started.resolve();
+            await release.promise;
+            return read(name, maxBytes);
+          });
+          const operation = operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id });
+          const claimToken = newUuid();
+
+          const task = sut.run({ operation, claimToken });
+          await started.promise;
+          await vi.advanceTimersByTimeAsync(PRESERVATION_LEASE_MS + PRESERVATION_TICK_MS);
+          expect(operations.heartbeat).toHaveBeenCalledWith(operation.id, claimToken, PRESERVATION_LEASE_MS);
+          expect(operations.heartbeat.mock.calls.length).toBeGreaterThan(1);
+
+          release.resolve();
+          await task;
+          expect(operations.complete).toHaveBeenCalled();
+          expect(vi.getTimerCount()).toBe(0);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
       it('calls a package whose manifest was rewritten after this server wrote it unreadable', async () => {
         const built = buildPackage(1);
         useSource(built.entries);
@@ -1356,6 +1615,34 @@ describe(PreservationWorkerService.name, () => {
           found.id,
           expect.objectContaining({
             verification: expect.objectContaining({ status: 'unreadable', reasonKey: 'package_index_changed' }),
+          }),
+        );
+      });
+
+      it('reports changed saved-link metadata even when a package has no originals', async () => {
+        const built = buildPackage(0);
+        const bytes = preservationJson([]);
+        built.entries.set('bookmarks.json', Buffer.from('changed'));
+        built.entries.set(
+          'manifest.json',
+          preservationJson({
+            ...built.manifest,
+            schemaVersion: 2,
+            counts: { ...built.manifest.counts, bookmarks: 0 },
+            files: { ...built.manifest.files, 'bookmarks.json': { sha256: hash(bytes).sha256, bytes: bytes.length } },
+          }),
+        );
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload' });
+        repository.getPackageById.mockResolvedValue(found);
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id }),
+          claimToken: newUuid(),
+        });
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          found.id,
+          expect.objectContaining({
+            verification: expect.objectContaining({ status: 'problems', documentsChanged: ['bookmarks.json'] }),
           }),
         );
       });

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
@@ -21,23 +21,58 @@ import {
   requireSuppressedOnlyAccess,
 } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { collectFilterIds, filterNamesPeople, requirePetFilterAllowed } from 'src/utils/search-filter.js';
+import {
+  collectFilterIds,
+  filterNamesPeople,
+  requirePetFilterAllowed,
+  requireSourceFilterAllowed,
+} from 'src/utils/search-filter.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
   async getTimeBuckets(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketsResponseDto[]> {
+    if (dto.sort && auth.sharedLink && !auth.sharedLink.showExif) {
+      throw new BadRequestException('This link does not allow sorting by file name or rating');
+    }
     await this.timeBucketChecks(auth, dto);
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, dto);
-    return await this.assetRepository.getTimeBuckets(timeBucketOptions, auth);
+    const { pageSize, locateAssetId, sort, ...bucketDto } = dto;
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    return pageSize === undefined
+      ? this.assetRepository.getTimeBuckets(timeBucketOptions, auth)
+      : this.assetRepository.getTimeBuckets(timeBucketOptions, auth, {
+          pageSize,
+          locateAssetId,
+          ...(sort && { sort }),
+        });
   }
 
   // pre-jsonified response
   async getTimeBucket(auth: AuthDto, dto: TimeBucketAssetDto): Promise<string> {
     await this.timeBucketChecks(auth, dto);
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, { ...dto });
-
-    // TODO: use id cursor for pagination
-    const bucket = await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth);
+    const { take, after, before, firstAssetId, lastAssetId, membershipAlbumId, ...bucketDto } = dto;
+    if (membershipAlbumId) {
+      await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [membershipAlbumId] });
+    }
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    const bucket =
+      take === undefined
+        ? await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth)
+        : await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth, {
+            take,
+            ...(after && { after }),
+            ...(before && { before }),
+            ...(membershipAlbumId && { membershipAlbumId }),
+          });
+    if (firstAssetId || lastAssetId) {
+      const { id, startCursor, endCursor } = JSON.parse(bucket.assets);
+      if (
+        (firstAssetId && startCursor !== firstAssetId) ||
+        (lastAssetId && endCursor !== lastAssetId) ||
+        id?.length !== take
+      ) {
+        throw new ConflictException('Calendar page changed; refresh the timeline');
+      }
+    }
     return bucket.assets;
   }
 
@@ -149,6 +184,12 @@ export class TimelineService extends BaseService {
       dto.userId = auth.user.id;
     }
 
+    // a shared link reads as its owner, whose favourites the visitor never sees: filtering on them
+    // would reveal which items are favourites even though each item reports isFavorite false
+    if (auth.sharedLink && dto.isFavorite !== undefined) {
+      throw new BadRequestException('isFavorite is not available through a shared link');
+    }
+
     // LIB-P3: Best Photos are the caller's own, as on the Best Photos page: never a partner's, an album
     // member's or a shared link owner's, and never the Locked view
     if (dto.bestPhotos) {
@@ -188,8 +229,14 @@ export class TimelineService extends BaseService {
       if (auth.sharedLink) {
         throw new BadRequestException('filter and imageEnrichment are not available through a shared link');
       }
+      requireSourceFilterAllowed(auth, dto.filter ?? {});
       // the same access the single albumId and tagId above need, as search checks the albums it names
-      const albumIds = collectFilterIds(dto.filter ?? {}, 'albumIds');
+      const albumIds = [
+        ...new Set([
+          ...collectFilterIds(dto.filter ?? {}, 'albumIds'),
+          ...collectFilterIds(dto.filter ?? {}, 'albumSubtreeIds'),
+        ]),
+      ];
       if (albumIds.length > 0) {
         await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: albumIds });
       }

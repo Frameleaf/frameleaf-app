@@ -36,6 +36,7 @@ import {
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
+import { libraryPathOnRelink } from 'src/utils/library-path.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 export type VerifiedMedia = Extract<
@@ -744,6 +745,8 @@ export class MediaRecoveryRepository {
             .updateTable('asset')
             .set({
               originalPath: promotedPath,
+              // FL-417: the recovered file is the photo's own
+              libraryPath: libraryPathOnRelink(promotedPath, true),
               checksum: final.sha256,
               checksumAlgorithm: ChecksumAlgorithm.sha256File,
               isOffline: false,

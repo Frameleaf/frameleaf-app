@@ -189,7 +189,8 @@ test.describe('viewer media sources', () => {
     await expect(page.getByRole('menuitem', { name: 'Refresh faces' })).toHaveCount(0);
   });
 
-  test('the top row rates the item (V-3)', async ({ context, page }) => {
+  // FL-707 item 14: no star in the top row; the 1–5 keys (and the information panel) rate.
+  test('the 1–5 keys rate the item, with no star in the top row (V-3)', async ({ context, page }) => {
     await enableRatings(context);
     let sent: unknown;
     await context.route(`**/api/assets/${fixture.primaryAsset.id}`, async (route, request) => {
@@ -201,11 +202,9 @@ test.describe('viewer media sources', () => {
     });
     await page.goto(`/photos/${fixture.primaryAsset.id}`);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
-    await page.getByTestId('viewer-rating-button').click();
-    const stars = page.getByRole('group', { name: 'Rate this item' });
-    await stars.getByRole('button', { name: 'Rate 3 stars' }).click();
+    await expect(page.getByTestId('viewer-rating-button')).toHaveCount(0);
+    await page.keyboard.press('3');
     await expect.poll(() => sent).toEqual({ rating: 3 });
-    await expect(stars).toHaveCount(0);
   });
 
   test('T opens the information panel on the tag box (V-15, V-25)', async ({ context, page }) => {

@@ -1,7 +1,7 @@
 import esbuild from 'esbuild';
 
 esbuild.build({
-  entryPoints: ['src/index.ts', 'src/cli.ts'],
+  entryPoints: ['src/index.ts', 'src/cli.ts', 'src/host-functions.ts'],
   outdir: 'dist',
   bundle: true,
   sourcemap: false,

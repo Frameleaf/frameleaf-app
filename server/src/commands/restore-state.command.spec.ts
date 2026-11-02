@@ -32,6 +32,11 @@ it('reconstructs execution state offline after canonical initialization and sani
     expect(events).toEqual([]);
     expect(process.exitCode).toBe(1);
     process.exitCode = exitCode;
+    process.env.FRAMELEAF_MANAGER_RESTORE_OPERATION_ID = '00000000-0000-0000-0000-000000000000';
+    await command.run();
+    expect(events).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = exitCode;
     process.env.FRAMELEAF_MANAGER_RESTORE_OPERATION_ID = '11111111-2222-3333-4444-555555555555';
     await command.run();
     expect(events).toEqual(['initialize', 'reset']);

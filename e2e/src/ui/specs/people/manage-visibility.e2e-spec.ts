@@ -61,6 +61,7 @@ test('keeps a rejected unnamed visibility change retryable and returns to the di
   await context.route('**/api/albums/tree', (route) =>
     route.fulfill({ json: { collections: [], albums: [], spaces: [] } }),
   );
+  await context.route('**/api/albums/hierarchy*', (route) => route.fulfill({ json: { roots: [] } }));
   await context.route('**/api/jobs/running', (route) =>
     route.fulfill({ json: { operations: [], memoryExports: [], queues: [], canManageQueues: false } }),
   );
@@ -134,6 +135,7 @@ test('Hide all covers people on every page and saves them together', async ({ co
   await context.route('**/api/albums/tree', (route) =>
     route.fulfill({ json: { collections: [], albums: [], spaces: [] } }),
   );
+  await context.route('**/api/albums/hierarchy*', (route) => route.fulfill({ json: { roots: [] } }));
   await context.route('**/api/jobs/running', (route) =>
     route.fulfill({ json: { operations: [], memoryExports: [], queues: [], canManageQueues: false } }),
   );

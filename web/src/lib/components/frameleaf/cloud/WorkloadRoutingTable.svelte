@@ -178,9 +178,11 @@
   </div>
   <p class="fc-note">
     <Icon icon={mdiExpansionCard} size="16" aria-hidden={true} />
-    {worker.gpu
-      ? $t('admin.frameleaf_routing_hardware_gpu', { values: { gpu: worker.gpu.name, memory: worker.gpu.vramGb } })
-      : $t('admin.frameleaf_routing_hardware_processor')}
+    {worker.gpu?.integrated
+      ? $t('admin.frameleaf_routing_hardware_integrated', { values: { gpu: worker.gpu.name } })
+      : worker.gpu
+        ? $t('admin.frameleaf_routing_hardware_gpu', { values: { gpu: worker.gpu.name, memory: worker.gpu.vramGb } })
+        : $t('admin.frameleaf_routing_hardware_processor')}
     ·
     <a class="fc-link" href={Route.hardware()}>{$t('admin.frameleaf_routing_hardware_link')}</a>
   </p>

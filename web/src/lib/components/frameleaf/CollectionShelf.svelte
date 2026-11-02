@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import { defaultIconFor, othersOf, type AlbumShelf } from '$lib/frameleaf/album-directory';
@@ -129,7 +130,14 @@
         {/if}
       </span>
       <span class="text">
-        <h2 id={titleId}>{name}</h2>
+        <h2 id={titleId}>
+          {#if collection.color}<AlbumMark
+              icon={collection.icon}
+              color={collection.color}
+              kind={collection.kind}
+              size="18"
+            />{/if}{name}
+        </h2>
         <small>
           {$t('frameleaf_albums_count', { values: { count: shelf.albumCount } })}
           · {$t('frameleaf_albums_items', { values: { count: shelf.assetCount } })}

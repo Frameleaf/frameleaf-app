@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
 import { copyFile, link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -214,34 +214,135 @@ export const publishVerifiedCopy = async (input: {
 const errorCode = (error: unknown) =>
   error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
 
+const sha256Of = async (filePath: string) => {
+  const digest = createHash('sha256');
+  for await (const chunk of createReadStream(filePath)) {
+    digest.update(chunk as Buffer);
+  }
+  return digest.digest();
+};
+
+/** Whether two names hold the same bytes: the same file, or an identical complete copy. */
+const holdsSameBytes = async (source: string, destination: string) => {
+  const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
+  if (from.ino === to.ino && from.dev === to.dev) {
+    return true;
+  }
+  if (from.size !== to.size) {
+    return false;
+  }
+  const [a, b] = await Promise.all([sha256Of(source), sha256Of(destination)]);
+  return a.equals(b);
+};
+
+/** Errors from a filesystem that cannot hard-link at all. */
+const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
+/**
+ * Publish a flushed staged copy where hard links are unsupported. The destination is created
+ * exclusively first, so it never replaces anything, and only a destination this call created is
+ * removed when the copy cannot be finished, so a retry starts clean.
+ */
+const publishByCopy = async (
+  staged: string,
+  destination: string,
+  refuseDifferent: (error: unknown) => Promise<void>,
+) => {
+  let file;
+  try {
+    file = await open(destination, 'wx', (await lstat(staged)).mode & 0o777);
+  } catch (error) {
+    if (errorCode(error) === 'EEXIST') {
+      await refuseDifferent(error);
+      return;
+    }
+    throw error;
+  }
+  try {
+    await file.writeFile(createReadStream(staged));
+    await file.sync();
+  } catch (error) {
+    await file.close().catch(() => {});
+    await unlink(destination).catch(() => {});
+    throw error;
+  }
+  await file.close();
+};
+
 /**
  * Move a file to a new name without ever replacing anything (FL-69).
  *
  * The new name is hard-linked first, which fails rather than overwrites, and the old name is only
- * removed once the new one holds the same file. Across filesystems the bytes are copied to the new
- * name exclusively and flushed before the old name is removed. A repeat after an interruption finds
- * both names on the same file and just removes the old one; a different file already at the new name
- * is an error and nothing is changed.
+ * removed once the new one holds the same bytes. Across filesystems the bytes are copied to a private
+ * temporary name beside the new one, flushed, and then hard-linked into place, so the new name is
+ * either complete or absent. A repeat after an interruption finds the same bytes at both names and
+ * just removes the old one; different bytes already at the new name are an error and nothing is
+ * changed.
  */
-export const retainFile = async (source: string, destination: string): Promise<void> => {
+export const retainFile = (source: string, destination: string): Promise<void> => {
+  // Every move runs one after another in this process (they are rare), so no move ever sees another
+  // one's half-written copy or a source it is about to remove. A move of the same file to the same name
+  // that succeeded meanwhile is this move done; after a failure the next one tries afresh.
+  const key = `${path.resolve(source)}\0${path.resolve(destination)}`;
+  const previous = retainingMoves.get(key);
+  const current = retainQueue.then(async () => {
+    if (previous && (await previous)) {
+      return;
+    }
+    await retainFileNow(source, destination);
+  });
+  const succeeded = current.then(() => true).catch(() => false);
+  retainQueue = succeeded;
+  retainingMoves.set(key, succeeded);
+  void succeeded.then(() => {
+    if (retainingMoves.get(key) === succeeded) {
+      retainingMoves.delete(key);
+    }
+  });
+  return current;
+};
+
+let retainQueue: Promise<unknown> = Promise.resolve();
+const retainingMoves = new Map<string, Promise<boolean>>();
+
+const retainFileNow = async (source: string, destination: string): Promise<void> => {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+  const refuseDifferent = async (error: unknown) => {
+    if (!(await holdsSameBytes(source, destination))) {
+      throw new Error(`${destination} already holds a different file`, { cause: error });
+    }
+  };
   try {
     await link(source, destination);
   } catch (error) {
     const code = errorCode(error);
     if (code === 'EXDEV') {
-      await copyFile(source, destination, constants.COPYFILE_EXCL);
-      const file = await open(destination, 'r');
+      const temporary = `${destination}.${randomUUID()}.partial`;
       try {
-        await file.sync();
+        await copyFile(source, temporary, constants.COPYFILE_EXCL);
+        const file = await open(temporary, 'r');
+        try {
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        try {
+          await link(temporary, destination);
+        } catch (linkError) {
+          const linkCode = errorCode(linkError);
+          if (linkCode === 'EEXIST') {
+            await refuseDifferent(linkError);
+          } else if (typeof linkCode === 'string' && NO_HARD_LINKS.has(linkCode)) {
+            await publishByCopy(temporary, destination, refuseDifferent);
+          } else {
+            throw linkError;
+          }
+        }
       } finally {
-        await file.close();
+        await unlink(temporary).catch(() => {});
       }
     } else if (code === 'EEXIST') {
-      const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
-      if (from.ino !== to.ino || from.dev !== to.dev) {
-        throw new Error(`${destination} already holds a different file`, { cause: error });
-      }
+      await refuseDifferent(error);
     } else {
       throw error;
     }

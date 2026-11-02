@@ -9,10 +9,10 @@ vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/user-setti
 
 const queue = (isActive: boolean, waiting = 0) =>
   ({
-    integrityCheck: {
-      jobCounts: { active: isActive ? 1 : 0, waiting, delayed: 0, paused: 0, completed: 0, failed: 0 },
-      queueStatus: { isActive, isPaused: false },
-    },
+    name: 'integrityCheck',
+    isPaused: false,
+    hasUnfinishedWork: isActive || waiting > 0,
+    statistics: { active: isActive ? 1 : 0, waiting, delayed: 0, paused: 0, completed: 0, failed: 0 },
   }) as never;
 
 const summary = { untracked_file: 0, missing_file: 0, checksum_mismatch: 0 };
@@ -40,7 +40,7 @@ describe('MaintenanceSection integrity polling (FL-81)', () => {
   });
 
   it('re-reads the summary only once queued checks have run, not while they wait', async () => {
-    sdkMock.getQueuesLegacy
+    sdkMock.getQueue
       .mockResolvedValueOnce(queue(true))
       .mockResolvedValueOnce(queue(false, 2))
       .mockResolvedValue(queue(false));
@@ -55,10 +55,12 @@ describe('MaintenanceSection integrity polling (FL-81)', () => {
 
     await vi.advanceTimersByTimeAsync(2000); // done
     expect(sdkMock.getIntegrityReportSummary).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getQueue).toHaveBeenCalledWith({ name: 'integrityCheck' });
+    expect(sdkMock.getQueuesLegacy).not.toHaveBeenCalled();
   });
 
   it('shows the integrity checks even when the backups cannot be listed', async () => {
-    sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
+    sdkMock.getQueue.mockResolvedValue(queue(false));
     sdkMock.listDatabaseBackups.mockRejectedValue(new Error('500'));
 
     render(MaintenanceSection, { section: 'integrity' });
@@ -68,7 +70,7 @@ describe('MaintenanceSection integrity polling (FL-81)', () => {
   });
 
   it('re-reads the summary after a check started before the first poll finishes', async () => {
-    sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
+    sdkMock.getQueue.mockResolvedValue(queue(false));
     sdkMock.createJob.mockResolvedValue(undefined as never);
 
     render(MaintenanceSection, { section: 'integrity' });

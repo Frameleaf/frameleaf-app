@@ -37,6 +37,19 @@ import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } f
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
 import { LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
+// Counts what the streaming inflater has produced, so a test can see how far it runs ahead of onData.
+const inflated = vi.hoisted(() => ({ bytes: 0 }));
+vi.mock('node:zlib', async (importOriginal) => {
+  const zlib = await importOriginal<typeof import('node:zlib')>();
+  return {
+    ...zlib,
+    createInflateRaw: (...args: Parameters<typeof zlib.createInflateRaw>) =>
+      zlib.createInflateRaw(...args).on('data', (chunk: Buffer) => {
+        inflated.bytes += chunk.length;
+      }),
+  };
+});
+
 /* ------------------------------------------------------------------ */
 /* A tiny ZIP writer, so the reader is tested against real archives     */
 /* ------------------------------------------------------------------ */
@@ -334,6 +347,28 @@ describe('readZipEntry and digestZipEntry', () => {
       expect(Buffer.concat(copied)).toEqual(media);
       expect(digest.sha256).toBe(sha256Of(media));
     }
+  });
+
+  it('does not let one read inflate far ahead of onData', async () => {
+    // Zeros deflate about 1000:1, so one default 4 MiB read could inflate to the whole entry at once;
+    // random padding keeps the entry under the archive's ratio limit.
+    const media = Buffer.concat([Buffer.alloc(64 * 1024 * 1024), randomBytes(512 * 1024)]);
+    const zip = buildZip([{ name: 'media/library-asset-zeros.bin', data: media }]);
+    const source = sourceOf(zip);
+    const directory = await readZipDirectory(source);
+    inflated.bytes = 0;
+    let delivered = 0;
+    let backlog = 0;
+
+    await digestZipEntry(source, directory.byName.get('media/library-asset-zeros.bin')!, {
+      onData: (chunk) => {
+        delivered += chunk.length;
+        backlog = Math.max(backlog, inflated.bytes - delivered);
+      },
+    });
+
+    expect(delivered).toBe(media.length);
+    expect(backlog).toBeLessThan(20 * 1024 * 1024);
   });
 
   it('reads a document entry up to a caller-chosen limit and no further', async () => {

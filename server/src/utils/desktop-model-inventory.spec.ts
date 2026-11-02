@@ -70,7 +70,8 @@ it.each(['model', 'options', 'provider', 'source'])('does not substitute another
       break;
     }
     case 'provider': {
-      input.provider = 'CUDAExecutionProvider';
+      // a provider the release has no profile for (CUDA and OpenVINO twins exist since epoch 12)
+      input.provider = 'MIGraphXExecutionProvider';
       break;
     }
     case 'source': {

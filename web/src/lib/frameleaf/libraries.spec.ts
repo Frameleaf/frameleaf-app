@@ -191,9 +191,15 @@ describe('scans', () => {
     expect(scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 10, offlined: 2, added: 3 }))).toEqual(
       {
         key: 'frameleaf_libraries_scan_completed',
-        values: { matched: 8, added: 3, missing: 2 },
+        values: { matched: 5, added: 3, missing: 2 },
       },
     );
+  });
+
+  it('matches nothing on a first scan: every item it checked, it had just added', () => {
+    expect(
+      scanMessage(scanOf({ status: MediaOperationStatus.Completed, checked: 21, offlined: 0, added: 21 })).values,
+    ).toEqual({ matched: 0, added: 21, missing: 0 });
   });
 });
 

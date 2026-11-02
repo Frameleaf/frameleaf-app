@@ -90,6 +90,11 @@ export const createStudioBridge = ({ context, handlers = {} }: StudioBridgeOptio
    * keeping it longer would only risk answering a new command with an old result.
    */
   const settled = new Map<string, StudioCommandResult>();
+  /**
+   * Batches run one after another, never overlapping: a retry that arrives while the first send of
+   * the same key is still being applied waits for it and is then answered from `settled`.
+   */
+  let queue: Promise<unknown> = Promise.resolve();
 
   const evaluate = async (candidate: unknown): Promise<StudioCommandResult> => {
     const key = keyOf(candidate);
@@ -173,12 +178,16 @@ export const createStudioBridge = ({ context, handlers = {} }: StudioBridgeOptio
      * Evaluated in order, one at a time: later commands in a batch depend on the revision
      * earlier ones produced, so they cannot be evaluated concurrently.
      */
-    async submit(envelopes) {
-      const results: StudioCommandResult[] = [];
-      for (const envelope of envelopes) {
-        results.push(await evaluate(envelope));
-      }
-      return results;
+    submit(envelopes) {
+      const run = queue.then(async () => {
+        const results: StudioCommandResult[] = [];
+        for (const envelope of envelopes) {
+          results.push(await evaluate(envelope));
+        }
+        return results;
+      });
+      queue = run.catch(() => undefined);
+      return run;
     },
   };
 };

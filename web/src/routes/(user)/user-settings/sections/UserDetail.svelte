@@ -2,13 +2,14 @@
   /**
    * One account (FL-76) inside Users → People with server access (FL-71): the old
    * `/admin/users/<id>` page, as the template's detail panel below the account list. Its header
-   * carries the profile, View analytics, Edit account and Close details; the account's password,
-   * PIN, sessions, deletion and restore live in its tabs. `?edit=1` opens the account form over it.
+   * carries the profile, View analytics and Close details. FL-516: the person opens in three parts
+   * (`PersonPage`: About; Sign-in & security; What they've turned on) in place of seven tabs, with
+   * removing them last. `?edit=1`, an older address, still opens the account form over it.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
-  import AccountDetailTabs from '$lib/components/frameleaf/AccountDetailTabs.svelte';
+  import PersonPage from '$lib/components/frameleaf/settings/people/PersonPage.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
@@ -16,7 +17,6 @@
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import { accountLifecycle } from '$lib/frameleaf/accounts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getUserAdminActions } from '$lib/services/user-admin.service';
@@ -115,15 +115,7 @@
   </div>
 {/if}
 
-{#snippet detail({
-  user,
-  userPreferences,
-  userStatistics,
-  userSessions,
-  libraries,
-  libraryStatistics,
-  physicalBytes,
-}: UserDetailData)}
+{#snippet detail({ user, userPreferences, userSessions }: UserDetailData)}
   {@const { ResetPassword, ResetPinCode, Update, Delete, Restore } = getUserAdminActions($t, user)}
   <CommandPaletteDefaultProvider name={$t('user')} actions={[ResetPassword, ResetPinCode, Update, Delete, Restore]} />
 
@@ -140,35 +132,23 @@
       <Button onclick={() => void goto(Route.libraryAnalytics({ scope: `account:${user.id}` }))}>
         {$t('frameleaf_users_view_analytics')}
       </Button>
-      {#if accountLifecycle(user) === 'active'}
-        <Button onclick={() => void goto(Route.editUser(user))}>{$t('frameleaf_users_edit_account')}</Button>
-      {/if}
       <IconButton label={$t('frameleaf_users_close_details')} onclick={() => void goto(Route.users())}>
         <Icon icon={mdiClose} size={ICON_SIZE.lg} />
       </IconButton>
     </div>
   </header>
 
-  <!--
-    The account detail's tabs (FL-76): Overview, Features / Preferences / Notifications
-    (FL-77's AccountPreferencesEditor), Libraries, Security and Activity, exactly the
-    `resource-tabs` layout of the design template's account detail panel.
-  -->
+  <!-- FL-516: one person in three parts, in place of the seven tabs (FL-76). -->
   <Pane label={$t('frameleaf_account_detail_aria_label', { values: { name: user.name } })}>
     {#key user.id}
-      <AccountDetailTabs
+      <PersonPage
         {user}
         preferences={userPreferences}
-        statistics={userStatistics}
         sessions={userSessions}
-        {libraries}
-        {libraryStatistics}
-        {physicalBytes}
-        preferencesEditable={accountLifecycle(user) === 'active'}
         savePreferences={(update) => updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
         loadPreferences={() => getUserPreferencesAdmin({ id: user.id })}
         onPreferencesSaved={() => onPreferencesSaved(user)}
-        onOpenPrivacy={user.id === authManager.user.id ? openOwnLockedSettings : undefined}
+        onOpenPrivacy={authManager.authenticated && user.id === authManager.user.id ? openOwnLockedSettings : undefined}
       />
     {/key}
   </Pane>

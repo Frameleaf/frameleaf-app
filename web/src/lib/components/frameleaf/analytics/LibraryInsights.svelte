@@ -29,6 +29,7 @@
     orientationRows,
     photoFormatRows,
     placeRows,
+    printRecords,
     punchcardPeak,
     videoResolutionRows,
     volumeSegments,
@@ -46,6 +47,7 @@
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
     AnalyticsMetadataField,
+    AnalyticsScopeKind,
     type AnalyticsInsightsDto,
     type AnalyticsReportResponseDto,
     type PersonResponseDto,
@@ -174,12 +176,12 @@
   const days = $derived(dayRecords(report.days));
   const records = $derived(insights.records);
   const yearsAgo = (date: string) => Math.max(0, throughYear - Number(date.slice(0, 4)));
-  // 0.3 mm per 6×4 print and 152.4 mm along its long edge (AnalyticsDashboard.jsx:565-566).
-  const printStackMetres = $derived(Math.round(((report.summary.photos * 0.3) / 1000) * 10) / 10);
-  const printLineKm = $derived(Math.round(((report.summary.photos * 152.4) / 1_000_000) * 10) / 10);
+  const prints = $derived(printRecords(report.summary.photos));
 
   // ── Storage ──
   const host = $derived(report.host);
+  // An account or library still sees the whole drive here, so the title says whose space it is.
+  const wholeDrive = $derived(report.scopeKind !== AnalyticsScopeKind.Host);
   const volume = $derived(volumeSegments(report, tr));
   const PART_COLORS: Record<string, string> = {
     originals: 'var(--an-1)',
@@ -280,7 +282,7 @@
     id="storage"
     kicker={$t('frameleaf_analytics_storage_kicker')}
     title={host.volumeUsedBytes !== null && host.capacityBytes !== null
-      ? $t('frameleaf_analytics_storage_title', {
+      ? $t(wholeDrive ? 'frameleaf_analytics_storage_title_drive' : 'frameleaf_analytics_storage_title', {
           values: { used: f.size(host.volumeUsedBytes), capacity: f.size(host.capacityBytes) },
         })
       : $t('frameleaf_analytics_volume')}
@@ -595,12 +597,14 @@
           <small>{f.longDate(days.streak.from)} – {f.longDate(days.streak.through)}</small>
         </div>
       {/if}
-      <div class="an-record">
-        <Icon icon={mdiChartLine} size="20" aria-hidden />
-        <span>{$t('frameleaf_analytics_record_daily')}</span>
-        <strong>{$t('frameleaf_analytics_per_day', { values: { value: f.number(days.perDay) } })}</strong>
-        <small>{$t('frameleaf_analytics_in_selected_dates')}</small>
-      </div>
+      {#if days.perDay > 0}
+        <div class="an-record">
+          <Icon icon={mdiChartLine} size="20" aria-hidden />
+          <span>{$t('frameleaf_analytics_record_daily')}</span>
+          <strong>{$t('frameleaf_analytics_per_day', { values: { value: f.number(days.perDay) } })}</strong>
+          <small>{$t('frameleaf_analytics_in_selected_dates')}</small>
+        </div>
+      {/if}
       {#if records.largestFile}
         <div class="an-record">
           <Icon icon={mdiFileVideoOutline} size="20" aria-hidden />
@@ -617,18 +621,33 @@
           <small>{records.longestVideo.name ?? $t('frameleaf_analytics_name_private')}</small>
         </div>
       {/if}
-      <div class="an-record">
-        <Icon icon={mdiLayersTripleOutline} size="20" aria-hidden />
-        <span>{$t('frameleaf_analytics_record_stack')}</span>
-        <strong>{$t('frameleaf_analytics_metres_tall', { values: { value: f.number(printStackMetres) } })}</strong>
-        <small>{$t('frameleaf_analytics_record_stack_detail')}</small>
-      </div>
-      <div class="an-record">
-        <Icon icon={mdiRuler} size="20" aria-hidden />
-        <span>{$t('frameleaf_analytics_record_line')}</span>
-        <strong>{$t('frameleaf_analytics_kilometres', { values: { value: f.number(printLineKm) } })}</strong>
-        <small>{$t('frameleaf_analytics_record_line_detail')}</small>
-      </div>
+      {#if prints.stack.value > 0}
+        <div class="an-record">
+          <Icon icon={mdiLayersTripleOutline} size="20" aria-hidden />
+          <span>{$t('frameleaf_analytics_record_stack')}</span>
+          <strong
+            >{$t(
+              prints.stack.unit === 'm' ? 'frameleaf_analytics_metres_tall' : 'frameleaf_analytics_centimetres_tall',
+              {
+                values: { value: f.number(prints.stack.value) },
+              },
+            )}</strong
+          >
+          <small>{$t('frameleaf_analytics_record_stack_detail')}</small>
+        </div>
+      {/if}
+      {#if prints.line.value > 0}
+        <div class="an-record">
+          <Icon icon={mdiRuler} size="20" aria-hidden />
+          <span>{$t('frameleaf_analytics_record_line')}</span>
+          <strong
+            >{$t(prints.line.unit === 'km' ? 'frameleaf_analytics_kilometres' : 'frameleaf_analytics_metres', {
+              values: { value: f.number(prints.line.value) },
+            })}</strong
+          >
+          <small>{$t('frameleaf_analytics_record_line_detail')}</small>
+        </div>
+      {/if}
     </div>
   </AnalyticsPanel>
 </div>

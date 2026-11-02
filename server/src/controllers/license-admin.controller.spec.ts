@@ -25,11 +25,25 @@ describe(LicenseAdminController.name, () => {
       ['delete', '/admin/license'],
       ['delete', '/admin/license/plan'],
       ['post', '/admin/license/refresh'],
+      ['post', '/admin/license/checkout'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
       expect(ctx.authenticate).toHaveBeenCalled();
       ctx.authenticate.mockClear();
     }
+  });
+
+  it('refuses a checkout for anything but the four store products', async () => {
+    const { status } = await request(ctx.getHttpServer())
+      .post('/admin/license/checkout')
+      .send({ licence: 'supporter-server', plan: 'weekly' });
+    expect(status).toBe(400);
+    expect(service.startCheckout).not.toHaveBeenCalled();
+
+    await request(ctx.getHttpServer())
+      .post('/admin/license/checkout')
+      .send({ licence: 'supporter-individual', plan: 'cloud-monthly' });
+    expect(service.startCheckout.mock.calls[0][1]).toEqual({ licence: 'supporter-individual', plan: 'cloud-monthly' });
   });
 
   it('takes the key only in the request body', async () => {

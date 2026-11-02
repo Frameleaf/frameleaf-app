@@ -6,6 +6,9 @@ import { DateTime, Duration } from 'luxon';
 import { Stats } from 'node:fs';
 import { constants } from 'node:fs/promises';
 import { join, parse } from 'node:path';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { LANDMARK_ICON_PACK } from 'src/constants.js';
@@ -24,6 +27,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  LibraryScope,
   QueueName,
   SourceType,
   StorageFolder,
@@ -40,9 +44,11 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { rewriteThroughPlainCopy, withPlainCopy } from 'src/utils/locked-read.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
+import { photoGpsAccuracy } from 'src/utils/photo-locations.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -173,6 +179,10 @@ export class MetadataService extends BaseService {
       await this.jobRepository.resume(QueueName.MetadataExtraction);
       if (imported) {
         await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
+      } else {
+        // FL-402: nothing to re-match, so the place data is complete (also clears a flag a crash left behind)
+        await this.mapRepository.setPlacesRestoring(false);
+        await this.queueLandmarkInference();
       }
       // Not awaited: a download of tens of megabytes must not hold up the worker's start.
       void this.syncLandmarkIcons();
@@ -207,7 +217,38 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.LandmarkMatchAll, queue: QueueName.BackgroundTask })
   async handleLandmarkMatchAll(): Promise<JobStatus> {
-    await this.mapRepository.matchAllLandmarks();
+    try {
+      await this.mapRepository.matchAllLandmarks();
+      await this.queueLandmarkInference();
+    } finally {
+      // FL-402: places are back once items are matched to them again; a failure must not leave the notice up
+      await this.mapRepository.setPlacesRestoring(false);
+    }
+    return JobStatus.Success;
+  }
+
+  private async queueLandmarkInference(id?: string): Promise<void> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (reverseGeocoding.enabled) {
+      await this.jobRepository.queue({ name: JobName.LandmarkInfer, ...(id && { data: { id, trigger: 'metadata' } }) });
+    }
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup', workers: [FrameleafWorker.Microservices] })
+  async onNightlyLandmarkInference(): Promise<void> {
+    await this.queueLandmarkInference();
+  }
+
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
+  async onLandmarkMetadataExtracted({ assetId }: ArgOf<'AssetMetadataExtracted'>): Promise<void> {
+    await this.queueLandmarkInference(assetId);
+  }
+
+  @OnJob({ name: JobName.LandmarkInfer, queue: QueueName.BackgroundTask })
+  async handleLandmarkInfer({ id }: JobOf<JobName.LandmarkInfer> = {}): Promise<JobStatus> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (!reverseGeocoding.enabled) return JobStatus.Skipped;
+    await this.mapRepository.inferLandmarks(id);
     return JobStatus.Success;
   }
 
@@ -278,19 +319,42 @@ export class MetadataService extends BaseService {
     if (!asset) {
       return;
     }
+    // FL-721 (spec §8.2): exiftool, ffprobe and sharp read a sealed original from one plain copy;
+    // what is compared and recorded (the publication check, the asset row) stays the real path
+    await withPlainCopy(asset.originalPath, (plainOriginal) =>
+      this.extractMetadataFrom(data, asset, plainOriginal, metadata, reverseGeocoding, previous),
+    );
+    // a Live Photo's extracted motion part is its own asset, sealed after its own extraction
+    await this.queueLockedSeal([asset.id]);
+  }
+
+  private async extractMetadataFrom(
+    data: JobOf<JobName.AssetExtractMetadata>,
+    asset: NonNullable<Awaited<ReturnType<AssetJobRepository['getForMetadataExtraction']>>>,
+    plainOriginal: string,
+    metadata: SystemConfig['metadata'],
+    reverseGeocoding: SystemConfig['reverseGeocoding'],
+    previous: Awaited<ReturnType<AssetRepository['getForMetadataExtractionTags']>>,
+  ) {
+    const source = plainOriginal === asset.originalPath ? asset : { ...asset, originalPath: plainOriginal };
     const [exifResult, stats] = await Promise.all([
-      this.getExifTags(asset),
-      this.storageRepository.stat(asset.originalPath),
+      this.getExifTags(source),
+      // FL-721: the plain copy's size is the file's real size (a sealed file is larger), and it
+      // carries the stored file's mtime; motion-photo offsets and fileSizeInByte depend on it
+      this.storageRepository.stat(plainOriginal),
     ]);
     const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
-    const dates = this.getDates(asset, exifTags, stats);
-
-    const { width, height } = this.getImageDimensions(exifTags);
     // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
     // instead of being read from the file's own coordinates
     const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    // LIB-02: a time zone set in Frameleaf stays locked (the sidecar holds only an offset), and the file's
+    // date is read in it rather than in the zone its GPS position suggests
+    const lockedTimeZone = lockedProperties.includes('timeZone') ? previous?.timeZone : undefined;
+    const dates = this.getDates(asset, exifTags, stats, lockedTimeZone, previous?.timeZone);
+
+    const { width, height } = this.getImageDimensions(exifTags);
     const locationLocked = lockedProperties.includes('latitude');
     // Persisted locks can include camera fields beyond the public editable-property union.
     const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
@@ -301,7 +365,7 @@ export class MetadataService extends BaseService {
       !cameraEvidence.recorded
     ) {
       try {
-        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(asset.originalPath);
+        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(plainOriginal);
       } catch (error) {
         this.logger.warn(`Unable to read optional JPEG encoding clue for ${asset.id}: ${error}`);
       }
@@ -323,7 +387,7 @@ export class MetadataService extends BaseService {
     if (asset.type === AssetType.Image && !mimeTypes.isRaw(asset.originalFileName)) {
       try {
         imageEncoding = ImageEncodingSchema.parse({
-          ...(await this.mediaRepository.inspectImageEncoding(asset.originalPath)),
+          ...(await this.mediaRepository.inspectImageEncoding(plainOriginal)),
           inspectionStatus: 'identified',
         });
       } catch (error) {
@@ -352,6 +416,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
+      gpsAccuracyM: locationLocked ? null : photoGpsAccuracy(exifTags.GPSHPositioningError),
       ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
@@ -442,7 +507,7 @@ export class MetadataService extends BaseService {
     const assetHeight = validate(isSidewards ? width : height);
 
     if (this.isMotionPhoto(asset, exifTags)) {
-      await this.applyMotionPhotos(asset, exifTags, dates, stats);
+      await this.applyMotionPhotos(source, exifTags, dates, stats);
     }
     await publishJobResult(async () => {
       await assertPublicationSource(asset.id, asset.checksum);
@@ -450,13 +515,19 @@ export class MetadataService extends BaseService {
       if (!current || !current.checksum.equals(asset.checksum) || current.originalPath !== asset.originalPath) {
         throw new Error('Metadata source changed before publication');
       }
+      const currentMetadata = await this.assetRepository.getForMetadataExtractionTags(asset.id);
+      // EXIF locks and revisions also protect the capture clocks stored on the asset row.
+      const preserveCaptureTime =
+        lockedProperties.includes('dateTimeOriginal') || currentMetadata?.updateId !== previous?.updateId;
       const tasks = [
         () =>
           this.assetRepository.update({
             id: asset.id,
             duration: this.getDuration(exifTags),
-            localDateTime: dates.localDateTime,
-            fileCreatedAt: dates.dateTimeOriginal ?? undefined,
+            ...(!preserveCaptureTime && {
+              localDateTime: dates.localDateTime,
+              fileCreatedAt: dates.dateTimeOriginal ?? undefined,
+            }),
             fileModifiedAt: stats.mtime,
 
             // Keep unedited assets in sync with the file on disk, but don't overwrite edited dimensions.
@@ -479,7 +550,11 @@ export class MetadataService extends BaseService {
         },
       ];
 
-      if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {
+      if (
+        current.libraryScope !== LibraryScope.Design &&
+        isFaceImportEnabled(metadata) &&
+        this.hasTaggedFaces(exifTags)
+      ) {
         tasks.push(() => this.applyTaggedFaces(asset, exifTags));
       }
 
@@ -512,6 +587,10 @@ export class MetadataService extends BaseService {
   async handleMetadataPostprocess({ id, source }: JobOf<JobName.AssetMetadataPostprocess>) {
     const asset = await this.assetRepository.getById(id);
     if (!asset) {
+      return JobStatus.Skipped;
+    }
+    // FL-683: an item of a library being removed is going; the work this would start could only wait in the queues
+    if (asset.libraryId && (await this.libraryRepository.get(asset.libraryId, true))?.deletedAt) {
       return JobStatus.Skipped;
     }
     await this.eventRepository.emit('AssetMetadataExtracted', { assetId: id, userId: asset.ownerId, source });
@@ -578,7 +657,14 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.SidecarWrite, queue: QueueName.Sidecar })
   async handleSidecarWrite(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
-    return this.databaseRepository.withAssetSidecarLock(job.id, (kysely) => this.writeSidecar(job, kysely));
+    const status = await this.databaseRepository.withAssetSidecarLock(job.id, (kysely) =>
+      this.writeSidecar(job, kysely),
+    );
+    if (status === JobStatus.Success) {
+      // FL-721 (spec §7.2): a Locked item's rewritten sidecar is sealed again
+      await this.queueLockedSeal([job.id]);
+    }
+    return status;
   }
 
   /** Every query here runs on the sidecar lock's own connection; see `withAssetSidecarLock`. */
@@ -646,7 +732,8 @@ export class MetadataService extends BaseService {
       // Preserve unedited source-XMP fields while applying edits only to our independent copy.
       await this.storageRepository.copyFile(sidecarFile.path, sidecarPath);
     }
-    await this.metadataRepository.writeTags(sidecarPath, exif);
+    // FL-721: exiftool edits a sealed sidecar through a plain copy; the result is sealed again after
+    await rewriteThroughPlainCopy(sidecarPath, (path) => this.metadataRepository.writeTags(path, exif));
 
     if (!sidecarFile || sidecarFile.path !== sidecarPath) {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath }, kysely);
@@ -660,9 +747,12 @@ export class MetadataService extends BaseService {
     // Tags set in Frameleaf stay locked too. The sidecar is written by a job that can run behind the tag
     // edits, so the next metadata read may find an older list in it; unlocked, that read took the
     // older list as the file's and dropped the tags added since.
+    // LIB-02: so does a time zone set in Frameleaf: the sidecar holds only an offset, and the next read would
+    // take the zone of the GPS position instead.
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
+      'timeZone',
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(
@@ -787,7 +877,8 @@ export class MetadataService extends BaseService {
 
     const [mediaTags, sidecarTags, videoResult] = await Promise.all([
       this.metadataRepository.readTags(asset.originalPath),
-      sidecarFile ? this.metadataRepository.readTags(sidecarFile.path) : null,
+      // FL-721: a sealed sidecar is read from a plain copy
+      sidecarFile ? withPlainCopy(sidecarFile.path, (path) => this.metadataRepository.readTags(path)) : null,
       shouldProbe ? this.getVideoTags(asset.originalPath) : null,
     ]);
 
@@ -927,9 +1018,9 @@ export class MetadataService extends BaseService {
 
     this.logger.debug(`Starting motion photo video extraction for asset ${asset.id}: ${asset.originalPath}`);
 
+    let video: Buffer;
     try {
       const position = stats.size - length - padding;
-      let video: Buffer;
       // Samsung MotionPhoto video extraction
       //     HEIC-encoded
       if (hasMotionPhotoVideo) {
@@ -947,6 +1038,13 @@ export class MetadataService extends BaseService {
           length,
         });
       }
+    } catch (error) {
+      // A damaged embedded video must not cost the still its metadata, as upstream.
+      this.logger.error(`Failed to extract motion video for ${asset.id}: ${asset.originalPath}: ${error}`);
+      return;
+    }
+
+    try {
       const checksum = this.cryptoRepository.hashSha1(video);
       const existing = await this.assetRepository.getByChecksum({
         ownerId: asset.ownerId,
@@ -955,9 +1053,23 @@ export class MetadataService extends BaseService {
       });
       if (existing) {
         if (!(await this.storageRepository.checkFileExists(existing.originalPath))) {
-          throw new Error('Existing motion video original is missing; repair is required before extracting metadata');
-        }
-        if (existing.id === asset.livePhotoVideoId) {
+          // Only our own extracted copy is rewritten; a missing upload is left to media health.
+          if (!StorageCore.isAndroidMotionPath(existing.originalPath)) {
+            this.logger.warn(`Motion video ${existing.id} for asset ${asset.id} is missing: ${existing.originalPath}`);
+            return;
+          }
+          // write the extracted video back, especially if the encoded-video folder has been deleted
+          this.storageCore.ensureFolders(existing.originalPath);
+          await this.storageRepository.createFile(existing.originalPath, video);
+          this.logger.log(`Wrote motion photo video to ${existing.originalPath}`);
+          if (existing.id === asset.livePhotoVideoId) {
+            await this.jobRepository.queue({
+              name: JobName.AssetExtractMetadata,
+              data: { id: existing.id, source: 'motion-photo' },
+            });
+            return;
+          }
+        } else if (existing.id === asset.livePhotoVideoId) {
           return;
         }
       }
@@ -1194,6 +1306,8 @@ export class MetadataService extends BaseService {
     asset: { id: string; originalPath: string; fileCreatedAt: Date },
     exifTags: ImmichTags,
     stats: Stats,
+    lockedTimeZone?: string | null,
+    storedTimeZone?: string | null,
   ) {
     const result = firstDateTime(exifTags);
     const tag = result?.tag;
@@ -1207,7 +1321,7 @@ export class MetadataService extends BaseService {
     }
 
     // timezone
-    let timeZone = exifTags.zone ?? null;
+    let timeZone = lockedTimeZone ?? exifTags.zone ?? null;
     if (timeZone === null && (dateTime?.rawValue?.endsWith('Z') || dateTime?.rawValue?.endsWith('+00:00'))) {
       // exiftool-vendored returns "no timezone" information even though "+00:00" might be set explicitly
       // https://github.com/photostructure/exiftool-vendored.js/issues/203
@@ -1242,7 +1356,12 @@ export class MetadataService extends BaseService {
       this.logger.debug(
         `No exif date time found, falling back on ${earliestDate.toISO()}, earliest of file creation and modification for asset ${asset.id}: ${asset.originalPath}`,
       );
-      dateTimeOriginal = localDateTime = earliestDate;
+      // FL-698: a file date is an instant, not a wall time. Read it in the item's zone (one a capture kept on the
+      // row, or a locked or EXIF one) so its local date is where it was saved, not in UTC.
+      timeZone ??= storedTimeZone ?? null;
+      const zoned = timeZone ? earliestDate.setZone(timeZone) : undefined;
+      dateTimeOriginal = earliestDate;
+      localDateTime = zoned?.isValid ? zoned.setZone('UTC', { keepLocalTime: true }) : earliestDate;
     }
 
     this.logger.verbose(`Found local date time ${localDateTime.toISO()} for asset ${asset.id}: ${asset.originalPath}`);

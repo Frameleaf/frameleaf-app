@@ -13,7 +13,15 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { type DB } from 'src/schema/index.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { SERVER_OWNER_READY_MESSAGE, SupervisorStop, WORKER_STOP_MESSAGE, onStopRequest } from 'src/utils/shutdown.js';
+import { LockedKeyMessage, LockedKeyRelay, isLockedKeyMessage, isLockedKeyReady } from 'src/utils/locked-key-ipc.js';
+import {
+  API_STARTUP_RETRY_EXIT_CODE,
+  SERVER_OWNER_READY_MESSAGE,
+  SupervisorStop,
+  WORKER_STOP_MESSAGE,
+  getWorkerDeadlineMs,
+  onStopRequest,
+} from 'src/utils/shutdown.js';
 
 /**
  * FL-161: an `FRAMELEAF_EDGE_SECRET` set in the environment, kept for installs that set one on purpose.
@@ -34,6 +42,12 @@ const setEdgeSecret = () => {
 };
 
 /**
+ * FL-721 (spec §4.3): the workers that receive the Locked keys the API process loads: the job worker only.
+ * The edge worker faces the internet and only proxies to the API over loopback, so it never holds a key.
+ */
+const LOCKED_KEY_WORKERS: ReadonlySet<FrameleafWorker> = new Set([FrameleafWorker.Microservices]);
+
+/**
  * Manages worker lifecycle
  */
 export class Workers {
@@ -41,12 +55,25 @@ export class Workers {
    * Currently running workers
    */
   workers: Partial<
-    Record<FrameleafWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void; stop: () => void }>
+    Record<
+      FrameleafWorker,
+      {
+        kill: (signal: NodeJS.Signals) => Promise<void> | void;
+        stop: () => void;
+        send: (message: LockedKeyMessage) => void;
+      }
+    >
   > = {};
+
+  /** FL-721: the Locked keys loaded in the API process, replayed to a worker that (re)starts. */
+  private lockedKeys = new LockedKeyRelay();
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
   private databaseRestarts = new Set<FrameleafWorker>();
   private workerRestarts = new Map<FrameleafWorker, NodeJS.Timeout>();
+  /** When each restarted worker last started, and how often in a row it failed. */
+  private workerStartedAt = new Map<FrameleafWorker, number>();
+  private workerFailures = new Map<FrameleafWorker, number>();
   private lifecycle = {};
   private maintenanceMode = false;
   private workerStopProofs = new WorkerStopProofRecorder(new ConfigRepository());
@@ -216,6 +243,7 @@ export class Workers {
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
     let stop: () => void;
+    let send: (message: LockedKeyMessage) => void;
     let stopped: Promise<void> | undefined;
 
     // FL-165: the edge worker is a process of its own like the API: it holds the remote access
@@ -247,23 +275,63 @@ export class Workers {
           failed();
         }
       };
+      send = (message) => {
+        // a channel closing under a send is the worker exiting; the replay covers its restart
+        if (worker.connected) worker.send(message, () => {});
+      };
       // eslint-disable-next-line unicorn/prefer-hoisting-branch-code
       anyWorker = worker;
     } else {
       const worker = new Worker(workerFile);
+      let terminate = () => worker.terminate();
+      stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
       if (name === FrameleafWorker.Microservices) {
-        stopped = superviseQueueWorker(worker, undefined, undefined, {
+        const queue = superviseQueueWorker(worker, undefined, undefined, {
           recordStopped: (proof) => this.workerStopProofs.record(proof),
           diagnostic: (message) => console.error(message),
-        }).stopped;
+        });
+        stopped = queue.stopped;
+        terminate = queue.terminate;
+        const { graceMs, workerDeadlineMs } = new ConfigRepository().getEnv().shutdown;
+        const terminateAt = getWorkerDeadlineMs(graceMs, workerDeadlineMs);
+        let forceTimer: NodeJS.Timeout | undefined;
+        let exited = false;
+        worker.once('exit', () => {
+          exited = true;
+          clearTimeout(forceTimer);
+        });
+        stop = () => {
+          if (!exited) {
+            // Preserve grace and reserve the existing worker/supervisor deadline gap for stop proof.
+            forceTimer ??= setTimeout(() => {
+              if (process.env.FRAMELEAF_NATIVE_OWNER === '1') this.exitCode = 1;
+              void queue.terminate(workerDeadlineMs - terminateAt);
+            }, terminateAt);
+          }
+          worker.postMessage(WORKER_STOP_MESSAGE);
+        };
       }
 
-      kill = async () => void (await worker.terminate());
-      stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
+      kill = async () => void (await terminate());
+      send = (message) => worker.postMessage(message);
       anyWorker = worker;
     }
 
+    if (name === FrameleafWorker.Api) {
+      // a new API process holds no keys, so neither may anything it handed keys to before
+      for (const message of this.lockedKeys.clear()) this.relayLockedKey(message);
+    }
+
     anyWorker.on('message', (message: { type?: string }) => {
+      if (name === FrameleafWorker.Api && isLockedKeyMessage(message)) {
+        if (this.lockedKeys.record(message)) this.relayLockedKey(message);
+        return;
+      }
+      // the worker listens now: hand it the keys loaded so far (a restarted worker holds none)
+      if (LOCKED_KEY_WORKERS.has(name) && isLockedKeyReady(message)) {
+        for (const locked of this.lockedKeys.replay()) send(locked);
+        return;
+      }
       if (message?.type !== 'database-unusable') return;
       this.databaseRestarts.add(name);
       void kill('SIGKILL');
@@ -275,11 +343,16 @@ export class Workers {
       else this.onExit(name, exitCode);
     });
 
-    this.workers[name] = { kill, stop };
+    this.workers[name] = { kill, stop, send };
+    this.workerStartedAt.set(name, Date.now());
     if (name === FrameleafWorker.Edge) {
       this.edgeStartedAt = Date.now();
       this.edgeStopRequested = false;
     }
+  }
+
+  private relayLockedKey(message: LockedKeyMessage) {
+    for (const name of LOCKED_KEY_WORKERS) this.workers[name]?.send(message);
   }
 
   onError(name: FrameleafWorker, error: Error) {
@@ -359,10 +432,21 @@ export class Workers {
 
     // Database cleanup failure poisons only its originating pool. Restart that worker; keep the
     // other API/edge/executor pools available. Safe queue publications remain token fenced.
-    if (this.databaseRestarts.delete(name) || name === FrameleafWorker.Microservices) {
+    // FL-646: likewise an API worker whose start-up lost a transient PostgreSQL lock conflict.
+    if (
+      this.databaseRestarts.delete(name) ||
+      name === FrameleafWorker.Microservices ||
+      (name === FrameleafWorker.Api && exitCode === API_STARTUP_RETRY_EXIT_CODE)
+    ) {
       delete this.workers[name];
       const lifecycle = this.lifecycle;
       clearTimeout(this.workerRestarts.get(name));
+      // Like the edge worker: 1 s, then 2 s, 4 s … up to a minute while it keeps failing at startup
+      const ranMs = Date.now() - (this.workerStartedAt.get(name) ?? 0);
+      const failures = ranMs > 60_000 ? 1 : (this.workerFailures.get(name) ?? 0) + 1;
+      this.workerFailures.set(name, failures);
+      const delay = Math.min(60_000, 1000 * 2 ** (failures - 1));
+      console.error(`${name} worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
       const timer = setTimeout(() => {
         this.workerRestarts.delete(name);
         const permitted = this.maintenanceMode
@@ -377,7 +461,7 @@ export class Workers {
         ) {
           this.startWorker(name);
         }
-      }, 1000);
+      }, delay);
       this.workerRestarts.set(name, timer);
       return;
     }
@@ -413,8 +497,8 @@ async function main() {
   // FL-294: `frameleaf-admin`; `immich-admin` is its deprecated alias
   if (immichApp === 'frameleaf-admin' || immichApp === 'immich-admin') {
     if (process.argv[2] === 'buddy-backup') {
-      const { buddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
-      return buddyBackupCommand(process.argv.slice(3));
+      const { runBuddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
+      return runBuddyBackupCommand(process.argv.slice(3));
     }
     process.title = 'frameleaf_admin_cli';
     process.env.FRAMELEAF_LOG_LEVEL = LogLevel.Warn;

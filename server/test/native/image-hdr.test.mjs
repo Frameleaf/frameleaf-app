@@ -814,18 +814,19 @@ for (const [name, headroom, gamut, maximumBound, rmsBound] of [
   ['pq-alternate', 8, 1, 0.08, 0.015],
   ['hlg-candidate', 4, 2, 0.002, 0.0007],
 ]) {
-  const input = readFileSync(new URL(`./fixtures/iso-hdr-base/${name}.heic`, import.meta.url));
-  const reference = JSON.parse(
-    readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-reference.json`, import.meta.url)),
-  );
-  const sdrReference =
-    name === 'pq-colors' || name === 'pq-alternate'
-      ? JSON.parse(readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-sdr-reference.json`, import.meta.url)))
-      : null;
   test(
     `HDR-base ${name} retains the primary and reconstructs authored SDR rather than flattening it`,
     { skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1' },
     () => {
+      // Read fixtures inside the opt-in test so a skipped run never touches them.
+      const input = readFileSync(new URL(`./fixtures/iso-hdr-base/${name}.heic`, import.meta.url));
+      const reference = JSON.parse(
+        readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-reference.json`, import.meta.url)),
+      );
+      const sdrReference =
+        name === 'pq-colors' || name === 'pq-alternate'
+          ? JSON.parse(readFileSync(new URL(`./fixtures/iso-hdr-base/${name}-sdr-reference.json`, import.meta.url)))
+          : null;
       const checksum = createHash('sha256').update(input).digest('hex');
       assert.equal(checksum, reference.sourceSha256);
       const info = codec.inspect(input, ...limits);
@@ -907,11 +908,11 @@ for (const [name, headroom, gamut, maximumBound, rmsBound] of [
     },
   );
 }
-const inverseInput = readFileSync(new URL('./fixtures/iso-hdr-base/pq-candidate.heic', import.meta.url));
 test(
   'invalid inverse metadata and budgets cannot advertise reconstruction',
   { skip: process.env.FRAMELEAF_HDR_ISO_TEST !== '1' },
   () => {
+    const inverseInput = readFileSync(new URL('./fixtures/iso-hdr-base/pq-candidate.heic', import.meta.url));
     for (const operation of [codec.inspect, codec.decode, codec.decodePaired])
       assert.throws(() => operation(inverseInput, 1, limits[1]), { code: 'RESOURCE_LIMIT' });
     for (const offset of [38 + 16, 38 + 40 + 16, 38 + 80 + 16]) {

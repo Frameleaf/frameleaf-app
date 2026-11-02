@@ -1,0 +1,126 @@
+import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
+import { LibraryScope, LibraryScopeSchema } from 'src/enum.js';
+
+// Stored references only; validation never fetches a caller-supplied URL.
+const referenceUrl = z
+  .string()
+  .max(8192)
+  .url()
+  .refine((value) => {
+    if (!URL.canParse(value)) return false;
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+  }, 'Expected an HTTP(S) URL without credentials');
+
+const bookmarkRating = z
+  .int()
+  .min(-1)
+  .max(5)
+  .refine((value) => value !== 0, 'Use -1 for rejected, 1–5 stars, or null for unrated')
+  .nullable()
+  .optional();
+
+const bookmarkFields = z.object({
+  rating: bookmarkRating,
+  url: referenceUrl,
+  title: z.string().max(2000),
+  note: z.string().max(20_000).nullable().optional(),
+  previewAssetId: z.uuidv4().nullable().optional(),
+  libraryScope: LibraryScopeSchema,
+  isArchived: z.boolean().optional(),
+  isLocked: z.boolean().optional(),
+});
+
+export class BookmarkCreateDto extends createZodDto(
+  bookmarkFields
+    .extend({ libraryScope: LibraryScopeSchema.default(LibraryScope.Design) })
+    .meta({ id: 'BookmarkCreateDto' }),
+) {}
+export class BookmarkUpdateDto extends createZodDto(bookmarkFields.partial().meta({ id: 'BookmarkUpdateDto' })) {}
+
+export const BookmarkResponseSchema = z
+  .object({
+    id: z.uuidv4(),
+    ownerId: z.uuidv4(),
+    url: z.string(),
+    title: z.string(),
+    note: z.string().nullable(),
+    rating: bookmarkRating,
+    previewAssetId: z.uuidv4().nullable(),
+    libraryScope: LibraryScopeSchema,
+    isArchived: z.boolean(),
+    isLocked: z.boolean(),
+    createdAt: z.string().meta({ format: 'date-time' }),
+    updatedAt: z.string().meta({ format: 'date-time' }),
+    deletedAt: z.string().nullable().meta({ format: 'date-time' }),
+    updateId: z.string(),
+  })
+  .meta({ id: 'BookmarkResponseDto' });
+export class BookmarkResponseDto extends createZodDto(BookmarkResponseSchema) {}
+
+export class BookmarkPreviewRequestDto extends createZodDto(
+  z.object({ url: referenceUrl }).meta({ id: 'BookmarkPreviewRequestDto' }),
+) {}
+export class BookmarkPreviewResponseDto extends createZodDto(
+  z
+    .object({
+      title: z.string().nullable(),
+      image: z
+        .object({ contentType: z.string(), data: z.string().describe('Base64 image bytes') })
+        .nullable()
+        .describe("The page's picture, to upload as the link's preview"),
+    })
+    .meta({ id: 'BookmarkPreviewResponseDto' }),
+) {}
+
+export class BookmarkTagsDto extends createZodDto(
+  z.object({ ids: z.array(z.uuidv4()).max(500) }).meta({ id: 'BookmarkTagsDto' }),
+) {}
+
+export class CaptureSourceDto extends createZodDto(
+  z
+    .object({
+      captureId: z.uuidv4(),
+      pageUrl: referenceUrl,
+      mediaUrl: referenceUrl.nullable().optional(),
+      title: z.string().max(2000),
+      capturedAt: z.iso.datetime({ offset: true }),
+      note: z.string().max(20_000).nullable().optional(),
+      creator: z.string().max(2000).nullable().optional(),
+      licenseUrl: referenceUrl.nullable().optional(),
+    })
+    .meta({ id: 'CaptureSourceDto' }),
+) {}
+
+export class AssetSourceResponseDto extends createZodDto(
+  CaptureSourceDto.schema
+    .extend({
+      id: z.uuidv4(),
+      assetId: z.uuidv4(),
+      createdAt: z.string().meta({ format: 'date-time' }),
+      // A plain string rather than an enum, so a later importer is not a breaking change for strict clients.
+      importedFrom: z.string().nullable().meta({
+        description: 'The app the source was imported from, such as "eagle"; null when the browser extension saved it',
+      }),
+    })
+    .meta({ id: 'AssetSourceResponseDto' }),
+) {}
+
+/** FL-653: a web address an Eagle import brings over as the item's Source › Page. */
+export class AssetSourceImportDto extends createZodDto(
+  z
+    .object({
+      importedFrom: z.literal('eagle').meta({ description: 'The app the address was imported from' }),
+      pageUrl: referenceUrl,
+      title: z.string().max(2000).optional(),
+    })
+    .meta({ id: 'AssetSourceImportDto' }),
+) {}
+
+/** FL-653: the Added date of an item an import brought over, such as when it was last changed in Eagle. */
+export class AssetAddedDateDto extends createZodDto(
+  z
+    .object({ addedAt: z.iso.datetime({ offset: true }).meta({ description: 'A time in the past' }) })
+    .meta({ id: 'AssetAddedDateDto' }),
+) {}

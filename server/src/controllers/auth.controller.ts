@@ -9,6 +9,9 @@ import {
   LoginCredentialDto,
   LoginResponseDto,
   LogoutResponseDto,
+  PasswordLinkCheckDto,
+  PasswordLinkCheckResponseDto,
+  PasswordLinkRedeemDto,
   PinCodeChangeDto,
   PinCodeResetDto,
   PinCodeSetupDto,
@@ -87,6 +90,33 @@ export class AuthController {
   })
   changePassword(@Auth() auth: AuthDto, @Body() dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
     return this.service.changePassword(auth, dto);
+  }
+
+  @Post('password-link/check')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.login)
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Check a choose-a-password link',
+    description: 'Who an emailed single-use link to choose a password is for, while it can still be used.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  checkPasswordLink(@Body() dto: PasswordLinkCheckDto): Promise<PasswordLinkCheckResponseDto> {
+    return this.service.checkPasswordLink(dto);
+  }
+
+  @Post('password-link')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.login)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Choose a password with a link',
+    description:
+      'Set the password with an emailed single-use link. The link stops working once used, and every session of the account is signed out.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  redeemPasswordLink(@Body() dto: PasswordLinkRedeemDto): Promise<void> {
+    return this.service.redeemPasswordLink(dto);
   }
 
   @Post('logout')

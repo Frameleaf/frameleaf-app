@@ -129,8 +129,9 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
     await writeBlob(workspace.handle(), ['media', TAKE, 'upscaled.mp4'], new Uint8Array([1, 2, 3, 4]))
     await watch.retry()
     expect(upload).not.toHaveBeenCalled()
+    // The held write is kept in the workspace, only not sent (read before dispose empties it).
+    expect(await workspace.readFile(['media', TAKE, 'upscaled.mp4'])).not.toBeNull()
     workspace.dispose()
-    expect(await workspace.readFile(['media', TAKE, 'upscaled.mp4'])).toBeNull()
     watch.stop()
   })
 

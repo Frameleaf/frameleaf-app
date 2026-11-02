@@ -5,6 +5,7 @@ import {
   backupGrantProblem,
   managedBackupRefusal,
 } from 'src/utils/frameleaf-cloud-backup.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 export type BackupCredentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
 
@@ -67,7 +68,7 @@ export const managedBackupSession = (
     ) {
       return grant.capability.credentials;
     }
-    pending = Promise.try(async () => {
+    pending = tryPromise(async () => {
       try {
         const next = await renew();
         validate(next);
@@ -100,7 +101,7 @@ export const managedBackupReadSession = (
   return (failedAccessKeyId?: string): Promise<BackupCredentials> => {
     if (pending) return pending;
     if (failure && now() < retryAt) return Promise.reject(failure);
-    pending = Promise.try(async () => {
+    pending = tryPromise(async () => {
       session ??= managedBackupSession(await renew(), 'restore', renew, now, binding);
       const credentials = await session(failedAccessKeyId);
       failure = undefined;

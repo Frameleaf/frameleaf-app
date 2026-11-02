@@ -180,7 +180,9 @@
     }
     previewing = true;
     try {
-      preview = await previewPreservationExport({ preservationPreviewDto: { scope: request, includeLocked } });
+      preview = await previewPreservationExport({
+        preservationPreviewDto: { scope: request, includeLocked, includeMetadata },
+      });
       if (includeLocked && !preview.lockedAllowed) {
         includeLocked = false;
       }

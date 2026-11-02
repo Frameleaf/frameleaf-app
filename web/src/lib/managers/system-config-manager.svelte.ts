@@ -13,8 +13,13 @@ class SystemConfigManager {
   }
 
   async init() {
-    await this.#loadConfig();
-    await this.#loadDefault();
+    await Promise.all([this.#loadConfig(), this.#loadDefault()]);
+  }
+
+  /** Start from settings and defaults the caller already loaded, without asking the server again. */
+  seed(value: AdminConfigDto, defaultValue: AdminConfigDto) {
+    this.#value = value;
+    this.#defaultValue = defaultValue;
   }
 
   get value() {

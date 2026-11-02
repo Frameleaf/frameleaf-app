@@ -183,4 +183,24 @@ describe('withheld album items (FL-447)', () => {
       }),
     ]);
   });
+
+  it("sends the delete for an item removed from the album after it began matching its owner's rule", async () => {
+    const { ctx, auth, owner, album, tagged, tag } = await setup();
+    const first = await ctx.syncStream(auth, legacyTypes);
+    expect(albumAssetIds(first).has(tagged.id)).toBe(true);
+    await ctx.syncAckAll(auth, first);
+    await ctx.assertSyncIsComplete(auth, legacyTypes);
+
+    await setLockedRules(owner.id, { tagIds: [tag.id] });
+    await db.deleteFrom('album_asset').where('albumId', '=', album.id).where('assetId', '=', tagged.id).execute();
+    await wait(2);
+
+    const next = await ctx.syncStream(auth, [SyncRequestType.AlbumToAssetsV1]);
+    expect(next).toContainEqual(
+      expect.objectContaining({
+        type: SyncEntityType.AlbumToAssetDeleteV1,
+        data: { albumId: album.id, assetId: tagged.id },
+      }),
+    );
+  });
 });

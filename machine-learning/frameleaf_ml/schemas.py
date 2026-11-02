@@ -35,6 +35,10 @@ class ModelTask(StrEnum):
     SEMANTIC_MASK = "semantic-mask"
     INPAINT = "inpaint"
     TRANSCRIBE = "transcribe"
+    MUSIC = "music"
+    SUBJECT_MATTE = "subject-matte"
+    VOICE_CLEANUP = "voice-cleanup"
+    TRANSLATE = "translate"
 
 
 class ModelType(StrEnum):
@@ -238,7 +242,34 @@ class ImageDescriptionOptions(_OptionsBase):
 
 class SemanticMaskOptions(_OptionsBase):
     target: Literal["subject", "sky"] = "subject"
-    device: Literal["cpu", "cuda"] = "cpu"
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE.
+    device: Literal["cpu", "cuda"] | None = None
+
+
+class SubjectMattePoint(_OptionsBase):
+    """One "Add to subject" (1) or "Take away" (0) point: a frame of the clip and fractions of it."""
+
+    frame: int = Field(ge=0, lt=600)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    label: Literal[0, 1]
+
+
+class SubjectMatteOptions(_OptionsBase):
+    """Options for the subject-matte task (Studio cut-out, FL-639).
+
+    `seedKind` "face" seeds the subject from `seedBox`, the chosen person's face as fractions of the
+    first frame; "subject" finds the main subject with Florence-2. `points` refine the subject from
+    their frame on. The matte comes back at `matteWidth` x `matteHeight`.
+    """
+
+    seedKind: Literal["face", "subject"] = "subject"
+    seedBox: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    points: list[SubjectMattePoint] = Field(default_factory=list, max_length=64)
+    matteWidth: int = Field(default=256, ge=1, le=512)
+    matteHeight: int = Field(default=256, ge=1, le=512)
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE, as for photo masks.
+    device: Literal["cpu", "cuda"] | None = None
 
 
 class InpaintOptions(_OptionsBase):
@@ -256,6 +287,43 @@ class TranscribeOptions(_OptionsBase):
     wordTimestamps: bool = True
 
 
+class MusicOptions(_OptionsBase):
+    """Options for the music task (Make a movie, MusicGen small).
+
+    `prompt` describes the music, `duration` is its length in seconds and `seed` makes a run
+    repeatable: the same prompt, length and seed give the same music.
+    """
+
+    prompt: str = Field(min_length=1, max_length=500)
+    duration: float = Field(gt=0, le=180)
+    seed: int = Field(default=0, ge=0, le=2**31 - 1)
+
+
+class VoiceCleanupOptions(_OptionsBase):
+    """Options for the voice clean-up task (Studio "Clean up voice", FL-637, DeepFilterNet3).
+
+    `mode` is `analyze` (what is in the sound) or `clean`. For `clean`, `strength` is Light, Standard or
+    Strong and `noises` the problems to remove. `humHz` is the mains frequency the analysis found; absent,
+    the worker looks for it again.
+    """
+
+    mode: Literal["analyze", "clean"] = "clean"
+    strength: Literal["light", "standard", "strong"] = "standard"
+    noises: list[Literal["wind", "hum", "background", "echo"]] = Field(default_factory=list, max_length=4)
+    humHz: Literal[50, 60] | None = None
+
+
+class TranslateOptions(_OptionsBase):
+    """Options for the translate task (Studio captions in other languages, FL-641).
+
+    `source` and `target` are the BCP 47 primary tags of the languages Studio offers (`en`, `fr`, `nb`);
+    the worker refuses any other.
+    """
+
+    source: str = Field(pattern=r"^[a-z]{2,3}$")
+    target: str = Field(pattern=r"^[a-z]{2,3}$")
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -269,6 +337,10 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEMANTIC_MASK, ModelType.VISUAL): SemanticMaskOptions,
     (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
     (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
+    (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
+    (ModelTask.SUBJECT_MATTE, ModelType.VISUAL): SubjectMatteOptions,
+    (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
+    (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
 }
 
 

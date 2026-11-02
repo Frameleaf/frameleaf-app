@@ -3,6 +3,7 @@ import type { EmailRepository, SendEmailOptions, SendEmailResponse } from 'src/r
 import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { FrameleafMailConnection } from 'src/types.js';
+import type { SystemNotificationTemplate } from 'src/utils/notification-locale.js';
 import {
   DatabaseLock,
   MailConnectionStatus,
@@ -103,6 +104,11 @@ export const mailNeedsSignInNotice = (provider: MailSignInProvider) => ({
   level: NotificationLevel.Error,
   title: `Email stopped: sign in to ${MAIL_PROVIDER_NAMES[provider]} again`,
   description: `${MAIL_PROVIDER_NAMES[provider]} is asking you to sign in again, because the account’s password changed or Frameleaf’s access was removed. Emails are not sent until you do; invitations and album updates appear in the app only. Open Settings > Notifications > Email delivery and choose Sign in again.`,
+  systemTemplate: {
+    version: 1,
+    key: 'mail-needs-sign-in',
+    args: { provider: MAIL_PROVIDER_NAMES[provider] },
+  } satisfies SystemNotificationTemplate,
   dedupeKey: 'frameleaf-mail:needs-sign-in',
   dedupeDays: 1,
 });

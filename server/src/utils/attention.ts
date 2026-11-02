@@ -50,7 +50,11 @@ const time = (value: string | null | undefined) => {
 /** The drive the library is on, as `StorageRepository.checkDiskUsage` reads it. */
 export type DiskFacts = { available: number; free: number; total: number };
 
-export const storageSignal = (disk: DiskFacts): SignalResult => {
+/**
+ * FL-365: `nearlyFullPercent` is Storage & originals › "Warn me when the disk is nearly full"
+ * (`storageWarning.percent`); 0 turns that warning off. Under 10 GB free always needs the person.
+ */
+export const storageSignal = (disk: DiskFacts, nearlyFullPercent = NEARLY_FULL_PERCENT): SignalResult => {
   if (!(disk.total > 0)) {
     return { state: 'unknown', items: [] };
   }
@@ -63,7 +67,7 @@ export const storageSignal = (disk: DiskFacts): SignalResult => {
   if (disk.available < OUT_OF_SPACE_BYTES) {
     return outcome([item({ id: 'storage', kind: 'storage', reason: 'out-of-space', level: 'now', storage })]);
   }
-  if (usedPercent >= NEARLY_FULL_PERCENT) {
+  if (nearlyFullPercent > 0 && usedPercent >= nearlyFullPercent) {
     return outcome([item({ id: 'storage', kind: 'storage', reason: 'nearly-full', level: 'soon', storage })]);
   }
   return outcome([]);
@@ -217,6 +221,8 @@ export type QueueFacts = {
   paused: boolean;
   /** Paused by a library move, which starts it again by itself when the move ends. */
   heldByMove: boolean;
+  /** FL-711: paused by quiet hours, which start it again by themselves when the overnight window opens. */
+  heldByQuietHours?: boolean;
 };
 
 const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count;
@@ -224,7 +230,7 @@ const byCount = (a: { count: number }, b: { count: number }) => b.count - a.coun
 /**
  * Work that stopped and cannot carry on by itself: items that failed (they stay failed until someone
  * retries or clears them), and work paused with items waiting behind the pause. A pause a library
- * move holds lifts by itself and is not listed.
+ * move or quiet hours hold lifts by itself and is not listed.
  */
 export const workSignal = (queues: QueueFacts[]): SignalResult => {
   const items: AttentionItem[] = [];
@@ -244,7 +250,7 @@ export const workSignal = (queues: QueueFacts[]): SignalResult => {
     );
   }
   const paused = queues
-    .filter((queue) => queue.paused && !queue.heldByMove)
+    .filter((queue) => queue.paused && !queue.heldByMove && !queue.heldByQuietHours)
     .map((queue) => ({ name: queue.name, count: queue.counts.waiting + queue.counts.paused }))
     .filter((queue) => queue.count > 0)
     .toSorted(byCount);

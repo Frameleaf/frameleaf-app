@@ -549,7 +549,8 @@ test('current prepared source uses its exact Chromium tuple without extending hi
     for (const update of [
       { browser: '148.0.7778.96' },
       { browser: '156.0.8078.5' },
-      { sourceSha256: source.slice(0, -1) + '0' },
+      // Always a different digest, even when the current one ends in 0.
+      { sourceSha256: source.slice(0, -1) + (source.endsWith('0') ? '1' : '0') },
       { sourceSha256: source99 },
     ])
       assert.throws(

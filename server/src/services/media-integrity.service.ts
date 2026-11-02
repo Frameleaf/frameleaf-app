@@ -7,6 +7,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -32,6 +33,11 @@ export type MediaIntegrityResult =
   | { status: 'corrupt'; reason: 'expected_mismatch' | 'empty_file' | 'decode_failed' }
   | { status: 'unsupported'; reason: 'raw_decode_unsupported' | 'media_type_unsupported' | 'decode_unsupported' }
   | { status: 'timeout'; reason: 'validation_timeout' | 'decode_timeout' }
+  /**
+   * FL-721 (spec §8.3): a sealed Locked file (its bytes start with `FLLK`). It is never hashed or
+   * decoded here, so never called damaged: "encrypted, not checked". Its GCM tags prove it intact.
+   */
+  | { status: 'encrypted'; reason: 'locked_encrypted' }
   | {
       status: 'transient';
       reason:
@@ -103,6 +109,9 @@ export class MediaIntegrityService {
       const before = await this.storageRepository.stat(input.path);
       if (!before.isFile()) {
         return { status: 'unreadable', reason: 'not_regular_file' };
+      }
+      if (await isLockedPath(input.path)) {
+        return { status: 'encrypted', reason: 'locked_encrypted' };
       }
       if (signal.aborted) {
         return { status: 'timeout', reason: 'validation_timeout' };

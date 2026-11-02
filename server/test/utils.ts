@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-this-outside-of-class */
 import { DatabaseConnectionParams, createPostgres } from '@frameleaf/sql-tools';
 import { CallHandler, ExecutionContext, Provider } from '@nestjs/common';
+import { PROPERTY_DEPS_METADATA } from '@nestjs/common/constants.js';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
 import { Test } from '@nestjs/testing';
@@ -13,7 +14,7 @@ import { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { Duplex, Readable, Writable } from 'node:stream';
 import { PNG } from 'pngjs';
-import { Mock, Mocked, assert, vitest } from 'vitest';
+import { Mock, Mocked, assert, expect, vitest } from 'vitest';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { AuthGuard } from 'src/middleware/auth.guard.js';
@@ -55,6 +56,9 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
+import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
@@ -97,8 +101,11 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
+import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { renderSystemNotification } from 'src/utils/notification-locale.js';
 import { ClusterGroupFactory } from 'test/factories/cluster-group.factory.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { IAccessRepositoryMock, newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
@@ -292,6 +299,12 @@ export type ServiceOverrides = {
   integrityReport: IntegrityRepository;
   job: JobRepository;
   library: LibraryRepository;
+  /** FL-721: not a BaseService dependency; services that need it take `mocks.lockedKey` explicitly. */
+  lockedKey: LockedKeyRepository;
+  /** FL-721: not a BaseService dependency either; `LockedEncryptionService` takes it explicitly. */
+  lockedEncryption: LockedEncryptionRepository;
+  /** FL-721: `LockedSealService` only. */
+  lockedFile: LockedFileRepository;
   logger: LoggingRepository;
   machineLearning: MachineLearningRepository;
   map: MapRepository;
@@ -368,6 +381,7 @@ export const getMocks = () => {
   databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
   databaseMock.withAssetSidecarLock.mockImplementation((_assetId, fn) => fn(undefined as never));
   databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
+  databaseMock.withLockedKeyFileLock.mockImplementation((_userId, fn) => fn());
   databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('19beta4 (Debian 19~beta4-1.pgdg12+1)');
   databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=19.0.0 <20.0.0');
   databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);
@@ -405,6 +419,9 @@ export const getMocks = () => {
     job: newJobRepositoryMock(),
     apiKey: automock(ApiKeyRepository),
     library: automock(LibraryRepository, { strict: false }),
+    lockedKey: automock(LockedKeyRepository),
+    lockedEncryption: automock(LockedEncryptionRepository, { args: [database], strict: false }),
+    lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
     media: newMediaRepositoryMock(),
@@ -468,6 +485,7 @@ export const getMocks = () => {
 
   // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
   mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+  mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);
@@ -500,6 +518,8 @@ export const getMocks = () => {
     unchanged: 0,
     tagged: [],
     untagged: [],
+    locked: [],
+    missing: [],
   });
   mocks.classification.recordAlbumAdditions.mockResolvedValue();
 
@@ -513,6 +533,8 @@ export const getMocks = () => {
     Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
   );
   mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+  mocks.mlDestination.resolveRoute.mockResolvedValue([]);
   // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
   mocks.mlDestination.getRoutes.mockResolvedValue([]);
   mocks.mlDestination.getSpend.mockResolvedValue(0);
@@ -610,11 +632,47 @@ export const newTestService = <T extends BaseService>(
     overrides.workflow || (mocks.workflow as As<WorkflowRepository>),
   );
 
+  // FL-721: services that take LockedEncryptionService by property injection get one on the same mocks
+  // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+  const properties: { key: string; type: unknown }[] = Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
+  for (const { key, type } of properties) {
+    if (type === LockedEncryptionService) {
+      Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
+    }
+  }
+
   return {
     sut,
     mocks,
   };
 };
+
+/** FL-721: a LockedEncryptionService on these mocks (it is not a BaseService). */
+export const newLockedEncryptionService = (mocks: ServiceMocks) =>
+  new LockedEncryptionService(
+    mocks.logger as As<LoggingRepository>,
+    mocks.lockedKey as As<LockedKeyRepository>,
+    mocks.lockedEncryption as As<LockedEncryptionRepository>,
+    mocks.user as As<UserRepository>,
+    mocks.session as As<SessionRepository>,
+    mocks.job as As<JobRepository>,
+    mocks.crypto as As<CryptoRepository>,
+    mocks.websocket as As<WebsocketRepository>,
+    mocks.database as As<DatabaseRepository>,
+  );
+
+/** FL-721: a LockedSealService on these mocks (it is not a BaseService). */
+export const newLockedSealService = (mocks: ServiceMocks) =>
+  new LockedSealService(
+    mocks.logger as As<LoggingRepository>,
+    mocks.lockedFile as As<LockedFileRepository>,
+    mocks.lockedKey as As<LockedKeyRepository>,
+    mocks.lockedEncryption as As<LockedEncryptionRepository>,
+    mocks.job as As<JobRepository>,
+    mocks.database as As<DatabaseRepository>,
+    mocks.websocket as As<WebsocketRepository>,
+    mocks.cron as As<CronRepository>,
+  );
 
 const createPNG = (r: number, g: number, b: number) => {
   const image = new PNG({ width: 1, height: 1 });
@@ -765,4 +823,20 @@ export const wait = (ms: number): Promise<void> => {
     };
     setTimeout(checkDone, ms);
   });
+};
+
+/**
+ * FL-329/FL-406: every administrator notice and push a producer emitted carries a system template whose
+ * English catalog text is exactly the producer's supplied text, so English recipients see no change.
+ */
+export const expectLocalisedSystemNotices = (emit: { mock: { calls: unknown[][] } }) => {
+  for (const [event, value] of emit.mock.calls) {
+    if (event !== 'AdminNotify' && event !== 'PushNotify') {
+      continue;
+    }
+    const notice = value as { title: string; description?: string; body?: string; systemTemplate?: unknown };
+    const supplied = { title: notice.title, body: event === 'AdminNotify' ? notice.description : notice.body };
+    expect(notice.systemTemplate, `${event}: ${notice.title}`).toBeDefined();
+    expect(renderSystemNotification(notice.systemTemplate, 'en', { title: '', body: '' })).toEqual(supplied);
+  }
 };

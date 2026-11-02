@@ -99,6 +99,20 @@ const TagStatisticsResponseSchema = z
   })
   .meta({ id: 'TagStatisticsResponseDto' });
 
+/** FL-647: a picker's search-as-you-type read of the caller's tags. */
+const TagSearchSchema = z
+  .object({
+    search: z
+      .string()
+      .trim()
+      .max(100)
+      .optional()
+      .describe('Only tags whose full value contains this text, ignoring case'),
+    take: z.coerce.number().int().min(1).max(100).default(20).describe('At most this many tags'),
+  })
+  .meta({ id: 'TagSearchDto' });
+
+export class TagSearchDto extends createZodDto(TagSearchSchema) {}
 export class TagCreateDto extends createZodDto(TagCreateSchema) {}
 export class TagUpdateDto extends createZodDto(TagUpdateSchema) {}
 export class TagMergeDto extends createZodDto(TagMergeSchema) {}

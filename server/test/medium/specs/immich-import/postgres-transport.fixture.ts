@@ -452,14 +452,27 @@ export class PostgresImportFixture {
   }
 
   async close() {
-    try {
-      await Promise.all([...this.connections].map((connection) => connection.close()));
-      for (const name of this.databases.toReversed()) await this.admin.unsafe(`DROP DATABASE IF EXISTS ${quote(name)}`);
-      if (this.roleCreated) await this.admin.unsafe(`DROP ROLE ${quote(this.role)}`);
-      for (const role of this.extraRoles) await this.admin.unsafe(`DROP ROLE ${quote(role)}`);
-    } finally {
-      await this.admin.end();
-      if (this.directory) await rm(this.directory, { recursive: true, force: true });
+    // Attempt every cleanup step, so one failure does not leak the rest; report the first failure.
+    const errors: unknown[] = [];
+    const attempt = async (step: () => Promise<unknown>) => {
+      try {
+        await step();
+      } catch (error) {
+        errors.push(error);
+      }
+    };
+    const closed = await Promise.allSettled([...this.connections].map((connection) => connection.close()));
+    for (const result of closed) if (result.status === 'rejected') errors.push(result.reason);
+    for (const name of this.databases.toReversed()) {
+      await attempt(() => this.admin.unsafe(`DROP DATABASE IF EXISTS ${quote(name)} WITH (FORCE)`));
     }
+    if (this.roleCreated) await attempt(() => this.admin.unsafe(`DROP ROLE ${quote(this.role)}`));
+    for (const role of this.extraRoles) await attempt(() => this.admin.unsafe(`DROP ROLE ${quote(role)}`));
+    await attempt(() => this.admin.end());
+    if (this.directory) {
+      const directory = this.directory;
+      await attempt(() => rm(directory, { recursive: true, force: true }));
+    }
+    if (errors.length > 0) throw errors[0];
   }
 }

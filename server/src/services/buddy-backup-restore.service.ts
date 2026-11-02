@@ -5,10 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { type Transaction, sql } from 'kysely';
+import { NoResultError, type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { coerce, gt } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
@@ -53,6 +53,7 @@ import {
   type CloudBackupRestoreFile,
   type CloudBackupRestoreSnapshot,
   CloudBackupRestorer,
+  countEncryptedWithOlderKey,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
@@ -100,8 +101,28 @@ type RestoreJob = {
   owner: NonNullable<CloudBackupRestoreSnapshot['owner']>;
   manifestHash: string;
   albums?: BuddyAlbumPlan;
+  /**
+   * FL-508: backup owners with no account on this server (a fresh replacement), each mapped to the
+   * administrator who restores their items. Their albums are not recreated.
+   */
+  owners?: Record<string, string>;
 };
 const LEASE_MS = 300_000;
+
+/** The account that receives a backed-up owner's items on this server. */
+const restoreOwner = (job: RestoreJob, ownerId: string) => job.owners?.[ownerId] ?? ownerId;
+
+/** Moves an owner-private path (upload, thumbnails, encoded video, storage-template library) to another owner. */
+export const retargetBuddyOwnerPath = (path: string, from: string, to: { id: string; storageLabel: string | null }) => {
+  for (const folder of [StorageFolder.Upload, StorageFolder.Thumbnails, StorageFolder.EncodedVideo]) {
+    const source = StorageCore.getFolderLocation(folder, from) + sep;
+    if (path.startsWith(source)) return join(StorageCore.getFolderLocation(folder, to.id), path.slice(source.length));
+  }
+  const library = StorageCore.getBaseFolder(StorageFolder.Library) + sep;
+  const rest = path.startsWith(library) ? path.slice(library.length) : '';
+  const slash = rest.indexOf(sep);
+  return slash > 0 ? join(StorageCore.getLibraryFolder(to), rest.slice(slash + 1)) : path;
+};
 /** Claims a restore may spend on PostgreSQL lock contention (55P03) before it is reported as failed. */
 const LOCK_CONTENTION_ATTEMPTS = 6;
 class RestoreStopped extends Error {}
@@ -151,17 +172,25 @@ export class BuddyBackupRestoreService {
       operation.status === MediaOperationStatus.Completed && Array.isArray(operation.result?.preservedVersionAssetIds)
         ? operation.result.preservedVersionAssetIds.length
         : 0;
+    const olderKey = operation.result?.encryptedWithOlderKey;
+    const encryptedWithOlderKey = Number.isSafeInteger(olderKey) && (olderKey as number) > 0 ? (olderKey as number) : 0;
+    const notes = [
+      preserved
+        ? `Existing originals and their current saved versions were kept for ${preserved} item(s). Choose replace to restore their backed-up versions.`
+        : null,
+      // FL-721 (spec §9): said, never left silent
+      encryptedWithOlderKey
+        ? `${encryptedWithOlderKey} restored Locked item(s) are encrypted with an older key that this server's key file does not open.`
+        : null,
+    ].filter((note): note is string => !!note);
     return {
       id,
       state: operation.status,
       progress: operation.progress,
       phase: String(operation.result?.phase ?? operation.status),
       recoveryId: typeof operation.result?.recoveryId === 'string' ? operation.result.recoveryId : null,
-      error:
-        operation.error ??
-        (preserved
-          ? `Existing originals and their current saved versions were kept for ${preserved} item(s). Choose replace to restore their backed-up versions.`
-          : null),
+      encryptedWithOlderKey,
+      error: operation.error ?? (notes.length > 0 ? notes.join(' ') : null),
     };
   }
 
@@ -437,6 +466,7 @@ export class BuddyBackupRestoreService {
     if (request.scope === 'server')
       selectedFiles.push(
         ...Object.values(manifest.library.profiles),
+        ...Object.values(manifest.library.lockedKeys ?? {}),
         ...manifest.dependencies,
         ...manifest.configurationFiles,
         ...(manifest.library.database ? [manifest.library.database] : []),
@@ -446,13 +476,21 @@ export class BuddyBackupRestoreService {
     if (bytes + 1024 ** 3 > free.available)
       throw new BadRequestException('More free space is needed to stage and verify this restore.');
     const identities = await this.index.getOwnerRestoreIdentities(ids);
+    const owners =
+      admin && !['server', 'settings'].includes(request.scope)
+        ? await this.missingOwners(manifest, ids, current.user.id)
+        : undefined;
     const albumIds = manifest.metadata
-      ? selectBuddyAlbumIds(
-          manifest.metadata,
-          { ...request, assetIds: request.mode === 'keep' ? ids.filter((id) => !identities[id]) : ids },
-          manifest.library.assets,
-          current.user.id,
-          admin,
+      ? this.restorableAlbums(
+          manifest,
+          selectBuddyAlbumIds(
+            manifest.metadata,
+            { ...request, assetIds: request.mode === 'keep' ? ids.filter((id) => !identities[id]) : ids },
+            manifest.library.assets,
+            current.user.id,
+            admin,
+          ),
+          owners,
         )
       : [];
     const albums = manifest.metadata
@@ -501,6 +539,7 @@ export class BuddyBackupRestoreService {
       owner,
       manifestHash: this.fingerprint(manifest),
       ...(albums && { albums }),
+      ...(owners && { owners }),
     };
     const result = await this.operations.createExclusive(
       {
@@ -564,6 +603,30 @@ export class BuddyBackupRestoreService {
     if (claim) await this.run(claim.operation, claim.claimToken);
   }
 
+  /**
+   * FL-508: a replacement server restored from scratch has none of the backup's accounts. An administrator's
+   * item restore then places those owners' items in the administrator's own account, which can already
+   * browse and restore every owner's items; complete server recovery is what brings the accounts back.
+   */
+  private async missingOwners(manifest: BuddyManifest, ids: string[], administratorId: string) {
+    const wanted = new Set(ids.map((id) => manifest.library.assets[id].owner!));
+    for (const album of Object.values(manifest.metadata?.albums ?? {})) wanted.add(album.ownerId);
+    if (wanted.size === 0) return;
+    const present = await this.repository.db
+      .selectFrom('user')
+      .select('id')
+      .where('id', 'in', [...wanted])
+      .where('deletedAt', 'is', null)
+      .execute();
+    for (const { id } of present) wanted.delete(id);
+    return wanted.size > 0 ? Object.fromEntries([...wanted].map((id) => [id, administratorId])) : undefined;
+  }
+
+  /** Albums are recreated only for owners who still have an account here (FL-508). */
+  private restorableAlbums(manifest: BuddyManifest, albumIds: string[], owners?: Record<string, string>) {
+    return owners ? albumIds.filter((id) => !owners[manifest.metadata!.albums[id].ownerId]) : albumIds;
+  }
+
   private async binding(job: RestoreJob) {
     const ring = await this.backup.keyring(job.vaultId);
     if (ring.vaultId !== job.vaultId || this.fingerprint(ring) !== job.fingerprint)
@@ -583,18 +646,22 @@ export class BuddyBackupRestoreService {
     if (!job.albums || job.owner.ownerId !== operation.ownerId || job.owner.sessionId !== job.sessionId) {
       throw new Error('Buddy restore album selection unavailable');
     }
-    const selected = selectBuddyAlbumIds(
-      manifest.metadata,
-      {
-        ...job.request,
-        assetIds:
-          job.request.mode === 'keep'
-            ? job.request.assetIds?.filter((id) => !job.owner.current[id])
-            : job.request.assetIds,
-      },
-      manifest.library.assets,
-      operation.ownerId,
-      job.admin,
+    const selected = this.restorableAlbums(
+      manifest,
+      selectBuddyAlbumIds(
+        manifest.metadata,
+        {
+          ...job.request,
+          assetIds:
+            job.request.mode === 'keep'
+              ? job.request.assetIds?.filter((id) => !job.owner.current[id])
+              : job.request.assetIds,
+        },
+        manifest.library.assets,
+        operation.ownerId,
+        job.admin,
+      ),
+      job.owners,
     );
     assertBuddyAlbumPlan(manifest.metadata, job.albums, selected, job.request.mode);
     const metadata = new BuddyBackupMetadataRepository(this.repository.db);
@@ -682,13 +749,15 @@ export class BuddyBackupRestoreService {
           parentId,
         );
       }
-      const ownerId = manifest.library.assets[assetId].owner!;
+      const ownerId = restoreOwner(job, manifest.library.assets[assetId].owner!);
       const owner = await trx
         .selectFrom('user')
         .select(['id', 'storageLabel'])
         .where('id', '=', ownerId)
         .where('deletedAt', 'is', null)
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+      // FL-508: before owners were mapped, a fresh replacement failed here as an unnamed "no result".
+      if (!owner) throw new Error('Buddy restore owner is missing');
       const current = await trx
         .selectFrom('asset')
         .select(['originalPath', 'ownerId', 'libraryId'])
@@ -705,7 +774,11 @@ export class BuddyBackupRestoreService {
         StorageCore.getLibraryFolder(owner),
         StorageCore.getFolderLocation(StorageFolder.Thumbnails, ownerId),
         StorageCore.getFolderLocation(StorageFolder.EncodedVideo, ownerId),
-      ];
+      ].flatMap((root) => {
+        const below = relative(root, file.target);
+        // A fresh owner's directory may not exist; keep its exact prefix and validate from the current mount.
+        return below && below !== '..' && !below.startsWith(`..${sep}`) && !isAbsolute(below) ? [dirname(root)] : [];
+      });
       const external = manifest.assetLinks?.[assetId];
       if (external?.isExternal) {
         if (!job.admin || !external.libraryId || (current && current.libraryId !== external.libraryId))
@@ -724,7 +797,7 @@ export class BuddyBackupRestoreService {
         const expected = buddyFidelityFiles(manifest, assetId).find((entry) => entry.fileKey === file.fileKey);
         if (
           !expected ||
-          expected.target !== file.target ||
+          retargetBuddyOwnerPath(expected.target, manifest.library.assets[assetId].owner!, owner) !== file.target ||
           expected.sha256 !== file.sha256 ||
           expected.size !== file.size
         )
@@ -880,6 +953,33 @@ export class BuddyBackupRestoreService {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       await writeBuddyFile(path, JSON.stringify(record), true);
     }
+  }
+
+  /** Files of external assets that live in the folders of a library marked read-only (FL-490). */
+  private async readOnlyLibraryFiles(manifest: BuddyManifest, files: CloudBackupRestoreFile[]) {
+    const libraryIds = [
+      ...new Set(
+        files.flatMap((file) => {
+          const link = manifest.assetLinks?.[file.assetId!];
+          return link?.isExternal && link.libraryId ? [link.libraryId] : [];
+        }),
+      ),
+    ];
+    if (libraryIds.length === 0) return [];
+    const libraries = await this.repository.db
+      .selectFrom('library')
+      .select(['id', 'importPaths'])
+      .where('id', 'in', libraryIds)
+      .where('readOnly', '=', true)
+      .execute();
+    return files.filter((file) => {
+      const link = manifest.assetLinks?.[file.assetId!];
+      const library = link?.isExternal ? libraries.find(({ id }) => id === link.libraryId) : undefined;
+      return library?.importPaths.some((folder) => {
+        const path = relative(folder, file.target);
+        return path !== '' && !path.startsWith('..') && !isAbsolute(path);
+      });
+    });
   }
 
   private async verifyFiles(operationId: string, files: CloudBackupRestoreFile[]) {
@@ -1050,6 +1150,20 @@ export class BuddyBackupRestoreService {
               )),
         );
         plan.files.push(...ids.flatMap((id) => buddyFidelityFiles(manifest, id)));
+        if (job.owners) {
+          // FL-508: an owner without an account here restores into the administrator's own folders.
+          const accounts = await this.repository.db
+            .selectFrom('user')
+            .select(['id', 'storageLabel'])
+            .where('id', 'in', [...new Set(Object.values(job.owners))])
+            .execute();
+          for (const file of plan.files) {
+            const from = manifest.library.assets[file.assetId!].owner!;
+            const to = accounts.find((account) => account.id === job.owners![from]);
+            // A no-op for paths already outside the backed-up owner's folders, so a resumed run agrees.
+            if (to) file.target = retargetBuddyOwnerPath(file.target, from, to);
+          }
+        }
         const projectIds = buddyStudioProjectIds(manifest, job.request.scope);
         for (const projectId of projectIds) {
           if (
@@ -1061,11 +1175,22 @@ export class BuddyBackupRestoreService {
         plan.files.sort((a, b) => compareCodeUnits(a.fileKey, b.fileKey));
         if (plan.files.some((file) => !file.inPlace))
           throw new Error('Restore the original storage mounts before restoring these items.');
+        // FL-490: a read-only library's folder is never written, not even a staged copy. Its files
+        // must already be there; the restore then only puts the library details back.
+        const readOnly = job.admin ? await this.readOnlyLibraryFiles(manifest, plan.files) : [];
+        for (const file of readOnly) {
+          const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
+            (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+          );
+          if (!evidence.identity || (job.request.mode === 'replace' && evidence.sha256 !== file.sha256))
+            throw new Error('A file in a read-only library is missing or changed. Put it back, then restore again.');
+          await this.recordFile(operation.id, file, job.request.mode === 'keep');
+        }
         const restorer = new CloudBackupRestorer(null, this.storage, this.crypto, this.logger);
         const done = await restorer.restore({
           manifest: manifest.library,
           scope: 'asset',
-          files: plan.files,
+          files: plan.files.filter((file) => !readOnly.includes(file)),
           destination: null,
           stageBesideTarget: true,
           read: async (_key, path, sha256) => {
@@ -1158,7 +1283,8 @@ export class BuddyBackupRestoreService {
                   const index = new CloudBackupIndexRepository(trx);
                   const existing = (await index.getAssetDetails([assetId])).get(assetId);
                   const asset = manifest.library.assets[assetId];
-                  const library = buddyLibraryForOwner(manifest, ownerId);
+                  // The backed-up owner's library; `ownerId` differs only for a mapped owner (FL-508).
+                  const library = buddyLibraryForOwner(manifest, asset.owner!);
                   const context: OwnerRestoreDetailsContext = {
                     db: trx,
                     ownerId,
@@ -1295,7 +1421,12 @@ export class BuddyBackupRestoreService {
               }
               const state = readBuddyAssetFidelity(manifest, assetId);
               if (state) {
-                const versionFiles = buddyFidelityFiles(manifest, assetId);
+                const versionFiles = buddyFidelityFiles(manifest, assetId).map((expected) => {
+                  const file = plan.files.find((entry) => entry.fileKey === expected.fileKey);
+                  if (!file || file.sha256 !== expected.sha256 || file.size !== expected.size)
+                    throw new Error('Buddy version destination changed');
+                  return file;
+                });
                 const published = await this.guarded(
                   operation,
                   token,
@@ -1308,7 +1439,15 @@ export class BuddyBackupRestoreService {
                       (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
                     );
                     const outcome = await new BuddyBackupFidelityRepository(trx).publish({
-                      state,
+                      state: {
+                        ...state,
+                        ownerId,
+                        videoVersions: state.videoVersions.map((row) => ({ ...row, ownerId })),
+                        developRevisions: state.developRevisions.map((row) => ({ ...row, ownerId })),
+                        artifacts: state.artifacts.map((row) => ({ ...row, ownerId })),
+                        developExports: state.developExports.map((row) => ({ ...row, ownerId })),
+                        restorations: state.restorations.map((row) => ({ ...row, ownerId })),
+                      },
                       ownerId,
                       originalSha256: current.sha256 ?? '',
                       mode: job.request.mode,
@@ -1378,8 +1517,9 @@ export class BuddyBackupRestoreService {
                 true,
               );
             }
-            for (const ownerId of new Set(ids.map((id) => manifest.library.assets[id].owner!))) {
-              const members = ids.filter((id) => manifest.library.assets[id].owner === ownerId);
+            for (const sourceOwnerId of new Set(ids.map((id) => manifest.library.assets[id].owner!))) {
+              const ownerId = restoreOwner(job, sourceOwnerId);
+              const members = ids.filter((id) => manifest.library.assets[id].owner === sourceOwnerId);
               const anchor = plan.files.find((file) => file.assetId === members[0] && file.role === 'original')!;
               await this.guarded(
                 operation,
@@ -1398,7 +1538,7 @@ export class BuddyBackupRestoreService {
                   if (current.length !== members.length || current.some((item) => item.ownerId !== ownerId))
                     throw new Error('Buddy restore relationship ownership changed');
                   const queued: OwnerRestoreDetailsContext['jobs'] = [];
-                  const library = buddyLibraryForOwner(manifest, ownerId);
+                  const library = buddyLibraryForOwner(manifest, sourceOwnerId);
                   const context: OwnerRestoreDetailsContext = {
                     db: trx,
                     ownerId,
@@ -1570,9 +1710,15 @@ export class BuddyBackupRestoreService {
         });
         if (!done) throw new RestoreStopped();
         await this.verifyFiles(operation.id, plan.files);
+        // FL-721: an encrypted item no key file on this server opens for its owner is said so
+        const encryptedWithOlderKey = await countEncryptedWithOlderKey(plan.files, StorageCore.getMediaLocation());
+        if (encryptedWithOlderKey > 0)
+          this.logger.warn(
+            `Buddy restore ${operation.id}: ${encryptedWithOlderKey} restored items are encrypted with an older key that this server's Locked key file does not open`,
+          );
         if (
           !(await this.operations.setBulkResult(operation.id, token, {
-            result: done,
+            result: { ...done, encryptedWithOlderKey },
             processedUnits: done.files,
             totalUnits: done.filesTotal,
             progress: 100,
@@ -1624,8 +1770,10 @@ export class BuddyBackupRestoreService {
           'Buddy administrator authorization changed': 'administrator_changed',
           'Live Photo relationship changed': 'live_photo_changed',
           'Buddy restore destination changed': 'destination_changed',
+          'Owner restore destination unavailable': 'destination_unavailable',
           'External library identity changed': 'external_library_changed',
           'Buddy version destination changed': 'version_destination_changed',
+          'Buddy version ownership changed': 'version_ownership',
           'Buddy restored file did not verify': 'file_verification',
           'Buddy restored file checkpoint changed': 'checkpoint_changed',
           'Buddy restored file checkpoint unavailable': 'checkpoint_unavailable',
@@ -1636,6 +1784,18 @@ export class BuddyBackupRestoreService {
           'Buddy restore relationship ownership changed': 'relationship_ownership',
           'Buddy restore stack ownership changed': 'stack_ownership',
           'Restore the original storage mounts before restoring these items.': 'storage_mounts',
+          'Buddy restore owner is missing': 'owner_missing',
+          'Buddy snapshot rollback detected': 'snapshot_rollback',
+          'Buddy snapshot identity mismatch': 'snapshot_identity',
+          'Buddy Studio dependency is outside this restore': 'studio_dependency',
+          'A retained Buddy version copy changed': 'version_changed',
+          'Buddy Studio retained file did not verify': 'studio_verification',
+          'Buddy Studio requires complete, currently owned resources': 'studio_resources',
+          'Buddy Studio destination changed': 'studio_destination',
+          'Buddy restore album selection changed': 'album_selection',
+          'Buddy restore album unavailable': 'album_unavailable',
+          'Buddy restore parent unavailable': 'album_unavailable',
+          'Invalid restore job identity': 'job_identity',
         };
         const cause = error instanceof Error ? error.cause : undefined;
         const codes = new Set([
@@ -1678,9 +1838,11 @@ export class BuddyBackupRestoreService {
                 ? 'deadline'
                 : error instanceof FrameleafCloudError
                   ? 'upstream'
-                  : code === 'UNKNOWN'
-                    ? 'unexpected'
-                    : 'coded_error';
+                  : error instanceof NoResultError
+                    ? 'row_missing'
+                    : code === 'UNKNOWN'
+                      ? 'unexpected'
+                      : 'coded_error';
         this.logger.error(`BUDDY_RESTORE_DIAGNOSTIC ${JSON.stringify({ category, code, status })}`);
         await this.operations.fail(
           operation.id,
@@ -1717,6 +1879,8 @@ export class BuddyBackupRestoreService {
         : [
             ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
             ...Object.values(manifest.library.profiles),
+            // FL-721: published with mode 0600 like every recovered file, next to the database they match
+            ...Object.values(manifest.library.lockedKeys ?? {}),
             ...manifest.dependencies,
             ...manifest.configurationFiles,
           ];

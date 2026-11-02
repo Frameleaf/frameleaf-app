@@ -10,7 +10,9 @@ import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
+import { tryPromise } from 'src/utils/promise.js';
 import {
+  TAKEOUT_ZIP_MAX_DIRECTORY_BYTES,
   TakeoutZipEntry,
   TakeoutZipSource,
   readTakeoutZipDirectory,
@@ -31,7 +33,13 @@ export type StagedDigest = { size: number; checksum: Buffer; legacyChecksum: Buf
 
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 
+/** No read is larger than an archive's central directory may be; chunks are far smaller. */
+const READ_RANGE_MAX_BYTES = TAKEOUT_ZIP_MAX_DIRECTORY_BYTES;
+
 const readRange = async (handle: FileHandle, position: number, length: number): Promise<Buffer> => {
+  if (!Number.isSafeInteger(length) || length < 0 || length > READ_RANGE_MAX_BYTES) {
+    throw new TakeoutStagingError('A read from the archive is larger than an import needs');
+  }
   const buffer = Buffer.alloc(length);
   let offset = 0;
   while (offset < length) {
@@ -373,7 +381,7 @@ export class TakeoutStagingRepository {
       return compose(raw, createInflateRaw());
     };
     // Deferred like an async function, so a synchronous failure to open still arrives as a rejection.
-    const openEntry = () => Promise.try(openEntryNow);
+    const openEntry = () => tryPromise(openEntryNow);
     return this.writeStaged(openEntry, entry.uncompressedSize, destination, signal, entry.crc32);
   }
 
@@ -400,7 +408,8 @@ export class TakeoutStagingRepository {
    * caller removes it. The destination must not exist yet.
    */
   async copyToLibrary(
-    staged: string,
+    /** The staged file, or a handle already opened on it (read from where it is, never reopened by name). */
+    staged: string | FileHandle,
     declared: number,
     destination: string,
     signal: AbortSignal,
@@ -412,7 +421,9 @@ export class TakeoutStagingRepository {
     const output = await open(destination, 'wx', 0o600);
     try {
       await onCreated();
-      await pipeline(createReadStream(staged), digest.transform, output.createWriteStream({ autoClose: true }), {
+      const input =
+        typeof staged === 'string' ? createReadStream(staged) : staged.createReadStream({ autoClose: false, start: 0 });
+      await pipeline(input, digest.transform, output.createWriteStream({ autoClose: true }), {
         signal,
       });
     } catch (error) {

@@ -102,9 +102,10 @@ it('preserves fail-closed downgrade, 150/160 ordering and fair global cleanup af
     source = randomUUID(),
     queue = `library-migration-${randomUUID()}`;
   try {
-    expect((await sql<{ version: string }>`select version()`.execute(db)).rows[0].version).toContain(
-      'PostgreSQL 19beta4',
-    );
+    const version = (
+      await sql<{ version: number }>`select current_setting('server_version_num')::int as version`.execute(db)
+    ).rows[0].version;
+    expect(Math.floor(version / 10_000)).toBeGreaterThanOrEqual(19);
     expect(
       (await sql<{ statement_timeout: string }>`show statement_timeout`.execute(db)).rows[0].statement_timeout,
     ).toBe('5s');

@@ -12,6 +12,7 @@
   import LibrariesManager from '$lib/components/frameleaf/LibrariesManager.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { buildLibraryRows, loadLibrariesArea, type LibrariesAreaData } from '$lib/frameleaf/libraries';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import {
     getAllLibraries,
@@ -35,6 +36,7 @@
         getLibraryStatistics,
       });
       failed = false;
+      eventManager.emit('LibrariesChange');
     } catch {
       failed = true;
     }

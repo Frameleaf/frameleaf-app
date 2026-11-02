@@ -151,6 +151,11 @@ describe('renderHelpArticle', () => {
     expect(tailscale.getAttribute('rel')).toBe('noreferrer');
   });
 
+  it('keeps a malformed anchor as written instead of failing the article', () => {
+    const [link] = render('[Sure](#100%-sure)').querySelectorAll('a');
+    expect(link.dataset.helpHeading).toBe('100%-sure');
+  });
+
   it('turns asides into asides and never lets markup through', () => {
     const element = render(
       ':::caution[Nothing falls back silently]\nA job is **refused**.\n:::\n\n<script>alert(1)</script><img src="/shots/a.jpg" onerror="alert(1)"><img src="javascript:alert(1)">\n\n[x](javascript:alert(1))',

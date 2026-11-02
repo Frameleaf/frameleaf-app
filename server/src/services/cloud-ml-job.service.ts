@@ -63,6 +63,7 @@ import {
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -115,6 +116,8 @@ import {
   plannedWorkers,
 } from 'src/utils/cloud-ml-job.js';
 import { getConfig } from 'src/utils/config.js';
+import { lockedViewerOf } from 'src/utils/file.js';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
 import { CloudJobInputError, FrameleafCloudJobClient } from 'src/utils/frameleaf-cloud-job-client.js';
 import {
@@ -126,6 +129,7 @@ import {
   CloudUploadTarget,
   FrameleafCloudError,
   catalogGroupKey,
+  cloudCustomerCost,
   cloudErrorCode,
   cloudUpscaleAppliedScale,
   estimateUsable,
@@ -137,6 +141,8 @@ import {
   pausedException,
   upscaleResultSchema,
 } from 'src/utils/frameleaf-cloud.js';
+import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
+import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
   audioReattachOffsetSeconds,
@@ -324,6 +330,8 @@ export class CloudMlJobService {
     private restorationRepository: AssetRestorationRepository,
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    /** FL-721: a restoration of a Locked item is sealed once published. */
+    private lockedFileRepository?: LockedFileRepository,
   ) {
     this.logger.setContext(CloudMlJobService.name);
   }
@@ -485,17 +493,23 @@ export class CloudMlJobService {
     try {
       prepared = copy
         ? this.fromPreparedCopy(copy, workload, sizes, durationSeconds, smooth ? 1 : settings.upscale)
-        : await this.prepareInput(source, {
-            workDir,
-            stage: dto.stage,
-            workload,
-            sourceType,
-            sizes,
-            durationSeconds,
-            region: settings.region,
-            crop: !smooth,
-            upscale: smooth ? 1 : settings.upscale,
-          });
+        : // FL-721 (spec §8.2): a sealed original is read from a plain copy, for a viewer allowed its key
+          await withPlainCopy(
+            source.originalPath,
+            (originalPath) =>
+              this.prepareInput(originalPath === source.originalPath ? source : { ...source, originalPath }, {
+                workDir,
+                stage: dto.stage,
+                workload,
+                sourceType,
+                sizes,
+                durationSeconds,
+                region: settings.region,
+                crop: !smooth,
+                upscale: smooth ? 1 : settings.upscale,
+              }),
+            { viewerId: lockedViewerOf(auth) },
+          );
     } catch (error) {
       await this.removeWorkDir(workDir);
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
@@ -568,9 +582,9 @@ export class CloudMlJobService {
       sealed: sealed.estimate,
       approved: {
         estimateId: id,
-        p50Usd: sealed.cost.p50,
-        p90Usd: sealed.cost.p90,
-        holdUsd: sealed.cost.hold,
+        p50Usd: cloudCustomerCost(sealed).p50,
+        p90Usd: cloudCustomerCost(sealed).p90,
+        holdUsd: cloudCustomerCost(sealed).hold,
         startupUsd: sealed.cost.startup,
         minimumUsd: sealed.cost.minimum,
         startFeeUsd: model.rate.startFeeUsd,
@@ -592,24 +606,27 @@ export class CloudMlJobService {
       model: this.modelOf(model),
       models: offered.toSorted((a, b) => a.rank - b.rank).map((entry) => this.modelOf(entry)),
       basis: sealed.basis,
-      p50Usd: sealed.cost.p50,
-      p90Usd: sealed.cost.p90,
+      p50Usd: cloudCustomerCost(sealed).p50,
+      p90Usd: cloudCustomerCost(sealed).p90,
       startupUsd: sealed.cost.startup,
       startFeeUsd: model.rate.startFeeUsd,
       perSecondUsd: model.rate.perSecondUsd,
-      holdUsd: sealed.cost.hold,
+      holdUsd: cloudCustomerCost(sealed).hold,
       minimumUsd: sealed.cost.minimum,
       plannedWorkers: workers,
       coldStartSeconds: sealed.seconds.coldStart,
       runSeconds: sealed.seconds.run,
-      perUnit: { ...perUnitEstimate(sealed, quantity), quantity: Math.round(quantity.value * 100) / 100 },
+      perUnit: {
+        ...perUnitEstimate({ cost: cloudCustomerCost(sealed) }, quantity),
+        quantity: Math.round(quantity.value * 100) / 100,
+      },
       availableUsd,
       dailyCapUsd: wallet.dailyCapUsd,
       spentTodayUsd: wallet.spentTodayUsd,
       consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
-      refusal: this.walletRefusal(wallet, availableUsd, sealed.cost.hold),
+      refusal: this.walletRefusal(wallet, availableUsd, cloudCustomerCost(sealed).hold),
       // everyone may see what a job would cost; only those allowed may confirm it
-      permission: await this.spendPermission(auth, sealed.cost.hold, now),
+      permission: await this.spendPermission(auth, cloudCustomerCost(sealed).hold, now),
       upscale: upscale
         ? {
             requestedScale: upscale.requestedScale,
@@ -670,6 +687,7 @@ export class CloudMlJobService {
     auth: AuthDto,
     holdUsd: number,
     now: Date,
+    options?: { exactHold?: boolean; excludeLocationScanId?: string },
   ): Promise<CloudMlJobEstimateResponseDto['permission']> {
     if (auth.user.isAdmin) {
       return { canConfirm: true, reason: null, monthlyCapUsd: null, spentThisMonthUsd: null };
@@ -682,10 +700,17 @@ export class CloudMlJobService {
     if (spender.monthlyCapUsd === null) {
       return { canConfirm: true, reason: null, monthlyCapUsd: null, spentThisMonthUsd: null };
     }
-    const rows = await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
+    const rows = options?.excludeLocationScanId
+      ? await this.mediaOperationRepository.listCloudMlJobSpend(
+          auth.user.id,
+          cloudMlJobMonthStart(now),
+          options.excludeLocationScanId,
+        )
+      : await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
     const spent = cloudMlJobSpentUsd(rows);
     // a job the queue held past its estimate may be resealed up to 10 % higher: the limit keeps room for it
-    const within = spent + holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE <= spender.monthlyCapUsd + 1e-9;
+    const within =
+      spent + holdUsd * (options?.exactHold ? 1 : CLOUD_ML_JOB_PRICE_TOLERANCE) <= spender.monthlyCapUsd + 1e-9;
     return {
       canConfirm: within,
       reason: within ? null : 'monthly-cap',
@@ -1510,12 +1535,12 @@ export class CloudMlJobService {
       );
     }
     if (
-      sealed.cost.p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
-      sealed.cost.hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
+      cloudCustomerCost(sealed).p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
+      cloudCustomerCost(sealed).hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
     ) {
       throw new CloudMlJobFailure(
         'cloud_ml_estimate_increased',
-        `Frameleaf Cloud now estimates this job at up to $${sealed.cost.p90.toFixed(2)}, above the $${snapshot.approved.p90Usd.toFixed(2)} you confirmed. Nothing was sent; estimate again.`,
+        `Frameleaf Cloud now estimates this job at up to $${cloudCustomerCost(sealed).p90.toFixed(2)}, above the $${snapshot.approved.p90Usd.toFixed(2)} you confirmed. Nothing was sent; estimate again.`,
         false,
       );
     }
@@ -1526,9 +1551,9 @@ export class CloudMlJobService {
       expiresAt: sealed.expiresAt,
       modelRev: sealed.modelRev,
       computeSku: sealed.computeSku,
-      p50Usd: sealed.cost.p50,
-      p90Usd: sealed.cost.p90,
-      holdUsd: sealed.cost.hold,
+      p50Usd: cloudCustomerCost(sealed).p50,
+      p90Usd: cloudCustomerCost(sealed).p90,
+      holdUsd: cloudCustomerCost(sealed).hold,
       startupUsd: sealed.cost.startup,
       attemptedAt: null,
     };
@@ -1833,7 +1858,10 @@ export class CloudMlJobService {
     const original = snapshot.stage === 'preview' ? null : source.originalPath;
     const output =
       snapshot.sourceType === 'video'
-        ? await this.assembleVideo(run, outputs, original)
+        ? original
+          ? // FL-721: the audio is put back from a plain copy of a sealed original
+            await withPlainCopy(original, (plain) => this.assembleVideo(run, outputs, plain))
+          : await this.assembleVideo(run, outputs, null)
         : await this.assembleImage(run, outputs[0]);
 
     const files: PublishedFile[] = [];
@@ -1925,6 +1953,10 @@ export class CloudMlJobService {
     if (outcome === 'completed') {
       await this.removeJobFiles(snapshot);
       this.logger.log(`Frameleaf Cloud job ${operation.id} published ${snapshot.purpose} ${snapshot.stage} ${row.id}`);
+      // FL-721 (spec §7.2): the restoration files of a Locked item are sealed
+      await queueLockedSealOf({ lockedFile: this.lockedFileRepository, job: this.jobRepository, logger: this.logger }, [
+        snapshot.assetId,
+      ]);
     }
     return outcome;
   }
@@ -2845,6 +2877,14 @@ export class CloudMlJobService {
     if (source.type !== AssetType.Image && source.type !== AssetType.Video) {
       throw new BadRequestException('Only photos and videos can be sent to Frameleaf Cloud');
     }
+    // FL-721 (spec §8): a job's prepared inputs and results are kept on disk beside the thumbnails, up
+    // to a day for a whole video, so an encrypted Locked item is refused before anything is prepared,
+    // as Cloud ML batches refuse it; restoring it on this server keeps its work in the Locked folder
+    if (await isLockedPath(source.originalPath)) {
+      throw new BadRequestException(
+        'Frameleaf Cloud can’t work on an encrypted Locked item; restore it on this server instead',
+      );
+    }
     return source;
   }
 
@@ -3061,21 +3101,17 @@ export class CloudMlJobService {
 
   /** Why the AI Wallet cannot hold the job now, or null. Nothing is sent, and no lighter model is tried. */
   private walletRefusal(
-    wallet: { dailyCapUsd: number | null; spentTodayUsd: number },
+    wallet: { dailyCapUsd: number | null; spentTodayUsd: number; topUpUrl?: string | null },
     availableUsd: number,
     holdUsd: number,
-  ): { code: string; message: string } | null {
+  ): { code: string; message: string; topUpUrl: string | null } | null {
+    // FL-544: the refusal carries the page that fixes it, so a gate shows one button instead of a sentence
+    const topUpUrl = wallet.topUpUrl ?? null;
     if (availableUsd < holdUsd) {
-      return {
-        code: 'insufficient-credits',
-        message: `This job needs $${holdUsd.toFixed(2)} held and the AI Wallet has $${availableUsd.toFixed(2)} available. Add credit first.`,
-      };
+      return { code: 'insufficient-credits', message: CLOUD_GATES.creditShort(holdUsd, availableUsd), topUpUrl };
     }
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + holdUsd > wallet.dailyCapUsd) {
-      return {
-        code: 'daily-cap',
-        message: `Today's AI Wallet limit of $${wallet.dailyCapUsd.toFixed(2)} leaves too little for this job. Try again tomorrow or raise the limit in your Frameleaf account.`,
-      };
+      return { code: 'daily-cap', message: CLOUD_GATES.dailyCap(wallet.dailyCapUsd), topUpUrl };
     }
     return null;
   }
@@ -3180,7 +3216,13 @@ export class CloudMlJobService {
       await this.removeWorkDir(dir);
       this.storageRepository.mkdirSync(dir);
       await this.notePrepared(dir, source.ownerId);
-      const { file, contentType } = await this.prepareFullVideo(source, dir);
+      // FL-721 (spec §8.2): a sealed original is read from a plain copy
+      const { file, contentType } = await withPlainCopy(
+        source.originalPath,
+        (originalPath) =>
+          this.prepareFullVideo(originalPath === source.originalPath ? source : { ...source, originalPath }, dir),
+        { viewerId: userId },
+      );
       const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(file);
       const copy: PreparedCopy = { file, contentType, bytes: sizeInBytes, sha256: sha256.toString('hex') };
       // written last: a copy without its record is never used

@@ -3,8 +3,7 @@ import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
-import { join, parse } from 'node:path';
-import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
+import { join, normalize, parse } from 'node:path';
 import type { ReleasingPublicationRole } from 'src/utils/studio-import-reference-roles.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -21,11 +20,16 @@ import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
-import { anyUuid, asUuid } from 'src/utils/database.js';
+import { asUuid } from 'src/utils/database.js';
+import { libraryPathOnRelink } from 'src/utils/library-path.js';
+import { encryptsFilesOf, holdsEncryptedOriginal } from 'src/utils/locked-encryption-set.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
 /** `linkUploadedOriginal`: the candidate is not the file that was proven; prove it and try again. */
 const RETRY_LINK = Symbol('retry-link');
+/** Trashed copies of one content looked at for an upload; a sealed one is passed over (FL-721). */
+const UNTRASH_CANDIDATES = 5;
 export const BUDDY_CAPTURE_LOCK = -311;
 /**
  * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
@@ -35,9 +39,11 @@ export const BUDDY_CAPTURE_LOCK = -311;
  */
 export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
   await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
-  const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+  await sql`SELECT pg_advisory_xact_lock(${filePathLockKey(path)}::bigint)`.execute(db);
 };
+/** The advisory-lock key of one file path, shared by `lockFilePath` and the Locked file jobs (FL-721). */
+export const filePathLockKey = (path: string): string =>
+  createHash('sha1').update(path).digest().readBigInt64BE(0).toString();
 /**
  * Serializes universal-storage linking per content hash (see `linkUploadedOriginal`). Taken before any
  * path lock, never after one.
@@ -92,6 +98,7 @@ export const countPathReferences = async (
 
     UNION ALL SELECT 1 FROM public.asset_develop_revision r
     WHERE r."masterPath"=${path} OR r."previewPath"=${path} OR r."hdrMasterPath"=${path} OR r."hdrPreviewPath"=${path}
+    UNION ALL SELECT 1 FROM public.develop_batch_return returned WHERE returned."pendingMasterPath"=${path}
     UNION ALL SELECT 1 FROM public.asset_file f
     WHERE f."isEdited" AND f.type='encoded_video' AND f.path || '.lineage.json'=${path}
   ) retained`.execute(trx);
@@ -103,7 +110,6 @@ export const countPathReferences = async (
     SELECT 1 FROM public.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
     UNION ALL SELECT 1 FROM public.person person WHERE person."thumbnailPath"=${path}
     UNION ALL SELECT 1 FROM public."user" owner WHERE owner."profileImagePath"=${path}
-    UNION ALL SELECT 1 FROM public.asset_video_duplicate_frame frame WHERE frame.path=${path}
     UNION ALL SELECT 1 FROM public.video_moment_frame frame WHERE frame.path=${path}
     UNION ALL SELECT 1 FROM public.photography_workflow workflow
     WHERE workflow.value->'published'->>'logoPath'=${path}
@@ -317,46 +323,10 @@ export class PhysicalFileRepository {
     });
   }
   /**
-   * The ordering is load-bearing: when the master account holds several copies
-   * of the same file, an unordered limit lets upload-time dedup and the dedup
-   * migration pick different masters for the same duplicate — the migration
-   * then treats the first master's file as the duplicate's own and queues it
-   * for deletion. Both callers share this query, so a stable pick keeps them
-   * agreeing on one canonical master.
-   */
-  async getMasterOriginalCandidate(masterUserId: string, checksum: Buffer, sizeInBytes: number) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select([
-        'asset.id',
-        'asset.originalPath',
-        'asset.originalFileName',
-        'asset.type',
-        'asset.physicalOriginalFileId',
-        'asset.checksum',
-        'asset.width',
-        'asset.height',
-        'asset.duration',
-        'asset_exif.fileSizeInByte as sizeInBytes',
-      ])
-      .where('asset.ownerId', '=', asUuid(masterUserId))
-      .where('asset.libraryId', 'is', null)
-      .where('asset.isExternal', '=', false)
-      .where('asset.isOffline', '=', false)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.status', '=', AssetStatus.Active)
-      .where('asset.checksum', '=', checksum)
-      .where('asset_exif.fileSizeInByte', '=', sizeInBytes)
-      .orderBy('asset.id', 'asc')
-      .limit(1)
-      .executeTakeFirst();
-  }
-  /**
    * Universal storage: the asset whose original file the server keeps for this content. Any active,
-   * non-external, online asset with the same SHA-256 and size qualifies, whoever owns it; the lowest id
-   * wins, so upload linking and the storage migration always agree on one file. `excludeAssetId` leaves
-   * out the asset being linked.
+   * non-external, online asset with the same SHA-256 and size qualifies, whoever owns it; the oldest (the
+   * photo added first, then the lowest id) wins, so upload linking and the identical-files engine (FL-413)
+   * always agree on one file. `excludeAssetId` leaves out the asset being linked.
    */
   getServerOriginalCandidate(
     checksum: Buffer,
@@ -366,21 +336,26 @@ export class PhysicalFileRepository {
       kysely?: Kysely<DB>;
     } = {},
   ) {
-    return (options.kysely ?? this.db)
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
-      .where('asset.libraryId', 'is', null)
-      .where('asset.isExternal', '=', false)
-      .where('asset.isOffline', '=', false)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.status', '=', AssetStatus.Active)
-      .where('asset.checksum', '=', checksum)
-      .where('asset_exif.fileSizeInByte', '=', sizeInBytes)
-      .$if(!!options.excludeAssetId, (qb) => qb.where('asset.id', '!=', asUuid(options.excludeAssetId!)))
-      .orderBy('asset.id', 'asc')
-      .limit(1)
-      .executeTakeFirst();
+    return (
+      (options.kysely ?? this.db)
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
+        .where('asset.libraryId', 'is', null)
+        .where('asset.isExternal', '=', false)
+        .where('asset.isOffline', '=', false)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.status', '=', AssetStatus.Active)
+        .where('asset.checksum', '=', checksum)
+        .where('asset_exif.fileSizeInByte', '=', sizeInBytes)
+        // FL-721 (spec §6.1): a file an encrypted Locked item reads is never a dedupe target
+        .where(sql<boolean>`not ${holdsEncryptedOriginal('asset')}`)
+        .$if(!!options.excludeAssetId, (qb) => qb.where('asset.id', '!=', asUuid(options.excludeAssetId!)))
+        .orderBy('asset.createdAt', 'asc')
+        .orderBy('asset.id', 'asc')
+        .limit(1)
+        .executeTakeFirst()
+    );
   }
   /**
    * Universal storage upload linking (one file per content hash, server-wide). Under a per-checksum lock,
@@ -478,6 +453,12 @@ export class PhysicalFileRepository {
       const asset = await trx
         .selectFrom('asset')
         .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
+        // FL-721 (spec §6.1): an upload into an encrypted Locked keeps its own file, which is sealed next
+        .select(
+          sql<boolean>`exists (select 1 from public.asset_lock l where l."assetId" = asset.id) and ${encryptsFilesOf('asset')}`.as(
+            'encrypted',
+          ),
+        )
         .where('asset.id', '=', asUuid(assetId))
         .where('asset.checksum', '=', file.checksum)
         .where('asset.libraryId', 'is', null)
@@ -497,10 +478,12 @@ export class PhysicalFileRepository {
         }
         return physicalFile ? { physicalFile, linked: physicalFile.canonicalAssetId !== asset.id } : undefined;
       }
-      const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
-        excludeAssetId: asset.id,
-        kysely: trx,
-      });
+      const candidate = asset.encrypted
+        ? undefined
+        : await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
+            excludeAssetId: asset.id,
+            kysely: trx,
+          });
       if (candidate) {
         const target = candidate.physicalOriginalFileId
           ? await this.getPhysicalFile(candidate.physicalOriginalFileId, trx)
@@ -533,7 +516,11 @@ export class PhysicalFileRepository {
           // the candidate may have had no physical file yet: it becomes the primary of the one just made
           await trx
             .updateTable('asset')
-            .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+            .set({
+              physicalOriginalFileId: physicalFile.id,
+              originalPath: physicalFile.path,
+              libraryPath: libraryPathOnRelink(physicalFile.path, false),
+            })
             .where('physicalOriginalFileId', 'is', null)
             .where((eb) => eb.or([eb('id', '=', asUuid(candidate.id)), eb('id', '=', asUuid(asset.id))]))
             .execute();
@@ -541,7 +528,7 @@ export class PhysicalFileRepository {
         }
       }
       // the content is in the file trash: take that file back out and link to it, never keep two copies
-      if (options.untrash) {
+      if (options.untrash && !asset.encrypted) {
         const trashed = await sql<{
           id: string;
           path: string;
@@ -549,9 +536,17 @@ export class PhysicalFileRepository {
           SELECT id, path FROM public.physical_file_trash
           WHERE checksum = ${file.checksum} AND "sizeInBytes" = ${file.sizeInBytes}::bigint
           ORDER BY "trashedAt" DESC, id
-          LIMIT 1
+          LIMIT ${UNTRASH_CANDIDATES}
           FOR UPDATE`.execute(trx);
-        const entry = trashed.rows[0];
+        // FL-721 (spec §6.1): a sealed Locked file in the trash holds ciphertext; it is never taken back
+        // for an upload of the plain content
+        let entry: { id: string; path: string } | undefined;
+        for (const row of trashed.rows) {
+          if (!(await isLockedPath(row.path))) {
+            entry = row;
+            break;
+          }
+        }
         if (entry) {
           const upload = parse(asset.originalPath);
           const target = join(upload.dir, `${upload.name}-restored${upload.ext}`);
@@ -572,7 +567,11 @@ export class PhysicalFileRepository {
             });
             await trx
               .updateTable('asset')
-              .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+              .set({
+                physicalOriginalFileId: physicalFile.id,
+                originalPath: physicalFile.path,
+                libraryPath: libraryPathOnRelink(physicalFile.path, true),
+              })
               .where('id', '=', asUuid(asset.id))
               .execute();
             return { physicalFile, linked: true };
@@ -779,56 +778,115 @@ export class PhysicalFileRepository {
     return rows.length > 0;
   }
   /**
-   * Physical files' reference counts, as `countOriginalReferences` counts one (FL-73). A file
-   * nothing references is absent from the map.
+   * Media health: a verified copy of an asset's lost original (a re-upload, or an untracked file found
+   * in the owner's storage) becomes its original again. Every record that pointed at the lost file
+   * follows it, and their open "missing" findings resolve. False when the asset changed meanwhile.
+   * The caller has checked the copy's digests and that the lost file is really gone.
    */
-  async countOriginalReferencesFor(physicalFileIds: string[]): Promise<Map<string, number>> {
-    const ids = [...new Set(physicalFileIds)];
-    if (ids.length === 0) {
-      return new Map();
-    }
-    const rows = await this.db
-      .selectFrom('asset')
-      .select(['asset.physicalOriginalFileId'])
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('asset.physicalOriginalFileId', '=', anyUuid(ids))
-      .where('asset.deletedAt', 'is', null)
-      .groupBy('asset.physicalOriginalFileId')
-      .execute();
-    return new Map(rows.map((row) => [row.physicalOriginalFileId as string, Number(row.count)]));
+  async restoreLostOriginal(input: {
+    assetId: string;
+    expectedOriginalPath: string;
+    originalPath: string;
+    sha1: Buffer;
+    sha256: Buffer;
+    sizeInBytes: number;
+    reason: 'restored_by_upload' | 'restored_from_untracked_file';
+  }): Promise<boolean> {
+    const restored = normalize(input.originalPath);
+    return this.db.transaction().execute(async (trx) => {
+      for (const path of [input.expectedOriginalPath, restored].sort()) {
+        await lockFilePath(trx, path);
+      }
+      const asset = await trx
+        .selectFrom('asset')
+        .select([
+          'id',
+          'originalPath',
+          'libraryId',
+          'isExternal',
+          'physicalOriginalFileId',
+          'checksum',
+          'deletedAt',
+          'status',
+        ])
+        .where('id', '=', asUuid(input.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      // A photo in the Trash or awaiting removal (a resolved duplicate, say) is never brought back.
+      if (
+        !asset ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active ||
+        asset.originalPath !== input.expectedOriginalPath ||
+        asset.libraryId ||
+        asset.isExternal ||
+        !(asset.checksum.equals(input.sha256) || asset.checksum.equals(input.sha1))
+      ) {
+        return false;
+      }
+      const physical = asset.physicalOriginalFileId
+        ? await trx
+            .selectFrom('physical_file')
+            .select(['id', 'path'])
+            .where('id', '=', asset.physicalOriginalFileId)
+            .forUpdate()
+            .executeTakeFirst()
+        : undefined;
+      let physicalId: string;
+      if (physical?.path === input.expectedOriginalPath) {
+        physicalId = physical.id;
+        await trx
+          .updateTable('physical_file')
+          .set({ path: restored, checksum: input.sha256, sizeInBytes: input.sizeInBytes })
+          .where('id', '=', physicalId)
+          .execute();
+      } else {
+        physicalId = randomUUID();
+        await trx
+          .insertInto('physical_file')
+          .values({
+            id: physicalId,
+            canonicalAssetId: asset.id,
+            checksum: input.sha256,
+            path: restored,
+            sizeInBytes: input.sizeInBytes,
+            type: PhysicalFileType.Original,
+          })
+          .execute();
+      }
+      const moved = await trx
+        .updateTable('asset')
+        .set({
+          originalPath: restored,
+          physicalOriginalFileId: physicalId,
+          isOffline: false,
+          // The restored photo now owns its file; others sharing the lost file keep showing their own path.
+          libraryPath: sql`CASE WHEN id = ${asset.id}::uuid THEN ${libraryPathOnRelink(restored, true)}
+            ELSE ${libraryPathOnRelink(restored, false)} END`,
+        })
+        .where('originalPath', '=', input.expectedOriginalPath)
+        .where('libraryId', 'is', null)
+        .where('isExternal', '=', false)
+        // Trashed sharers follow the file (they stay in the Trash); rows awaiting removal do not.
+        .where('status', '!=', AssetStatus.Deleted)
+        .returning('id')
+        .execute();
+      const ids = moved.map(({ id }) => id);
+      await sql`INSERT INTO asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        SELECT id, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${restored}]::text[], 1,
+          jsonb_build_object('source', 'recovery'), now(), now() FROM unnest(${ids}::uuid[]) id
+        ON CONFLICT ("assetId") DO UPDATE SET sha1=EXCLUDED.sha1, sha256=EXCLUDED.sha256, "sizeInBytes"=EXCLUDED."sizeInBytes",
+          "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
+        trx,
+      );
+      await sql`UPDATE asset_health SET "runId"=NULL, status='relinked', severity='info', "originalPath"=${restored},
+          evidence=jsonb_build_object('reason', ${input.reason}::text, 'previousPath', ${input.expectedOriginalPath}::text),
+          "checkedAt"=now(), "resolvedAt"=now()
+        WHERE "assetId"=ANY(${ids}::uuid[]) AND category='missing' AND "resolvedAt" IS NULL`.execute(trx);
+      return true;
+    });
   }
-  /**
-   * What a reviewed deduplication plan is checked against before review, before apply and before
-   * each copy's file is touched (FL-73): owner, path, checksum, size, state and physical original
-   * of every named asset, whatever its visibility. Background work reaches Locked assets.
-   */
-  async getPlanEvidence(assetIds: string[]): Promise<PhysicalDeduplicationEvidenceRow[]> {
-    const ids = [...new Set(assetIds)];
-    if (ids.length === 0) {
-      return [];
-    }
-    const rows = await this.db
-      .selectFrom('asset')
-      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select([
-        'asset.id',
-        'asset.ownerId',
-        'asset.originalPath',
-        'asset.checksum',
-        'asset.deletedAt',
-        'asset.status',
-        'asset.isExternal',
-        'asset.isOffline',
-        'asset.libraryId',
-        'asset.physicalOriginalFileId',
-        'asset.originalFileName',
-        'asset.type',
-        'asset_exif.fileSizeInByte as sizeInBytes',
-      ])
-      .where('asset.id', '=', anyUuid(ids))
-      .execute();
-    return rows as unknown as PhysicalDeduplicationEvidenceRow[];
-  }
+
   getPhysicalFile(id: string, kysely: Kysely<DB> = this.db): Promise<PhysicalFile | undefined> {
     return kysely.selectFrom('physical_file').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
   }
@@ -909,7 +967,11 @@ export class PhysicalFileRepository {
         .executeTakeFirstOrThrow();
       await trx
         .updateTable('asset')
-        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .set({
+          physicalOriginalFileId: physicalFile.id,
+          originalPath: physicalFile.path,
+          libraryPath: libraryPathOnRelink(physicalFile.path, physicalFile.canonicalAssetId === asset.id),
+        })
         .where('id', '=', asUuid(asset.id))
         .execute();
       return physicalFile;
@@ -981,7 +1043,11 @@ export class PhysicalFileRepository {
       }
       const linked = await trx
         .updateTable('asset')
-        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .set({
+          physicalOriginalFileId: physicalFile.id,
+          originalPath: physicalFile.path,
+          libraryPath: libraryPathOnRelink(physicalFile.path, false),
+        })
         .where('id', '=', asUuid(assetId))
         .$if(!!expected, (qb) =>
           qb
@@ -1036,7 +1102,11 @@ export class PhysicalFileRepository {
         .executeTakeFirstOrThrow();
       await trx
         .updateTable('asset')
-        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .set({
+          physicalOriginalFileId: physicalFile.id,
+          originalPath: physicalFile.path,
+          libraryPath: libraryPathOnRelink(physicalFile.path, physicalFile.canonicalAssetId === assetId),
+        })
         .where('id', '=', asUuid(assetId))
         .execute();
       return physicalFile;
@@ -1487,31 +1557,6 @@ export class PhysicalFileRepository {
           execute,
         )
       : this.withPathLock(path, execute);
-  }
-  getMigrationCandidates(masterUserId: string) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select([
-        'asset.id',
-        'asset.ownerId',
-        'asset.originalPath',
-        'asset.originalFileName',
-        'asset.type',
-        'asset.checksum',
-        'asset.isExternal',
-        'asset.isOffline',
-        'asset.libraryId',
-        'asset.physicalOriginalFileId',
-        'asset.width',
-        'asset.height',
-        'asset.duration',
-        'asset_exif.fileSizeInByte as sizeInBytes',
-      ])
-      .where('asset.ownerId', '!=', asUuid(masterUserId))
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.status', '=', AssetStatus.Active)
-      .stream();
   }
   getGeneratedFile(assetId: string, type: AssetFileType) {
     return this.db

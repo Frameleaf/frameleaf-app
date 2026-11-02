@@ -10,7 +10,7 @@
    * Activity indicator do.
    */
   import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
-  import type { BackgroundWorkCard } from '$lib/frameleaf/background-work';
+  import { tonightStart, type BackgroundWorkCard } from '$lib/frameleaf/background-work';
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -36,10 +36,28 @@
     return queue ? $t(`frameleaf_jobs_queue_${queue.key}` as Translations) : $t('frameleaf_activity_background_work');
   };
 
+  /**
+   * FL-711: work quiet hours saved for the overnight window starts again by itself, so it says when,
+   * never "Paused". Tonight's start reads as a time; a start further off names its day as well.
+   */
+  const tonightOf = ({ startsAt }: NonNullable<BackgroundWorkCard['tonight']>) => {
+    const when = tonightStart(startsAt);
+    if (when === 'unscheduled' || !startsAt) {
+      return $t('frameleaf_activity_bg_tonight_unscheduled');
+    }
+    const at = new Date(startsAt);
+    const time = new Intl.DateTimeFormat($locale ?? undefined, { hour: 'numeric', minute: '2-digit' }).format(at);
+    if (when === 'tonight') {
+      return $t('frameleaf_activity_bg_tonight', { values: { time } });
+    }
+    const day = new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long' }).format(at);
+    return $t('frameleaf_activity_bg_tonight_day', { values: { day, time } });
+  };
+
   /** The prototype's line: the state, what is waiting and running, how far, and where. */
   const detailOf = (card: BackgroundWorkCard) =>
     [
-      $t(ACTIVITY_STAGE_KEYS[card.stage]),
+      card.tonight ? tonightOf(card.tonight) : $t(ACTIVITY_STAGE_KEYS[card.stage]),
       card.waiting > 0 ? $t('frameleaf_activity_bg_waiting', { values: { count: number(card.waiting) } }) : null,
       card.running > 0 ? $t('frameleaf_activity_bg_running', { values: { count: number(card.running) } }) : null,
       card.progress === null ? null : `${card.progress}%`,
@@ -79,10 +97,10 @@
   <div class="fla-bg-group" role="group" aria-labelledby={headingId}>
     <h3 id={headingId} class="fla-bg-heading">
       {$t('frameleaf_activity_background_work')} <span class="fla-bg-count">{count}</span>
-      <span class="fla-bg-hint">
-        {$t('frameleaf_activity_background_hint')}
-        <a href={commandCenterUrl('processing', 'queues')}>{$t('frameleaf_activity_background_link')}</a>
-      </span>
+      <!-- UI review 2026-10-30 #18: one plain link to where background work is managed. -->
+      <a class="fla-manage" href={commandCenterUrl('processing', 'queues')}
+        >{$t('frameleaf_activity_background_manage')}<Icon icon={mdiChevronRight} size="14" aria-hidden /></a
+      >
     </h3>
     <ul class="fla-bg-list">
       {#each cards as card (card.id)}
@@ -107,7 +125,7 @@
               {/if}
             </span>
             <span class="fla-bg-link" aria-hidden="true">
-              {$t('frameleaf_activity_background_work')}
+              <span class="fla-bg-link-text">{$t('frameleaf_activity_background_work')}</span>
               <Icon icon={mdiChevronRight} size="16" />
             </span>
           </a>
@@ -135,7 +153,7 @@
               {/if}
             </span>
             <span class="fla-bg-link" aria-hidden="true">
-              {$t('frameleaf_cc_section_cloud_backup')}
+              <span class="fla-bg-link-text">{$t('frameleaf_cc_section_cloud_backup')}</span>
               <Icon icon={mdiChevronRight} size="16" />
             </span>
           </a>
@@ -173,18 +191,19 @@
     font-variant-numeric: tabular-nums;
     text-transform: none;
   }
-  .fla-bg-hint {
-    font-weight: 400;
-    text-transform: none;
+  .fla-manage {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-inline-start: var(--fl-space-2);
+    color: var(--fl-accent);
+    font-weight: 500;
     letter-spacing: 0;
+    text-decoration: none;
+    text-transform: none;
   }
-  .fla-bg-hint a {
-    color: inherit;
+  .fla-manage:hover {
     text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .fla-bg-hint a:hover {
-    color: var(--fl-text);
   }
   .fla-bg-list {
     display: flex;
@@ -282,6 +301,10 @@
     }
     .fla-bg-title {
       white-space: normal;
+    }
+    /* #18: the rows keep their text width; the chevron alone says each one opens. */
+    .fla-bg-link-text {
+      display: none;
     }
   }
 </style>

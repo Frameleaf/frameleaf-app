@@ -5,6 +5,7 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
@@ -31,8 +32,9 @@ describe('Matched import metadata fills', () => {
     const { sut, ctx } = newMediumService(AssetService, {
       database: db,
       real: [AssetRepository, AccessRepository, PartnerOriginRepository, DatabaseRepository],
-      mock: [JobRepository, LoggingRepository, WebsocketRepository],
+      mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
     });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
     const { auth, user } = await ctx.newSyncAuthUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id, visibility });
     const assets = ctx.get(AssetRepository);

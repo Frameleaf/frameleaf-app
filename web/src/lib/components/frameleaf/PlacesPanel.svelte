@@ -379,8 +379,9 @@
     font-size: 15px;
     font-weight: 580;
   }
+  /* FL-707 P5: explanatory text is at least 12px. */
   .discovery small {
-    font-size: var(--fl-font-micro);
+    font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
   .discovery strong {
@@ -663,5 +664,10 @@
     .dv-search input {
       min-width: 0;
     }
+  }
+  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
+     the page area already adds 8px. */
+  .discovery {
+    padding-top: calc(var(--fl-page-top) - 8px);
   }
 </style>

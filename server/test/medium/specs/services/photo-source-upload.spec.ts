@@ -23,6 +23,7 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
@@ -148,6 +149,7 @@ async function setup() {
     admission,
     new ICloudIdentityRepository(db),
     sources,
+    new CaptureRepository(db),
   );
   const identity = { kind: 'folder' as const, sourceId: source.id, runId: run.id, itemId: item.id };
   const headers = {

@@ -296,4 +296,12 @@
     border: 0;
     outline: none;
   }
+  /* FL-707 P1: one top padding above every library-side page heading (28px, 16px on phones);
+     the page area already adds 8px. */
+  .documents {
+    margin-top: 0;
+  }
+  .documents-header {
+    padding-top: calc(var(--fl-page-top) - 8px);
+  }
 </style>

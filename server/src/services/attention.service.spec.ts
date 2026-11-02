@@ -28,11 +28,18 @@ const setup = () => {
     },
     frameleafCloud: { cloudBackup: { enabled: true, target: 'managed', schedule: { cronExpression: '0 3 * * *' } } },
     newVersionCheck: { enabled: true, channel: 'stable' },
+    storageWarning: { percent: 90 },
   };
   const mocks = {
     logger: { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() },
     config: { getEnv: () => ({}) },
-    metadata: { get: vi.fn((key: SystemMetadataKey) => Promise.resolve(metadata[key])) },
+    metadata: {
+      get: vi.fn((key: SystemMetadataKey) => Promise.resolve(metadata[key])),
+      set: vi.fn((key: SystemMetadataKey, value: unknown) => {
+        metadata[key] = value;
+        return Promise.resolve();
+      }),
+    },
     storage: {
       checkDiskUsage: vi.fn().mockResolvedValue({ available: 600 * GB, free: 600 * GB, total: 1000 * GB }),
       // The server names each copy after its own clock: this one was made early this morning.
@@ -90,7 +97,29 @@ describe(AttentionService.name, () => {
         { kind: 'work', state: 'ok' },
         { kind: 'version', state: 'ok' },
       ],
+      dismissed: [],
     });
+  });
+
+  it('keeps a dismissed Overview item for every administrator, and brings it back (FL-363)', async () => {
+    const { sut } = setup();
+
+    await expect(sut.setDismissed({ id: 'studio', dismissed: true })).resolves.toEqual(
+      expect.objectContaining({ dismissed: ['studio'] }),
+    );
+    await expect(sut.setDismissed({ id: 'studio', dismissed: false })).resolves.toEqual(
+      expect.objectContaining({ dismissed: [] }),
+    );
+  });
+
+  it('keeps the newest 32 dismissals, including the one just added', async () => {
+    const { sut, mocks } = setup();
+    const old = Array.from({ length: 32 }, (_, i) => `old-${i}`);
+    await mocks.metadata.set(SystemMetadataKey.OverviewDismissed, { ids: old });
+
+    await expect(sut.setDismissed({ id: 'studio', dismissed: true })).resolves.toEqual(
+      expect.objectContaining({ dismissed: [...old.slice(1), 'studio'] }),
+    );
   });
 
   it('reads the drive the library is on', async () => {
@@ -192,6 +221,39 @@ describe(AttentionService.name, () => {
       expect.objectContaining({
         id: 'work:paused',
         work: { count: 10, queues: [{ name: QueueName.FaceDetection, count: 10 }] },
+      }),
+    ]);
+  });
+
+  it('leaves out the heavy work quiet hours save for tonight on a new server (FL-711)', async () => {
+    const { sut, mocks, metadata, config, useConfig } = setup();
+    useConfig({ ...config, nightlyTasks: { startTime: '00:00', days: [0, 1, 2, 3, 4, 5, 6] } });
+    metadata[SystemMetadataKey.OvernightSequence] = {
+      run: null,
+      nights: [],
+      quiet: { holding: [QueueName.VideoConversion, QueueName.FaceDetection] },
+    };
+    mocks.job.getJobCounts.mockImplementation((name: QueueName) =>
+      Promise.resolve(name === QueueName.VideoConversion ? { ...idle, paused: 3 } : idle),
+    );
+    mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
+
+    expect((await sut.getAttention()).items).toEqual([]);
+  });
+
+  it('still lists a pause an administrator made on a queue quiet hours do not hold', async () => {
+    const { sut, mocks, metadata, config, useConfig } = setup();
+    useConfig({ ...config, nightlyTasks: { startTime: '00:00', days: [0, 1, 2, 3, 4, 5, 6] } });
+    metadata[SystemMetadataKey.OvernightSequence] = { run: null, nights: [], quiet: { holding: null } };
+    mocks.job.getJobCounts.mockImplementation((name: QueueName) =>
+      Promise.resolve(name === QueueName.VideoConversion ? { ...idle, paused: 3 } : idle),
+    );
+    mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
+
+    expect((await sut.getAttention()).items).toEqual([
+      expect.objectContaining({
+        id: 'work:paused',
+        work: { count: 3, queues: [{ name: QueueName.VideoConversion, count: 3 }] },
       }),
     ]);
   });

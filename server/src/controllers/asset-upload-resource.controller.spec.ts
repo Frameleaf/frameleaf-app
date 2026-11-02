@@ -9,6 +9,7 @@ describe('upload resource protocol headers over HTTP', () => {
   it('advertises current capacity on OPTIONS and the persisted ceiling on 104, POST and HEAD', async () => {
     const headers = new Map<string, string>();
     const resource = {
+      id: '00000000-0000-4000-8000-000000000001',
       maxSize: 8,
       maxAppendSize: 8,
       state: 'receiving',
@@ -37,9 +38,11 @@ describe('upload resource protocol headers over HTTP', () => {
     expect(headers.get('Upload-Limit')).toBe('max-size=10, max-append-size=10, max-age=86400, min-size=1');
     await controller.createAssetUploadResource(
       {} as never,
-      { rawHeaders: [], headers: {}, originalUrl: '/uploads' } as never,
+      { rawHeaders: [], headers: {}, originalUrl: '//evil.example/uploads' } as never,
       res as never,
     );
+    // A crafted request path never shapes Location (CodeQL js/server-side-unvalidated-url-redirection).
+    expect(headers.get('Location')).toBe('/api/assets/uploads/00000000-0000-4000-8000-000000000001');
     const storedLimit = 'max-size=8, max-append-size=8, max-age=86400, min-size=1';
     expect(res.writeInformation).toHaveBeenCalledWith(104, expect.objectContaining({ 'Upload-Limit': storedLimit }));
     expect(headers.get('Upload-Limit')).toBe(storedLimit);

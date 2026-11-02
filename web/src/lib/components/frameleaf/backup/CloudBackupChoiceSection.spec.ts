@@ -83,6 +83,32 @@ describe('Backup › What Cloud Backup keeps (FL-362)', () => {
     expect(await screen.findByText('About 1,204 of your 3,400 photos and videos')).toBeInTheDocument();
   });
 
+  // FL-529: the end date is the person's today, not UTC's, since capture dates are compared locally.
+  it('starts a Between period on the local date', async () => {
+    const zone = process.env.TZ;
+    process.env.TZ = 'Australia/Sydney';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T22:00:00.000Z'));
+    try {
+      const chosen = { ...EVERYTHING, mode: 'chosen', selectedOriginals: 0 };
+      sdkMock.getOwnCloudBackupSelection.mockResolvedValue(chosen as never);
+      sdkMock.setOwnCloudBackupSelection.mockResolvedValue(chosen as never);
+      render(CloudBackupChoiceSection);
+      await fireEvent.change(await screen.findByRole('combobox', { name: en.frameleaf_backup_keeps_period_label }), {
+        target: { value: 'between' },
+      });
+
+      expect(sdkMock.setOwnCloudBackupSelection).toHaveBeenCalledWith({
+        cloudBackupSelectionUpdateDto: expect.objectContaining({
+          dateRanges: [{ kind: 'between', from: '2025-10-22', to: '2026-10-22' }],
+        }),
+      });
+    } finally {
+      vi.useRealTimers();
+      process.env.TZ = zone;
+    }
+  });
+
   it('chooses albums from the person’s own albums only, not their collections', async () => {
     sdkMock.getOwnCloudBackupSelection.mockResolvedValue({
       ...EVERYTHING,

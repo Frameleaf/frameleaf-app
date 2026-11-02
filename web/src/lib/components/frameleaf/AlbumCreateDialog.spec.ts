@@ -1,5 +1,5 @@
 import { AlbumKind, type AlbumResponseDto } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -136,7 +136,8 @@ describe('AlbumCreateDialog editing (AL-2)', () => {
     expect(screen.getByRole('heading', { name: 'Edit album' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Rockies');
     expect(screen.queryByRole('switch', { name: /Smart album/ })).toBeNull();
-    await fireEvent.change(screen.getByRole('combobox', { name: 'In collection' }), { target: { value: 'family' } });
+    const parent = within(screen.getByRole('group', { name: 'Parent album or collection' }));
+    await fireEvent.click(parent.getByRole('radio', { name: /Family/ }));
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
@@ -144,6 +145,7 @@ describe('AlbumCreateDialog editing (AL-2)', () => {
         albumName: 'Rockies',
         description: 'Hiking',
         icon: 'mdiImageAlbum',
+        color: null,
         parentId: 'family',
       }),
     );
@@ -160,9 +162,60 @@ describe('AlbumCreateDialog editing (AL-2)', () => {
       onSave,
     });
 
-    expect(screen.queryByRole('combobox', { name: 'In collection' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Parent album or collection' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave.mock.calls[0][0]).not.toHaveProperty('parentId');
+  });
+});
+
+describe('AlbumCreateDialog colour and icon (Boards, README point 22)', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+  });
+
+  it('creates with a named colour and leaves the icon to the default until one is chosen', async () => {
+    const onCreate = vi.fn().mockResolvedValue(true);
+    render(AlbumCreateDialog, { kind: AlbumKind.Album, collections: [], open: true, onCreate });
+
+    const colours = within(screen.getByRole('group', { name: 'Colour' }));
+    expect(colours.getAllByRole('radio').map((radio) => radio.closest('label')?.textContent?.trim())).toEqual([
+      'No colour',
+      'Grey',
+      'Green',
+      'Teal',
+      'Blue',
+      'Purple',
+      'Pink',
+      'Amber',
+      'Red',
+    ]);
+    expect(colours.getByRole('radio', { name: 'No colour' })).toBeChecked();
+    await fireEvent.click(colours.getByRole('radio', { name: 'Teal' }));
+    expect(screen.getByRole('button', { name: 'Choose an icon' })).toHaveAttribute('aria-expanded', 'false');
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Moodboard' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
+    expect(onCreate.mock.calls[0][0]).toMatchObject({ albumName: 'Moodboard', color: 'teal' });
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty('icon');
+  });
+
+  it('sends no colour when none is chosen', async () => {
+    const onCreate = vi.fn().mockResolvedValue(true);
+    render(AlbumCreateDialog, { kind: AlbumKind.Album, collections: [], open: true, onCreate });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Plain' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty('color');
   });
 });

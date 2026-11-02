@@ -114,6 +114,14 @@ describe(AssetDevelopService.name, () => {
           Promise.resolve(revisionStub({ id, ...patch })),
         ),
       setCurrent: vi.fn().mockResolvedValue(void 0),
+      recoverBatchImports: vi.fn(),
+      failBatchRender: vi.fn(),
+      reserveBatchMaster: vi.fn(),
+      moveBatchMaster: vi.fn(),
+      cleanupFailedBatchMaster: vi.fn(),
+      queueBatchRevision: vi.fn(),
+      releaseBatchMaster: vi.fn(),
+      publishBatchRendered: vi.fn(),
       requestCancel: vi.fn().mockResolvedValue(void 0),
       isCancelRequested: vi.fn().mockResolvedValue(false),
       releaseRemovedAssetRevisions: vi.fn().mockResolvedValue([]),
@@ -139,6 +147,7 @@ describe(AssetDevelopService.name, () => {
       updatePreset: vi.fn(),
       deletePreset: vi.fn(),
       createExport: vi.fn(),
+      createReservedExport: vi.fn(),
       listExports: vi.fn().mockResolvedValue([]),
       getExport: vi.fn(),
     };
@@ -170,6 +179,7 @@ describe(AssetDevelopService.name, () => {
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
       mocks.machineLearning as never,
+      mocks.event as never,
     );
     mocks.media.getImageMetadata.mockResolvedValue({ width: 4, height: 4, isTransparent: false });
     vi.mocked(encodeNativeDevelopOutput).mockReset().mockResolvedValue(Buffer.from('jpeg'));
@@ -279,6 +289,17 @@ describe(AssetDevelopService.name, () => {
         ...asset,
         exifInfo: { ...asset.exifInfo, exifImageWidth: 4000, exifImageHeight: 3000 },
       } as never);
+    });
+
+    it("queues LockedSeal for an encrypted Locked item's new artifact (FL-721)", async () => {
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' },
+      ] as never);
+
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+
+      expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
     });
 
     it('stores a normalized bitmap beside the versions, records it, and discards the upload', async () => {
@@ -602,6 +623,7 @@ describe(AssetDevelopService.name, () => {
     it('makes the original current when no revision is named', async () => {
       await sut.revert(authStub.user1, asset.id, {});
       expect(developRepository.setCurrent).toHaveBeenCalledWith(asset.id, null);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetDevelopCurrentChanged', { assetId: asset.id });
     });
 
     it('only accepts rendered revisions', async () => {
@@ -1334,7 +1356,7 @@ describe(AssetDevelopService.name, () => {
       ownerId: asset.ownerId,
       originalPath: '/motion.mov',
       checksum: Buffer.alloc(20, 4),
-      format: { duration: 2.5 },
+      format: { duration: 2500 },
       videoStream: { index: 0 },
     };
     const prepareKeyframe = () => {

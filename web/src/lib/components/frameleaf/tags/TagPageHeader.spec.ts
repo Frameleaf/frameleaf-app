@@ -250,6 +250,23 @@ describe('TagPageHeader', () => {
       expect(sdkMock.updateTag).not.toHaveBeenCalled();
     });
 
+    it('keeps a refused name on blur without pulling focus back to the field', async () => {
+      renderHeader('norway');
+      const field = await startEdit();
+      field.focus();
+      await fireEvent.input(field, { target: { value: 'CANADA' } });
+      const elsewhere = document.createElement('button');
+      document.body.append(elsewhere);
+      try {
+        elsewhere.focus();
+        expect(await screen.findByRole('alert')).toHaveTextContent('A tag named CANADA already exists here.');
+        expect(screen.getByRole('textbox', { name: 'Edit tag name' })).toHaveValue('CANADA');
+        expect(elsewhere).toHaveFocus();
+      } finally {
+        elsewhere.remove();
+      }
+    });
+
     it('refuses a name with a slash', async () => {
       renderHeader('norway');
       const field = await startEdit();

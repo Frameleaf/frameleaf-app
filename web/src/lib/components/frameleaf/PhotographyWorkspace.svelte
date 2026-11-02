@@ -11,6 +11,9 @@
    * Culling never stops: a rating shows at once and saves behind it, one tile at a time. A rating
    * that could not be saved puts that tile back and offers a retry on the tile. Click a photograph to
    * make it current, then arrows move (Up/Down by row), 1-5 rate, X rejects and 0 clears.
+   *
+   * Clients is opt-in (owner, October 28): while it is in the top bar the rail's foot offers
+   * "Remove from the top bar", which puts it back under Tools; the page owns that action.
    */
   import { onDestroy, onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -120,15 +123,23 @@
   let {
     initialShoot,
     initialSection,
+    onRemoveFromTopBar,
+    removing = false,
   }: {
     /** A shoot to open first: the RAW develop editor's way back (FL-420). */
     initialShoot?: string;
-    /** `galleries`: the editor's Proof opens the shoot's galleries. */
-    initialSection?: 'galleries';
+    /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
+    initialSection?: 'galleries' | 'website';
+    /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
+    onRemoveFromTopBar?: () => void;
+    /** Removing is being saved. */
+    removing?: boolean;
   } = $props();
 
   // svelte-ignore state_referenced_locally
-  let section = $state<Section>(initialShoot && initialSection === 'galleries' ? 'galleries' : 'shoots');
+  let section = $state<Section>(
+    initialSection === 'website' ? 'website' : initialShoot && initialSection === 'galleries' ? 'galleries' : 'shoots',
+  );
   let shootFilter = $state<ShootFilter>('all');
   let workspace = $state<Workspace>({ revision: null, shoots: [] });
   let workflowSummaries = $state<WorkflowSummary[]>([]);
@@ -485,7 +496,8 @@
       if (disposed || current !== detailGeneration) {
         return;
       }
-      photos = [...photos, ...page.photos.filter((photo) => photos.every(({ id }) => id !== photo.id))];
+      const loaded = new Set(photos.map(({ id }) => id));
+      photos = [...photos, ...page.photos.filter((photo) => !loaded.has(photo.id))];
       nextCursor = page.nextCursor;
     } catch (error_) {
       if (current === detailGeneration) {
@@ -785,6 +797,12 @@
         >{$t('frameleaf_photography_raw_compatibility')}
         <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} /></a
       >
+      {#if onRemoveFromTopBar}
+        <button type="button" class="phw-remove-top-bar" disabled={removing} onclick={onRemoveFromTopBar}
+          >{$t('frameleaf_clients_remove_from_top_bar')}
+          <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} /></button
+        >
+      {/if}
     </div>
   </aside>
   <div class="phw-workspace">
@@ -833,7 +851,10 @@
           }}
         />
       {:else if section === 'watermarks'}<PhotographyWatermarks />
-      {:else if section === 'website'}<PhotographyWebsite shoots={workspace.shoots} />
+      {:else if section === 'website'}<PhotographyWebsite
+          shoots={workspace.shoots}
+          onEditBrand={() => (section = 'branding')}
+        />
       {:else if picksShoot(section)}
         {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
               shoot={active}
@@ -1340,3 +1361,33 @@
     </form>
   </Dialog>
 </div>
+
+<style>
+  /* PhotographyWorkspace.jsx `.phw-rail-bottom button`: a quiet text action under RAW compatibility. */
+  .phw-remove-top-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+    margin-top: 4px;
+    padding: 3px 0;
+    border: 0;
+    border-radius: var(--fl-radius-xs);
+    background: none;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-micro);
+    cursor: pointer;
+  }
+  .phw-remove-top-bar:hover:not(:disabled) {
+    color: var(--fl-text);
+  }
+  .phw-remove-top-bar:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  .phw-remove-top-bar:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+</style>

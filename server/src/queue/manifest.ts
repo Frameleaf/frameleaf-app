@@ -1,5 +1,6 @@
-import { Kysely, RawBuilder, SelectQueryBuilder, Transaction, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, RawBuilder, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import type { DB } from 'src/schema/index.js';
 import { JobName } from 'src/enum.js';
 import { jobSignal } from 'src/queue/context.js';
 import {
@@ -28,7 +29,7 @@ import {
   QueueOptions,
 } from 'src/queue/types.js';
 
-type Executor = Kysely<any> | Transaction<any>;
+type Executor = Kysely<DB>;
 
 /** Resolve selected-asset identity after the frozen row has supplied its ID. */
 export function getManifestJobOptions(name: string, data: Record<string, unknown>): QueueOptions | undefined {
@@ -39,7 +40,7 @@ export function getManifestJobOptions(name: string, data: Record<string, unknown
 }
 
 /** Caller holds the queue catalogue lock; this is the single producer-to-run attachment protocol. */
-export async function attachProducerRun(tx: Transaction<any>, claim: QueueClaim, submittedRunId?: string) {
+export async function attachProducerRun(tx: Transaction<DB>, claim: QueueClaim, submittedRunId?: string) {
   const {
     rows: [owner],
   } = await sql<{ runId: string | null; itemKey: string | null; name: string; queue: string }>`
@@ -71,7 +72,7 @@ export async function attachProducerRun(tx: Transaction<any>, claim: QueueClaim,
 
 /** Attach briefly, then capture one immutable SQL snapshot without holding dispatch/publication locks. */
 export async function freezeSelection(
-  db: Kysely<any>,
+  db: Kysely<DB>,
   intent: QueueIntent,
   selection: SelectQueryBuilder<any, any, { id: string }>,
   context?: QueueExecution,
@@ -80,7 +81,7 @@ export async function freezeSelection(
 ) {
   context?.signal.throwIfAborted();
   const claim = context?.claim;
-  const attach = async (tx: Transaction<any>) => {
+  const attach = async (tx: Transaction<DB>) => {
     // This short phase follows publication's catalogue -> job -> run lock order.
     await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
     if (claim) await sql`select name from job_queue order by name for no key update`.execute(tx);
@@ -121,7 +122,7 @@ export async function freezeSelection(
     if (claim) await attachSelectionMemberships(tx, claim.id);
     return { runId, producerItemKey, selectionId };
   };
-  const capture = async (tx: Transaction<any>, result: Awaited<ReturnType<typeof attach>>) => {
+  const capture = async (tx: Transaction<DB>, result: Awaited<ReturnType<typeof attach>>) => {
     if (readiness) {
       // Setup release uses this same run -> selection order. Read the committed gate only after
       // locking its run, so a concurrent release cannot be overwritten by an older capture view.
@@ -138,10 +139,16 @@ export async function freezeSelection(
       where id = ${result.selectionId}::uuid`.execute(tx);
     if (!snapshot.capturedAt) {
       context?.signal.throwIfAborted();
-      await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
+      const { numAffectedRows } =
+        await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
         select ${result.runId}::uuid, selected.id::text, coalesce(to_jsonb(selected)->>'rootItemKey', selected.id::text), ${intent.name}, ${intent.queue},
           ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(selected)->'data', '{}'::jsonb) || jsonb_build_object('id', selected.id), ${result.selectionId}::uuid
         from (${selection}) selected on conflict do nothing`.execute(tx);
+      if ((numAffectedRows ?? 0n) >= 10_000n) {
+        context?.signal.throwIfAborted();
+        // Large captures outpace autoanalyze; refresh before publication without holding its job fence.
+        await sql`analyze job_run_item`.execute(tx);
+      }
     }
     context?.signal.throwIfAborted();
     if (claim) {
@@ -161,12 +168,6 @@ export async function freezeSelection(
       state = case when state = 'cancelled' or (${!!readiness} and state = 'needs_attention') then state
         else ${claim ? sql.lit('enumerating') : (readiness ?? sql.lit('ready'))} end
       where id = ${result.selectionId}::uuid`.execute(tx);
-    if (claim) {
-      // This run owns the source rows, so sharing them with itself requires no scan or copy.
-      await sql`update job_run_item set "selectionVersion" = (select count(*) from job_selection
-        where "producerId" = ${claim.id}::uuid and "capturedAt" is not null)
-        where "jobId" = ${claim.id}::uuid and "rootItemKey" is null and "runId" = ${result.runId}::uuid`.execute(tx);
-    }
     if (!claim && !submittedRunId) {
       await sql`update job_run set "enumerationDone" = true where id = ${result.runId}::uuid`.execute(tx);
     }
@@ -205,8 +206,8 @@ export type QueuePublication = <T>(action: () => Promise<T>) => Promise<T>;
 
 /** A newly attached run restarts only the short transaction, releasing local and SQL publication gates first. */
 export async function withSelectionSharing<T>(
-  db: Kysely<any>,
-  work: (tx: Transaction<any>) => Promise<T>,
+  db: Kysely<DB>,
+  work: (tx: Transaction<DB>) => Promise<T>,
   publication: QueuePublication = (action) => action(),
 ): Promise<T> {
   for (;;) {
@@ -242,7 +243,7 @@ export const selectionCopySource = (runId: string, selectionId: string, after: s
     order by "itemKey" limit ${QUEUE_BATCH}`;
 
 /** The producer job is locked by the caller. This check never reads its selected media rows. */
-export async function assertSelectionsShared(tx: Executor, producerId: string) {
+export async function assertSelectionsShared(tx: QueryExecutorProvider, producerId: string) {
   const { rows } = await sql`select 1 from job_selection_run membership
     join job_selection snapshot on snapshot.id = membership."selectionId"
     where snapshot."producerId" = ${producerId}::uuid and snapshot."capturedAt" is not null
@@ -352,12 +353,6 @@ export async function shareSelectionPage(db: Executor, filter: { producerId: str
       "libraryVersion" = case when ${complete} then ${membership.appendSequence}::bigint else "libraryVersion" end
       where "selectionId" = ${membership.selectionId}::uuid and "runId" = ${membership.runId}::uuid`.execute(tx);
     if (complete) {
-      await sql`update job_run_item i set "selectionVersion" = (select count(*) from job_selection
-        where "producerId" = ${membership.producerId}::uuid and "capturedAt" is not null)
-        where i."runId" = ${membership.runId}::uuid and i."jobId" = ${membership.producerId}::uuid
-          and i."rootItemKey" is null and not exists (
-            select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-              where m."runId" = i."runId" and s."producerId" = i."jobId" and not m."copyComplete")`.execute(tx);
       await sql`update job_run r set "enumerationDone" = true where r.id = ${membership.runId}::uuid
         and not exists (select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
           and i.state in ('pending','waiting','active')
@@ -410,7 +405,7 @@ export async function shareSelections(db: Executor, producerId: string, signal =
   }
 }
 
-export async function finishSelections(tx: Executor, producerId: string, succeeded: boolean) {
+export async function finishSelections(tx: QueryExecutorProvider, producerId: string, succeeded: boolean) {
   if (succeeded) {
     await assertSelectionsShared(tx, producerId);
     const { rows } = await sql`select 1 from job_selection where "producerId" = ${producerId}::uuid
@@ -453,9 +448,9 @@ export async function resumeSelections(tx: Executor, producerId: string) {
 
 /** One coordinator visit admits at most 250 executions and releases its connection immediately. */
 export async function feedManifest(
-  db: Kysely<any>,
+  db: Kysely<DB>,
   queue: string,
-  enqueue: (intents: QueueIntent[], tx: Transaction<any>) => Promise<void>,
+  enqueue: (intents: QueueIntent[], tx: Transaction<DB>) => Promise<void>,
 ) {
   return db.transaction().execute(async (tx) => {
     const {

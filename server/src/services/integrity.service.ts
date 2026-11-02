@@ -12,16 +12,21 @@ import type {
   IIntegrityPathWithChecksumJob,
   IIntegrityPathWithReportJob,
   IIntegrityUntrackedFilesJob,
+  IntegrityCheckHistoryEntry,
 } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   IntegrityCheckRunsResponseDto,
+  IntegrityFindingAssetsDto,
+  IntegrityFindingAssetsResponseDto,
   IntegrityGetReportDto,
+  IntegrityOverviewResponseDto,
   IntegrityReportClearResponseDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
+  IntegrityUnreachableFolder,
 } from 'src/dtos/integrity.dto.js';
 import {
   AssetStatus,
@@ -39,7 +44,16 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { isLockedPath } from 'src/utils/locked-read.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
+
+/** FL-520: how many past checks "Recent checks" keeps. */
+export const INTEGRITY_HISTORY_KEPT = 30;
+/** FL-520: the most photos "Restore from a backup" takes at once (the restore request's own limit). */
+const FINDING_ASSETS_LIMIT = 10_000;
+/** FL-520: how often (in files) the damage check saves its progress and looks for a Stop. */
+const CHECKSUM_PROGRESS_EVERY = 100;
 
 /**
  * Untracked Files:
@@ -70,15 +84,12 @@ export class IntegrityService extends BaseService {
   private integrityLock = false;
 
   /**
-   * Library care → "Audit database and file references" (FL-69, settings-catalog.mjs:926-931): the
-   * scheduled missing-file and untracked-file checks are that audit. Each keeps its own switch and
-   * schedule; turning the audit off stops both schedules without losing them. Asking for a check
+   * FL-363: the three checks no longer start on timers of their own. The overnight schedule's
+   * "Check files" step (`OvernightService`) queues each one that is switched on; the missing-file and
+   * untracked-file checks also need Library care → "Audit database and file references" (FL-69).
+   * The timers are kept, stopped, so an expression set before still reads back. Asking for a check
    * from the job manager still runs it.
    */
-  private static referenceAudit(enabled: boolean, config: ArgOf<'ConfigInit'>['newConfig']) {
-    return enabled && config.libraryCare.integrityAudit;
-  }
-
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     const {
@@ -97,7 +108,8 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityUntrackedFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
+      // FL-363: the overnight schedule runs the file checks
+      start: false,
     });
 
     this.cronRepository.create({
@@ -108,7 +120,7 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityMissingFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
+      start: false,
     });
 
     this.cronRepository.create({
@@ -116,7 +128,7 @@ export class IntegrityService extends BaseService {
       expression: checksumFiles.cronExpression,
       onTick: () =>
         handlePromiseError(this.jobRepository.queue({ name: JobName.IntegrityChecksumFiles, data: {} }), this.logger),
-      start: checksumFiles.enabled,
+      start: false,
     });
   }
 
@@ -132,19 +144,20 @@ export class IntegrityService extends BaseService {
     this.cronRepository.update({
       name: 'integrityUntrackedFiles',
       expression: untrackedFiles.cronExpression,
-      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
+      // FL-363: the overnight schedule runs the file checks
+      start: false,
     });
 
     this.cronRepository.update({
       name: 'integrityMissingFiles',
       expression: missingFiles.cronExpression,
-      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
+      start: false,
     });
 
     this.cronRepository.update({
       name: 'integrityChecksumFiles',
       expression: checksumFiles.cronExpression,
-      start: checksumFiles.enabled,
+      start: false,
     });
   }
 
@@ -165,6 +178,148 @@ export class IntegrityService extends BaseService {
       [IntegrityReport.MissingFile]: runs[IntegrityReport.MissingFile]?.lastRunAt ?? null,
       [IntegrityReport.UntrackedFile]: runs[IntegrityReport.UntrackedFile]?.lastRunAt ?? null,
     };
+  }
+
+  /**
+   * FL-520: Library care's one source of findings (a photo two checkers both report is counted once),
+   * the folders of originals that cannot be reached, the checks running now and the recent checks.
+   */
+  async getIntegrityOverview(): Promise<IntegrityOverviewResponseDto> {
+    const [counts, unreachable, runs, history] = await Promise.all([
+      this.integrityRepository.getFindingsOverview(Object.keys(mimeTypes.raw)),
+      this.getUnreachableFolders(),
+      this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns),
+      this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckHistory),
+    ]);
+    const running = Object.values(IntegrityReport).flatMap((type) => {
+      const current = runs?.[type]?.current;
+      return current ? [{ type, startedAt: current.startedAt, done: current.done, total: current.batches }] : [];
+    });
+    return {
+      missing: counts.missing,
+      damaged: counts.damaged,
+      stray: counts.stray,
+      rawToMatch: counts.rawToMatch,
+      unreachable,
+      running,
+      history: history?.entries ?? [],
+    };
+  }
+
+  /**
+   * FL-520: a real "drive unplugged" signal. Frameleaf's own folders are reachable while their mount
+   * file (`.frameleaf`) is there; an external library's folder while it exists. Each folder that
+   * cannot be reached says how many missing files are inside it.
+   */
+  private async getUnreachableFolders(): Promise<IntegrityUnreachableFolder[]> {
+    const candidates: Omit<IntegrityUnreachableFolder, 'missing'>[] = [];
+    for (const folder of [StorageFolder.Library, StorageFolder.Upload, StorageFolder.EncodedVideo]) {
+      const base = StorageCore.getBaseFolder(folder);
+      if ((await this.pathState(`${base}/.frameleaf`)) === 'missing') {
+        candidates.push({ kind: 'storage', name: '', path: base });
+      }
+    }
+    const libraries = await this.libraryRepository.getAll().catch(() => []);
+    for (const library of libraries) {
+      for (const importPath of library.importPaths) {
+        if ((await this.pathState(importPath)) === 'missing') {
+          candidates.push({ kind: 'library', name: library.name, path: importPath.replace(/\/+$/, '') });
+        }
+      }
+    }
+    const counts = await this.integrityRepository.countMissingUnder(candidates.map(({ path }) => `${path}/`));
+    return candidates.map((candidate, index) => ({ ...candidate, missing: counts[index] }));
+  }
+
+  /** `missing` only when the filesystem says so; any other failure says nothing. */
+  private async pathState(path: string): Promise<'present' | 'missing' | 'unknown'> {
+    try {
+      await this.storageRepository.stat(path);
+      return 'present';
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      return code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unknown';
+    }
+  }
+
+  /** FL-520: the photos behind the missing or damaged findings, for "Restore from a backup". */
+  async getFindingAssetIds({ kind }: IntegrityFindingAssetsDto): Promise<IntegrityFindingAssetsResponseDto> {
+    return { assetIds: await this.integrityRepository.getFindingAssetIds(kind, FINDING_ASSETS_LIMIT) };
+  }
+
+  /**
+   * FL-520: Stop. Checks waiting their turn are taken off the queue, the checks in progress end as
+   * "stopped" in Recent checks, and the damage check stops at its next save point. Nothing found so far
+   * is lost: the damage check carries on from where it stopped the next night, and the other two look
+   * again in full the next night.
+   */
+  async stopIntegrityChecks(): Promise<IntegrityOverviewResponseDto> {
+    const requestedAt = new Date().toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.IntegrityCheckStop, { requestedAt });
+    await this.jobRepository.empty(QueueName.IntegrityCheck);
+    const runs = (await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns)) ?? {};
+    for (const type of Object.values(IntegrityReport)) {
+      const current = runs[type]?.current;
+      if (current && (await this.systemMetadataRepository.clearIntegrityRun(type, current.runId))) {
+        await this.recordHistory(type, current.startedAt, 'stopped', null);
+      }
+    }
+    return this.getIntegrityOverview();
+  }
+
+  /** Whether Stop was pressed after `startedAt`. */
+  private async stopRequestedSince(startedAt: string): Promise<boolean> {
+    const stop = await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckStop);
+    return !!stop && stop.requestedAt >= startedAt;
+  }
+
+  /** FL-520: adds one ended check to Recent checks, newest first, with how many findings its list holds. */
+  private async recordHistory(
+    type: IntegrityReport,
+    startedAt: string,
+    outcome: IntegrityCheckHistoryEntry['outcome'],
+    checked: number | null,
+    encrypted?: number,
+  ) {
+    const summary = await this.integrityRepository.getIntegrityReportSummary();
+    const entry: IntegrityCheckHistoryEntry = {
+      type,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      outcome,
+      found: summary[type] ?? 0,
+      checked,
+      ...(encrypted !== undefined && { encrypted }),
+    };
+    const history = await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckHistory);
+    await this.systemMetadataRepository.set(SystemMetadataKey.IntegrityCheckHistory, {
+      entries: [entry, ...(history?.entries ?? [])].slice(0, INTEGRITY_HISTORY_KEPT),
+    });
+  }
+
+  /**
+   * FL-721 (spec §8.3): the reported items whose original is a sealed Locked file now, read when the
+   * delete acts: the reported path, or the item's current original (moved since the report). A
+   * checksum failure on such a file speaks of ciphertext, so the item is never trashed from here.
+   */
+  private async encryptedAssetIds(reports: { assetId: string; path: string }[]): Promise<Set<string>> {
+    const encrypted = new Set<string>();
+    if (reports.length === 0) {
+      return encrypted;
+    }
+    const current = new Map(
+      (await this.assetRepository.getByIds(reports.map(({ assetId }) => assetId))).map((asset) => [
+        asset.id,
+        asset.originalPath,
+      ]),
+    );
+    for (const { assetId, path } of reports) {
+      const original = current.get(assetId);
+      if ((await isLockedPath(path)) || (original && original !== path && (await isLockedPath(original)))) {
+        encrypted.add(assetId);
+      }
+    }
+    return encrypted;
   }
 
   /** A full (not refresh-only) run of `type` begins; its batches carry the returned id. */
@@ -192,8 +347,13 @@ export class IntegrityService extends BaseService {
       return;
     }
     const run = await this.systemMetadataRepository.updateIntegrityRun(type, runId, progress);
-    if (run && run.batches !== null && run.done >= run.batches) {
-      await this.systemMetadataRepository.completeIntegrityRun(type, runId, new Date());
+    if (
+      run &&
+      run.batches !== null &&
+      run.done >= run.batches &&
+      (await this.systemMetadataRepository.completeIntegrityRun(type, runId, new Date()))
+    ) {
+      await this.recordHistory(type, run.startedAt, 'completed', null);
     }
   }
 
@@ -232,7 +392,10 @@ export class IntegrityService extends BaseService {
   async deleteIntegrityReport(userId: string, id: string): Promise<void> {
     const { path, assetId, fileAssetId } = await this.integrityRepository.getById(id);
 
-    if (assetId) {
+    if (assetId && (await this.encryptedAssetIds([{ assetId, path }])).has(assetId)) {
+      // FL-721 (spec §8.3): an encrypted Locked item is never trashed from here; the stale report goes
+      await this.integrityRepository.deleteById(id);
+    } else if (assetId) {
       await this.assetRepository.updateAll([assetId], {
         deletedAt: new Date(),
         status: AssetStatus.Trashed,
@@ -250,7 +413,9 @@ export class IntegrityService extends BaseService {
       // kept while tracked (fork-only paths such as video duplicate frames), and otherwise only through
       // the reference-counted guard: a path any row references (a shared original, the file trash) is kept
       const trackedPaths = await this.integrityRepository.getTrackedPaths([path]);
-      if (trackedPaths.length === 0) {
+      // FL-721 (spec §8.3): a sealed Locked file nothing tracks may be the only copy of an item's
+      // bytes; it is never deleted from here
+      if (trackedPaths.length === 0 && !(await isLockedPath(path))) {
         await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path), {
           trash: this.originalsToFileTrash(),
         });
@@ -368,54 +533,13 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
-  private async checkUntrackedFiles({ type, paths }: Omit<IIntegrityUntrackedFilesJob, 'runId'>): Promise<JobStatus> {
+  private async checkUntrackedFiles({ paths }: Omit<IIntegrityUntrackedFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${paths.length} files to check if they are untracked.`);
 
+    // Every owner of a file on disk — originals, sidecars, thumbnails, video frames, develop versions,
+    // Studio outputs, registered files — comes from one list, `getTrackedPaths`, the same one a delete trusts.
     const untrackedFiles = new Set<string>(paths);
-    if (type === 'asset') {
-      const assets = await this.integrityRepository.getAssetPathsByPaths(paths);
-      for (const { originalPath, encodedVideoPath } of assets) {
-        untrackedFiles.delete(originalPath);
-
-        if (encodedVideoPath) {
-          untrackedFiles.delete(encodedVideoPath);
-        }
-      }
-    }
-
-    // Sidecar asset_file rows point into the upload folder (both uploaded
-    // sidecars and the ones physical deduplication migrates), so the
-    // asset-folder walk must be checked against asset_file too — not just
-    // asset.originalPath — or every sidecar is reported as untracked.
-    const assetFiles = await this.integrityRepository.getAssetFilePathsByPaths(paths);
-    for (const { path } of assetFiles) {
-      untrackedFiles.delete(path);
-    }
-
-    const personThumbnailPaths = await this.integrityRepository.getPersonThumbnailPathsByPaths(paths);
-    for (const { thumbnailPath } of personThumbnailPaths) {
-      untrackedFiles.delete(thumbnailPath);
-    }
-
-    // The enhanced video duplicate check stores sampled frames in the
-    // thumbnails folder, tracked in asset_video_duplicate_frame rather than
-    // asset_file, so the walk must exempt them explicitly.
-    const framePaths = await this.integrityRepository.getVideoDuplicateFramePathsByPaths(paths);
-    for (const { path } of framePaths) {
-      untrackedFiles.delete(path);
-    }
-
-    // Develop versions (edited masters, previews, developed files brought back) are tracked by
-    // their version row; they are a person's work, never an orphan to clean up (FL-64).
-    const developPaths = await this.integrityRepository.getDevelopRevisionPathsByPaths(paths);
-    for (const { path } of developPaths) {
-      untrackedFiles.delete(path);
-    }
-
-    // FL-412: a stored file (a shared original, or one waiting to be moved to the file trash) is tracked by
-    // its `physical_file` row even while no asset names it
-    const registeredPaths = await this.integrityRepository.getRegisteredFilePathsByPaths(paths);
-    for (const { path } of registeredPaths) {
+    for (const { path } of await this.integrityRepository.getTrackedPaths(paths)) {
       untrackedFiles.delete(path);
     }
 
@@ -447,7 +571,7 @@ export class IntegrityService extends BaseService {
           return reportId;
         }
 
-        return (await this.pathExists(path)) ? undefined : reportId;
+        return (await this.pathExists(path)) === false ? reportId : undefined;
       }),
     );
 
@@ -521,15 +645,19 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
-  private async pathExists(path: string): Promise<boolean> {
+  /** Whether the path exists, or undefined when it cannot be checked (EACCES, EIO, ENOTDIR …): such a path is never reported
+   * missing, and must not fail its batch. */
+  private async pathExists(path: string): Promise<boolean | undefined> {
     try {
       await this.storageRepository.stat(path);
       return true;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-        throw error;
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        return false;
       }
-      return false;
+      this.logger.warn(`Could not check ${path}: ${code ?? error}`);
+      return undefined;
     }
   }
 
@@ -541,9 +669,9 @@ export class IntegrityService extends BaseService {
     const outdatedReports: string[] = [];
     const missingFiles = [];
     for (const [index, { reportId, path, assetId, fileAssetId }] of items.entries()) {
-      if (!exists[index]) {
+      if (exists[index] === false) {
         missingFiles.push({ type: IntegrityReport.MissingFile, path, assetId, fileAssetId });
-      } else if (reportId) {
+      } else if (exists[index] && reportId) {
         outdatedReports.push(reportId);
       }
     }
@@ -564,7 +692,7 @@ export class IntegrityService extends BaseService {
 
     const results = await Promise.all(
       paths.map(async ({ reportId, path }) => {
-        return (await this.pathExists(path)) ? reportId : undefined;
+        return (await this.pathExists(path)) === true ? reportId : undefined;
       }),
     );
 
@@ -606,9 +734,10 @@ export class IntegrityService extends BaseService {
 
   /**
    * The fork writes sha256 checksums for new server uploads and keeps sha1 for
-   * legacy rows (see ChecksumAlgorithm), so integrity verification must hash
-   * with the algorithm the row was written under. `sha1Path` checksums cover a
-   * path string rather than file contents and cannot be verified from disk.
+   * legacy rows until a check verifies them (see ChecksumAlgorithm), so
+   * integrity verification must hash with the algorithm the row was written
+   * under. `sha1Path` checksums cover a path string rather than file contents
+   * and cannot be verified from disk.
    */
   private hashForAlgorithm(checksumAlgorithm?: string | null) {
     switch (checksumAlgorithm) {
@@ -633,6 +762,11 @@ export class IntegrityService extends BaseService {
   ) {
     if (!this.hashForAlgorithm(checksumAlgorithm)) {
       return;
+    }
+    // FL-721 (spec §8.3): a sealed Locked file holds ciphertext, so its plaintext checksum can't be
+    // compared: "encrypted, not checked", never a checksum failure (its GCM tags prove it intact)
+    if (await isLockedPath(originalPath)) {
+      return 'encrypted' as const;
     }
 
     const sha1Hash = createHash('sha1');
@@ -689,6 +823,22 @@ export class IntegrityService extends BaseService {
         path: originalPath,
         source: 'integrity',
       });
+      // A legacy upload moves to the SHA-256 just read, so the apps' uploads and duplicate checks, which send
+      // SHA-256, find it. The check just made holds for that checksum too: recorded under it, the file stays
+      // verified for Library care and the safety lookup. A real duplicate keeps its SHA-1 (`promoteToSha256`).
+      if (
+        checksumAlgorithm === ChecksumAlgorithm.sha1File &&
+        (await this.forkSchemaRepository.promoteToSha256({ assetId, sha1: sha1!, sha256: sha256! }))
+      ) {
+        await this.integrityRepository.recordVerification({
+          assetId,
+          originalPath,
+          expectedChecksum: sha256!,
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          actualSha256,
+          result: 'passed',
+        });
+      }
     }
     if (result === 'passed' || result === 'missing') {
       if (reportId) {
@@ -735,18 +885,41 @@ export class IntegrityService extends BaseService {
     };
 
     let lastCreatedAt: Date | undefined;
+    let stopped = false;
 
     this.logger.log(`Processing assets from ${startMarker?.toISOString() ?? 'beginning'}`);
 
+    // FL-520: the night's damage check is a run of its own, so its progress and its end show in
+    // Library care: the files it plans to read tonight, and how many it has read.
+    const runId = await this.startCheckRun(IntegrityReport.ChecksumFail);
+    const runStartedAt = new Date(startedAt).toISOString();
+    await this.systemMetadataRepository.updateIntegrityRun(IntegrityReport.ChecksumFail, runId, {
+      batches: Math.max(0, Math.min(count, Math.ceil(count * percentageLimit))),
+    });
+
     const assets = this.integrityRepository.streamAssetChecksums(startMarker);
 
+    let encrypted = 0;
     for await (const { originalPath, checksum, checksumAlgorithm, createdAt, assetId, reportId } of assets) {
-      await this.checkAssetChecksum(originalPath, checksum, checksumAlgorithm, assetId, reportId);
+      if (
+        (await this.checkAssetChecksum(originalPath, checksum, checksumAlgorithm, assetId, reportId)) === 'encrypted'
+      ) {
+        encrypted++;
+      }
 
       processed++;
 
-      if (processed % 100 === 0) {
+      if (processed % CHECKSUM_PROGRESS_EVERY === 0) {
         printStats();
+        await this.systemMetadataRepository.updateIntegrityRun(IntegrityReport.ChecksumFail, runId, {
+          finished: CHECKSUM_PROGRESS_EVERY,
+        });
+        if (await this.stopRequestedSince(runStartedAt)) {
+          this.logger.log('Stopped by an administrator.');
+          lastCreatedAt = createdAt;
+          stopped = true;
+          break;
+        }
       }
 
       if (Date.now() > startedAt + timeLimit || processed > count * percentageLimit) {
@@ -764,12 +937,29 @@ export class IntegrityService extends BaseService {
 
     if (lastCreatedAt) {
       this.logger.log(`Finished checksum job, will continue from ${lastCreatedAt.toISOString()}.`);
+      // FL-520: a pass stopped by its limits (or by Stop) is not a completed run: it carries on from the
+      // checkpoint next night. Stop already wrote its own line in Recent checks.
+      if (await this.systemMetadataRepository.clearIntegrityRun(IntegrityReport.ChecksumFail, runId)) {
+        await this.recordHistory(
+          IntegrityReport.ChecksumFail,
+          runStartedAt,
+          stopped ? 'stopped' : 'paused',
+          processed - encrypted,
+          encrypted,
+        );
+      }
     } else {
       this.logger.log(`Finished checksum job, covered all assets.`);
-      // A pass that reached the last asset is a completed run (FL-81); one stopped by its limits
-      // continues from the checkpoint next time and completes then.
-      const runId = await this.startCheckRun(IntegrityReport.ChecksumFail);
-      await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date());
+      // A pass that reached the last asset is a completed run (FL-81).
+      if (await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date())) {
+        await this.recordHistory(
+          IntegrityReport.ChecksumFail,
+          runStartedAt,
+          'completed',
+          processed - encrypted,
+          encrypted,
+        );
+      }
     }
 
     return JobStatus.Success;
@@ -787,6 +977,11 @@ export class IntegrityService extends BaseService {
 
         const hash = this.hashForAlgorithm(checksumAlgorithm);
         if (!hash) {
+          return reportId;
+        }
+        // FL-721: a sealed Locked file's plaintext checksum can't be compared: its report is out of
+        // date ("encrypted, not checked"), never a failure anything may act on
+        if (await isLockedPath(path)) {
           return reportId;
         }
 
@@ -870,8 +1065,16 @@ export class IntegrityService extends BaseService {
     const byFileAsset = reports.filter((report) => report.fileAssetId);
     const byPath = reports.filter((report) => !report.assetId && !report.fileAssetId);
 
-    if (byAsset.length > 0) {
-      const ids = byAsset.map(({ assetId }) => assetId!);
+    // FL-721 (spec §8.3): an encrypted Locked item is never trashed from here; its stale report goes
+    const encrypted = await this.encryptedAssetIds(byAsset.map(({ assetId, path }) => ({ assetId: assetId!, path })));
+    const skipped = byAsset.filter(({ assetId }) => encrypted.has(assetId!));
+    if (skipped.length > 0) {
+      await this.integrityRepository.deleteByIds(skipped.map(({ id }) => id));
+    }
+    const trashed = byAsset.filter(({ assetId }) => !encrypted.has(assetId!));
+
+    if (trashed.length > 0) {
+      const ids = trashed.map(({ assetId }) => assetId!);
       await this.assetRepository.updateAll(ids, {
         deletedAt: new Date(),
         status: AssetStatus.Trashed,
@@ -882,7 +1085,7 @@ export class IntegrityService extends BaseService {
         userId: '', // we don't notify any users currently
       });
 
-      await this.integrityRepository.deleteByIds(byAsset.map(({ id }) => id));
+      await this.integrityRepository.deleteByIds(trashed.map(({ id }) => id));
     }
 
     if (byFileAsset.length > 0) {
@@ -893,7 +1096,8 @@ export class IntegrityService extends BaseService {
       const tracked = await this.integrityRepository.getTrackedPaths(byPath.map(({ path }) => path));
       const trackedPaths = new Set(tracked.map(({ path }) => path));
       for (const { path } of byPath) {
-        if (trackedPaths.has(path)) {
+        // FL-721 (spec §8.3): a sealed Locked file is never deleted from here
+        if (trackedPaths.has(path) || (await isLockedPath(path))) {
           continue;
         }
         await this.physicalFileRepository

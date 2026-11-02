@@ -97,6 +97,9 @@ window.addEventListener('message', (event) => {
         outcome,
       }
       port?.postMessage(reply)
+    }).catch((error: unknown) => {
+      // A failed reply (e.g. an uncloneable outcome) must not wedge the queue for later applies.
+      console.error('Studio command frame could not deliver an apply reply', error)
     })
   }
   const ready: StudioCommandFrameMessage = {

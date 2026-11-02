@@ -1,12 +1,18 @@
-import { AssetVisibility } from '@frameleaf/sdk';
+import { AssetVisibility, TimeBucketDateType } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { Settings } from 'luxon';
 import { tick } from 'svelte';
+import { locale } from 'svelte-i18n';
 import { readable } from 'svelte/store';
 import { describe, expect, it, vi } from 'vitest';
 import { DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
 import { clearLocksRevealed, markLocksRevealed } from '$lib/components/timeline/lock-reveal';
+import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
+import { bucketTimelineAssets } from '$lib/managers/timeline-manager/timeline-month.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import AssetTile from './AssetTile.svelte';
+import LibraryDayGroup from './LibraryDayGroup.svelte';
 
 vi.mock('$lib/utils', async (original) => ({
   ...(await original<typeof import('$lib/utils')>()),
@@ -240,5 +246,107 @@ describe('AssetTile selection and touch', () => {
     screen.getByRole('button', { name: /A photo/ }).dispatchEvent(event);
     expect(onContextMenu).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+describe('AssetTile date labels', () => {
+  it.each([
+    ['2026-01-15', 21, 16, '2026-01-15'],
+    ['2026-07-15', 21, 17, '2026-07-15'],
+    ['2026-01-15', 2, 21, '2026-01-14'],
+  ])('converts added time to the viewer zone (%s at %s UTC)', (date, hour, expectedHour, expectedDate) => {
+    const previousZone = Settings.defaultZone;
+    Settings.defaultZone = 'America/Toronto';
+    void locale.set('en-US');
+    try {
+      const [year, month, day] = date.split('-').map(Number);
+      const response = toResponseDto(timelineAssetFactory.build());
+      response.createdAt = [`${date}T${String(hour).padStart(2, '0')}:20:00.000Z`];
+      response.fileCreatedAt = ['2019-06-01T12:00:00.000Z'];
+      response.localOffsetHours = [-5];
+      const [photo] = bucketTimelineAssets(response);
+      const tile = { id: photo.id, asset: photo, position: { top: 0, left: 0, width: 200, height: 160 } };
+      const { container } = render(LibraryDayGroup, {
+        timelineDay: {
+          dateType: TimeBucketDateType.Added,
+          timelineMonth: { yearMonth: { year, month } },
+          day,
+          viewerAssets: [tile],
+          activeViewerAssets: [tile],
+          width: 200,
+          height: 160,
+        } as unknown as TimelineDay,
+        selection: [],
+        selecting: false,
+        showHeader: false,
+        captionHeight: 24,
+      });
+      const time = container.querySelector('time')!;
+      expect(time.textContent?.replaceAll(/\s+/g, ' ').trim()).toBe(`${expectedHour % 12 || 12}:20 PM`);
+      expect(time.getAttribute('datetime')).toContain(`${expectedDate}T${expectedHour}:20`);
+    } finally {
+      Settings.defaultZone = previousZone;
+      void locale.set('en');
+    }
+  });
+
+  it.each(['timeline', 'work'] as const)('preserves the capture clock in %s', (layout) => {
+    const previousZone = Settings.defaultZone;
+    Settings.defaultZone = 'America/Toronto';
+    void locale.set('en-US');
+    try {
+      const { container } = render(AssetTile, {
+        asset: asset({
+          localDateTime: { year: 2026, month: 1, day: 15, hour: 21, minute: 20, second: 0, millisecond: 0 },
+        }),
+        layout,
+        width: 200,
+        height: 160,
+        captionHeight: 24,
+      });
+      expect(container.querySelector('time')?.textContent?.replaceAll(/\s+/g, ' ').trim()).toBe('9:20 PM');
+    } finally {
+      Settings.defaultZone = previousZone;
+      void locale.set('en');
+    }
+  });
+});
+
+describe('AssetTile list and browse dates', () => {
+  it.each([TimeBucketDateType.Added, TimeBucketDateType.Taken])(
+    'uses the appropriate date in List (%s)',
+    (dateType) => {
+      const previousZone = Settings.defaultZone;
+      Settings.defaultZone = 'America/Toronto';
+      void locale.set('en-US');
+      try {
+        const at = { year: 2026, month: 1, day: 15, hour: 2, minute: 20, second: 0, millisecond: 0 };
+        const { container } = render(AssetTile, {
+          asset: asset({ createdAt: at, localDateTime: at }),
+          width: 300,
+          height: 96,
+          layout: 'list',
+          dateType,
+        });
+        expect(container.querySelector('.fl-list-date')?.textContent).toBe(
+          dateType === TimeBucketDateType.Added ? 'Jan 14, 2026' : 'Jan 15, 2026',
+        );
+      } finally {
+        Settings.defaultZone = previousZone;
+        void locale.set('en');
+      }
+    },
+  );
+
+  it('keeps Browse free of time captions', () => {
+    const { container } = render(AssetTile, {
+      asset: asset(),
+      width: 200,
+      height: 200,
+      layout: 'browse',
+      captionHeight: 24,
+      dateType: TimeBucketDateType.Added,
+    });
+    expect(container.querySelector('time')).toBeNull();
   });
 });

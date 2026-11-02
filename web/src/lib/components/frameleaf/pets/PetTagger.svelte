@@ -33,6 +33,7 @@
     type PetObservationResponseDto,
     type PetResponseDto,
   } from '@frameleaf/sdk';
+  import { toastManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -42,7 +43,12 @@
     /** The pet to preselect, when the caller knows it. */
     petId?: string;
     onClose: () => void;
-    onSaved: (observation: PetObservationResponseDto, pet: PetResponseDto) => void;
+    /** `source` is the photo the observation was written on: its id and checksum when Save was pressed. */
+    onSaved: (
+      observation: PetObservationResponseDto,
+      pet: PetResponseDto,
+      source: { id: string; checksum: string },
+    ) => void;
   }
 
   let { asset, pets, petId = '', onClose, onSaved }: Props = $props();
@@ -72,7 +78,14 @@
   let error = $state('');
   let imageFailed = $state(false);
 
-  const source = $derived(getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }));
+  // The checksum is part of the cache key so a replaced original reloads (and re-measures) the image.
+  const source = $derived(
+    getAssetMediaUrl({
+      id: asset.id,
+      size: AssetMediaSize.Preview,
+      cacheKey: `${asset.thumbhash ?? ''}.${asset.checksum}`,
+    }),
+  );
   const content = $derived(imageContentRect(viewport, natural));
   const shown = $derived(preview ?? box);
   const canSave = $derived(!!selectedPetId && !saving && (wholePhoto || (!!box && !!natural)));
@@ -83,6 +96,25 @@
     }
   });
 
+  // A region belongs to the photo it was drawn on: when the viewer moves to another photo, or the
+  // original is replaced, the draft (and the measured image size) start over so Save can never send
+  // the old region.
+  const draftKey = () => `${asset.id}:${asset.checksum}`;
+  let draftFor = draftKey();
+  $effect(() => {
+    const key = draftKey();
+    if (key === draftFor) {
+      return;
+    }
+    draftFor = key;
+    box = null;
+    drag = null;
+    preview = null;
+    natural = null;
+    error = '';
+    imageFailed = false;
+  });
+
   const measure = () => {
     const rect = stage?.getBoundingClientRect();
     if (rect && (rect.width !== viewport.width || rect.height !== viewport.height)) {
@@ -90,13 +122,19 @@
     }
   };
 
+  // False once the dialog is gone: a save that fails afterwards reports in a toast.
+  let alive = true;
+
   onMount(() => {
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     if (stage) {
       observer?.observe(stage);
     }
-    return () => observer?.disconnect();
+    return () => {
+      alive = false;
+      observer?.disconnect();
+    };
   });
 
   const point = (event: PointerEvent, clampToImage = false) =>
@@ -162,27 +200,40 @@
     }
   };
 
+  const stillShown = (source: { id: string; checksum: string }) =>
+    source.id === asset.id && source.checksum === asset.checksum;
+
   const save = async (event: Event) => {
     event.preventDefault();
     const pet = pets.find(({ id }) => id === selectedPetId);
     if (!pet || !canSave) {
       return;
     }
+    const source = { id: asset.id, checksum: asset.checksum };
     saving = true;
     error = '';
     try {
       const observation = await createPetObservation({
         id: pet.id,
         petObservationCreateDto: {
-          assetId: asset.id,
-          expectedChecksum: asset.checksum,
+          assetId: source.id,
+          expectedChecksum: source.checksum,
           ...(!wholePhoto && box && natural && regionFromBox(box, natural)),
         },
       });
-      onSaved(observation, pet);
-      open = false;
+      onSaved(observation, pet, source);
+      // A save that finishes after the viewer moved on leaves the dialog to the photo now shown.
+      if (stillShown(source)) {
+        open = false;
+      }
     } catch (error_) {
-      error = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
+      const message = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
+      if (alive && open && stillShown(source)) {
+        error = message;
+      } else {
+        // The dialog was closed or the viewer moved on: say so in a toast, never silently.
+        toastManager.warning(message);
+      }
     } finally {
       saving = false;
     }
@@ -266,7 +317,7 @@
               type="number"
               min="0"
               max="100"
-              step="0.5"
+              step="any"
               value={toPercent(box[field])}
               onchange={(event) => setField(field, event.currentTarget.value)}
             />

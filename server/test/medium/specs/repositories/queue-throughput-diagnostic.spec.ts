@@ -66,7 +66,7 @@ const queryClass = (text: string) => {
   if (q.startsWith('update job_run_item i set state = j.state from job j')) return 'item-state-sync';
   if (q.startsWith('update job_run_item i set selection =') && q.includes('j.sensitive'))
     return 'item-library-redaction';
-  if (q.startsWith('update job_run_item shadow') && q.includes('join job_selection_lineage origin'))
+  if (q.includes('update job_run_item shadow') && q.includes('join job_selection_lineage origin'))
     return 'lineage-mirror';
   if (q.startsWith('with origins as (') && q.includes('insert into job_selection_lineage')) return 'lineage-record';
   if (q.startsWith('select candidate.id from unnest(')) return 'settlement-live-proof';

@@ -27,16 +27,20 @@
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
+  import ImportLanding from '$lib/components/frameleaf/settings/imports/ImportLanding.svelte';
+  import StorageLanding from '$lib/components/frameleaf/settings/storage/StorageLanding.svelte';
   import MaintenanceLanding from '$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte';
   import EditingLanding from '$lib/components/frameleaf/settings/editing/EditingLanding.svelte';
   import SearchLanding from '$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte';
   import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
   import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
   import ServerLanding from '$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte';
-  import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
+  import CloudLanding from '$lib/components/frameleaf/settings/cloud/CloudLanding.svelte';
+  import WhoCanSignInLanding from '$lib/components/frameleaf/settings/security/WhoCanSignInLanding.svelte';
+  import YourSignInLanding from '$lib/components/frameleaf/settings/security/YourSignInLanding.svelte';
+  import Overview from '$lib/components/frameleaf/settings/overview/Overview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
@@ -45,7 +49,6 @@
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
-    AREA_TILE_COLORS,
     backupPageFor,
     commandCenterUrl,
     hasLandingPage,
@@ -90,6 +93,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAccountLockOutline,
     mdiAccountMultipleOutline,
     mdiAccountOutline,
     mdiDeleteOutline,
@@ -197,6 +201,12 @@
       description: $t('frameleaf_settings_area_security_description'),
       icon: mdiShieldLockOutline,
     },
+    // FL-367: a person's own sign-in, devices, keys and Locked photos.
+    privacy: {
+      title: $t('frameleaf_settings_area_privacy'),
+      description: $t('frameleaf_settings_area_privacy_description'),
+      icon: mdiAccountLockOutline,
+    },
     notifications: {
       title: $t('frameleaf_settings_area_notifications'),
       description: $t('frameleaf_settings_area_notifications_description'),
@@ -238,7 +248,7 @@
       icon: mdiFolderOutline,
     },
     utilities: {
-      title: $t('utilities'),
+      title: $t('frameleaf_tools'),
       description: $t('frameleaf_utilities_description'),
       icon: mdiTools,
     },
@@ -294,7 +304,12 @@
       .join(' '),
   );
   const requestedArea = $derived(
-    resolveSettingsArea({ area: page.url.searchParams.get('area'), isOpen: legacyOpen, isAdmin }),
+    resolveSettingsArea({
+      area: page.url.searchParams.get('area'),
+      section: page.url.searchParams.get('section'),
+      isOpen: legacyOpen,
+      isAdmin,
+    }),
   );
   // An area this account may not open falls back to the first one it may. This is the area the
   // address names; `area` below is the one the page is shown in.
@@ -347,14 +362,18 @@
     'routing',
     'cloud-processing',
     'hardware',
+    // FL-365: the Storage & originals pages draw their own kit cards.
+    'storage-template',
+    'trash',
+    'migration',
+    // FL-363: the Overnight schedule draws its own kit cards.
+    'nightly-tasks',
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
-    'cloud-license',
     'cloud-remote',
     'cloud-backup',
     'frameleaf-signin',
-    'deduplication',
     'mode',
     'backups',
     'integrity',
@@ -654,12 +673,17 @@
 
   /** Opens an area, or one of its sections, keeping the "Viewing" scope. */
   const navigate = async (next: SettingsAreaId, section?: string, params: Record<string, string> = {}) => {
-    query = '';
     sidebarStore.isOpen = false;
     const currentScope = page.url.searchParams.get('scope') ?? undefined;
-    await gotoWithFocusAndScroll(commandCenterUrl(next, section, { ...params, scope: currentScope }), {
-      keepFocus: true,
-    });
+    try {
+      await gotoWithFocusAndScroll(commandCenterUrl(next, section, { ...params, scope: currentScope }), {
+        keepFocus: true,
+      });
+    } finally {
+      // Clear the search only once the new page is in place: clearing it first shows the page the
+      // search started from until the navigation lands.
+      query = '';
+    }
     await focusHeading();
   };
 
@@ -748,8 +772,8 @@
               aria-current={item.id === area ? 'page' : undefined}
               onclick={() => navigate(item.id)}
             >
-              <!-- FL-76: a coloured icon tile per area, like System Settings (apple-style.css:565-640). -->
-              <span class="tile fl-continuous-corners" style:--tile={AREA_TILE_COLORS[item.id]}>
+              <!-- UI review 2026-10-30 P3: a plain icon, as in the main rail (green when selected or hovered). -->
+              <span class="tile">
                 <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
               </span>
               <span>{areaCopy[item.id].title}</span>
@@ -831,7 +855,12 @@
       {:else}
         <!-- An administrator outside the scoped pages: say who the page applies to instead of offering a picker it ignores. -->
         <p class="cc-account-scope cc-scope-fixed">
-          {appliesToAccount ? $t('frameleaf_cc_scope_applies_account') : $t('frameleaf_cc_scope_applies_server')}
+          <!-- Change history lists the whole server's saves, so it carries the server's scope tag. -->
+          {addressArea === 'history'
+            ? $t('frameleaf_cc_scope_tag_server')
+            : appliesToAccount
+              ? $t('frameleaf_cc_scope_applies_account')
+              : $t('frameleaf_cc_scope_applies_server')}
         </p>
       {/if}
       <label class="cc-search">
@@ -947,7 +976,7 @@
                 </div>
               {/if}
               {#if area === 'overview'}
-                <CommandCenterOverview />
+                <Overview />
               {:else if area === 'backups' && backupPage}
                 <BackupArea page={backupPage} />
               {:else if area === 'history'}
@@ -978,15 +1007,6 @@
                     class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
-                    {#if area === 'storage' && selected.key === 'trash'}
-                      <!-- The template's Storage → Trash & retention links to the account's own trash. -->
-                      <div class="cc-section-link">
-                        <Button onclick={() => navigate('trash', 'contents')}>
-                          <Icon icon={mdiDeleteOutline} size="1rem" aria-hidden />
-                          {$t('frameleaf_cc_open_trash')}
-                        </Button>
-                      </div>
-                    {/if}
                     {#if selected.component}
                       <selected.component />
                     {:else}
@@ -1002,12 +1022,22 @@
                 <PreferencesLanding sections={areaSections} />
               {:else if area === 'care'}
                 <LibraryCareLanding />
+              {:else if area === 'storage'}
+                <StorageLanding />
+              {:else if area === 'backup'}
+                <ImportLanding />
               {:else if area === 'intelligence'}
                 <SearchLanding sections={areaSections} />
               {:else if area === 'editing'}
                 <EditingLanding sections={areaSections} />
               {:else if area === 'maintenance'}
                 <MaintenanceLanding />
+              {:else if area === 'security'}
+                <WhoCanSignInLanding />
+              {:else if area === 'cloud'}
+                <CloudLanding />
+              {:else if area === 'privacy'}
+                <YourSignInLanding sections={areaSections} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />
@@ -1067,7 +1097,8 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    width: 228px;
+    /* P3: wide enough that "Computers & background work" stays on one line at the rail's 14px. */
+    width: 280px;
     padding: 14px 0 0;
     overflow: hidden;
     white-space: nowrap;
@@ -1137,7 +1168,8 @@
   .cc-nav-group > p {
     margin: 12px 22px 6px;
     color: var(--fl-muted);
-    font-size: 10px;
+    /* P5: explanatory text is at least 12px. */
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: 1.1px;
     text-transform: uppercase;
@@ -1165,26 +1197,18 @@
     color: var(--fl-text);
     box-shadow: inset 3px 0 var(--fl-accent);
   }
+  /* P3 (review-1030-shell.css): plain icons like the main rail, green when selected or hovered. */
   .tile {
     display: grid;
     flex: none;
     place-items: center;
     width: 24px;
     height: 24px;
-    color: #fff;
-    background: var(--tile, #8e8e93);
-    border-radius: 7px;
-    box-shadow: inset 0 0 0 0.5px #ffffff40;
+    color: var(--fl-muted);
   }
-  @supports (corner-shape: squircle) {
-    .tile {
-      border-radius: 10px;
-    }
-  }
-  @media (prefers-contrast: more) {
-    .tile {
-      box-shadow: inset 0 0 0 1px var(--fl-text);
-    }
+  .area:hover .tile,
+  .area.selected .tile {
+    color: var(--fl-accent);
   }
   .pending {
     flex-shrink: 0;
@@ -1232,14 +1256,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /*
-   * A long area name ("Computers & background work") takes a second line in the open rail, as in the
-   * prototype, instead of being cut short. The collapsed rail hides labels altogether.
-   */
-  .command-center:not(.cc-collapsed) .area > span:not(.tile, .pending) {
-    white-space: normal;
-    text-wrap: balance;
-  }
   .cc-nav-children button:hover,
   .cc-nav-children button[aria-current='page'] {
     color: var(--fl-text);
@@ -1251,13 +1267,14 @@
     gap: 10px;
     padding: 14px 22px;
     color: var(--fl-muted);
+    background: var(--fl-panel);
     border-top: 1px solid var(--fl-border);
-    font-size: var(--fl-font-micro);
+    font-size: 12px;
   }
   .cc-nav-foot small {
     display: block;
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .cc-nav-scrim {
     display: none;
@@ -1278,7 +1295,7 @@
     padding: 10px 28px;
     background: var(--fl-panel);
     border-bottom: 1px solid var(--fl-border);
-    font-size: var(--fl-font-micro);
+    font-size: 12px;
   }
   .cc-context {
     display: flex;
@@ -1348,6 +1365,9 @@
     white-space: nowrap;
   }
   .cc-main {
+    /* The containing block of the hidden screen-reader labels inside: without it they are placed on
+       the body, grow the document past the window and Manage or a long scroll moves the whole shell. */
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: auto;
@@ -1402,9 +1422,6 @@
     background: none;
     border: 0;
   }
-  .cc-section-link {
-    margin: 14px 0;
-  }
   .cc-section + .cc-section {
     margin-top: 16px;
   }
@@ -1428,7 +1445,7 @@
   /* command-center.css `.cc-subtle`. */
   .cc-subtle {
     color: var(--fl-muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.65;
     margin: 12px 0 0;
   }
@@ -1500,7 +1517,7 @@
   .cc-search-results small,
   .cc-search-results button > span > span {
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
+    font-size: var(--fl-font-small);
   }
   .cc-search-results button:focus-visible {
     outline-offset: var(--fl-focus-inset);
@@ -1569,7 +1586,7 @@
       bottom: 0;
       inset-inline-start: 0;
       z-index: 60;
-      width: 250px;
+      width: min(280px, 85vw);
       padding-top: 10px;
       visibility: hidden;
       transform: translateX(-100%);

@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
-import { AssetLockReason, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetLockReason, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -357,4 +357,33 @@ describe('atomic Live Photo verified-resource publication', () => {
     expect((await h.state()).assets).toEqual([]);
     expect((await h.state()).quota).toBe(0);
   });
+});
+
+it('publishes designer Live Photos with scope on both first asset rows and refuses mixed scopes', async () => {
+  const h = await setup();
+  const still = h.prepared(h.still, AssetType.Image);
+  const video = h.prepared(h.video, AssetType.Video);
+  const publish = (motionScope: LibraryScope) =>
+    uploads.lockedMany([h.still.id, h.video.id], h.user.id, (tx, rows) =>
+      uploads.publishLivePhoto(
+        tx,
+        rows.find((row) => row.id === h.still.id)!,
+        rows.find((row) => row.id === h.video.id)!,
+        {
+          still: { ...still, asset: { ...still.asset, libraryScope: LibraryScope.Design } },
+          video: { ...video, asset: { ...video.asset, libraryScope: motionScope } },
+        },
+      ),
+    );
+  await expect(publish(LibraryScope.Personal)).rejects.toBeInstanceOf(ConflictException);
+  expect((await h.state()).assets).toEqual([]);
+  await publish(LibraryScope.Design);
+  const rows = await db
+    .selectFrom('asset')
+    .select(['id', 'libraryScope', 'livePhotoVideoId'])
+    .where('ownerId', '=', h.user.id)
+    .execute();
+  expect(rows).toHaveLength(2);
+  expect(rows.every((row) => row.libraryScope === LibraryScope.Design)).toBe(true);
+  expect(rows.filter((row) => row.livePhotoVideoId !== null)).toHaveLength(1);
 });

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { MediaOperationKind } from 'src/enum.js';
+import { LibraryScope, MediaOperationKind } from 'src/enum.js';
 import {
   PRESERVATION_FORMAT,
   PRESERVATION_INDEX_ENTRY,
   PRESERVATION_SCHEMA_VERSION,
   PRESERVATION_SUPPORT,
   PreservationAlbum,
+  PreservationBookmarksSchema,
   PreservationEntrySchema,
   PreservationLibraryState,
   PreservationManifestSchema,
@@ -40,6 +41,8 @@ const sha256 = 'b'.repeat(64);
 
 const sidecarOf = (overrides: Partial<PreservationSidecar> = {}): PreservationSidecar => ({
   schemaVersion: PRESERVATION_SCHEMA_VERSION,
+  libraryScope: LibraryScope.Personal,
+  sources: [],
   sourceAssetId: sourceId,
   originalFileName: 'lake.jpg',
   type: 'IMAGE',
@@ -210,10 +213,54 @@ describe('index entries', () => {
 });
 
 describe('sidecars', () => {
+  it('reads legacy sidecars and manifests while preserving explicit v2 workspace metadata', () => {
+    const legacy = { ...sidecarOf(), schemaVersion: 1 } as Record<string, unknown>;
+    delete legacy.libraryScope;
+    delete legacy.sources;
+    expect(PreservationSidecarSchema.safeParse(legacy).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(manifestOf({ schemaVersion: 1 })).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(manifestOf({ schemaVersion: 2 })).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(manifestOf({ schemaVersion: 3 })).success).toBe(false);
+    const current = { ...legacy, schemaVersion: 2, libraryScope: LibraryScope.Design, sources: [] };
+    expect(PreservationSidecarSchema.parse(current)).toMatchObject({ libraryScope: LibraryScope.Design, sources: [] });
+    expect(PreservationSidecarSchema.safeParse({ ...legacy, schemaVersion: 2 }).success).toBe(false);
+    expect(PreservationSidecarSchema.safeParse({ ...current, schemaVersion: 1 }).success).toBe(false);
+    expect(PreservationSidecarSchema.safeParse({ ...current, libraryScope: 'unknown' }).success).toBe(false);
+  });
+
   it('round-trips through the written form', () => {
     const sidecar = sidecarOf({ tags: ['Travel/Italy'], lock: { reason: 'marked', lockedAt: null } });
     const parsed = PreservationSidecarSchema.parse(JSON.parse(preservationJson(sidecar).toString('utf8')));
     expect(parsed).toEqual(sidecar);
+  });
+
+  it('carries where an imported source came from, and still reads sources without it (FL-653)', () => {
+    const source = {
+      captureId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0',
+      pageUrl: 'https://example.com/board',
+      mediaUrl: null,
+      title: '',
+      capturedAt: '2026-10-29T10:00:00.000Z',
+      note: null,
+      creator: null,
+      licenseUrl: null,
+    };
+    const v2 = { ...sidecarOf(), sources: [source] };
+    expect(PreservationSidecarSchema.parse(v2).sources?.[0]).not.toHaveProperty('importedFrom');
+    const dated = { ...sidecarOf(), dates: { ...sidecarOf().dates, addedAt: '2024-03-01T12:00:00.000Z' } };
+    expect(PreservationSidecarSchema.parse(dated).dates.addedAt).toBe('2024-03-01T12:00:00.000Z');
+    expect(PreservationSidecarSchema.parse(sidecarOf()).dates).not.toHaveProperty('addedAt');
+    // a partial date would restore as 1 January; only a full timestamp with its offset is accepted
+    expect(() =>
+      PreservationSidecarSchema.parse({ ...sidecarOf(), dates: { ...sidecarOf().dates, addedAt: '2024' } }),
+    ).toThrow();
+    const imported = { ...sidecarOf(), sources: [{ ...source, importedFrom: 'eagle' }] };
+    const written = PreservationSidecarSchema.parse(JSON.parse(preservationJson(imported).toString('utf8')));
+    expect(written.sources?.[0]).toMatchObject({ importedFrom: 'eagle' });
+    expect(
+      PreservationSidecarSchema.safeParse({ ...sidecarOf(), sources: [{ ...source, importedFrom: 'pinterest' }] })
+        .success,
+    ).toBe(false);
   });
 
   it('refuses a sidecar with fields it does not know', () => {
@@ -270,13 +317,23 @@ describe(orderPreservationAlbums.name, () => {
     },
   );
 
-  it('nests an album only in a top-level collection, one level deep', () => {
+  it('preflights the complete hierarchy against the restore depth limit', () => {
+    const chain = Array.from({ length: 33 }, (_, index) =>
+      album(String(index), { parentId: index === 0 ? null : String(index - 1) }),
+    );
+    expect(orderPreservationAlbums(chain.slice(0, 32), 32)).toHaveLength(32);
+    expect(() => orderPreservationAlbums(chain.toReversed(), 32)).toThrow('32 levels');
+  });
+
+  it('preserves nested album and collection parents', () => {
     const top = album(collection, { kind: 'collection' });
     const byId = new Map([[collection, top]]);
     expect(restoredAlbumParent(album(child, { parentId: collection }), byId)).toBe(collection);
-    expect(restoredAlbumParent(album(child, { kind: 'collection', parentId: collection }), byId)).toBeNull();
+    expect(restoredAlbumParent(album(child, { kind: 'collection', parentId: collection }), byId)).toBe(collection);
     const notACollection = new Map([[collection, album(collection)]]);
-    expect(restoredAlbumParent(album(child, { parentId: collection }), notACollection)).toBeNull();
+    expect(restoredAlbumParent(album(child, { parentId: collection }), notACollection)).toBe(collection);
+    const nested = new Map([[collection, album(collection, { parentId: 'ancestor' })]]);
+    expect(restoredAlbumParent(album(child, { parentId: collection }), nested)).toBe(collection);
   });
 });
 
@@ -457,5 +514,57 @@ describe('small rules', () => {
     expect(describePreservationScope({ filter: { isFavorite: { eq: true }, takenAt: { gte: 'x' } } })).toBe(
       'Library items matching: isFavorite, takenAt',
     );
+  });
+});
+
+describe('portable preservation bookmarks', () => {
+  it('bounds originals and links together before reading package contents', () => {
+    const make = (exported: number) =>
+      manifestOf({
+        complete: true,
+        counts: { selected: exported, exported, failed: 0, skipped: 0, locked: 0, bytes: 1, bookmarks: 1 },
+        files: { 'assets.jsonl': { sha256, bytes: 1 }, 'bookmarks.json': { sha256, bytes: 1 } },
+      });
+    expect(PreservationManifestSchema.safeParse(make(99_999)).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(make(100_000)).success).toBe(false);
+  });
+
+  const bookmark = () => ({
+    id: sourceId,
+    url: 'https://example.com/watch?v=123',
+    title: 'Inspiration',
+    note: 'My private note',
+    libraryScope: LibraryScope.Design,
+    isArchived: false,
+    isLocked: true,
+    rating: 4,
+    previewAssetId: null,
+    albumIds: [],
+    tags: ['Material/Paper'],
+    source: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  it('keeps references discriminated from originals and retains private organization', () => {
+    const input = [bookmark()];
+    expect(PreservationBookmarksSchema.parse(JSON.parse(preservationJson(input).toString()))).toEqual(input);
+  });
+  it.each(['javascript:alert(1)', 'file:///private/source', 'https://user:secret@example.com/'])(
+    'refuses unsafe URL %s',
+    (url) => {
+      expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), url }]).success).toBe(false);
+    },
+  );
+  it('refuses duplicate identities, unknown workspace and unreviewed server or owner fields', () => {
+    expect(PreservationBookmarksSchema.safeParse([bookmark(), bookmark()]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), libraryScope: 'invalid' }]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), ownerId: sourceId }]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), originalPath: '/private/original' }]).success).toBe(
+      false,
+    );
+  });
+  it('requires explicit workspace membership and validates every logical album reference', () => {
+    const { libraryScope: _scope, ...withoutScope } = bookmark();
+    expect(PreservationBookmarksSchema.safeParse([withoutScope]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), albumIds: ['not-an-id'] }]).success).toBe(false);
   });
 });

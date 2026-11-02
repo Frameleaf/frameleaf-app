@@ -12,7 +12,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { formatBytes } from '$lib/frameleaf/physical-dedup';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import {
     collectPages,
     findStagedArchive,

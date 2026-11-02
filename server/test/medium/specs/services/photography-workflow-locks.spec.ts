@@ -11,7 +11,9 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
+import { defaultPhotographySite } from 'src/utils/photography-site.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -222,27 +224,49 @@ it('rechecks canonical source and logo locks for published metadata, pixels and 
   expect(JSON.stringify([historical.captures, historical.approvedVersions, historical.orders])).not.toContain(
     rejection.revisionId,
   );
-  await service.saveSite(auth, {
+  // FL-702: the website keeps its own copies, written beside the test's files.
+  const siteFolder = vi.spyOn(StorageCore, 'getFolderLocation').mockReturnValue(folder);
+  const siteService = new PhotographySiteService(
+    repository,
+    {
+      get: () => Promise.resolve({ value: { shoots: [{ id: shootId, albumId: album.id, name: 'Portrait' }], brand } }),
+    } as never,
+    service,
+    {} as never,
+    { queue: vi.fn(async () => {}) } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { setContext: vi.fn(), warn: vi.fn() } as never,
+  );
+  await siteService.saveSite(auth, {
     expectedRevision: null,
     site: {
+      ...defaultPhotographySite(brand.name),
       enabled: true,
-      title: brand.name,
-      about: '',
-      services: '',
-      contact: '',
-      presentation: { layout: 'editorial', spacing: 'comfortable', font: 'editorial', palette: 'studio' },
-      portfolio: pins.map((pin) => ({ shootId, captureId: pin.captureId, consent: true })),
+      collections: [{ id: 'work', name: 'Work', items: pins.map((pin) => ({ shootId, captureId: pin.captureId })) }],
     },
   });
+  siteFolder.mockRestore();
+  const websitePhotos = async () =>
+    (await siteService.publicSite(user.id)).collections[0].photos.map((photo) => photo.key.split(':', 2)[1]);
   const byteReaders = (pin: (typeof pins)[number]) => [
     () => service.file(shootId, guest.session, pin.captureId, 'preview'),
     () => service.file(shootId, guest.session, pin.captureId, 'thumbnail'),
     () => service.outputPreview(shootId, guest.session, pin.captureId, pin.outputId),
     () => service.outputFile(shootId, guest.session, pin.captureId, pin.outputId),
     () => service.file(shootId, guest.session, pin.captureId, 'download'),
-    () => service.publicPhoto(user.id, shootId, pin.captureId),
+    () => siteService.publicPhoto(user.id, shootId, pin.captureId, 640),
   ];
-  const expectedPaths = [files.preview, files.thumbnail, files.approval, files.output, files.output, files.preview];
+  const expectedPaths = [
+    files.preview,
+    files.thumbnail,
+    files.approval,
+    files.output,
+    files.output,
+    expect.stringContaining('-640.jpg'),
+  ];
   const archives = [];
   for (const pin of pins) {
     for (const [index, read] of byteReaders(pin).entries())
@@ -284,7 +308,7 @@ it('rechecks canonical source and logo locks for published metadata, pixels and 
   for (const read of byteReaders(pins[0])) await expect(read()).rejects.toThrow();
   await expect(service.zip(shootId, guest.session, { captureIds: [captureId] })).rejects.toThrow();
   await expect(service.archive(shootId, guest.session, archives[0])).rejects.toThrow();
-  expect((await service.publicSite(user.id)).portfolio.map((photo) => photo.captureId)).toEqual([groupId]);
+  expect(await websitePhotos()).toEqual([groupId]);
   expect(
     await repository.eligibleRevisions(
       (await repository.get(shootId))!,
@@ -341,7 +365,7 @@ it('rechecks canonical source and logo locks for published metadata, pixels and 
     .values({ assetId: logo.id, reason: AssetLockReason.Marked, lockedBy: user.id })
     .execute();
   expect((await service.gallery(shootId, guest.session)).brand.logoUrl).toBeNull();
-  expect((await service.publicSite(user.id)).brand.logoUrl).toBeNull();
+  expect((await siteService.publicSite(user.id)).brand.logoUrl).toBeNull();
   for (const view of [await service.get(auth, shootId), await service.gallery(shootId, guest.session)])
     expect(view.orders.find((order) => order.id === pins[0].orderId)!.items[0].outputs[0]).toMatchObject({
       ready: false,
@@ -373,7 +397,7 @@ it('rechecks canonical source and logo locks for published metadata, pixels and 
     ),
   ).toEqual(new Set(pins.map((pin) => pin.revisionId)));
   expect((await service.gallery(shootId, guest.session)).photos).toHaveLength(2);
-  expect((await service.publicSite(user.id)).portfolio).toHaveLength(2);
+  expect(await websitePhotos()).toHaveLength(2);
   await expect(service.galleryLogo(shootId, guest.session)).resolves.toMatchObject({ path: files.logo });
   expect((await service.publicLogo(user.id)).length).toBeGreaterThan(0);
   for (const [index, pin] of pins.entries()) {

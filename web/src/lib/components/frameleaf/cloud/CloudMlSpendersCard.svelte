@@ -162,7 +162,7 @@
         {$t('admin.frameleaf_cloud_ml_spenders_unsaved')}
       {/if}
     </p>
-    <SettingActions keys={['frameleafCloud']} {disabled} />
+    <SettingActions keys={['frameleafCloud.cloudMl.spenders']} {disabled} />
   </section>
 {/if}
 

@@ -18,6 +18,7 @@ from frameleaf_ml.schemas import ModelSession, ModelTask, ModelType
 class BaseCLIPTextualEncoder(InferenceModel):
     depends = []
     identity = (ModelType.TEXTUAL, ModelTask.SEARCH)
+    threads = 4  # lower search latency
 
     def predict(self, *inputs: Any, **model_kwargs: Any) -> str:
         # `language` is a per-request option (the query locale). The base

@@ -45,6 +45,10 @@ describe(LivePhotoRepository.name, () => {
     defaultDatabase = await getKyselyDB();
   });
 
+  afterEach(async () => {
+    await defaultDatabase?.destroy();
+  });
+
   describe('getUnlinkedByContentId', () => {
     it('returns an unlinked image + video that share a ContentIdentifier', async () => {
       const { sut, assetRepository, userRepository, database } = setup();

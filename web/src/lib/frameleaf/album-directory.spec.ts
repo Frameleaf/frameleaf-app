@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import {
+  albumAncestors,
   arrangeAlbumDirectory,
   canDropOnCollection,
   canTakeOut,
@@ -142,7 +143,7 @@ describe('album directory rules', () => {
     expect(canDropOnCollection(mine, family, 'jamie')).toBe(false);
     expect(canDropOnCollection(family, family, 'me')).toBe(false);
     expect(canDropOnCollection(space, family, 'me')).toBe(false);
-    expect(canDropOnCollection(mine, rockies, 'me')).toBe(false); // an album is not a container
+    expect(canDropOnCollection(mine, rockies, 'me')).toBe(true);
     expect(canTakeOut(winter, 'me')).toBe(true);
     expect(canTakeOut(mine, 'me')).toBe(false);
     expect(canTakeOut(winter, 'jamie')).toBe(false);
@@ -161,7 +162,7 @@ describe('album directory rules', () => {
     const withOther = tree({
       collections: [...directory.collections, { collection: readOnly, albums: [], albumCount: 0, assetCount: 0 }],
     });
-    expect(moveTargets(withOther, rockies, 'me').map(({ collection }) => collection.id)).toEqual(['family']);
+    expect(moveTargets(withOther, rockies, 'me').map(({ collection }) => collection.id)).toEqual(['family', 'winter']);
     expect(moveTargets(withOther, family, 'me')).toEqual([]);
   });
 
@@ -226,5 +227,30 @@ describe('album directory rules', () => {
     // Left from this tab: the local announcement and the server echo are both ignored.
     expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, leftLocally: true })).toBe('ignore');
     expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, isOwner: true })).toBe('refresh');
+  });
+});
+
+describe('nested album organization', () => {
+  const root = owned({ id: 'root', parentId: null });
+  const child = owned({ id: 'child', parentId: 'root', kind: AlbumKind.Collection });
+  const leaf = owned({ id: 'leaf', parentId: 'child' });
+  const other = owned({ id: 'other', parentId: null });
+  const nested = tree({
+    collections: [{ collection: child, albums: [leaf], albumCount: 1, assetCount: 0 }],
+    albums: [root, other],
+  });
+  it('offers albums as parents but excludes the moving subtree', () => {
+    expect(moveTargets(nested, root, 'me').map(({ collection }) => collection.id)).toEqual(['other']);
+    expect(
+      moveTargets(nested, leaf, 'me')
+        .map(({ collection }) => collection.id)
+        .sort(),
+    ).toEqual(['child', 'other', 'root']);
+    expect(canDropOnCollection(child, other, 'me')).toBe(true);
+    expect(canTakeOut(child, 'me')).toBe(true);
+  });
+  it('builds full breadcrumbs and stops at unavailable ancestors', () => {
+    expect(albumAncestors(nested, leaf).map(({ id }) => id)).toEqual(['root', 'child']);
+    expect(albumAncestors(tree({ albums: [leaf] }), leaf)).toEqual([]);
   });
 });

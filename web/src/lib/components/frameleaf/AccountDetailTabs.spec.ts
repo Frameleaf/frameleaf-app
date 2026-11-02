@@ -24,6 +24,7 @@ import en from '../../../../../i18n/en.json';
 
 vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto: vi.fn() }));
 
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: { email: false } } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'admin-id' } } }));
 
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({

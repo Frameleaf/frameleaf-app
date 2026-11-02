@@ -2,6 +2,7 @@ import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+import { Readable } from 'node:stream';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -225,6 +226,64 @@ describe(StorageRepository.name, () => {
       expect(archive).toContain('IMG_1.JPG.xmp');
       expect(archive).toContain('original pixels');
       expect(archive).toContain('<x:xmpmeta>details</x:xmpmeta>');
+    });
+
+    it('starts a streamed entry only once the streamed entry before it is done (FL-721)', async () => {
+      const zip = sut.createZipStream();
+      const started: string[] = [];
+      let firstStarted!: () => void;
+      const first = new Promise<void>((resolve) => (firstStarted = resolve));
+      const lazy = (name: string) =>
+        Readable.from(
+          (function* () {
+            started.push(name);
+            firstStarted();
+            // more than the stream buffers hold, like a real file, so it stays open until read
+            for (let index = 0; index < 64; index++) {
+              yield Buffer.alloc(65_536, name);
+            }
+            yield Buffer.from(`${name} bytes`);
+          })(),
+        );
+      const chunks: Buffer[] = [];
+      zip.stream.pause();
+      const ended = new Promise((resolve, reject) => zip.stream.on('end', resolve).on('error', reject));
+
+      zip.addFile(lazy('a'), 'a.jpg');
+      zip.addFile(lazy('b'), 'b.jpg');
+      const finalized = zip.finalize();
+      await first;
+      // give a wrongly started second stream time to show up
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      // nothing reads the archive yet, so the second stream must not have been opened
+      expect(started).toEqual(['a']);
+
+      zip.stream
+        .on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        })
+        .resume();
+      await finalized;
+      await ended;
+      expect(started).toEqual(['a', 'b']);
+      expect(Buffer.concat(chunks).toString('latin1')).toContain('b bytes');
+    });
+  });
+
+  describe('removeDirIfEmpty', () => {
+    it('removes only an empty folder, never one with files, a link or a missing path (OPS-08)', async () => {
+      await writeFiles({ '/upload/ab/full/keep.jpg': 'original', '/outside/keep.jpg': 'outside' });
+      await fs.mkdir(fixturePath('/upload/ab/empty'), { recursive: true });
+      await fs.symlink(fixturePath('/outside'), fixturePath('/upload/ab/link'), 'dir');
+
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/empty'))).resolves.toBe(true);
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/full'))).resolves.toBe(false);
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/link'))).resolves.toBe(false);
+      await expect(sut.removeDirIfEmpty(fixturePath('/upload/ab/gone'))).resolves.toBe(false);
+
+      await expect(fs.stat(fixturePath('/upload/ab/empty'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.readFile(fixturePath('/upload/ab/full/keep.jpg'), 'utf8')).resolves.toBe('original');
+      expect((await fs.lstat(fixturePath('/upload/ab/link'))).isSymbolicLink()).toBe(true);
     });
   });
 
