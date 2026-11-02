@@ -1,5 +1,7 @@
 import { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
+import { ImportedPasswordContext } from 'src/library-import/passwords.js';
+import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 const contentTables = [
@@ -127,6 +129,13 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
+    password: (context: ImportedPasswordContext) =>
+      readSqlitePassword(
+        database,
+        context,
+        'photoprism-bcrypt',
+        'SELECT p.hash AS password FROM auth_users u LEFT JOIN passwords p ON p.uid=u.user_uid WHERE u.user_uid=?',
+      ),
     validateRelationships: () => {
       try {
         for (const [code, sql] of relationshipChecks) {

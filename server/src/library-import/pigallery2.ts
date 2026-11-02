@@ -1,5 +1,7 @@
 import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
+import { ImportedPasswordContext } from 'src/library-import/passwords.js';
+import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 const projections = {
@@ -48,6 +50,8 @@ export const openPigallery2Snapshot = (path: string, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
+    password: (context: ImportedPasswordContext) =>
+      readSqlitePassword(database, context, 'bcrypt', 'SELECT password FROM user_entity WHERE id=?'),
     *rows(table: Pigallery2Table): Generator<Pigallery2Row[]> {
       if (!Object.hasOwn(projections, table)) throw new Pigallery2ReadError('PIGALLERY2_TABLE_NOT_ALLOWED');
       try {

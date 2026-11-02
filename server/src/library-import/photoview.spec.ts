@@ -1,3 +1,4 @@
+import { hash } from 'bcrypt';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -5,6 +6,7 @@ import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import content from 'src/library-import/fixtures/photoview/2.4.0-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { PhotoviewTable, openPhotoviewSnapshot } from 'src/library-import/photoview.js';
 
 describe('Photoview pinned SQLite extraction', () => {
@@ -61,6 +63,25 @@ describe('Photoview pinned SQLite extraction', () => {
       source.close();
     }
   };
+  it('transfers an explicitly mapped owner password through a protected channel', async () => {
+    const password = 'synthetic owner password';
+    const encoded = await hash(password, 12);
+    database.prepare('UPDATE users SET password=? WHERE id=2').run(encoded);
+    const source = openPhotoviewSnapshot(path, 'v2.4.0');
+    try {
+      const credential = await source.password({
+        operationId: '11111111-1111-4111-8111-111111111111',
+        sourceUserId: '2',
+        destinationUserId: '22222222-2222-4222-8222-222222222222',
+      });
+      expect(credential).toBeDefined();
+      expect(await verifyImportedPassword(password, credential!.forImport())).toBe(true);
+      expect(JSON.stringify(credential)).not.toContain(encoded);
+      expect([...source.rows('users')].flat()[0]).not.toHaveProperty('password');
+    } finally {
+      source.close();
+    }
+  });
   it('reads all native projected records, retaining shared access and per-user favourites', () => {
     for (const [table, expected] of Object.entries(content.rows))
       expect(rows(table as PhotoviewTable)).toHaveLength(expected.length);
