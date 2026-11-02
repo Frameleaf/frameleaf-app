@@ -44,6 +44,27 @@ mount records before resolving bytes. Encrypted files, remote storage and object
 stores require a verified decrypted staging export. Nothing in this reader authorizes
 in-place adoption, relocation, source restart or destination activation.
 
+## Local home original classification
+
+`resolveNextcloudHomeOriginal` joins one file-cache record to its storage, local home
+mount, storage-root record, user and MIME record. All numeric identities must match;
+the local home storage identity, mount provider, mount point and owner must agree.
+Only readable, unencrypted image/video originals under `files/` are accepted. Unsafe
+paths, generated application data, trash-tree paths, unavailable storage, object or
+external mounts, encrypted files and missing/mismatched records are refused.
+
+The result preserves source file IDs, owner IDs and numeric storage scopes, including
+identities beyond JavaScript safe integers. Paths remain relative to the explicitly
+bound storage root. File-cache path hashes, etags and stored checksums never become
+migration content hashes. The caller must still prove filesystem containment, source
+consistency and original bytes independently. Remote/encrypted sources need a
+separately qualified decrypted export; this classifier does not provide that export,
+interpret sharing restrictions, pair Live Photos or authorize file movement.
+
+The five generated-original classifications match the captured native storage API
+inventory below, including separate-owner duplicate bytes. This comparison reuses the
+existing pinned fixture; it is not a new full-source or filesystem acceptance run.
+
 ## Native fixture evidence and limits
 
 An isolated installation with no external network or exposed ports created three
