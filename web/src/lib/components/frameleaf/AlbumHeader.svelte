@@ -948,7 +948,7 @@
 {#if createOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
     <AlbumCreateDialog
       kind={AlbumKind.Album}
-      collections={collections.length > 0 ? collections : [album]}
+      collections={collections.length > 0 || createParentId !== album.id ? collections : [album]}
       defaultParentId={createParentId}
       bind:open={createOpen}
       onCreate={createChildAlbum}
