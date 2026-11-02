@@ -132,7 +132,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-734–736 audio and delivery workflows; verified visual producers unchanged.
     sourceSha256 === '253ed9a82591ab9c2aa765c387036438fcce858052fb9f88430aad2da69ee3d3' ||
     // FL-1120 inspector copy and panel placement; changes no composition or raster producer.
-    sourceSha256 === '07bc785b900d7601f50636eb8126dd3e46f1880e6b42062f82dd2825a6db3262'
+    sourceSha256 === 'ef10a34b580249446fe7dbd51411acf408eed24d2152b39bcd1609d9758cf51a'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -1390,6 +1390,8 @@
             })),
           );
         }
+        // A lost response for Original is rethrown only after the batch's outcome is shown and followed.
+        let lostOriginal: unknown = null;
         if (pendingDeliveries.original) {
           try {
             const { operation } = await createStudioExport({
@@ -1398,16 +1400,17 @@
             });
             items.unshift({ shape: StudioExportShape.Original, operation, error: null });
           } catch (error) {
-            if (!isHttpError(error)) {
-              // A lost response: keep the keys so trying again answers with the same export.
-              throw error;
+            if (isHttpError(error)) {
+              const refusal = studioRenderRefusalFromError(error.data);
+              items.unshift({
+                shape: StudioExportShape.Original,
+                operation: null,
+                error: $t(refusal ? studioRenderRefusalKey(refusal) : 'frameleaf_studio_export_failed'),
+              });
+            } else {
+              // Keep the keys so trying again answers with the same export.
+              lostOriginal = error;
             }
-            const refusal = studioRenderRefusalFromError(error.data);
-            items.unshift({
-              shape: StudioExportShape.Original,
-              operation: null,
-              error: $t(refusal ? studioRenderRefusalKey(refusal) : 'frameleaf_studio_export_failed'),
-            });
           }
         }
         deliveryResults = items.map((item) => ({ shape: item.shape, queued: !!item.operation, error: item.error }));
@@ -1419,6 +1422,9 @@
         }
         if (admitted.length > 0) {
           saveCaptionSidecars(choice);
+        }
+        if (lostOriginal) {
+          throw lostOriginal;
         }
         const refused = items.filter((item) => !item.operation);
         if (refused.length > 0) {

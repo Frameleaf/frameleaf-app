@@ -102,7 +102,7 @@ index 58f49f0..a45f353 100644
                      const item = useItemsStore.getState().itemById[warning.itemId]
                      const seconds = Number.isFinite(warning.startSeconds)
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
-index 9a1b49c..049c9e2 100644
+index 9a1b49c..4461be2 100644
 --- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 @@ -40,6 +40,8 @@ import type { TimelineState, TimelineActions } from '@/features/editor/deps/time
@@ -160,17 +160,15 @@ index 9a1b49c..049c9e2 100644
          </TabsContent>
  
          {/* Effects Tab - clip effects plus text styling and animation */}
-@@ -764,6 +781,13 @@ const ClipPanelCore = memo(function ClipPanelCore({
+@@ -764,6 +781,11 @@ const ClipPanelCore = memo(function ClipPanelCore({
            )}
          </TabsContent>
        </Tabs>
 +      {/* Mounted beside the tabs, not inside one, so the chosen tracks, the reviewed mix and a
 +          running audition survive a look at another tab. */}
-+      {showAudioTab && (
-+        <div hidden={activeTab !== 'audio'} data-testid="voice-music-host">
-+          <VoiceMusicPanel />
-+        </div>
-+      )}
++      <div hidden={!showAudioTab || activeTab !== 'audio'} data-testid="voice-music-host">
++        <VoiceMusicPanel />
++      </div>
      </div>
    )
  })
@@ -442,7 +440,7 @@ index cbc657a..2e6dccd 100644
    }
  }
 diff --git a/src/i18n/locales/partials/en/voice-music.json b/src/i18n/locales/partials/en/voice-music.json
-index 905db62..760404f 100644
+index 905db62..e7c7f05 100644
 --- a/src/i18n/locales/partials/en/voice-music.json
 +++ b/src/i18n/locales/partials/en/voice-music.json
 @@ -1,36 +1,41 @@
@@ -459,7 +457,7 @@ index 905db62..760404f 100644
 -    "attackSec": "Attack (seconds)",
 -    "releaseSec": "Release (seconds)",
 +    "targetLufs": "Voice loudness (LUFS)",
-+    "duckDb": "Music drops by (dB)",
++    "duckDb": "Music level while someone speaks (dB, below 0)",
 +    "attackSec": "Fade down (s)",
 +    "releaseSec": "Fade back up (s)",
      "review": "Review mix",
@@ -486,7 +484,7 @@ index 905db62..760404f 100644
 +    "cancelled": "Stopped. Nothing on the timeline changed.",
 +    "applied": "Mix applied. You can undo it in one step.",
 +    "selectTracks": "Choose at least one voice track and one music track.",
-+    "separateTracks": "Voice and music need to be on different tracks.",
++    "separateTracks": "Choose different sources for voice and music. The same clip can't be both.",
      "invalidSettings": "Use valid ducking, loudness and timing settings.",
      "inaudible": "A selected source is muted, hidden or excluded by solo. Review track audibility first.",
      "locked": "A selected source or linked companion is locked.",

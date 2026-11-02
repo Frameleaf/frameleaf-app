@@ -348,6 +348,23 @@ describe('delivery batch recovery', () => {
     expect(vi.mocked(createStudioExport).mock.calls[1]![0].studioExportCreateDto.requestKey).toBe(single.requestKey);
   });
 
+  it('shows and follows the admitted batch before reporting a lost Original response', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [admitted] } as never);
+    vi.mocked(createStudioExport).mockRejectedValueOnce(new Error('Response lost'));
+    const both = {
+      ...choice,
+      deliveries: [
+        { shape: 'original', format: 'mp4-h264', color: 'preserve', resolution: '1080p' },
+        ...choice.deliveries,
+      ],
+    };
+    await harness.exportDialog!.onExport(both);
+    await tick();
+    expect(harness.exportDialog!.deliveryResults).toEqual([{ shape: 'landscape', queued: true, error: null }]);
+    expect(studioCaptionExportSidecars).toHaveBeenCalledTimes(1);
+    expect(harness.exportDialog!.retryPending).toBe(true);
+  });
+
   it.each([false, true])(
     'downloads caption sidecars only when a delivery is admitted (admitted=%s)',
     async (accepted) => {

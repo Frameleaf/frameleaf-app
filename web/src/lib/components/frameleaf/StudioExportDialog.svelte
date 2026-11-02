@@ -500,7 +500,7 @@
       color,
       resolution,
       quality,
-      subtitleMode,
+      ...(!audioOnly && { subtitleMode }),
       ...picture,
       shape: value,
     });
@@ -769,7 +769,8 @@
               color,
               resolution,
               quality,
-              subtitleMode,
+              ...(mastering && { mastering }),
+              ...(!photo && !audioOnly && { subtitleMode }),
               shape: value,
               ...(selectedRange && { range: selectedRange }),
               ...(isReshaped(value) && { framing: variantFraming(value) }),

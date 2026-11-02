@@ -66,7 +66,8 @@
   let brand = $state<Brand | null>(null);
   let workflows = $state<Record<string, Workflow>>({});
   let phone = $state(false);
-  let busy = $state(false);
+  // Loading from the first render, so the did-not-load card never flashes before the first answer.
+  let busy = $state(true);
   let error = $state('');
   let message = $state('');
   let collectionId = $state<string | null>(null);
@@ -648,7 +649,9 @@
                 <Button
                   variant="quiet"
                   label={item.name.trim()
-                    ? $t('frameleaf_studio_site_remove_named', { values: { name: item.name.trim() } })
+                    ? $t('frameleaf_studio_site_remove_named', {
+                        values: { name: item.name.trim(), number: index + 1 },
+                      })
                     : $t('frameleaf_studio_site_remove_service', { values: { number: index + 1 } })}
                   onclick={() => draft!.packages.splice(index, 1)}>{$t('remove')}</Button
                 >
@@ -678,7 +681,9 @@
                 <Button
                   variant="quiet"
                   label={item.name.trim()
-                    ? $t('frameleaf_studio_site_remove_kind_words_from', { values: { name: item.name.trim() } })
+                    ? $t('frameleaf_studio_site_remove_kind_words_from', {
+                        values: { name: item.name.trim(), number: index + 1 },
+                      })
                     : $t('frameleaf_studio_site_remove_kind_words', { values: { number: index + 1 } })}
                   onclick={() => draft!.testimonials.splice(index, 1)}>{$t('remove')}</Button
                 >
