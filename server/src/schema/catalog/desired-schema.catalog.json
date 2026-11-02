@@ -47663,6 +47663,242 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "frameleaf_library_import",
+      "columns": [
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "singleton",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operation_id",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "binding",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "created_at",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updated_at",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_singleton_check",
+          "definition": "CHECK (singleton)",
+          "tableName": "frameleaf_library_import",
+          "expression": "(singleton)",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_binding_check",
+          "definition": "CHECK ((jsonb_typeof(binding) = 'object'::text))",
+          "tableName": "frameleaf_library_import",
+          "expression": "((jsonb_typeof(binding) = 'object'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))",
+          "tableName": "frameleaf_library_import",
+          "expression": "((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_check",
+          "definition": "CHECK ((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "frameleaf_library_import_pkey",
+          "definition": "PRIMARY KEY (singleton)",
+          "tableName": "frameleaf_library_import",
+          "columnNames": [
+            "singleton"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "frameleaf_library_import_operation_id_key",
+          "definition": "UNIQUE (operation_id)",
+          "tableName": "frameleaf_library_import",
+          "columnNames": [
+            "operation_id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "frameleaf_library_import_mapping",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operation_id",
+          "tableName": "frameleaf_library_import_mapping",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "entity_kind",
+          "tableName": "frameleaf_library_import_mapping",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "source_id",
+          "tableName": "frameleaf_library_import_mapping",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "destination_id",
+          "tableName": "frameleaf_library_import_mapping",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "record_sha256",
+          "tableName": "frameleaf_library_import_mapping",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "applied_at",
+          "tableName": "frameleaf_library_import_mapping",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "foreign-key",
+          "name": "frameleaf_library_import_mapping_operation_id_fkey",
+          "definition": "FOREIGN KEY (operation_id) REFERENCES frameleaf_library_import(operation_id)",
+          "tableName": "frameleaf_library_import_mapping",
+          "columnNames": [
+            "operation_id"
+          ],
+          "referenceTableName": "frameleaf_library_import",
+          "referenceColumnNames": [
+            "operation_id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_mapping_entity_kind_check",
+          "definition": "CHECK ((entity_kind = ANY (ARRAY['owner'::text, 'library'::text, 'asset'::text, 'file'::text, 'album'::text, 'person'::text, 'stack'::text])))",
+          "tableName": "frameleaf_library_import_mapping",
+          "expression": "((entity_kind = ANY (ARRAY['owner'::text, 'library'::text, 'asset'::text, 'file'::text, 'album'::text, 'person'::text, 'stack'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_mapping_source_id_check",
+          "definition": "CHECK (((length(source_id) >= 1) AND (length(source_id) <= 1024)))",
+          "tableName": "frameleaf_library_import_mapping",
+          "expression": "(((length(source_id) >= 1) AND (length(source_id) <= 1024)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_mapping_record_sha256_check",
+          "definition": "CHECK ((record_sha256 ~ '^[a-f0-9]{64}$'::text))",
+          "tableName": "frameleaf_library_import_mapping",
+          "expression": "((record_sha256 ~ '^[a-f0-9]{64}$'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "frameleaf_library_import_mapping_pkey",
+          "definition": "PRIMARY KEY (operation_id, entity_kind, source_id)",
+          "tableName": "frameleaf_library_import_mapping",
+          "columnNames": [
+            "operation_id",
+            "entity_kind",
+            "source_id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
