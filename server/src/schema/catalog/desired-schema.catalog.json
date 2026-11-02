@@ -40146,408 +40146,6 @@
       "synchronize": true
     },
     {
-      "name": "user",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "email",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "password",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "pinCode",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "profileImagePath",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "profileImageAssetId",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isAdmin",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "shouldChangePassword",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "true",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "avatarColor",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "oauthId",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "storageLabel",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "quotaSizeInBytes",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "quotaUsageInBytes",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "status",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "'active'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "profileChangedAt",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "clusterGroupId",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "uploadsPaused",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "passwordLinkHash",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "passwordLinkExpiresAt",
-          "tableName": "user",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "importClaimPending",
-          "tableName": "user",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "user_updateId_idx",
-          "definition": "CREATE INDEX \"user_updateId_idx\" ON public.\"user\" USING btree (\"updateId\")",
-          "tableName": "user",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "user_profileImageAssetId_idx",
-          "definition": "CREATE INDEX \"user_profileImageAssetId_idx\" ON public.\"user\" USING btree (\"profileImageAssetId\")",
-          "tableName": "user",
-          "columnNames": [
-            "profileImageAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "user_updatedAt_id_idx",
-          "definition": "CREATE INDEX \"user_updatedAt_id_idx\" ON public.\"user\" USING btree (\"updatedAt\", id)",
-          "tableName": "user",
-          "columnNames": [
-            "updatedAt",
-            "id"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "user_clusterGroupId_idx",
-          "definition": "CREATE INDEX \"user_clusterGroupId_idx\" ON public.\"user\" USING btree (\"clusterGroupId\")",
-          "tableName": "user",
-          "columnNames": [
-            "clusterGroupId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "icloud_weekly_pin_retirement",
-          "definition": "CREATE TRIGGER icloud_weekly_pin_retirement AFTER DELETE OR UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION retire_icloud_weekly_authority()",
-          "tableName": "user",
-          "functionName": "retire_icloud_weekly_authority",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "delete",
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "user_delete_audit",
-          "definition": "CREATE TRIGGER user_delete_audit AFTER DELETE ON public.\"user\" REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION user_delete_audit()",
-          "tableName": "user",
-          "functionName": "user_delete_audit",
-          "referencingOldTableAs": "old",
-          "when": "(pg_trigger_depth() = 0)",
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "statement"
-        },
-        {
-          "name": "user_updatedAt",
-          "definition": "CREATE TRIGGER \"user_updatedAt\" BEFORE UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "user",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "user_email_uq",
-          "definition": "UNIQUE (email)",
-          "tableName": "user",
-          "columnNames": [
-            "email"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "user_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "user",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "user_storageLabel_uq",
-          "definition": "UNIQUE (\"storageLabel\")",
-          "tableName": "user",
-          "columnNames": [
-            "storageLabel"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "user_clusterGroupId_fkey",
-          "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE",
-          "tableName": "user",
-          "columnNames": [
-            "clusterGroupId"
-          ],
-          "referenceTableName": "cluster_group",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "user_profileImageAssetId_fkey",
-          "definition": "FOREIGN KEY (\"profileImageAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "user",
-          "columnNames": [
-            "profileImageAssetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "workflow_batch",
       "columns": [
         {
@@ -47665,119 +47263,402 @@
       "synchronize": true
     },
     {
-      "name": "frameleaf_library_import",
+      "name": "user",
       "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "email",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "password",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "pinCode",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileImagePath",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "profileImageAssetId",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
         {
           "type": "boolean",
           "primary": false,
-          "name": "singleton",
-          "tableName": "frameleaf_library_import",
+          "name": "isAdmin",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "shouldChangePassword",
+          "tableName": "user",
           "nullable": false,
           "isArray": false,
           "default": "true",
           "synchronize": true
         },
         {
-          "type": "uuid",
+          "type": "character varying",
           "primary": false,
-          "name": "operation_id",
-          "tableName": "frameleaf_library_import",
-          "nullable": false,
+          "name": "avatarColor",
+          "tableName": "user",
+          "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "jsonb",
+          "type": "timestamp with time zone",
           "primary": false,
-          "name": "binding",
-          "tableName": "frameleaf_library_import",
-          "nullable": false,
+          "name": "deletedAt",
+          "tableName": "user",
+          "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "text",
+          "type": "character varying",
+          "primary": false,
+          "name": "oauthId",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "storageLabel",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "quotaSizeInBytes",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "quotaUsageInBytes",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
           "primary": false,
           "name": "status",
-          "tableName": "frameleaf_library_import",
+          "tableName": "user",
           "nullable": false,
           "isArray": false,
+          "default": "'active'::character varying",
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "created_at",
-          "tableName": "frameleaf_library_import",
+          "name": "profileChangedAt",
+          "tableName": "user",
           "nullable": false,
           "isArray": false,
           "default": "now()",
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "uuid",
           "primary": false,
-          "name": "updated_at",
-          "tableName": "frameleaf_library_import",
+          "name": "updateId",
+          "tableName": "user",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clusterGroupId",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "uploadsPaused",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "passwordLinkHash",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "passwordLinkExpiresAt",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "importClaimPending",
+          "tableName": "user",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
           "synchronize": true
         }
       ],
-      "indexes": [],
-      "triggers": [],
+      "indexes": [
+        {
+          "name": "user_updateId_idx",
+          "definition": "CREATE INDEX \"user_updateId_idx\" ON public.\"user\" USING btree (\"updateId\")",
+          "tableName": "user",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_profileImageAssetId_idx",
+          "definition": "CREATE INDEX \"user_profileImageAssetId_idx\" ON public.\"user\" USING btree (\"profileImageAssetId\")",
+          "tableName": "user",
+          "columnNames": [
+            "profileImageAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_updatedAt_id_idx",
+          "definition": "CREATE INDEX \"user_updatedAt_id_idx\" ON public.\"user\" USING btree (\"updatedAt\", id)",
+          "tableName": "user",
+          "columnNames": [
+            "updatedAt",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "user_clusterGroupId_idx",
+          "definition": "CREATE INDEX \"user_clusterGroupId_idx\" ON public.\"user\" USING btree (\"clusterGroupId\")",
+          "tableName": "user",
+          "columnNames": [
+            "clusterGroupId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "icloud_weekly_pin_retirement",
+          "definition": "CREATE TRIGGER icloud_weekly_pin_retirement AFTER DELETE OR UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION retire_icloud_weekly_authority()",
+          "tableName": "user",
+          "functionName": "retire_icloud_weekly_authority",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "delete",
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "user_delete_audit",
+          "definition": "CREATE TRIGGER user_delete_audit AFTER DELETE ON public.\"user\" REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION user_delete_audit()",
+          "tableName": "user",
+          "functionName": "user_delete_audit",
+          "referencingOldTableAs": "old",
+          "when": "(pg_trigger_depth() = 0)",
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "statement"
+        },
+        {
+          "name": "user_updatedAt",
+          "definition": "CREATE TRIGGER \"user_updatedAt\" BEFORE UPDATE ON public.\"user\" FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "user",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
-          "type": "check",
-          "name": "frameleaf_library_import_singleton_check",
-          "definition": "CHECK (singleton)",
-          "tableName": "frameleaf_library_import",
-          "expression": "(singleton)",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "frameleaf_library_import_binding_check",
-          "definition": "CHECK ((jsonb_typeof(binding) = 'object'::text))",
-          "tableName": "frameleaf_library_import",
-          "expression": "((jsonb_typeof(binding) = 'object'::text))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "frameleaf_library_import_status_check",
-          "definition": "CHECK ((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))",
-          "tableName": "frameleaf_library_import",
-          "expression": "((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "frameleaf_library_import_check",
-          "definition": "CHECK ((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text)))",
-          "tableName": "frameleaf_library_import",
-          "expression": "((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text)))",
+          "type": "unique",
+          "name": "user_email_uq",
+          "definition": "UNIQUE (email)",
+          "tableName": "user",
+          "columnNames": [
+            "email"
+          ],
           "synchronize": true
         },
         {
           "type": "primary-key",
-          "name": "frameleaf_library_import_pkey",
-          "definition": "PRIMARY KEY (singleton)",
-          "tableName": "frameleaf_library_import",
+          "name": "user_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "user",
           "columnNames": [
-            "singleton"
+            "id"
           ],
           "synchronize": true
         },
         {
           "type": "unique",
-          "name": "frameleaf_library_import_operation_id_key",
-          "definition": "UNIQUE (operation_id)",
-          "tableName": "frameleaf_library_import",
+          "name": "user_storageLabel_uq",
+          "definition": "UNIQUE (\"storageLabel\")",
+          "tableName": "user",
           "columnNames": [
-            "operation_id"
+            "storageLabel"
           ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_clusterGroupId_fkey",
+          "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE",
+          "tableName": "user",
+          "columnNames": [
+            "clusterGroupId"
+          ],
+          "referenceTableName": "cluster_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "user_profileImageAssetId_fkey",
+          "definition": "FOREIGN KEY (\"profileImageAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "user",
+          "columnNames": [
+            "profileImageAssetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],
@@ -47987,6 +47868,167 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "RESTRICT",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "frameleaf_library_import",
+      "columns": [
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "singleton",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operation_id",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "binding",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "created_at",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updated_at",
+          "tableName": "frameleaf_library_import",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "reviewed_manifest",
+          "tableName": "frameleaf_library_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "reviewed_plan",
+          "tableName": "frameleaf_library_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_singleton_check",
+          "definition": "CHECK (singleton)",
+          "tableName": "frameleaf_library_import",
+          "expression": "(singleton)",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_binding_check",
+          "definition": "CHECK ((jsonb_typeof(binding) = 'object'::text))",
+          "tableName": "frameleaf_library_import",
+          "expression": "((jsonb_typeof(binding) = 'object'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))",
+          "tableName": "frameleaf_library_import",
+          "expression": "((status = ANY (ARRAY['copying'::text, 'verifying'::text, 'activated'::text, 'abandoned'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_check",
+          "definition": "CHECK ((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "((((binding ->> 'operationId'::text) IS NOT NULL) AND ((binding ->> 'operationId'::text) = (operation_id)::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "frameleaf_library_import_pkey",
+          "definition": "PRIMARY KEY (singleton)",
+          "tableName": "frameleaf_library_import",
+          "columnNames": [
+            "singleton"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "frameleaf_library_import_operation_id_key",
+          "definition": "UNIQUE (operation_id)",
+          "tableName": "frameleaf_library_import",
+          "columnNames": [
+            "operation_id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_inputs_pair",
+          "definition": "CHECK (((reviewed_manifest IS NULL) = (reviewed_plan IS NULL)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((reviewed_manifest IS NULL) = (reviewed_plan IS NULL)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_manifest_object",
+          "definition": "CHECK (((reviewed_manifest IS NULL) OR (jsonb_typeof(reviewed_manifest) = 'object'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((reviewed_manifest IS NULL) OR (jsonb_typeof(reviewed_manifest) = 'object'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_plan_object",
+          "definition": "CHECK (((reviewed_plan IS NULL) OR (jsonb_typeof(reviewed_plan) = 'object'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((reviewed_plan IS NULL) OR (jsonb_typeof(reviewed_plan) = 'object'::text)))",
           "synchronize": true
         }
       ],
