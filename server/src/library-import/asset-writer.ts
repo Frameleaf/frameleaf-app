@@ -3,7 +3,7 @@ import { posix } from 'node:path';
 import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { DestinationImportPlan, bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import { verifyImportFiles } from 'src/library-import/files.js';
+import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
 import { ImportManifest, parseImportManifest } from 'src/library-import/manifest.js';
 import { LibraryImportBinding, LibraryImportJournal, LibraryImportRefused } from 'src/library-import/state.js';
 import { BUDDY_CAPTURE_LOCK, filePathLockKey } from 'src/repositories/physical-file.repository.js';
@@ -212,6 +212,7 @@ export class CanonicalAssetWriter {
       );
     } catch (error) {
       if (error instanceof LibraryImportRefused) throw error;
+      if (error instanceof BundleVerificationError) throw new LibraryImportRefused(error.code);
       // Database diagnostics may contain media names and host paths.
       throw new LibraryImportRefused('ASSET_WRITE_FAILED');
     }

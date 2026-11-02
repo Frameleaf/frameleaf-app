@@ -12,7 +12,10 @@ import { LibraryImportJournal } from 'src/library-import/state.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
-vi.mock('src/library-import/files.js', () => ({ verifyImportFiles: vi.fn() }));
+vi.mock('src/library-import/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/library-import/files.js')>()),
+  verifyImportFiles: vi.fn(),
+}));
 let db: Kysely<DB>;
 const wrap = (connection: Kysely<any>): ImportDatabase => ({
   query: async (statement, parameters = []) =>
