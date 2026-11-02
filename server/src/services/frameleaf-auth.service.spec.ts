@@ -647,7 +647,10 @@ describe(FrameleafAuthService.name, () => {
         metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
         const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'admin' } });
         await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toMatchObject({
-          response: expect.objectContaining({ code: 'frameleaf_exchange_no_access' }),
+          response: expect.objectContaining({
+            code: 'frameleaf_exchange_no_access',
+            message: 'Your Frameleaf account does not have access to this server',
+          }),
         });
         expect(mocks.user.create).not.toHaveBeenCalled();
       });
@@ -729,6 +732,30 @@ describe(FrameleafAuthService.name, () => {
         );
       });
     });
+
+    it.each(['subject', 'email'])(
+      'explains an unclaimed imported owner matched by %s on native sign-in',
+      async (match) => {
+        const user = UserFactory.create({ email: 'remote@example.test', importClaimPending: true });
+        if (match === 'subject') {
+          mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+          mocks.user.get.mockResolvedValue(user);
+        } else {
+          mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
+          mocks.user.getByEmail.mockResolvedValue(user);
+        }
+        await expect(sut.exchangeToken({ token: await mint() }, loginDetails)).rejects.toMatchObject({
+          status: 400,
+          response: {
+            code: FrameleafTokenExchangeErrorCode.AccountConflict,
+            message: 'This account must be claimed before signing in',
+          },
+        });
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('accepts an EdDSA-signed token and links an existing account by its verified email', async () => {
       const existing = UserFactory.create({ email: 'remote@example.test' });
