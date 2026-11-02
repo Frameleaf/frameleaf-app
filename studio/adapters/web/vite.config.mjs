@@ -11,10 +11,11 @@
  *
  *   node studio/tools/adapter.mjs build     # or: test
  */
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { cpSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { cp } from 'node:fs/promises'
 // The engine's own chunking rules: they exist to keep production builds free of circular-chunk
 // initialisation errors, so the adapter build must split the engine exactly the same way.
 import engineConfig, { stableAssetSourcemapsPlugin } from '../../engine/vite.config.ts'
@@ -27,6 +28,7 @@ const studio = path.resolve(here, '../..')
 const repository = path.resolve(studio, '..')
 const engine = path.join(studio, 'engine')
 const engineRequire = createRequire(path.join(engine, 'package.json'))
+const vitePath = (file) => file.split(path.sep).join('/')
 const outDir = path.join(repository, 'web/static/studio-engine')
 const build = JSON.parse(readFileSync(path.join(studio, 'engine-build.json'), 'utf8'))
 
@@ -53,7 +55,7 @@ const claimedFeatures = JSON.parse(
 const frameManifest = () => ({
   name: 'frameleaf-frame-manifest',
   apply: 'build',
-  closeBundle() {
+  async writeBundle() {
     const manifest = {
       protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
       engineRevision: build.upstreamCommit,
@@ -64,7 +66,7 @@ const frameManifest = () => ({
     }
     writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     // The licence texts travel with the code they cover: Freecut's MIT notice first among them.
-    cpSync(path.join(studio, 'notices'), path.join(outDir, 'notices'), { recursive: true })
+    await cp(path.join(studio, 'notices'), path.join(outDir, 'notices'), { recursive: true })
   },
 })
 
@@ -76,10 +78,11 @@ const resolveFromEngine = () => ({
   name: 'frameleaf-resolve-from-engine',
   enforce: 'pre',
   async resolveId(source, importer, options) {
-    if (!importer || source.startsWith('.') || source.startsWith('/') || source.startsWith('\0'))
+    // Absolute Windows aliases can reach this hook before Vite normalizes their separators.
+    if (!importer || source.startsWith('.') || path.isAbsolute(source) || path.win32.isAbsolute(source) || source.startsWith('\0'))
       return null
     if (source.startsWith('@/') || source.startsWith('@frameleaf/')) return null
-    if (!importer.startsWith(here) || importer.startsWith(engine)) return null
+    if (!vitePath(importer).startsWith(vitePath(here) + '/') || vitePath(importer).startsWith(vitePath(engine) + '/')) return null
     return this.resolve(source, path.join(engine, 'src/main.tsx'), { ...options, skipSelf: true })
   },
 })
@@ -95,10 +98,10 @@ const gateTimelinePersistence = () => ({
   name: 'frameleaf-gate-timeline-persistence',
   enforce: 'pre',
   async resolveId(source, importer, options) {
-    if (!importer || importer === persistenceShim || !source.includes('timeline-persistence'))
+    if (!importer || vitePath(importer) === vitePath(persistenceShim) || !source.includes('timeline-persistence'))
       return null
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-    return resolved?.id === persistenceModule ? persistenceShim : null
+    return resolved?.id && vitePath(resolved.id) === vitePath(persistenceModule) ? vitePath(persistenceShim) : null
   },
 })
 
@@ -120,7 +123,7 @@ const useAdapterWorkspace = () => ({
   async resolveId(source, importer, options) {
     if (!importer || !source.includes('in-memory-handle')) return null
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-    return resolved?.id === upstreamWorkspaceDouble ? adapterWorkspaceDouble : null
+    return resolved?.id && vitePath(resolved.id) === vitePath(upstreamWorkspaceDouble) ? vitePath(adapterWorkspaceDouble) : null
   },
 })
 
@@ -146,7 +149,7 @@ const upstreamSuites = [
 
 const plugins = async () => {
   const react = engineRequire('@vitejs/plugin-react')
-  const tailwind = await import(engineRequire.resolve('@tailwindcss/vite'))
+  const tailwind = await import(pathToFileURL(engineRequire.resolve('@tailwindcss/vite')).href)
   return [
     resolveFromEngine(),
     gateTimelinePersistence(),
