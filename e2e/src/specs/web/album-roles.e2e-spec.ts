@@ -86,11 +86,14 @@ test.describe('Album roles', () => {
       // Invite is the owner's; everyone else sees who is in the album.
       await expect(page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(row.share ? 1 : 0);
       await expect(page.getByRole('button', { name: 'Members', exact: true })).toHaveCount(row.share ? 0 : 1);
-      await expect(page.getByRole('button', { name: 'Links', exact: true })).toHaveCount(row.links ? 1 : 0);
       // Likes and comments are offered to every role.
       await expect(page.getByRole('button', { name: /^Comments/ })).toBeVisible();
+      // FL-1118: Links folds into "…" when the header is 1060px or narrower, so it is in one place or the other.
+      const linksInRow = await page.getByRole('button', { name: 'Links', exact: true }).count();
 
       const more = await openMore(page);
+      const linksInMenu = await more.getByRole('menuitem', { name: 'Links', exact: true }).count();
+      expect(linksInRow + linksInMenu).toBe(row.links ? 1 : 0);
       await expect(more.getByRole('menuitem', { name: 'Edit details' })).toHaveCount(row.edit ? 1 : 0);
       await expect(more.getByRole('menuitem', { name: /Delete album/ })).toHaveCount(row.leave ? 0 : 1);
       await expect(more.getByRole('menuitem', { name: /Leave album/ })).toHaveCount(row.leave ? 1 : 0);
