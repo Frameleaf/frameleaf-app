@@ -278,8 +278,11 @@
         addingStarted ? $t('frameleaf_album_suggestions_apply_failed') : $t('frameleaf_album_suggestions_save_failed'),
         true,
       );
-      if (added > 0 || fixed > 0) {
+      // Some of it may have been saved before the failure (an add can commit and still reject), so
+      // the album and the suggestions are read again rather than trusted as they were.
+      if (addingStarted || fixed > 0 || autoAddChanged) {
         onChanged();
+        await load(albumId);
       }
     } finally {
       saving = false;

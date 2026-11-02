@@ -179,6 +179,17 @@ describe('AlbumSuggestions', () => {
     expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledTimes(1);
   });
 
+  it('reads the album and suggestions again when an add fails, since it may have been saved', async () => {
+    sdkMock.addAssetsToAlbum.mockRejectedValueOnce(new Error('timeout'));
+    const onChanged = vi.fn();
+    render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add 2 photos' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't finish adding the photos.");
+    await waitFor(() => expect(sdkMock.getAlbumSuggestions).toHaveBeenCalledTimes(2));
+    expect(onChanged).toHaveBeenCalled();
+  });
+
   it('labels the button for dates alone, and moves between tabs with the arrow keys', async () => {
     sdkMock.getAlbumSuggestions.mockResolvedValue({ ...suggestions, fromTrip: [] });
     render(AlbumSuggestions, { albumId: 'album', albumName: 'Summer', onChanged: vi.fn() });
