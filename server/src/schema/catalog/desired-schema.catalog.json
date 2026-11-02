@@ -47899,6 +47899,98 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "asset_original",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_original",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "physicalFileId",
+          "tableName": "asset_original",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "originalFileName",
+          "tableName": "asset_original",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_original_physicalFileId_idx",
+          "definition": "CREATE INDEX \"asset_original_physicalFileId_idx\" ON public.asset_original USING btree (\"physicalFileId\")",
+          "tableName": "asset_original",
+          "columnNames": [
+            "physicalFileId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_original_pkey",
+          "definition": "PRIMARY KEY (\"assetId\", \"physicalFileId\")",
+          "tableName": "asset_original",
+          "columnNames": [
+            "assetId",
+            "physicalFileId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_original_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_original",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_original_physicalFileId_fkey",
+          "definition": "FOREIGN KEY (\"physicalFileId\") REFERENCES physical_file(id) ON UPDATE CASCADE ON DELETE RESTRICT",
+          "tableName": "asset_original",
+          "columnNames": [
+            "physicalFileId"
+          ],
+          "referenceTableName": "physical_file",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "RESTRICT",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
