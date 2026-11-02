@@ -509,6 +509,19 @@ describe('AlbumHeader in Boards', () => {
     );
   });
 
+  it('creates New album at the top level when the plain album is in a collection you cannot edit', async () => {
+    const album = albumAs(AlbumUserRole.Owner, { parentId: 'theirs' });
+    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ id: 'new', albumName: 'Hikes' }));
+    render(AlbumHeader, { album, assetCount: 3, collections: [], onAlbumChange: vi.fn(), onRefresh: vi.fn() });
+    const menu = await openMore();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'New album' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    await fireEvent.input(dialog.getByRole('textbox', { name: 'Name' }), { target: { value: 'Hikes' } });
+    await fireEvent.click(dialog.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(sdkMock.createAlbum).toHaveBeenCalled());
+    expect(sdkMock.createAlbum.mock.calls.at(-1)?.[0].createAlbumDto.parentId).toBeUndefined();
+  });
+
   it('keeps a Boards collection compact: Boards path, no empty albums strip, extras in the menu (FL-670)', async () => {
     const album = albumAs(AlbumUserRole.Owner, { libraryScope: LibraryScope.Design, description: '' });
     render(AlbumHeader, {

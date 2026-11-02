@@ -273,6 +273,9 @@
   let createOpen = $state(false);
   /** Where New album lands: inside a collection, or next to a plain album in its own collection. */
   let createParentId = $state<string | null>(null);
+  const siblingParentId = $derived(
+    collections.some(({ id }) => id === album.parentId) ? (album.parentId ?? null) : null,
+  );
   const openCreate = (parentId: string | null) => {
     createParentId = parentId;
     createOpen = true;
@@ -785,8 +788,9 @@
         <div class="menu-separator" role="separator"></div>
       {/if}
       {#if canCreateChild}
-        <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection. -->
-        <MenuItem onSelect={() => openCreate(isCollection ? album.id : (album.parentId ?? null))}>
+        <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection
+             when you can add to that collection; otherwise at the top level. -->
+        <MenuItem onSelect={() => openCreate(isCollection ? album.id : siblingParentId)}>
           <Icon icon={mdiPlus} size="18" />
           {$t('frameleaf_albums_create_album')}
         </MenuItem>
