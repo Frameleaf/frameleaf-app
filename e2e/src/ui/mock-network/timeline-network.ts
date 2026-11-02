@@ -24,10 +24,40 @@ export class TimelineTestContext {
 
 export const setupTimelineMockApiRoutes = async (
   context: BrowserContext,
-  timelineRestData: TimelineData,
+  sourceData: TimelineData,
   changes: Changes,
   testContext: TimelineTestContext,
 ) => {
+  const timelineRestData = {
+    ...sourceData,
+    buckets: new Map(sourceData.buckets),
+    album: { ...sourceData.album, assetIds: [...sourceData.album.assetIds] },
+  };
+  const purged = new Set<string>();
+  const purge = (ids: string[]) => {
+    const removed = new Set(ids);
+    for (const id of ids) {
+      purged.add(id);
+    }
+    changes.assetDeletions = changes.assetDeletions.filter((id) => !removed.has(id));
+    changes.albumAdditions = changes.albumAdditions.filter((id) => !removed.has(id));
+    timelineRestData.album.assetIds = timelineRestData.album.assetIds.filter((id) => !removed.has(id));
+    for (const [timeBucket, assets] of timelineRestData.buckets) {
+      const remaining = assets.filter((asset) => !removed.has(asset.id));
+      if (remaining.length > 0) {
+        timelineRestData.buckets.set(timeBucket, remaining);
+      } else {
+        timelineRestData.buckets.delete(timeBucket);
+      }
+    }
+  };
+  const readAlbum = (id: string | undefined) => {
+    const album = getAlbum(timelineRestData, testContext.adminId, id, changes);
+    if (album?.albumThumbnailAssetId && purged.has(album.albumThumbnailAssetId)) {
+      album.albumThumbnailAssetId = null;
+    }
+    return album;
+  };
   const orderedAssets = (params: URLSearchParams) =>
     timelineRestData.buckets
       .entries()
@@ -218,6 +248,9 @@ export const setupTimelineMockApiRoutes = async (
       const url = new URL(request.url());
       const pathname = url.pathname;
       const assetId = basename(pathname);
+      if (purged.has(assetId)) {
+        return route.fulfill({ status: 404 });
+      }
       let asset = getAsset(timelineRestData, assetId);
       if (!asset) {
         return route.fallback();
@@ -247,7 +280,9 @@ export const setupTimelineMockApiRoutes = async (
   await context.route('**/api/assets', async (route, request) => {
     if (request.method() === 'DELETE') {
       const { ids, force } = request.postDataJSON();
-      if (!force) {
+      if (force) {
+        purge(ids);
+      } else {
         for (const id of ids) {
           if (!changes.assetDeletions.includes(id)) {
             changes.assetDeletions.push(id);
@@ -353,18 +388,18 @@ export const setupTimelineMockApiRoutes = async (
     const pathname = new URL(request.url()).pathname;
     if (pathname === '/api/albums/tree') {
       // The library rail reads the album tree; the mock album stands on its own.
-      const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
+      const album = readAlbum(timelineRestData.album.id);
       return route.fulfill({ json: { albums: [album], collections: [], spaces: [] } });
     }
     if (pathname === '/api/albums/hierarchy') {
       // The same rail data in the nested shape the rail now reads.
-      const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
+      const album = readAlbum(timelineRestData.album.id);
       return route.fulfill({ json: { roots: [{ album, children: [] }] } });
     }
     // Only the album itself: sub-resources (descendant counts, members, ...) are not mocked.
     const albumsMatch = pathname.match(/^\/api\/albums\/(?<albumId>[0-9a-f-]{36})$/);
     if (albumsMatch && request.method() === 'GET') {
-      const album = getAlbum(timelineRestData, testContext.adminId, albumsMatch.groups?.albumId, changes);
+      const album = readAlbum(albumsMatch.groups?.albumId);
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -385,6 +420,7 @@ export const setupTimelineMockApiRoutes = async (
     }
     return route.fallback();
   });
+  return { purge };
 };
 
 /**
@@ -395,6 +431,7 @@ export const setupTrashMockApiRoutes = async (
   context: BrowserContext,
   timelineRestData: TimelineData,
   changes: Changes,
+  purge: (ids: string[]) => void,
 ) => {
   const trashItems = () =>
     changes.assetDeletions
@@ -435,10 +472,13 @@ export const setupTrashMockApiRoutes = async (
     }
     if (pathname === '/api/trash/apply') {
       const { action, ids = [] } = request.postDataJSON();
+      const affected = action === 'empty' && ids.length === 0 ? [...changes.assetDeletions] : ids;
       if (action === 'restore') {
-        changes.assetDeletions = changes.assetDeletions.filter((id) => !ids.includes(id));
+        changes.assetDeletions = changes.assetDeletions.filter((id) => !affected.includes(id));
+      } else if (action === 'delete' || action === 'empty') {
+        purge(affected);
       }
-      return route.fulfill({ json: { count: ids.length } });
+      return route.fulfill({ json: { count: affected.length } });
     }
     return route.fallback();
   });

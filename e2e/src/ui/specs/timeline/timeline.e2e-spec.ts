@@ -79,8 +79,8 @@ test.describe('Timeline', () => {
 
   test.beforeEach(async ({ context }) => {
     await setupBaseMockApiRoutes(context, adminUserId);
-    await setupTimelineMockApiRoutes(context, timelineRestData, changes, testContext);
-    await setupTrashMockApiRoutes(context, timelineRestData, changes);
+    const { purge } = await setupTimelineMockApiRoutes(context, timelineRestData, changes, testContext);
+    await setupTrashMockApiRoutes(context, timelineRestData, changes, purge);
   });
 
   test.afterEach(() => {

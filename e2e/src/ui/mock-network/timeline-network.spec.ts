@@ -2,7 +2,7 @@ import { AssetVisibility } from '@frameleaf/sdk';
 import type { BrowserContext, Request, Route } from '@playwright/test';
 import type { Changes, TimelineData } from 'src/ui/generators/timeline';
 import { expect, it, vi } from 'vitest';
-import { setupTimelineMockApiRoutes, TimelineTestContext } from './timeline-network';
+import { setupTimelineMockApiRoutes, setupTrashMockApiRoutes, TimelineTestContext } from './timeline-network';
 
 const fixture = async () => {
   const assets = Array.from({ length: 501 }, (_, index) => ({
@@ -43,7 +43,9 @@ const fixture = async () => {
   };
   const changes: Changes = { albumAdditions: [], assetDeletions: [], assetArchivals: [], assetFavorites: ['0500'] };
   const route = vi.fn();
-  await setupTimelineMockApiRoutes({ route } as unknown as BrowserContext, data, changes, new TimelineTestContext());
+  const context = { route } as unknown as BrowserContext;
+  const { purge } = await setupTimelineMockApiRoutes(context, data, changes, new TimelineTestContext());
+  await setupTrashMockApiRoutes(context, data, changes, purge);
   const handler = route.mock.calls.find(([pattern]) => pattern === '**/api/timeline**')![1];
   const request = async (path: string) => {
     const fulfill = vi.fn();
@@ -59,7 +61,34 @@ const fixture = async () => {
     );
     expect(fulfill).toHaveBeenCalledWith({ status: 204 });
   };
-  return { changes, request, deleteAssets };
+  const trashHandler = route.mock.calls.find(([pattern]) => pattern === '**/api/trash/**')![1];
+  const applyTrash = async (action: string, ids?: string[]) => {
+    const fulfill = vi.fn();
+    await trashHandler(
+      { fulfill } as unknown as Route,
+      { url: () => 'http://localhost/api/trash/apply', postDataJSON: () => ({ action, ids }) } as unknown as Request,
+    );
+    return fulfill.mock.calls[0][0].json;
+  };
+  const readAlbum = async () => {
+    const fulfill = vi.fn();
+    const albumHandler = route.mock.calls.find(([pattern]) => pattern === '**/api/albums/**')![1];
+    await albumHandler(
+      { fulfill } as unknown as Route,
+      { url: () => 'http://localhost/api/albums/tree', method: () => 'GET' } as unknown as Request,
+    );
+    return fulfill.mock.calls[0][0].json.albums[0];
+  };
+  const readAsset = async (id: string) => {
+    const fulfill = vi.fn();
+    const assetHandler = route.mock.calls.find(([pattern]) => pattern === '**/api/assets/*')![1];
+    await assetHandler(
+      { fulfill } as unknown as Route,
+      { url: () => `http://localhost/api/assets/${id}`, method: () => 'GET' } as unknown as Request,
+    );
+    return fulfill.mock.calls[0][0];
+  };
+  return { changes, request, deleteAssets, data, applyTrash, readAlbum, readAsset };
 };
 
 it.each(['isFavorite=true', 'albumId=album'])(
@@ -130,4 +159,52 @@ it.each([undefined, false])('retains soft deletions through refresh when force i
   expect(highlights.json[0].highlightAssetIds).not.toContain('0001');
   const trash = await request('bucket?timeBucket=2025-01-01&isTrashed=true');
   expect(trash.json.id).toEqual(['0000', '0001']);
+});
+
+it('permanently removes forced deletions from every timeline without changing the shared baseline', async () => {
+  const { changes, request, deleteAssets, data } = await fixture();
+  await deleteAssets(['0000']);
+  await deleteAssets(['0000', '0001'], true);
+  expect(changes.assetDeletions).toEqual([]);
+  for (const filter of ['', '&isTrashed=true']) {
+    const page = await request(`bucket?timeBucket=2025-01-01${filter}`);
+    expect(page.json.id).not.toContain('0000');
+    expect(page.json.id).not.toContain('0001');
+  }
+  const summaries = await request('buckets?pageSize=500');
+  expect(summaries.json).toMatchObject([{ count: 499, firstAssetId: '0002', lastAssetId: '0500' }]);
+  const highlights = await request('highlights?grouping=month&highlightCount=12');
+  expect(highlights.json).toMatchObject([{ count: 499, keyAssetId: '0002' }]);
+  expect(data.buckets.get('2025-01-01')).toHaveLength(501);
+});
+
+it.each([
+  ['delete', ['0000', '0001']],
+  ['empty', undefined],
+  ['empty', []],
+] as const)('purges trash action %s with ids %j', async (action, ids) => {
+  const { changes, request, deleteAssets, applyTrash, data } = await fixture();
+  await deleteAssets(['0000', '0001']);
+  expect(await applyTrash(action, ids ? [...ids] : undefined)).toEqual({ count: 2 });
+  expect(changes.assetDeletions).toEqual([]);
+  for (const filter of ['', '&isTrashed=true']) {
+    const page = await request(`bucket?timeBucket=2025-01-01${filter}`);
+    expect(page.json.id).not.toContain('0000');
+    expect(page.json.id).not.toContain('0001');
+  }
+  const summaries = await request('buckets?pageSize=500');
+  expect(summaries.json).toMatchObject([{ count: 499, firstAssetId: '0002', lastAssetId: '0500' }]);
+  const highlights = await request('highlights?grouping=month&highlightCount=12');
+  expect(highlights.json).toMatchObject([{ count: 499, keyAssetId: '0002' }]);
+  expect(data.buckets.get('2025-01-01')).toHaveLength(501);
+});
+
+it('removes a purged album cover and refuses asset reads while retaining the next test baseline', async () => {
+  const { deleteAssets, readAlbum, readAsset, data } = await fixture();
+  await deleteAssets(['0500'], true);
+  expect(await readAsset('0500')).toEqual({ status: 404 });
+  expect(await readAlbum()).toMatchObject({ assetCount: 0, albumThumbnailAssetId: null });
+  expect(data.album.assetIds).toEqual(['0500']);
+  expect(data.album.thumbnailAssetId).toBe('0500');
+  expect(data.buckets.get('2025-01-01')).toHaveLength(501);
 });
