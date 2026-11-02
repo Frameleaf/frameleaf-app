@@ -12,11 +12,11 @@ export async function writeImportedTags(tx: ImportDatabase, ownerId: string, ass
             INSERT INTO public.tag("userId",value,"parentId")
             SELECT $1::uuid,$2,$3::uuid WHERE $3::uuid IS NULL OR EXISTS(
               SELECT 1 FROM public.tag WHERE id=$3::uuid AND "userId"=$1::uuid)
-            ON CONFLICT ("userId",value) DO NOTHING RETURNING id,value,"parentId"
+            ON CONFLICT ("userId",value) DO NOTHING RETURNING id,value,"parentId",color
           ), chosen AS (
-            SELECT id,value,"parentId" FROM inserted
+            SELECT id,value,"parentId",color FROM inserted
             UNION ALL
-            SELECT id,value,"parentId" FROM public.tag WHERE "userId"=$1::uuid AND value=$2
+            SELECT id,value,"parentId",color FROM public.tag WHERE "userId"=$1::uuid AND value=$2
               AND "parentId" IS NOT DISTINCT FROM $3::uuid AND NOT EXISTS(SELECT 1 FROM inserted)
           ), closures AS (
             INSERT INTO public.tag_closure(id_ancestor,id_descendant)
@@ -24,10 +24,10 @@ export async function writeImportedTags(tx: ImportDatabase, ownerId: string, ass
             UNION ALL
             SELECT c.id_ancestor,t.id FROM chosen t JOIN public.tag_closure c ON c.id_descendant=t."parentId"
             ON CONFLICT DO NOTHING
-          ) SELECT id::text,value FROM chosen`,
+          ) SELECT id::text,value,color FROM chosen`,
           [userId, value, parentId ?? null],
         );
-        if (!tag || typeof tag.id !== 'string' || tag.value !== value)
+        if (!tag || typeof tag.id !== 'string' || tag.value !== value || tag.color !== null)
           throw new LibraryImportRefused('ASSET_TAGS_CONFLICT');
         return { id: tag.id, value };
       },

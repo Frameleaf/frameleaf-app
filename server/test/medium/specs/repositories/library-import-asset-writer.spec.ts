@@ -402,3 +402,41 @@ it('refuses an existing different tag parent without reparenting or leaving part
   expect(await db.selectFrom('asset').selectAll().execute()).toEqual([]);
   expect(await db.selectFrom('physical_file').selectAll().execute()).toEqual([]);
 });
+
+it.each(['Places', 'Places/Canada'])('refuses an existing custom-colored tag atomically: %s', async (value) => {
+  const { context, item, ownerId } = await setup(['Places/Canada']);
+  const parent = await db
+    .insertInto('tag')
+    .values({ userId: ownerId, value: 'Places', color: value === 'Places' ? '#112233' : null })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  const child = await db
+    .insertInto('tag')
+    .values({
+      userId: ownerId,
+      value: 'Places/Canada',
+      parentId: parent.id,
+      color: value === 'Places/Canada' ? '#112233' : null,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  await db
+    .insertInto('tag_closure')
+    .values([
+      { id_ancestor: parent.id, id_descendant: parent.id },
+      { id_ancestor: child.id, id_descendant: child.id },
+      { id_ancestor: parent.id, id_descendant: child.id },
+    ])
+    .execute();
+  const before = await db.selectFrom('tag').selectAll().orderBy('id').execute();
+  await expect(new CanonicalAssetWriter(wrap(db), context).write(item)).rejects.toThrow('ASSET_TAGS_CONFLICT');
+  expect(await db.selectFrom('tag').selectAll().orderBy('id').execute()).toEqual(before);
+  expect(await db.selectFrom('tag_closure').selectAll().execute()).toHaveLength(3);
+  expect(await db.selectFrom('tag_asset').selectAll().execute()).toEqual([]);
+  expect(await db.selectFrom('asset').selectAll().execute()).toEqual([]);
+  expect(await db.selectFrom('physical_file').selectAll().execute()).toEqual([]);
+  expect(
+    (await db.selectFrom('user').select('quotaUsageInBytes').where('id', '=', ownerId).executeTakeFirstOrThrow())
+      .quotaUsageInBytes,
+  ).toBe(0);
+});
