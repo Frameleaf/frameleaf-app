@@ -26,7 +26,7 @@ The synthetic interoperability fixture records the exact Lychee PHP 8.5.12 and N
 
 ### Piwigo account password formats
 
-The admitted Piwigo reader provides a protected callback for explicitly mapped account passwords, separate from its media batches. Default PHPass and legacy MD5 credentials can retain the source password behind the destination bcrypt policy. Guest accounts have no portable credential. Custom authentication, source login hooks and MFA remain activation gates; a compatible digest alone never authorizes enabling an owner. See [Piwigo account passwords](./library-import-piwigo.md#protected-account-passwords) for resource limits, native test provenance and the stricter legacy comparison.
+The admitted Piwigo reader provides a protected callback for explicitly mapped account passwords, separate from its media batches. Default PHPass and legacy MD5 credentials preserve the ability to use the source password under the destination bcrypt policy; neither plaintext nor the original verifier is stored. Guest accounts have no portable credential. Custom authentication, source login hooks and MFA remain activation gates; a compatible digest alone never authorizes enabling an owner. See [Piwigo account passwords](./library-import-piwigo.md#protected-account-passwords) for resource limits, native test provenance and the stricter legacy comparison.
 
 ## PhotoPrism SQLite reader
 
