@@ -1,11 +1,14 @@
 import { type LockedKeyFile, generateKeyPair, unwrapKey, wrapKey } from '@frameleaf/locked-crypto';
 import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { hash } from 'bcrypt';
 import { DateTime } from 'luxon';
 import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AdminAuditAction, AuthCookie, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
+import { ImportedPassword } from 'src/library-import/passwords.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
@@ -62,6 +65,38 @@ describe(AuthService.name, () => {
   });
 
   describe('login', () => {
+    it('signs in with a preserved source password and can replace it with a native password', async () => {
+      const password = 'synthetic imported password';
+      const user = UserFactory.create({ importClaimPending: false });
+      const credential = await ImportedPassword.fromSource(
+        {
+          operationId: '11111111-1111-4111-8111-111111111111',
+          sourceUserId: 'source-owner',
+          destinationUserId: user.id,
+        },
+        'bcrypt',
+        await hash(password, 9),
+      );
+      user.password = credential.forImport();
+      const crypto = new CryptoRepository();
+      mocks.crypto.compareBcrypt.mockImplementation((value, encoded) => crypto.compareBcrypt(value, encoded));
+      mocks.crypto.hashBcrypt.mockImplementation((value, rounds) => crypto.hashBcrypt(value, rounds));
+      mocks.user.getByEmail.mockResolvedValue(user);
+      mocks.session.create.mockResolvedValue(SessionFactory.create({ userId: user.id }));
+      await expect(sut.login({ email: user.email, password }, loginDetails)).resolves.toMatchObject({
+        userId: user.id,
+      });
+      await expect(sut.login({ email: user.email, password: 'wrong password' }, loginDetails)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(mocks.session.create).toHaveBeenCalledTimes(1);
+      mocks.user.getForChangePassword.mockResolvedValue({ id: user.id, password: user.password });
+      mocks.user.update.mockResolvedValue(user);
+      await sut.changePassword(AuthFactory.create(user), { password, newPassword: 'new synthetic password' });
+      const changed = mocks.user.update.mock.calls.at(-1)![1].password!;
+      expect(changed).toMatch(/^\$2b\$/);
+      expect(await crypto.compareBcrypt('new synthetic password', changed)).toBe(true);
+    });
     it('should throw an error if password login is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.disabled);
 

@@ -1,6 +1,8 @@
 import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' with { type: 'json' };
 import { librephotosProjections as projections } from 'src/library-import/librephotos-projections.js';
+import { ImportedPasswordContext } from 'src/library-import/passwords.js';
+import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 export type LibrephotosTable = keyof typeof projections;
@@ -50,6 +52,8 @@ export const openLibrephotosSnapshot = (path: string, version: string) => {
   return {
     version,
     schemaSha256: fixture.schemaSha256,
+    password: (context: ImportedPasswordContext) =>
+      readSqlitePassword(database, context, 'django-pbkdf2-sha256', 'SELECT password FROM api_user WHERE id=?'),
     *rows(table: LibrephotosTable): Generator<LibrephotosRow[]> {
       if (!Object.hasOwn(projections, table)) throw new LibrephotosReadError('LIBREPHOTOS_TABLE_NOT_ALLOWED');
       try {

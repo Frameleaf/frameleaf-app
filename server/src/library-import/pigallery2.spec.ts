@@ -1,3 +1,4 @@
+import { hash } from 'bcrypt';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -5,6 +6,7 @@ import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import content from 'src/library-import/fixtures/pigallery2/3.5.2-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { Pigallery2Table, openPigallery2Snapshot } from 'src/library-import/pigallery2.js';
 
 describe('PiGallery2 pinned SQLite extraction', () => {
@@ -58,6 +60,24 @@ describe('PiGallery2 pinned SQLite extraction', () => {
     expect(rows('media_entity')).toHaveLength(4);
     expect(rows('directory_entity')).toHaveLength(4);
     expect(typeof rows('media_entity')[0].id).toBe('bigint');
+  });
+  it('preserves an explicitly mapped local owner password without adding it to content records', async () => {
+    const password = 'synthetic owner password';
+    const encoded = await hash(password, 9);
+    const owner = database.prepare('SELECT id FROM user_entity ORDER BY id LIMIT 1').get()!;
+    database.prepare('UPDATE user_entity SET password=? WHERE id=?').run(encoded, owner.id);
+    const source = openPigallery2Snapshot(path, '3.5.2');
+    try {
+      const credential = await source.password({
+        operationId: '11111111-1111-4111-8111-111111111111',
+        sourceUserId: String(owner.id),
+        destinationUserId: '22222222-2222-4222-8222-222222222222',
+      });
+      expect(await verifyImportedPassword(password, credential!.forImport())).toBe(true);
+      expect([...source.rows('user_entity')].flat()[0]).not.toHaveProperty('password');
+    } finally {
+      source.close();
+    }
   });
 
   it('retains captions, source date values and unknown timezone offset', () => {

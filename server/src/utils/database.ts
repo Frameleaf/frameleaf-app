@@ -119,10 +119,11 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
-      // Desktop inference rows and queued job payloads (JOBS_WITH_SENSITIVE_DATA) must never be logged.
+      // Credentials, desktop inference rows and queued job payloads must never be logged.
       const privateData =
         /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(event.query.sql) ||
-        /\b(?:insert\s+into|update)\s+(?:public\.)?"?job(?:_run_item)?"?(?![\w"])/iu.test(event.query.sql);
+        /\b(?:insert\s+into|update)\s+(?:public\.)?"?job(?:_run_item)?"?(?![\w"])/iu.test(event.query.sql) ||
+        /\b(?:password|pinCode|passwordLinkHash)\b/iu.test(event.query.sql);
       // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
       const sqlState = event.error instanceof postgres.PostgresError ? event.error.code : undefined;
       console.error('Query failed :', {
