@@ -482,10 +482,13 @@ test.describe('Timeline', () => {
       await thumbnailUtils.ensureSelected(page, assets[2].id);
       await expect(selectionBarUtils.locator(page)).toContainText('3 selected');
 
+      // Notifications follow committed server changes, which refreshed pages must also see.
+      changes.assetDeletions.push(assets[1].id);
       socket.emit('on_asset_trash', [assets[1].id]);
       await expect(thumbnailUtils.withAssetId(page, assets[1].id)).toHaveCount(0);
       await expect(selectionBarUtils.locator(page)).toContainText('2 selected');
 
+      changes.assetDeletions.push(assets[2].id);
       socket.emit('on_asset_delete', assets[2].id);
       await expect(thumbnailUtils.withAssetId(page, assets[2].id)).toHaveCount(0);
       await expect(selectionBarUtils.locator(page)).toContainText('1 selected');
