@@ -50,12 +50,14 @@ describe('suggested photo location', () => {
     expect(screen.getByText('Example City')).toBeInTheDocument();
     expect(row).toHaveTextContent(relation === 'at' ? 'Taken at Example Café' : 'Near Example Café');
     expect(row).toHaveTextContent('10 Main Street');
-    expect(within(row).getByTitle(/current map data.*historical visit/i)).toHaveTextContent('Inferred');
+    // The explanation is visible text beside the Inferred pill, not a tooltip.
+    expect(within(row).getByText('Inferred')).toBeVisible();
+    expect(within(row).getByText(/current map data.*historical visit/i)).toBeVisible();
     expect(within(row).getByRole('link', { name: 'Open in Google Maps' })).toHaveAttribute(
       'href',
       asset.locationInsight.mapsUrl,
     );
-    expect(row).toHaveTextContent('Google Maps');
+    expect(row).toHaveTextContent('From Google Maps');
     expect(within(row).getByRole('link', { name: 'Maps contributor' })).toHaveAttribute(
       'href',
       'https://maps.google.com/contributor/example',

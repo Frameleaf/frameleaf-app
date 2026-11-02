@@ -193,6 +193,9 @@
           <p>{place ?? $t('frameleaf_info_no_location')}</p>
           {#if coordinates}
             <p class="text-sm text-gray-500 dark:text-gray-400">{coordinates}</p>
+          {:else if isOwner}
+            <!-- No GPS, only an inferred landmark: keep the way to add one in view (prototype MediaViewer). -->
+            <p class="text-sm text-gray-500 dark:text-gray-400">{$t('add_a_location')}</p>
           {/if}
         </div>
       </div>
@@ -277,38 +280,43 @@
 
   {#if insight}
     <section class="suggestion" aria-labelledby={insightHeadingId}>
-      <h4 id={insightHeadingId}>{$t('frameleaf_location_insight_title')}</h4>
-      <span class="inferred" title={$t('frameleaf_location_insight_inference')}>
-        {$t('frameleaf_location_insight_inferred')}
-        <span class="sr-only">{$t('frameleaf_location_insight_inference')}</span>
-      </span>
+      <div class="heading">
+        <h4 id={insightHeadingId}>{$t('frameleaf_location_insight_title')}</h4>
+        <em class="inferred">{$t('frameleaf_location_insight_inferred')}</em>
+      </div>
       <p>
         {$t(insight.relation === 'at' ? 'frameleaf_location_insight_at' : 'frameleaf_location_insight_near', {
           values: { name: insight.name },
         })}
       </p>
       {#if insight.address}<p class="muted">{insight.address}</p>{/if}
+      <p class="muted">{$t('frameleaf_location_insight_inference')}</p>
       {#if insightMapLink}
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->
         <a href={insightMapLink} target="_blank" rel="noopener noreferrer" class="hover:text-primary">
           {$t('frameleaf_location_insight_open_maps')}
         </a>
       {/if}
-      <p class="muted">Google Maps</p>
-      {#each insight.attributions as attribution (attribution)}
-        {@const href = libraryReferenceUrl(attribution.uri)}
-        {#if href}
-          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->
-          <a {href} target="_blank" rel="noopener noreferrer" class="muted hover:text-primary">
-            {attribution.displayName}
-          </a>
-        {:else}<p class="muted">{attribution.displayName}</p>{/if}
-      {/each}
+      <p class="muted source">
+        <span>{$t('frameleaf_location_insight_source')}</span>
+        {#each insight.attributions as attribution (attribution)}
+          {@const href = libraryReferenceUrl(attribution.uri)}
+          {#if href}
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->
+            <a {href} target="_blank" rel="noopener noreferrer" class="hover:text-primary">
+              {attribution.displayName}
+            </a>
+          {:else}<span>{attribution.displayName}</span>{/if}
+        {/each}
+      </p>
       {#if isOwner}
-        <div>
-          <Button disabled={isDismissing} onclick={dismissInsight}>{$t('frameleaf_location_insight_dismiss')}</Button>
-        </div>
-        {#if dismissFailed}
+        {#if !dismissFailed}
+          <div>
+            <Button disabled={isDismissing} onclick={dismissInsight}>
+              {isDismissing ? $t('frameleaf_location_insight_dismissing') : $t('frameleaf_location_insight_dismiss')}
+            </Button>
+          </div>
+        {:else}
           <InlineError
             message={$t('frameleaf_location_insight_dismiss_failed')}
             onRetry={dismissInsight}
@@ -335,13 +343,29 @@
   .suggestion h4 {
     font-weight: 600;
   }
-  .muted,
-  .inferred {
+  .heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+  }
+  .muted {
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  /* The prototype's blue "Inferred" pill beside the heading. */
   .inferred {
-    text-decoration: underline dotted;
-    text-underline-offset: 3px;
+    padding: 2px 8px;
+    border-radius: var(--fl-radius-pill);
+    background: color-mix(in srgb, var(--fl-accent), transparent 86%);
+    color: var(--fl-accent);
+    font-size: var(--fl-font-small);
+    font-style: normal;
+    font-weight: 500;
+  }
+  /* "From Google Maps · Parks Canada": one line, a dot between each source. */
+  .source > :global(* + *)::before {
+    content: ' · ';
+    color: var(--fl-muted);
   }
 </style>

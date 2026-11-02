@@ -217,6 +217,24 @@
    */
   const boards = $derived(uploadScope === LibraryScope.Design);
   const folded = $derived(compact || boards);
+  /**
+   * The header's own width (so the Work panel beside the grid counts as well as the window): the
+   * secondary actions fold into "…" as it narrows, so the row never wraps and leaves "…" alone on a
+   * second line (prototype CollectionHeader.jsx `WIDTH_FOLDS`). 0 until it has been measured.
+   */
+  let headerWidth = $state(0);
+  type FoldableAction = 'links' | 'map' | 'slideshow' | 'movie' | 'download' | 'activity';
+  const WIDTH_FOLDS: [number, FoldableAction[]][] = [
+    [840, ['links', 'map', 'movie', 'download']],
+    [1060, ['links', 'map']],
+  ];
+  const foldedActions = $derived.by((): Set<FoldableAction> => {
+    if (folded) {
+      return new Set(['links', 'map', 'slideshow', 'movie', 'download', 'activity']);
+    }
+    return new Set(headerWidth > 0 ? (WIDTH_FOLDS.find(([max]) => headerWidth <= max)?.[1] ?? []) : []);
+  });
+  const inRow = (action: FoldableAction) => !foldedActions.has(action);
   /** Another collection, opened in Boards whatever its own scope (a "both" collection would open in Library). */
   const albumHref = (id: string) =>
     workspaceHref(Route.viewAlbum({ id }), boards ? LibraryViewScope.Design : undefined, page.url.origin);
@@ -476,7 +494,7 @@
   const openLinks = () => openShare('links');
 </script>
 
-<header class="album-header" aria-label={kindLabel}>
+<header class="album-header" aria-label={kindLabel} bind:clientWidth={headerWidth}>
   {#if compact && uploadScope === LibraryScope.Design}
     <!-- Boards on a phone: the rail is the "Collections and filters" sheet (prototype screen 22). -->
     <button
@@ -652,55 +670,59 @@
     <!--
       On phones the secondary actions move into the "…" menu instead of running off-screen
       (CollectionHeader.jsx:1142-1154, 1410-1510; apple-style.css:872-877): only Add photos (or New
-      album), Re-evaluate and Share stay in the row.
+      album), Re-evaluate and Share stay in the row. Wider, the header's width folds some of them.
     -->
-    {#if !folded}
-      {#if owner}
-        <button type="button" class="action" onclick={openLinks}>
-          <Icon icon={mdiLinkVariant} size="18" />
-          <span>{$t('frameleaf_spaces_links')}</span>
-        </button>
-      {/if}
+    {#if owner && inRow('links')}
+      <button type="button" class="action" onclick={openLinks}>
+        <Icon icon={mdiLinkVariant} size="18" />
+        <span>{$t('frameleaf_spaces_links')}</span>
+      </button>
+    {/if}
 
-      {#if mapEnabled}
-        <button type="button" class="action" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
-          <Icon icon={mdiMapOutline} size="18" />
-          <span>{$t('map')}</span>
-        </button>
-      {/if}
+    {#if mapEnabled && inRow('map')}
+      <button type="button" class="action" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
+        <Icon icon={mdiMapOutline} size="18" />
+        <span>{$t('map')}</span>
+      </button>
+    {/if}
 
+    {#if inRow('slideshow')}
       <button type="button" class="action" disabled={assetCount === 0} onclick={() => onSlideshow?.()}>
         <Icon icon={mdiPlayCircleOutline} size="18" />
         <span>{$t('slideshow')}</span>
       </button>
+    {/if}
 
+    {#if inRow('movie')}
       <button type="button" class="action" disabled={assetCount === 0} onclick={() => (movieOpen = true)}>
         <Icon icon={mdiMovieOpenPlayOutline} size="18" />
         <span>{$t('frameleaf_movie_make')}</span>
       </button>
+    {/if}
 
+    {#if inRow('download')}
       <button type="button" class="action" disabled={assetCount === 0} onclick={download}>
         <Icon icon={mdiDownloadOutline} size="18" />
         <span>{$t('download')}</span>
       </button>
+    {/if}
 
-      <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
-      {#if onToggleActivity}
-        <!-- SHARING-P7: "Comments" on album and space headers alike; "Activity" is the app's own workspace. -->
-        <button
-          type="button"
-          class="action"
-          aria-pressed={activityOpen}
-          aria-label={$t('frameleaf_album_activity_button', { values: { count: likeCount + commentCount } })}
-          onclick={() => onToggleActivity?.()}
-        >
-          <Icon icon={mdiCommentTextOutline} size="18" />
-          <span>{$t('frameleaf_album_comments_title')}</span>
-          {#if likeCount + commentCount > 0}
-            <span class="count" aria-hidden="true">{likeCount + commentCount}</span>
-          {/if}
-        </button>
-      {/if}
+    <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
+    {#if onToggleActivity && inRow('activity')}
+      <!-- SHARING-P7: "Comments" on album and space headers alike; "Activity" is the app's own workspace. -->
+      <button
+        type="button"
+        class="action"
+        aria-pressed={activityOpen}
+        aria-label={$t('frameleaf_album_activity_button', { values: { count: likeCount + commentCount } })}
+        onclick={() => onToggleActivity?.()}
+      >
+        <Icon icon={mdiCommentTextOutline} size="18" />
+        <span>{$t('frameleaf_album_comments_title')}</span>
+        {#if likeCount + commentCount > 0}
+          <span class="count" aria-hidden="true">{likeCount + commentCount}</span>
+        {/if}
+      </button>
     {/if}
 
     <span class="spacer"></span>
@@ -709,38 +731,44 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
-      {#if folded}
-        {#if boards && editor && !isCollection}
+      {#if foldedActions.size > 0}
+        {#if folded && boards && editor && !isCollection}
           <MenuItem onSelect={() => (createOpen = true)}>
             <Icon icon={mdiPlus} size="18" />
             {$t('frameleaf_boards_new_collection')}
           </MenuItem>
         {/if}
-        {#if owner}
+        {#if owner && !inRow('links')}
           <MenuItem onSelect={openLinks}>
             <Icon icon={mdiLinkVariant} size="18" />
             {$t('frameleaf_spaces_links')}
           </MenuItem>
         {/if}
-        {#if mapEnabled}
+        {#if mapEnabled && !inRow('map')}
           <MenuItem disabled={mapMarkers.length === 0} onSelect={() => void openMap()}>
             <Icon icon={mdiMapOutline} size="18" />
             {$t('map')}
           </MenuItem>
         {/if}
-        <MenuItem disabled={assetCount === 0} onSelect={() => onSlideshow?.()}>
-          <Icon icon={mdiPlayCircleOutline} size="18" />
-          {$t('slideshow')}
-        </MenuItem>
-        <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
-          <Icon icon={mdiMovieOpenPlayOutline} size="18" />
-          {$t('frameleaf_movie_make')}
-        </MenuItem>
-        <MenuItem disabled={assetCount === 0} onSelect={download}>
-          <Icon icon={mdiDownloadOutline} size="18" />
-          {$t('download')}
-        </MenuItem>
-        {#if onToggleActivity}
+        {#if !inRow('slideshow')}
+          <MenuItem disabled={assetCount === 0} onSelect={() => onSlideshow?.()}>
+            <Icon icon={mdiPlayCircleOutline} size="18" />
+            {$t('slideshow')}
+          </MenuItem>
+        {/if}
+        {#if !inRow('movie')}
+          <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
+            <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+            {$t('frameleaf_movie_make')}
+          </MenuItem>
+        {/if}
+        {#if !inRow('download')}
+          <MenuItem disabled={assetCount === 0} onSelect={download}>
+            <Icon icon={mdiDownloadOutline} size="18" />
+            {$t('download')}
+          </MenuItem>
+        {/if}
+        {#if onToggleActivity && !inRow('activity')}
           <MenuItem checked={activityOpen} onSelect={() => onToggleActivity?.()}>
             <Icon icon={mdiCommentTextOutline} size="18" />
             {likeCount + commentCount > 0

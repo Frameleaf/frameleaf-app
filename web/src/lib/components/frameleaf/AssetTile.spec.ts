@@ -282,7 +282,10 @@ describe('AssetTile date labels', () => {
         captionHeight: 24,
       });
       const time = container.querySelector('time')!;
-      expect(time.textContent?.replaceAll(/\s+/g, ' ').trim()).toBe(`${expectedHour % 12 || 12}:20 PM`);
+      // No day headers under Added, so the caption names the day too (prototype "18 Aug 06:00").
+      const [, expectedMonth, expectedDay] = expectedDate.split('-').map(Number);
+      const dayLabel = `${expectedMonth === 7 ? 'Jul' : 'Jan'} ${expectedDay}`;
+      expect(time.textContent?.replaceAll(/\s+/g, ' ').trim()).toBe(`${dayLabel}, ${expectedHour % 12 || 12}:20 PM`);
       expect(time.getAttribute('datetime')).toContain(`${expectedDate}T${expectedHour}:20`);
     } finally {
       Settings.defaultZone = previousZone;
@@ -337,6 +340,20 @@ describe('AssetTile list and browse dates', () => {
       }
     },
   );
+
+  it('rings the item the Work panel describes, unless it is selected (FL-1117)', async () => {
+    const { container, rerender } = render(AssetTile, {
+      asset: asset(),
+      width: 200,
+      height: 200,
+      layout: 'work',
+      inPanel: true,
+    });
+    const tile = container.querySelector('.fl-tile')!;
+    expect(tile).toHaveClass('is-in-panel');
+    await rerender({ inPanel: false });
+    expect(tile).not.toHaveClass('is-in-panel');
+  });
 
   it('keeps Browse free of time captions', () => {
     const { container } = render(AssetTile, {
