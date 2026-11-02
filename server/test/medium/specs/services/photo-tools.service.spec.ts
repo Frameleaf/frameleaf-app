@@ -58,7 +58,11 @@ const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest();
 
 const setup = () => {
   const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
-  const job = { queue: vi.fn().mockResolvedValue(undefined), queueAll: vi.fn().mockResolvedValue(undefined) };
+  const job = {
+    queue: vi.fn().mockResolvedValue(undefined),
+    queueAll: vi.fn().mockResolvedValue(undefined),
+    collectFollowups: vi.fn((action: () => Promise<void>) => action()),
+  };
   const develop = new AssetDevelopRepository(database);
   const photoTools = new PhotoToolsRepository(database);
   const sut = new AssetDevelopService(

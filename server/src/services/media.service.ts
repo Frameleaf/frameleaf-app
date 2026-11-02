@@ -364,7 +364,7 @@ export class MediaService extends BaseService {
       ),
     );
     if (status === JobStatus.Success) {
-      await this.queueLockedSeal([asset.id]);
+      await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
     }
     return status;
   }
@@ -437,7 +437,7 @@ export class MediaService extends BaseService {
       this.generateThumbnailsFrom(originalPath === asset.originalPath ? asset : { ...asset, originalPath }, config),
     );
     if (status === JobStatus.Success) {
-      await this.queueLockedSeal([asset.id]);
+      await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
     }
     return status;
   }
@@ -1392,7 +1392,7 @@ export class MediaService extends BaseService {
           },
         ],
       );
-      await this.queueLockedSeal([asset.id]);
+      await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
       return JobStatus.Success;
     }
 
@@ -1423,7 +1423,7 @@ export class MediaService extends BaseService {
     const status = await this.editOperations.execute(operationId, (run) => this.renderVideoEdit(id, versionId, run));
     if (status === JobStatus.Success) {
       // FL-721 (spec §7.2): the new master, proxy and thumbnails of a Locked item are sealed
-      await this.queueLockedSeal([id]);
+      await this.jobRepository.collectFollowups(() => this.queueLockedSeal([id]));
     }
     return status;
   }

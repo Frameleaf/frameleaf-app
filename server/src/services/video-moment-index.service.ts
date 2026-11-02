@@ -169,7 +169,9 @@ export class VideoMomentIndexService {
   private async ensureFrames(assetId: string, config: SystemConfig): Promise<FrameCutOutcome> {
     const outcome = await ensureVideoFrames(this.frameDeps, assetId, config);
     if (outcome.status === 'cut') {
-      await queueLockedSealOf({ lockedFile: this.lockedFiles, job: this.jobs, logger: this.logger }, [assetId]);
+      await this.jobs.collectFollowups(() =>
+        queueLockedSealOf({ lockedFile: this.lockedFiles, job: this.jobs, logger: this.logger }, [assetId]),
+      );
     }
     return outcome;
   }
