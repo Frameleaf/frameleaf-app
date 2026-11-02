@@ -515,13 +515,19 @@ export class MetadataService extends BaseService {
       if (!current || !current.checksum.equals(asset.checksum) || current.originalPath !== asset.originalPath) {
         throw new Error('Metadata source changed before publication');
       }
+      const currentMetadata = await this.assetRepository.getForMetadataExtractionTags(asset.id);
+      // EXIF locks and revisions also protect the capture clocks stored on the asset row.
+      const preserveCaptureTime =
+        lockedProperties.includes('dateTimeOriginal') || currentMetadata?.updateId !== previous?.updateId;
       const tasks = [
         () =>
           this.assetRepository.update({
             id: asset.id,
             duration: this.getDuration(exifTags),
-            localDateTime: dates.localDateTime,
-            fileCreatedAt: dates.dateTimeOriginal ?? undefined,
+            ...(!preserveCaptureTime && {
+              localDateTime: dates.localDateTime,
+              fileCreatedAt: dates.dateTimeOriginal ?? undefined,
+            }),
             fileModifiedAt: stats.mtime,
 
             // Keep unedited assets in sync with the file on disk, but don't overwrite edited dimensions.

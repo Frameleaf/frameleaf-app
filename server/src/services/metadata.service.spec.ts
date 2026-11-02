@@ -1202,13 +1202,16 @@ describe(MetadataService.name, () => {
     it('should remove the tags the file no longer lists', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.asset.getForMetadataExtractionTags
-        .mockResolvedValueOnce({
-          tags: ['Parent/Child', 'Kept'],
-          timeZone: null,
-          updateId: '00000000-0000-0000-0000-000000000001',
-        })
-        .mockResolvedValueOnce({ tags: ['Kept'], timeZone: null, updateId: '00000000-0000-0000-0000-000000000001' });
+      let stored = {
+        tags: ['Parent/Child', 'Kept'],
+        timeZone: null,
+        updateId: '00000000-0000-0000-0000-000000000001',
+      };
+      mocks.asset.getForMetadataExtractionTags.mockImplementation(() => Promise.resolve(stored));
+      mocks.asset.upsertExif.mockImplementation(() => {
+        stored = { ...stored, tags: ['Kept'], updateId: '00000000-0000-0000-0000-000000000002' };
+        return Promise.resolve();
+      });
       mockReadTags({ TagsList: ['Kept'] });
       mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
 
@@ -1887,6 +1890,39 @@ describe(MetadataService.name, () => {
 
     // LIB-02: a zone picked in Edit date and time came back as the zone the GPS position is in (America/Vancouver
     // instead of America/Edmonton) once the sidecar was read again, and the local time moved an hour with it
+    it.each([true, false])(
+      'keeps a locked capture date while regenerating metadata (embedded date: %s)',
+      async (embedded) => {
+        const manualDate = new Date('2026-06-21T22:56:00.000Z');
+        const localDate = new Date('2026-06-21T16:56:00.000Z');
+        const asset = AssetFactory.create({ fileCreatedAt: manualDate, localDateTime: localDate });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal', 'timeZone']);
+        mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+          tags: null,
+          updateId: 'revision',
+          timeZone: 'America/Edmonton',
+        });
+        mockReadTags(embedded ? { DateTimeOriginal: ExifDateTime.fromISO('2001-01-01T12:00:00Z'), zone: 'UTC' } : {});
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('fileCreatedAt');
+        expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('localDateTime');
+      },
+    );
+
+    it('does not publish capture clocks from a metadata revision changed while reading the file', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
+      mocks.asset.getForMetadataExtractionTags
+        .mockResolvedValue({ tags: null, updateId: 'new-revision', timeZone: 'America/Edmonton' })
+        .mockResolvedValueOnce({ tags: null, updateId: 'old-revision', timeZone: 'UTC' });
+      mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO('2001-01-01T12:00:00Z'), zone: 'UTC' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('fileCreatedAt');
+      expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('localDateTime');
+    });
+
     it('keeps a locked time zone over the one the file suggests', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
