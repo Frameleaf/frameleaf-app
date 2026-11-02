@@ -246,6 +246,14 @@ export const setupTimelineMockApiRoutes = async (
 
   await context.route('**/api/assets', async (route, request) => {
     if (request.method() === 'DELETE') {
+      const { ids, force } = request.postDataJSON();
+      if (!force) {
+        for (const id of ids) {
+          if (!changes.assetDeletions.includes(id)) {
+            changes.assetDeletions.push(id);
+          }
+        }
+      }
       return route.fulfill({
         status: 204,
       });

@@ -50,7 +50,16 @@ const fixture = async () => {
     await handler({ fulfill } as unknown as Route, { url: () => `http://localhost/api/timeline/${path}` } as Request);
     return fulfill.mock.calls[0][0];
   };
-  return { changes, request };
+  const deleteHandler = route.mock.calls.find(([pattern]) => pattern === '**/api/assets')![1];
+  const deleteAssets = async (ids: string[], force?: boolean) => {
+    const fulfill = vi.fn();
+    await deleteHandler(
+      { fulfill } as unknown as Route,
+      { method: () => 'DELETE', postDataJSON: () => ({ ids, force }) } as unknown as Request,
+    );
+    expect(fulfill).toHaveBeenCalledWith({ status: 204 });
+  };
+  return { changes, request, deleteAssets };
 };
 
 it.each(['isFavorite=true', 'albumId=album'])(
@@ -96,10 +105,29 @@ it.each(['', '&isTrashed=false', '&isTrashed=true'])(
       expect(summaries.json).toMatchObject([
         { count: expectedIds.length, firstAssetId: expectedIds[0], lastAssetId: expectedIds.at(-1) },
       ]);
-      const highlights = await request(`highlights?grouping=month&highlightCount=500${filter}`);
+      const highlights = await request(`highlights?grouping=month&highlightCount=12${filter}`);
       expect(highlights.json).toMatchObject([
-        { count: expectedIds.length, keyAssetId: expectedIds[0], highlightAssetIds: expectedIds.slice(1) },
+        { count: expectedIds.length, keyAssetId: expectedIds[0], highlightAssetIds: expectedIds.slice(1, 13) },
       ]);
     }
   },
 );
+
+it.each([undefined, false])('retains soft deletions through refresh when force is %s', async (force) => {
+  const { changes, request, deleteAssets } = await fixture();
+  await deleteAssets(['0000'], force);
+  await deleteAssets(['0000', '0001'], force);
+  expect(changes.assetDeletions).toEqual(['0000', '0001']);
+  const page = await request('bucket?timeBucket=2025-01-01');
+  expect(page.json.id).toHaveLength(499);
+  expect(page.json.id).not.toContain('0000');
+  expect(page.json.id).not.toContain('0001');
+  const summaries = await request('buckets?pageSize=500');
+  expect(summaries.json).toMatchObject([{ count: 499, firstAssetId: '0002', lastAssetId: '0500' }]);
+  const highlights = await request('highlights?grouping=month&highlightCount=12');
+  expect(highlights.json).toMatchObject([{ count: 499, keyAssetId: '0002' }]);
+  expect(highlights.json[0].highlightAssetIds).not.toContain('0000');
+  expect(highlights.json[0].highlightAssetIds).not.toContain('0001');
+  const trash = await request('bucket?timeBucket=2025-01-01&isTrashed=true');
+  expect(trash.json.id).toEqual(['0000', '0001']);
+});
