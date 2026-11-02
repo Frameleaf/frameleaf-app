@@ -81,6 +81,15 @@ const sourceSettings = (format: ImportedPasswordFormat, encoded: string): { sett
   return refused();
 };
 
+const sourceSpace = /^\p{White_Space}$/u;
+const trimSourceSpace = (value: string): string => {
+  let start = 0;
+  let end = value.length;
+  while (start < end && sourceSpace.test(value[start])) start++;
+  while (end > start && sourceSpace.test(value[end - 1])) end--;
+  return value.slice(start, end);
+};
+
 const sourceHash = async (password: string, settings: Settings): Promise<string> => {
   if (settings.format === 'django-pbkdf2-sha256') {
     const [iterations, salt] = settings.settings;
@@ -88,10 +97,7 @@ const sourceHash = async (password: string, settings: Settings): Promise<string>
     return `pbkdf2_sha256$${iterations}$${salt}$${bytes.toString('base64')}`;
   }
   // Go's strings.TrimSpace includes NEL and excludes BOM, unlike JavaScript trim().
-  const input =
-    settings.format === 'photoprism-bcrypt'
-      ? password.replaceAll(/^\p{White_Space}+|\p{White_Space}+$/gu, '')
-      : password;
+  const input = settings.format === 'photoprism-bcrypt' ? trimSourceSpace(password) : password;
   if (settings.format === 'photoprism-bcrypt' && input.length === 0) return refused();
   return hash(input, settings.settings);
 };

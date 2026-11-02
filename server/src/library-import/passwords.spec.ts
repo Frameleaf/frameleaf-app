@@ -35,6 +35,11 @@ it('preserves the source whitespace rules rather than using JavaScript trim', as
   expect(await verifyImportedPassword(`\u{FEFF}${password}\u{FEFF}`, credential.forImport())).toBe(false);
 });
 
+it('handles long interior whitespace without changing source password semantics', async () => {
+  const credential = await ImportedPassword.fromSource(context, 'photoprism-bcrypt', bcryptHash);
+  expect(await verifyImportedPassword('a' + ' '.repeat(1_000_000) + 'b', credential.forImport())).toBe(false);
+});
+
 it('preserves a Python-generated Django PBKDF2 verifier and strengthens its stored representation', async () => {
   const credential = await ImportedPassword.fromSource(
     { ...context, sourceUserId: 'django-owner' },
