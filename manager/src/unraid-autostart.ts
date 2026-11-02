@@ -61,17 +61,24 @@ export class HostAutostart implements AutostartFile {
     if (!dataRoot.startsWith('/') || dataRoot === '/' || resolve(dataRoot) !== dataRoot || /[\x00-\x1f\x7f,]/.test(dataRoot))
       throw new Refusal('unraid_autostart_unavailable');
     const run = async (mount: string, script: string) => {
-      const id = containerId.parse((await this.execute('docker', [
-        'create', '--interactive', '--pull', 'never', '--network', 'none', '--read-only',
-        '--label', `app.frameleaf.manager.autostart=${this.directory}`,
-        '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL', '--cap-add', 'DAC_OVERRIDE',
-        '--pids-limit', '32', '--memory', '128m', '--mount', mount,
-        '--entrypoint', 'node', controllers[0].Image, '-e', script, '/autostart',
-      ])).trim());
+      let id: string | undefined;
       try {
+        id = containerId.parse((await this.execute('docker', [
+          'create', '--interactive', '--pull', 'never', '--network', 'none', '--read-only',
+          '--label', `app.frameleaf.manager.autostart=${this.directory}`,
+          '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL', '--cap-add', 'DAC_OVERRIDE',
+          '--pids-limit', '32', '--memory', '128m', '--mount', mount,
+          '--entrypoint', 'node', controllers[0].Image, '-e', script, '/autostart',
+        ])).trim());
         return await this.execute('docker', ['start', '--attach', '--interactive', id], { input: JSON.stringify(request) });
       } finally {
-        await this.execute('docker', ['rm', '--force', id]);
+        if (id !== undefined) await this.execute('docker', ['rm', '--force', id]);
+        else {
+          const helpers = (await this.docker.inventory()).filter(
+            (c) => c.Config.Labels?.['app.frameleaf.manager.autostart'] === this.directory,
+          );
+          for (const helper of helpers) await this.execute('docker', ['rm', '--force', containerId.parse(helper.Id)]);
+        }
       }
     };
     let result: { text?: string; error?: string };

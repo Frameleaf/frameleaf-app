@@ -213,3 +213,29 @@ test('concurrent reads finish helper cleanup before the next helper starts', asy
   assert.equal(peak, 1);
   assert.equal(active, 0);
 });
+
+for (const failure of ['timeout', 'invalid output']) {
+  test(`cleans a registered helper when create returns ${failure}`, async () => {
+    const helper = { ...controller, Id: helperId, Config: { ...controller.Config,
+      Labels: { 'app.frameleaf.manager.autostart': '/state' } } };
+    const neighbour = { ...helper, Id: 'c'.repeat(64), Config: { ...helper.Config,
+      Labels: { 'app.frameleaf.manager.autostart': '/other-manager' } } };
+    let registered = false;
+    const removed: string[] = [];
+    const docker = {
+      inventory: async () => [controller, neighbour, ...(registered ? [helper] : [])],
+      compatibility: async () => ({ dataRoot: '/docker' }),
+    };
+    const file = new HostAutostart(docker as any, '/state', async (_binary, args) => {
+      if (args[0] === 'create') {
+        registered = true;
+        if (failure === 'timeout') throw new Error('simulated create timeout after registration');
+        return 'not a container id';
+      }
+      if (args[0] === 'rm') { removed.push(args[2]); return ''; }
+      assert.fail('a failed create must not start a helper');
+    });
+    await assert.rejects(file.read(), { message: 'unraid_autostart_unavailable' });
+    assert.deepEqual(removed, [helperId]);
+  });
+}
