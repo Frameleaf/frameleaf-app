@@ -114,6 +114,27 @@ beforeEach(() => {
   } as never);
 });
 describe('Piwigo restored database transport', () => {
+  it('expires a stalled password callback and releases a queued cancellation', async () => {
+    vi.useFakeTimers();
+    try {
+      const entered = Promise.withResolvers<void>();
+      const stream = readPiwigoRestore(config, async () => {
+        entered.resolve();
+        await new Promise(() => {});
+      });
+      const next = stream.next().catch((error: unknown) => error);
+      await entered.promise;
+      const cancelled = stream.return(undefined);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(destroy).toHaveBeenCalledOnce();
+      expect(await next).toMatchObject({ message: 'Piwigo source refused: PIWIGO_PASSWORD_CALLBACK_TIMEOUT' });
+      await cancelled;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each(['restore.example.invalid', 'localhost', '10.0.0.1'])(
     'refuses unencrypted nonliteral-loopback host %s before connecting',
     async (host) => {
