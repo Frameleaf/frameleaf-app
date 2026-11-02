@@ -418,9 +418,10 @@ export class DatabaseRepository {
   }
 
   async assertImportActivated(): Promise<void> {
-    const { rows } = await sql<{ status: string }>`SELECT status FROM public.frameleaf_immich_import`.execute(this.db);
-    if (rows[0] && rows[0].status !== 'activated') {
-      throw new Error('DESTINATION_IMPORT_NOT_ACTIVATED: finish import-immich verify before starting Frameleaf.');
+    const { rows } = await sql<{ status: string }>`SELECT status FROM public.frameleaf_immich_import
+      UNION ALL SELECT status FROM public.frameleaf_library_import`.execute(this.db);
+    if (rows.some((row) => row.status !== 'activated')) {
+      throw new Error('DESTINATION_IMPORT_NOT_ACTIVATED: finish import verification before starting Frameleaf.');
     }
   }
 
