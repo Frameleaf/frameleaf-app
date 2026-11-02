@@ -46,10 +46,10 @@ export async function main(args) {
   const [command] = args;
   assert.ok(args.length === 1 && (command === 'build' || command === 'test'), 'Usage: node studio/tools/adapter.mjs build | test');
   assert.ok(await present(path.join(workspace, 'frameleaf-source.json')), 'Prepare the engine first: node studio/tools/engine.mjs prepare');
-  const vp = path.join(workspace, 'node_modules/.bin/vp');
+  const vp = path.join(workspace, 'node_modules/vite-plus/bin/vp');
   assert.ok(await present(vp), 'Install the engine lockfile first: npm --prefix studio/engine ci --ignore-scripts');
   const vpArgs = command === 'build' ? ['build', '--config', config] : ['test', 'run', '--config', config];
-  execFileSync(vp, vpArgs, { cwd: workspace, stdio: 'inherit' });
+  execFileSync(process.execPath, [vp, ...vpArgs], { cwd: workspace, stdio: 'inherit' });
   if (command === 'build') {
     await verifyEditorStyles(output);
     // The licences travel with the code: every installed package's notice files and the reviewed
