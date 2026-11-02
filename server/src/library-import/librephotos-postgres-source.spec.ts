@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import content from 'src/library-import/fixtures/librephotos/1.5.1-postgres-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/librephotos/1.5.1-postgres18.json' with { type: 'json' };
 import { openLibrephotosPostgresSnapshot } from 'src/library-import/librephotos-postgres-source.js';
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { postgresSchemaQueries } from 'src/library-import/postgres-schema.js';
 
 const transport = vi.hoisted(() => ({ reserve: vi.fn(), unsafe: vi.fn(), release: vi.fn(), end: vi.fn() }));
@@ -15,6 +16,11 @@ const guard = {
   other_clients: false,
 };
 const url = 'postgres://fixture:private-password@localhost/fixture';
+const passwordContext = {
+  operationId: '11111111-1111-4111-8111-111111111111',
+  sourceUserId: '2',
+  destinationUserId: '22222222-2222-4222-8222-222222222222',
+};
 
 describe('LibrePhotos PostgreSQL snapshot stream', () => {
   beforeEach(() => {
@@ -31,6 +37,61 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
       if (statement.includes('FROM ONLY public.')) return Promise.resolve([]);
       return Promise.resolve([]);
     });
+  });
+
+  it('preserves a mapped account password through the same admitted snapshot without exposing it in content', async () => {
+    const encoded = 'pbkdf2_sha256$10000$synthetic-salt$VdKESgIicWV9gR3+m0G8t+NmiavllPA0ghPzkbOv3sE=';
+    const original = transport.unsafe.getMockImplementation()!;
+    transport.unsafe.mockImplementation((statement: string) =>
+      statement === 'SELECT password FROM ONLY public.api_user WHERE id=$1'
+        ? Promise.resolve([{ password: encoded }])
+        : original(statement),
+    );
+    const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
+    const context = {
+      operationId: '11111111-1111-4111-8111-111111111111',
+      sourceUserId: '2',
+      destinationUserId: '22222222-2222-4222-8222-222222222222',
+    };
+    try {
+      const credential = await source.password(context);
+      expect(await verifyImportedPassword('Frameleaf migration ✓ 123', credential!.forImport())).toBe(true);
+      expect(JSON.stringify(credential)).not.toContain(encoded);
+      expect(transport.unsafe).toHaveBeenCalledWith('SELECT password FROM ONLY public.api_user WHERE id=$1', ['2']);
+    } finally {
+      await source.close();
+    }
+    await expect(source.password(context)).rejects.toThrow('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
+  });
+
+  it.each([null, '', '!synthetic-unusable-password'])(
+    'uses claim fallback for a missing or unusable Django credential: %s',
+    async (password) => {
+      const original = transport.unsafe.getMockImplementation()!;
+      transport.unsafe.mockImplementation((statement: string) =>
+        statement === 'SELECT password FROM ONLY public.api_user WHERE id=$1'
+          ? Promise.resolve([{ password }])
+          : original(statement),
+      );
+      const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
+      try {
+        expect(await source.password(passwordContext)).toBeUndefined();
+      } finally {
+        await source.close();
+      }
+    },
+  );
+
+  it('redacts credential-bearing driver failures instead of selecting claim fallback', async () => {
+    const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
+    transport.unsafe.mockRejectedValueOnce(new Error('synthetic-secret-verifier ' + url));
+    try {
+      await expect(source.password(passwordContext)).rejects.toThrow(
+        /^LibrePhotos source refused: LIBREPHOTOS_POSTGRES_PASSWORD_UNAVAILABLE$/,
+      );
+    } finally {
+      await source.close();
+    }
   });
 
   it('pins an exclusive read-only repeatable-read transaction and closes it explicitly', async () => {

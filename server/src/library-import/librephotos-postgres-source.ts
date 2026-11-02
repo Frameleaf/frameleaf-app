@@ -3,6 +3,7 @@ import fixture from 'src/library-import/fixtures/librephotos/1.5.1-postgres18.js
 import { createLibrephotosPostgresDecoder } from 'src/library-import/librephotos-postgres.js';
 import { librephotosProjections } from 'src/library-import/librephotos-projections.js';
 import { LibrephotosRow, LibrephotosTable } from 'src/library-import/librephotos.js';
+import { ImportedPassword, ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readPostgresSourceSchema } from 'src/library-import/postgres-schema.js';
 
 class LibrephotosSnapshotError extends Error {
@@ -113,6 +114,25 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
   return {
     version,
     schemaSha256: decoder.schemaSha256,
+    password: async (context: ImportedPasswordContext): Promise<ImportedPassword | undefined> => {
+      if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
+      try {
+        const rows = await reserved.unsafe('SELECT password FROM ONLY public.api_user WHERE id=$1', [
+          context.sourceUserId,
+        ]);
+        if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
+        if (rows.length !== 1) throw new Error('Source owner missing');
+        const encoded = rows[0].password;
+        if (encoded === null || encoded === '' || (typeof encoded === 'string' && encoded.startsWith('!'))) return;
+        if (typeof encoded !== 'string') throw new Error('Source password encoding unsupported');
+        const credential = await ImportedPassword.fromSource(context, 'django-pbkdf2-sha256', encoded);
+        if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
+        return credential;
+      } catch (error) {
+        if (error instanceof LibrephotosSnapshotError) throw error;
+        throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_PASSWORD_UNAVAILABLE');
+      }
+    },
     async *rows(table: LibrephotosTable): AsyncGenerator<LibrephotosRow[]> {
       if (!Object.hasOwn(librephotosProjections, table))
         throw new LibrephotosSnapshotError('LIBREPHOTOS_TABLE_NOT_ALLOWED');
