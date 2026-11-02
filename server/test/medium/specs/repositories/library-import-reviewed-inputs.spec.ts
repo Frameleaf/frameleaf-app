@@ -168,7 +168,14 @@ it.each(['manifest', 'plan', 'credential', 'destination', 'binding'] as const)(
         break;
       }
     }
-    await expect(retainReviewedImportInputs(wrap(db), changed.context, changed.input)).rejects.toThrow();
+    const expected = {
+      manifest: 'IMPORT_PLAN_BINDING_CHANGED',
+      plan: 'IMPORT_PLAN_BINDING_CHANGED',
+      credential: 'IMPORT_REVIEWED_INPUTS_INVALID',
+      destination: 'IMPORT_PLAN_DESTINATION_CHANGED',
+      binding: 'IMPORT_BINDING_CHANGED',
+    } as const;
+    await expect(retainReviewedImportInputs(wrap(db), changed.context, changed.input)).rejects.toThrow(expected[kind]);
     expect(await loadReviewedImportInputs(wrap(db), context)).toEqual({ manifest, plan });
   },
 );
