@@ -440,7 +440,7 @@ index cbc657a..2e6dccd 100644
    }
  }
 diff --git a/src/i18n/locales/partials/en/voice-music.json b/src/i18n/locales/partials/en/voice-music.json
-index 905db62..e7c7f05 100644
+index 905db62..3317c7c 100644
 --- a/src/i18n/locales/partials/en/voice-music.json
 +++ b/src/i18n/locales/partials/en/voice-music.json
 @@ -1,36 +1,41 @@
@@ -484,7 +484,7 @@ index 905db62..e7c7f05 100644
 +    "cancelled": "Stopped. Nothing on the timeline changed.",
 +    "applied": "Mix applied. You can undo it in one step.",
 +    "selectTracks": "Choose at least one voice track and one music track.",
-+    "separateTracks": "Choose different sources for voice and music. The same clip can't be both.",
++    "separateTracks": "Voice and music need different tracks, and the same clip can't be on both.",
      "invalidSettings": "Use valid ducking, loudness and timing settings.",
      "inaudible": "A selected source is muted, hidden or excluded by solo. Review track audibility first.",
      "locked": "A selected source or linked companion is locked.",
