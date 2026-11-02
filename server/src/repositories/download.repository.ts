@@ -27,13 +27,41 @@ const builder = (db: Kysely<DB>, options: DownloadPrivacyOptions = {}) =>
   db
     .selectFrom('asset')
     .innerJoin('asset_exif', 'assetId', 'id')
-    .select(['asset.id', 'asset.livePhotoVideoId', 'asset_exif.fileSizeInByte as size'])
+    .select(['asset.id', 'asset.livePhotoVideoId'])
+    .select(
+      sql<number | null>`COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE((
+        SELECT sum(file."sizeInBytes") FROM public.asset_original original
+        JOIN public.physical_file file ON file.id = original."physicalFileId"
+        WHERE original."assetId" = asset.id
+      ), 0)`.as('size'),
+    )
     .where('asset.deletedAt', 'is', null)
     .$call((qb) => withHiddenContentFilter(qb, options));
 
 @Injectable()
 export class DownloadRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  async hasAdditionalOriginals(ids: string[]) {
+    const original = await this.db
+      .selectFrom('asset_original')
+      .select('assetId')
+      .where('assetId', '=', anyUuid(ids))
+      .limit(1)
+      .executeTakeFirst();
+    return original !== undefined;
+  }
+
+  getAdditionalOriginals(ids: string[]) {
+    return this.db
+      .selectFrom('asset_original')
+      .innerJoin('physical_file', 'physical_file.id', 'asset_original.physicalFileId')
+      .select(['asset_original.assetId', 'asset_original.originalFileName', 'physical_file.path as originalPath'])
+      .where('asset_original.assetId', '=', anyUuid(ids))
+      .orderBy('asset_original.assetId')
+      .orderBy('physical_file.id')
+      .stream();
+  }
 
   downloadAssetIds(ids: string[], options?: DownloadPrivacyOptions) {
     return builder(this.db, options).where('asset.id', '=', anyUuid(ids)).stream();

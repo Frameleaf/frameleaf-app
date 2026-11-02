@@ -132,6 +132,14 @@ export class DownloadService extends BaseService {
     }
 
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+    // shortcut: portable v1 cannot retain additional-original relationships; lift after versioned export/restore supports them.
+    if (
+      dto.includeLibraryMetadata &&
+      assets.length > 0 &&
+      (await this.downloadRepository.hasAdditionalOriginals(assetMap.keys().toArray()))
+    ) {
+      throw new BadRequestException('Portable library export cannot yet preserve photos with multiple originals');
+    }
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
     const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
@@ -161,34 +169,48 @@ export class DownloadService extends BaseService {
       : undefined;
     const zip = this.storageRepository.createZipStream();
 
-    for (const assetId of dto.assetIds) {
-      const found = assetMap.get(assetId);
-      if (!found) {
-        continue;
+    try {
+      for (const assetId of dto.assetIds) {
+        const found = assetMap.get(assetId);
+        if (!found) {
+          continue;
+        }
+
+        // As shown: the owner's current develop version takes the place of any other edited file.
+        const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
+        const name = manifestNames.get(assetId) ?? nextArchiveName(paths, archiveFileName(asset, dto));
+        // FL-721 (spec §8.1): an encrypted file goes in decrypted, as a stream for this viewer
+        zip.addFile(await lockedArchiveInput(await this.resolveArchivePath(asset, dto), lockedViewerOf(auth)), name);
+
+        // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
+        const sidecar = sidecars.get(assetId);
+        const generated = details.get(assetId);
+        if (sidecar) {
+          zip.addFile(await lockedArchiveInput(sidecar, lockedViewerOf(auth)), nextArchiveName(paths, `${name}.xmp`));
+        } else if (generated) {
+          // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
+          const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
+          zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
+        }
       }
 
-      // As shown: the owner's current develop version takes the place of any other edited file.
-      const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
-      const name = manifestNames.get(assetId) ?? nextArchiveName(paths, archiveFileName(asset, dto));
-      // FL-721 (spec §8.1): an encrypted file goes in decrypted, as a stream for this viewer
-      zip.addFile(await lockedArchiveInput(await this.resolveArchivePath(asset, dto), lockedViewerOf(auth)), name);
-
-      // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
-      const sidecar = sidecars.get(assetId);
-      const generated = details.get(assetId);
-      if (sidecar) {
-        zip.addFile(await lockedArchiveInput(sidecar, lockedViewerOf(auth)), nextArchiveName(paths, `${name}.xmp`));
-      } else if (generated) {
-        // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
-        const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
-        zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
+      if (!dto.edited && assets.length > 0) {
+        for await (const original of this.downloadRepository.getAdditionalOriginals(assetMap.keys().toArray())) {
+          zip.addFile(
+            await lockedArchiveInput(await this.resolveArchivePath(original, dto), lockedViewerOf(auth)),
+            nextArchiveName(paths, original.originalFileName),
+          );
+        }
       }
+
+      if (manifest) zip.addFile(Buffer.from(JSON.stringify(manifest), 'utf8'), 'frameleaf-library.json');
+      void zip.finalize();
+
+      return { stream: zip.stream, disposition };
+    } catch (error) {
+      zip.stream.destroy();
+      throw error;
     }
-
-    if (manifest) zip.addFile(Buffer.from(JSON.stringify(manifest), 'utf8'), 'frameleaf-library.json');
-    void zip.finalize();
-
-    return { stream: zip.stream, disposition };
   }
 
   /**
