@@ -1,52 +1,30 @@
 import { z } from 'zod';
 import { Refusal } from './contracts.js';
 import type { Store } from './store.js';
+import {
+  importHash as hash,
+  importTransferSchema as transferSchema,
+  importPlanSha256,
+  parseImportPlan,
+  importVerificationSchema,
+  type ImportPlan,
+  type ImportTransfer,
+  type ImportVerification,
+} from './import-plan.js';
+export type { ImportTransfer } from './import-plan.js';
 
-const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const decimal = z.string().regex(/^(0|[1-9]\d*)$/);
-const id = z.string().min(1).max(1024);
-const path = z
-  .string()
-  .min(1)
-  .max(4096)
-  .refine(
-    (value) =>
-      !value.startsWith('/') &&
-      !value.includes('\\') &&
-      !/^[a-z]:/i.test(value) &&
-      [...value].every((c) => c >= ' ') &&
-      value.split('/').every((part) => part && part !== '.' && part !== '..'),
-  );
 const bindingSchema = z.strictObject({
   manifestSha256: hash,
   planSha256: hash,
 });
-const transferSchema = z.strictObject({
-  id,
-  mode: z.enum(['copy', 'adopt', 'relocate']),
-  sourceRoot: id,
-  sourcePath: path,
-  destinationRoot: id,
-  destinationPath: path,
-  sha256: hash,
-  bytes: decimal,
-  sourceIdentity: z.strictObject({
-    device: decimal,
-    inode: decimal,
-    bytes: decimal,
-    mtimeNs: decimal,
-    ctimeNs: decimal,
-    links: decimal,
-  }),
-  destinationDevice: decimal,
-});
-export type ImportTransfer = z.infer<typeof transferSchema>;
 type State =
   'intent' | 'verified' | 'rollback-intent' | 'rolled-back' | 'cancelled';
 type TransferRow = { file_id: string; value: string; state: State };
 
 /** Durable receipts only: the transfer worker must verify mounted roots, fencing and actual filesystem effects. */
 export class ImportTransferJournal {
+  private planned?: { operationId: string; files: Map<string, string> };
   constructor(private store: Store) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS library_import_runs (
       operation_id TEXT PRIMARY KEY REFERENCES operations(id), binding TEXT NOT NULL,
@@ -55,7 +33,10 @@ export class ImportTransferJournal {
       operation_id TEXT NOT NULL REFERENCES library_import_runs(operation_id), file_id TEXT NOT NULL,
       value TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('intent','verified','rollback-intent','rolled-back','cancelled')),
       destination_root TEXT NOT NULL, destination_path TEXT NOT NULL,
-      PRIMARY KEY(operation_id,file_id), UNIQUE(operation_id,destination_root,destination_path));`);
+      PRIMARY KEY(operation_id,file_id), UNIQUE(operation_id,destination_root,destination_path));
+      CREATE TABLE IF NOT EXISTS library_import_review (
+      operation_id TEXT PRIMARY KEY REFERENCES library_import_runs(operation_id),
+      plan TEXT NOT NULL, verification TEXT);`);
   }
   private atomic<T>(operationId: string, body: () => T): T {
     let began = false;
@@ -116,6 +97,117 @@ export class ImportTransferJournal {
       this.run(operationId);
     });
   }
+  sealPlan(operationId: string, input: unknown): void {
+    const plan = parseImportPlan(input);
+    const value = JSON.stringify(plan);
+    this.atomic(operationId, () => {
+      this.run(operationId, true);
+      const row = this.store.db
+        .prepare('SELECT binding FROM library_import_runs WHERE operation_id=?')
+        .get(operationId)!;
+      if (JSON.parse(String(row.binding)).planSha256 !== importPlanSha256(plan))
+        throw new Refusal('import_plan_changed');
+      const planned = new Map(
+        plan.files.map((file) => [file.id, JSON.stringify(file)]),
+      );
+      for (const { file } of this.files(operationId))
+        this.assertPlannedFile(planned, file);
+      this.store.db
+        .prepare(
+          'INSERT OR IGNORE INTO library_import_review(operation_id,plan) VALUES(?,?)',
+        )
+        .run(operationId, value);
+      const reviewed = this.store.db
+        .prepare('SELECT plan FROM library_import_review WHERE operation_id=?')
+        .get(operationId)!;
+      if (reviewed.plan !== value) throw new Refusal('import_plan_changed');
+    });
+  }
+  private assertPlannedFile(
+    planned: Map<string, string>,
+    file: ImportTransfer,
+  ): void {
+    if (planned.get(file.id) !== JSON.stringify(file))
+      throw new Refusal('import_transfer_not_planned');
+  }
+  private plannedFiles(operationId: string): Map<string, string> | null {
+    if (this.planned?.operationId === operationId) return this.planned.files;
+    const { plan } = this.review(operationId);
+    if (!plan) return null;
+    // Sealed plans are immutable; retain only the active operation's lookup, never a negative result.
+    this.planned = {
+      operationId,
+      files: new Map(plan.files.map((file) => [file.id, JSON.stringify(file)])),
+    };
+    return this.planned.files;
+  }
+  private assertCompleteTransfers(operationId: string, plan: ImportPlan): void {
+    const files = this.files(operationId);
+    if (
+      files.length !== plan.files.length ||
+      files.some((entry) => entry.state !== 'verified')
+    )
+      throw new Refusal('import_transfers_unverified');
+    const planned = new Map(
+      plan.files.map((file) => [file.id, JSON.stringify(file)]),
+    );
+    for (const { file } of files) this.assertPlannedFile(planned, file);
+  }
+  recordVerification(operationId: string, input: unknown): void {
+    const parsed = importVerificationSchema.safeParse(input);
+    if (!parsed.success) throw new Refusal('import_reconciliation_failed');
+    const verification = parsed.data;
+    if (
+      ['records', 'relationships', 'permissions'].some((key) => {
+        const receipt = verification[key as 'records'];
+        return receipt.expectedSha256 !== receipt.actualSha256;
+      })
+    )
+      throw new Refusal('import_reconciliation_failed');
+    this.atomic(operationId, () => {
+      this.run(operationId, true);
+      const { plan, verification: previous } = this.review(operationId);
+      if (!plan) throw new Refusal('import_plan_not_sealed');
+      this.assertCompleteTransfers(operationId, plan);
+      const row = this.store.db
+        .prepare('SELECT binding FROM library_import_runs WHERE operation_id=?')
+        .get(operationId)!;
+      const binding = bindingSchema.parse(JSON.parse(String(row.binding)));
+      if (
+        binding.manifestSha256 !== verification.manifestSha256 ||
+        binding.planSha256 !== verification.planSha256
+      )
+        throw new Refusal('import_reconciliation_failed');
+      const value = JSON.stringify(verification);
+      if (previous && JSON.stringify(previous) !== value)
+        throw new Refusal('import_reconciliation_changed');
+      this.store.db
+        .prepare(
+          'UPDATE library_import_review SET verification=? WHERE operation_id=?',
+        )
+        .run(value, operationId);
+    });
+  }
+  review(operationId: string): {
+    plan: ImportPlan | null;
+    verification: ImportVerification | null;
+  } {
+    try {
+      const row = this.store.db
+        .prepare(
+          'SELECT plan,verification FROM library_import_review WHERE operation_id=?',
+        )
+        .get(operationId);
+      return {
+        plan: row ? parseImportPlan(JSON.parse(String(row.plan))) : null,
+        verification: row?.verification
+          ? importVerificationSchema.parse(JSON.parse(String(row.verification)))
+          : null,
+      };
+    } catch {
+      throw new Refusal('import_journal_unavailable');
+    }
+  }
   intent(operationId: string, input: ImportTransfer): void {
     const parsed = transferSchema.safeParse(input);
     if (
@@ -132,6 +224,8 @@ export class ImportTransferJournal {
       throw new Refusal('import_relocation_cross_filesystem');
     this.atomic(operationId, () => {
       this.run(operationId, true);
+      const planned = this.plannedFiles(operationId);
+      if (planned) this.assertPlannedFile(planned, file);
       const value = JSON.stringify(file);
       const prior = this.store.db
         .prepare(
@@ -270,14 +364,10 @@ export class ImportTransferJournal {
   writersStarting(operationId: string): void {
     this.atomic(operationId, () => {
       this.run(operationId);
-      if (
-        this.store.db
-          .prepare(
-            "SELECT 1 FROM library_import_transfers WHERE operation_id=? AND state<>'verified' LIMIT 1",
-          )
-          .get(operationId)
-      )
-        throw new Refusal('import_transfers_unverified');
+      const { plan, verification } = this.review(operationId);
+      if (!plan) throw new Refusal('import_plan_not_sealed');
+      this.assertCompleteTransfers(operationId, plan);
+      if (!verification) throw new Refusal('import_reconciliation_missing');
       this.store.db
         .prepare(
           'UPDATE library_import_runs SET writers_starting=1 WHERE operation_id=?',
