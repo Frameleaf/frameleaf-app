@@ -191,7 +191,12 @@ const MODEL_SOURCES: Readonly<Record<string, string>> = { openai: 'OpenAI', webl
  */
 export const readableModelName = (id: string) => {
   const [model, source] = id.split('__', 2);
-  return source ? `${MODEL_SOURCES[source.toLowerCase()] ?? source} ${model}` : id;
+  if (!source) {
+    return id;
+  }
+  const key = source.toLowerCase();
+  // own keys only: an id like `custom__constructor` must not read an Object.prototype member
+  return `${Object.hasOwn(MODEL_SOURCES, key) ? MODEL_SOURCES[key] : source} ${model}`;
 };
 
 /** Whether an existing library's search model is one outside the tiers, offered as "keep current model". */

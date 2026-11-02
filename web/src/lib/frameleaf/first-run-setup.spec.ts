@@ -350,6 +350,7 @@ describe('first-run setup state (FL-176)', () => {
       expect(readableModelName('ViT-B-32__openai')).toBe('OpenAI ViT-B-32');
       expect(readableModelName('ViT-B-16-SigLIP-384__webli')).toBe('WebLI ViT-B-16-SigLIP-384');
       expect(readableModelName('custom-model')).toBe('custom-model');
+      expect(readableModelName('custom__constructor')).toBe('constructor custom');
       // a new server still starts at the hardware's tier
       expect(defaultTier('new', { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' })).toBe('best');
 
