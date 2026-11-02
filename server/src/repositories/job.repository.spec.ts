@@ -136,7 +136,9 @@ describe(JobRepository.name, () => {
   it.each(['asset', 'lockedFile'] as const)(
     'retains committed %s sealing when the producer later fails',
     async (source) => {
-      const { db, queries } = scriptedKysely(() => ({ rows: [{ id: 'parent' }] }));
+      const { db, queries } = scriptedKysely(({ sql }) => ({
+        rows: sql.startsWith('select id from job where id =') ? [{ id: 'parent' }] : [],
+      }));
       const handlers = sut['handlers'];
       sut = new JobRepository(
         {} as ModuleRef,
@@ -145,7 +147,6 @@ describe(JobRepository.name, () => {
         { setContext: vi.fn(), error: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository,
         db as Kysely<any>,
       );
-      sut['store'].enqueue = enqueue;
       Object.assign(sut['handlers'], handlers);
       const execution = context();
       // A source guard or unrelated adoption does not make committed files staged.
@@ -164,12 +165,13 @@ describe(JobRepository.name, () => {
         }),
       ).rejects.toThrow('completion failed');
       expect(deps.logger.warn).not.toHaveBeenCalled();
-      expect(enqueue).toHaveBeenCalledOnce();
-      expect(enqueue.mock.calls[0][0]).toEqual([
-        expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' }, parentId: undefined }),
-      ]);
       expect(execution.followups).toEqual([]);
-      expect(queries.map(({ sql }) => sql)).toContain('commit');
+      const inserted = queries.findIndex(({ sql }) => sql.startsWith('insert into job('));
+      expect(inserted).toBeGreaterThanOrEqual(0);
+      expect(queries[inserted].parameters).toContain(JobName.LockedSeal);
+      expect(queries[inserted].parameters).toContain(JSON.stringify({ id: 'asset' }));
+      expect(queries[inserted].parameters.at(-1)).toBeNull();
+      expect(queries.findIndex(({ sql }) => sql === 'commit')).toBeGreaterThan(inserted);
       await db.destroy();
     },
   );
