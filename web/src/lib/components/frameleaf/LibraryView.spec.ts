@@ -426,6 +426,10 @@ describe('LibraryView', () => {
       expect(onOpen).not.toHaveBeenCalled();
       expect(librarySession.session.scrollAnchor).toBe(second.id);
       expect(screen.getByTestId('work-panel')).toBeInTheDocument();
+      // FL-1118: a neutral ring marks the tile the panel beside the grid describes
+      const ringed = () =>
+        [...document.querySelectorAll<HTMLElement>('.fl-tile.is-in-panel')].map((node) => node.dataset.assetId);
+      expect(ringed()).toEqual([second.id]);
 
       await click(second);
       expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: second.id }));
