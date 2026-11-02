@@ -1143,6 +1143,12 @@
    * focused tile (a click with no count) opens it at once, since focus has shown it in the panel.
    */
   let workClickedId: string | undefined;
+  // Focus moving the panel to another item (Tab, the viewer) makes a click back a first click again.
+  $effect(() => {
+    if ((session.selection.at(-1) ?? session.session.scrollAnchor) !== workClickedId) {
+      workClickedId = undefined;
+    }
+  });
   const handleTileClick = (asset: TimelineAsset, event?: MouseEvent | KeyboardEvent) => {
     if (onTileClick?.(asset)) {
       return true;

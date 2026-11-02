@@ -418,6 +418,10 @@ describe('LibraryView', () => {
       const click = (asset: TimelineAsset, detail = 1) => fireEvent.click(tile(asset), { detail });
 
       await click(first);
+      // Tab to another tile moves the panel there, so going back to the first is a first click again
+      await fireEvent.focus(tile(second));
+      expect(librarySession.session.scrollAnchor).toBe(second.id);
+      await click(first);
       await click(second);
       expect(onOpen).not.toHaveBeenCalled();
       expect(librarySession.session.scrollAnchor).toBe(second.id);
