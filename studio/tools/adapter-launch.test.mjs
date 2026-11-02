@@ -87,6 +87,14 @@ test('adapter config loads private engine plugins and preserves resolver boundar
     }
     assert.equal(await dependency.resolveId.call(resolver, 'mediabunny',
       vitePath(adapter + '-other/src/file.ts'), {}), null);
+    for (const source of [path.join(engine, 'src/features/timeline/stores/timeline-persistence'),
+      'D:\\engine\\src/features/timeline/stores/timeline-persistence',
+      'D:/engine/src/features/timeline/stores/timeline-persistence',
+      '\\\\server\\share\\timeline-persistence']) {
+      assert.equal(await dependency.resolveId.call({ resolve() {
+        throw new Error('absolute aliases must retain their importer for the persistence gate');
+      } }, source, path.join(adapter, 'src/shims/timeline-persistence.ts'), {}), null);
+    }
     const persistence = result.plugins.find((plugin) => plugin.name === 'frameleaf-gate-timeline-persistence');
     const shim = vitePath(path.join(adapter, 'src/shims/timeline-persistence.ts'));
     for (const id of pathForms(path.join(engine, 'src/features/timeline/stores/timeline-persistence.ts'))) {

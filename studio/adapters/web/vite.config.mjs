@@ -78,7 +78,8 @@ const resolveFromEngine = () => ({
   name: 'frameleaf-resolve-from-engine',
   enforce: 'pre',
   async resolveId(source, importer, options) {
-    if (!importer || source.startsWith('.') || source.startsWith('/') || source.startsWith('\0'))
+    // Absolute Windows aliases can reach this hook before Vite normalizes their separators.
+    if (!importer || source.startsWith('.') || path.isAbsolute(source) || path.win32.isAbsolute(source) || source.startsWith('\0'))
       return null
     if (source.startsWith('@/') || source.startsWith('@frameleaf/')) return null
     if (!vitePath(importer).startsWith(vitePath(here) + '/') || vitePath(importer).startsWith(vitePath(engine) + '/')) return null
