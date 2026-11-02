@@ -513,11 +513,12 @@ export class JobRepository {
     if (!context) {
       return action();
     }
+    const buffering = context.buffering;
     context.buffering = true;
     try {
       await action();
     } finally {
-      context.buffering = false;
+      context.buffering = buffering;
     }
   }
 
