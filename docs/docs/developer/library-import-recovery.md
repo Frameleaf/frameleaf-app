@@ -148,3 +148,11 @@ This destination primitive accepts only independently qualified, enabled local-p
 ## Consistent verification lifecycle
 
 Owner, photo and album readback share `beginLibraryImportReadback`. Before its first query snapshot, it obtains a non-waiting shared lock on the recovery table, then establishes read-only repeatable-read isolation and acquires the existing importer advisory lock. A concurrent lifecycle update or importer refuses verification. The table lock prevents an abandonment commit from becoming invisible behind an earlier snapshot; readback remains unable to write destination data. Controllers still need current fencing, complete reconciliation and durable regeneration before activation.
+
+## Retained reviewed inputs
+
+`retainReviewedImportInputs` stores the complete validated manifest and reviewed destination plan together on the Server's existing recovery row. It checks the operation, source, both fingerprints and destination identity under the common import lock. Identical retries retain the first inventory; changed inputs and corrupted retained inputs refuse instead of being overwritten. `loadReviewedImportInputs` reads a consistent snapshot and revalidates the retained structures and fingerprints on every recovery. Ordinary journal status does not include names, metadata or storage paths from these inputs.
+
+Retention is allowed during copying or verification. Abandoned and activated runs remain readable for recovery but reject retention writes. The additive migration permits existing runs with no retained inputs; attempting to load one explicitly refuses. Downgrade refuses to discard retained inventories. Historical migrations and the frozen baseline remain unchanged.
+
+This internal store does not establish source completeness or privacy, perform a transfer, or authorize activation. The controller must retain these reviewed inputs before relying on journal-only recovery. Private owner/credential intents, legacy prepared photo inventories and unsupported source metadata still require protected archival and recovery integration. Credentials are refused in the manifest and plan; compatible password preservation remains supported through the separate qualified account machinery. Full lifecycle/CLI/Manager integration and all-source qualification remain required.
