@@ -117,7 +117,9 @@ a catalog submission.
 HexOS runs TrueNAS underneath and installs apps from JSON install scripts. Manager
 is a `custom: true` script on TrueNAS's generic `ix-app` chart; it asks HexOS for the
 ApplicationsPerformance, ApplicationsCapacity and Photos locations and mounts each
-Frameleaf folder at its host path.
+Frameleaf folder at its host path. The `ix-app` chart keeps Docker's default
+capabilities and turns off `no-new-privileges`, so Manager's entrypoint drops its
+bounding set to CHOWN, DAC_OVERRIDE and FOWNER and sets `no-new-privs` itself.
 
 - **Custom Install:** `manager/hexos/frameleaf-manager.hexos.json` is the signed
   installer attached to every Manager release, image `:latest`. In HexOS, turn on
