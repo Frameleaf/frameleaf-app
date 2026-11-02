@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -54,7 +54,8 @@ test('adapter config loads private engine plugins and preserves resolver boundar
       'studio/engine/node_modules/@vitejs/plugin-react/index.cjs': 'module.exports=()=>({name:"react-fixture"});',
       'studio/engine/node_modules/@tailwindcss/vite/package.json': '{"type":"module","exports":"./index.mjs"}',
       'studio/engine/node_modules/@tailwindcss/vite/index.mjs': 'export default ()=>({name:"tailwind-fixture"});',
-      'studio/engine-build.json': '{}',
+      'studio/engine-build.json': JSON.stringify({ upstreamCommit: 'a'.repeat(40), sourceSha256: 'b'.repeat(64) }),
+      'studio/notices/FRAMELEAF-NOTICE.txt': 'synthetic fixture notice',
       'studio/freecut-feature-manifest.json': '{"features":[]}',
       'web/src/lib/frameleaf/studio/frame-protocol.ts': 'export const STUDIO_FRAME_PROTOCOL_VERSION=1;',
     };
@@ -96,5 +97,17 @@ test('adapter config loads private engine plugins and preserves resolver boundar
       return { id: vitePath(path.join(engine, 'src/infrastructure/storage/workspace-fs/__tests__/in-memory-handle.ts')) };
     } }, './in-memory-handle', vitePath(path.join(engine, 'src/test.ts')), {}),
     vitePath(path.join(adapter, 'test/upstream/in-memory-handle.ts')));
+    const frame = result.plugins.find((plugin) => plugin.name === 'frameleaf-frame-manifest');
+    const output = result.build.outDir;
+    assert.doesNotThrow(() => frame.closeBundle?.());
+    await assert.rejects(readFile(path.join(output, 'manifest.json')), { code: 'ENOENT' });
+    await mkdir(output, { recursive: true });
+    for (const name of ['editor.html', 'commands.html']) await writeFile(path.join(output, name), '<html>fixture</html>');
+    frame.writeBundle();
+    assert.deepEqual(JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8')), {
+      protocolVersion: 1, engineRevision: 'a'.repeat(40), sourceSha256: 'b'.repeat(64),
+      features: [], editor: 'editor.html', commands: 'commands.html',
+    });
+    assert.equal(await readFile(path.join(output, 'notices/FRAMELEAF-NOTICE.txt'), 'utf8'), 'synthetic fixture notice');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

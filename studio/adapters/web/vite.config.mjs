@@ -54,7 +54,7 @@ const claimedFeatures = JSON.parse(
 const frameManifest = () => ({
   name: 'frameleaf-frame-manifest',
   apply: 'build',
-  closeBundle() {
+  writeBundle() {
     const manifest = {
       protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
       engineRevision: build.upstreamCommit,
