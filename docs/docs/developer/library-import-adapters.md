@@ -69,3 +69,9 @@ Manifest version `2` requires a `primaryFileId` for every logical asset. It must
 Version `1` remains accepted when each asset has exactly one original, with its existing serialized structure and fingerprint. An ambiguous version-one asset with several originals refuses preflight with `PRIMARY_ORIGINAL_REQUIRED`; capture explicit source primary evidence or obtain an operator-reviewed selection in a version-two bundle. File order, extension and resolution are not primary-selection evidence. Changing the selected primary changes the manifest fingerprint and cannot silently alter a journalled operation.
 
 This contract separates logical asset identity from physical original identity. It does not establish source ownership/privacy evidence, implement destination multi-original storage or complete any adapter's qualification. The destination writer and reconciliation must preserve every source relationship before activation.
+
+### Destination original references
+
+The internal `asset_original` relation attaches additional originals to one logical photo through canonical `physical_file` records, while `asset.originalPath` remains the selected primary. A physical original can remain attached after another photo that used it as its primary is removed. File reference counting protects the remaining attachment, and the database refuses deletion of its physical record. Removing the final attachment releases that reference. Downgrade refuses to drop a populated attachment table.
+
+This is destination retention infrastructure. It does not import attachments, authorize file linking, enqueue their deletion, expose downloads or extend preservation packages, backup inventories, quota accounting or Locked encryption. Those integrations and canonical reconciliation remain required before migration activation; the new adapters remain unqualified.
