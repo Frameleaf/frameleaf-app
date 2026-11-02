@@ -251,7 +251,6 @@ export const Route = {
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('corrupt-media', params),
 
   downloadsUtility: () => utilitiesUrl('downloads'),
-  obtainiumUtility: () => utilitiesUrl('obtainium'),
 
   // workflows
   workflows: () => utilitiesUrl('workflows'),

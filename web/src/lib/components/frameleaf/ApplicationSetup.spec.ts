@@ -32,7 +32,7 @@ const configured = {
 describe('ApplicationSetup', () => {
   it('says no signed release is available and offers no download when none is configured', async () => {
     sdkMock.getAppReleases.mockResolvedValue({ android: { available: false }, ios: { available: false } });
-    const { container } = render(ApplicationSetup, { tool: 'downloads' });
+    const { container } = render(ApplicationSetup);
 
     expect(await screen.findByText(t.unavailable)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: t.download_android })).toBeDisabled();
@@ -41,7 +41,7 @@ describe('ApplicationSetup', () => {
 
   it('downloads the configured signed build and shows its signing certificate', async () => {
     sdkMock.getAppReleases.mockResolvedValue(configured);
-    render(ApplicationSetup, { tool: 'downloads' });
+    render(ApplicationSetup);
 
     const link = await screen.findByRole('link', { name: t.download_android });
     expect(link).toHaveAttribute('href', configured.android.links.universal);
@@ -49,37 +49,5 @@ describe('ApplicationSetup', () => {
 
     await fireEvent.change(screen.getByLabelText(t.platform), { target: { value: 'iOS' } });
     expect(screen.getByRole('link', { name: t.open_app_store })).toHaveAttribute('href', configured.ios.url);
-  });
-
-  it('generates an Obtainium configuration with new download-only access', async () => {
-    sdkMock.getAppReleases.mockResolvedValue(configured);
-    sdkMock.createApiKey.mockResolvedValue({
-      secret: 'AbCdEfGhIjKlMnOpQrStUv0123456789',
-      apiKey: { id: 'k', name: 'Obtainium updates', permissions: [], createdAt: '', updatedAt: '' },
-    } as never);
-    render(ApplicationSetup, { tool: 'obtainium' });
-
-    expect(await screen.findByRole('button', { name: t.open_obtainium })).toBeDisabled();
-    await fireEvent.click(screen.getByRole('button', { name: t.create_access }));
-
-    const link = await screen.findByRole('link', { name: t.open_obtainium });
-    expect(sdkMock.createApiKey).toHaveBeenCalledWith({
-      apiKeyCreateDto: { name: t.access_key_name, permissions: ['server.apkLinks'] },
-    });
-    const href = link.getAttribute('href')!;
-    expect(href.startsWith('obtainium://app/')).toBe(true);
-    const app = JSON.parse(decodeURIComponent(href.slice('obtainium://app/'.length)));
-    expect(app).toMatchObject({ id: 'app.frameleaf.android', name: 'Frameleaf' });
-    expect(app.url).toMatch(/\/api\/server\/apk-links$/);
-    expect(screen.getByText(t.obtainium_attribution)).toBeInTheDocument();
-  });
-
-  it('keeps Obtainium unavailable without a signed Android release', async () => {
-    sdkMock.getAppReleases.mockResolvedValue({ android: { available: false }, ios: { available: false } });
-    render(ApplicationSetup, { tool: 'obtainium' });
-
-    expect(await screen.findByText(t.unavailable)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: t.open_obtainium })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: t.create_access })).toBeNull();
   });
 });

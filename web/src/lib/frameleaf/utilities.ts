@@ -3,7 +3,6 @@ import {
   mdiCloudOutline,
   mdiCompare,
   mdiDevices,
-  mdiDownload,
   mdiFolderSearchOutline,
   mdiHarddisk,
   mdiMapMarker,
@@ -24,8 +23,7 @@ export type UtilityId =
   | 'missing-media'
   | 'corrupt-media'
   | 'workflows'
-  | 'downloads'
-  | 'obtainium';
+  | 'downloads';
 export type UtilityTool = {
   id: UtilityId;
   group: UtilityGroup;
@@ -101,20 +99,7 @@ export const UTILITY_TOOLS: UtilityTool[] = [
     titleKey: 'library_care_tool_downloads',
     descriptionKey: 'library_care_tool_downloads_description',
   },
-  {
-    id: 'obtainium',
-    group: 'connect',
-    icon: mdiDownload,
-    titleKey: 'library_care_tool_obtainium',
-    descriptionKey: 'library_care_tool_obtainium_description',
-  },
 ];
-
-/**
- * FL-519: tools kept under a closed Advanced in the Utilities directory; most people never need them.
- * FL-416: Unused files (the old File trash) left Utilities: it is a Library care page, the server owner's.
- */
-export const RARELY_NEEDED_UTILITIES: readonly UtilityId[] = ['obtainium'];
 
 /** What the Utilities summary says about one tool: how many are waiting, and whether that needs a look. */
 export type UtilityState = { count: number; waiting: boolean };
