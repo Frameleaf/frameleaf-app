@@ -33,7 +33,7 @@ export class LibraryImportRefused extends Error {
     super(`Library import refused: ${code}`);
   }
 }
-const bindingOf = (input: unknown): LibraryImportBinding => {
+export const parseLibraryImportBinding = (input: unknown): LibraryImportBinding => {
   const parsed = bindingSchema.safeParse(input);
   if (!parsed.success) throw new LibraryImportRefused('INVALID_IMPORT_BINDING');
   return parsed.data;
@@ -53,12 +53,12 @@ export class LibraryImportJournal {
   private async current(db: ImportDatabase, binding: LibraryImportBinding): Promise<Run> {
     const [row] = await db.query('SELECT binding,status FROM public.frameleaf_library_import FOR UPDATE');
     if (!row) throw new LibraryImportRefused('IMPORT_JOURNAL_MISSING');
-    const recorded = bindingOf(row.binding);
+    const recorded = parseLibraryImportBinding(row.binding);
     if (JSON.stringify(recorded) !== JSON.stringify(binding)) throw new LibraryImportRefused('IMPORT_BINDING_CHANGED');
     return { binding: recorded, status: row.status as Phase };
   }
   async begin(input: unknown): Promise<Run> {
-    const binding = bindingOf(input);
+    const binding = parseLibraryImportBinding(input);
     return this.exclusive(async (db) => {
       const [existing] = await db.query('SELECT 1 FROM public.frameleaf_library_import');
       if (existing) {
@@ -87,7 +87,7 @@ export class LibraryImportJournal {
     value: unknown,
     write: (db: ImportDatabase, destinationId: string) => Promise<void>,
   ): Promise<string> {
-    const binding = bindingOf(input);
+    const binding = parseLibraryImportBinding(input);
     const parsed = mappingSchema.safeParse(value);
     if (!parsed.success) throw new LibraryImportRefused('INVALID_IMPORT_MAPPING');
     return this.persist(binding, parsed.data, write);
@@ -98,7 +98,7 @@ export class LibraryImportJournal {
     value: unknown,
     write: (db: ImportDatabase, destinationId: string) => Promise<void>,
   ): Promise<string> {
-    const binding = bindingOf(input);
+    const binding = parseLibraryImportBinding(input);
     const parsed = creationSchema.safeParse(value);
     if (!parsed.success) throw new LibraryImportRefused('INVALID_IMPORT_MAPPING');
     return this.persist(binding, parsed.data, write);
@@ -137,7 +137,7 @@ export class LibraryImportJournal {
     });
   }
   async phase(input: unknown, phase: 'verifying' | 'abandoned'): Promise<void> {
-    const binding = bindingOf(input);
+    const binding = parseLibraryImportBinding(input);
     if (phase !== 'verifying' && phase !== 'abandoned') throw new LibraryImportRefused('INVALID_IMPORT_PHASE');
     await this.exclusive(async (db) => {
       const run = await this.current(db, binding);
@@ -148,7 +148,7 @@ export class LibraryImportJournal {
   }
   async status(): Promise<{ run: Run | null; mappings: { kind: string; count: string }[] }> {
     const [row] = await this.db.query('SELECT binding,status FROM public.frameleaf_library_import');
-    const run = row ? { binding: bindingOf(row.binding), status: row.status as Phase } : null;
+    const run = row ? { binding: parseLibraryImportBinding(row.binding), status: row.status as Phase } : null;
     const mappings = await this.db.query(
       'SELECT entity_kind AS kind,count(*)::text AS count FROM public.frameleaf_library_import_mapping GROUP BY entity_kind ORDER BY entity_kind',
     );
