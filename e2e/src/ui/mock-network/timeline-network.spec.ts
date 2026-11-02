@@ -62,11 +62,11 @@ const fixture = async () => {
     expect(fulfill).toHaveBeenCalledWith({ status: 204 });
   };
   const trashHandler = route.mock.calls.find(([pattern]) => pattern === '**/api/trash/**')![1];
-  const applyTrash = async (action: string, ids?: string[]) => {
+  const trashRequest = async (path: string, action?: string, ids?: string[]) => {
     const fulfill = vi.fn();
     await trashHandler(
       { fulfill } as unknown as Route,
-      { url: () => 'http://localhost/api/trash/apply', postDataJSON: () => ({ action, ids }) } as unknown as Request,
+      { url: () => `http://localhost/api/trash/${path}`, postDataJSON: () => ({ action, ids }) } as unknown as Request,
     );
     return fulfill.mock.calls[0][0].json;
   };
@@ -88,7 +88,8 @@ const fixture = async () => {
     );
     return fulfill.mock.calls[0][0];
   };
-  return { changes, request, deleteAssets, data, applyTrash, readAlbum, readAsset };
+  const applyTrash = (action: string, ids?: string[]) => trashRequest('apply', action, ids);
+  return { changes, request, deleteAssets, data, applyTrash, trashRequest, readAlbum, readAsset };
 };
 
 it.each(['isFavorite=true', 'albumId=album'])(
@@ -207,4 +208,28 @@ it('removes a purged album cover and refuses asset reads while retaining the nex
   expect(data.album.assetIds).toEqual(['0500']);
   expect(data.album.thumbnailAssetId).toBe('0500');
   expect(data.buckets.get('2025-01-01')).toHaveLength(501);
+});
+
+it('does not resurrect a purged photo after a stale soft delete', async () => {
+  const { deleteAssets, changes, trashRequest } = await fixture();
+  await deleteAssets(['0000'], true);
+  await deleteAssets(['0000']);
+  expect(await trashRequest('items')).toEqual({ items: [], nextPage: null, total: 0 });
+  expect(changes.assetDeletions).toEqual([]);
+});
+
+it.each([[undefined], [[]]])('reviews the same whole-trash set that empty applies with ids %j', async (ids) => {
+  const { deleteAssets, trashRequest, applyTrash } = await fixture();
+  await deleteAssets(['0000', '0001']);
+  expect(await trashRequest('review', 'empty', ids)).toMatchObject({ action: 'empty', count: 2 });
+  expect(await applyTrash('empty', ids)).toEqual({ count: 2 });
+});
+
+it('restores the whole trash and counts selected visible items once', async () => {
+  const { deleteAssets, trashRequest, applyTrash, changes } = await fixture();
+  await deleteAssets(['0000', '0001']);
+  expect(await trashRequest('review', 'delete', ['0000', '0000', 'missing'])).toMatchObject({ count: 1 });
+  expect(await trashRequest('review', 'restore-all')).toMatchObject({ count: 2 });
+  expect(await applyTrash('restore-all')).toEqual({ count: 2 });
+  expect(changes.assetDeletions).toEqual([]);
 });

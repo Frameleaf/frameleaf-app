@@ -284,7 +284,7 @@ export const setupTimelineMockApiRoutes = async (
         purge(ids);
       } else {
         for (const id of ids) {
-          if (!changes.assetDeletions.includes(id)) {
+          if (!purged.has(id) && !changes.assetDeletions.includes(id)) {
             changes.assetDeletions.push(id);
           }
         }
@@ -447,6 +447,13 @@ export const setupTrashMockApiRoutes = async (
         type: asset.type,
       }));
 
+  const affectedIds = (action: string, ids: string[]) => {
+    const selected = new Set(ids);
+    return trashItems()
+      .map(({ id }) => id)
+      .filter((id) => action === 'empty' || action === 'restore-all' || selected.has(id));
+  };
+
   await context.route('**/api/trash/**', async (route, request) => {
     const pathname = new URL(request.url()).pathname;
     if (pathname === '/api/trash/summary') {
@@ -462,7 +469,7 @@ export const setupTrashMockApiRoutes = async (
         json: {
           action,
           bytes: 0,
-          count: ids.length,
+          count: affectedIds(action, ids).length,
           names: [],
           retainedBytes: 0,
           retainedOriginals: 0,
@@ -472,8 +479,8 @@ export const setupTrashMockApiRoutes = async (
     }
     if (pathname === '/api/trash/apply') {
       const { action, ids = [] } = request.postDataJSON();
-      const affected = action === 'empty' && ids.length === 0 ? [...changes.assetDeletions] : ids;
-      if (action === 'restore') {
+      const affected = affectedIds(action, ids);
+      if (action === 'restore' || action === 'restore-all') {
         changes.assetDeletions = changes.assetDeletions.filter((id) => !affected.includes(id));
       } else if (action === 'delete' || action === 'empty') {
         purge(affected);
