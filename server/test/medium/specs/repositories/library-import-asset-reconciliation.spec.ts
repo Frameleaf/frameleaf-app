@@ -6,9 +6,10 @@ import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { verifyImportFiles } from 'src/library-import/files.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
-import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
+import { importFileSchema, manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { createImportedOwner } from 'src/library-import/owners.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -22,7 +23,13 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', empty = false, sealed = false) => {
+const setup = async (
+  visibility: 'archive' | 'hidden' | 'trash' = 'archive',
+  empty = false,
+  sealed = false,
+  tags?: string[],
+  twoOwners = false,
+) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
@@ -44,6 +51,18 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
       sourceIdentity: { ...primary.sourceIdentity, inode: '42', bytes: '3' },
     },
   ];
+  if (twoOwners) {
+    plan.owners.push({ sourceId: 'other-owner', destinationId: randomUUID() });
+    plan.files.push(
+      ...plan.files.map((file) => ({
+        ...file,
+        id: 'other-' + file.id,
+        sourcePath: 'other-' + file.sourcePath,
+        destinationPath: 'other-' + file.destinationPath,
+        sourceIdentity: { ...file.sourceIdentity, inode: String(BigInt(file.sourceIdentity.inode) + 100n) },
+      })),
+    );
+  }
   if (empty) plan.files = [];
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
@@ -57,7 +76,7 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
       revisionBefore: plan.source.revision,
       revisionAfter: plan.source.revision,
     },
-    users: [{ id: 'owner', name: 'Synthetic owner' }],
+    users: plan.owners.map((owner) => ({ id: owner.sourceId, name: 'Synthetic ' + owner.sourceId })),
     files: plan.files.map((file) => ({
       id: file.id,
       path: file.destinationPath,
@@ -67,19 +86,20 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
     })),
     assets: empty
       ? []
-      : [
-          {
+      : plan.owners.map((owner, index) => {
+          const prefix = index === 0 ? '' : 'other-';
+          return {
             ...(sealed
               ? {
                   type: 'IMAGE',
                   fileModifiedAt: '2020-07-02T01:02:03.456789Z',
-                  originalFileNames: { jpeg: 'camera.jpg', raw: 'camera.raw' },
+                  originalFileNames: { [prefix + 'jpeg']: 'camera.jpg', [prefix + 'raw']: 'camera.raw' },
                 }
               : {}),
-            id: 'photo',
-            ownerId: 'owner',
-            fileIds: ['jpeg', 'raw'],
-            primaryFileId: 'raw',
+            id: prefix + 'photo',
+            ownerId: owner.sourceId,
+            fileIds: [prefix + 'jpeg', prefix + 'raw'],
+            primaryFileId: prefix + 'raw',
             visibility,
             metadata: {
               takenAt: '2020-07-01T12:34:56.123456Z',
@@ -89,10 +109,11 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
               latitude: 51.1,
               longitude: -114.1,
               favorite: true,
+              ...(tags === undefined ? {} : { tags }),
               deletedAt: visibility === 'trash' ? '2020-08-01T00:00:00.123456Z' : undefined,
             },
-          },
-        ],
+          };
+        }),
     albums: [],
     losses: [],
   });
@@ -103,18 +124,19 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
     source: plan.source,
   };
   await new LibraryImportJournal(wrap(db)).begin(binding);
-  await new LibraryImportJournal(wrap(db)).apply(
-    binding,
-    { kind: 'owner', sourceId: 'owner', destinationId: ownerId, recordSha256: 'd'.repeat(64) },
-    (tx) =>
-      createImportedOwner(tx, {
-        operationId: binding.operationId,
-        sourceUserId: 'owner',
-        destinationUserId: ownerId,
-        name: 'Synthetic owner',
-        email: 'owner@example.test',
-      }),
-  );
+  for (const owner of plan.owners)
+    await new LibraryImportJournal(wrap(db)).apply(
+      binding,
+      { kind: 'owner', sourceId: owner.sourceId, destinationId: owner.destinationId, recordSha256: 'd'.repeat(64) },
+      (tx) =>
+        createImportedOwner(tx, {
+          operationId: binding.operationId,
+          sourceUserId: owner.sourceId,
+          destinationUserId: owner.destinationId,
+          name: 'Synthetic ' + owner.sourceId,
+          email: owner.sourceId + '@example.test',
+        }),
+    );
   const context = { binding, plan, manifest, destinationId: plan.destinationId };
   const item = {
     sourceAssetId: 'photo',
@@ -122,7 +144,13 @@ const setup = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', emp
     fileModifiedAt: '2020-07-02T01:02:03.456789Z',
     originalFileNames: { jpeg: 'camera.jpg', raw: 'camera.raw' },
   };
-  vi.mocked(verifyImportFiles).mockResolvedValue({ files: 2, bytes: '17' });
+  vi.mocked(verifyImportFiles).mockImplementation((_root, files) => {
+    const inventory = importFileSchema.array().parse(files);
+    return Promise.resolve({
+      files: inventory.length,
+      bytes: String(inventory.reduce((n, file) => n + BigInt(file.bytes), 0n)),
+    });
+  });
   return { context, item, ownerId };
 };
 beforeAll(async () => {
@@ -130,7 +158,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   vi.mocked(verifyImportFiles).mockReset();
-  await sql`TRUNCATE public.physical_file,public."user",public.cluster_group,public.user_audit,public.user_preference_history,
+  await sql`TRUNCATE public.physical_file,public."user",public.cluster_group,public.user_audit,public.user_preference_history,public.tag_audit,public.tag_asset_audit,
     public.frameleaf_library_import_mapping,public.frameleaf_library_import,public.frameleaf_immich_import CASCADE`.execute(
     db,
   );
@@ -141,8 +169,8 @@ beforeEach(async () => {
 });
 afterAll(async () => db?.destroy());
 
-const ready = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive') => {
-  const fixture = await setup(visibility);
+const ready = async (visibility: 'archive' | 'hidden' | 'trash' = 'archive', tags?: string[]) => {
+  const fixture = await setup(visibility, false, false, tags);
   const id = await new CanonicalAssetWriter(wrap(db), fixture.context).write(fixture.item);
   await new LibraryImportJournal(wrap(db)).phase(fixture.context.binding, 'verifying');
   return { ...fixture, id };
@@ -153,7 +181,7 @@ it('reconciles every original, microsecond clocks, manual metadata and quota aft
   const first = await reconcileImportedAssets(wrap(db), context, [item]);
   expect(first).toMatchObject({
     format: 'frameleaf-asset-reconciliation',
-    version: 1,
+    version: 2,
     operationId: context.binding.operationId,
     manifestSha256: context.binding.manifestSha256,
     planSha256: context.binding.planSha256,
@@ -403,3 +431,101 @@ it('writes and reconciles only the sealed version-three photo intent', async () 
     'ASSET_PREPARED_INTENT_CHANGED',
   );
 });
+
+it('reconciles authoritative imported tag metadata without rewriting it', async () => {
+  const { context, item } = await ready('archive', ['Places/Canada', '旅行']);
+  const before = await db.selectFrom('tag').selectAll().orderBy('id').execute();
+  const report = await reconcileImportedAssets(wrap(db), context, [item]);
+  expect(report).toMatchObject({ version: 2, assets: 1, tagNodes: 3, tagAssignments: 2 });
+  expect(await db.selectFrom('tag').selectAll().orderBy('id').execute()).toEqual(before);
+});
+
+it.each(['membership', 'name', 'owner', 'parent', 'closure', 'extra'])(
+  'refuses changed imported tag relationships: %s',
+  async (kind) => {
+    const { context, item } = await ready('archive', ['Places/Canada', '旅行']);
+    switch (kind) {
+      case 'membership': {
+        await db.deleteFrom('tag_asset').execute();
+        break;
+      }
+      case 'name': {
+        await db.updateTable('tag').set({ value: 'changed' }).where('value', '=', '旅行').execute();
+        break;
+      }
+      case 'owner': {
+        const admin = await db.selectFrom('user').select('id').where('isAdmin', '=', true).executeTakeFirstOrThrow();
+        await db.updateTable('tag').set({ userId: admin.id }).where('value', '=', '旅行').execute();
+        break;
+      }
+      case 'parent': {
+        await db.updateTable('tag').set({ parentId: null }).where('value', '=', 'Places/Canada').execute();
+        break;
+      }
+      case 'closure': {
+        await db.deleteFrom('tag_closure').execute();
+        break;
+      }
+      case 'extra': {
+        const owner = context.plan.owners[0].destinationId;
+        await db.insertInto('tag').values({ userId: owner, value: 'unexpected' }).execute();
+        break;
+      }
+    }
+    await expect(reconcileImportedAssets(wrap(db), context, [item])).rejects.toThrow('ASSET_RECONCILIATION_MISMATCH');
+  },
+);
+
+it('keeps identical imported tag names and relationships within each explicit owner', async () => {
+  const { context, item } = await setup('archive', false, false, ['Places/Canada', '旅行'], true);
+  const otherItem = {
+    ...item,
+    sourceAssetId: 'other-photo',
+    originalFileNames: { 'other-jpeg': 'camera.jpg', 'other-raw': 'camera.raw' },
+  };
+  const writer = new CanonicalAssetWriter(wrap(db), context);
+  const first = await writer.write(item);
+  const second = await writer.write(otherItem);
+  const named = await db.selectFrom('tag').select(['id', 'userId']).where('value', '=', '旅行').execute();
+  expect(named).toHaveLength(2);
+  expect(new Set(named.map((tag) => tag.userId))).toEqual(
+    new Set(context.plan.owners.map((owner) => owner.destinationId)),
+  );
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  expect(await reconcileImportedAssets(wrap(db), context, [item, otherItem])).toMatchObject({
+    assets: 2,
+    tagNodes: 6,
+    tagAssignments: 4,
+  });
+  const firstTag = named.find((tag) => tag.userId === context.plan.owners[0].destinationId)!;
+  const otherTag = named.find((tag) => tag.userId === context.plan.owners[1].destinationId)!;
+  await db
+    .updateTable('tag_asset')
+    .set({ tagId: otherTag.id })
+    .where('assetId', '=', first)
+    .where('tagId', '=', firstTag.id)
+    .execute();
+  await expect(reconcileImportedAssets(wrap(db), context, [item, otherItem])).rejects.toThrow(
+    'ASSET_RECONCILIATION_MISMATCH',
+  );
+  expect(await db.selectFrom('tag_asset').selectAll().where('assetId', '=', second).execute()).toHaveLength(2);
+});
+it.each([{ tags: [] }, { tags: ['Places/Canada', '旅行'] }])(
+  'keeps imported tag intent when metadata is regenerated: %j',
+  async ({ tags }) => {
+    const { context, item, id } = await ready('archive', tags);
+    const before = await reconcileImportedAssets(wrap(db), context, [item]);
+    await new AssetRepository(db).upsertExif({
+      exif: { assetId: id, tags: ['Stale embedded tag'] },
+      lockedPropertiesBehavior: 'skip',
+    });
+    const exif = await db
+      .selectFrom('asset_exif')
+      .select(['tags', 'lockedProperties'])
+      .where('assetId', '=', id)
+      .executeTakeFirstOrThrow();
+    expect(exif.tags).toEqual(tags);
+    expect(exif.lockedProperties).toContain('tags');
+    expect(await reconcileImportedAssets(wrap(db), context, [item])).toEqual(before);
+  },
+);

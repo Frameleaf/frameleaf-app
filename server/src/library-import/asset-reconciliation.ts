@@ -10,6 +10,7 @@ import {
   LibraryImportRefused,
   parseLibraryImportBinding,
 } from 'src/library-import/state.js';
+import { reconcileImportedTags } from 'src/library-import/tags.js';
 import { beginLibraryImportReadback } from 'src/library-import/verification.js';
 
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -108,10 +109,11 @@ export async function reconcileImportedAssets(
           rating: metadata.rating ?? null,
           latitude: metadata.latitude ?? null,
           longitude: metadata.longitude ?? null,
+          tags: metadata.tags ?? null,
           lockedProperties: [
             'dateTimeOriginal',
             'timeZone',
-            ...(['description', 'rating', 'latitude', 'longitude'] as const).filter(
+            ...(['description', 'rating', 'latitude', 'longitude', 'tags'] as const).filter(
               (key) => metadata[key] !== undefined,
             ),
           ].sort(),
@@ -130,7 +132,7 @@ export async function reconcileImportedAssets(
         (u.status='active' AND u."deletedAt" IS NULL AND NOT u."isAdmin") AS "ownerEligible",
         CASE WHEN e."assetId" IS NULL THEN NULL ELSE jsonb_build_object(
           'fileSizeInByte',e."fileSizeInByte"::text,'dateTimeOriginal',to_char(e."dateTimeOriginal" AT TIME ZONE 'UTC',${format}),
-          'timeZone',e."timeZone",'description',e.description,'rating',e.rating,'latitude',e.latitude,'longitude',e.longitude,
+          'timeZone',e."timeZone",'description',e.description,'rating',e.rating,'latitude',e.latitude,'longitude',e.longitude,'tags',e.tags,
           'lockedProperties',ARRAY(SELECT unnest(e."lockedProperties") ORDER BY 1)) END AS exif
         FROM public.asset a LEFT JOIN public.physical_file p ON p.id=a."physicalOriginalFileId"
         LEFT JOIN public.asset_exif e ON e."assetId"=a.id LEFT JOIN public."user" u ON u.id=a."ownerId" ORDER BY a.id`,
@@ -197,6 +199,10 @@ export async function reconcileImportedAssets(
         owners.some((owner) => owner.eligible !== true || owner.bytes !== String(quota.get(String(owner.id))))
       )
         mismatch();
+      const tags = await reconcileImportedTags(
+        tx,
+        expected.map(({ id, ownerId, metadata }) => ({ id: String(id), ownerId, tags: metadata.tags })),
+      );
       let bytes = 0n;
       for (const files of Map.groupBy(
         expected.flatMap((photo) => photo.files),
@@ -214,17 +220,20 @@ export async function reconcileImportedAssets(
       }
       return {
         format: 'frameleaf-asset-reconciliation' as const,
-        version: 1 as const,
+        version: 2 as const,
         operationId: binding.operationId,
         manifestSha256: binding.manifestSha256,
         planSha256: binding.planSha256,
         assets: actualPhotos.length,
         originals: actualFiles.length,
+        tagNodes: tags.nodes.length,
+        tagAssignments: tags.memberships.length,
         bytes: String(bytes),
         sha256: fingerprint({
           photos: actualPhotos,
           files: actualFiles,
           additional: actualAdditional,
+          tags,
           quotas: owners.sort((a, b) => String(a.id).localeCompare(String(b.id))),
         }),
       };

@@ -11,7 +11,7 @@ vi.mock('src/library-import/files.js', async (importOriginal) => ({
   verifyImportFiles: vi.fn(),
 }));
 
-const setup = (sealed = false) => {
+const setup = (sealed = false, tags?: string[]) => {
   const plan = parseDestinationImportPlan(fixture.plan),
     file = plan.files[0],
     owner = plan.owners[0];
@@ -39,7 +39,7 @@ const setup = (sealed = false) => {
         fileIds: [file.id],
         primaryFileId: file.id,
         visibility: 'timeline',
-        metadata: { takenAt: '2020-01-02T03:04:05Z', timeZone: 'UTC' },
+        metadata: { takenAt: '2020-01-02T03:04:05Z', timeZone: 'UTC', ...(tags === undefined ? {} : { tags }) },
       },
     ],
     albums: [],
@@ -129,4 +129,19 @@ it.each(['type', 'clock', 'name'])('refuses changed sealed %s before touching th
   }
   expect(() => writer.prepare(item)).toThrow('ASSET_PREPARED_INTENT_CHANGED');
   expect(query).not.toHaveBeenCalled();
+});
+
+it.each([[''], ['/name'], ['name/'], ['name//child'], ['name\0'], ['same', 'same']])(
+  'refuses noncanonical tag intent before querying the destination: %j',
+  (...tags) => {
+    const { writer, item, query } = setup(false, tags);
+    expect(() => writer.prepare(item)).toThrow('ASSET_TAGS_INVALID');
+    expect(query).not.toHaveBeenCalled();
+  },
+);
+it('keeps source tag intent isolated from changes to prepared metadata', () => {
+  const { writer, item } = setup(false, ['Places/Canada']);
+  const prepared = writer.prepare(item);
+  prepared.metadata.tags!.push('changed');
+  expect(writer.prepare(item).metadata.tags).toEqual(['Places/Canada']);
 });

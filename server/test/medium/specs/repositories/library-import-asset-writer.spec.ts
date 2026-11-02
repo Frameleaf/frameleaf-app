@@ -22,7 +22,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async () => {
+const setup = async (tags?: string[]) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
@@ -79,6 +79,7 @@ const setup = async () => {
           latitude: 51.1,
           longitude: -114.1,
           favorite: true,
+          ...(tags === undefined ? {} : { tags }),
         },
       },
     ],
@@ -119,7 +120,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   vi.mocked(verifyImportFiles).mockReset();
-  await sql`TRUNCATE public.physical_file,public."user",public.cluster_group,public.user_audit,public.user_preference_history,
+  await sql`TRUNCATE public.physical_file,public."user",public.cluster_group,public.user_audit,public.user_preference_history,public.tag_audit,public.tag_asset_audit,
     public.frameleaf_library_import_mapping,public.frameleaf_library_import,public.frameleaf_immich_import CASCADE`.execute(
     db,
   );
@@ -288,7 +289,7 @@ it('refuses existing paths without overwriting their recorded identity or leavin
   ).toEqual([existing]);
 });
 
-it.each(['locked', 'title', 'tags', 'sidecar', 'clock', 'trash'])(
+it.each(['locked', 'title', 'sidecar', 'clock', 'trash'])(
   'refuses unsupported or incomplete source facts: %s',
   async (kind) => {
     const { context, item } = await setup();
@@ -300,10 +301,6 @@ it.each(['locked', 'title', 'tags', 'sidecar', 'clock', 'trash'])(
       }
       case 'title': {
         asset.metadata.title = 'Source title';
-        break;
-      }
-      case 'tags': {
-        asset.metadata.tags = ['source tag'];
         break;
       }
       case 'sidecar': {
@@ -328,3 +325,80 @@ it.each(['locked', 'title', 'tags', 'sidecar', 'clock', 'trash'])(
     expect(await db.selectFrom('asset').select('id').execute()).toEqual([]);
   },
 );
+
+it('preserves source tag paths, owner relationships and locks across replay', async () => {
+  const values = ['Places/Canada', '旅行'];
+  const { context, item, ownerId } = await setup(values);
+  const writer = new CanonicalAssetWriter(wrap(db), context);
+  const id = await writer.write(item);
+  expect(await writer.write(item)).toBe(id);
+  const exif = await db
+    .selectFrom('asset_exif')
+    .select(['tags', 'lockedProperties'])
+    .where('assetId', '=', id)
+    .executeTakeFirstOrThrow();
+  expect(exif.tags).toEqual(values);
+  expect(exif.lockedProperties).toContain('tags');
+  expect(await db.selectFrom('tag').select(['userId', 'value']).orderBy('value').execute()).toEqual([
+    { userId: ownerId, value: 'Places' },
+    { userId: ownerId, value: 'Places/Canada' },
+    { userId: ownerId, value: '旅行' },
+  ]);
+  const links = await db
+    .selectFrom('tag_asset')
+    .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+    .select(['tag_asset.assetId', 'tag.userId', 'tag.value'])
+    .orderBy('tag.value')
+    .execute();
+  expect(links).toEqual(values.map((value) => ({ assetId: id, userId: ownerId, value })));
+  expect(await db.selectFrom('tag_closure').selectAll().execute()).toHaveLength(4);
+});
+it('preserves an explicit empty tag list against stale embedded metadata', async () => {
+  const { context, item } = await setup([]);
+  const id = await new CanonicalAssetWriter(wrap(db), context).write(item);
+  const exif = await db
+    .selectFrom('asset_exif')
+    .select(['tags', 'lockedProperties'])
+    .where('assetId', '=', id)
+    .executeTakeFirstOrThrow();
+  expect(exif.tags).toEqual([]);
+  expect(exif.lockedProperties).toContain('tags');
+  expect(await db.selectFrom('tag').selectAll().execute()).toEqual([]);
+});
+it('rolls back imported tags, closures and memberships with a quota failure', async () => {
+  const { context, item, ownerId } = await setup(['Places/Canada']);
+  await db.updateTable('user').set({ quotaSizeInBytes: 16 }).where('id', '=', ownerId).execute();
+  await expect(new CanonicalAssetWriter(wrap(db), context).write(item)).rejects.toThrow('ASSET_QUOTA_EXCEEDED');
+  expect(await db.selectFrom('tag').selectAll().execute()).toEqual([]);
+  expect(await db.selectFrom('tag_closure').selectAll().execute()).toEqual([]);
+  expect(await db.selectFrom('tag_asset').selectAll().execute()).toEqual([]);
+  expect(await db.selectFrom('asset').selectAll().execute()).toEqual([]);
+});
+
+it('refuses an existing different tag parent without reparenting or leaving partial records', async () => {
+  const { context, item, ownerId } = await setup(['Places/Canada']);
+  const parent = await db
+    .insertInto('tag')
+    .values({ userId: ownerId, value: 'Existing' })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  const child = await db
+    .insertInto('tag')
+    .values({ userId: ownerId, value: 'Places/Canada', parentId: parent.id })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  await db
+    .insertInto('tag_closure')
+    .values([
+      { id_ancestor: parent.id, id_descendant: parent.id },
+      { id_ancestor: child.id, id_descendant: child.id },
+      { id_ancestor: parent.id, id_descendant: child.id },
+    ])
+    .execute();
+  const before = await db.selectFrom('tag').selectAll().orderBy('id').execute();
+  await expect(new CanonicalAssetWriter(wrap(db), context).write(item)).rejects.toThrow('ASSET_TAGS_CONFLICT');
+  expect(await db.selectFrom('tag').selectAll().orderBy('id').execute()).toEqual(before);
+  expect(await db.selectFrom('tag_closure').selectAll().execute()).toHaveLength(3);
+  expect(await db.selectFrom('asset').selectAll().execute()).toEqual([]);
+  expect(await db.selectFrom('physical_file').selectAll().execute()).toEqual([]);
+});
