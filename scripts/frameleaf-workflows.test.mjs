@@ -1459,6 +1459,13 @@ const assertIntegrationMlArchives = (w) => {
   );
 };
 
+test("main Test runs finish instead of being cancelled by the next merge", () => {
+  assert.deepEqual(workflow("test.yml").concurrency, {
+    group: "${{ github.workflow }}-${{ github.ref }}",
+    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+  });
+});
+
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
   // Pushes to main build it; a manual dispatch on main rebuilds the current head.

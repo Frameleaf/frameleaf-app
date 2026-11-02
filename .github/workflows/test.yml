@@ -15,7 +15,9 @@ name: Test
       - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # main merges land faster than a full run; cancelling them left no head qualified for Deploy. A
+  # running main run finishes and GitHub keeps only the newest queued one.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
