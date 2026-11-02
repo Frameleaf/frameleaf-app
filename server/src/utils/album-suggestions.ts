@@ -22,6 +22,14 @@ export const TRIP_MAX_POINTS = 300;
 export const NEAR_IDENTICAL_DISTANCE = 0.06;
 export const SAME_SCENE_DISTANCE = 0.15;
 export const LOOKS_LIKE_DISTANCE = 0.25;
+/**
+ * FL-1094: CLIP cosine distance between two torso crops of the same person wearing the same clothes.
+ * Measured with ViT-B-16-SigLIP-384__webli on 1,407 CC-licensed Wikimania 2019/2023 photos of 118 people
+ * (person from Commons categories, day from EXIF), each dated by the one-day rule against that person's
+ * other photos: 0.10 dated 43% of datable photos at 97.4% precision; 0.12 dated 50% at 94.9%. Details in
+ * PR 731. Measure again before changing the default CLIP model.
+ */
+export const SAME_OUTFIT_DISTANCE = 0.1;
 
 export type TripPhoto = {
   id: string;
@@ -49,7 +57,8 @@ export type SuggestionReason =
   | { kind: 'looks-like' }
   | { kind: 'same-scene'; assetId: string; date: string }
   | { kind: 'near-identical'; assetId: string; date: string }
-  | { kind: 'people'; names: string[] };
+  | { kind: 'people'; names: string[] }
+  | { kind: 'same-outfit'; names: string[]; assetId: string; date: string };
 
 const cameraKey = (make: string | null, model: string | null) =>
   make?.trim() && model?.trim() ? `${make.trim()}\0${model.trim()}` : undefined;
@@ -112,6 +121,13 @@ export const describeTrip = (photos: TripPhoto[]): Trip | undefined => {
     cameras: new Set(kept.map(({ make, model }) => cameraKey(make, model)).filter((key): key is string => !!key)),
     photoIds: kept.map(({ id }) => id),
   };
+};
+
+/** Evenly spaced picks, so a long trip is represented from start to end. */
+export const sample = <T>(items: T[], count: number): T[] => {
+  if (items.length <= count) return items;
+  const step = items.length / count;
+  return Array.from({ length: count }, (_, index) => items[Math.floor(index * step)]);
 };
 
 export const segmentAt = (trip: Trip, takenAt: Date) =>
@@ -187,8 +203,69 @@ export type DateEstimate = {
   precision: DatePrecision;
   /** Local wall time to set, as `YYYY-MM-DDTHH:mm:ss`; the caller adds the trip's offset. */
   localDateTime: string;
+  /** The album photo the date came from, for its offset; none when only "during the trip" is known. */
+  datedBy?: { takenAt: Date; localDateTime: Date };
   reasons: SuggestionReason[];
 };
+
+/** The torso under a face: about three face heights down and three face widths across, clamped to the image. */
+export const torsoBox = (
+  face: { x1: number; y1: number; x2: number; y2: number },
+  image: { width: number; height: number },
+) => {
+  const width = face.x2 - face.x1;
+  const height = face.y2 - face.y1;
+  if (width <= 0 || height <= 0) return;
+  const left = Math.max(0, Math.round((face.x1 + face.x2) / 2 - 1.5 * width));
+  const right = Math.min(image.width, Math.round((face.x1 + face.x2) / 2 + 1.5 * width));
+  const top = Math.max(0, Math.round(face.y2));
+  const bottom = Math.min(image.height, Math.round(face.y2 + 3 * height));
+  // A face at the bottom edge leaves no clothes to compare.
+  if (bottom - top < height || right - left < width) return;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
+export const cosineDistance = (a: number[], b: number[]) => {
+  if (a.length !== b.length || a.length === 0) return Infinity;
+  let dot = 0;
+  let aa = 0;
+  let bb = 0;
+  for (let index = 0; index < a.length; index++) {
+    dot += a[index] * b[index];
+    aa += a[index] * a[index];
+    bb += b[index] * b[index];
+  }
+  return aa === 0 || bb === 0 ? Infinity : 1 - dot / Math.sqrt(aa * bb);
+};
+
+export type Outfit = { personId: string; name: string; embedding: number[] };
+export type TripOutfit = Outfit & { assetId: string; takenAt: Date; localDateTime: Date };
+export type OutfitMatch = { name: string; assetId: string; distance: number; takenAt: Date; localDateTime: Date };
+
+/**
+ * The one trip day someone in the photo wore the same clothes. Someone who wore them on several days of
+ * the trip tells no day, so that is no match.
+ */
+export const matchOutfit = (outfits: Outfit[], trip: TripOutfit[]): OutfitMatch | undefined => {
+  let best: OutfitMatch | undefined;
+  for (const outfit of outfits) {
+    const days = new Map<string, OutfitMatch>();
+    for (const worn of trip) {
+      if (worn.personId !== outfit.personId) continue;
+      const distance = cosineDistance(outfit.embedding, worn.embedding);
+      if (!(distance <= SAME_OUTFIT_DISTANCE)) continue;
+      const day = localDay(worn.localDateTime);
+      const seen = days.get(day);
+      if (!seen || distance < seen.distance || (distance === seen.distance && worn.assetId < seen.assetId))
+        days.set(day, { name: outfit.name, assetId: worn.assetId, distance, ...pick(worn) });
+    }
+    const [match, ...others] = days.values();
+    if (match && others.length === 0 && (!best || match.distance < best.distance)) best = match;
+  }
+  return best;
+};
+
+const pick = ({ takenAt, localDateTime }: { takenAt: Date; localDateTime: Date }) => ({ takenAt, localDateTime });
 
 /**
  * An undated photo belongs to the trip when two independent signals agree: what it shows (its closest
@@ -203,16 +280,26 @@ export const estimateDate = (
     people: string[];
     place: string | null;
     savedAt?: Date;
+    /** FL-1094: someone in it wears what they wore on one trip day. */
+    outfit?: OutfitMatch;
   },
 ): DateEstimate | undefined => {
   const neighbours = [...candidate.neighbours]
     .filter(({ distance }) => Number.isFinite(distance) && distance <= LOOKS_LIKE_DISTANCE)
     .sort((a, b) => a.distance - b.distance || a.assetId.localeCompare(b.assetId));
   const best = neighbours[0];
-  const segment = best ? segmentAt(trip, best.takenAt) : trip.segments[0];
+  const scene = best && best.distance <= SAME_SCENE_DISTANCE ? best : undefined;
+  // An outfit from another day than the scene it shows is no evidence for that date.
+  const outfit =
+    candidate.outfit && (!scene || localDay(scene.localDateTime) === localDay(candidate.outfit.localDateTime))
+      ? candidate.outfit
+      : undefined;
+  // The trip segment of whatever dates it: a scene match, then an outfit, then the closest look-alike.
+  const datedBy = scene ?? outfit ?? best;
+  const segment = datedBy ? segmentAt(trip, datedBy.takenAt) : trip.segments[0];
   if (!segment) return;
-  // It can't have been taken after it was saved or received: before a dated match, before the trip otherwise.
-  const anchoredBy = best && best.distance <= SAME_SCENE_DISTANCE ? best.takenAt : segment.from;
+  // It can't have been taken after it was saved or received: before a scene match, before its segment otherwise.
+  const anchoredBy = scene ? scene.takenAt : segment.from;
   if (candidate.savedAt && candidate.savedAt < anchoredBy) return;
 
   const reasons: SuggestionReason[] = [];
@@ -236,13 +323,25 @@ export const estimateDate = (
     reasons.push({ kind: 'place', place: candidate.place });
     signals += 1;
   }
+  if (outfit) {
+    const { name, assetId, localDateTime } = outfit;
+    reasons.push({ kind: 'same-outfit', names: [name], assetId, date: localDay(localDateTime) });
+    signals += 1;
+  }
   if (signals < 2) return;
 
   const wall = (date: Date, time: string) => `${localDay(date)}T${time}`;
   if (best && best.distance <= NEAR_IDENTICAL_DISTANCE)
-    return { precision: 'moment', localDateTime: best.localDateTime.toISOString().slice(0, 19), reasons };
+    return {
+      precision: 'moment',
+      localDateTime: best.localDateTime.toISOString().slice(0, 19),
+      datedBy: pick(best),
+      reasons,
+    };
   if (best && best.distance <= SAME_SCENE_DISTANCE)
-    return { precision: 'day', localDateTime: wall(best.localDateTime, '12:00:00'), reasons };
+    return { precision: 'day', localDateTime: wall(best.localDateTime, '12:00:00'), datedBy: pick(best), reasons };
+  if (outfit)
+    return { precision: 'day', localDateTime: wall(outfit.localDateTime, '12:00:00'), datedBy: pick(outfit), reasons };
   return { precision: 'trip', localDateTime: wall(segment.localStart, '12:00:00'), reasons };
 };
 

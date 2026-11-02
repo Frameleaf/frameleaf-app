@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   type TripPhoto,
+  cosineDistance,
   describeTrip,
   estimateDate,
+  matchOutfit,
   matchTripCandidate,
   suspiciousDate,
+  torsoBox,
   utcOffset,
 } from 'src/utils/album-suggestions.js';
 
@@ -134,6 +137,7 @@ describe('estimateDate', () => {
     ).toEqual({
       precision: 'moment',
       localDateTime: '2026-08-13T20:41:00',
+      datedBy: { takenAt: at('2026-08-14T02:41:00Z'), localDateTime: at('2026-08-13T20:41:00Z') },
       reasons: [{ kind: 'near-identical', assetId: 'a3', date: '2026-08-13' }],
     });
   });
@@ -170,6 +174,123 @@ describe('estimateDate', () => {
         savedAt: at('2026-08-01T00:00:00Z'),
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('outfits', () => {
+  const trip = describeTrip(rockies)!;
+  const jacket = [1, 0, 0];
+  const nearlyJacket = [0.99, 0.1, 0];
+  const swimsuit = [0, 1, 0];
+  const worn = (assetId: string, iso: string, embedding: number[], personId = 'emma') => ({
+    assetId,
+    personId,
+    name: personId === 'emma' ? 'Emma' : 'Sam',
+    embedding,
+    takenAt: at(`${iso}Z`),
+    localDateTime: new Date(at(`${iso}Z`).getTime() - 6 * 3_600_000),
+  });
+  const emma = (embedding: number[]) => [{ personId: 'emma', name: 'Emma', embedding }];
+
+  it('crops the torso under a face, clamped to the image', () => {
+    expect(torsoBox({ x1: 100, y1: 50, x2: 140, y2: 100 }, { width: 400, height: 300 })).toEqual({
+      x: 60,
+      y: 100,
+      width: 120,
+      height: 150,
+    });
+    expect(torsoBox({ x1: 0, y1: 0, x2: 40, y2: 50 }, { width: 400, height: 300 })).toEqual({
+      x: 0,
+      y: 50,
+      width: 80,
+      height: 150,
+    });
+    // A face at the bottom of the frame has no clothes under it.
+    expect(torsoBox({ x1: 100, y1: 250, x2: 140, y2: 290 }, { width: 400, height: 300 })).toBeUndefined();
+    expect(torsoBox({ x1: 100, y1: 50, x2: 100, y2: 100 }, { width: 400, height: 300 })).toBeUndefined();
+  });
+
+  it('measures cosine distance and refuses vectors of another size', () => {
+    expect(cosineDistance([1, 0], [1, 0])).toBeCloseTo(0);
+    expect(cosineDistance([1, 0], [0, 1])).toBeCloseTo(1);
+    expect(cosineDistance([1, 0], [1, 0, 0])).toBe(Infinity);
+    expect(cosineDistance([0, 0], [1, 0])).toBe(Infinity);
+  });
+
+  it('finds the one trip day the same person wore the same clothes', () => {
+    expect(
+      matchOutfit(emma(nearlyJacket), [
+        worn('a2', '2026-08-12T16:00:00', swimsuit),
+        worn('a4', '2026-08-14T17:00:00', jacket),
+        worn('a5', '2026-08-14T18:00:00', jacket, 'sam'),
+      ]),
+    ).toMatchObject({ name: 'Emma', assetId: 'a4' });
+  });
+
+  it('tells no day when the clothes were worn on several days, or by someone else', () => {
+    expect(
+      matchOutfit(emma(jacket), [worn('a2', '2026-08-12T16:00:00', jacket), worn('a4', '2026-08-14T17:00:00', jacket)]),
+    ).toBeUndefined();
+    expect(matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket, 'sam')])).toBeUndefined();
+    expect(matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', swimsuit)])).toBeUndefined();
+  });
+
+  it('counts a same outfit as a signal and dates the photo to that day', () => {
+    const outfit = matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket)])!;
+    expect(estimateDate(trip, { neighbours: [], people: ['Emma'], place: null, outfit })).toEqual({
+      precision: 'day',
+      localDateTime: '2026-08-14T12:00:00',
+      datedBy: { takenAt: at('2026-08-14T17:00:00Z'), localDateTime: at('2026-08-14T11:00:00Z') },
+      reasons: [
+        { kind: 'people', names: ['Emma'] },
+        { kind: 'same-outfit', names: ['Emma'], assetId: 'a4', date: '2026-08-14' },
+      ],
+    });
+    // An outfit alone is one signal.
+    expect(estimateDate(trip, { neighbours: [], people: [], place: null, outfit })).toBeUndefined();
+  });
+
+  it('ignores an outfit from another day than the scene it shows', () => {
+    const outfit = matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket)])!;
+    const scene = {
+      assetId: 'a3',
+      distance: 0.1,
+      takenAt: at('2026-08-13T20:00:00Z'),
+      localDateTime: at('2026-08-13T14:00:00Z'),
+    };
+    expect(estimateDate(trip, { neighbours: [scene], people: [], place: null, outfit })).toBeUndefined();
+    expect(estimateDate(trip, { neighbours: [scene], people: ['Emma'], place: null, outfit })).toEqual(
+      expect.objectContaining({
+        localDateTime: '2026-08-13T12:00:00',
+        reasons: expect.not.arrayContaining([expect.objectContaining({ kind: 'same-outfit' })]),
+      }),
+    );
+  });
+
+  it("checks the save date against the outfit's trip, not a later look-alike's", () => {
+    const twoTrips = describeTrip([
+      ...rockies,
+      photo('b1', '2027-02-01T12:00:00'),
+      photo('b2', '2027-02-01T13:00:00'),
+      photo('b3', '2027-02-02T09:00:00'),
+    ])!;
+    const outfit = matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket)])!;
+    const lookAlike = {
+      assetId: 'b2',
+      distance: 0.2,
+      takenAt: at('2027-02-01T13:00:00Z'),
+      localDateTime: at('2027-02-01T07:00:00Z'),
+    };
+    // Saved between the two trips: it can be from August, not February.
+    expect(
+      estimateDate(twoTrips, {
+        neighbours: [lookAlike],
+        people: [],
+        place: null,
+        outfit,
+        savedAt: at('2026-12-01T00:00:00Z'),
+      }),
+    ).toMatchObject({ precision: 'day', localDateTime: '2026-08-14T12:00:00' });
   });
 });
 
