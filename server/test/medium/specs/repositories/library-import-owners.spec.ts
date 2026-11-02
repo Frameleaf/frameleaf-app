@@ -9,6 +9,7 @@ import { ImportedPassword } from 'src/library-import/passwords.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SessionFactory } from 'test/factories/session.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -30,7 +31,9 @@ beforeAll(async () => {
   db = await getKyselyDB();
 });
 beforeEach(async () => {
-  await sql`TRUNCATE public."user",public.cluster_group,public.user_audit,public.album CASCADE`.execute(db);
+  await sql`TRUNCATE public."user",public.cluster_group,public.user_audit,public.album,public.user_preference_history,public.frameleaf_library_import_mapping,public.frameleaf_library_import CASCADE`.execute(
+    db,
+  );
   await sql`WITH g AS (INSERT INTO public.cluster_group DEFAULT VALUES RETURNING id)
     INSERT INTO public."user" (email,"clusterGroupId","isAdmin") SELECT 'bootstrap@example.test',id,true FROM g`.execute(
     db,
@@ -158,6 +161,18 @@ it.each(['second-owner', 'orphan-group', 'existing-album', 'past-library', 'past
   },
 );
 
+it('refuses preference history belonging to an absent owner', async () => {
+  await new UserRepository(db).addPreferenceHistory({
+    userId: randomUUID(),
+    deviceLabel: null,
+    changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+    omittedChanges: 0,
+  });
+  await expect(assertFreshImportDestination(wrap(db), { allowBootstrapAdmin: true })).rejects.toThrow(
+    'DESTINATION_NOT_FRESH',
+  );
+});
+
 it.each(Object.values(UserMetadataKey).filter((key) => key !== UserMetadataKey.Preferences))(
   'refuses administrator metadata outside the preference allowance: %s',
   async (key) => {
@@ -168,6 +183,36 @@ it.each(Object.values(UserMetadataKey).filter((key) => key !== UserMetadataKey.P
     );
   },
 );
+
+it('admits changed setup preferences and preserves their native account history', async () => {
+  const admin = await db.selectFrom('user').select('id').executeTakeFirstOrThrow();
+  const users = new UserRepository(db);
+  await users.upsertMetadata(admin.id, { key: UserMetadataKey.Preferences, value: { memories: { enabled: false } } });
+  await users.addPreferenceHistory({
+    userId: admin.id,
+    deviceLabel: 'Synthetic setup',
+    changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+    omittedChanges: 0,
+  });
+  const history = await users.getPreferenceHistory(admin.id);
+  expect(history).toHaveLength(1);
+  await expect(
+    new LibraryImportJournal(wrap(db)).begin({
+      operationId: randomUUID(),
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: {
+        kind: 'photoview',
+        version: '2.4.0',
+        identity: 'synthetic-library',
+        revision: 'frozen',
+        schemaSha256: 'c'.repeat(64),
+      },
+    }),
+  ).resolves.toMatchObject({ status: 'copying' });
+  expect(await users.getPreferenceHistory(admin.id)).toEqual(history);
+  await expect(assertFreshImportDestination(wrap(db))).rejects.toThrow('DESTINATION_NOT_FRESH');
+});
 
 it('admits an unused setup administrator and journals preserved owner credentials atomically', async () => {
   const bootstrap = await db.selectFrom('user').selectAll().executeTakeFirstOrThrow();

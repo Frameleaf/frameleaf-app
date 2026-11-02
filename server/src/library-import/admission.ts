@@ -45,7 +45,8 @@ export async function assertFreshImportDestination(
           );
           break;
         }
-        case 'session': {
+        case 'session':
+        case 'user_preference_history': {
           records = await destination.query(
             `SELECT 1 FROM public.${quote(table)} WHERE "userId" IS DISTINCT FROM $1::uuid LIMIT 1`,
             [admin.id],
