@@ -194,6 +194,17 @@ describe.skipIf(process.platform !== 'linux')('bundle original verification', ()
   });
 });
 
+it.each(['original', 'sidecar', 'companion'] as const)(
+  'refuses an unowned %s before opening any files on every platform',
+  async (role) => {
+    const value = manifest();
+    value.files.push({ ...value.files[0], id: 'orphan', path: 'unowned/file', role });
+    vi.mocked(open).mockClear();
+    await expect(verifyBundleFiles('/unused', value)).rejects.toThrow('FILE_OWNER_RELATIONSHIP_REQUIRED');
+    expect(open).not.toHaveBeenCalled();
+  },
+);
+
 it.skipIf(process.platform === 'linux')('refuses verification without descriptor containment support', async () => {
   await expect(verifyBundleFiles('/unused', manifest())).rejects.toThrow('BUNDLE_REQUIRES_LINUX_CONTAINER');
 });
