@@ -32,6 +32,12 @@ Native synthetic checks passed on the pinned Manager Node 22.23.4 ARM64 Linux im
 
 The worker is not wired to a command, API or UI. Capacity preflight, durable root/namespace preparation, fencing/controller integration, cancellation, owner/library fanout, database relationships and regeneration remain outstanding. Adoption and copy-mode rollback are not implemented here. The separate relocation primitive below also remains internal. No expanded import support is released by this stage.
 
+## Complete bundle file ownership
+
+Every physical file in manifest versions 1, 2 and 3 must be referenced by at least one logical photo with a known source owner. This includes originals, sidecars and companions. Parsing and fingerprinting refuse an unreferenced file with `FILE_OWNER_RELATIONSHIP_REQUIRED`; bundle verification refuses it before accessing the filesystem. An archive-only file needs an explicit ownership contract before it can enter this inventory. Empty inventories and source users without photos remain valid, and valid owned inventories retain their existing fingerprints.
+
+Multiple photos may retain a relationship to the same source file without merging their owners. Structural links do not prove source ownership, permission equivalence or safe destination storage/deduplication; adapters and the controller must independently qualify those boundaries. The selected-file byte verifier remains independent of bundle ownership, and the photo writer still refuses unsupported sidecars or companions until their destination handling is implemented.
+
 ## Server journal and startup fence
 
 `LibraryImportJournal` records a generic import in the destination's canonical PostgreSQL database. Its immutable binding includes the Manager operation ID, manifest and reviewed-plan SHA256 values, and source family, version, identity, revision and schema fingerprint. Unknown binding fields are refused. Initial admission reuses canonical fresh-destination checks and permits one unused setup administrator with [scoped setup records](#destination-setup-account); a journal from `import-immich` blocks starting another source. Import qualification, canonical schema preflight and source/service fencing remain controller obligations.
