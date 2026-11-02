@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { BigIntStats, constants } from 'node:fs';
 import { FileHandle, open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { ImportManifest, parseImportManifest } from 'src/library-import/manifest.js';
+import { z } from 'zod';
+import { ImportManifest, importFileSchema, parseImportManifest } from 'src/library-import/manifest.js';
 
 export class BundleVerificationError extends Error {
   constructor(readonly code: string) {
@@ -74,8 +75,36 @@ const openContained = async (root: FileHandle, path: string): Promise<FileHandle
 export const verifyBundleFiles = async (
   root: string,
   input: ImportManifest,
+): Promise<{ files: number; bytes: string }> => verifyFiles(root, parseImportManifest(input).files);
+
+const rootIdentitySchema = z.strictObject({
+  device: z.string().regex(/^(0|[1-9]\d*)$/),
+  inode: z.string().regex(/^(0|[1-9]\d*)$/),
+});
+
+/** Verify selected destination files against the reviewed root before their atomic database write. */
+export const verifyImportFiles = async (
+  root: string,
+  input: unknown,
+  expectedRoot: { device: string; inode: string },
 ): Promise<{ files: number; bytes: string }> => {
-  const manifest = parseImportManifest(input);
+  const parsed = z.array(importFileSchema).safeParse(input);
+  if (
+    !parsed.success ||
+    new Set(parsed.data.map((file) => file.id)).size !== parsed.data.length ||
+    new Set(parsed.data.map((file) => file.path)).size !== parsed.data.length
+  )
+    refuse('BUNDLE_FILE_INVENTORY_INVALID');
+  const identity = rootIdentitySchema.safeParse(expectedRoot);
+  if (!identity.success) refuse('BUNDLE_ROOT_INVALID');
+  return verifyFiles(root, parsed.data!, identity.data!);
+};
+
+const verifyFiles = async (
+  root: string,
+  files: ImportManifest['files'],
+  expectedRoot?: { device: string; inode: string },
+): Promise<{ files: number; bytes: string }> => {
   if (process.platform !== 'linux') refuse('BUNDLE_REQUIRES_LINUX_CONTAINER');
   try {
     const canonicalRoot = resolve(root);
@@ -83,8 +112,13 @@ export const verifyBundleFiles = async (
     const rootHandle = await openRoot(canonicalRoot);
     try {
       const rootBefore = await rootHandle.stat({ bigint: true });
+      if (
+        expectedRoot &&
+        (String(rootBefore.dev) !== expectedRoot.device || String(rootBefore.ino) !== expectedRoot.inode)
+      )
+        refuse('BUNDLE_ROOT_CHANGED');
       let bytes = 0n;
-      for (const entry of manifest.files) {
+      for (const entry of files) {
         const path = resolve(canonicalRoot, entry.path);
         const resolved = await realpath(path);
         const remainder = relative(canonicalRoot, resolved);
@@ -112,7 +146,7 @@ export const verifyBundleFiles = async (
       if ((await realpath(root)) !== canonicalRoot || !sameIdentity(rootBefore, await stat(root, { bigint: true }))) {
         refuse('BUNDLE_CHANGED_DURING_VERIFICATION');
       }
-      return { files: manifest.files.length, bytes: String(bytes) };
+      return { files: files.length, bytes: String(bytes) };
     } finally {
       await rootHandle.close();
     }

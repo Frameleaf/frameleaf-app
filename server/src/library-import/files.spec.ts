@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, open, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { verifyBundleFiles } from 'src/library-import/files.js';
+import { verifyBundleFiles, verifyImportFiles } from 'src/library-import/files.js';
 import { parseImportManifest } from 'src/library-import/manifest.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -58,6 +58,18 @@ describe.skipIf(process.platform !== 'linux')('bundle original verification', ()
   it('verifies bytes and hashes without modifying originals', async () => {
     const result = await verifyBundleFiles(root, manifest());
     expect(result).toEqual({ files: 1, bytes: String(content.length) });
+    expect(await readFile(join(root, 'album/original.jpg'))).toEqual(content);
+  });
+  it('verifies a selected file inventory against the reviewed root identity', async () => {
+    const identity = await stat(root, { bigint: true });
+    const expectedRoot = { device: String(identity.dev), inode: String(identity.ino) };
+    await expect(verifyImportFiles(root, manifest().files, expectedRoot)).resolves.toEqual({
+      files: 1,
+      bytes: String(content.length),
+    });
+    await expect(
+      verifyImportFiles(root, manifest().files, { ...expectedRoot, inode: String(identity.ino + 1n) }),
+    ).rejects.toThrow('BUNDLE_ROOT_CHANGED');
     expect(await readFile(join(root, 'album/original.jpg'))).toEqual(content);
   });
   it('verifies every version-two original even when a different file is the explicit primary', async () => {
@@ -184,4 +196,15 @@ describe.skipIf(process.platform !== 'linux')('bundle original verification', ()
 
 it.skipIf(process.platform === 'linux')('refuses verification without descriptor containment support', async () => {
   await expect(verifyBundleFiles('/unused', manifest())).rejects.toThrow('BUNDLE_REQUIRES_LINUX_CONTAINER');
+});
+
+it.each([
+  (files: ReturnType<typeof manifest>['files']) => [...files, ...files],
+  (files: ReturnType<typeof manifest>['files']) => [...files, { ...files[0], id: 'other' }],
+  (files: ReturnType<typeof manifest>['files']) => [{ ...files[0], path: '../escape' }],
+])('refuses invalid selected inventories before opening files', async (change) => {
+  await expect(verifyImportFiles('/unused', change(manifest().files), { device: '1', inode: '2' })).rejects.toThrow(
+    'BUNDLE_FILE_INVENTORY_INVALID',
+  );
+  expect(open).not.toHaveBeenCalled();
 });

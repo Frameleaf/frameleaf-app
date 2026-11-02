@@ -36,6 +36,7 @@ const mapping = () => ({
   destinationId: randomUUID(),
   recordSha256: 'd'.repeat(64),
 });
+const creation = () => ({ kind: 'asset', sourceId: 'source-photo', recordSha256: 'd'.repeat(64) });
 const journal = () => new LibraryImportJournal(wrap(db));
 const gate = () => new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository());
 
@@ -49,6 +50,70 @@ beforeEach(async () => {
   );
 });
 afterAll(async () => db?.destroy());
+
+it('allocates a non-owner destination identity once and recovers a lost commit acknowledgement', async () => {
+  const input = binding(),
+    item = creation();
+  await journal().begin(input);
+  const actual = wrap(db);
+  const lost: ImportDatabase = {
+    ...actual,
+    transaction: async (body) => {
+      await actual.transaction(body);
+      throw new Error('synthetic lost commit acknowledgement');
+    },
+  };
+  let allocated: string | undefined;
+  const write = vi.fn(async (tx: ImportDatabase, id: string) => {
+    allocated = id;
+    await tx.query('INSERT INTO public.import_probe VALUES($1::uuid,$2)', [id, 'preserved metadata']);
+  });
+  await expect(new LibraryImportJournal(lost).create(input, item, write)).rejects.toThrow(
+    'lost commit acknowledgement',
+  );
+  expect(allocated).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+  await expect(journal().create(input, item, write)).resolves.toBe(allocated);
+  expect(write).toHaveBeenCalledOnce();
+  expect((await sql`SELECT * FROM public.import_probe`.execute(db)).rows).toEqual([
+    { id: allocated, payload: 'preserved metadata' },
+  ]);
+  await expect(journal().create(input, { ...item, recordSha256: 'e'.repeat(64) }, write)).rejects.toThrow(
+    'IMPORT_MAPPING_CHANGED',
+  );
+  expect(write).toHaveBeenCalledOnce();
+});
+
+it('rolls back an allocated identity with its write and retries without orphan records', async () => {
+  const input = binding(),
+    item = creation();
+  await journal().begin(input);
+  await expect(
+    journal().create(input, item, async (tx, id) => {
+      await tx.query('INSERT INTO public.import_probe VALUES($1::uuid,$2)', [id, 'partial']);
+      throw new Error('synthetic creation interruption');
+    }),
+  ).rejects.toThrow('creation interruption');
+  expect((await sql`SELECT * FROM public.import_probe`.execute(db)).rows).toEqual([]);
+  expect((await journal().status()).mappings).toEqual([]);
+  const id = await journal().create(input, item, async (tx, destinationId) => {
+    await tx.query('INSERT INTO public.import_probe VALUES($1::uuid,$2)', [destinationId, 'complete']);
+  });
+  expect((await sql`SELECT * FROM public.import_probe`.execute(db)).rows).toEqual([{ id, payload: 'complete' }]);
+});
+
+it('requires explicit owner mappings and refuses supplied identities in the allocating path', async () => {
+  const input = binding(),
+    write = vi.fn();
+  await journal().begin(input);
+  await expect(journal().create(input, { ...creation(), kind: 'owner' }, write)).rejects.toThrow(
+    'INVALID_IMPORT_MAPPING',
+  );
+  await expect(journal().create(input, { ...creation(), destinationId: randomUUID() }, write)).rejects.toThrow(
+    'INVALID_IMPORT_MAPPING',
+  );
+  expect(write).not.toHaveBeenCalled();
+  expect((await journal().status()).mappings).toEqual([]);
+});
 
 it('retains binding and mappings after reconnect and does not replay a committed destination write', async () => {
   const input = binding(),
