@@ -24,9 +24,12 @@ export const SAME_SCENE_DISTANCE = 0.15;
 export const LOOKS_LIKE_DISTANCE = 0.25;
 /**
  * FL-1094: CLIP cosine distance between two torso crops of the same person wearing the same clothes.
- * Checked on a labelled set of trip photos (see the FL-1094 pull request); recheck if the CLIP model changes.
+ * Measured with ViT-B-16-SigLIP-384__webli on 1,407 CC-licensed Wikimania 2019/2023 photos of 118 people
+ * (person from Commons categories, day from EXIF), each dated by the one-day rule against that person's
+ * other photos: 0.10 dated 43% of datable photos at 97.4% precision; 0.12 dated 50% at 94.9%. Details in
+ * PR 731. Measure again before changing the default CLIP model.
  */
-export const SAME_OUTFIT_DISTANCE = 0.12;
+export const SAME_OUTFIT_DISTANCE = 0.1;
 
 export type TripPhoto = {
   id: string;
