@@ -306,6 +306,7 @@ describe('photo tools round trip (FL-64)', () => {
     expect(job.queue.mock.calls.map(([item]) => item.name)).toEqual([JobName.AssetDevelopRender]);
 
     await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+    expect(job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
     const stored = await develop.get(revision.id);
     expect(stored).toMatchObject({
       status: AssetDevelopRevisionStatus.Rendered,

@@ -585,6 +585,7 @@ describe(MediaService.name, () => {
         expect(await locked.copiesLeft()).toBe(0);
         expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
         expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+        expect(mocks.job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
       } finally {
         await locked.cleanup();
       }
@@ -2389,6 +2390,7 @@ describe(MediaService.name, () => {
       mocks.media.generateThumbhash.mockResolvedValue(factory.buffer());
 
       await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
 
       const visibleFaces = cropped ? [faces[1], faces[2]] : [faces[1]];
       const hiddenFaces = cropped ? [faces[0]] : [];
@@ -4255,6 +4257,7 @@ describe(MediaService.name, () => {
       expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(context.adoptions).toHaveLength(1);
+      expect(mocks.job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
       await queueExecution.run(context, async () => {
         for (const adopt of context.adoptions) await adopt({} as never);
       });
@@ -4886,7 +4889,15 @@ describe(MediaService.name, () => {
       mocks.logger.isLevelEnabled.mockReturnValue(false);
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
 
-      await sut.handleVideoConversion({ id: 'video-id' });
+      const context = {
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetEncodeVideo },
+        signal: new AbortController().signal,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+      await queueExecution.run(context, () => sut.handleVideoConversion({ id: 'video-id' }));
+      expect(mocks.job.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
 
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
       expect(mocks.storage.mkdirSync).toHaveBeenCalled();

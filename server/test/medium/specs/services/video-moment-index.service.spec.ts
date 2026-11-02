@@ -189,11 +189,12 @@ const setup = () => {
 describe(VideoMomentIndexService.name, () => {
   describe('frame publication and the source fingerprint', () => {
     it('publishes the frames it cut, recording the fingerprint they were cut from', async () => {
-      const { sut, newOwner, newVideo, fingerprintOf, framesOf, indexOf } = setup();
+      const { sut, jobs, newOwner, newVideo, fingerprintOf, framesOf, indexOf } = setup();
       const { user } = await newOwner();
       const video = await newVideo(user.id);
 
       await expect(sut.runFramesStage(video.id)).resolves.toEqual({ state: EnrichmentItemState.Completed });
+      expect(jobs.collectFollowups).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
 
       const frames = await framesOf(video.id);
       expect(frames).toHaveLength(VIDEO_MOMENT_FRAME_COUNT);
