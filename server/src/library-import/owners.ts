@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
 
-const ownerSchema = z.strictObject({
+export const importedOwnerSchema = z.strictObject({
   operationId: z.uuid().transform((value) => value.toLowerCase()),
   sourceUserId: z.string().min(1).max(1024),
   destinationUserId: z.uuid().transform((value) => value.toLowerCase()),
@@ -19,7 +19,7 @@ export async function createImportedOwner(
   input: unknown,
   credential?: ImportedPassword,
 ): Promise<void> {
-  const parsed = ownerSchema.safeParse(input);
+  const parsed = importedOwnerSchema.safeParse(input);
   if (!parsed.success) throw new Error('Library import refused: OWNER_INVALID');
   const owner = parsed.data;
   if (
