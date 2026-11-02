@@ -26,4 +26,63 @@ Completion checks original and destination SHA256 values, stable filesystem iden
 
 Native synthetic checks passed on the pinned Manager Node 22.23.4 ARM64 Linux image: independent original bytes, restart with a partial prefix, collisions, mismatches, symlinks, hardlinks, changed roots/sources and injected close failure. A separate isolated 128 MiB tmpfs probe produced kernel `ENOSPC`, retained a 6,123,520-byte prefix and the original, then resumed to the verified 33,554,432-byte destination after space was freed. This evidence covers the copy primitive, not full migration acceptance.
 
-The worker is not wired to a command, API or UI. Capacity preflight, durable root/namespace preparation, fencing/controller integration, cancellation, owner/library fanout, database relationships and regeneration remain outstanding. Relocation, adoption and their rollback workers are not implemented here. No expanded import support is released by this stage.
+The worker is not wired to a command, API or UI. Capacity preflight, durable root/namespace preparation, fencing/controller integration, cancellation, owner/library fanout, database relationships and regeneration remain outstanding. Adoption and copy-mode rollback are not implemented here. The separate relocation primitive below also remains internal. No expanded import support is released by this stage.
+
+## Internal reversible-relocation worker
+
+`relocateImportFiles` and `rollbackImportRelocations` consume existing relocation
+intents. They are not exposed by a command, API or UI. The controller must bind
+absolute root paths and device/inode identities into its reviewed
+plan; keep source services and every restart mechanism fenced; and run one worker.
+Source and destination roots must share a device and mount ID. Mount IDs are
+captured after validating the planned root identities, checked throughout one worker
+run, and reacquired for a resumed process; they are not durable filesystem
+identifiers. Changed planned device/inode identities require separate storage
+recovery. The destination namespace must remain private and exclusive to this operation. Unknown roots,
+changed mount identities, unsafe path components, symlinks, multiple hardlinks,
+changed originals and filename collisions refuse the operation.
+
+The Manager image builds a small Linux helper that calls `renameat2` with
+`RENAME_NOREPLACE` directly through inherited directory descriptors. It has no
+copy, unlink or non-atomic replacement fallback. Unsupported kernels/filesystems,
+cross-mount moves and existing destination entries are refused. The helper checks
+regular-file identity before and after the move and syncs both directories. The
+Node worker independently verifies original inode, size, modification time and
+SHA256; rechecks directory entries and mount identities; syncs the file/directories;
+and only then writes durable completion. Rename changes inode change time, so
+resumed moved files are checked through the journal's destination path with their
+original device/inode, modification time and byte hash.
+
+A move failure can have an ambiguous effect: retain intent and both recorded paths.
+Never delete either side or silently overwrite a conflict. Forward resume reconciles
+a present source or a moved destination. Rollback persists its own intent before the
+reverse move; it can recover a forward effect without its verification checkpoint
+and a reverse effect without its completion checkpoint. An unchanged, unapplied
+intent becomes `cancelled`. Destination writers prevent ordinary rollback even if
+their startup acknowledgement was lost. Abandonment retains media and recovery
+records; post-boundary recovery still requires a separate procedure.
+
+Native synthetic ARM64 Linux tests cover forward/reverse inode-preserving moves,
+durable journal reopen, interrupted checkpoints, source/destination collisions,
+changed originals, symlinks, hardlinks, private roots, mount changes and the write
+boundary. Fault injection against the actual helper verifies refusal when atomic
+rename is unavailable. An independent isolated kernel syscall denial probe also
+retains the source and leaves the destination absent. These checks use generated
+bytes only; they do not qualify every storage filesystem or a complete migration.
+A separate generated-volume probe terminated the process after a move but before
+its verification checkpoint. Fresh containers resumed verification and rolled back,
+preserving the original inode and bytes. Mount IDs happened to match in that probe;
+a separate renumbering fault test covers reacquisition. Full host reboot and
+filesystem-identity rebinding remain unqualified.
+
+Linux unit tests compile the current helper with a C compiler in private temporary
+storage. The compiler is present only in the image build stage; production uses
+the installed helper.
+
+Capacity and namespace preparation, authenticated fencing, complete source
+inventories, owner/library fanout, in-place adoption, original source metadata
+archives, destination reconciliation, Server lifecycle commands, Manager journeys
+and combined ten-source acceptance remain outstanding. Remote/object/encrypted
+sources require a separately qualified plaintext staging export; a matching device
+number alone does not establish such qualification. No expanded adapter support,
+release or deployment is authorized by this primitive.
