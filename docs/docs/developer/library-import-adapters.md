@@ -82,4 +82,10 @@ Managed asset deletion snapshots additional originals with the existing path-loc
 
 Storage statistics and both quota recount paths include every attached original's physical size in addition to the primary original. Attachments do not multiply logical photo/video counts. Existing owner, managed-library, trash and privacy filters remain unchanged, and developed artifacts and revision charges remain included in the full recount. An absent primary EXIF size does not hide known attachment bytes.
 
-This remains internal infrastructure. It does not import attachments, authorize file linking, expose downloads or extend preservation packages, backup inventories, initial quota charging or Locked encryption. Those integrations and canonical reconciliation remain required before migration activation; the new adapters remain unqualified.
+This remains internal infrastructure. It does not import attachments, authorize file linking, extend portable library exports, preservation packages, backup inventories, initial quota charging or Locked encryption. Those integrations and canonical reconciliation remain required before migration activation; the new adapters remain unqualified.
+
+### Original archive downloads
+
+Original-mode ZIP downloads stream every attached original through the existing permission, embedded-metadata and Locked-read checks. Archive planning includes additional original sizes without multiplying logical asset IDs. Original filenames use the existing collision-safe archive naming. An as-shown download keeps the selected display version. A failure opening an encrypted file closes the unfinished archive.
+
+The version-one portable library inventory represents one original per logical asset. A portable export containing additional originals is refused before archive creation, so it cannot silently omit their relationships. Versioned portable export/restore, preservation and backup inventories, initial charging and Locked-writer integration remain required before migration activation. These archive checks do not qualify any new source adapter.
