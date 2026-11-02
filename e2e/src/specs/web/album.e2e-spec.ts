@@ -102,6 +102,10 @@ test.describe('Album', () => {
     await expect(photoTile.getByRole('checkbox')).toBeChecked();
     await photoTile.getByRole('checkbox').click();
 
+    // Work (FL-1117): a click shows the item in the information panel; clicking it again opens it.
+    await videoTile.locator('button').first().click();
+    await expect(page.getByTestId('frameleaf-work-inspector')).toContainText('kayak-demo.mp4');
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
     await videoTile.locator('button').first().click();
     await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', video.id);
     await page.goBack();

@@ -101,7 +101,7 @@
      * Intercept a plain click on a tile. Return `true` when the page handled it, and the timeline
      * does nothing further; the geolocation utility reads an item's coordinates this way.
      */
-    onTileClick?: (asset: TimelineAsset) => boolean;
+    onTileClick?: (asset: TimelineAsset, event?: MouseEvent | KeyboardEvent) => boolean;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
     /** The hover quick actions each tile may offer (prototype `AssetTile.jsx` `.at-actions`). */
@@ -1351,9 +1351,9 @@
     session.select(asset.id);
   };
 
-  const handleOpen = (asset: TimelineAsset) => {
+  const handleOpen = (asset: TimelineAsset, event?: MouseEvent | KeyboardEvent) => {
     // The page may claim a plain click for itself before anything else happens.
-    if (onTileClick?.(asset)) {
+    if (onTileClick?.(asset, event)) {
       session.setScrollAnchor(asset.id);
       return;
     }
