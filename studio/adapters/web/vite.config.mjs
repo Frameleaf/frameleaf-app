@@ -81,7 +81,7 @@ const resolveFromEngine = () => ({
     if (!importer || source.startsWith('.') || source.startsWith('/') || source.startsWith('\0'))
       return null
     if (source.startsWith('@/') || source.startsWith('@frameleaf/')) return null
-    if (!importer.startsWith(vitePath(here) + '/') || importer.startsWith(vitePath(engine) + '/')) return null
+    if (!vitePath(importer).startsWith(vitePath(here) + '/') || vitePath(importer).startsWith(vitePath(engine) + '/')) return null
     return this.resolve(source, path.join(engine, 'src/main.tsx'), { ...options, skipSelf: true })
   },
 })
@@ -97,10 +97,10 @@ const gateTimelinePersistence = () => ({
   name: 'frameleaf-gate-timeline-persistence',
   enforce: 'pre',
   async resolveId(source, importer, options) {
-    if (!importer || importer === vitePath(persistenceShim) || !source.includes('timeline-persistence'))
+    if (!importer || vitePath(importer) === vitePath(persistenceShim) || !source.includes('timeline-persistence'))
       return null
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-    return resolved?.id === vitePath(persistenceModule) ? vitePath(persistenceShim) : null
+    return resolved?.id && vitePath(resolved.id) === vitePath(persistenceModule) ? vitePath(persistenceShim) : null
   },
 })
 
@@ -122,7 +122,7 @@ const useAdapterWorkspace = () => ({
   async resolveId(source, importer, options) {
     if (!importer || !source.includes('in-memory-handle')) return null
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-    return resolved?.id === vitePath(upstreamWorkspaceDouble) ? vitePath(adapterWorkspaceDouble) : null
+    return resolved?.id && vitePath(resolved.id) === vitePath(upstreamWorkspaceDouble) ? vitePath(adapterWorkspaceDouble) : null
   },
 })
 

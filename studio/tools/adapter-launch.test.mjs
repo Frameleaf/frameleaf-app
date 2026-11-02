@@ -72,6 +72,7 @@ test('adapter config loads private engine plugins and preserves resolver boundar
     const result = await (await import(pathToFileURL(configuration).href)).default();
     assert.ok(result.plugins.some((plugin) => plugin.name === 'tailwind-fixture'));
     const vitePath = (file) => file.split(path.sep).join('/');
+    const pathForms = (file) => [...new Set([file, vitePath(file)])];
     const adapter = path.join(root, 'studio/adapters/web');
     const engine = path.join(root, 'studio/engine');
     const dependency = result.plugins.find((plugin) => plugin.name === 'frameleaf-resolve-from-engine');
@@ -81,22 +82,29 @@ test('adapter config loads private engine plugins and preserves resolver boundar
       assert.equal(options.skipSelf, true);
       return { id: 'engine-dependency-fixture' };
     } };
-    assert.deepEqual(await dependency.resolveId.call(resolver, 'mediabunny',
-      vitePath(path.join(adapter, 'src/library-media.ts')), {}), { id: 'engine-dependency-fixture' });
+    for (const importer of pathForms(path.join(adapter, 'src/library-media.ts'))) {
+      assert.deepEqual(await dependency.resolveId.call(resolver, 'mediabunny', importer, {}), { id: 'engine-dependency-fixture' });
+    }
     assert.equal(await dependency.resolveId.call(resolver, 'mediabunny',
       vitePath(adapter + '-other/src/file.ts'), {}), null);
     const persistence = result.plugins.find((plugin) => plugin.name === 'frameleaf-gate-timeline-persistence');
     const shim = vitePath(path.join(adapter, 'src/shims/timeline-persistence.ts'));
-    assert.equal(await persistence.resolveId.call({ async resolve() {
-      return { id: vitePath(path.join(engine, 'src/features/timeline/stores/timeline-persistence.ts')) };
-    } }, './timeline-persistence', vitePath(path.join(engine, 'src/features/timeline/stores/store.ts')), {}), shim);
-    assert.equal(await persistence.resolveId.call({ resolve() { throw new Error('shim must retain its upstream import'); } },
-      './timeline-persistence', shim, {}), null);
+    for (const id of pathForms(path.join(engine, 'src/features/timeline/stores/timeline-persistence.ts'))) {
+      assert.equal(await persistence.resolveId.call({ async resolve() { return { id }; } },
+        './timeline-persistence', vitePath(path.join(engine, 'src/features/timeline/stores/store.ts')), {}), shim);
+    }
+    for (const importer of pathForms(path.join(adapter, 'src/shims/timeline-persistence.ts'))) {
+      assert.equal(await persistence.resolveId.call({ resolve() { throw new Error('shim must retain its upstream import'); } },
+        './timeline-persistence', importer, {}), null);
+    }
+    assert.equal(await persistence.resolveId.call({ async resolve() { return { id: path.join(engine, 'src/other.ts') }; } },
+      './timeline-persistence', vitePath(path.join(engine, 'src/test.ts')), {}), null);
     const workspace = result.plugins.find((plugin) => plugin.name === 'frameleaf-upstream-tests-on-virtual-workspace');
-    assert.equal(await workspace.resolveId.call({ async resolve() {
-      return { id: vitePath(path.join(engine, 'src/infrastructure/storage/workspace-fs/__tests__/in-memory-handle.ts')) };
-    } }, './in-memory-handle', vitePath(path.join(engine, 'src/test.ts')), {}),
-    vitePath(path.join(adapter, 'test/upstream/in-memory-handle.ts')));
+    for (const id of pathForms(path.join(engine, 'src/infrastructure/storage/workspace-fs/__tests__/in-memory-handle.ts'))) {
+      assert.equal(await workspace.resolveId.call({ async resolve() { return { id }; } },
+        './in-memory-handle', vitePath(path.join(engine, 'src/test.ts')), {}),
+      vitePath(path.join(adapter, 'test/upstream/in-memory-handle.ts')));
+    }
     const frame = result.plugins.find((plugin) => plugin.name === 'frameleaf-frame-manifest');
     const output = result.build.outDir;
     assert.doesNotThrow(() => frame.closeBundle?.());
