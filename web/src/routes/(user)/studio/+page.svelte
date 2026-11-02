@@ -1162,6 +1162,8 @@
   let videoExportOpen = $state(false);
   let exporting = $state(false);
   let pendingDeliveries = $state<DeliverySubmission | null>(null);
+  /** The delivery submission whose caption files were already saved (FL-1120). */
+  let sidecarsSavedFor: DeliverySubmission | null = null;
   let deliveryResults = $state<{ shape: string; queued: boolean; error: string | null }[]>([]);
   /**
    * The newest export this session started, followed in the header until it is done: its progress,
@@ -1420,7 +1422,9 @@
           exportJob = last;
           followExport(last.id);
         }
-        if (admitted.length > 0) {
+        // Retries reuse the same submission object, so its caption files download only once.
+        if (admitted.length > 0 && sidecarsSavedFor !== pendingDeliveries) {
+          sidecarsSavedFor = pendingDeliveries;
           saveCaptionSidecars(choice);
         }
         if (lostOriginal) {

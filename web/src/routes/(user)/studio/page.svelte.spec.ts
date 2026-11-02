@@ -348,6 +348,13 @@ describe('delivery batch recovery', () => {
     expect(vi.mocked(createStudioExport).mock.calls[1]![0].studioExportCreateDto.requestKey).toBe(single.requestKey);
   });
 
+  it('saves caption files once per submission, not again on each retry', async () => {
+    vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [admitted, refused] } as never);
+    await harness.exportDialog!.onExport(choice);
+    await harness.exportDialog!.onExport(choice);
+    expect(studioCaptionExportSidecars).toHaveBeenCalledTimes(1);
+  });
+
   it('shows and follows the admitted batch before reporting a lost Original response', async () => {
     vi.mocked(createStudioExportBatch).mockResolvedValue({ items: [admitted] } as never);
     vi.mocked(createStudioExport).mockRejectedValueOnce(new Error('Response lost'));
