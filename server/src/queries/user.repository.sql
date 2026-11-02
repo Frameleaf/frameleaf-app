@@ -547,14 +547,40 @@ select
       )
   ) as "videos",
   coalesce(
-    sum("asset_exif"."fileSizeInByte") filter (
+    sum(
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
+        (
+          SELECT
+            sum(file."sizeInBytes")
+          FROM
+            public.asset_original original
+            JOIN public.physical_file file ON file.id = original."physicalFileId"
+          WHERE
+            original."assetId" = asset.id
+        ),
+        0
+      )
+    ) filter (
       where
         "asset"."libraryId" is null
     ),
     0
   ) as "usage",
   coalesce(
-    sum("asset_exif"."fileSizeInByte") filter (
+    sum(
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
+        (
+          SELECT
+            sum(file."sizeInBytes")
+          FROM
+            public.asset_original original
+            JOIN public.physical_file file ON file.id = original."physicalFileId"
+          WHERE
+            original."assetId" = asset.id
+        ),
+        0
+      )
+    ) filter (
       where
         (
           "asset"."libraryId" is null
@@ -564,7 +590,20 @@ select
     0
   ) as "usagePhotos",
   coalesce(
-    sum("asset_exif"."fileSizeInByte") filter (
+    sum(
+      COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
+        (
+          SELECT
+            sum(file."sizeInBytes")
+          FROM
+            public.asset_original original
+            JOIN public.physical_file file ON file.id = original."physicalFileId"
+          WHERE
+            original."assetId" = asset.id
+        ),
+        0
+      )
+    ) filter (
       where
         (
           "asset"."libraryId" is null
@@ -605,7 +644,23 @@ update "user"
 set
   "quotaUsageInBytes" = (
     select
-      coalesce(sum("asset_exif"."fileSizeInByte"), 0) as "usage"
+      coalesce(
+        sum(
+          COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE(
+            (
+              SELECT
+                sum(file."sizeInBytes")
+              FROM
+                public.asset_original original
+                JOIN public.physical_file file ON file.id = original."physicalFileId"
+              WHERE
+                original."assetId" = asset.id
+            ),
+            0
+          )
+        ),
+        0
+      ) as "usage"
     from
       "asset"
       left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"

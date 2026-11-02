@@ -62,6 +62,12 @@ const withMetadata = (eb: ExpressionBuilder<DB, 'user'>) => {
       .whereRef('user.id', '=', 'user_metadata.userId'),
   ).as('metadata');
 };
+// Aggregate attachments per asset so file variants never multiply logical photo counts.
+const originalBytes = sql<number>`COALESCE(asset_exif."fileSizeInByte", 0) + COALESCE((
+  SELECT sum(file."sizeInBytes") FROM public.asset_original original
+  JOIN public.physical_file file ON file.id = original."physicalFileId"
+  WHERE original."assetId" = asset.id
+), 0)`;
 @Injectable()
 export class UserRepository {
   constructor(
@@ -827,15 +833,12 @@ export class UserRepository {
           )
           .as('videos'),
         eb.fn
-          .coalesce(
-            eb.fn.sum<number>('asset_exif.fileSizeInByte').filterWhere('asset.libraryId', 'is', null),
-            eb.lit(0),
-          )
+          .coalesce(eb.fn.sum<number>(originalBytes).filterWhere('asset.libraryId', 'is', null), eb.lit(0))
           .as('usage'),
         eb.fn
           .coalesce(
             eb.fn
-              .sum<number>('asset_exif.fileSizeInByte')
+              .sum<number>(originalBytes)
               .filterWhere((eb) =>
                 eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Image))]),
               ),
@@ -845,7 +848,7 @@ export class UserRepository {
         eb.fn
           .coalesce(
             eb.fn
-              .sum<number>('asset_exif.fileSizeInByte')
+              .sum<number>(originalBytes)
               .filterWhere((eb) =>
                 eb.and([eb('asset.libraryId', 'is', null), eb('asset.type', '=', sql.lit(AssetType.Video))]),
               ),
@@ -884,7 +887,7 @@ export class UserRepository {
           eb
             .selectFrom('asset')
             .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-            .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('asset_exif.fileSizeInByte'), eb.lit(0)).as('usage'))
+            .select((eb) => eb.fn.coalesce(eb.fn.sum<number>(originalBytes), eb.lit(0)).as('usage'))
             .where('asset.libraryId', 'is', null)
             .where('asset.ownerId', '=', eb.ref('user.id')),
         updatedAt: new Date(),
