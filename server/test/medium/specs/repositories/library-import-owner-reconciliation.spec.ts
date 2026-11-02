@@ -1,8 +1,10 @@
 import { hash } from 'bcrypt';
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { SharedLinkType, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, SharedLinkType, UserMetadataKey } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
+import { reconcileImportedAlbums } from 'src/library-import/album-reconciliation.js';
+import { CanonicalAlbumWriter } from 'src/library-import/album-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
@@ -20,7 +22,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async () => {
+const setup = async (withAlbum = false) => {
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.files = [];
   plan.owners = ['preserved', 'claim'].map((sourceId) => ({ sourceId, destinationId: randomUUID() }));
@@ -39,7 +41,17 @@ const setup = async () => {
     users: plan.owners.map((owner) => ({ id: owner.sourceId, name: 'Source ' + owner.sourceId })),
     files: [],
     assets: [],
-    albums: [],
+    albums: withAlbum
+      ? [
+          {
+            id: 'album',
+            ownerId: 'preserved',
+            name: 'Shared album',
+            assetIds: [],
+            members: [{ userId: 'claim', role: 'viewer' }],
+          },
+        ]
+      : [],
     losses: [],
   });
   const binding = {
@@ -274,6 +286,8 @@ it.each([
   'bootstrap-identity-link',
   'orphan-identity-link',
   'shared-link',
+  'partner-outgoing',
+  'partner-incoming',
   'mapping',
   'extra-owner',
 ])('refuses independently observed owner corruption: %s', async (kind) => {
@@ -369,6 +383,22 @@ it.each([
         .execute();
       break;
     }
+    case 'partner-outgoing':
+    case 'partner-incoming': {
+      const administrator = await db
+        .selectFrom('user')
+        .select('id')
+        .where('isAdmin', '=', true)
+        .executeTakeFirstOrThrow();
+      await db
+        .insertInto('partner')
+        .values({
+          sharedById: kind === 'partner-outgoing' ? ownerId : administrator.id,
+          sharedWithId: kind === 'partner-outgoing' ? administrator.id : ownerId,
+        })
+        .execute();
+      break;
+    }
     case 'mapping': {
       await sql`UPDATE frameleaf_library_import_mapping SET record_sha256=${'f'.repeat(64)} WHERE source_id='preserved'`.execute(
         db,
@@ -424,4 +454,21 @@ it('retains a bootstrap administrator session while excluding imported-owner aut
     claimPending: 1,
   });
   expect(await db.selectFrom('session').select('userId').execute()).toEqual([{ userId: administrator.id }]);
+});
+
+it('retains imported album grants while independently refusing changed permissions', async () => {
+  const { context, inventory, claimId } = await setup(true);
+  const writer = new CanonicalOwnerWriter(wrap(db), context);
+  for (const item of inventory) await writer.write(item.intent, item.credential);
+  const albumId = await new CanonicalAlbumWriter(wrap(db), context).write('album');
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  expect(await reconcileImportedOwners(wrap(db), context, inventory)).toMatchObject({ owners: 2 });
+  expect(await reconcileImportedAlbums(wrap(db), context)).toMatchObject({ albums: 1, grants: 2 });
+  await db
+    .updateTable('album_user')
+    .set({ role: AlbumUserRole.Editor })
+    .where('albumId', '=', albumId)
+    .where('userId', '=', claimId)
+    .execute();
+  await expect(reconcileImportedAlbums(wrap(db), context)).rejects.toThrow('ALBUM_RECONCILIATION_MISMATCH');
 });

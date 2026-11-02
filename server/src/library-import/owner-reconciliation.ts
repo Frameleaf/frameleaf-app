@@ -236,7 +236,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
           };
         })
         .sort((a, b) => a.id.localeCompare(b.id));
-      // Imported users have not yet been allowed to establish destination authentication or sharing.
+      // Imported users cannot establish authentication or partner sharing; albums have separate manifest reconciliation.
       const artifacts = await tx.query(
         `SELECT 1 FROM public.session WHERE "userId"=ANY($1::uuid[])
         UNION ALL SELECT 1 FROM public.api_key WHERE "userId"=ANY($1::uuid[])
@@ -244,7 +244,9 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
         UNION ALL SELECT 1 FROM public.frameleaf_session
         UNION ALL SELECT 1 FROM public.user_metadata WHERE "userId"=ANY($1::uuid[])
         UNION ALL SELECT 1 FROM public.user_preference_history WHERE "userId"=ANY($1::uuid[])
-        UNION ALL SELECT 1 FROM public.shared_link WHERE "userId"=ANY($1::uuid[]) LIMIT 1`,
+        UNION ALL SELECT 1 FROM public.shared_link WHERE "userId"=ANY($1::uuid[])
+        UNION ALL SELECT 1 FROM public.partner
+          WHERE "sharedById"=ANY($1::uuid[]) OR "sharedWithId"=ANY($1::uuid[]) LIMIT 1`,
         [ownerIds],
       );
       if (artifacts.length > 0) return refuse('OWNER_RECONCILIATION_MISMATCH');
