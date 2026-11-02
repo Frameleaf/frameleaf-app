@@ -486,18 +486,17 @@ describe('/search', () => {
   });
 
   describe('POST /search/random', () => {
-    beforeAll(async () => {
-      await Promise.all([
-        utils.createAsset(admin.accessToken),
-        utils.createAsset(admin.accessToken),
-        utils.createAsset(admin.accessToken),
-        utils.createAsset(admin.accessToken),
-        utils.createAsset(admin.accessToken),
-        utils.createAsset(admin.accessToken),
-      ]);
-
-      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
-    });
+    beforeAll(
+      withApiAssetReadiness(SEARCH_SETUP_TIMEOUT, async (signal) => {
+        const assets = await Promise.all(
+          Array.from({ length: 6 }, () => utils.createAsset(admin.accessToken, undefined, { signal })),
+        );
+        for (const asset of assets) {
+          await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
+        }
+      }),
+      SEARCH_SETUP_TIMEOUT + 5000,
+    );
 
     it.each(TEN_TIMES)('should return 1 random assets', async () => {
       const { status, body } = await request(app)
