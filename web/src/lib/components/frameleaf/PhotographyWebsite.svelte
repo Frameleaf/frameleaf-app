@@ -36,8 +36,11 @@
   import { Icon } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import {
+    mdiAlertCircleOutline,
     mdiArrowDown,
+    mdiArrowExpand,
     mdiArrowUp,
+    mdiCheckCircleOutline,
     mdiCellphone,
     mdiDragVertical,
     mdiLockOutline,
@@ -63,7 +66,8 @@
   let brand = $state<Brand | null>(null);
   let workflows = $state<Record<string, Workflow>>({});
   let phone = $state(false);
-  let busy = $state(false);
+  // Loading from the first render, so the did-not-load card never flashes before the first answer.
+  let busy = $state(true);
   let error = $state('');
   let message = $state('');
   let collectionId = $state<string | null>(null);
@@ -95,6 +99,42 @@
   const domainOk = $derived(!!draft && validDomain(draft.domain));
   const seo = $derived(draft ? seoPreview(draft, brand?.tagline || draft.about.slice(0, 160)) : null);
   const origin = typeof location === 'undefined' ? '' : location.origin;
+  /** Why Save is off, in words beside it (FL-1120): what to fix, or whether anything is unsaved. */
+  const saveState = $derived(
+    !draft || !stored || busy
+      ? null
+      : !slugOk
+        ? { tone: 'problem', text: $t('frameleaf_studio_site_save_fix_address') }
+        : !domainOk
+          ? { tone: 'problem', text: $t('frameleaf_studio_site_save_fix_domain') }
+          : dirty
+            ? { tone: 'dirty', text: $t('frameleaf_studio_site_unsaved') }
+            : { tone: 'saved', text: $t('frameleaf_studio_site_all_saved') },
+  );
+  let stage = $state<HTMLDivElement>();
+  const canFullScreen = typeof document !== 'undefined' && !!document.fullscreenEnabled;
+  /** The preview on its own, filling the screen; Esc brings the editor back. */
+  function fullScreen() {
+    // The wrapper fills the screen, so a Phone preview keeps its phone width inside it.
+    void stage?.requestFullscreen?.().catch(() => {});
+  }
+  /**
+   * "Use IMG_0412.jpg from Maya & Theo as cover (3 of 11)": the photograph, its shoot and its place,
+   * so two shoots with the same file name still give different buttons.
+   */
+  function coverLabel(item: SiteItem, index: number) {
+    const capture = captures.get(siteItemKey(item));
+    const name =
+      capture?.fileName ||
+      (capture
+        ? $t('frameleaf_studio_site_photo_number', { values: { number: capture.number } })
+        : $t('frameleaf_studio_site_photo_number', { values: { number: index + 1 } }));
+    const shoot = shoots.find((entry) => entry.id === item.shootId)?.name ?? '';
+    const values = { name, shoot, position: index + 1, total: items.length };
+    return shoot
+      ? $t('frameleaf_studio_site_use_photo_from_shoot_as_cover', { values })
+      : $t('frameleaf_studio_site_use_photo_as_cover', { values });
+  }
 
   function photo(item: SiteItem, alt: string): SitePhoto | null {
     const assetId = captures.get(siteItemKey(item))?.assetId;
@@ -295,6 +335,19 @@
       {#if stored?.site.enabled}<a class="fl-control" href={stored.url} target="_blank" rel="noopener"
           >{$t('frameleaf_photography_site_open')} ↗</a
         >{/if}
+      {#if saveState}
+        <span
+          class="sse-save-state"
+          class:is-problem={saveState.tone === 'problem'}
+          class:is-dirty={saveState.tone === 'dirty'}
+          data-testid="site-save-state"
+          ><Icon
+            icon={saveState.tone === 'problem' ? mdiAlertCircleOutline : mdiCheckCircleOutline}
+            size="14"
+            aria-hidden={true}
+          />{saveState.text}</span
+        >
+      {/if}
       <Button variant="primary" disabled={busy || !draft || !dirty || !slugOk || !domainOk} onclick={save}
         >{$t('frameleaf_photography_site_save')}</Button
       >
@@ -320,9 +373,18 @@
           <Button pressed={phone} label={$t('frameleaf_studio_site_phone')} onclick={() => (phone = true)}
             ><Icon icon={mdiCellphone} size="18" aria-hidden={true} /></Button
           >
+          {#if canFullScreen}
+            <Button onclick={fullScreen}
+              ><Icon icon={mdiArrowExpand} size="18" aria-hidden={true} />{$t(
+                'frameleaf_studio_site_full_screen',
+              )}</Button
+            >
+          {/if}
         </div>
-        <div class="sse-frame" class:is-phone={phone}>
-          <StudioSite site={preview} />
+        <div class="sse-fullscreen" bind:this={stage}>
+          <div class="sse-frame" class:is-phone={phone}>
+            <StudioSite site={preview} />
+          </div>
         </div>
       </section>
 
@@ -378,12 +440,12 @@
             <h2>{$t('frameleaf_studio_site_cover')}</h2>
             {#if items.length > 0}
               <div class="sse-cover-pick">
-                {#each items as item (siteItemKey(item))}
+                {#each items as item, index (siteItemKey(item))}
                   {@const assetId = captures.get(siteItemKey(item))?.assetId}
                   <button
                     type="button"
                     aria-pressed={!!draft.cover && siteItemKey(draft.cover) === siteItemKey(item)}
-                    aria-label={$t('frameleaf_studio_site_use_as_cover')}
+                    aria-label={coverLabel(item, index)}
                     onclick={() => (draft!.cover = item)}
                   >
                     {#if assetId}<img
@@ -502,6 +564,11 @@
                 <label class="sse-consent"
                   ><input type="checkbox" bind:checked={consent} />{$t('frameleaf_photography_site_consent')}</label
                 >
+                {#if !consent && pickable.length > 0}
+                  <p class="sse-help" role="note" data-testid="site-consent-reason">
+                    {$t('frameleaf_studio_site_consent_reason')}
+                  </p>
+                {/if}
                 <div class="sse-photo-pick">
                   {#each pickable as capture (capture.id)}
                     {@const item = { shootId: pickShoot, captureId: capture.id }}
@@ -579,7 +646,15 @@
                   aria-label={$t('frameleaf_studio_site_package_detail', { values: { number: index + 1 } })}
                   maxlength="400"
                   bind:value={item.detail}></textarea>
-                <Button variant="quiet" onclick={() => draft!.packages.splice(index, 1)}>{$t('remove')}</Button>
+                <Button
+                  variant="quiet"
+                  label={item.name.trim()
+                    ? $t('frameleaf_studio_site_remove_named', {
+                        values: { name: item.name.trim(), number: index + 1 },
+                      })
+                    : $t('frameleaf_studio_site_remove_service', { values: { number: index + 1 } })}
+                  onclick={() => draft!.packages.splice(index, 1)}>{$t('remove')}</Button
+                >
               </div>
             {/each}
             <div class="sse-row">
@@ -603,7 +678,15 @@
                   maxlength="80"
                   bind:value={item.name}
                 />
-                <Button variant="quiet" onclick={() => draft!.testimonials.splice(index, 1)}>{$t('remove')}</Button>
+                <Button
+                  variant="quiet"
+                  label={item.name.trim()
+                    ? $t('frameleaf_studio_site_remove_kind_words_from', {
+                        values: { name: item.name.trim(), number: index + 1 },
+                      })
+                    : $t('frameleaf_studio_site_remove_kind_words', { values: { number: index + 1 } })}
+                  onclick={() => draft!.testimonials.splice(index, 1)}>{$t('remove')}</Button
+                >
               </div>
             {/each}
             <div class="sse-row">
@@ -627,7 +710,11 @@
                   aria-label={$t('frameleaf_studio_site_answer', { values: { number: index + 1 } })}
                   maxlength="2000"
                   bind:value={item.a}></textarea>
-                <Button variant="quiet" onclick={() => draft!.faq.splice(index, 1)}>{$t('remove')}</Button>
+                <Button
+                  variant="quiet"
+                  label={$t('frameleaf_studio_site_remove_question', { values: { number: index + 1 } })}
+                  onclick={() => draft!.faq.splice(index, 1)}>{$t('remove')}</Button
+                >
               </div>
             {/each}
             {#if draft.template === 'commercial'}
@@ -729,9 +816,14 @@
       </aside>
     </div>
   {:else}
-    <p role="status">
-      {busy ? $t('frameleaf_photography_site_loading') : $t('frameleaf_photography_reload_to_retry')}
-    </p>
-    {#if !busy}<Button onclick={reload}>{$t('frameleaf_photography_reload')}</Button>{/if}
+    {#if busy}
+      <p role="status">{$t('frameleaf_photography_site_loading')}</p>
+    {:else}
+      <div class="sse-state" role="status">
+        <strong>{$t('frameleaf_studio_site_load_failed')}</strong>
+        <p>{$t('frameleaf_studio_site_load_failed_body')}</p>
+        <Button onclick={reload}>{$t('frameleaf_studio_site_try_again')}</Button>
+      </div>
+    {/if}
   {/if}
 </div>

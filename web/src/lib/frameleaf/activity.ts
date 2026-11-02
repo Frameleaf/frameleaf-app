@@ -210,6 +210,8 @@ export type ActivityItem = {
   estimateSeconds?: number;
   /** Studio rates come only from durable worker frame samples; never infer them from a percentage. */
   renderProgress?: NonNullable<MediaOperationDto['renderProgress']>;
+  /** When a worker started the Studio render; queue time before it is not work, so it is never counted. */
+  renderStartedAt?: number;
   finishedAt?: number;
   /** The server's estimate of the output size, in bytes, when it has one (prototype "Done · 12 MB"). */
   sizeBytes?: number;
@@ -608,6 +610,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
       },
       estimateSeconds: undefined,
       finishedAt: operation.finishedAt ? Date.parse(operation.finishedAt) : undefined,
+      renderStartedAt: operation.startedAt ? Date.parse(operation.startedAt) : undefined,
     }),
     ...((operation.encryptedWithOlderKey ?? 0) > 0 && { encryptedWithOlderKey: operation.encryptedWithOlderKey! }),
     ...(CLOUD_WORK_KINDS.has(operation.kind) && { cloudWork: true }),
@@ -1020,6 +1023,9 @@ export const activityStatusText = (
     | 'estimateSeconds'
     | 'sizeBytes'
     | 'renderProgress'
+    | 'renderStartedAt'
+    | 'finishedAt'
+    | 'failed'
   >,
   {
     translate,
@@ -1040,8 +1046,25 @@ export const activityStatusText = (
   const status = translate(item.statusKey);
   const progress = item.progress === null ? null : Math.round(item.progress);
   if (item.finished) {
+    // A finished Studio export says its outcome and how long the render took, nothing more (FL-1120).
+    const took =
+      item.renderProgress && item.renderStartedAt !== undefined && item.finishedAt !== undefined
+        ? Math.max(0, (item.finishedAt - item.renderStartedAt) / 1000)
+        : null;
+    if (took !== null && item.failed) {
+      return translate('frameleaf_activity_render_failed_after', { values: { time: formatDuration(took) } });
+    }
+    const outcome =
+      took !== null && item.statusKey === 'frameleaf_activity_status_completed'
+        ? translate('frameleaf_activity_render_done_in', { values: { time: formatDuration(took) } })
+        : status;
     if (item.statusKey === 'frameleaf_activity_status_completed' && item.sizeBytes && formatSize) {
-      return translate('frameleaf_activity_status_done_size', { values: { status, size: formatSize(item.sizeBytes) } });
+      return translate('frameleaf_activity_status_done_size', {
+        values: { status: outcome, size: formatSize(item.sizeBytes) },
+      });
+    }
+    if (took !== null && item.statusKey === 'frameleaf_activity_status_completed') {
+      return outcome;
     }
     return item.statusKey === 'frameleaf_activity_status_cancelled' && progress !== null && progress < 100
       ? translate('frameleaf_activity_status_at', { values: { status, progress } })

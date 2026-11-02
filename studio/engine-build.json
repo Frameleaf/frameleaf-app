@@ -824,7 +824,12 @@
       "path": "patches/0178-voice-over-music.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4485989cd6d6b847c876b7b9e4160410b0bfd9a88594b97c76c4b27830fc3c71"
+    },
+    {
+      "path": "patches/0179-studio-ui-audit-copy-and-panel-placement.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6aadb42629fc50693abb8d2b3af92cd1c5a326adb510530ec0cba13b7a1ebdfe"
     }
   ],
-  "sourceSha256": "253ed9a82591ab9c2aa765c387036438fcce858052fb9f88430aad2da69ee3d3"
+  "sourceSha256": "be812d0bab9c29042c3a611e4d67894ceb5862825fec3688379df9e7a72ab402"
 }

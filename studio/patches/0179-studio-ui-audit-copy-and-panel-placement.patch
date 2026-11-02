@@ -1,0 +1,676 @@
+diff --git a/src/config/hotkeys.ts b/src/config/hotkeys.ts
+index 9114762..7327251 100644
+--- a/src/config/hotkeys.ts
++++ b/src/config/hotkeys.ts
+@@ -305,8 +305,8 @@ export const HOTKEY_DESCRIPTIONS: Record<HotkeyKey, string> = {
+   FREEZE_FRAME: "Insert freeze frame at playhead",
+   TRIM_BEFORE_PLAYHEAD: "Remove before playhead",
+   TRIM_AFTER_PLAYHEAD: "Remove after playhead",
+-  RIPPLE_TRIM_BEFORE_PLAYHEAD: "Ripple remove before playhead",
+-  RIPPLE_TRIM_AFTER_PLAYHEAD: "Ripple remove after playhead",
++  RIPPLE_TRIM_BEFORE_PLAYHEAD: "Remove before and close the gap",
++  RIPPLE_TRIM_AFTER_PLAYHEAD: "Remove after and close the gap",
+ 
+   LINK_AUDIO_VIDEO: "Link selected clips",
+   UNLINK_AUDIO_VIDEO: "Unlink selected clips",
+diff --git a/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx b/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
+index 58f49f0..a45f353 100644
+--- a/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
++++ b/src/features/editor/components/properties-sidebar/caption-quality-panel.tsx
+@@ -1,4 +1,4 @@
+-import { useMemo } from 'react'
++import { useEffect, useMemo, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import { ListChecks } from 'lucide-react'
+ import {
+@@ -12,8 +12,32 @@ import { usePlaybackStore } from '@/shared/state/playback'
+ import { PropertySection } from './components'
+ import { reviewCaptionQuality } from '../../utils/caption-quality'
+ 
++/**
++ * Choosing a warning selects its clip, and the inspector remounts for the new selection. This
++ * carries the open review across that remount so the next warning is one click away.
++ */
++let keepOpenOnNextMount = false
++
+ export function CaptionQualityPanel() {
+   const { t, i18n } = useTranslation()
++  const [openOnMount] = useState(() => {
++    const open = keepOpenOnNextMount
++    keepOpenOnNextMount = false
++    return open
++  })
++  // The panel that mounts for the new selection reads the flag while rendering; afterwards this
++  // one clears it, whether it was replaced (cleanup) or stayed (the choice effect), so nothing
++  // mounted later inherits it.
++  const [choices, setChoices] = useState(0)
++  useEffect(() => {
++    keepOpenOnNextMount = false
++  }, [choices])
++  useEffect(
++    () => () => {
++      keepOpenOnNextMount = false
++    },
++    [],
++  )
+   const items = useItemsStore((state) => state.items)
+   const tracks = useItemsStore((state) => state.tracks)
+   const timelineFps = useTimelineStore((state) => state.fps)
+@@ -32,6 +56,16 @@ export function CaptionQualityPanel() {
+       0,
+     )
+   const warnings = useMemo(() => reviewCaptionQuality(items, fps, duration), [items, fps, duration])
++  const hasCaptions = useMemo(
++    () =>
++      items.some(
++        (item) =>
++          item.type === 'subtitle' ||
++          (item.type === 'text' && item.textRole === 'caption') ||
++          ((item.type === 'video' || item.type === 'audio') && item.transcriptCaptions?.enabled),
++      ),
++    [items],
++  )
+   const locale = i18n.resolvedLanguage ?? i18n.language ?? 'en'
+   const names = useMemo(() => {
+     try {
+@@ -54,11 +88,16 @@ export function CaptionQualityPanel() {
+       return code
+     }
+   }
++  if (!hasCaptions) return null
+   return (
+     <PropertySection
+-      title={t('captionQuality.title', { count: warnings.length })}
++      title={
++        warnings.length > 0
++          ? t('captionQuality.titleCount', { count: warnings.length })
++          : t('captionQuality.title')
++      }
+       icon={ListChecks}
+-      defaultOpen={false}
++      defaultOpen={openOnMount}
+     >
+       <section
+         aria-label={t('captionQuality.label')}
+@@ -83,6 +122,8 @@ export function CaptionQualityPanel() {
+                   className="w-full rounded border border-border p-2 text-left hover:bg-secondary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                   aria-label={label}
+                   onClick={() => {
++                    keepOpenOnNextMount = true
++                    setChoices((count) => count + 1)
+                     useSelectionStore.getState().selectItems([warning.itemId])
+                     const item = useItemsStore.getState().itemById[warning.itemId]
+                     const seconds = Number.isFinite(warning.startSeconds)
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+index 9a1b49c..4461be2 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -40,6 +40,8 @@ import type { TimelineState, TimelineActions } from '@/features/editor/deps/time
+ import type { TransformProperties } from '@/types/transform'
+ import type { TimelineItem, VideoItem, CompositionItem } from '@/types/timeline'
+ import { StabiliseSection } from './stabilise-section'
++import { CaptionQualityPanel } from '../caption-quality-panel'
++import { VoiceMusicPanel } from '../voice-music-panel'
+ import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ 
+@@ -535,7 +537,14 @@ const ClipPanelCore = memo(function ClipPanelCore({
+   // tab id for its full authoring library, preserving inspector state while the
+   // user-facing concepts remain distinct.
+   const showVideoTab = layoutFillItems.length > 0
+-  const showAudioTab = hasAudioItems
++  const hasCaptionSelection = selectedItems.some(
++    (item: TimelineItem) =>
++      item.type === 'subtitle' ||
++      (item.type === 'text' && item.textRole === 'caption') ||
++      ((item.type === 'video' || item.type === 'audio') && !!item.transcriptCaptions?.enabled),
++  )
++  // A nested composition can carry the voice or the music, so it also opens Audio for Voice over music.
++  const showAudioTab = hasAudioItems || hasCompositionItems
+   const showFullMotionLibrary = workspace === 'motion' && hasVisualItems
+   const showMotionTab = hasVisualItems
+   const showSecondTab = showAudioTab
+@@ -629,12 +638,19 @@ const ClipPanelCore = memo(function ClipPanelCore({
+   const motionUsesFullHeight = activeTab === 'motion' && showFullMotionLibrary
+ 
+   return (
+-    <div className={cn(motionUsesFullHeight ? 'h-full min-h-0' : 'space-y-3')}>
++    <div className={cn(motionUsesFullHeight ? 'flex h-full min-h-0 flex-col gap-3' : 'space-y-3')}>
++      {/* Caption quality belongs with captions of every kind: subtitles, caption text and
++          transcript captions on video or audio clips. */}
++      {hasCaptionSelection && (
++        <div className={cn(motionUsesFullHeight && 'shrink-0')}>
++          <CaptionQualityPanel />
++        </div>
++      )}
+       {/* Tabbed sections */}
+       <Tabs
+         value={activeTab}
+         onValueChange={handleTabChange}
+-        className={cn('w-full', motionUsesFullHeight && 'flex h-full min-h-0 flex-col')}
++        className={cn('w-full', motionUsesFullHeight && 'flex min-h-0 flex-1 flex-col')}
+       >
+         <TabsList className={cn('grid h-8 w-full shrink-0', tabGridColsClass)}>
+           {availableTabs.map((value) => {
+@@ -738,6 +754,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+               <LazyAudioSection items={audioPanelItems} />
+             </Suspense>
+           )}
++
+         </TabsContent>
+ 
+         {/* Effects Tab - clip effects plus text styling and animation */}
+@@ -764,6 +781,11 @@ const ClipPanelCore = memo(function ClipPanelCore({
+           )}
+         </TabsContent>
+       </Tabs>
++      {/* Mounted beside the tabs, not inside one, so the chosen tracks, the reviewed mix and a
++          running audition survive a look at another tab. */}
++      <div hidden={!showAudioTab || activeTab !== 'audio'} data-testid="voice-music-host">
++        <VoiceMusicPanel />
++      </div>
+     </div>
+   )
+ })
+diff --git a/src/features/editor/components/properties-sidebar/index.tsx b/src/features/editor/components/properties-sidebar/index.tsx
+index 07c18dd..fde00b8 100644
+--- a/src/features/editor/components/properties-sidebar/index.tsx
++++ b/src/features/editor/components/properties-sidebar/index.tsx
+@@ -24,7 +24,6 @@ import { useSelectionStore } from '@/shared/state/selection'
+ import type { TimelineItem } from '@/types/timeline'
+ import { CanvasPanel } from './canvas-panel'
+ import { CaptionQualityPanel } from './caption-quality-panel'
+-import { VoiceMusicPanel } from './voice-music-panel'
+ import { useSettingsStore } from '@/features/editor/deps/settings'
+ import {
+   EDITOR_LAYOUT_CSS_VALUES,
+@@ -343,8 +342,6 @@ export const PropertiesSidebar = memo(function PropertiesSidebar() {
+                   : 'flex-1 overflow-y-auto overflow-x-hidden p-3 [scrollbar-gutter:stable]'
+               }
+             >
+-              <CaptionQualityPanel />
+-              <VoiceMusicPanel />
+               {selectedTransitionId ? (
+                 <Suspense fallback={null}>
+                   <LazyTransitionPanel />
+@@ -373,7 +370,10 @@ export const PropertiesSidebar = memo(function PropertiesSidebar() {
+                     </Suspense>
+                   </div>
+                   {!hasClipSelection && (
+-                    <div>
++                    <div className="space-y-3">
++                      {/* With nothing selected, the film's caption warnings stay reachable; the
++                          panel hides itself when the film has no captions. */}
++                      <CaptionQualityPanel />
+                       <CanvasPanel />
+                     </div>
+                   )}
+diff --git a/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx b/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx
+index 788b72f..12d3a4a 100644
+--- a/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx
++++ b/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx
+@@ -27,7 +27,7 @@ vi.mock('@/features/editor/deps/timeline-store', () => ({
+ 
+ const open = () => {
+   const result = render(<ChapterExport />)
+-  fireEvent.click(screen.getByRole('button', { name: 'Export YouTube chapters' }))
++  fireEvent.click(screen.getByRole('button', { name: 'Export chapters' }))
+   return result
+ }
+ 
+@@ -73,7 +73,7 @@ describe('chapter export controls', () => {
+     state.compositions.compositionById.sequence = { fps: 60, durationInFrames: 1800 }
+     open()
+     expect(
+-      screen.getByText('Chapter 1 must last at least ten seconds, including the final chapter.'),
++      screen.getByText('Chapter 1 is shorter than 10 seconds. YouTube needs every chapter, including the last, to be at least 10 seconds long.'),
+     ).toBeInTheDocument()
+     expect(screen.getByRole('button', { name: 'Copy text' })).toBeDisabled()
+   })
+@@ -81,7 +81,7 @@ describe('chapter export controls', () => {
+     vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error('denied'))
+     open()
+     fireEvent.click(screen.getByRole('button', { name: 'Copy text' }))
+-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Could not copy.'))
++    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent("Couldn't copy."))
+     expect(screen.getByRole('textbox')).toBeInTheDocument()
+   })
+   it('downloads a local UTF-8 text blob and releases its URL', () => {
+@@ -111,7 +111,7 @@ describe('chapter export controls', () => {
+     })
+     open()
+     fireEvent.click(screen.getByRole('button', { name: 'Download text' }))
+-    expect(screen.getByRole('status')).toHaveTextContent('Could not start the download.')
++    expect(screen.getByRole('status')).toHaveTextContent("Couldn't start the download.")
+     expect(screen.getByRole('button', { name: 'Copy text' })).toBeEnabled()
+   })
+ })
+diff --git a/src/features/editor/components/properties-sidebar/voice-music-panel.tsx b/src/features/editor/components/properties-sidebar/voice-music-panel.tsx
+index 7cad202..bc5585c 100644
+--- a/src/features/editor/components/properties-sidebar/voice-music-panel.tsx
++++ b/src/features/editor/components/properties-sidebar/voice-music-panel.tsx
+@@ -47,6 +47,7 @@ export function VoiceMusicPanel() {
+   })
+   const [plan, setPlan] = useState<VoiceMixPlan | null>(null)
+   const [busy, setBusy] = useState(false)
++  const [advanced, setAdvanced] = useState(false)
+   const [feedback, setFeedback] = useState('')
+   const controller = useRef<AbortController | null>(null)
+   const sound = useRef<AudioBufferSourceNode | null>(null)
+@@ -162,6 +163,14 @@ export function VoiceMusicPanel() {
+               ))}
+           </fieldset>
+         ))}
++        {/* Loudness and timing are for the occasional fix; most mixes never open this. */}
++        <details
++          className="space-y-2"
++          open={advanced}
++          onToggle={(event) => setAdvanced(event.currentTarget.open)}
++        >
++          <summary className="cursor-pointer font-medium">{t('voiceMix.advanced')}</summary>
++          <div className="space-y-3 pt-2">
+         {(
+           [
+             { key: 'targetLufs', min: -36, max: -6, step: 1 },
+@@ -179,29 +188,42 @@ export function VoiceMusicPanel() {
+               onChange={(event) =>
+                 update({ [key]: event.target.value === '' ? NaN : Number(event.target.value) })
+               }
+-              className="w-20 rounded border p-1 bg-background"
++              className="w-24 rounded border px-3 py-1 bg-background"
+             />
+           </label>
+         ))}
++          </div>
++        </details>
+         {plan && (
+           <div className="space-y-2" aria-label={t('voiceMix.review')}>
+             <p>
+-              {t('voiceMix.duckChange', {
+-                db: settings.duckDb,
+-                attack: settings.attackSec,
+-                release: settings.releaseSec,
+-              })}
++              {advanced
++                ? t('voiceMix.duckChange', {
++                    db: settings.duckDb,
++                    attack: settings.attackSec,
++                    release: settings.releaseSec,
++                  })
++                : t('voiceMix.duckChangeBasic', { db: Math.abs(settings.duckDb) })}
+             </p>
+             <ul>
+               {plan.changes.map((change) => (
+                 <li key={change.id}>
+-                  {t('voiceMix.change', {
+-                    label: change.label,
+-                    lufs: change.measuredLufs.toFixed(1),
+-                    before: change.beforeGain.toFixed(1),
+-                    after: change.afterGain.toFixed(1),
+-                    gain: change.gainDb.toFixed(1),
+-                  })}
++                  {advanced
++                    ? t('voiceMix.change', {
++                        label: change.label,
++                        lufs: change.measuredLufs.toFixed(1),
++                        before: change.beforeGain.toFixed(1),
++                        after: change.afterGain.toFixed(1),
++                        gain: change.gainDb.toFixed(1),
++                      })
++                    : t(
++                        Math.abs(change.gainDb) < 0.05
++                          ? 'voiceMix.changeSame'
++                          : change.gainDb > 0
++                            ? 'voiceMix.changeLouder'
++                            : 'voiceMix.changeQuieter',
++                        { label: change.label, gain: Math.abs(change.gainDb).toFixed(1) },
++                      )}
+                 </li>
+               ))}
+             </ul>
+diff --git a/src/features/timeline/components/timeline-item/item-context-menu.tsx b/src/features/timeline/components/timeline-item/item-context-menu.tsx
+index 9e6c5ad..31127cf 100644
+--- a/src/features/timeline/components/timeline-item/item-context-menu.tsx
++++ b/src/features/timeline/components/timeline-item/item-context-menu.tsx
+@@ -724,6 +724,15 @@ function PlayheadTrimActions({ t, hotkeys }: ItemContextMenuSectionProps) {
+   )
+   return (
+     <>
++      {!enabled && (
++        <div
++          role="note"
++          className="px-2 py-1.5 text-xs text-muted-foreground"
++          data-testid="trim-to-playhead-off-reason"
++        >
++          {t('trimToPlayhead.offReason')}
++        </div>
++      )}
+       <ContextMenuItem
+         disabled={!enabled}
+         onSelect={() => trimSelectedToPlayhead(ids, frame, 'start', false)}
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 4f34d7a..92eeb1b 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -2,8 +2,9 @@
+   "trimToPlayhead": {
+     "before": "Remove before playhead",
+     "after": "Remove after playhead",
+-    "rippleBefore": "Ripple remove before playhead",
+-    "rippleAfter": "Ripple remove after playhead"
++    "rippleBefore": "Remove before and close the gap",
++    "rippleAfter": "Remove after and close the gap",
++    "offReason": "Move the playhead over this clip to split or trim it."
+   },
+   "appShell": {
+     "newVersionAvailable": "A new version is available. Save your work and reload.",
+diff --git a/src/i18n/locales/partials/de/caption-quality.json b/src/i18n/locales/partials/de/caption-quality.json
+index 4a27eac..bca747f 100644
+--- a/src/i18n/locales/partials/de/caption-quality.json
++++ b/src/i18n/locales/partials/de/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "Untertitelqualität ({{count}})",
++    "title": "Untertitelqualität",
++    "titleCount": "Untertitelqualität ({{count}})",
+     "label": "Hinweise zur Untertitelqualität",
+     "note": "Nur Hinweise. Prüfe die Untertitel der aktiven Sequenz; Export und Untertitel bleiben unverändert.",
+     "clear": "Keine Qualitätshinweise.",
+diff --git a/src/i18n/locales/partials/en/caption-quality.json b/src/i18n/locales/partials/en/caption-quality.json
+index ce35a0e..46872cd 100644
+--- a/src/i18n/locales/partials/en/caption-quality.json
++++ b/src/i18n/locales/partials/en/caption-quality.json
+@@ -1,15 +1,16 @@
+ {
+   "captionQuality": {
+-    "title": "Caption quality ({{count}})",
++    "title": "Caption quality",
++    "titleCount": "Caption quality ({{count}})",
+     "label": "Caption quality warnings",
+-    "note": "Advisory only. Review cues in the active sequence; export and captions remain unchanged.",
++    "note": "These lines may be hard to read. Choose one to go to it; nothing is changed for you.",
+     "clear": "No caption quality warnings.",
+     "original": "Original",
+     "unknownTime": "Unknown time",
+-    "speed": "Over 20 characters per second",
++    "speed": "Too fast to read (over 20 characters a second)",
+     "lines": "More than two lines",
+-    "overlap": "Overlapping cues on this track",
+-    "bounds": "Outside sequence bounds",
+-    "timing": "Invalid or zero duration"
++    "overlap": "Overlaps another caption on this track",
++    "bounds": "Starts before the film or runs past its end",
++    "timing": "Has no time on screen"
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/chapter-export.json b/src/i18n/locales/partials/en/chapter-export.json
+index cbc657a..2e6dccd 100644
+--- a/src/i18n/locales/partials/en/chapter-export.json
++++ b/src/i18n/locales/partials/en/chapter-export.json
+@@ -1,21 +1,21 @@
+ {
+   "chapterExport": {
+-    "title": "Export YouTube chapters",
+-    "description": "Preview chapter text from the active sequence’s named markers. Times use whole seconds rounded down. Copy or download locally; nothing is uploaded or changed.",
++    "title": "Export chapters",
++    "description": "Paste this into your YouTube video's description to split it into chapters. Times are rounded down to the second. Nothing is uploaded.",
+     "validation": "Chapter validation",
+     "preview": "Chapter text preview",
+     "copy": "Copy text",
+     "download": "Download text",
+     "copied": "Chapter text copied.",
+-    "copyFailed": "Could not copy. Select the preview text and copy it manually, or download the text.",
++    "copyFailed": "Couldn't copy. Select the text and copy it yourself, or download it.",
+     "downloadStarted": "Download requested. Check your browser’s downloads.",
+-    "downloadFailed": "Could not start the download. Copy the preview text instead.",
+-    "invalidSequence": "The active sequence needs a valid positive frame rate and duration before exporting chapters.",
++    "downloadFailed": "Couldn't start the download. Copy the text instead.",
++    "invalidSequence": "This film needs a length and frame rate before you can export chapters.",
+     "tooFew": "Add at least three named chapter markers.",
+-    "firstZero": "The first marker must be at frame zero (00:00). Authored markers have not been moved.",
++    "firstZero": "The first chapter has to start at 00:00. Add a marker at the very start of the film.",
+     "blankName": "Marker {{index}} needs a chapter name.",
+-    "outOfBounds": "Marker {{index}} has an invalid frame or is outside the sequence.",
+-    "duplicateSecond": "Marker {{index}} shares a whole-second timestamp with another marker.",
+-    "shortInterval": "Chapter {{index}} must last at least ten seconds, including the final chapter."
++    "outOfBounds": "Marker {{index}} is outside the film.",
++    "duplicateSecond": "Marker {{index}} is in the same second as the one before it. Move one of them.",
++    "shortInterval": "Chapter {{index}} is shorter than 10 seconds. YouTube needs every chapter, including the last, to be at least 10 seconds long."
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/voice-music.json b/src/i18n/locales/partials/en/voice-music.json
+index 905db62..3317c7c 100644
+--- a/src/i18n/locales/partials/en/voice-music.json
++++ b/src/i18n/locales/partials/en/voice-music.json
+@@ -1,36 +1,41 @@
+ {
+   "voiceMix": {
+     "title": "Voice over music",
+-    "note": "Choose dialogue and music tracks, review loudness matches and audition before applying. Existing master and limiter settings stay unchanged.",
+-    "dialogueTrackIds": "Dialogue tracks",
++    "note": "Choose your voice and music tracks, check what will change, then listen before you apply. Your master volume and limiter stay as they are.",
++    "dialogueTrackIds": "Voice tracks",
+     "musicTrackIds": "Music tracks",
+-    "targetLufs": "Dialogue target (LUFS)",
+-    "duckDb": "Music ducking (dB)",
+-    "attackSec": "Attack (seconds)",
+-    "releaseSec": "Release (seconds)",
++    "targetLufs": "Voice loudness (LUFS)",
++    "duckDb": "Music level while someone speaks (dB, below 0)",
++    "attackSec": "Fade down (s)",
++    "releaseSec": "Fade back up (s)",
+     "review": "Review mix",
+-    "audition": "Audition 15 seconds",
+-    "apply": "Apply reviewed mix",
+-    "cancel": "Cancel audition",
+-    "preserved": "Clip gains, fades and keyframes stay unchanged. Dialogue EQ output trim is adjusted; authored ducking is replaced only on reviewed dialogue items.",
++    "audition": "Listen to 15 seconds",
++    "apply": "Apply",
++    "cancel": "Stop listening",
++    "preserved": "Clip volumes, fades and keyframes stay as they are. Any ducking already set on the voice clips, including which tracks it lowers, is replaced by this mix.",
+     "duckChange": "Music attenuation: {{db}} dB; attack {{attack}} s, release {{release}} s.",
+     "change": "{{label}}: {{lufs}} LUFS; output trim {{before}} → {{after}} dB (change {{gain}} dB).",
+-    "preparing": "Rendering audition from the playhead…",
+-    "playing": "Playing reviewed mix.",
+-    "finished": "Audition finished.",
+-    "cancelled": "Audition cancelled. Timeline unchanged.",
+-    "applied": "Mix applied as one undoable edit.",
+-    "selectTracks": "Choose at least one dialogue track and one music track.",
+-    "separateTracks": "Dialogue and music must use separate audible sources.",
++    "preparing": "Getting 15 seconds ready from the playhead…",
++    "playing": "Playing the new mix.",
++    "finished": "Finished playing.",
++    "cancelled": "Stopped. Nothing on the timeline changed.",
++    "applied": "Mix applied. You can undo it in one step.",
++    "selectTracks": "Choose at least one voice track and one music track.",
++    "separateTracks": "Voice and music need different tracks, and the same clip can't be on both.",
+     "invalidSettings": "Use valid ducking, loudness and timing settings.",
+     "inaudible": "A selected source is muted, hidden or excluded by solo. Review track audibility first.",
+     "locked": "A selected source or linked companion is locked.",
+     "noAudio": "No audible source could be rendered on a selected track.",
+     "outputGain": "Enable dialogue EQ output and remove output-trim animation before matching. Other authored EQ stays unchanged.",
+     "silent": "Dialogue is silent or too short to measure.",
+-    "stale": "The sequence changed. Review the mix again.",
++    "stale": "The film changed. Review the mix again.",
+     "failed": "Could not prepare this mix. Check source availability and try again.",
+     "solo": "Turn off solo before reviewing this mix.",
+-    "range": "Audition plays up to 15 seconds from the playhead, not the whole sequence."
++    "range": "Listen plays up to 15 seconds from the playhead, not the whole film.",
++    "advanced": "Advanced",
++    "duckChangeBasic": "Music · drops {{db}} dB while someone speaks",
++    "changeLouder": "{{label}} · {{gain}} dB louder",
++    "changeQuieter": "{{label}} · {{gain}} dB quieter",
++    "changeSame": "{{label}} · no change"
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/caption-quality.json b/src/i18n/locales/partials/es/caption-quality.json
+index 19032b5..0ff7207 100644
+--- a/src/i18n/locales/partials/es/caption-quality.json
++++ b/src/i18n/locales/partials/es/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "Calidad de subtítulos ({{count}})",
++    "title": "Calidad de subtítulos",
++    "titleCount": "Calidad de subtítulos ({{count}})",
+     "label": "Avisos de calidad de subtítulos",
+     "note": "Solo orientativo. Revisa los subtítulos de la secuencia activa; la exportación y los subtítulos no cambian.",
+     "clear": "Sin avisos de calidad.",
+diff --git a/src/i18n/locales/partials/fr/caption-quality.json b/src/i18n/locales/partials/fr/caption-quality.json
+index 147c516..9fe34e0 100644
+--- a/src/i18n/locales/partials/fr/caption-quality.json
++++ b/src/i18n/locales/partials/fr/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "Qualité des sous-titres ({{count}})",
++    "title": "Qualité des sous-titres",
++    "titleCount": "Qualité des sous-titres ({{count}})",
+     "label": "Avertissements des sous-titres",
+     "note": "À titre indicatif. Vérifiez les répliques de la séquence active ; les sous-titres et l’export restent inchangés.",
+     "clear": "Aucun avertissement.",
+diff --git a/src/i18n/locales/partials/ja/caption-quality.json b/src/i18n/locales/partials/ja/caption-quality.json
+index 7175d28..b054045 100644
+--- a/src/i18n/locales/partials/ja/caption-quality.json
++++ b/src/i18n/locales/partials/ja/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "字幕の品質（{{count}}）",
++    "title": "字幕の品質",
++    "titleCount": "字幕の品質（{{count}}）",
+     "label": "字幕の品質に関する警告",
+     "note": "参考情報です。現在のシーケンスの字幕を確認します。書き出しや字幕は変更されません。",
+     "clear": "字幕の品質に関する警告はありません。",
+diff --git a/src/i18n/locales/partials/ko/caption-quality.json b/src/i18n/locales/partials/ko/caption-quality.json
+index b37871d..04cebcb 100644
+--- a/src/i18n/locales/partials/ko/caption-quality.json
++++ b/src/i18n/locales/partials/ko/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "자막 품질 ({{count}})",
++    "title": "자막 품질",
++    "titleCount": "자막 품질 ({{count}})",
+     "label": "자막 품질 경고",
+     "note": "참고용입니다. 현재 시퀀스의 자막을 검토하세요. 내보내기와 자막은 변경되지 않습니다.",
+     "clear": "자막 품질 경고가 없습니다.",
+diff --git a/src/i18n/locales/partials/pt-BR/caption-quality.json b/src/i18n/locales/partials/pt-BR/caption-quality.json
+index dadc73d..36fabe6 100644
+--- a/src/i18n/locales/partials/pt-BR/caption-quality.json
++++ b/src/i18n/locales/partials/pt-BR/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "Qualidade das legendas ({{count}})",
++    "title": "Qualidade das legendas",
++    "titleCount": "Qualidade das legendas ({{count}})",
+     "label": "Avisos de qualidade das legendas",
+     "note": "Apenas orientativo. Revise as legendas da sequência ativa; a exportação e as legendas permanecem inalteradas.",
+     "clear": "Nenhum aviso de qualidade.",
+diff --git a/src/i18n/locales/partials/tr/caption-quality.json b/src/i18n/locales/partials/tr/caption-quality.json
+index bb8f233..1ba320f 100644
+--- a/src/i18n/locales/partials/tr/caption-quality.json
++++ b/src/i18n/locales/partials/tr/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "Altyazı kalitesi ({{count}})",
++    "title": "Altyazı kalitesi",
++    "titleCount": "Altyazı kalitesi ({{count}})",
+     "label": "Altyazı kalitesi uyarıları",
+     "note": "Yalnızca öneri niteliğindedir. Etkin dizinin altyazılarını inceleyin; dışa aktarma ve altyazılar değişmez.",
+     "clear": "Altyazı kalitesi uyarısı yok.",
+diff --git a/src/i18n/locales/partials/zh/caption-quality.json b/src/i18n/locales/partials/zh/caption-quality.json
+index c7c6963..c150d55 100644
+--- a/src/i18n/locales/partials/zh/caption-quality.json
++++ b/src/i18n/locales/partials/zh/caption-quality.json
+@@ -1,6 +1,7 @@
+ {
+   "captionQuality": {
+-    "title": "字幕质量（{{count}}）",
++    "title": "字幕质量",
++    "titleCount": "字幕质量（{{count}}）",
+     "label": "字幕质量警告",
+     "note": "仅供参考。检查当前序列的字幕，不会更改导出或字幕。",
+     "clear": "没有字幕质量警告。",
+diff --git a/src/test/caption-quality.test.tsx b/src/test/caption-quality.test.tsx
+index 1d37b09..d1d7ce7 100644
+--- a/src/test/caption-quality.test.tsx
++++ b/src/test/caption-quality.test.tsx
+@@ -254,7 +254,7 @@ it('uses the active sequence rate for reading speed, cue offsets and seeking ind
+   const ui = render(<CaptionQualityPanel />)
+   fireEvent.click(ui.getByRole('button', { name: 'Caption quality (2)' }))
+   expect(
+-    ui.getByRole('button', { name: /Original · 0:01.00 · Over 20 characters per second/ }),
++    ui.getByRole('button', { name: /Original · 0:01.00 · Too fast to read \(over 20 characters a second\)/ }),
+   ).toBeInTheDocument()
+   fireEvent.click(ui.getByRole('button', { name: /Original · 0:03.00 · More than two lines/ }))
+   expect(useSelectionStore.getState().selectedItemIds).toEqual(['nested-caption'])
+@@ -286,3 +286,29 @@ it.each([
+   expect(warning.textContent).toContain(label)
+   expect(warning.textContent).not.toContain('−0:00.00')
+ })
++
++it('hides caption quality when the film has no captions', () => {
++  useItemsStore.getState().setItems([])
++  const ui = render(<CaptionQualityPanel />)
++  expect(ui.queryByRole('button', { name: /Caption quality/ })).not.toBeInTheDocument()
++})
++
++it('keeps the review open when choosing a warning remounts the inspector', () => {
++  const item = segment({ cues: [cue('fast', 1, 2, 'x'.repeat(60))] })
++  useItemsStore.getState().setItems([item])
++  useTimelineSettingsStore.getState().setFps(30)
++  // The inspector is keyed by selection, so the panel mounts again for the chosen clip.
++  function Keyed() {
++    const ids = useSelectionStore((state) => state.selectedItemIds)
++    return <CaptionQualityPanel key={ids.join(',')} />
++  }
++  const ui = render(<Keyed />)
++  fireEvent.click(ui.getByRole('button', { name: /Caption quality/ }))
++  fireEvent.click(ui.getAllByRole('button').find((button) => button.getAttribute('aria-label'))!)
++  expect(useSelectionStore.getState().selectedItemIds).toEqual([item.id])
++  expect(ui.getByTestId('caption-quality-panel')).toBeInTheDocument()
++  cleanup()
++  // A panel mounted later starts closed again.
++  const later = render(<CaptionQualityPanel />)
++  expect(later.queryByTestId('caption-quality-panel')).not.toBeInTheDocument()
++})
+diff --git a/src/test/voice-music-mix.test.tsx b/src/test/voice-music-mix.test.tsx
+index 16e2098..3423a3a 100644
+--- a/src/test/voice-music-mix.test.tsx
++++ b/src/test/voice-music-mix.test.tsx
+@@ -251,20 +251,26 @@ it('reviews and cancels real audition playback without mutating graph/history',
+   const ui = render(<VoiceMusicPanel />)
+   fireEvent.click(ui.getByRole('button', { name: 'Voice over music' }))
+   fireEvent.click(
+-    within(ui.getByRole('group', { name: 'Dialogue tracks' })).getByLabelText('Dialogue'),
++    within(ui.getByRole('group', { name: 'Voice tracks' })).getByLabelText('Dialogue'),
+   )
+   fireEvent.click(within(ui.getByRole('group', { name: 'Music tracks' })).getByLabelText('Music'))
+   const before = captureVoiceMixState()
+   const history = useTimelineCommandStore.getState()
+   fireEvent.click(ui.getByRole('button', { name: 'Review mix' }))
+-  await waitFor(() => expect(ui.getByRole('button', { name: 'Audition 15 seconds' })).toBeEnabled())
++  await waitFor(() => expect(ui.getByRole('button', { name: 'Listen to 15 seconds' })).toBeEnabled())
++  // Basic shows plain changes; loudness numbers wait behind Advanced.
++  expect(ui.getByText(/6.0 dB louder/)).toBeInTheDocument()
++  expect(ui.queryByText(/output trim/)).not.toBeInTheDocument()
++  const advanced = ui.getByText('Advanced').closest('details')!
++  advanced.open = true
++  fireEvent(advanced, new Event('toggle'))
+   expect(ui.getByText(/output trim 2.0 → 8.0 dB/)).toBeInTheDocument()
+-  fireEvent.click(ui.getByRole('button', { name: 'Audition 15 seconds' }))
++  fireEvent.click(ui.getByRole('button', { name: 'Listen to 15 seconds' }))
+   await waitFor(() => expect(source.start).toHaveBeenCalledOnce())
+-  fireEvent.click(ui.getByRole('button', { name: 'Cancel audition' }))
++  fireEvent.click(ui.getByRole('button', { name: 'Stop listening' }))
+   expect(source.stop).toHaveBeenCalledOnce()
+   expect(close).toHaveBeenCalledOnce()
+   expect(captureVoiceMixState()).toEqual(before)
+   expect(useTimelineCommandStore.getState()).toBe(history)
+-  expect(ui.getByRole('status')).toHaveTextContent('Audition cancelled. Timeline unchanged.')
++  expect(ui.getByRole('status')).toHaveTextContent('Stopped. Nothing on the timeline changed.')
+ })

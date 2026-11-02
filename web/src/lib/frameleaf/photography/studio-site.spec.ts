@@ -40,10 +40,10 @@ describe('studio site helpers', () => {
     expect(validDomain('')).toBe(true);
     expect(validDomain('photos.cedarandlight.ca')).toBe(true);
     expect(validDomain('https://cedar.ca')).toBe(false);
-    expect(siteAddress({ slug: 'cedar', domain: '' }, 'https://photos.example')).toBe(
-      'https://photos.example/studio/cedar',
-    );
-    expect(siteAddress({ slug: 'cedar', domain: ' Cedar.ca ' }, 'https://photos.example')).toBe('https://cedar.ca');
+    expect(siteAddress({ slug: 'cedar' }, 'https://photos.example')).toBe('https://photos.example/studio/cedar');
+    // An own domain isn't served yet, so the working address stays on this server.
+    const withDomain = { slug: 'cedar', domain: 'cedar.ca' };
+    expect(siteAddress(withDomain, 'https://photos.example')).toBe('https://photos.example/studio/cedar');
   });
 
   it('checks an inquiry', () => {

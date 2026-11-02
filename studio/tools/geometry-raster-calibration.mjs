@@ -246,7 +246,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '27ee0089c32ce1f8976ca10eeda2a745d93970e913c042fc66672b8e1e4ce6f4' ||
           // FL-734–736 workflows; verified raster producers unchanged.
           binding.sourceSha256 ===
-            '253ed9a82591ab9c2aa765c387036438fcce858052fb9f88430aad2da69ee3d3')),
+            '253ed9a82591ab9c2aa765c387036438fcce858052fb9f88430aad2da69ee3d3' ||
+          // FL-1120 inspector copy and panel placement; raster producers unchanged.
+          binding.sourceSha256 ===
+            'be812d0bab9c29042c3a611e4d67894ceb5862825fec3688379df9e7a72ab402')),
     'SOURCE_BROWSER',
   )
   check(
