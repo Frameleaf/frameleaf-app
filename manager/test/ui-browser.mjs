@@ -35,6 +35,7 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
+await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
 const errors = [];
 let expectedHttpErrors = 0;
 page.on('pageerror', (e) => errors.push(e.message));

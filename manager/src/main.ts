@@ -423,7 +423,8 @@ async function main() {
   await mkdir(directory!, { recursive: true, mode: 0o700 });
   const cert = join(directory!, 'tls.crt'),
     key = join(directory!, 'tls.key');
-  if (!native) {
+  const http = !native && security.origin?.startsWith('http://');
+  if (!native && !http) {
     try {
       await stat(cert);
       await stat(key);
@@ -452,7 +453,7 @@ async function main() {
   }
   const httpsOptions = native
     ? native.httpsOptions()
-    : { cert: await readFile(cert), key: await readFile(key) };
+    : http ? undefined : { cert: await readFile(cert), key: await readFile(key) };
   store.interrupt();
   const app = await NestFactory.create(ManagerModule, {
     logger: false,
@@ -493,6 +494,7 @@ async function main() {
   app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
   app.enableShutdownHooks();
   if (native) await app.listen(nativeAddress!.port, nativeAddress!.host);
+  else if (http) await app.listen(9443, '0.0.0.0');
   else {
     // Docker: browsers send a typed "IP:port" as http://, so redirect it instead of an empty reply.
     await app.init();

@@ -5,15 +5,17 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import https from 'node:https';
+import http from 'node:http';
 import { chromium } from 'playwright';
 import { gotoWithNetworkChangeRetry } from './navigation.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'frameleaf-manager-ci-'));
 const name = `frameleaf-manager-test-${process.pid}`;
-const origin = 'https://127.0.0.1:19443';
+const protocol = process.env.MANAGER_TEST_HTTP === '1' ? 'http' : 'https';
+const origin = `${protocol}://127.0.0.1:19443`;
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const request = (path, body, headers = {}) =>
   new Promise((resolve, reject) => {
-    const req = https.request(
+    const req = (protocol === 'http' ? http : https).request(
       `${origin}/manager-api/${path}`,
       {
         rejectUnauthorized: false,
@@ -35,7 +37,7 @@ const request = (path, body, headers = {}) =>
     req.on('error', reject);
     req.end(body ? JSON.stringify(body) : undefined);
   });
-const evidence = { schemaVersion: 1, commit: process.env.GITHUB_SHA, architecture: process.arch, checks: {} };
+const evidence = { schemaVersion: 1, commit: process.env.GITHUB_SHA, architecture: process.arch, protocol, checks: {} };
 try {
   for (const p of ['state', 'media', 'backup', 'custom-appdata']) await mkdir(join(directory, p));
   await writeFile(join(directory, 'docker.cfg'), `DOCKER_APP_CONFIG_PATH="${directory}/custom-appdata/"\n`);
@@ -78,7 +80,11 @@ try {
   const claim = await request('claim', { name: 'Test administrator', password: 'a long disposable password' });
   assert.equal(claim.status, 201);
   assert.match(claim.headers['set-cookie'][0], /HttpOnly/);
-  assert.match(claim.headers['set-cookie'][0], /Secure/);
+  if (protocol === 'https') assert.match(claim.headers['set-cookie'][0], /Secure/);
+  else {
+    assert.doesNotMatch(claim.headers['set-cookie'][0], /Secure/);
+    assert.match(claim.headers['set-cookie'][0], /^frameleaf-manager=/);
+  }
   const cookie = claim.headers['set-cookie'][0].split(';')[0],
     csrf = claim.body.csrf;
   const auth = { Cookie: cookie, 'X-CSRF-Token': csrf };
@@ -108,7 +114,7 @@ try {
     403,
   );
   assert.equal((await request('status', undefined, { Host: 'evil.test' })).status, 403);
-  evidence.checks.httpsAuthenticationCsrfAndRebinding = 'passed';
+  evidence.checks.authenticationCsrfAndRebinding = 'passed';
   docker('restart', name);
   for (let i = 0; i < 30; i++) {
     try {
@@ -183,7 +189,7 @@ try {
     await page.locator('main').getByRole('button', { name: 'Sign out', exact: true }).click();
     await page.locator('main').getByRole('button', { name: 'Sign in', exact: true }).waitFor();
     assert.deepEqual(failures, []);
-    evidence.checks.realHttpsBrowserSignInSettingsAndSignOut = 'passed';
+    evidence.checks.realBrowserSignInSettingsAndSignOut = 'passed';
   } finally {
     await browser.close();
   }
@@ -191,7 +197,7 @@ try {
   try {
     docker('rm', '-f', name);
   } catch {}
-  await writeFile('manager-evidence.json', JSON.stringify(evidence, null, 2));
+  await writeFile(protocol === 'http' ? 'manager-evidence-http.json' : 'manager-evidence.json', JSON.stringify(evidence, null, 2));
   // Manager creates private root-owned files. Remove only this disposable fixture through Docker.
   try {
     docker(

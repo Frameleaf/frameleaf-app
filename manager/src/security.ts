@@ -8,7 +8,6 @@ import { Store } from './store.js';
 const scrypt = promisify(derive);
 const token = () => randomBytes(32).toString('hex');
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-const COOKIE = '__Host-frameleaf-manager';
 const LIFETIME = 8 * 60 * 60 * 1000;
 // Without a configured origin, only names public DNS cannot point at this host are trusted (no rebinding).
 const localHost = (hostname: string) =>
@@ -27,19 +26,23 @@ export const homeAddress = (address: string | undefined) => {
 
 export class Security {
   private readonly frameAncestors: string;
+  private readonly secure: boolean;
+  private readonly cookieName: string;
   constructor(
     private store: Store,
     readonly origin: string | undefined,
     frameOrigin?: string,
   ) {
     this.frameAncestors = "'none'";
+    this.secure = !origin || new URL(origin).protocol !== 'http:';
+    this.cookieName = this.secure ? '__Host-frameleaf-manager' : 'frameleaf-manager';
     if (!origin) {
       if (frameOrigin) throw new Error('A frame origin requires MANAGER_ORIGIN');
       return;
     }
     const url = new URL(origin);
-    if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
-      throw new Error('Invalid Manager HTTPS origin');
+    if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search || url.hash || url.username || url.password)
+      throw new Error('Invalid Manager HTTP or HTTPS origin');
     this.origin = url.origin;
     if (frameOrigin) {
       const frame = new URL(frameOrigin);
@@ -133,7 +136,7 @@ export class Security {
     }
   }
   cookie(res: Response, session: string): void {
-    res.cookie(COOKIE, session, { secure: true, httpOnly: true, sameSite: 'strict', path: '/', maxAge: LIFETIME });
+    res.cookie(this.cookieName, session, { secure: this.secure, httpOnly: true, sameSite: 'strict', path: '/', maxAge: LIFETIME });
   }
   private signedIn(req: Request): boolean {
     try {
@@ -146,8 +149,8 @@ export class Security {
     const value = (req.headers.cookie ?? '')
       .split(';')
       .map((c) => c.trim())
-      .find((c) => c.startsWith(`${COOKIE}=`))
-      ?.slice(COOKIE.length + 1);
+      .find((c) => c.startsWith(`${this.cookieName}=`))
+      ?.slice(this.cookieName.length + 1);
     if (!value || !/^[a-f0-9]{64}$/.test(value)) throw new Refusal('sign_in_required', 401);
     const hash = sha256(value);
     const found = this.store.db
@@ -158,7 +161,7 @@ export class Security {
   }
   logout(req: Request, res: Response): void {
     this.store.db.prepare('DELETE FROM sessions WHERE hash=?').run(this.session(req).hash);
-    res.clearCookie(COOKIE, { secure: true, httpOnly: true, sameSite: 'strict', path: '/' });
+    res.clearCookie(this.cookieName, { secure: this.secure, httpOnly: true, sameSite: 'strict', path: '/' });
   }
   guard = (req: Request, res: Response, next: NextFunction): void => {
     try {

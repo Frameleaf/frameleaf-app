@@ -230,3 +230,42 @@ test('a signed-in session polling the dashboard never runs out of the per-addres
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('explicit HTTP origin uses a host-only HTTP session and retains host, origin and CSRF checks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-http-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, 'http://tower.local:2282');
+    await security.claim('Owner', 'synthetic HTTP test password', '127.0.0.1');
+    const session = await security.login('synthetic HTTP test password');
+    let cookie: any[] = [];
+    const response = { cookie: (...args: any[]) => { cookie = args; } } as unknown as Response;
+    security.cookie(response, session.session);
+    assert.equal(cookie[0], 'frameleaf-manager');
+    assert.deepEqual(cookie[2], { secure: false, httpOnly: true, sameSite: 'strict', path: '/', maxAge: 28_800_000 });
+    const req = { headers: { host: 'tower.local:2282', origin: security.origin,
+      cookie: `${cookie[0]}=${session.session}`, 'x-csrf-token': session.csrf },
+      method: 'POST', path: '/manager-api/control', socket: { remoteAddress: '127.0.0.1' }, is: () => true } as unknown as Request;
+    assert.equal(security.session(req).csrf, session.csrf);
+    const invoke = (patch: Record<string, string>) => {
+      let next = false, status = 0;
+      const res = { set() {}, status(value: number) { status = value; return this; }, json() {} } as unknown as Response;
+      security.guard({ ...req, headers: { ...req.headers, ...patch } } as Request, res, () => { next = true; });
+      return { next, status };
+    };
+    assert.equal(invoke({}).next, true);
+    for (const patch of [{ host: 'evil.test' }, { origin: 'https://tower.local:2282' }, { 'x-csrf-token': 'bad' }])
+      assert.equal(invoke(patch).next, false);
+    const https = new Security(store, 'https://tower.local:2282');
+    assert.throws(() => https.session(req), /sign_in_required/);
+    https.cookie(response, session.session);
+    assert.equal(cookie[0], '__Host-frameleaf-manager');
+    assert.equal(cookie[2].secure, true);
+    security.logout(req, { clearCookie: (...args: any[]) => { cookie = args; } } as unknown as Response);
+    assert.equal(cookie[0], 'frameleaf-manager');
+    assert.equal(cookie[1].secure, false);
+    assert.throws(() => security.session(req), /sign_in_required/);
+    for (const origin of ['ftp://tower.local', 'http://u:p@tower.local', 'http://tower.local/path', 'http://tower.local?x=1', 'http://tower.local#x'])
+      assert.throws(() => new Security(store, origin));
+  } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});
