@@ -107,6 +107,7 @@ export class StorageRepository {
     const track = (input: Readable) => {
       inputs.add(input);
       input.once('close', () => inputs.delete(input));
+      input.once('error', (error) => archive.destroy(error));
       return input;
     };
     let cancelled = false;

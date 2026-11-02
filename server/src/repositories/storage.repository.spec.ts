@@ -208,6 +208,70 @@ describe(StorageRepository.name, () => {
   });
 
   describe('createZipStream', () => {
+    it.each(['active', 'queued'] as const)(
+      'forwards a failed %s input and closes every owned reader',
+      async (failed) => {
+        const zip = sut.createZipStream();
+        const started = vi.fn();
+        const active = new Readable({
+          read() {
+            started();
+          },
+        });
+        const pending = new Readable({ read() {} });
+        const errors = vi.fn();
+        const failure = new Error('synthetic original read failure');
+        const broken = failed === 'active' ? active : pending;
+        // Observe the low-level failure so the regression can assert archive propagation without an unhandled event.
+        broken.on('error', () => {});
+        zip.stream.on('error', errors);
+        try {
+          zip.addFile(active, 'active.raw');
+          zip.addFile(pending, 'pending.raw');
+          await vi.waitFor(() => expect(started).toHaveBeenCalled());
+          broken.destroy(failure);
+          await vi.waitFor(() => {
+            expect(errors).toHaveBeenCalledWith(failure);
+            expect(active.closed).toBe(true);
+            expect(pending.closed).toBe(true);
+          });
+        } finally {
+          zip.stream.destroy();
+          active.destroy();
+          pending.destroy();
+        }
+      },
+    );
+
+    it('forwards an owned plain-file read failure after successful stat', async () => {
+      const path = fixturePath('/zip/not-a-file');
+      await fs.mkdir(path, { recursive: true });
+      const original = sut.createPlainReadStream.bind(sut);
+      const open = vi.spyOn(sut, 'createPlainReadStream').mockImplementation((...args) => {
+        const source = original(...args);
+        source.on('error', () => {});
+        return source;
+      });
+      const zip = sut.createZipStream();
+      const pending = new Readable({ read() {} });
+      const errors = vi.fn();
+      zip.stream.on('error', errors);
+      zip.stream.resume();
+      try {
+        zip.addFile(path, 'original.raw');
+        zip.addFile(pending, 'pending.raw');
+        await vi.waitFor(() => {
+          expect(errors).toHaveBeenCalledWith(expect.objectContaining({ code: 'EISDIR' }));
+          expect(pending.closed).toBe(true);
+        });
+      } finally {
+        zip.stream.destroy();
+        pending.destroy();
+        for (const result of open.mock.results) if (result.type === 'return') result.value.destroy();
+        open.mockRestore();
+      }
+    });
+
     it('fails a missing file through the archive and closes inputs that have not started', async () => {
       const zip = sut.createZipStream();
       const started = vi.fn();
