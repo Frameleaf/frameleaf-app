@@ -166,9 +166,9 @@ export class AlbumSuggestionService extends BaseService {
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
     if (!asset || asset.visibility === AssetVisibility.Hidden) return JobStatus.Skipped;
-    // The preview faces were detected on: the edited one when the photo was edited.
-    const { editedPreviewFile, previewFile } = getAssetFiles(asset.files);
-    const preview = editedPreviewFile ?? previewFile;
+    // Face boxes are stored in the unedited photo's space (mapped back when found on an edited preview), so
+    // the unedited preview is cropped: no edit transform is needed, and an edit never makes an outfit stale.
+    const { previewFile: preview } = getAssetFiles(asset.files);
     if (!preview) return JobStatus.Skipped;
     const { modelName } = machineLearning.clip;
     const faces = await this.albumRepository.suggestions.getFacesWithoutOutfit(id, modelName);
@@ -366,9 +366,13 @@ export class AlbumSuggestionService extends BaseService {
     }
 
     const tripSet = new Set(tripIds);
+    // A person whose trip photos aren't all cropped yet could match the one day that is: wait for the rest.
+    const pending = new Set(
+      rows.filter(({ assetId, encoded }) => !encoded && tripSet.has(assetId)).map(({ personId }) => personId),
+    );
     for (const { assetId, personId, name, embedding } of rows) {
       const vector = parseOutfit(embedding);
-      if (!vector || !wanted.has(personId)) continue;
+      if (!vector || !wanted.has(personId) || pending.has(personId)) continue;
       const outfit = { personId, name, embedding: vector };
       if (!tripSet.has(assetId)) byAsset.set(assetId, [...(byAsset.get(assetId) ?? []), outfit]);
       else {

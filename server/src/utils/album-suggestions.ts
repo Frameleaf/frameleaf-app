@@ -285,8 +285,12 @@ export const estimateDate = (
     .filter(({ distance }) => Number.isFinite(distance) && distance <= LOOKS_LIKE_DISTANCE)
     .sort((a, b) => a.distance - b.distance || a.assetId.localeCompare(b.assetId));
   const best = neighbours[0];
-  const outfit = candidate.outfit;
   const scene = best && best.distance <= SAME_SCENE_DISTANCE ? best : undefined;
+  // An outfit from another day than the scene it shows is no evidence for that date.
+  const outfit =
+    candidate.outfit && (!scene || localDay(scene.localDateTime) === localDay(candidate.outfit.localDateTime))
+      ? candidate.outfit
+      : undefined;
   // The trip segment of whatever dates it: a scene match, then an outfit, then the closest look-alike.
   const datedBy = scene ?? outfit ?? best;
   const segment = datedBy ? segmentAt(trip, datedBy.takenAt) : trip.segments[0];

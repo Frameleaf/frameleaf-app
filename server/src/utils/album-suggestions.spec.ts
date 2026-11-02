@@ -250,6 +250,23 @@ describe('outfits', () => {
     expect(estimateDate(trip, { neighbours: [], people: [], place: null, outfit })).toBeUndefined();
   });
 
+  it('ignores an outfit from another day than the scene it shows', () => {
+    const outfit = matchOutfit(emma(jacket), [worn('a4', '2026-08-14T17:00:00', jacket)])!;
+    const scene = {
+      assetId: 'a3',
+      distance: 0.1,
+      takenAt: at('2026-08-13T20:00:00Z'),
+      localDateTime: at('2026-08-13T14:00:00Z'),
+    };
+    expect(estimateDate(trip, { neighbours: [scene], people: [], place: null, outfit })).toBeUndefined();
+    expect(estimateDate(trip, { neighbours: [scene], people: ['Emma'], place: null, outfit })).toEqual(
+      expect.objectContaining({
+        localDateTime: '2026-08-13T12:00:00',
+        reasons: expect.not.arrayContaining([expect.objectContaining({ kind: 'same-outfit' })]),
+      }),
+    );
+  });
+
   it("checks the save date against the outfit's trip, not a later look-alike's", () => {
     const twoTrips = describeTrip([
       ...rockies,

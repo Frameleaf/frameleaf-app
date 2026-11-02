@@ -270,6 +270,17 @@ describe(AlbumSuggestionService.name, () => {
       await expect(sut.getSuggestions(auth, albumId)).resolves.toMatchObject({ needDate: [{ precision: 'trip' }] });
     });
 
+    it("waits for all of a person's trip crops before matching their outfit", async () => {
+      suggestions.getOutfits.mockResolvedValue([
+        outfit('wa', [1, 0, 0]),
+        outfit('a2', null, false),
+        outfit('a4', [0.99, 0.05, 0]),
+      ]);
+      const { needDate } = await sut.getSuggestions(auth, albumId);
+      expect(needDate).toMatchObject([{ precision: 'trip' }]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.AlbumSuggestionOutfit, data: { id: 'a2' } }]);
+    });
+
     it('queues outfit crops for photos that have none yet', async () => {
       suggestions.getOutfits.mockResolvedValue([outfit('wa', null, false), outfit('a4', [1, 0, 0])]);
       const { needDate } = await sut.getSuggestions(auth, albumId);
@@ -288,7 +299,7 @@ describe(AlbumSuggestionService.name, () => {
         id: 'wa',
         ownerId: auth.user.id,
         visibility: AssetVisibility.Timeline,
-        // Faces were detected on the edited preview, so that is the one cropped.
+        // Face boxes are in the unedited photo's space, so the unedited preview is cropped.
         files: [
           { id: 'f', path: '/preview.jpeg', type: AssetFileType.Preview, isEdited: false, isProgressive: false },
           { id: 'e', path: '/edited.jpeg', type: AssetFileType.Preview, isEdited: true, isProgressive: false },
@@ -306,7 +317,7 @@ describe(AlbumSuggestionService.name, () => {
       mocks.machineLearning.encodeImage.mockResolvedValue('[0.1,0.2]');
 
       await expect(sut.handleOutfit({ id: 'wa' })).resolves.toBe(JobStatus.Success);
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith('/edited.jpeg', expect.anything());
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith('/preview.jpeg', expect.anything());
       expect(mocks.media.generateThumbnail).toHaveBeenCalledOnce();
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         expect.anything(),
