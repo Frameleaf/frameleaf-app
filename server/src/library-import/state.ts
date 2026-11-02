@@ -66,7 +66,7 @@ export class LibraryImportJournal {
       if ((await db.query('SELECT 1 FROM public.frameleaf_immich_import')).length > 0)
         throw new LibraryImportRefused('DESTINATION_ALREADY_IMPORTED');
       try {
-        await assertFreshImportDestination(db);
+        await assertFreshImportDestination(db, { allowBootstrapAdmin: true });
       } catch (error) {
         if (error instanceof ImportRefused) throw new LibraryImportRefused(error.code);
         throw error;

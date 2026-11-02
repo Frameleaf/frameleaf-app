@@ -1,11 +1,15 @@
 import { hash } from 'bcrypt';
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { AdminAuditAction, UserMetadataKey } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
+import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { createImportedOwner } from 'src/library-import/owners.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
+import { LibraryImportJournal } from 'src/library-import/state.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SessionFactory } from 'test/factories/session.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -27,7 +31,9 @@ beforeAll(async () => {
   db = await getKyselyDB();
 });
 beforeEach(async () => {
-  await sql`TRUNCATE public."user",public.cluster_group CASCADE`.execute(db);
+  await sql`TRUNCATE public."user",public.cluster_group,public.user_audit,public.album,public.user_preference_history,public.frameleaf_library_import_mapping,public.frameleaf_library_import CASCADE`.execute(
+    db,
+  );
   await sql`WITH g AS (INSERT INTO public.cluster_group DEFAULT VALUES RETURNING id)
     INSERT INTO public."user" (email,"clusterGroupId","isAdmin") SELECT 'bootstrap@example.test',id,true FROM g`.execute(
     db,
@@ -100,4 +106,181 @@ it('requires an existing destination administrator', async () => {
   await expect(createImportedOwner(wrap(db), input())).rejects.toThrow('DESTINATION_ADMIN_REQUIRED');
   expect(await db.selectFrom('user').select('id').execute()).toHaveLength(0);
   expect(await db.selectFrom('cluster_group').select('id').execute()).toHaveLength(1);
+});
+
+it.each(['second-owner', 'orphan-group', 'existing-album', 'past-library', 'past-user', 'non-admin', 'deleted-admin'])(
+  'keeps generic destination admission restricted: %s',
+  async (state) => {
+    const bootstrap = await db.selectFrom('user').selectAll().executeTakeFirstOrThrow();
+    switch (state) {
+      case 'second-owner': {
+        await sql`WITH g AS (INSERT INTO public.cluster_group DEFAULT VALUES RETURNING id)
+          INSERT INTO public."user" (email,"clusterGroupId") SELECT 'extra@example.test',id FROM g`.execute(db);
+        break;
+      }
+      case 'orphan-group': {
+        await sql`INSERT INTO public.cluster_group DEFAULT VALUES`.execute(db);
+        break;
+      }
+      case 'existing-album': {
+        await sql`INSERT INTO public.album DEFAULT VALUES`.execute(db);
+        break;
+      }
+      case 'past-library': {
+        await db
+          .insertInto('admin_audit_event')
+          .values({
+            userId: bootstrap.id,
+            actorId: bootstrap.id,
+            libraryId: null,
+            action: AdminAuditAction.LibraryDeleted,
+            subject: 'Previously used library',
+            detail: null,
+          })
+          .execute();
+        break;
+      }
+      case 'past-user': {
+        await sql`INSERT INTO public.user_audit ("userId") VALUES (${randomUUID()}::uuid)`.execute(db);
+        break;
+      }
+      case 'non-admin': {
+        await sql`UPDATE public."user" SET "isAdmin"=false`.execute(db);
+        break;
+      }
+      case 'deleted-admin': {
+        await sql`UPDATE public."user" SET "deletedAt"=now()`.execute(db);
+        break;
+      }
+      // No default
+    }
+    await expect(assertFreshImportDestination(wrap(db), { allowBootstrapAdmin: true })).rejects.toThrow(
+      'DESTINATION_NOT_FRESH',
+    );
+    expect(await wrap(db).query('SELECT operation_id FROM public.frameleaf_library_import')).toEqual([]);
+  },
+);
+
+it('refuses preference history belonging to an absent owner', async () => {
+  await new UserRepository(db).addPreferenceHistory({
+    userId: randomUUID(),
+    deviceLabel: null,
+    changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+    omittedChanges: 0,
+  });
+  await expect(assertFreshImportDestination(wrap(db), { allowBootstrapAdmin: true })).rejects.toThrow(
+    'DESTINATION_NOT_FRESH',
+  );
+});
+
+it.each(Object.values(UserMetadataKey).filter((key) => key !== UserMetadataKey.Preferences))(
+  'refuses administrator metadata outside the preference allowance: %s',
+  async (key) => {
+    const bootstrap = await db.selectFrom('user').select('id').executeTakeFirstOrThrow();
+    await db.insertInto('user_metadata').values({ userId: bootstrap.id, key, value: {} }).execute();
+    await expect(assertFreshImportDestination(wrap(db), { allowBootstrapAdmin: true })).rejects.toThrow(
+      'DESTINATION_NOT_FRESH',
+    );
+  },
+);
+
+it('admits changed setup preferences and preserves their native account history', async () => {
+  const admin = await db.selectFrom('user').select('id').executeTakeFirstOrThrow();
+  const users = new UserRepository(db);
+  await users.upsertMetadata(admin.id, { key: UserMetadataKey.Preferences, value: { memories: { enabled: false } } });
+  await users.addPreferenceHistory({
+    userId: admin.id,
+    deviceLabel: 'Synthetic setup',
+    changes: [{ path: 'memories.enabled', before: 'true', after: 'false' }],
+    omittedChanges: 0,
+  });
+  const history = await users.getPreferenceHistory(admin.id);
+  expect(history).toHaveLength(1);
+  await expect(
+    new LibraryImportJournal(wrap(db)).begin({
+      operationId: randomUUID(),
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: {
+        kind: 'photoview',
+        version: '2.4.0',
+        identity: 'synthetic-library',
+        revision: 'frozen',
+        schemaSha256: 'c'.repeat(64),
+      },
+    }),
+  ).resolves.toMatchObject({ status: 'copying' });
+  expect(await users.getPreferenceHistory(admin.id)).toEqual(history);
+  await expect(assertFreshImportDestination(wrap(db))).rejects.toThrow('DESTINATION_NOT_FRESH');
+});
+
+it('admits an unused setup administrator and journals preserved owner credentials atomically', async () => {
+  const bootstrap = await db.selectFrom('user').selectAll().executeTakeFirstOrThrow();
+  await db
+    .insertInto('admin_audit_event')
+    .values({
+      userId: bootstrap.id,
+      actorId: bootstrap.id,
+      libraryId: null,
+      action: AdminAuditAction.AccountCreated,
+      subject: 'Bootstrap administrator',
+      detail: 'server-claimed:web',
+    })
+    .execute();
+  await new SessionRepository(db).create(SessionFactory.create({ userId: bootstrap.id }));
+  await db
+    .insertInto('user_metadata')
+    .values({ userId: bootstrap.id, key: UserMetadataKey.Preferences, value: {} })
+    .execute();
+  const owner = input();
+  const binding = {
+    operationId: owner.operationId,
+    manifestSha256: 'a'.repeat(64),
+    planSha256: 'b'.repeat(64),
+    source: {
+      kind: 'photoview',
+      version: '2.4.0',
+      identity: 'synthetic-library',
+      revision: 'frozen',
+      schemaSha256: 'c'.repeat(64),
+    },
+  };
+  const journal = new LibraryImportJournal(wrap(db));
+  await expect(assertFreshImportDestination(wrap(db))).rejects.toThrow('DESTINATION_NOT_FRESH');
+  await expect(journal.begin(binding)).resolves.toMatchObject({ status: 'copying' });
+  const credential = await ImportedPassword.fromSource(
+    {
+      operationId: owner.operationId,
+      sourceUserId: owner.sourceUserId,
+      destinationUserId: owner.destinationUserId,
+    },
+    'bcrypt',
+    await hash('synthetic preserved password', 9),
+  );
+  const mapping = {
+    kind: 'owner',
+    sourceId: owner.sourceUserId,
+    destinationId: owner.destinationUserId,
+    recordSha256: 'd'.repeat(64),
+  };
+  await journal.apply(binding, mapping, (transaction) => createImportedOwner(transaction, owner, credential));
+  await expect(journal.begin(binding)).resolves.toMatchObject({ status: 'copying' });
+  await expect(
+    journal.apply(binding, mapping, () => {
+      throw new Error('committed owner must not replay');
+    }),
+  ).resolves.toBe(owner.destinationUserId);
+  const imported = await db
+    .selectFrom('user')
+    .selectAll()
+    .where('id', '=', owner.destinationUserId)
+    .executeTakeFirstOrThrow();
+  expect(await new CryptoRepository().compareBcrypt('synthetic preserved password', imported.password!)).toBe(true);
+  expect(imported).toMatchObject({ isAdmin: false, importClaimPending: false });
+  expect(await db.selectFrom('user').selectAll().where('id', '=', bootstrap.id).executeTakeFirstOrThrow()).toEqual(
+    bootstrap,
+  );
+  expect(await db.selectFrom('session').select('id').where('userId', '=', owner.destinationUserId).execute()).toEqual(
+    [],
+  );
 });
