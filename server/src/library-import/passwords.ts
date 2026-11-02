@@ -2,6 +2,7 @@ import { hashRaw as hashArgonRaw, parseOptions as parseArgonOptions } from '@nod
 import AsyncLock from 'async-lock';
 import { compare, hash } from 'bcrypt';
 import { createHash, pbkdf2 } from 'node:crypto';
+import { setImmediate } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -12,11 +13,11 @@ const derivePbkdf2 = promisify(pbkdf2);
 const argonAlgorithms = { argon2i: 1, argon2id: 2 } as const;
 const argonVersions = { 16: 0, 19: 1 } as const;
 // Keep memory-hard verification independent of the server's general worker-pool size.
-const argonLock = new AsyncLock({ maxPending: 8, timeout: 10_000 });
+const expensivePasswordLock = new AsyncLock({ maxPending: 8, timeout: 10_000 });
 const bcryptPattern = /^\$2[ab]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$/;
 const saltPattern = /^\$2[ab]\$(?:0[4-9]|1[0-6])\$[./A-Za-z0-9]{22}$/;
 export type ImportedPasswordFormat =
-  'bcrypt' | 'photoprism-bcrypt' | 'django-pbkdf2-sha256' | 'php-password' | 'nextcloud-password';
+  'bcrypt' | 'photoprism-bcrypt' | 'django-pbkdf2-sha256' | 'php-password' | 'nextcloud-password' | 'piwigo-password';
 const contextSchema = z.strictObject({
   operationId: z.uuid().transform((value) => value.toLowerCase()),
   sourceUserId: z.string().min(1).max(1024),
@@ -31,6 +32,13 @@ const djangoSettings = z.strictObject({
   format: z.literal('django-pbkdf2-sha256'),
   settings: z.tuple([z.number().int().min(1).max(5_000_000), z.string().min(1).max(256)]),
 });
+const phpassAlphabet = './0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const phpassPattern = /^\$P\$[5-9A-G][./0-9A-Za-z]{8}$/;
+const phpassSettings = z.strictObject({
+  format: z.literal('piwigo-phpass'),
+  settings: z.string().regex(phpassPattern),
+});
+const piwigoMd5Settings = z.strictObject({ format: z.literal('piwigo-md5'), settings: z.literal('') });
 const phcBase64 = (bytes: Buffer) => bytes.toString('base64').replaceAll('=', '');
 const argonSettings = z.strictObject({
   format: z.enum(['argon2i', 'argon2id']),
@@ -55,9 +63,16 @@ type ArgonSettings = z.infer<typeof argonSettings>;
 const envelope = z.discriminatedUnion('format', [
   bcryptSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
   djangoSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
+  piwigoMd5Settings.extend({ verifier: z.string().regex(bcryptPattern) }),
+  phpassSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
   argonSettings.extend({ verifier: z.string().regex(bcryptPattern) }),
 ]);
-type Settings = z.infer<typeof bcryptSettings> | z.infer<typeof djangoSettings> | ArgonSettings;
+type Settings =
+  | z.infer<typeof bcryptSettings>
+  | z.infer<typeof djangoSettings>
+  | ArgonSettings
+  | z.infer<typeof phpassSettings>
+  | z.infer<typeof piwigoMd5Settings>;
 const refused = (): never => {
   throw new Error('Imported password refused: SOURCE_PASSWORD_UNSUPPORTED');
 };
@@ -115,6 +130,13 @@ const targetSalt = (context: ImportedPasswordContext, format: ImportedPasswordFo
 
 const sourceSettings = (format: ImportedPasswordFormat, encoded: string): { settings: Settings; canonical: string } => {
   if (typeof encoded !== 'string' || encoded.length > 2048) return refused();
+  if (format === 'piwigo-password') {
+    if (/^[0-9a-f]{32}$/.test(encoded)) return { settings: { format: 'piwigo-md5', settings: '' }, canonical: encoded };
+    const settings = encoded.slice(0, 12);
+    const tail = encoded.slice(12);
+    if (!phpassPattern.test(settings) || !/^[./0-9A-Za-z]{21}[./01]$/.test(tail)) return refused();
+    return { settings: { format: 'piwigo-phpass', settings }, canonical: encoded };
+  }
   if (format === 'nextcloud-password') {
     if (!/^[123]\|/.test(encoded)) return refused();
     return sourceSettings('php-password', encoded.slice(2));
@@ -157,9 +179,33 @@ const trimSourceSpace = (value: string): string => {
 };
 
 const sourceHash = async (password: string, settings: Settings): Promise<string> => {
+  if (settings.format === 'piwigo-md5') {
+    if (Buffer.byteLength(password, 'utf8') > 4096) return refused();
+    return createHash('md5').update(password, 'utf8').digest('hex');
+  }
+  if (settings.format === 'piwigo-phpass') {
+    const input = Buffer.from(password, 'utf8');
+    if (input.length > 4096) return refused();
+    return expensivePasswordLock.acquire('imported-password', async () => {
+      let bytes = createHash('md5').update(settings.settings.slice(4)).update(input).digest();
+      const rounds = 2 ** phpassAlphabet.indexOf(settings.settings[3]);
+      for (let index = 0; index < rounds; index++) {
+        bytes = createHash('md5').update(bytes).update(input).digest();
+        // PHPass is iterative MD5, not PBKDF2; yield so imported logins cannot stall the event loop.
+        if ((index + 1) % 1024 === 0) await setImmediate();
+      }
+      let encoded = '';
+      for (let bit = 0; bit < 128; bit += 6) {
+        const offset = Math.floor(bit / 8);
+        const value = bytes[offset] | ((bytes[offset + 1] ?? 0) << 8);
+        encoded += phpassAlphabet[(value >> (bit % 8)) & 63];
+      }
+      return settings.settings + encoded;
+    });
+  }
   if (settings.format === 'argon2i' || settings.format === 'argon2id') {
     const { salt, version, ...options } = settings.settings;
-    const bytes = await argonLock.acquire('imported-password', () =>
+    const bytes = await expensivePasswordLock.acquire('imported-password', () =>
       hashArgonRaw(password, {
         ...options,
         salt: Buffer.from(salt, 'base64'),

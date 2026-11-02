@@ -1,6 +1,7 @@
 import { hash } from 'bcrypt';
 import { inspect } from 'node:util';
 import argonVectors from 'src/library-import/fixtures/password-argon2-vectors.json' with { type: 'json' };
+import piwigoVectors from 'src/library-import/fixtures/password-piwigo-vectors.json' with { type: 'json' };
 import vectors from 'src/library-import/fixtures/password-vectors.json' with { type: 'json' };
 import { ImportedPassword, verifyImportedPassword } from 'src/library-import/passwords.js';
 
@@ -128,4 +129,59 @@ it.each(['data=YWJj', 'keyid=YWJj', 'foo=1'])('refuses unrepresented Argon2 para
   await expect(ImportedPassword.fromSource(context, 'php-password', source)).rejects.toThrow(
     /^Imported password refused: SOURCE_PASSWORD_UNSUPPORTED$/,
   );
+});
+
+it.each(piwigoVectors.vectors)('preserves native Piwigo PHPass passwords: $hash', async (vector) => {
+  const credential = await ImportedPassword.fromSource(context, 'piwigo-password', vector.hash);
+  expect(await verifyImportedPassword(vector.password, credential.forImport())).toBe(true);
+  expect(await verifyImportedPassword(vector.password + 'tail', credential.forImport())).toBe(false);
+  expect(credential.forImport()).not.toContain(vector.hash);
+  expect(JSON.stringify(credential)).not.toContain(vector.hash);
+});
+
+it('refuses PHPass passwords above the native byte limit and yields during costly verification', async () => {
+  const vector = piwigoVectors.vectors[0];
+  const credential = await ImportedPassword.fromSource(context, 'piwigo-password', vector.hash);
+  const oversized = '✓'.repeat(1366);
+  expect(await verifyImportedPassword(oversized, credential.forImport())).toBe(false);
+  let finished = false;
+  const work = verifyImportedPassword(vector.password, credential.forImport()).finally(() => {
+    finished = true;
+  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  expect(finished).toBe(false);
+  expect(await work).toBe(true);
+});
+
+it.each(['$P$zabcdefgh' + 'a'.repeat(22), '$P$Gshort', '$H$Gabcdefgh' + 'a'.repeat(22), 'plaintext'])(
+  'refuses unqualified Piwigo settings without exposing them',
+  async (encoded) => {
+    await expect(ImportedPassword.fromSource(context, 'piwigo-password', encoded)).rejects.toThrow(
+      /^Imported password refused: SOURCE_PASSWORD_UNSUPPORTED$/,
+    );
+  },
+);
+
+it('preserves a PHP legacy MD5 password behind the destination verifier without loose numeric comparison', async () => {
+  const encoded = '482c811da5d5b4bc6d497ffa98491e38'; // PHP md5('password123').
+  const credential = await ImportedPassword.fromSource(context, 'piwigo-password', encoded);
+  expect(await verifyImportedPassword('password123', credential.forImport())).toBe(true);
+  expect(await verifyImportedPassword('wrong', credential.forImport())).toBe(false);
+  expect(credential.forImport()).not.toContain(encoded);
+  const magic = await ImportedPassword.fromSource(context, 'piwigo-password', '0e462097431906509019562988736854');
+  expect(await verifyImportedPassword('240610708', magic.forImport())).toBe(true);
+  expect(await verifyImportedPassword('QNKCDZO', magic.forImport())).toBe(false);
+});
+
+it('refuses noncanonical PHPass output bits', async () => {
+  const encoded = piwigoVectors.vectors[0].hash.slice(0, -1) + 'D';
+  await expect(ImportedPassword.fromSource(context, 'piwigo-password', encoded)).rejects.toThrow(
+    /^Imported password refused: SOURCE_PASSWORD_UNSUPPORTED$/,
+  );
+});
+
+it.each(piwigoVectors.legacyMd5)('preserves the native legacy Piwigo verifier: $hash', async (vector) => {
+  const credential = await ImportedPassword.fromSource(context, 'piwigo-password', vector.hash);
+  expect(await verifyImportedPassword(vector.password, credential.forImport())).toBe(vector.valid);
+  expect(await verifyImportedPassword('wrong', credential.forImport())).toBe(vector.wrong);
 });
