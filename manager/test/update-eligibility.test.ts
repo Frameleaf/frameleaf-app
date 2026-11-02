@@ -211,3 +211,25 @@ test(`resuming an update whose release was ${missing ? 'removed' : 'withdrawn'} 
     await rm(directory, { recursive: true });
   }
 });
+
+test('an interrupted update whose apply step completed keeps its applied release', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-update-applied-'));
+  const store = new Store(directory);
+  try {
+    let checks = 0;
+    const operations = new Operations(store, {} as never, {
+      eligible: async () => { checks++; throw new Error('release no longer available'); },
+    } as never, {} as never, [], {} as never);
+    const { operation } = store.start('update', 'applied', { reviewId: 'r' });
+    operation.state = 'interrupted';
+    operation.completed = ['download-images', 'stop-application', 'database-checkpoint', 'apply-release'];
+    store.save(operation);
+    const review = { release: { nas: { tag: 'frameleaf-v1.1.17' } } };
+    assert.equal(await (operations as any).retargetWithdrawnUpdate(operation, review), review);
+    assert.equal(checks, 0);
+    assert.deepEqual(operation.completed, ['download-images', 'stop-application', 'database-checkpoint', 'apply-release']);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});

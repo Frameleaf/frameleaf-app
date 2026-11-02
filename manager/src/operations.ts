@@ -1039,10 +1039,9 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
   }
-  // A failed update keeps the operation lock, so retrying is the only way forward. When its release was
-  // withdrawn (1.1.17, issue 626), retry with the newest offered release instead. The database checkpoint
-  // taken before the failed attempt is kept: the withdrawn release never started.
+  /** Retry withdrawn targets with a newer compatible release, keeping the checkpoint and any already applied release. */
   private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
+    if (operation.completed.includes('apply-release')) return review;
     const withdrawn = await this.releases.eligible(review.release.nas.tag).then(
       () => false,
       (error) => {

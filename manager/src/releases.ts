@@ -22,6 +22,7 @@ export function offered(body: string, seed: string, tag: string): boolean {
   const version = tag.replace(/^frameleaf-v/, '').replace(/-\d+$/, '');
   return percent <= 100 && parseInt(sha256(`${seed}:${version}`).slice(0, 8), 16) % 100 < percent;
 }
+/** Classify removed tags as ineligible so saved updates can recover through the withdrawn-release path. */
 async function github(path: string): Promise<any> {
   const response = await fetch(`${REPOSITORY}/${path}`, {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Frameleaf-Manager' },
