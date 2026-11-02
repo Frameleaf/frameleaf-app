@@ -3,9 +3,12 @@ import { MediaOperationKind, MediaOperationStatus, MlWorkload } from 'src/enum.j
 import {
   CLOUD_JOB_STATUSES,
   CloudEstimate,
+  CloudJobRouting,
   CloudJobView,
   CloudOutputDownload,
+  CloudUpgradeEstimate,
   isFinalCloudJobStatus,
+  jobRoutingSchema,
 } from 'src/utils/frameleaf-cloud.js';
 
 /**
@@ -136,6 +139,7 @@ export const CloudMlJobApprovalSchema = z.object({
   coldStartSeconds: z.number().min(0),
   runSeconds: z.number().min(0),
   basis: z.enum(['measured', 'modelled']),
+  approvedMaximumUsd: usd.optional(),
 });
 export type CloudMlJobApproval = z.infer<typeof CloudMlJobApprovalSchema>;
 
@@ -225,6 +229,7 @@ const CloudMlJobRecordSchema = z.object({
   etag: z.string().nullable(),
   admittedAt: z.string(),
   startedAt: z.string().nullable(),
+  routing: jobRoutingSchema.optional(),
   error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean() }).nullable(),
 });
 export type CloudMlJobRecord = z.infer<typeof CloudMlJobRecordSchema>;
@@ -283,6 +288,15 @@ export type CloudMlJobEstimateRecord = {
   operationId: string | null;
   /** FC-46: a photo upscale's quoted factor; absent on video work. */
   upscale?: CloudMlJobUpscale;
+};
+
+/** A kept, job-bound upgrade quote; attempted prices reserve spending until the job reports them. */
+export type CloudMlJobUpgradeRecord = {
+  id: string;
+  operationId: string;
+  createdBy: string;
+  quote: CloudUpgradeEstimate;
+  attemptedAt: string | null;
 };
 
 /** What happened so far; the one mutable part of the job. */
@@ -527,6 +541,7 @@ export type CloudMlJobActivity = {
   workers: number;
   cloudStatus: string | null;
   progressUnit: string | null;
+  routing?: CloudJobRouting;
   cost: {
     estimatedP50Usd: number;
     estimatedP90Usd: number;
@@ -567,6 +582,7 @@ export const cloudMlJobActivity = (operation: {
     workers: result.job?.workers ?? 0,
     cloudStatus: result.job?.status ?? null,
     progressUnit: result.job?.progress?.unit ?? null,
+    ...(result.job?.routing && { routing: result.job.routing }),
     cost: {
       estimatedP50Usd: approved.p50Usd,
       estimatedP90Usd: approved.p90Usd,
@@ -618,6 +634,11 @@ export const cloudMlJobRecordOf = (
   etag,
   admittedAt: previous?.admittedAt ?? view.createdAt,
   startedAt: view.run.startedAt,
+  ...(view.routing
+    ? { routing: view.routing }
+    : previous?.routing
+      ? { routing: { ...previous.routing, upgradeAvailable: false } }
+      : {}),
   error: view.error ? { code: view.error.code, message: view.error.message, retryable: view.error.retryable } : null,
 });
 

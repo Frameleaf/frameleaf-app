@@ -47,6 +47,7 @@ type FakeCloud = {
     dpop: string | null;
     idempotencyKey: string | null;
     promotionPricing: string | null;
+    routingProtocol: string | null;
     body: string;
   }>;
   publicJwk?: FrameleafInstanceIdentity['publicJwk'];
@@ -103,6 +104,7 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       dpop: (request.headers.dpop as string | undefined) ?? null,
       idempotencyKey: (request.headers['idempotency-key'] as string | undefined) ?? null,
       promotionPricing: (request.headers['x-frameleaf-promotion-pricing'] as string | undefined) ?? null,
+      routingProtocol: (request.headers['x-frameleaf-ml-routing'] as string | undefined) ?? null,
       body,
     });
     const send = (status: number, payload: unknown) => {
@@ -639,6 +641,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       expect(estimate).toMatchObject({ modelSku: 'ms_K6WT70CS', modelRev: 'mr_B2H147RBJBQ0', basis: 'measured' });
       expect(JSON.parse(gatewayRequests('POST', '/v2/estimates')[0].body)).toEqual(estimateRequest());
       expect(gatewayRequests('POST', '/v2/estimates')[0].promotionPricing).toBe('1');
+      expect(gatewayRequests('POST', '/v2/estimates')[0].routingProtocol).toBe('1');
 
       const admitted = await ml.createJob(gateway, jobRequest(), 'batch-0192f1b0-1');
       expect(admitted).toMatchObject({ jobId, status: 'admitted', hold: { amountUsd: 0.203251 } });
@@ -654,6 +657,46 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       expect(gatewayRequests('DELETE', `/v2/jobs/${jobId}`)).toHaveLength(1);
       const calls = cloud.requests.filter((request) => request.path.startsWith('/ml-eu/v2/'));
       expect(calls.every((request) => request.auth === `DPoP ${cloud.token}` && !!request.dpop)).toBe(true);
+    });
+
+    it('quotes and upgrades the same job with routing negotiation, DPoP and a stable idempotency key', async () => {
+      const { gateway, ml } = await ready();
+      const base = cloudContractFixture('ml/estimate-response.json');
+      const quote = {
+        ...base,
+        jobId,
+        pricingRevision: 0,
+        incurredUsd: 0.1,
+        perSecondUsd: 0.01,
+        startFeeUsd: 0.02,
+        plannedWorkers: 1,
+        routing: {
+          quotedComputeSku: base.computeSku,
+          perSecondUsd: 0.01,
+          startFeeUsd: 0.02,
+          plannedWorkers: 1,
+          approvedMaximumUsd: 0.15,
+        },
+      };
+      const job = cloudContractFixture('ml/job-running.json');
+      cloud.respond = ({ path }) =>
+        path.endsWith('/upgrade-estimate')
+          ? { status: 200, body: quote }
+          : path.endsWith('/upgrade')
+            ? { status: 200, body: job }
+            : undefined;
+      expect(await ml.createUpgradeEstimate(gateway, jobId)).toEqual(quote);
+      expect(await ml.upgradeJob(gateway, jobId, { estimate: base.estimate }, 'gpu-upgrade-1')).toEqual(job);
+      const calls = cloud.requests.filter((request) => request.path.includes('/upgrade'));
+      expect(calls.map((call) => JSON.parse(call.body))).toEqual([{}, { estimate: base.estimate }]);
+      expect(
+        calls.every((call) => call.routingProtocol === '1' && !!call.dpop && call.auth === `DPoP ${cloud.token}`),
+      ).toBe(true);
+      expect(calls[1].idempotencyKey).toBe('gpu-upgrade-1');
+      await expect(ml.upgradeJob(gateway, jobId, { estimate: base.estimate }, 'bad')).rejects.toMatchObject({
+        refusal: MlAdmissionRefusal.RequestInvalid,
+      });
+      expect(cloud.requests.filter((request) => request.path.includes('/upgrade'))).toHaveLength(2);
     });
 
     it.each([

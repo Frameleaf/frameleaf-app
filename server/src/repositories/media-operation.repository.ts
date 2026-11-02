@@ -2010,6 +2010,7 @@ export class MediaOperationRepository {
         'ml_workload_accounting.costUsd as settledUsd',
       ])
       .where('media_operation.kind', '=', MediaOperationKind.CloudMlJob)
+      .$if(!!excludeLocationScanId, (qb) => qb.where('media_operation.id', '!=', excludeLocationScanId!))
       .where(sql<boolean>`"media_operation"."snapshot" -> 'consent' ->> 'acceptedBy' = ${userId}`)
       // this month's jobs, and any earlier one still holding the AI Wallet
       .where((eb) =>

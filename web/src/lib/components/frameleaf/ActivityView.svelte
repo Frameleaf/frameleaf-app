@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
   import StudioRenderProgress from '$lib/components/frameleaf/StudioRenderProgress.svelte';
   import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
@@ -531,6 +532,9 @@
       </div>
 
       <div class="fla-actions">
+        {#if item.cloud?.routing?.upgradeAvailable && !item.finished && item.operationId}
+          <CloudGpuUpgrade operationId={item.operationId} />
+        {/if}
         {#if item.canPause && item.source === 'job'}
           <Button
             disabled={busyId === item.id}

@@ -4,7 +4,7 @@
    * CloudJobDialog.jsx and cloud-job.css): the model on its slider, the server's estimate as a p50–p90
    * range with how it is billed (metered GPU time × rate + a start fee per worker, never a fixed
    * price), the amount the AI Wallet holds, and a per-job consent naming the terms version. A refusal
-   * replaces the submit button, and nothing ever moves to another worker. Once confirmed, the dialog
+   * replaces the submit button. GPU pricing changes require a separate approval. Once confirmed, the dialog
    * follows the same durable job Activity shows, so the two always agree; closing it leaves the job
    * running.
    *
@@ -14,6 +14,7 @@
   import './cloud-job.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
   import CloudMlModelSlider from '$lib/components/frameleaf/cloud/CloudMlModelSlider.svelte';
   import { activityCloudJob, mediaOperationStage } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
@@ -322,6 +323,12 @@
             {formatUsd(estimate.holdUsd)}
             <small>{$t('frameleaf_cloud_job_fact_held_help')}</small>
           </dd>
+          {#if estimate.approvedMaximumUsd !== undefined}
+            <dt>{$t('frameleaf_cloud_job_authorized_maximum')}</dt>
+            <dd>
+              {formatUsd(estimate.approvedMaximumUsd)}<small>{$t('frameleaf_cloud_job_authorized_maximum_help')}</small>
+            </dd>
+          {/if}
           <dt>{$t('frameleaf_cloud_job_fact_available')}</dt>
           <dd class:fcj-short={estimate.refusal?.code === 'insufficient-credits'}>
             {formatUsd(estimate.availableUsd)}
@@ -452,6 +459,9 @@
         </Button>
       {/if}
     {:else if !ended}
+      {#if cloud?.routing?.upgradeAvailable && job}
+        <CloudGpuUpgrade operationId={job.operationId} />
+      {/if}
       <Button onclick={close}>{$t('frameleaf_cloud_job_continue_in_activity')}</Button>
     {:else}
       <Button variant="primary" onclick={close}>{$t('done')}</Button>

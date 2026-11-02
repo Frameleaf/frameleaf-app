@@ -51,6 +51,13 @@ const open = () =>
   });
 
 describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () => {
+  it('shows the explicit approved maximum alongside a routed quote', async () => {
+    sdkMock.estimateCloudMlJob.mockResolvedValue({ ...estimate(null), approvedMaximumUsd: 0.21 });
+    open();
+    expect(await screen.findByText('frameleaf_cloud_job_authorized_maximum')).toBeInTheDocument();
+    expect(messages.frameleaf_cloud_job_authorized_maximum_help).toMatch(/maximum.*approve.*higher/i);
+  });
+
   it('shows the lowered factor and what it changes before the owner confirms', async () => {
     sdkMock.estimateCloudMlJob.mockResolvedValue(
       estimate({ requestedScale: 4, appliedScale: 2, lowered: true, outputWidth: 8000, outputHeight: 6000 }),

@@ -276,6 +276,7 @@ export type ActivityCloudJob = {
   preview: boolean;
   plannedWorkers: number;
   workers: number;
+  routing?: CloudMlJobActivityDto['routing'];
   cost: {
     estimatedUsd: number;
     estimatedHighUsd: number;
@@ -340,6 +341,7 @@ export const activityCloudJob = (cloudJob: CloudMlJobActivityDto): ActivityCloud
   preview: cloudJob.stage === CloudMlJobStage.Preview,
   plannedWorkers: cloudJob.plannedWorkers,
   workers: cloudJob.workers,
+  ...(cloudJob.routing && { routing: cloudJob.routing }),
   cost: {
     estimatedUsd: cloudJob.cost.estimatedP50Usd,
     estimatedHighUsd: cloudJob.cost.estimatedP90Usd,

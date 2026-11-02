@@ -22271,6 +22271,128 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/cloud/ml/jobs/{id}/upgrade": {
+      "post": {
+        "operationId": "upgradeCloudMlJob",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudMlJobUpgradeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlJobActivityDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Approve a new maximum for remaining Cloud work",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "cloudMlJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/cloud/ml/jobs/{id}/upgrade-estimate": {
+      "post": {
+        "operationId": "estimateCloudMlJobUpgrade",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudMlJobUpgradeEstimateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate a GPU upgrade for remaining work",
+        "tags": [
+          "Frameleaf Cloud jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "cloudMlJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/cluster-groups/requests": {
       "get": {
         "description": "Retrieve the pending requests for the current user to join a cluster group.",
@@ -82828,6 +82950,9 @@
           "purpose": {
             "$ref": "#/components/schemas/CloudMlJobPurpose"
           },
+          "routing": {
+            "$ref": "#/components/schemas/CloudMlJobRoutingDto"
+          },
           "stage": {
             "$ref": "#/components/schemas/CloudMlJobStage"
           },
@@ -83079,6 +83204,11 @@
       },
       "CloudMlJobEstimateResponseDto": {
         "properties": {
+          "approvedMaximumUsd": {
+            "description": "The maximum the owner authorizes for this job, USD",
+            "format": "double",
+            "type": "number"
+          },
           "availableUsd": {
             "description": "AI Wallet balance minus holds, USD",
             "format": "double",
@@ -83400,6 +83530,89 @@
         ],
         "type": "object"
       },
+      "CloudMlJobRoutingDto": {
+        "additionalProperties": false,
+        "properties": {
+          "approvedMaximumUsd": {
+            "description": "The current total approved maximum, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "priceHistory": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "approvedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                  "type": "string"
+                },
+                "approvedMaximumUsd": {
+                  "description": "The total maximum approved with these prices, USD",
+                  "format": "double",
+                  "type": "number"
+                },
+                "computeSku": {
+                  "pattern": "^cs_[\\dA-HJKMNP-TV-Z]{8}$",
+                  "type": "string"
+                },
+                "perSecondUsd": {
+                  "description": "The approved GPU rate per metered second, USD",
+                  "format": "double",
+                  "type": "number"
+                },
+                "revision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "startFeeUsd": {
+                  "description": "The approved fee per new worker, USD",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "revision",
+                "computeSku",
+                "perSecondUsd",
+                "startFeeUsd",
+                "approvedMaximumUsd",
+                "approvedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "pricingRevision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "queuedSince": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "quotedComputeSku": {
+            "pattern": "^cs_[\\dA-HJKMNP-TV-Z]{8}$",
+            "type": "string"
+          },
+          "upgradeAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approvedMaximumUsd",
+          "priceHistory",
+          "pricingRevision",
+          "queuedSince",
+          "quotedComputeSku",
+          "upgradeAvailable"
+        ],
+        "type": "object"
+      },
       "CloudMlJobStage": {
         "description": "preview: a short clip or a crop first; full: the whole file, after the preview was reviewed",
         "enum": [
@@ -83407,6 +83620,108 @@
           "full"
         ],
         "type": "string"
+      },
+      "CloudMlJobUpgradeDto": {
+        "properties": {
+          "acknowledgeMaximum": {
+            "description": "The owner explicitly approved the new total maximum",
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "estimateId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "acknowledgeMaximum",
+          "estimateId"
+        ],
+        "type": "object"
+      },
+      "CloudMlJobUpgradeEstimateDto": {
+        "properties": {
+          "approvedMaximumUsd": {
+            "description": "New total authorized maximum, including incurred charges, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "computeSku": {
+            "type": "string"
+          },
+          "estimateId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "incurredUsd": {
+            "description": "Already incurred under previously approved prices, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "perSecondUsd": {
+            "description": "The next GPU tier rate per metered second, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/CloudMlJobPermissionDto"
+          },
+          "plannedWorkers": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pricingRevision": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudMlJobRefusalDto"
+              }
+            ],
+            "nullable": true
+          },
+          "remainingP50Usd": {
+            "description": "Likely cost of the remaining work on the next GPU tier, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "remainingP90Usd": {
+            "description": "High estimate for the remaining work on the next GPU tier, USD",
+            "format": "double",
+            "type": "number"
+          },
+          "startFeeUsd": {
+            "description": "The start fee for each new worker, USD",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "approvedMaximumUsd",
+          "computeSku",
+          "estimateId",
+          "expiresAt",
+          "incurredUsd",
+          "perSecondUsd",
+          "permission",
+          "plannedWorkers",
+          "pricingRevision",
+          "refusal",
+          "remainingP50Usd",
+          "remainingP90Usd",
+          "startFeeUsd"
+        ],
+        "type": "object"
       },
       "CloudMlJobUpscaleDto": {
         "properties": {
