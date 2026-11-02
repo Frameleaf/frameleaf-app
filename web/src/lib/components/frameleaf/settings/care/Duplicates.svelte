@@ -34,7 +34,12 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
-  import { ALIKE_CHOICES, alikeChoiceOf, aboutDuration } from '$lib/components/frameleaf/settings/care/duplicates';
+  import {
+    ALIKE_CHOICES,
+    alikeChoiceOf,
+    aboutDuration,
+    videoLookOf,
+  } from '$lib/components/frameleaf/settings/care/duplicates';
   import Explain from '$lib/components/frameleaf/settings/intelligence/Explain.svelte';
   import Figure from '$lib/components/frameleaf/settings/intelligence/Figure.svelte';
   import MasterOff from '$lib/components/frameleaf/settings/intelligence/MasterOff.svelte';
@@ -99,6 +104,8 @@
   const settingsDraft = requireSystemConfigDraft();
   const ml = $derived(settingsDraft.draft.machineLearning);
   const dupes = $derived(settingsDraft.draft.machineLearning.duplicateDetection);
+  const look = $derived(videoLookOf(dupes.enhancedVideo.maxHashDistance ?? 8));
+  const lookWord = $derived($t(`frameleaf_dupes_look_${look}` as Translations));
   const saved = $derived(settingsDraft.baseline.machineLearning.duplicateDetection);
   const review = $derived(settingsDraft.draft.libraryCare?.duplicateReview ?? false);
 
@@ -585,23 +592,49 @@
             (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.minMatchFraction = value / 100)}
         />
       </Row>
-      <Row label={$t('frameleaf_dupes_video_difference')} help={$t('frameleaf_dupes_video_difference_help')}>
-        <Amount
-          label={$t('frameleaf_dupes_video_difference')}
-          unit={$t('frameleaf_dupes_unit_of_64')}
-          min={0}
-          max={16}
-          value={dupes.enhancedVideo.maxHashDistance ?? 8}
-          disabled={disabled || !looking || !dupes.enhancedVideo.enabled}
-          onChange={(value) =>
-            (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.maxHashDistance = value)}
-        />
+      <Row
+        label={$t('frameleaf_dupes_video_difference')}
+        help={$t('frameleaf_dupes_video_difference_help', {
+          values: { choice: lookWord, detail: $t(`frameleaf_dupes_look_${look}_detail` as Translations) },
+        })}
+      >
+        <label class="slider">
+          <span>{$t('frameleaf_dupes_stricter')}</span>
+          <input
+            type="range"
+            aria-label={$t('frameleaf_dupes_video_difference')}
+            aria-valuetext={lookWord}
+            min={0}
+            max={16}
+            step={1}
+            value={dupes.enhancedVideo.maxHashDistance ?? 8}
+            disabled={disabled || !looking || !dupes.enhancedVideo.enabled}
+            oninput={(event) =>
+              (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.maxHashDistance = Number(
+                event.currentTarget.value,
+              ))}
+          />
+          <span>{$t('frameleaf_dupes_looser')}</span>
+        </label>
       </Row>
     </Advanced>
   </Section>
 </KitPage>
 
 <style>
+  /* settings-v2/care.css .care-slider: Stricter ↔ Looser, the choice said in words in the help. */
+  .slider {
+    display: grid;
+    grid-template-columns: auto minmax(120px, 200px) auto;
+    align-items: center;
+    gap: var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .slider input {
+    width: 100%;
+    accent-color: var(--fl-accent);
+  }
   /* settings-v2/care.css .care-subhead: a small heading inside a section, above a list of findings. */
   .subhead {
     display: flex;

@@ -140,12 +140,12 @@ describe('Storage & originals (FL-365)', () => {
     expect((draft.store as { draft: Config }).draft.storageTemplate.template).toBe('{{y}}/{{MM}}/{{filename}}');
   });
 
-  it('shows the account ID as the folder when there is no storage label', async () => {
+  it('never shows the account ID as the folder when there is no storage label', async () => {
     auth.user.storageLabel = null;
     render(FolderLayout);
-    expect(
-      (await screen.findAllByText(new RegExp(`Photo library › ${auth.user.id} › 2024 › 2024-06-15`))).length,
-    ).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Photo library › Your folder › 2024 › 2024-06-15/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(new RegExp(auth.user.id))).toBeNull();
+    expect(screen.getByText(/Your account has no folder name yet/)).toBeInTheDocument();
     auth.user.storageLabel = 'admin';
   });
 

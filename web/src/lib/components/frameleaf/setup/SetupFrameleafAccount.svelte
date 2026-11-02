@@ -32,7 +32,7 @@
     type CloudAccountLinkResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiLoading } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiInformationOutline, mdiLoading } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -141,6 +141,11 @@
     }
     // an expired code or a final refusal ends the code step: the form comes back with the reason
     restart();
+    if (answer.refusal === CloudAccountLinkRefusal.PasswordBreached) {
+      // about the password, so it sits under the password field
+      errors = { ...errors, password: message };
+      return;
+    }
     formError = message;
     const region = answer.accountRegion;
     if (
@@ -283,8 +288,11 @@
 {:else}
   <form class="frs-form frs-cloud-form" novalidate onsubmit={(event) => void submit(event)}>
     {#if formError}
-      <p class="auth-error" role="alert">
-        <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} /><span>{formError}</span>
+      <!-- the region offer is a choice, not a failure, so it reads as information -->
+      <p class={offeredRegion ? 'auth-info' : 'auth-error'} role={offeredRegion ? 'status' : 'alert'}>
+        <Icon icon={offeredRegion ? mdiInformationOutline : mdiAlertCircleOutline} size="16" aria-hidden={true} /><span
+          >{formError}</span
+        >
       </p>
     {/if}
     {#if offeredRegion}
@@ -338,7 +346,9 @@
       invalid={!!errors.password}
       describedBy={errors.password ? 'frs-fl-password-error' : undefined}
     />
-    {#if errors.password}<p id="frs-fl-password-error" class="auth-error frs-field-error">{errors.password}</p>{/if}
+    {#if errors.password}<p id="frs-fl-password-error" class="auth-error frs-field-error" role="alert">
+        {errors.password}
+      </p>{/if}
     {#if form.mode === 'create'}
       <p class="auth-note">
         <FormatMessage key="frameleaf_setup_frameleaf_terms">

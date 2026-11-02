@@ -26,7 +26,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   justify-items: start;
-  gap: 6px;
+  gap: var(--fl-space-2);
   margin: 0;
   font-size: var(--fl-font-small);
   font-weight: 600;
@@ -255,7 +255,7 @@
 }
 .le-steps p {
   max-width: 560px;
-  margin: 4px 0 0;
+  margin: var(--fl-space-2) 0 0;
   color: var(--fl-muted);
   font-size: var(--fl-font-small);
   line-height: 1.5;
@@ -266,13 +266,19 @@
   align-items: center;
   gap: var(--fl-space-2) var(--fl-space-3);
   min-width: 0;
-  margin-top: 4px;
+  margin-top: var(--fl-space-2);
 }
+/* The command is something to type, so it reads as code. */
 .le-command code {
+  padding: var(--fl-space-2) var(--fl-space-3);
   color: var(--fl-text);
-  font-family: inherit;
-  font-size: var(--fl-font-callout);
+  font-family: var(--fl-family-mono);
+  font-size: var(--fl-font-small);
+  line-height: 1.5;
   overflow-wrap: anywhere;
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
 }
 .le-steps + .le-hint {
   padding-top: var(--fl-space-2);

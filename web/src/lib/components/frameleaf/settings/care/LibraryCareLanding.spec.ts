@@ -135,7 +135,7 @@ describe('Library care landing (FL-366)', () => {
     render(LibraryCareLanding);
 
     expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Estimate library' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Estimate' })).toBeEnabled());
   });
 
   it('says the library is healthy, with how many files were checked', async () => {

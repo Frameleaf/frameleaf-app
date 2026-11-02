@@ -113,7 +113,7 @@ describe('WorkflowDesigner', () => {
     await screen.findByText('Server timezone: UTC');
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
-    expect(await screen.findByText(/25,001 eligible matches/)).toBeInTheDocument();
+    expect(await screen.findByText(/^25,001 photos and videos match\. Nothing was changed/)).toBeInTheDocument();
     expect(sdkMock.previewWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowPreviewDto: expect.objectContaining({ workflowId: id, source: { filter: { rating: { gte: 4 } } } }),
@@ -175,7 +175,7 @@ describe('WorkflowDesigner', () => {
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
     // the Faces step was not checked, so the count claims no bound
-    expect(await screen.findByText(/^0 matches pass the checked filters/)).toBeInTheDocument();
+    expect(await screen.findByText(/^0 photos and videos match the steps that could be checked/)).toBeInTheDocument();
     const steps = [...document.querySelectorAll('ol.wd-preview li')].map((item) =>
       item.textContent?.replaceAll(/\s+/g, ' ').trim(),
     );
@@ -204,7 +204,7 @@ describe('WorkflowDesigner', () => {
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
-    expect(await screen.findByText(/^At least 10,000 eligible matches/)).toBeInTheDocument();
+    expect(await screen.findByText(/^At least 10,000 photos and videos match\./)).toBeInTheDocument();
     expect(screen.getByText('and at least 9,999 more')).toBeInTheDocument();
   });
 
@@ -224,8 +224,8 @@ describe('WorkflowDesigner', () => {
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
-    expect(await screen.findByText(/^At least 10,000 matches pass the checked filters/)).toBeInTheDocument();
-    expect(screen.queryByText(/^At least 10,000 eligible matches/)).toBeNull();
+    expect(await screen.findByText(/^At least 10,000 match the steps that could be checked/)).toBeInTheDocument();
+    expect(screen.queryByText(/^At least 10,000 photos and videos match\./)).toBeNull();
   });
   it('edits parameters from the installed method schema and follows a schema change', async () => {
     const { rerender } = setup([webhook({ url: { type: 'string', title: 'URL' } }, ['url'])]);

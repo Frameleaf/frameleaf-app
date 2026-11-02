@@ -64,7 +64,7 @@ describe('Folder checks (FL-539)', () => {
     expect(screen.getByText(/1 folder, 3 new photos, nothing removed/)).toBeInTheDocument();
     expect(screen.getByText('A check is not a backup')).toBeInTheDocument();
     expect(screen.getByText('Recommended choices on')).toBeInTheDocument();
-    expect(screen.getByText('3 new · 0 changed · 0 removed')).toBeInTheDocument();
+    expect(screen.getByText('3 added')).toBeInTheDocument();
     expect(screen.getByText(/took 4 minutes/)).toBeInTheDocument();
   });
 

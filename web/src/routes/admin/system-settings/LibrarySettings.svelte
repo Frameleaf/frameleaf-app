@@ -22,7 +22,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
-  import { DEFAULT_EXCLUSION_PATTERNS, libraryKey } from '$lib/frameleaf/libraries';
+  import { checkFound, DEFAULT_EXCLUSION_PATTERNS, libraryKey } from '$lib/frameleaf/libraries';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -137,7 +137,11 @@
 <KitPage>
   <Said message={said} onDismiss={() => (said = '')} />
   {#if loadFailed}
-    <InlineError message={$t('errors.something_went_wrong')} onRetry={() => void load()} />
+    <InlineError
+      title={$t('frameleaf_checks_load_failed_title')}
+      message={$t('frameleaf_checks_load_failed_body')}
+      onRetry={() => void load()}
+    />
   {/if}
   {#if folders !== null}
     {#if folders.length === 0}
@@ -261,9 +265,9 @@
               name={library.name}
               detail={failed(library)
                 ? $t('frameleaf_checks_recent_skipped')
-                : $t('frameleaf_checks_recent_found', {
-                    values: { added: scan.added, updated: scan.updated, removed: scan.offlined },
-                  })}
+                : checkFound({ added: scan.added, changed: scan.updated, missing: scan.offlined })
+                    .map((part) => $t(part.key, { values: part.values }))
+                    .join(' · ')}
               tone={failed(library) ? 'warn' : 'good'}
               status={failed(library)
                 ? $t('frameleaf_checks_recent_status_skipped')

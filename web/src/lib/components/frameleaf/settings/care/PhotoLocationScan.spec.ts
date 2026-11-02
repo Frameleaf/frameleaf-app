@@ -60,11 +60,11 @@ const quote = () => ({
   refusal: null as string | null,
   topUpUrl: null as string | null,
 });
-const consent = () => screen.getByRole('checkbox', { name: /I agree to send/ });
-const start = () => screen.getByRole('button', { name: /Run scan · reserve/ });
-const estimateButton = () => screen.getByRole('button', { name: 'Estimate library' });
+const consent = () => screen.getByRole('checkbox', { name: /Send these photos’ map locations/ });
+const start = () => screen.getByRole('button', { name: /Start · hold/ });
+const estimateButton = () => screen.getByRole('button', { name: 'Estimate' });
 const openQuote = async () => {
-  await fireEvent.click(await screen.findByRole('button', { name: 'Estimate library' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Estimate' }));
   return screen.findByRole('dialog', { name: 'Review photo location scan' });
 };
 
@@ -84,10 +84,11 @@ describe('paid manual photo location scan', () => {
 
   it('shows the optional fixed price without automatically estimating or starting', async () => {
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
-    expect(screen.getByText(/\$5 per 1,000 checked GPS photos/)).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Estimate' });
+    expect(screen.getByText(/Frameleaf Cloud looks them up from each photo’s map location/)).toBeInTheDocument();
+    expect(screen.queryByText(/\$5 per 1,000/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Included with paid/)).not.toBeInTheDocument();
-    expect(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' })).toHaveValue(5);
+    expect(screen.getByRole('spinbutton', { name: 'Most to spend' })).toHaveValue(5);
     expect(api.estimate).not.toHaveBeenCalled();
     expect(api.start).not.toHaveBeenCalled();
   });
@@ -99,18 +100,19 @@ describe('paid manual photo location scan', () => {
       locationScanEstimateRequestDto: { refresh: false, maxSpendMicros: 5_000_000 },
     });
     for (const [label, value] of [
-      ['Eligible GPS photos', '1200'],
+      ['Photos with a map location', '1200'],
       ['Estimated cost for all eligible photos', '$6.00'],
       ['Selected for this job', '1000'],
       ['Remaining for another job', '200'],
       ['Estimated job charge', '$5.00'],
-      ['Maximum credit reservation', '$5.00'],
-      ['Available AI credit', '$10.00'],
+      ['Held from AI credit', '$5.00'],
+      ['AI credit available', '$10.00'],
     ]) {
       expect(within(dialog).getByText(label).nextElementSibling).toHaveTextContent(value);
     }
-    expect(dialog).toHaveTextContent(/cached results and no-match results/);
-    expect(dialog).toHaveTextContent(/Validation failures and unprocessed photos are not charged/);
+    expect(dialog).toHaveTextContent(/Every photo checked is charged, whether or not a place was found/);
+    expect(dialog).toHaveTextContent(/Skipped and failed photos aren’t/);
+    expect(dialog).toHaveTextContent(/\$5\.00 for every 1,000 photos checked/);
     expect(dialog).toHaveTextContent(/No photos are uploaded/);
     expect(dialog).toHaveTextContent(/current map listings.*historical visit/i);
     expect(consent()).not.toBeChecked();
@@ -121,7 +123,7 @@ describe('paid manual photo location scan', () => {
   it('starts only the reviewed quote after explicit GPS sharing and credit reservation consent', async () => {
     render(PhotoLocationScan);
     await openQuote();
-    expect(consent()).toHaveAccessibleName(/reserve up to \$5\.00 in AI credits/);
+    expect(consent()).toHaveAccessibleName(/Up to \$5\.00 is held from AI credit while the scan runs/);
     await fireEvent.click(consent());
     await fireEvent.click(start());
     expect(api.start).toHaveBeenCalledExactlyOnceWith({
@@ -134,7 +136,7 @@ describe('paid manual photo location scan', () => {
   it('requires a new explicit refresh choice for the next paid job', async () => {
     api.start.mockResolvedValue(status(scan('completed', finalBilling())));
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
+    await screen.findByRole('button', { name: 'Estimate' });
     await fireEvent.click(screen.getByRole('checkbox', { name: 'Refresh existing suggestions' }));
     await openQuote();
     await fireEvent.click(consent());
@@ -149,7 +151,7 @@ describe('paid manual photo location scan', () => {
 
   it('sends the photo cap instead of the spend cap and includes refresh only by choice', async () => {
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
+    await screen.findByRole('button', { name: 'Estimate' });
     await fireEvent.click(screen.getByRole('button', { name: 'Photo limit' }));
     expect(screen.getByRole('spinbutton', { name: 'Maximum photos' })).toHaveValue(1000);
     await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum photos' }), { target: { value: '25' } });
@@ -160,7 +162,7 @@ describe('paid manual photo location scan', () => {
     });
   });
 
-  it('preserves a half-cent spend cap and shows the pro-rata reservation without rounding it up', async () => {
+  it('accepts a one-cent spend cap and shows the hold the estimate gives', async () => {
     api.estimate.mockResolvedValue({
       ...quote(),
       eligiblePhotos: 1,
@@ -170,36 +172,36 @@ describe('paid manual photo location scan', () => {
       holdMicros: 5000,
     });
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
-    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' }), {
-      target: { value: '0.005' },
+    await screen.findByRole('button', { name: 'Estimate' });
+    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Most to spend' }), {
+      target: { value: '0.01' },
     });
     const dialog = await openQuote();
     expect(api.estimate).toHaveBeenCalledExactlyOnceWith({
-      locationScanEstimateRequestDto: { refresh: false, maxSpendMicros: 5000 },
+      locationScanEstimateRequestDto: { refresh: false, maxSpendMicros: 10_000 },
     });
-    expect(within(dialog).getByText('Maximum credit reservation').nextElementSibling).toHaveTextContent('$0.0050');
+    expect(within(dialog).getByText('Held from AI credit').nextElementSibling).toHaveTextContent('$0.0050');
   });
 
-  it('does not round a fractional-micro spend cap up to a billable photo', async () => {
+  it('accepts only whole cents as a spend cap', async () => {
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
-    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' }), {
-      target: { value: '0.0049999' },
+    await screen.findByRole('button', { name: 'Estimate' });
+    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Most to spend' }), {
+      target: { value: '0.005' },
     });
     expect(estimateButton()).toBeDisabled();
     expect(api.estimate).not.toHaveBeenCalled();
   });
 
-  it('preserves valid decimal spend limits at micro-dollar precision', async () => {
+  it('preserves a spend cap in dollars and cents', async () => {
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
-    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' }), {
-      target: { value: '1.005' },
+    await screen.findByRole('button', { name: 'Estimate' });
+    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Most to spend' }), {
+      target: { value: '1.25' },
     });
     await openQuote();
     expect(api.estimate).toHaveBeenCalledExactlyOnceWith({
-      locationScanEstimateRequestDto: { refresh: false, maxSpendMicros: 1_005_000 },
+      locationScanEstimateRequestDto: { refresh: false, maxSpendMicros: 1_250_000 },
     });
   });
 
@@ -208,7 +210,7 @@ describe('paid manual photo location scan', () => {
     await openQuote();
     await fireEvent.click(consent());
     if (change === 'limit') {
-      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' }), {
+      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Most to spend' }), {
         target: { value: '2' },
       });
     } else if (change === 'mode') {
@@ -225,8 +227,8 @@ describe('paid manual photo location scan', () => {
 
   it('refuses empty, zero, negative, and fractional photo limits', async () => {
     render(PhotoLocationScan);
-    await screen.findByRole('button', { name: 'Estimate library' });
-    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' }), { target: { value: '' } });
+    await screen.findByRole('button', { name: 'Estimate' });
+    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Most to spend' }), { target: { value: '' } });
     expect(estimateButton()).toBeDisabled();
     await fireEvent.click(screen.getByRole('button', { name: 'Photo limit' }));
     for (const value of ['0', '-1', '2.5', '']) {
@@ -263,7 +265,7 @@ describe('paid manual photo location scan', () => {
     render(PhotoLocationScan);
     const dialog = await openQuote();
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Not enough AI credit');
-    expect(screen.queryByRole('button', { name: /Run scan · reserve/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Start · hold/ })).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Add AI credit' }));
     expect(getCloudManager.request).toMatchObject({
       feature: 'processing',
@@ -289,7 +291,7 @@ describe('paid manual photo location scan', () => {
     render(PhotoLocationScan);
     const dialog = await openQuote();
     expect(dialog).toHaveTextContent('No eligible photos need location identification');
-    expect(screen.queryByRole('checkbox', { name: /I agree to send/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Send these photos’ map locations/ })).not.toBeInTheDocument();
     expect(api.start).not.toHaveBeenCalled();
   });
 
@@ -297,7 +299,7 @@ describe('paid manual photo location scan', () => {
     api.status.mockResolvedValue({ ...status(), enabled: false, available: false });
     render(PhotoLocationScan);
     expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Estimate library' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Estimate' })).toBeEnabled();
     expect(screen.queryByText(/paid Frameleaf Cloud plan/)).not.toBeInTheDocument();
   });
 
@@ -309,7 +311,7 @@ describe('paid manual photo location scan', () => {
     expect(progress).toHaveAttribute('aria-valuemax', '1000');
     for (const [label, count] of [
       ['Matched', 3],
-      ['Unmatched', 1],
+      ['Not matched', 1],
       ['Skipped', 1],
       ['Failed', 1],
     ] as const) {
@@ -318,9 +320,9 @@ describe('paid manual photo location scan', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel scan' }));
     expect(api.cancel).toHaveBeenCalledExactlyOnceWith({ id: 'scan-1' });
     expect(await screen.findByText('Cancelled')).toBeInTheDocument();
-    expect(screen.getByText('Cloud is settling this job')).toBeInTheDocument();
-    expect(screen.queryByText('Unused credit released')).not.toBeInTheDocument();
-    expect(screen.queryByText('Charged')).not.toBeInTheDocument();
+    expect(screen.getByText('Settling… Frameleaf Cloud sends the receipt within a few minutes.')).toBeInTheDocument();
+    expect(screen.queryByText('Returned to AI credit')).not.toBeInTheDocument();
+    expect(screen.queryByText('Settled')).not.toBeInTheDocument();
   });
 
   it('keeps polling after cancellation until Cloud supplies the final charge and release receipt', async () => {
@@ -330,10 +332,10 @@ describe('paid manual photo location scan', () => {
       .mockResolvedValue(status(scan('cancelled', finalBilling())));
     const view = render(PhotoLocationScan);
     await vi.advanceTimersByTimeAsync(0);
-    expect(screen.queryByText('Unused credit released')).not.toBeInTheDocument();
+    expect(screen.queryByText('Returned to AI credit')).not.toBeInTheDocument();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(screen.getByText('Charged').nextElementSibling).toHaveTextContent('$0.0200');
-    expect(screen.getByText('Unused credit released').nextElementSibling).toHaveTextContent('$4.98');
+    expect(screen.getByText('Settled').nextElementSibling).toHaveTextContent('$0.0200');
+    expect(screen.getByText('Returned to AI credit').nextElementSibling).toHaveTextContent('$4.98');
     await vi.advanceTimersByTimeAsync(30_000);
     expect(api.status).toHaveBeenCalledTimes(2);
     view.unmount();
@@ -347,9 +349,9 @@ describe('paid manual photo location scan', () => {
     render(PhotoLocationScan);
     await vi.advanceTimersByTimeAsync(0);
     expect(screen.getByText('Waiting for the Cloud billing receipt')).toBeInTheDocument();
-    expect(screen.queryByText('Unused credit released')).not.toBeInTheDocument();
+    expect(screen.queryByText('Returned to AI credit')).not.toBeInTheDocument();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(screen.getByText('Charged')).toBeInTheDocument();
+    expect(screen.getByText('Settled')).toBeInTheDocument();
   });
 
   it('shows an authoritative no-charge receipt for cancellation before a hold', async () => {
@@ -366,7 +368,7 @@ describe('paid manual photo location scan', () => {
     );
     render(PhotoLocationScan);
     expect(await screen.findByText('No charge')).toBeInTheDocument();
-    expect(screen.getByText('Charged').nextElementSibling).toHaveTextContent('$0.00');
+    expect(screen.getByText('Settled').nextElementSibling).toHaveTextContent('$0.00');
   });
 
   it('clears a rejected quote and checks status before another estimate or reservation', async () => {
@@ -388,7 +390,7 @@ describe('paid manual photo location scan', () => {
   it('retries a failed estimate without starting', async () => {
     api.estimate.mockRejectedValueOnce(new Error('offline')).mockImplementation(() => Promise.resolve(quote()));
     render(PhotoLocationScan);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Estimate library' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Estimate' }));
     await screen.findByRole('alert');
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('dialog', { name: 'Review photo location scan' })).toBeInTheDocument();
@@ -404,7 +406,7 @@ describe('paid manual photo location scan', () => {
     api.status.mockResolvedValue(status(scan('cancelled', billing('settling'))));
     await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Cancelled')).toBeInTheDocument();
-    expect(screen.getByText('Cloud is settling this job')).toBeInTheDocument();
+    expect(screen.getByText('Settling… Frameleaf Cloud sends the receipt within a few minutes.')).toBeInTheDocument();
     expect(api.cancel).toHaveBeenCalledTimes(2);
   });
 
@@ -423,7 +425,7 @@ describe('paid manual photo location scan', () => {
     pending.resolve(status(scan()));
     await vi.advanceTimersByTimeAsync(0);
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
-    expect(screen.getByText('Unused credit released')).toBeInTheDocument();
+    expect(screen.getByText('Returned to AI credit')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel scan' })).not.toBeInTheDocument();
   });
 
@@ -454,7 +456,8 @@ describe('paid manual photo location scan', () => {
   it('shows a pause reason and requires a new estimate to retry a failed job', async () => {
     api.status.mockResolvedValue(status({ ...scan('paused'), reason: 'Waiting for Cloud capacity' }));
     const view = render(PhotoLocationScan);
-    expect(await screen.findByText('Waiting for Cloud capacity')).toBeInTheDocument();
+    expect(await screen.findByText('The scan stopped for a moment and carries on by itself.')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting for Cloud capacity')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel scan' })).toBeEnabled();
     view.unmount();
     api.status.mockResolvedValue(status(scan('failed', finalBilling())));
@@ -468,13 +471,13 @@ describe('paid manual photo location scan', () => {
     const pending = deferredPromise<ReturnType<typeof quote>>();
     api.estimate.mockReturnValue(pending.promise);
     const view = render(PhotoLocationScan);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Estimate library' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Estimate' }));
     if (change === 'close') {
       view.unmount();
     } else if (change === 'session') {
       authManager.reset();
     } else {
-      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Maximum spend (USD)' }), {
+      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Most to spend' }), {
         target: { value: '2' },
       });
     }

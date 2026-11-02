@@ -277,7 +277,40 @@ type FailureKey =
   | 'frameleaf_libraries_scan_failed';
 
 /** What the scan block's message says, as a translation key and its values. */
-export type ScanMessage = { key: Translations; values?: Record<string, string | number> };
+export type ScanMessage = {
+  key: Translations;
+  values?: Record<string, string | number>;
+  /** Shown in place of `key`, joined with " · " (a finished check's counts). */
+  parts?: ScanMessage[];
+};
+
+/**
+ * What a folder check found, with the parts that are zero left out: "12,400 added", not
+ * "0 already in the library · 12,400 added · 0 missing". Nothing found reads "Nothing new".
+ */
+export const checkFound = ({
+  matched = 0,
+  added = 0,
+  changed = 0,
+  missing = 0,
+}: {
+  matched?: number;
+  added?: number;
+  changed?: number;
+  missing?: number;
+}): ScanMessage[] => {
+  const parts = (
+    [
+      ['frameleaf_libraries_found_matched', matched],
+      ['frameleaf_libraries_found_added', added],
+      ['frameleaf_libraries_found_changed', changed],
+      ['frameleaf_libraries_found_missing', missing],
+    ] as const
+  )
+    .filter(([, count]) => count > 0)
+    .map(([key, count]) => ({ key, values: { count } }));
+  return parts.length > 0 ? parts : [{ key: 'frameleaf_libraries_found_nothing' }];
+};
 
 const FAILURE_KEYS: Readonly<Record<string, FailureKey>> = {
   library_source_unavailable: 'frameleaf_libraries_scan_failed_unavailable',
@@ -322,15 +355,13 @@ export const scanMessage = (scan: LibraryScanResponseDto | null | undefined): Sc
       return { key: 'frameleaf_libraries_scan_cancelled' };
     }
     case 'completed': {
-      return {
-        key: 'frameleaf_libraries_scan_completed',
-        values: {
-          // the check phase also looks at the items this scan just added; they were not there to match
-          matched: Math.max(0, scan.checked - scan.added - scan.offlined),
-          added: scan.added,
-          missing: scan.offlined,
-        },
-      };
+      const parts = checkFound({
+        // the check phase also looks at the items this scan just added; they were not there to match
+        matched: Math.max(0, scan.checked - scan.added - scan.offlined),
+        added: scan.added,
+        missing: scan.offlined,
+      });
+      return { key: parts[0].key, values: parts[0].values, parts };
     }
     default: {
       return scan.phase === LibraryScanPhase.Crawl

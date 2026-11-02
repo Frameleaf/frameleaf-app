@@ -39,6 +39,17 @@
     no_charge: 'frameleaf_location_scan_billing_no_charge',
   } as const;
 
+  /**
+   * The server says why a scan paused in its own words; a person sees one of these sentences
+   * instead, and anything not listed gets a general one, never the raw text.
+   */
+  const PAUSES = [
+    [/request allowance/i, 'frameleaf_location_scan_pause_busy'],
+    [/temporarily unavailable/i, 'frameleaf_location_scan_pause_unavailable'],
+  ] as const;
+  const pauseReason = (serverText: string) =>
+    PAUSES.find(([pattern]) => pattern.test(serverText))?.[1] ?? 'frameleaf_location_scan_pause_other';
+
   let response = $state<LocationScanStatusResponseDto>();
   let quote = $state<LocationScanEstimateResponseDto | null>(null);
   let quoteOpen = $state(false);
@@ -57,13 +68,13 @@
   const active = $derived(!!scan && ['queued', 'preparing', 'uploading', 'running', 'paused'].includes(scan.status));
   const billingFinal = $derived(!!scan?.billing && ['settled', 'released', 'no_charge'].includes(scan.billing.state));
   const spendMicros = $derived(Math.round((spendLimit ?? 0) * 1_000_000));
-  // A spending limit must be representable in micros without rounding it up.
+  // A spending limit is whole cents: at least one, and never rounded.
   const validLimit = $derived(
     limitMode === 'spend'
       ? Number.isSafeInteger(spendMicros) &&
-          spendMicros >= 5000 &&
+          spendMicros >= 10_000 &&
           spendLimit !== undefined &&
-          spendLimit === Number(spendLimit.toFixed(6))
+          spendLimit === Number(spendLimit.toFixed(2))
       : photoLimit !== undefined && Number.isSafeInteger(photoLimit) && photoLimit > 0,
   );
 
@@ -261,7 +272,7 @@
         <span
           >{$t('frameleaf_location_scan_progress', { values: { processed: scan.processed, total: scan.total } })}</span
         >
-        {#if scan.status === 'paused' && scan.reason}<span>{scan.reason}</span>{/if}
+        {#if scan.status === 'paused' && scan.reason}<span>{$t(pauseReason(scan.reason))}</span>{/if}
       </div>
       {#if active}
         <progress
@@ -327,14 +338,18 @@
         {#if limitMode === 'spend'}
           <label class="number-field"
             >{$t('frameleaf_location_scan_max_spend')}
-            <input
-              type="number"
-              min="0.005"
-              step="0.000001"
-              bind:value={spendLimit}
-              disabled={busy}
-              oninput={invalidateQuote}
-            />
+            <span class="unit">
+              <input
+                type="number"
+                aria-label={$t('frameleaf_location_scan_max_spend')}
+                min="0.01"
+                step="0.01"
+                bind:value={spendLimit}
+                disabled={busy}
+                oninput={invalidateQuote}
+              />
+              <span>{$t('frameleaf_location_scan_max_spend_unit')}</span>
+            </span>
           </label>
         {:else}
           <label class="number-field"
@@ -422,14 +437,17 @@
         {#if quoteExpired}<Notice>{$t('frameleaf_location_scan_expired')}</Notice>{/if}
         {#if quote.refusal}<p role="alert">{quote.refusal}</p>{/if}
         {#if quote.canStart && quote.estimateId && quote.expiresAt}
-          <label
-            ><input type="checkbox" bind:checked={consent} disabled={busy || quoteExpired} />{$t(
-              'frameleaf_location_scan_consent',
-              {
-                values: { amount: formatUsd(quote.holdMicros / 1_000_000) },
-              },
-            )}</label
-          >
+          <label class="consent">
+            <input type="checkbox" bind:checked={consent} disabled={busy || quoteExpired} />
+            <span>
+              <strong>{$t('frameleaf_location_scan_consent')}</strong>
+              <small>
+                {$t('frameleaf_location_scan_consent_detail', {
+                  values: { amount: formatUsd(quote.holdMicros / 1_000_000) },
+                })}
+              </small>
+            </span>
+          </label>
         {/if}
       </div>
     {/if}
@@ -490,8 +508,28 @@
     display: grid;
     max-width: 20rem;
   }
+  .number-field .unit {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    color: var(--fl-muted);
+  }
   .number-field input {
     width: 100%;
+  }
+  .consent {
+    align-items: flex-start;
+  }
+  .consent input {
+    margin-top: 0.25rem;
+  }
+  .consent span {
+    display: grid;
+    gap: var(--fl-space-1);
+  }
+  .consent small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   progress {
     width: 100%;
