@@ -75,7 +75,7 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `FRAMELEAF_IOS_APP_URL`            | https App Store or TestFlight page of the iOS app.                                                                           |         | server     | api     |
 | `FRAMELEAF_ANDROID_STORE_URL`      | https store listing of the Android app (Google Play, F-Droid or another store), offered next to the APKs.                    |         | server     | api     |
 
-\*1: The folder must contain `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, `app-x86_64-release.apk` and `app-release.apk` (universal). Android downloads and Obtainium setup are offered only when all three Android variables are set; a value that is set but invalid stops the server at startup. Without them the Mobile applications and Obtainium setup pages say that no signed release is available. Include `{version}` in the folder so Obtainium recognises each new release.
+\*1: The folder must contain `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, `app-x86_64-release.apk` and `app-release.apk` (universal). Android downloads are offered only when all three Android variables are set; a value that is set but invalid stops the server at startup. Without them the Mobile applications page says that no signed release is available.
 
 ## Frameleaf Cloud
 

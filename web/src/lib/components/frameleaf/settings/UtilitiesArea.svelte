@@ -2,7 +2,6 @@
   import { goto } from '$app/navigation';
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
-  import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import MobileApps from '$lib/components/frameleaf/settings/utilities/MobileApps.svelte';
   import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
   import DuplicateUtility from '$lib/components/frameleaf/DuplicateUtility.svelte';
@@ -16,13 +15,11 @@
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
-  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     LIBRARY_CARE_TOOLS,
-    RARELY_NEEDED_UTILITIES,
     UTILITY_GROUPS,
     utilityStates,
     utilityTool,
@@ -210,8 +207,7 @@
   // The template lists Utilities as an ordinary area directory: grouped rows, each with its tool's
   // icon (UT-12; CommandCenter.jsx:2739, utilities-data.mjs:15-87), no scope tag (every tool works
   // on the signed-in account's own library).
-  // FL-519: tools with something waiting come first, under "Needs a look"; the rarely needed ones
-  // sit under a closed Advanced at the end (a search shows every match in its usual group).
+  // FL-519: tools with something waiting come first, under "Needs a look".
   const searching = $derived(query.trim() !== '');
   const rowOf = (tool: (typeof tools)[number], group: string): DirectoryRow => ({
     id: tool.id,
@@ -231,17 +227,10 @@
     ...UTILITY_GROUPS.flatMap((group) =>
       matches
         .filter((tool) => tool.group === group)
-        .filter((tool) => searching || (!waiting.includes(tool) && !RARELY_NEEDED_UTILITIES.includes(tool.id)))
+        .filter((tool) => searching || !waiting.includes(tool))
         .map((tool) => rowOf(tool, $t(`library_care_group_${group}`))),
     ),
   ]);
-  const rareRows = $derived(
-    searching
-      ? []
-      : tools
-          .filter((tool) => RARELY_NEEDED_UTILITIES.includes(tool.id) && !waiting.includes(tool))
-          .map((tool) => rowOf(tool, '')),
-  );
 
   const select = (section?: UtilityId) => {
     onNavigate?.();
@@ -307,11 +296,6 @@
     {/if}
   {/if}
   <SettingsDirectory {rows} areaTitle={$t('frameleaf_tools')} />
-  {#if rareRows.length > 0}
-    <Advanced summary={$t('frameleaf_utilities_rarely_needed')}>
-      <SettingsDirectory rows={rareRows} />
-    </Advanced>
-  {/if}
   {#if matches.length === 0}<p role="status">{$t('frameleaf_settings_search_empty', { values: { query } })}</p>{/if}
 {:else if failed}
   <InlineError message={$t('frameleaf_utilities_load_error')} onRetry={() => retry++} />
@@ -340,8 +324,6 @@
           />
         {/key}
       {:else if data.tool === 'downloads'}<MobileApps />
-      {:else if data.tool === 'obtainium'}
-        <ApplicationSetup tool={data.tool} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <LibraryCareHealth

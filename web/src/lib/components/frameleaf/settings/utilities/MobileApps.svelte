@@ -161,7 +161,7 @@
       {/if}
     </ItemList>
     <Advanced summary={$t('frameleaf_mobile_no_store')}>
-      <ApplicationSetup tool="downloads" />
+      <ApplicationSetup />
     </Advanced>
   </Section>
 </KitPage>

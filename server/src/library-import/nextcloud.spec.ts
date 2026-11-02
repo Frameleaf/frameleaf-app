@@ -5,7 +5,10 @@ import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import content from 'src/library-import/fixtures/nextcloud/35-8-10.2-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/nextcloud/35-8-10.2-sqlite.json' with { type: 'json' };
+import argonVectors from 'src/library-import/fixtures/password-argon2-vectors.json' with { type: 'json' };
+import bcryptVectors from 'src/library-import/fixtures/password-vectors.json' with { type: 'json' };
 import { NextcloudTable, openNextcloudSnapshot } from 'src/library-import/nextcloud.js';
+import { verifyImportedPassword } from 'src/library-import/passwords.js';
 
 describe('Nextcloud Photos / Memories pinned SQLite extraction', () => {
   let root: string;
@@ -39,6 +42,27 @@ describe('Nextcloud Photos / Memories pinned SQLite extraction', () => {
   afterEach(async () => {
     database.close();
     await rm(root, { recursive: true, force: true });
+  });
+  it.each(['1', '2', '3'])('preserves a mapped local account with source password version %s', async (version) => {
+    const vector =
+      version === '1'
+        ? bcryptVectors.php.vectors[0]
+        : argonVectors.vectors.find((row) => row.hash.startsWith(version === '2' ? '$argon2i$' : '$argon2id$'))!;
+    const uid = String(database.prepare('SELECT uid FROM oc_users ORDER BY uid LIMIT 1').get()!.uid);
+    database.prepare('UPDATE oc_users SET password=? WHERE uid=?').run(`${version}|${vector.hash}`, uid);
+    const source = openNextcloudSnapshot(path, fixture.source.version);
+    try {
+      const credential = await source.password({
+        operationId: '11111111-1111-4111-8111-111111111111',
+        sourceUserId: uid,
+        destinationUserId: '22222222-2222-4222-8222-222222222222',
+      });
+      expect(await verifyImportedPassword(vector.password, credential!.forImport())).toBe(true);
+      expect(await verifyImportedPassword('wrong', credential!.forImport())).toBe(false);
+      expect([...source.rows('oc_users')].flat()[0]).not.toHaveProperty('password');
+    } finally {
+      source.close();
+    }
   });
   const rows = (table: NextcloudTable) => {
     const source = openNextcloudSnapshot(path, fixture.source.version);

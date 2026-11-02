@@ -42,7 +42,7 @@ const metadata = z.strictObject({
   deletedAt: z.iso.datetime({ offset: true }).optional(),
 });
 
-const manifestSchema = z.strictObject({
+const legacyManifestSchema = z.strictObject({
   format: z.literal('frameleaf-library-import'),
   version: z.literal(1),
   source: z.strictObject({ kind: z.enum(sourceKinds), version: id, identity: id, revision: id, schemaSha256: sha256 }),
@@ -84,6 +84,13 @@ const manifestSchema = z.strictObject({
   ),
   losses: z.array(z.strictObject({ code: id, entityId: id.optional(), acknowledged: z.boolean() })),
 });
+const manifestSchema = z.discriminatedUnion('version', [
+  legacyManifestSchema,
+  legacyManifestSchema.extend({
+    version: z.literal(2),
+    assets: z.array(legacyManifestSchema.shape.assets.element.extend({ primaryFileId: id })),
+  }),
+]);
 export type ImportManifest = z.infer<typeof manifestSchema>;
 
 /** This validates bundle structure; source adapters must independently establish inventory evidence. */
@@ -121,7 +128,14 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
     if (!indexes.users.has(asset.ownerId)) fail('UNKNOWN_OWNER');
     if (new Set(asset.fileIds).size !== asset.fileIds.length) fail('DUPLICATE_FILE_REFERENCE');
     if (asset.fileIds.some((fileId) => !files.has(fileId))) fail('UNKNOWN_FILE');
-    if (asset.fileIds.every((fileId) => files.get(fileId)?.role !== 'original')) fail('MISSING_ORIGINAL');
+    const originals = asset.fileIds.filter((fileId) => files.get(fileId)?.role === 'original');
+    if (originals.length === 0) fail('MISSING_ORIGINAL');
+    if ('primaryFileId' in asset) {
+      if (!asset.fileIds.includes(asset.primaryFileId) || files.get(asset.primaryFileId)?.role !== 'original')
+        fail('PRIMARY_ORIGINAL_INVALID');
+    } else if (originals.length !== 1) {
+      fail('PRIMARY_ORIGINAL_REQUIRED');
+    }
   }
   for (const album of value.albums) {
     if (!indexes.users.has(album.ownerId)) fail('UNKNOWN_OWNER');

@@ -27,9 +27,8 @@ describe('Command Center utilities', () => {
       'icloud',
       'workflows',
       'downloads',
-      'obtainium',
     ]);
-    expect(utilityToolsFor(true)).toHaveLength(10);
+    expect(utilityToolsFor(true)).toHaveLength(9);
     // FL-416: File trash left Utilities; it is Library care › Unused files, the server owner's
     expect(utilityTool('file-trash')).toBeUndefined();
     expect(utilityTool('preservation')).toBeUndefined();

@@ -48,6 +48,23 @@ export async function verifyServerPackage(
   await verifyStudioSubtitleRuntime(root, canonicalRuntime);
 
   const require = createRequire(resolve(root, "package.json"));
+  const argonEntry = await contained(require.resolve("@node-rs/argon2"));
+  const argonRequire = createRequire(argonEntry);
+  const nativeName = `@node-rs/argon2-${process.platform}-${process.arch}${process.platform === "linux" ? "-gnu" : ""}`;
+  await contained(argonRequire.resolve(nativeName));
+  const { hashRaw } = require("@node-rs/argon2");
+  assert.equal(
+    (
+      await hashRaw("synthetic packaging check", {
+        memoryCost: 1024,
+        timeCost: 1,
+        parallelism: 1,
+        salt: Buffer.alloc(16, 1),
+      })
+    ).length,
+    32,
+    "Imported-password native runtime failed",
+  );
   const entry = await contained(require.resolve("@frameleaf/sql-tools"));
   const sqlRoot = dirname(dirname(entry));
   const manifest = JSON.parse(
