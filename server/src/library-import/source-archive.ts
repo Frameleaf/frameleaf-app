@@ -16,8 +16,7 @@ import { LibraryImportRefused, parseLibraryImportBinding } from 'src/library-imp
 
 const ordinal = z
   .string()
-  .regex(/^(?:0|[1-9]\d*)$/)
-  .refine((value) => BigInt(value) <= 9_223_372_036_854_775_807n);
+  .refine((value) => /^(?:0|[1-9]\d{0,18})$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n);
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const descriptorSchema = z.strictObject({
   format: z.literal('frameleaf-source-archive'),
