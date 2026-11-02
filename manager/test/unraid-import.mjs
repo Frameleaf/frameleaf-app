@@ -291,10 +291,11 @@ EOF
     nas(`docker tag ${sh(MANAGER_IMAGE)} ghcr.io/frameleaf/frameleaf-manager:latest`);
   });
   const xml = readFileSync(join(ROOT, 'packaging/nas/unraid/frameleaf-manager.xml.in'), 'utf8');
-  // The README: select the existing unraid-autostart under DockerRootDir, then set the controller path.
-  const values = { 'Unraid autostart file': autostart, 'Autostart controller path': '/run/frameleaf-host/unraid-autostart' };
+  // Default template, with no manual autostart path or mount.
+  const values = {};
   await step('Manager: stopped older copy + template-rendered container', async () => {
     const run = renderTemplate(xml, values);
+    assert.ok(!run.some((arg) => arg.includes('/run/frameleaf-host/unraid-autostart')));
     report.managerRun = run;
     const create = [...run];
     create[0] = 'create';
