@@ -1003,7 +1003,7 @@ describe(IntegrityService.name, () => {
 
       const {
         result: { id: badAssetId },
-      } = await ctx.newAsset({ ownerId, originalPath: '/path/to/missing', checksum: Buffer.from('2') });
+      } = await ctx.newAsset({ ownerId, originalPath: '/path/to/bad', checksum: Buffer.from('2') });
 
       const { id: badReportId } = await integrity.create({
         type: IntegrityReport.ChecksumFail,

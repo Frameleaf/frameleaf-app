@@ -428,3 +428,61 @@ it('publishes an in-flight upload summary after a harmless favorite edit', async
     manager.destroy();
   }
 });
+
+it('keeps a newly loaded distant page when eight nearby pages cannot be evicted', async () => {
+  const many = timelineAssetFactory.buildList(10, { localDateTime: date, fileCreatedAt: date });
+  sdkMock.getTimeBuckets.mockResolvedValue(
+    many.map((asset, page) => ({
+      timeBucket: '2024-01-01',
+      count: 1,
+      page,
+      after: many[page - 1]?.id ?? null,
+      firstAssetId: asset.id,
+      lastAssetId: asset.id,
+    })),
+  );
+  sdkMock.getTimeBucket.mockImplementation(async ({ firstAssetId }) =>
+    toResponseDto(many.find(({ id }) => id === firstAssetId)!),
+  );
+  const manager = new TimelineManager();
+  try {
+    await manager.updateOptions({});
+    for (const month of manager.months.slice(0, 8)) {
+      vi.spyOn(month, 'isInOrNearViewport', 'get').mockReturnValue(true);
+      await manager.loadTimelineMonth(month.yearMonth, { cancelable: false });
+    }
+    for (const month of manager.months.slice(8)) {
+      await manager.loadTimelineMonth(month.yearMonth, { cancelable: false });
+      expect(month.isLoaded).toBe(true);
+      expect(month.getFirstAsset()?.id).toBe(many[month.yearMonth.page!].id);
+    }
+    expect(manager.months[8].isLoaded).toBe(false);
+    expect(manager.months.slice(0, 8).every((month) => month.isLoaded)).toBe(true);
+    expect(manager.months.filter((month) => month.isLoaded)).toHaveLength(9);
+  } finally {
+    manager.destroy();
+  }
+});
+
+it.each([false, true])(
+  'handles an absent range anchor without selecting after an interrupted lookup (%s)',
+  async (interrupted) => {
+    sdkMock.getTimeBuckets.mockResolvedValue(pages);
+    sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(assets[0]));
+    const manager = new TimelineManager();
+    try {
+      await manager.updateOptions({});
+      await manager.loadTimelineMonth(manager.months[0].yearMonth, { cancelable: false });
+      sdkMock.getTimeBuckets.mockImplementation(async () => {
+        if (interrupted) {
+          manager.invalidateLiveProjection();
+        }
+        return [];
+      });
+      const range = await manager.retrieveRange({ id: 'absent-anchor' }, assets[0]);
+      expect(range.map(({ id }) => id)).toEqual(interrupted ? [] : [assets[0].id]);
+    } finally {
+      manager.destroy();
+    }
+  },
+);
