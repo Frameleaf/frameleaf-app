@@ -14,6 +14,8 @@ import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobNameSchema, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
+import { prepareLibraryImportWork } from 'src/library-import/derived-work.js';
+import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import {
@@ -508,6 +510,25 @@ export class JobRepository {
       context.outcome = response === JobStatus.Failed ? 'failed' : 'completed';
     }
     return response;
+  }
+
+  /** Shared executions can retain an import membership even when another run owns the job. */
+  async isImportedMetadataJob(): Promise<boolean> {
+    const claim = queueExecution.getStore()?.claim;
+    if (!claim || claim.name !== JobName.AssetExtractMetadata) return false;
+    const {
+      rows: [row],
+    } = await sql<{ preserve: boolean }>`select
+      exists (select 1 from job_run r where r.id=${claim.runId}::uuid
+        and r.kind in ('immich-import-derived','library-import-derived'))
+      or exists (select 1 from job_run_item i join job_run r on r.id=i."runId"
+        where i."jobId"=${claim.id}::uuid and i.stage=${claim.name}
+          and i.state in ('pending','waiting','active') and r."finishedAt" is null
+          and r.kind in ('immich-import-derived','library-import-derived')) as preserve`.execute(
+      publicationTransaction.getStore() ?? this.store.db,
+    );
+    if (typeof row?.preserve !== 'boolean') throw new Error('Imported metadata context unavailable');
+    return row.preserve;
   }
 
   async collectFollowups(action: () => Promise<void>) {
@@ -1015,6 +1036,10 @@ export class JobRepository {
     );
     await this.store.finishEnumeration(runId);
     return runId;
+  }
+  /** Generic import preparation stays held until separately verified activation. */
+  prepareImportedLibraryWork(context: ReviewedImportContext): Promise<string> {
+    return prepareLibraryImportWork(this.store.db, (name) => this.intent({ name, data: {} } as JobItem), context);
   }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {

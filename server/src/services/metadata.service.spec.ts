@@ -2177,6 +2177,30 @@ describe(MetadataService.name, () => {
       expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();
     });
 
+    it.each([true, false])('preserves source face assignments only for imported regeneration: %s', async (imported) => {
+      const asset = AssetFactory.from().face({ sourceType: SourceType.Exif }).build();
+      const originalFace = asset.faces[0];
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.job.isImportedMetadataJob.mockResolvedValue(imported);
+      mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: true } } });
+      mocks.person.getDistinctNames.mockResolvedValue([]);
+      mockReadTags(makeFaceTags({ Name: 'Stale embedded person' }));
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalled();
+      if (imported) {
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ fileModifiedAt: undefined }));
+        expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('fileCreatedAt');
+        expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('localDateTime');
+        expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
+        expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();
+        expect(mocks.person.createGroups).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(expect.any(Array), [originalFace.id]);
+      }
+    });
+
     it('skips tagged faces when the asset moves to design before metadata publication', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction

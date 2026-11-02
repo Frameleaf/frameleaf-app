@@ -769,6 +769,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
         ],
       });
       mock.collectFollowups.mockImplementation((action) => action());
+      mock.isImportedMetadataJob.mockResolvedValue(false);
       mock.pinnedDestination.mockResolvedValue(null);
       return mock;
     }
