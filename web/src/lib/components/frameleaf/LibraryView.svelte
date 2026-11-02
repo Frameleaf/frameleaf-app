@@ -1100,6 +1100,25 @@
   };
 
   /**
+   * Work with its information panel showing (owner, November 1, 2026): a click keeps the grid and
+   * shows the item in the panel, and clicking the same item again opens it. A tile takes focus on
+   * press, which already moves the panel to it, so "again" means the tile clicked last. A key on a
+   * focused tile (a click with no count) opens it at once, since focus has shown it in the panel.
+   */
+  let workClickedId: string | undefined;
+  const handleTileClick = (asset: TimelineAsset, event?: MouseEvent | KeyboardEvent) => {
+    if (onTileClick?.(asset)) {
+      return true;
+    }
+    if (gridLayout !== 'work' || !showInfoPanel || !event?.detail) {
+      return false;
+    }
+    const again = workClickedId === asset.id;
+    workClickedId = asset.id;
+    return !again;
+  };
+
+  /**
    * The session's open item follows the page's viewer, including its own previous/next, so Work's
    * panel, the scroll anchor and the playhead describe what is actually shown (prototype
    * `onNavigateAsset` → `open`). Closing the viewer leaves the item open: reopening it resumes it.
@@ -1721,7 +1740,7 @@
         {selectionMode}
         {singleSelect}
         {onSelect}
-        {onTileClick}
+        onTileClick={handleTileClick}
         {tileOverlay}
         {onOpen}
         quickActions={quickActionsFor}

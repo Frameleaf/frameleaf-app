@@ -12,9 +12,11 @@ import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { uploadAssetsStore } from '$lib/stores/upload';
+import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { renderWithTooltips } from '$tests/helpers';
-import { assetFactory } from '@test-data/factories/asset-factory';
+import { assetFactory, timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import LibraryView from './LibraryView.svelte';
@@ -325,6 +327,49 @@ describe('LibraryView', () => {
       librarySession.setLayout('work');
       await tick();
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+    });
+
+    it('shows a clicked item in the panel and opens it when it is clicked again (owner, November 1)', async () => {
+      const subscribe = vi.spyOn(TimelineManager.prototype, 'onRemoved');
+      const at = fromISODateTimeUTCToObject('2024-03-10T12:00:00.000Z');
+      const [first, second] = timelineAssetFactory
+        .buildList(2)
+        .map((asset) => ({ ...asset, fileCreatedAt: at, localDateTime: at }));
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2024-03-01', count: 2 }]);
+      sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(first, second));
+      const onOpen = vi.fn();
+      render(LibraryView, {
+        options: {},
+        destination: { kind: 'library' },
+        syncUrl: false,
+        noSelectionBar: true,
+        infoPanel,
+        onOpen,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.setLayout('work');
+      const manager = subscribe.mock.contexts.at(-1) as TimelineManager;
+      subscribe.mockRestore();
+      await manager.updateViewport({ width: 1000, height: 400 });
+
+      const tile = (asset: TimelineAsset) =>
+        document.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(asset.id)}"] .fl-tile-open`)!;
+      await waitFor(() => expect(tile(second)).toBeInTheDocument());
+      // a pointer click counts itself (detail 1); a key on a focused tile clicks with no count
+      const click = (asset: TimelineAsset, detail = 1) => fireEvent.click(tile(asset), { detail });
+
+      await click(first);
+      await click(second);
+      expect(onOpen).not.toHaveBeenCalled();
+      expect(librarySession.session.scrollAnchor).toBe(second.id);
+      expect(screen.getByTestId('work-panel')).toBeInTheDocument();
+
+      await click(second);
+      expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: second.id }));
+
+      await click(first, 0);
+      expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ id: first.id }));
+      librarySession.close();
     });
   });
 
