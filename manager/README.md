@@ -130,7 +130,8 @@ Use this procedure only when Manager reports `autostart_changed` after an
 interrupted write and refuses to resume or cancel. It exports the two recorded
 versions without editing Manager's database. Keep the source and Frameleaf
 services in the state Manager left them; do not start them or change their
-restart policies while resolving this conflict.
+restart policies while resolving this conflict. Keep other container-management
+tools and autostart editing idle until recovery finishes.
 
 Run these commands in Unraid's root terminal. Replace `frameleaf-manager` if the
 container has a different name. First stop Manager and its autostart helpers,
@@ -190,10 +191,18 @@ the intended version **in place**, then start Manager and use **Resume** or
 **Cancel safely** for the interrupted operation:
 
 ```bash
+if ! cmp -s -- "$docker_root/unraid-autostart" "$recovery/current.txt"; then
+  printf '%s\n' 'The host autostart list changed during recovery; keep the recovery files and stop.' >&2
+  exit 1
+fi
 cat "$recovery/modified.txt" > "$docker_root/unraid-autostart"
 sync "$docker_root/unraid-autostart"
 docker start "$manager_name"
 ```
+
+The comparison detects edits since the saved copy; it does not make the
+in-place write atomic. If it refuses the restore, retain the recovery files and
+review the new host edits before repeating the procedure.
 
 Manager verifies the restored content and advances or clears its pending journal
 through the normal recovery flow. If it refuses recovery, leave the saved files
