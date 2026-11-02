@@ -274,7 +274,9 @@
   /** Where New album lands: inside a collection, or next to a plain album in its own collection. */
   let createParentId = $state<string | null>(null);
   const siblingParentId = $derived(
-    collections.some(({ id }) => id === album.parentId) ? (album.parentId ?? null) : null,
+    collections.some(({ id, kind }) => id === album.parentId && kind === AlbumKind.Collection)
+      ? (album.parentId ?? null)
+      : null,
   );
   const openCreate = (parentId: string | null) => {
     createParentId = parentId;
