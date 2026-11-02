@@ -2,6 +2,7 @@ import { createConnection } from 'mysql2/promise';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import content from 'src/library-import/fixtures/piwigo/16.4.0-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
+import { ImportedPassword, verifyImportedPassword } from 'src/library-import/passwords.js';
 import { readPiwigoRestore } from 'src/library-import/piwigo-source.js';
 
 vi.mock('mysql2/promise', () => ({ createConnection: vi.fn() }));
@@ -282,3 +283,75 @@ it('keeps safe primary failures when cleanup also fails, and normalizes isolated
   mode = 'schema';
   await expect(collect()).rejects.toThrow(/^Piwigo source refused: PIWIGO_SCHEMA_UNQUALIFIED$/);
 });
+
+it('reads explicit owner passwords in a protected callback while retaining the admitted source locks', async () => {
+  const original = query.getMockImplementation()!;
+  query.mockImplementation(async (options, parameters) => {
+    if (options.sql.startsWith('SELECT password FROM ')) {
+      expect(parameters).toEqual(['3']);
+      return [[{ password: '482c811da5d5b4bc6d497ffa98491e38' }], []];
+    }
+    if (options.sql.startsWith('SELECT status FROM ')) return [[{ status: 'normal' }], []];
+    return original(options, parameters);
+  });
+  const context = {
+    operationId: '11111111-1111-4111-8111-111111111111',
+    sourceUserId: '3',
+    destinationUserId: '22222222-2222-4222-8222-222222222222',
+  };
+  let credential: ImportedPassword | undefined;
+  let escaped: ((mapping: typeof context) => Promise<ImportedPassword | undefined>) | undefined;
+  const batches = [];
+  for await (const batch of readPiwigoRestore(config, async (password) => {
+    escaped = password;
+    credential = await password(context);
+    expect(destroy).not.toHaveBeenCalled();
+  }))
+    batches.push(batch);
+  expect(credential).toBeInstanceOf(ImportedPassword);
+  expect(await verifyImportedPassword('password123', credential!.forImport())).toBe(true);
+  expect(
+    JSON.stringify(batches, (_, value: unknown) => (typeof value === 'bigint' ? String(value) : value)),
+  ).not.toContain('482c811da5d5b4bc6d497ffa98491e38');
+  const calls = query.mock.calls.length;
+  await expect(escaped!(context)).rejects.toThrow('PIWIGO_PASSWORD_UNAVAILABLE');
+  expect(query).toHaveBeenCalledTimes(calls);
+  expect(destroy).toHaveBeenCalledOnce();
+});
+
+it.each(['guest', 'empty', 'missing', 'malformed', 'query-error'])(
+  'handles protected Piwigo password state without exposing credentials: %s',
+  async (state) => {
+    const original = query.getMockImplementation()!;
+    query.mockImplementation(async (options, parameters) => {
+      if (options.sql.startsWith('SELECT status FROM '))
+        return [state === 'missing' ? [] : [{ status: state === 'guest' ? 'guest' : 'normal' }], []];
+      if (options.sql.startsWith('SELECT password FROM ')) {
+        if (state === 'query-error') throw new Error('private-source-password');
+        return [[{ password: state === 'empty' ? null : 'private-source-password' }], []];
+      }
+      return original(options, parameters);
+    });
+    let called = false;
+    const read = async () => {
+      for await (const _batch of readPiwigoRestore(config, async (password) => {
+        const credential = await password({
+          operationId: '11111111-1111-4111-8111-111111111111',
+          sourceUserId: '3',
+          destinationUserId: '22222222-2222-4222-8222-222222222222',
+        });
+        called = true;
+        expect(credential).toBeUndefined();
+      })) {
+        expect(_batch.table).not.toBe('password');
+      }
+    };
+    if (state === 'guest' || state === 'empty') {
+      await read();
+      expect(called).toBe(true);
+    } else await expect(read()).rejects.toThrow(/^Piwigo source refused: PIWIGO_PASSWORD_UNAVAILABLE$/);
+    if (state === 'guest')
+      expect(query.mock.calls.some(([options]) => options.sql.startsWith('SELECT password FROM '))).toBe(false);
+    expect(destroy).toHaveBeenCalledOnce();
+  },
+);
