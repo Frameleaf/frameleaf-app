@@ -13,6 +13,7 @@ import * as attemptEvidence from 'src/utils/attempt-evidence.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { LockedKeyUnavailableError, clearLockedDeferrals, deferForLockedKey } from 'src/utils/locked-read.js';
 import { queueLockedSealFor, queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
+import { scriptedKysely } from 'test/scripted-kysely.js';
 
 /** Facade behavior; actual locking, retries, accounting and rollback are tested with PostgreSQL. */
 describe(JobRepository.name, () => {
@@ -120,7 +121,9 @@ describe(JobRepository.name, () => {
       logger: { warn: vi.fn() },
     };
     await queueExecution.run(execution, () =>
-      source === 'asset' ? queueLockedSealFor(deps, ['asset']) : queueLockedSealOf(deps, ['asset']),
+      sut.collectFollowups(() =>
+        source === 'asset' ? queueLockedSealFor(deps, ['asset']) : queueLockedSealOf(deps, ['asset']),
+      ),
     );
     expect(deps.logger.warn).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -129,6 +132,47 @@ describe(JobRepository.name, () => {
       expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' }, parentId: 'parent' }),
     ]);
   });
+
+  it.each(['asset', 'lockedFile'] as const)(
+    'retains committed %s sealing when the producer later fails',
+    async (source) => {
+      const { db, queries } = scriptedKysely(() => ({ rows: [{ id: 'parent' }] }));
+      const handlers = sut['handlers'];
+      sut = new JobRepository(
+        {} as ModuleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn(), error: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository,
+        db as Kysely<any>,
+      );
+      sut['store'].enqueue = enqueue;
+      Object.assign(sut['handlers'], handlers);
+      const execution = context();
+      // A source guard or unrelated adoption does not make committed files staged.
+      execution.adoptions.push(vi.fn());
+      const deps = {
+        asset: { getLockedEncryptionItems: vi.fn().mockResolvedValue([{ id: 'asset', pending: false }]) },
+        lockedFile: { encryptedSetOwner: vi.fn().mockResolvedValue('owner') },
+        job: sut,
+        logger: { warn: vi.fn() },
+      };
+      await expect(
+        queueExecution.run(execution, async () => {
+          if (source === 'asset') await queueLockedSealFor(deps, ['asset']);
+          else await queueLockedSealOf(deps, ['asset']);
+          throw new Error('completion failed');
+        }),
+      ).rejects.toThrow('completion failed');
+      expect(deps.logger.warn).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledOnce();
+      expect(enqueue.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ name: JobName.LockedSeal, data: { id: 'asset' }, parentId: undefined }),
+      ]);
+      expect(execution.followups).toEqual([]);
+      expect(queries.map(({ sql }) => sql)).toContain('commit');
+      await db.destroy();
+    },
+  );
 
   it.each(['asset', 'lockedFile'] as const)(
     'still admits %s sealing immediately outside a queued writer',

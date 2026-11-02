@@ -669,10 +669,12 @@ export class AssetDevelopService {
         }
       });
       // FL-721 (spec §7.2): a Locked item's new develop files are sealed
-      await queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, [
-        source.id,
-        ...(motion ? [motion.id] : []),
-      ]);
+      await this.jobRepository.collectFollowups(() =>
+        queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, [
+          source.id,
+          ...(motion ? [motion.id] : []),
+        ]),
+      );
       return JobStatus.Success;
     } catch (error) {
       if (isLockedKeyUnavailable(error)) {
