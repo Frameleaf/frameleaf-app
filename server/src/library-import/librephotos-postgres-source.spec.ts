@@ -34,6 +34,7 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
         return Promise.resolve(fixture.migrations.map((row) => ({ ...row, finished: true })));
       const entry = Object.entries(postgresSchemaQueries).find(([, sql]) => sql === statement);
       if (entry) return Promise.resolve(fixture.structure[entry[0] as keyof typeof fixture.structure]);
+      if (statement.startsWith('SELECT count(*)::text')) return Promise.resolve([{ count: '0' }]);
       if (statement.includes('FROM ONLY public.')) return Promise.resolve([]);
       return Promise.resolve([]);
     });
@@ -211,13 +212,18 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
   it('streams actual source values while keeping native indexed keys for pagination', async () => {
     const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
     const page = content.rows.api_photo.map((row) => ({ ...row, __frameleaf_cursor: row.id }));
-    transport.unsafe.mockResolvedValueOnce(page).mockResolvedValueOnce([]);
+    transport.unsafe
+      .mockResolvedValueOnce([{ count: String(page.length) }])
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce([]);
     const rows = [];
     for await (const batch of source.rows('api_photo')) rows.push(...batch);
     expect(rows).toHaveLength(5);
     expect(rows.every((row) => typeof row.owner_id === 'bigint')).toBe(true);
-    const query = transport.unsafe.mock.calls.find(([sql]) => sql.includes('FROM ONLY public."api_photo"'))![0];
-    expect(query).toContain('ORDER BY "id" LIMIT 1000');
+    const query = transport.unsafe.mock.calls.find(
+      ([sql]) => sql.includes('AS __frameleaf_cursor') && sql.includes('FROM ONLY public."api_photo"'),
+    )![0];
+    expect(query).toContain('ORDER BY "api_photo"."id" LIMIT 1000');
     expect(query).not.toContain('ORDER BY "id"::text');
     const next = transport.unsafe.mock.calls.at(-1)!;
     expect(next[0]).toContain('WHERE "id">$1');
@@ -249,6 +255,7 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
       __frameleaf_cursor: String(index + 1),
     }));
     transport.unsafe
+      .mockResolvedValueOnce([{ count: '1001' }])
       .mockResolvedValueOnce(rows.slice(0, 1000))
       .mockResolvedValueOnce(rows.slice(1000))
       .mockResolvedValueOnce([]);
@@ -260,10 +267,40 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
     await source.close();
   });
 
+  it.each(['0', '2'])('refuses an inventory count of %s when one row was streamed', async (count) => {
+    const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
+    const row = { ...content.rows.api_filecopy[0], __frameleaf_cursor: content.rows.api_filecopy[0].id };
+    transport.unsafe.mockResolvedValueOnce([{ count }]).mockResolvedValueOnce([row]).mockResolvedValueOnce([]);
+    try {
+      await expect(async () => {
+        for await (const _batch of source.rows('api_filecopy')) {
+          /* consume the complete inventory */
+        }
+      }).rejects.toThrow('LIBREPHOTOS_POSTGRES_READ_FAILED');
+    } finally {
+      await source.close();
+    }
+  });
+
+  it.each([undefined, null, 1, '-1', '01', '1.0', 'private-row-value'])(
+    'refuses malformed independent inventory counts without reading rows: %s',
+    async (count) => {
+      const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
+      transport.unsafe.mockClear();
+      transport.unsafe.mockResolvedValueOnce([{ count }]);
+      try {
+        await expect(source.rows('api_filecopy').next()).rejects.toThrow('LIBREPHOTOS_POSTGRES_READ_FAILED');
+        expect(transport.unsafe).toHaveBeenCalledOnce();
+      } finally {
+        await source.close();
+      }
+    },
+  );
+
   it('refuses malformed or non-advancing transport cursors instead of repeating pages', async () => {
     const source = await openLibrephotosPostgresSnapshot(url, '1.5.1', true);
     const page = content.rows.api_filecopy.map((row) => ({ ...row, __frameleaf_cursor: row.id }));
-    transport.unsafe.mockResolvedValue(page);
+    transport.unsafe.mockResolvedValueOnce([{ count: String(page.length * 2) }]).mockResolvedValue(page);
     const stream = source.rows('api_filecopy');
     await expect(stream.next()).resolves.toMatchObject({ done: false });
     await expect(stream.next()).rejects.toThrow('LIBREPHOTOS_POSTGRES_READ_FAILED');
