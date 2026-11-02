@@ -33,6 +33,7 @@ import { Refusal, publicSource, redact, secretEnvironmentValues } from './contra
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
+import { HostAutostart } from './unraid-autostart.js';
 import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 
@@ -72,7 +73,7 @@ async function databaseDefaults() {
   return appdataDefaults(process.env, config);
 }
 const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
-// The Unraid template mounts the host's unraid-autostart file here; MANAGER_UNRAID_AUTOSTART only overrides the path.
+// Preserve existing explicit mounts; Unraid otherwise discovers the file through the host engine.
 const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
 const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
 const autostartStat = native ? null : await stat(autostart).catch(() => null);
@@ -88,7 +89,7 @@ const operations = new Operations(
   backups,
   (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
   databaseStorage,
-  process.env.MANAGER_UNRAID_AUTOSTART,
+  process.env.MANAGER_UNRAID_AUTOSTART ?? (defaults.platform === 'unraid' ? new HostAutostart(docker, directory) : undefined),
 );
 const lifecycle = native ?? operations;
 const RequestKey = z.string().uuid();

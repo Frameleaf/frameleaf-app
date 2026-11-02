@@ -8,7 +8,8 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { Store } from '../src/store.js';
 import { Fencing } from '../src/fencing.js';
-import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
+import { HostAutostart } from '../src/unraid-autostart.js';
+import { Docker, command, SERVER_ADMIN, type Container } from '../src/docker.js';
 import { sourceFingerprint } from '../src/discovery.js';
 import { type Source, type Mount, type Installation } from '../src/contracts.js';
 import { copyVerified, fileHash } from '../src/files.js';
@@ -111,7 +112,7 @@ test('source fencing resumes after a crash between restart-policy changes withou
     await rm(directory, { recursive: true });
   }
 });
-test('FL-476: a verified import retires the source database and Redis, and source recovery restores them', async () => {
+for (const automatic of [false, true]) test(`verified import retires source services and recovery restores them (${automatic ? 'automatic Unraid access' : 'mounted file'})`, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-retire-')),
     store = new Store(directory);
   const autostart = join(directory, 'unraid-autostart');
@@ -128,7 +129,12 @@ test('FL-476: a verified import retires the source database and Redis, and sourc
   otherRedis.Name = '/other_redis';
   otherRedis.NetworkSettings.Networks = { elsewhere: { IPAddress: '172.20.0.2', Aliases: ['redis'] } };
   for (const c of [database, redis, otherRedis]) c.Mounts = [];
-  const all = [app, database, redis, otherRedis];
+  const controller = container('e');
+  controller.Image = `sha256:${'f'.repeat(64)}`;
+  controller.Config.Labels = { 'app.frameleaf.manager.role': 'controller' };
+  controller.Config.Env = [`MANAGER_DATA=${directory}`];
+  controller.Mounts = [];
+  const all = [app, database, redis, otherRedis, controller];
   const source = {
     id: app.Id,
     app: app.Id,
@@ -143,6 +149,7 @@ test('FL-476: a verified import retires the source database and Redis, and sourc
   await writeFile(autostart, original);
   const docker = {
     inventory: async () => structuredClone(all),
+    compatibility: async () => ({ dataRoot: '/docker' }),
     restartPolicy: async (id: string, policy: string) => {
       const [name, count] = policy.split(':');
       all.find((c) => c.Id === id)!.HostConfig.RestartPolicy = { Name: name, MaximumRetryCount: Number(count ?? 0) };
@@ -154,7 +161,16 @@ test('FL-476: a verified import retires the source database and Redis, and sourc
       all.find((c) => c.Id === id)!.State.Running = true;
     },
   } as unknown as Docker;
-  const fencing = new Fencing(docker, store, autostart);
+  let script = '';
+  const access = automatic ? new HostAutostart(docker, directory, async (_binary, args, options) => {
+    if (args[0] === 'create') {
+      script = args[args.indexOf('-e') + 1];
+      return 'f'.repeat(64);
+    }
+    return args[0] === 'start'
+      ? command('docker', ['-e', script, autostart], { ...options, executable: process.execPath }) : '';
+  }) : autostart;
+  const fencing = new Fencing(docker, store, access);
   try {
     await fencing.stop(source);
     assert.equal(await readFile(autostart, 'utf8'), 'immich_redis\nimmich_postgres 10\nfilebrowser\n');
@@ -180,6 +196,12 @@ test('FL-476: a verified import retires the source database and Redis, and sourc
     await assert.rejects(fencing.verify(source), /source_changed_review_again/);
     database.HostConfig.RestartPolicy.Name = 'no';
 
+    if (automatic) {
+      // Crash during source-service retirement, before truncate; recovery repairs the durable write first.
+      const text = 'immich_redis\nimmich_postgres 10\nfilebrowser\n';
+      store.set('autostart-write', { text, modified: 'filebrowser\n' });
+      await writeFile(autostart, 'filebrowser\n' + text.slice('filebrowser\n'.length));
+    }
     await fencing.recover(source, { mayHaveWrittenMedia: false } as Installation);
     assert.deepEqual(database.HostConfig.RestartPolicy, { Name: 'always', MaximumRetryCount: 0 });
     assert.deepEqual(redis.HostConfig.RestartPolicy, { Name: 'on-failure', MaximumRetryCount: 3 });

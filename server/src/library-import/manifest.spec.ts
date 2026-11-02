@@ -131,6 +131,58 @@ describe('library import manifest trust boundary', () => {
   });
 });
 
+describe('complete physical file ownership', () => {
+  const inventory = (version: 1 | 2 | 3) => {
+    const value = manifest();
+    return {
+      ...value,
+      version,
+      assets: value.assets.map((asset) => ({
+        ...asset,
+        ...(version > 1 ? { primaryFileId: 'f1' } : {}),
+        ...(version === 3
+          ? {
+              type: 'IMAGE',
+              fileModifiedAt: '2020-01-02T03:04:05Z',
+              originalFileNames: { f1: 'image.jpg' },
+            }
+          : {}),
+      })),
+    };
+  };
+  describe.each([1, 2, 3] as const)('manifest version %s', (version) => {
+    it.each(['original', 'sidecar', 'companion'])('refuses an unreferenced %s', (role) => {
+      const value = inventory(version);
+      value.files.push({ ...value.files[0], id: 'orphan', path: 'unowned/file', role });
+      expect(() => parseImportManifest(value)).toThrow('FILE_OWNER_RELATIONSHIP_REQUIRED');
+    });
+    it.each(['original', 'sidecar', 'companion'] as const)('refuses to fingerprint an unowned %s', (role) => {
+      const value = parseImportManifest(inventory(version));
+      value.files.push({ ...value.files[0], id: 'orphan', path: 'unowned/file', role });
+      expect(() => manifestFingerprint(value)).toThrow('FILE_OWNER_RELATIONSHIP_REQUIRED');
+    });
+    it('retains attached sidecars and companions, shared files and unused source users', () => {
+      const value = inventory(version);
+      value.users.push({ id: 'bob', name: 'Bob' }, { id: 'unused', name: 'Unused' });
+      value.files.push(
+        { ...value.files[0], id: 'sidecar', path: 'originals/image.xmp', role: 'sidecar' },
+        { ...value.files[0], id: 'companion', path: 'originals/clip.mov', role: 'companion' },
+      );
+      value.assets[0].fileIds.push('sidecar', 'companion');
+      value.assets.push({ ...value.assets[0], id: 'bob-photo', ownerId: 'bob' });
+      expect(parseImportManifest(value)).toEqual(value);
+    });
+    it('permits an empty inventory with source users', () => {
+      const value = { ...inventory(version), files: [], assets: [], albums: [] };
+      expect(parseImportManifest(value)).toEqual(value);
+    });
+    it('refuses an inventory containing files without any photos', () => {
+      const value = { ...inventory(version), assets: [], albums: [] };
+      expect(() => parseImportManifest(value)).toThrow('FILE_OWNER_RELATIONSHIP_REQUIRED');
+    });
+  });
+});
+
 describe('explicit primary originals', () => {
   const multipleOriginals = () => {
     const value = manifest();

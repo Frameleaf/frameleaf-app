@@ -56,3 +56,11 @@ describe('upsertTags', () => {
     expect(upsertValue).toHaveBeenCalledTimes(1);
   });
 });
+
+it('supports transaction-bound tag references without requiring fabricated record metadata', async () => {
+  const result = await upsertTags(
+    { upsertValue: ({ value }) => Promise.resolve({ id: value, value }) },
+    { userId: 'owner', tags: ['Places/Canada'] },
+  );
+  expect(result).toEqual([{ id: 'Places/Canada', value: 'Places/Canada' }]);
+});

@@ -47950,6 +47950,24 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "private_owners",
+          "tableName": "frameleaf_library_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "private_owners_sha256",
+          "tableName": "frameleaf_library_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [],
@@ -48029,6 +48047,30 @@
           "definition": "CHECK (((reviewed_plan IS NULL) OR (jsonb_typeof(reviewed_plan) = 'object'::text)))",
           "tableName": "frameleaf_library_import",
           "expression": "(((reviewed_plan IS NULL) OR (jsonb_typeof(reviewed_plan) = 'object'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_private_owners_pair",
+          "definition": "CHECK (((private_owners IS NULL) = (private_owners_sha256 IS NULL)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((private_owners IS NULL) = (private_owners_sha256 IS NULL)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_private_owners_object",
+          "definition": "CHECK (((private_owners IS NULL) OR (jsonb_typeof(private_owners) = 'object'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((private_owners IS NULL) OR (jsonb_typeof(private_owners) = 'object'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_private_owners_hash",
+          "definition": "CHECK (((private_owners_sha256 IS NULL) OR (private_owners_sha256 ~ '^[a-f0-9]{64}$'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((private_owners_sha256 IS NULL) OR (private_owners_sha256 ~ '^[a-f0-9]{64}$'::text)))",
           "synchronize": true
         }
       ],
