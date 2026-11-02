@@ -539,7 +539,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
         SystemMetadataRepository,
         TagRepository,
       ],
-      mock: [ConfigRepository, EventRepository, LoggingRepository, MapRepository, StorageRepository],
+      mock: [ConfigRepository, EventRepository, JobRepository, LoggingRepository, MapRepository, StorageRepository],
     });
 
     this.getMock(ConfigRepository).getEnv.mockReturnValue(mockEnvData({}));
