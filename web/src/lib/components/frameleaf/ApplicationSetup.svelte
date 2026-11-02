@@ -167,8 +167,7 @@
     font-size: 1rem;
     margin: 0;
   }
-  p,
-  small {
+  p {
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
