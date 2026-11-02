@@ -3,7 +3,6 @@ import { ImportDatabase } from 'src/immich-import/types.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
-import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { parseImportManifest } from 'src/library-import/manifest.js';
 import {
   LibraryImportBinding,
@@ -11,6 +10,7 @@ import {
   LibraryImportRefused,
   parseLibraryImportBinding,
 } from 'src/library-import/state.js';
+import { beginLibraryImportReadback } from 'src/library-import/verification.js';
 
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const mismatch = (): never => {
@@ -36,9 +36,7 @@ export async function reconcileImportedAssets(
   if (new Set(prepared.map((photo) => photo.asset.id)).size !== manifest.assets.length) mismatch();
   try {
     return await db.transaction(async (tx) => {
-      await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-      const [lock] = await tx.query('SELECT pg_try_advisory_xact_lock($1::bigint) AS acquired', [LIBRARY_IMPORT_LOCK]);
-      if (!lock?.acquired) throw new LibraryImportRefused('IMPORT_ALREADY_RUNNING');
+      await beginLibraryImportReadback(tx);
       const { run } = await new LibraryImportJournal(tx).status();
       if (!run || JSON.stringify(run.binding) !== JSON.stringify(binding))
         throw new LibraryImportRefused('IMPORT_BINDING_CHANGED');
