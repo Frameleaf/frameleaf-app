@@ -6,6 +6,7 @@ export const userStub = {
   admin: <UserAdmin>{
     ...authStub.admin.user,
     status: UserStatus.Active,
+    importClaimPending: false,
     clusterGroupId: 'cluster-group-id',
     profileChangedAt: new Date('2021-01-01'),
     name: 'admin_name',
@@ -25,6 +26,7 @@ export const userStub = {
   user1: <UserAdmin>{
     ...authStub.user1.user,
     status: UserStatus.Active,
+    importClaimPending: false,
     clusterGroupId: 'cluster-group-id',
     profileChangedAt: new Date('2021-01-01'),
     name: 'immich_name',

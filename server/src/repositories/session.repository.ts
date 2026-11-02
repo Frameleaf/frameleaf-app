@@ -57,7 +57,8 @@ export class SessionRepository {
             .selectFrom('user')
             .select(columns.authUser)
             .whereRef('user.id', '=', 'session.userId')
-            .where('user.deletedAt', 'is', null),
+            .where('user.deletedAt', 'is', null)
+            .where('user.importClaimPending', '=', false),
         ).as('user'),
       ])
       .where('session.token', '=', token)
@@ -93,6 +94,7 @@ export class SessionRepository {
         .where('user.id', '=', dto.userId)
         .where('user.password', '=', expectedPassword)
         .where('user.deletedAt', 'is', null)
+        .where('user.importClaimPending', '=', false)
         .forShare()
         .executeTakeFirst();
       if (!user) {

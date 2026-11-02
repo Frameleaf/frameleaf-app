@@ -393,6 +393,7 @@ export class FrameleafAuthService extends BaseService {
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
     if (link) {
       user = await this.userRepository.get(link.userId, { withDeleted: false });
+      if (user?.importClaimPending) throw refuse('conflict', 'This account must be claimed before signing in');
       if (!user) {
         // the linked account is in the trash (scheduled for removal): never create a second one
         throw refuse('removed', DELETED_ACCOUNT_MESSAGE);
@@ -402,6 +403,7 @@ export class FrameleafAuthService extends BaseService {
       // an account here with the same verified email is linked to this Frameleaf account
       const existing = await this.userRepository.getByEmail(email);
       if (existing) {
+        if (existing.importClaimPending) throw refuse('conflict', 'This account must be claimed before signing in');
         const other = await this.frameleafAccountRepository.getLinkByUser(existing.id);
         if (other && other.sub !== profile.sub) {
           throw refuse('conflict', 'This account is already linked to another Frameleaf account');

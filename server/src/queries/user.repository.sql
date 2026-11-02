@@ -21,6 +21,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -62,6 +63,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -103,6 +105,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -169,7 +172,8 @@ where
 select
   "id",
   "name",
-  "email"
+  "email",
+  "importClaimPending"
 from
   "user"
 where
@@ -187,13 +191,27 @@ set
   "passwordLinkExpiresAt" = $4,
   "updatedAt" = $5
 where
-  "passwordLinkHash" = $6
+  "importClaimPending" = $6
+  and "passwordLinkHash" = $7
   and "passwordLinkExpiresAt" > now()
   and "deletedAt" is null
-  and "status" = $7
+  and "status" = $8
 returning
   "id",
   "email"
+
+-- UserRepository.setPasswordLink
+update "user"
+set
+  "passwordLinkHash" = $1,
+  "passwordLinkExpiresAt" = $2
+where
+  "id" = $3::uuid
+  and "email" = $4
+  and "deletedAt" is null
+  and "status" = $5
+returning
+  "id"
 
 -- UserRepository.getByEmail
 select
@@ -216,6 +234,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -256,7 +275,8 @@ select
   "storageLabel",
   "quotaSizeInBytes",
   "quotaUsageInBytes",
-  "uploadsPaused"
+  "uploadsPaused",
+  "importClaimPending"
 from
   "user"
 where
@@ -284,6 +304,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -333,6 +354,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -373,6 +395,7 @@ select
   "quotaSizeInBytes",
   "quotaUsageInBytes",
   "uploadsPaused",
+  "importClaimPending",
   (
     select
       coalesce(json_agg(agg), '[]')

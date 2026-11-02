@@ -411,6 +411,21 @@ describe(FrameleafAuthService.name, () => {
       });
     });
 
+    it.each(['subject', 'email'])('refuses an unclaimed imported owner matched by %s before linking', async (match) => {
+      const user = UserFactory.create({ email: 'remote@example.test', importClaimPending: true });
+      if (match === 'subject') {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+        mocks.user.get.mockResolvedValue(user);
+      } else {
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
+        mocks.user.getByEmail.mockResolvedValue(user);
+      }
+      await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('must be claimed');
+      expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
     it('links an existing account by its verified email', async () => {
       const existing = UserFactory.create({ email: 'remote@example.test' });
       mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);

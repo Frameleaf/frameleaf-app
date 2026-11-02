@@ -41,7 +41,8 @@ export class ApiKeyRepository {
             .selectFrom('user')
             .select(columns.authUser)
             .whereRef('user.id', '=', 'api_key.userId')
-            .where('user.deletedAt', 'is', null),
+            .where('user.deletedAt', 'is', null)
+            .where('user.importClaimPending', '=', false),
         ).as('user'),
       ])
       .where('api_key.key', '=', hashedToken)
