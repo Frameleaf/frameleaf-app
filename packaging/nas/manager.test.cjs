@@ -55,6 +55,8 @@ test('NAS Manager packages authenticate the component, both architectures and ex
     assert(xml.includes('--cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>'));
     assert(xml.includes('Target="/run/frameleaf-host/unraid-autostart" Default="" Mode="rw"'));
     assert(xml.includes('Target="MANAGER_UNRAID_AUTOSTART" Default=""'));
+    assert(xml.includes('Leave blank: Manager automatically discovers'));
+    assert(!xml.includes('Required for imports: select'));
     assert.equal(await fs.readFile(path.join(output, 'unraid/LICENSE'), 'utf8'),
       await fs.readFile(path.join(__dirname, '../../LICENSE'), 'utf8'));
     assert((await fs.readFile(path.join(output, 'unraid/README.md'), 'utf8')).includes('No claim key is needed'));
