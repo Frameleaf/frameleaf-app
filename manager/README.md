@@ -1,6 +1,6 @@
 # Frameleaf Manager
 
-Manager installs one Frameleaf stack using the host Docker engine. Its own administrator account and HTTPS endpoint remain available when the photo application is stopped. Only Manager receives the Docker socket. The application, PostgreSQL and optional machine learning run as sibling containers.
+Manager installs one Frameleaf stack using the host Docker engine. Its own administrator account and management endpoint remain available when the photo application is stopped. Only Manager receives the Docker socket. The application, PostgreSQL and optional machine learning run as sibling containers.
 
 ## PostgreSQL storage
 
@@ -89,12 +89,24 @@ copy automatically. Keep an independent media backup: Manager's database recover
 point contains no photos or videos. Moving to a different server remains a complete
 backup/restore operation, not a database-only restore described as a library move.
 
-The app's Storage page opens the deployment-configured HTTPS Manager origin and
+The app's Storage page opens the deployment-configured HTTP or HTTPS Manager origin and
 requires a separate Manager sign-in. A standalone server keeps the advanced
 migration checklist. Existing installations acquire the link when their Compose
 configuration is regenerated with the updated Manager. Configuration alone does
 not prove Manager is reachable. Real NAS disk/ACL and installed-release qualification
 is required before treating this source feature as an accepted deployment.
+
+For home-lab HTTP access, set the container’s `MANAGER_ORIGIN` to the exact browser
+address, such as `http://tower.local:2282`, and map that host port to container port
+9443. With `manager/launch.sh`, pass that address as the fifth argument; the launcher
+does not use `MANAGER_ORIGIN` from its environment. This serves HTTP directly.
+HTTP uses an explicit session header instead of a cookie, so other services on
+the same host do not receive Manager credentials. The browser holds this session
+only in memory; reloading the page requires sign-in. HTTP sends
+passwords and management traffic without encryption; use a trusted network.
+HTTPS origins retain certificate validation and Secure cookies. Leaving the origin
+unset retains the existing local HTTPS listener and HTTP-to-HTTPS redirect.
+The desktop-owned native Manager continues to use its private loopback TLS identity.
 
 ## Backup scope
 
@@ -118,7 +130,7 @@ An installed library can restore a snapshot from its own recorded library lineag
 
 Canonical recovery retains the imported regeneration run and its recorded original lineage, including a run still waiting for first setup. Once the restored application has an administrator and valid processing settings, setup can release that same prepared run. Missing or mismatched import lineage requires attention; recovery does not invent a replacement run or automatically replay unsafe external work.
 
-For Manager replacement, retain its state folder, exact bind mappings, HTTPS origin and recovery key. Stop the old Manager container, then launch the verified replacement image with those same mappings. The persisted operation journal marks unfinished work as interrupted. Resume only after reviewing the recorded step. An ambiguous database restore keeps its prior target directory and allocates another empty target before retrying.
+For Manager replacement, retain its state folder, exact bind mappings, Manager origin and recovery key. Stop the old Manager container, then launch the verified replacement image with those same mappings. The persisted operation journal marks unfinished work as interrupted. Resume only after reviewing the recorded step. An ambiguous database restore keeps its prior target directory and allocates another empty target before retrying.
 
 Import, restore, update, backup and lifecycle operations all have a retry action. A failed database backup can be cancelled without stopping Frameleaf. If an update fails before applying its release, cancellation restarts the prior release. Once release application may have changed the database or media, retry moves forward on that release; Manager does not attempt an image-only downgrade. Restore refuses media paths used by another running or automatically restarting application. Recovery retains the imported media-location environment and file settings while generating fresh target database credentials.
 

@@ -52,9 +52,9 @@ library from Manager to generate the service templates.
    storage **before** installing. Use Unraid's configured appdata share or your
    chosen pool; do not assume a pool named `cache`. Database storage must be on
    supported local disk storage outside Docker's data root and `docker.img`.
-2. Leave **Manager HTTPS origin** blank and open Manager from the WebUI link
+2. Leave **Manager origin** blank and open Manager from the WebUI link
    (`https://<NAS IP>:2282` or `https://tower.local:2282`). Only if you reach
-   Manager through a custom DNS name, set **Manager HTTPS origin** to that exact
+   Manager through a custom DNS name, set **Manager origin** to that exact
    address, for example `https://nas.example:2282`, and set **Advanced View →
    WebUI** to match; other hostnames are then refused with HTTP 403.
 3. Keep each storage mapping's **Host Path and Container Path identical**. When
@@ -147,3 +147,7 @@ passing package tests do not replace those platform checks.
 ### Mobile discovery
 
 Manager installations of releases that include `frameleaf-lan-discovery` publish a Bonjour announcement from a separate host-network companion. The Frameleaf server and database stay on their private Docker bridge. The companion follows the published web port and the server's LAN discovery setting; no host Avahi files or manual announcements are needed. A loopback-only installation is not advertised. Older server releases without the companion keep their existing deployment layout.
+
+For HTTP management, set **Manager origin** to the exact `http://` address and
+change the Advanced View WebUI to that same address. HTTP sends management
+traffic without encryption; use a trusted home network. An unset origin keeps HTTPS.

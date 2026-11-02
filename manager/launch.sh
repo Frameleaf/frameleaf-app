@@ -1,9 +1,9 @@
 #!/bin/sh
-# Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER HTTPS_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
+# Usage: sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest HOST_STATE_FOLDER HOST_MEDIA_FOLDER HOST_BACKUP_FOLDER MANAGER_ORIGIN [APPDATA_FOLDER|auto] [LAN_ADDRESS]
 # Another installation on the same host: run again with MANAGER_NAME, MANAGER_PORT and its own state, media and backup folders.
 set -eu
 umask 077
-test "$#" -ge 5 || { echo 'Expected Manager image, state folder, media folder, backup folder and HTTPS origin' >&2; exit 2; }
+test "$#" -ge 5 || { echo 'Expected Manager image, state folder, media folder, backup folder and HTTP or HTTPS origin' >&2; exit 2; }
 image=$1 state=$2 media=$3 backups=$4 origin=$5 appdata=${6:-auto} bind=${7:-127.0.0.1}
 name=${MANAGER_NAME:-frameleaf-manager} port=${MANAGER_PORT:-2282}
 printf '%s' "$name" | LC_ALL=C grep -Eqx '[a-zA-Z0-9][a-zA-Z0-9_.-]*' || { echo 'MANAGER_NAME must be a valid container name' >&2; exit 2; }

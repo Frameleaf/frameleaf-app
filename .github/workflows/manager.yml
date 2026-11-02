@@ -114,6 +114,10 @@ jobs:
       - run: docker load --input "$RUNNER_TEMP/manager/runtime.tar"
       - name: HTTPS claim, session and restart integration
         run: node manager/test/container.mjs
+      - name: HTTP claim, session and restart integration
+        env:
+          MANAGER_TEST_HTTP: '1'
+        run: node manager/test/container.mjs
       - name: Build PostgreSQL from the owned pinned source
         run: docker build --build-arg POSTGRES_IMAGE="$FRAMELEAF_CI_POSTGRES_IMAGE" --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-postgres:manager-test docker/postgres
       - name: Real disk PostgreSQL, encrypted Restic recovery and logical restore
@@ -124,6 +128,7 @@ jobs:
           name: manager-evidence-${{ matrix.architecture }}
           path: |
             manager-evidence.json
+            manager-evidence-http.json
             manager-postgres-evidence.json
           if-no-files-found: error
       - name: Bind both tested runtimes to their OCI bytes
@@ -169,7 +174,7 @@ jobs:
           node - <<'JS'
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
-          for (const file of ['manager-evidence.json', 'manager-postgres-evidence.json']) {
+          for (const file of ['manager-evidence.json', 'manager-evidence-http.json', 'manager-postgres-evidence.json']) {
             const evidence = JSON.parse(fs.readFileSync(file, 'utf8'));
             assert.equal(evidence.commit, process.env.SOURCE_SHA);
             assert(Object.keys(evidence.checks).length > 0);
