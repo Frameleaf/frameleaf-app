@@ -103,11 +103,13 @@ test('adapter config loads private engine plugins and preserves resolver boundar
     await assert.rejects(readFile(path.join(output, 'manifest.json')), { code: 'ENOENT' });
     await mkdir(output, { recursive: true });
     for (const name of ['editor.html', 'commands.html']) await writeFile(path.join(output, name), '<html>fixture</html>');
-    frame.writeBundle();
+    await frame.writeBundle();
     assert.deepEqual(JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8')), {
       protocolVersion: 1, engineRevision: 'a'.repeat(40), sourceSha256: 'b'.repeat(64),
       features: [], editor: 'editor.html', commands: 'commands.html',
     });
     assert.equal(await readFile(path.join(output, 'notices/FRAMELEAF-NOTICE.txt'), 'utf8'), 'synthetic fixture notice');
+    await rm(path.join(root, 'studio/notices'), { recursive: true });
+    await assert.rejects(async () => frame.writeBundle(), { code: 'ENOENT' });
   } finally { await rm(root, { recursive: true, force: true }); }
 });

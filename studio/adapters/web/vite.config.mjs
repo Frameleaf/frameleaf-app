@@ -14,7 +14,8 @@
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { cpSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { cp } from 'node:fs/promises'
 // The engine's own chunking rules: they exist to keep production builds free of circular-chunk
 // initialisation errors, so the adapter build must split the engine exactly the same way.
 import engineConfig, { stableAssetSourcemapsPlugin } from '../../engine/vite.config.ts'
@@ -54,7 +55,7 @@ const claimedFeatures = JSON.parse(
 const frameManifest = () => ({
   name: 'frameleaf-frame-manifest',
   apply: 'build',
-  writeBundle() {
+  async writeBundle() {
     const manifest = {
       protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
       engineRevision: build.upstreamCommit,
@@ -65,7 +66,7 @@ const frameManifest = () => ({
     }
     writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     // The licence texts travel with the code they cover: Freecut's MIT notice first among them.
-    cpSync(path.join(studio, 'notices'), path.join(outDir, 'notices'), { recursive: true })
+    await cp(path.join(studio, 'notices'), path.join(outDir, 'notices'), { recursive: true })
   },
 })
 
