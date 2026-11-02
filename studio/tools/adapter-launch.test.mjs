@@ -24,9 +24,9 @@ test('adapter launches the locked JavaScript CLI with its own Node and propagate
     await mkdir(path.dirname(cli), { recursive: true });
     await writeFile(path.join(workspace, 'frameleaf-source.json'), '{}');
     // No executable bit or package-manager shell wrapper is available to this fixture.
-    await writeFile(cli, 'process.stdout.write(JSON.stringify({node:process.execPath,cwd:process.cwd(),args:process.argv.slice(2)}),()=>process.exit(7));', { mode: 0o644 });
+    await writeFile(cli, 'process.stdout.write(JSON.stringify({node:process.execPath,execArgv:process.execArgv,cwd:process.cwd(),args:process.argv.slice(2)}),()=>process.exit(7));', { mode: 0o644 });
     for (const command of ['build', 'test']) {
-      const result = spawnSync(process.execPath, [path.join(root, 'studio/tools/adapter.mjs'), command], {
+      const result = spawnSync(process.execPath, ['--no-warnings', path.join(root, 'studio/tools/adapter.mjs'), command], {
         encoding: 'utf8', timeout: 5000, env: { ...process.env, PATH: '' },
       });
       assert.ifError(result.error);
@@ -34,6 +34,7 @@ test('adapter launches the locked JavaScript CLI with its own Node and propagate
       assert.match(result.stdout, /"args":/, result.stderr);
       const observed = JSON.parse(result.stdout);
       assert.equal(observed.node, process.execPath);
+      assert.deepEqual(observed.execArgv, ['--no-warnings']);
       assert.equal(observed.cwd, workspace);
       assert.deepEqual(observed.args, [command, ...(command === 'test' ? ['run'] : []),
         '--config', path.join(root, 'studio/adapters/web/vite.config.mjs')]);

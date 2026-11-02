@@ -49,7 +49,7 @@ export async function main(args) {
   const vp = path.join(workspace, 'node_modules/vite-plus/bin/vp');
   assert.ok(await present(vp), 'Install the engine lockfile first: npm --prefix studio/engine ci --ignore-scripts');
   const vpArgs = command === 'build' ? ['build', '--config', config] : ['test', 'run', '--config', config];
-  execFileSync(process.execPath, [vp, ...vpArgs], { cwd: workspace, stdio: 'inherit' });
+  execFileSync(process.execPath, [...process.execArgv, vp, ...vpArgs], { cwd: workspace, stdio: 'inherit' });
   if (command === 'build') {
     await verifyEditorStyles(output);
     // The licences travel with the code: every installed package's notice files and the reviewed
