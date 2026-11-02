@@ -1,5 +1,5 @@
 Native export contract fixture from ente-io/ente at d536e8e913443b9d88c1e60e3a5463cb78ba5592.
-Synthetic account IDs and opaque bytes only; export verifier and recovery state omitted.
+Synthetic account IDs, opaque bytes and Frameleaf-generated test media only; export verifier and recovery state omitted.
 Upstream license follows.
 
                     GNU AFFERO GENERAL PUBLIC LICENSE
