@@ -563,6 +563,11 @@
                 <label class="sse-consent"
                   ><input type="checkbox" bind:checked={consent} />{$t('frameleaf_photography_site_consent')}</label
                 >
+                {#if !consent && pickable.length > 0}
+                  <p class="sse-help" role="note" data-testid="site-consent-reason">
+                    {$t('frameleaf_studio_site_consent_reason')}
+                  </p>
+                {/if}
                 <div class="sse-photo-pick">
                   {#each pickable as capture (capture.id)}
                     {@const item = { shootId: pickShoot, captureId: capture.id }}
@@ -640,7 +645,13 @@
                   aria-label={$t('frameleaf_studio_site_package_detail', { values: { number: index + 1 } })}
                   maxlength="400"
                   bind:value={item.detail}></textarea>
-                <Button variant="quiet" onclick={() => draft!.packages.splice(index, 1)}>{$t('remove')}</Button>
+                <Button
+                  variant="quiet"
+                  label={item.name.trim()
+                    ? $t('frameleaf_studio_site_remove_named', { values: { name: item.name.trim() } })
+                    : $t('frameleaf_studio_site_remove_service', { values: { number: index + 1 } })}
+                  onclick={() => draft!.packages.splice(index, 1)}>{$t('remove')}</Button
+                >
               </div>
             {/each}
             <div class="sse-row">
@@ -664,7 +675,13 @@
                   maxlength="80"
                   bind:value={item.name}
                 />
-                <Button variant="quiet" onclick={() => draft!.testimonials.splice(index, 1)}>{$t('remove')}</Button>
+                <Button
+                  variant="quiet"
+                  label={item.name.trim()
+                    ? $t('frameleaf_studio_site_remove_kind_words_from', { values: { name: item.name.trim() } })
+                    : $t('frameleaf_studio_site_remove_kind_words', { values: { number: index + 1 } })}
+                  onclick={() => draft!.testimonials.splice(index, 1)}>{$t('remove')}</Button
+                >
               </div>
             {/each}
             <div class="sse-row">
@@ -688,7 +705,11 @@
                   aria-label={$t('frameleaf_studio_site_answer', { values: { number: index + 1 } })}
                   maxlength="2000"
                   bind:value={item.a}></textarea>
-                <Button variant="quiet" onclick={() => draft!.faq.splice(index, 1)}>{$t('remove')}</Button>
+                <Button
+                  variant="quiet"
+                  label={$t('frameleaf_studio_site_remove_question', { values: { number: index + 1 } })}
+                  onclick={() => draft!.faq.splice(index, 1)}>{$t('remove')}</Button
+                >
               </div>
             {/each}
             {#if draft.template === 'commercial'}

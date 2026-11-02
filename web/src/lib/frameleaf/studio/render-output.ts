@@ -219,6 +219,51 @@ export const studioKeepsHdrPicture = (
   return videos.size > 0 && (sharesTransfer(resources?.pqSources) || sharesTransfer(resources?.hlgSources));
 };
 
+/**
+ * FL-1120: the film's videos are all HDR but mix PQ and HLG, so "Preserve source" exports in
+ * standard colour. Lets a colour refusal say why in words instead of a generic line.
+ */
+export const studioMixesHdrKinds = (
+  graph: unknown,
+  resources: { pqSources?: readonly string[]; hlgSources?: readonly string[] } | null | undefined,
+): boolean => {
+  const pq = new Set((resources?.pqSources ?? []).map((id) => id.toLowerCase()));
+  const hlg = new Set((resources?.hlgSources ?? []).map((id) => id.toLowerCase()));
+  if (pq.size === 0 || hlg.size === 0) {
+    return false;
+  }
+  const kinds = new Set<string>();
+  let allHdr = true;
+  let budget = 100_000;
+  const visit = (value: unknown, depth: number) => {
+    if (--budget < 0 || depth > 64 || !value || typeof value !== 'object') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, depth + 1);
+      }
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    if (node.type === 'video' && typeof node.mediaId === 'string') {
+      const id = node.mediaId.toLowerCase();
+      if (pq.has(id)) {
+        kinds.add('pq');
+      } else if (hlg.has(id)) {
+        kinds.add('hlg');
+      } else {
+        allHdr = false;
+      }
+    }
+    for (const item of Object.values(node)) {
+      visit(item, depth + 1);
+    }
+  };
+  visit((graph as { timeline?: unknown } | null)?.timeline, 0);
+  return allHdr && kinds.size === 2;
+};
+
 export type StudioRenderChoice<T> = { value: T; verdict: StudioRenderVerdict };
 
 export type StudioRenderChoices = {

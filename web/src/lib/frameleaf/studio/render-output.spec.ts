@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateStudioRender,
   studioKeepsHdrPicture,
+  studioMixesHdrKinds,
   studioRenderChoices,
   studioRenderRefusalFromError,
   studioRenderRefusalKey,
@@ -206,6 +207,11 @@ describe('Studio render output (FL-42)', () => {
     expect(studioKeepsHdrPicture(graph('a'), { pqSources: [], hlgSources: [] })).toBe(false);
     expect(studioKeepsHdrPicture(graph('a'), undefined)).toBe(false);
     expect(studioKeepsHdrPicture(null, pq)).toBe(false);
+    // FL-1120: only all-HDR films with both kinds count as mixed.
+    expect(studioMixesHdrKinds(graph('a', 'h'), pq)).toBe(true);
+    expect(studioMixesHdrKinds(graph('a', 'b'), pq)).toBe(false);
+    expect(studioMixesHdrKinds(graph('a', 'h', 'sdr'), pq)).toBe(false);
+    expect(studioMixesHdrKinds(graph('a', 'h'), undefined)).toBe(false);
   });
 
   it('accepts a combination a qualified session verified', () => {

@@ -82,6 +82,7 @@
     evaluateStudioRender,
     studioRenderChoices,
     studioRenderRefusalKey,
+    type StudioRenderRefusal,
     type StudioRenderVerdict,
   } from '$lib/frameleaf/studio/render-output';
 
@@ -99,6 +100,7 @@
     captionLanguages = [],
     empty = false,
     hdrPicture = false,
+    mixedHdr = false,
     onExport,
   }: {
     /**
@@ -107,6 +109,8 @@
      * render worker that writes 10-bit SDR.
      */
     hdrPicture?: boolean;
+    /** FL-1120: the film mixes PQ and HLG video, so Preserve source exports in standard colour. */
+    mixedHdr?: boolean;
     /** FL-677: nothing is placed on the timeline, so there is nothing to export yet. */
     empty?: boolean;
     /** FL-641: other caption languages that go with the export as subtitle files, already named. */
@@ -636,10 +640,44 @@
   );
   const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
     list.find((entry) => entry.value === value)?.verdict.supported === false;
+  /**
+   * A refusal in words. A colour refusal while keeping the source colour of a standard-colour or
+   * mixed-HDR film says which, as the prototype does (`studio-delivery.mjs` unavailableReasons).
+   */
+  const refusalText = (refusal: StudioRenderRefusal, forColor = color) =>
+    refusal === 'incompatible-color' && forColor === StudioExportColor.Preserve && !hdrPicture
+      ? $t(mixedHdr ? 'frameleaf_studio_render_refusal_mixed_hdr' : 'frameleaf_studio_render_refusal_sdr_source')
+      : $t(studioRenderRefusalKey(refusal));
+  /**
+   * "Not available for this export": every format and colour this export can't use, grouped by
+   * reason, as visible text (an option's title isn't shown on touch or to most screen readers).
+   */
+  const unavailable = $derived.by(() => {
+    // Nothing can be made at all: the warning under the choices already says why.
+    if (photo || audioOnly || availableChoices.formats.every((entry) => !entry.verdict.supported)) {
+      return [];
+    }
+    const groups = new Map<string, string[]>();
+    const add = (text: string, name: string) => groups.set(text, [...(groups.get(text) ?? []), name]);
+    const formatNames = formatGroups.flatMap((group) => group.items);
+    for (const entry of availableChoices.formats) {
+      const item = formatNames.find((candidate) => candidate.value === entry.value);
+      if (item && !entry.verdict.supported) {
+        add(refusalText(entry.verdict.refusal, StudioExportColor.Preserve), $t(item.label));
+      }
+    }
+    for (const entry of availableChoices.colors) {
+      const item = colors.find((candidate) => candidate.value === entry.value);
+      if (item && !entry.verdict.supported) {
+        add(refusalText(entry.verdict.refusal, entry.value), $t(item.label));
+      }
+    }
+    return [...groups].map(([text, names]) => ({ text, names: names.join(', ') }));
+  });
   /** Why a choice is unavailable, shown on the disabled option so it is explained before any job. */
   const refusalTitle = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) => {
     const verdict = list.find((entry) => entry.value === value)?.verdict;
-    return verdict && !verdict.supported ? $t(studioRenderRefusalKey(verdict.refusal)) : undefined;
+    return verdict && !verdict.supported ? refusalText(verdict.refusal) : undefined;
   };
 
   const presetSupported = (preset: (typeof presets)[number]) =>
@@ -784,6 +822,10 @@
                           .map((entry) => entry.value)
                           .filter((value) => value === item.value || selectedShapes.includes(value))
                       : selectedShapes.filter((value) => value !== item.value);
+                    // The framing check below follows the shapes still chosen.
+                    if (!event.currentTarget.checked && shape === item.value) {
+                      chooseShape(selectedShapes.find((value) => isReshaped(value)) ?? StudioExportShape.Original);
+                    }
                   }}
                 />
                 <span class="shape-icon {item.value}" aria-hidden="true"></span>
@@ -943,6 +985,17 @@
       {/if}
     </div>
 
+    {#if unavailable.length > 0}
+      <div class="unavailable" role="note" data-testid="studio-export-unavailable">
+        <p class="unavailable-title">{$t('frameleaf_studio_export_unavailable_title')}</p>
+        <ul>
+          {#each unavailable as group (group.text)}
+            <li><strong>{group.names}</strong>: {group.text}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     <!-- Colour, quality and a partial range are for the occasional export; most never open this. -->
     <details class="advanced" bind:open={advancedOpen}>
       <summary>{$t('frameleaf_studio_export_advanced')}</summary>
@@ -1050,7 +1103,7 @@
     {#if !verdict.supported}
       <p class="note warning" role="status">
         <Icon icon={mdiAlertOutline} size="14" aria-hidden={true} />
-        {$t(studioRenderRefusalKey(verdict.refusal))}
+        {refusalText(verdict.refusal)}
       </p>
     {/if}
     <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
@@ -1195,6 +1248,28 @@
     color: var(--fl-warning);
   }
   /* studio-upgrades.css `.flu-export-shape`, `.flu-shapes`, `.flu-shape` */
+  /* studio-delivery.css `.flx-unavailable` (FL-1116 UI audit). */
+  .unavailable {
+    display: grid;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .unavailable-title {
+    margin: 0;
+    color: var(--fl-text);
+    font-weight: 600;
+  }
+  .unavailable ul {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
   /* studio-delivery.css `.flx-shape`, `.flx-status`, `.flx-result` (FL-1116 UI audit). */
   .delivery-row,
   .delivery-result {

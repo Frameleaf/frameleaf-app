@@ -503,6 +503,7 @@
 }
 .sse-fullscreen:fullscreen > .sse-frame.is-phone {
   height: min(100%, 800px);
+  min-height: 0;
 }
 .sse-state {
   display: grid;

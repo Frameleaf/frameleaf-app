@@ -513,12 +513,31 @@ describe('Studio export dialog', () => {
       .getAllByRole('option')
       .find((item) => (item as HTMLOptionElement).value === StudioExportFormat.Mp4HevcMain10) as HTMLOptionElement;
     expect(main10).toBeDisabled();
-    expect(main10.title).toBe('frameleaf_studio_render_refusal_incompatible_color');
+    expect(main10.title).toBe('frameleaf_studio_render_refusal_sdr_source');
     expect(screen.getByRole('radio', { name: 'frameleaf_studio_export_preset_best' })).toBeDisabled();
+    // The reason is visible text too, not only an option title.
+    const note = screen.getByTestId('studio-export-unavailable');
+    expect(note).toHaveTextContent('frameleaf_studio_export_unavailable_title');
+    expect(note).toHaveTextContent('frameleaf_studio_render_refusal_sdr_source');
 
     await fireEvent.click(exportButton());
     expect(onExport).toHaveBeenCalledWith(
       expect.objectContaining({ format: StudioExportFormat.Mp4H264, resolution: StudioExportResolution.$1440P }),
+    );
+  });
+
+  it('explains a film that mixes HLG and PQ in its own words (FL-1120)', () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      mixedHdr: true,
+      renderEvidence: [{ ...bundled, candidates: [candidate] }],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByTestId('studio-export-unavailable')).toHaveTextContent(
+      'frameleaf_studio_render_refusal_mixed_hdr',
     );
   });
 
@@ -1024,6 +1043,16 @@ describe('Studio export dialog: vertical and square', () => {
     expect(screen.getByTestId('studio-export-delivery-vertical')).toHaveTextContent(
       'frameleaf_studio_export_review_again',
     );
+  });
+
+  it('moves the framing check off a shape that is no longer chosen', async () => {
+    open({ revision: 3 });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_multiple' }));
+    await include('frameleaf_studio_export_shape_vertical');
+    await checkFraming();
+    await include('frameleaf_studio_export_shape_vertical');
+    expect(screen.queryByRole('checkbox', { name: 'frameleaf_studio_export_review_confirm' })).toBeNull();
+    expect(screen.queryByTestId('studio-export-reframe')).toBeNull();
   });
 
   it('says why Export is off when no shape is chosen', async () => {

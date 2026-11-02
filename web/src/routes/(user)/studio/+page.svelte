@@ -128,6 +128,7 @@
   } from '@frameleaf/sdk';
   import {
     studioKeepsHdrPicture,
+    studioMixesHdrKinds,
     studioRenderRefusalFromError,
     studioRenderRefusalKey,
   } from '$lib/frameleaf/studio/render-output';
@@ -1743,6 +1744,7 @@
   captionLanguages={captionExportLanguages}
   empty={isEmptyStudioExport(project.graph)}
   hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources)}
+  mixedHdr={studioMixesHdrKinds(project.graph, sessionState?.resources)}
   onExport={(choice) => void onExportVideo(choice)}
 />
 
