@@ -59,7 +59,11 @@ const setup = () => {
     crypto = new CryptoRepository(),
     storage = new StorageRepository(logger()),
     media = new MediaRepository(logger());
-  const jobs = { queue: vi.fn().mockResolvedValue(undefined), queueAll: vi.fn().mockResolvedValue(undefined) };
+  const jobs = {
+    queue: vi.fn().mockResolvedValue(undefined),
+    queueAll: vi.fn().mockResolvedValue(undefined),
+    collectFollowups: vi.fn((action: () => Promise<void>) => action()),
+  };
   const develop = new AssetDevelopService(
     logger(),
     access,
