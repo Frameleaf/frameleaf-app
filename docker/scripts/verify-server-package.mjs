@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { realpath, readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export function argon2NativePackage(platform, arch) {
@@ -21,7 +21,7 @@ export async function verifyServerPackage(
     const target = await realpath(file);
     const local = relative(root, target);
     assert(
-      local !== ".." && !local.startsWith("../") && !isAbsolute(local),
+      local !== ".." && !local.startsWith(`..${sep}`) && !isAbsolute(local),
       `Production dependency escapes deployed package: ${file}`,
     );
     assert((await stat(target)).isFile(), `Missing production file: ${file}`);

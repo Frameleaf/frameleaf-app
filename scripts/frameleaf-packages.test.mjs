@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { argon2NativePackage } from "../docker/scripts/verify-server-package.mjs";
+import { argon2NativePackage, verifyServerPackage } from "../docker/scripts/verify-server-package.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (file) =>
@@ -103,5 +106,19 @@ test("Argon2 native package names match all desktop platform ABIs", () => {
   ]) {
     assert.equal(argon2NativePackage(platform, arch), expected);
     assert.ok(read("pnpm-lock.yaml").includes(`'${expected}@`));
+  }
+});
+
+test("deployed package rejects an entrypoint outside its root", async () => {
+  const temporary = await mkdtemp(join(tmpdir(), "frameleaf-package-boundary-"));
+  try {
+    const root = join(temporary, "package"), outside = join(temporary, "outside");
+    await mkdir(root);
+    await mkdir(outside);
+    await writeFile(join(outside, "main.js"), "// synthetic fixture, never executed\n");
+    await symlink(outside, join(root, "dist"), process.platform === "win32" ? "junction" : "dir");
+    await assert.rejects(verifyServerPackage(root), /Production dependency escapes deployed package/);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
   }
 });
