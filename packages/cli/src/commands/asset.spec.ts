@@ -2,7 +2,6 @@ import { SingleBar } from 'cli-progress';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, expect, it, MockedFunction, vi } from 'vitest';
 
 import {
@@ -338,9 +337,11 @@ describe('checkForDuplicates', () => {
 describe('startWatch', { timeout: 15_000 }, () => {
   let testFolder: string;
   let checkBulkUploadMocked: MockedFunction<typeof checkBulkUpload>;
+  let stopWatch: Awaited<ReturnType<typeof startWatch>> | undefined;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    stopWatch = undefined;
 
     vi.mocked(getSupportedMediaTypes).mockResolvedValue({
       image: ['.jpg'],
@@ -358,8 +359,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
   it('should start watching a directory and upload new files', async () => {
     const testFilePath = path.join(testFolder, 'test.jpg');
 
-    await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
-    await sleep(100); // to debounce the watcher from considering the test file as a existing file
+    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
     await fs.promises.writeFile(testFilePath, 'testjpg');
 
     await vi.waitFor(
@@ -387,8 +387,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
     const testFilePath = path.join(testFolder, 'test.jpg');
     const unsupportedFilePath = path.join(testFolder, 'test.txt');
 
-    await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
-    await sleep(100); // to debounce the watcher from considering the test file as a existing file
+    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
     await fs.promises.writeFile(testFilePath, 'testjpg');
     await fs.promises.writeFile(unsupportedFilePath, 'testtxt');
 
@@ -424,8 +423,11 @@ describe('startWatch', { timeout: 15_000 }, () => {
     await fs.promises.mkdir(ignoredFolder, { recursive: true });
     const ignoredFilePath = path.join(ignoredFolder, 'ignored.jpg');
 
-    await startWatch([testFolder], { concurrency: 1, ignore: ignoredPattern }, { batchSize: 1, debounceTimeMs: 10 });
-    await sleep(100); // to debounce the watcher from considering the test file as a existing file
+    stopWatch = await startWatch(
+      [testFolder],
+      { concurrency: 1, ignore: ignoredPattern },
+      { batchSize: 1, debounceTimeMs: 10 },
+    );
     await fs.promises.writeFile(testFilePath, 'testjpg');
     await fs.promises.writeFile(ignoredFilePath, 'ignoredjpg');
 
@@ -455,6 +457,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
   });
 
   afterEach(async () => {
+    await stopWatch?.();
     await fs.promises.rm(testFolder, { recursive: true, force: true });
   });
 });

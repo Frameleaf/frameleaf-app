@@ -18,6 +18,7 @@ import { Matcher, watch as watchFs } from 'chokidar';
 import { MultiBar, Presets, SingleBar } from 'cli-progress';
 import { chunk } from 'lodash-es';
 import micromatch from 'micromatch';
+import { once } from 'node:events';
 import { Stats, createReadStream, readdirSync, statSync } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
 import path, { basename } from 'node:path';
@@ -128,11 +129,23 @@ export const startWatch = async (
     .on('change', onFile)
     .on('error', (error) => console.error(`Watcher error: ${error}`));
 
-  process.on('SIGINT', async () => {
-    console.log('Exiting...');
+  const stop = async () => {
+    process.off('SIGINT', onInterrupt);
     await fsWatcher.close();
+  };
+  const onInterrupt = async () => {
+    console.log('Exiting...');
+    await stop();
     process.exit();
-  });
+  };
+  process.on('SIGINT', onInterrupt);
+  try {
+    await once(fsWatcher, 'ready');
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+  return stop;
 };
 
 export const upload = async (paths: string[], baseOptions: BaseOptions, options: UploadOptionsDto) => {
@@ -151,8 +164,8 @@ export const upload = async (paths: string[], baseOptions: BaseOptions, options:
   }
 
   if (options.watch) {
-    console.log('Watching for changes...');
     await startWatch(paths, options);
+    console.log('Watching for changes...');
     // watcher does not handle the initial scan
     // as the scan() is a more efficient quick start with batched results
   }
