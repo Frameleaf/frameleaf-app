@@ -103,6 +103,6 @@ release or deployment is authorized by this primitive.
 
 ## Destination setup account
 
-The generic Server journal can begin on an unused destination that has one active setup administrator. Admission retains only that administrator, its private cluster group, its destination sessions/preferences and account-creation audit records. Other users, orphan groups, existing albums/media, prior library activity and user-deletion history still refuse admission. The existing Immich importer retains its completely empty destination requirement.
+The generic Server journal can begin on an unused destination that has one active setup administrator. Admission retains only that administrator, its private cluster group, its destination sessions/preferences and account-creation audit records. Other users, orphan groups, existing albums/media, prior library activity and user-deletion history still refuse admission. The existing `import-immich` command retains its completely empty destination requirement.
 
 This permits `createImportedOwner` to preserve qualified source passwords after setup. Journal replay does not recreate a committed owner, overwrite the setup account, merge matching email addresses or transfer source sessions/administration. A database with no administrator can still establish an internal journal, but creating imported owners requires the destination administrator first. Source eligibility, explicit mappings, service/restart fencing, verification and the activation boundary remain separate controller requirements.
