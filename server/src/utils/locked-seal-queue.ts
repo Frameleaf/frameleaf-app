@@ -4,12 +4,15 @@ import type { LockedEncryptionRepository } from 'src/repositories/locked-encrypt
 import type { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { JobName } from 'src/enum.js';
+import { publishJobResult } from 'src/queue/context.js';
 
 /**
  * FL-721 (spec §7.2), for services outside `BaseService` (which has `queueLockedSeal`): after a job
  * wrote new or derived files for `assetIds`, each one in an encrypted set
- * (`LockedFileRepository.encryptedSetOwner`) is sealed again. A failure to queue never fails the job
- * that wrote the files; the hourly sweep seals them.
+ * (`LockedFileRepository.encryptedSetOwner`) is sealed again. Queue jobs publish sealing intents with
+ * their new file paths so a sealing worker cannot finish before those paths become visible.
+ * Lookup or standalone enqueue failures fall back to the hourly sweep; publication failures retry
+ * the producing job without publishing its new paths.
  */
 export async function queueLockedSealOf(
   deps: {
@@ -30,7 +33,7 @@ export async function queueLockedSealOf(
       }
     }
     if (sealed.length > 0) {
-      await deps.job.queueAll(sealed.map((id) => ({ name: JobName.LockedSeal, data: { id } })));
+      await publishJobResult(() => deps.job.queueAll(sealed.map((id) => ({ name: JobName.LockedSeal, data: { id } }))));
     }
   } catch (error) {
     deps.logger.warn(`Could not queue sealing of new Locked files; the hourly sweep seals them: ${error}`);
@@ -52,7 +55,9 @@ export async function queueLockedSealFor(
   try {
     const items = (await deps.asset.getLockedEncryptionItems([...new Set(assetIds)])).filter(({ pending }) => !pending);
     if (items.length > 0) {
-      await deps.job.queueAll(items.map(({ id }) => ({ name: JobName.LockedSeal, data: { id } })));
+      await publishJobResult(() =>
+        deps.job.queueAll(items.map(({ id }) => ({ name: JobName.LockedSeal, data: { id } }))),
+      );
     }
   } catch (error) {
     deps.logger.warn(`Could not queue sealing of new Locked files; the hourly sweep seals them: ${error}`);
