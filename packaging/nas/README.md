@@ -12,12 +12,11 @@ Custom App Compose file. Install via TrueNAS's supported **Install via YAML**
 flow. Set the exact HTTPS origin and persistent host folders first; keep host
 and container paths identical. Map additional source media/database folders
 before import. Manager has Docker socket access to coordinate its library.
-For an Unraid import, fill the autostart file field with the existing
-`unraid-autostart` file beneath the exact `DockerRootDir` returned by
-`docker info --format '{{.DockerRootDir}}'` (usually
-`/var/lib/docker/unraid-autostart`); Manager finds it once mounted. Leave it blank
-when no file exists. Its writable mount lets Manager
-preserve other entries while preventing the source from starting during import.
+On Unraid, Manager automatically discovers Docker's actual data root and accesses
+its existing `unraid-autostart` file through an isolated helper using the running
+Manager image. No autostart mapping or path entry is needed. Existing manual
+mappings remain supported. Manager preserves unrelated entries and refuses an
+import if the host list cannot be accessed safely.
 
 The older direct-stack catalog builder below is retained for existing release
 compatibility. New NAS installations use the Manager artifacts. No Manager

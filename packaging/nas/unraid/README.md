@@ -87,13 +87,13 @@ Add each approved source media or database folder as an identical host/container
 mapping before import. Retain the original stopped source and its recovery point.
 Do not attach Frameleaf PostgreSQL to the source database's physical directory.
 
-For imports, use `docker info --format '{{.DockerRootDir}}'` to identify Docker's
-actual data root. Select its existing `unraid-autostart` file (usually
-`/var/lib/docker/unraid-autostart`) in **Unraid autostart file** and apply; Manager
-finds it automatically. Do not create a replacement or guess a pool path. Leave it
-blank for a fresh install. **Autostart controller path** stays blank.
-Manager needs this writable file to fence source autostart while preserving other
-entries. Follow the
+Manager configures Unraid autostart access automatically, using Docker's actual
+data root and the existing host list. Leave **Unraid autostart file** and
+**Autostart controller path** blank; existing manual mappings remain supported.
+An isolated helper uses the running Manager image and mounts that file,
+preserving other entries while preventing Immich from restarting at boot.
+If the host file is missing or inaccessible, Manager refuses the import. A fresh
+installation can proceed when Manager verifies that no list exists. Follow the
 [offline import guide](https://github.com/Frameleaf/frameleaf-app/blob/main/docs/docs/administration/import-immich.md).
 
 ## Updates and backups

@@ -3,6 +3,7 @@ import { Docker, environment, sharesMedia, type Container } from './docker.js';
 import { databaseCandidates, Discovery } from './discovery.js';
 import { Refusal, type Source, type Installation, type Mount } from './contracts.js';
 import { Store } from './store.js';
+import type { AutostartFile } from './unraid-autostart.js';
 
 // Unraid's rc.docker reads one exact container name and optional delay on each line.
 const autostartName = (line: string) => line.trim().split(/\s+/)[0];
@@ -50,7 +51,7 @@ export class Fencing {
   constructor(
     private docker: Docker,
     private store: Store,
-    private autostartFile?: string,
+    private autostartFile?: string | AutostartFile,
   ) {}
   async stopInstallation(installation: Installation): Promise<void> {
     await this.assertMedia(installation.mounts, installation);
@@ -75,7 +76,7 @@ export class Fencing {
     if (owned.some((c) => c.State.Running || c.HostConfig.RestartPolicy.Name !== 'no'))
       throw new Refusal('previous_installation_not_fenced');
     if (this.autostartFile) {
-      const text = await readFile(this.autostartFile, 'utf8');
+      const text = await this.readAutostart();
       if (
         removeAutostart(
           text,
@@ -85,14 +86,23 @@ export class Fencing {
         throw new Refusal('previous_autostart_enabled');
     }
   }
+  async readAutostart(required = false): Promise<string> {
+    if (!this.autostartFile) return '';
+    return typeof this.autostartFile === 'string'
+      ? readFile(this.autostartFile, 'utf8') : this.autostartFile.read(required);
+  }
   private async removeNames(names: string[]): Promise<void> {
     await this.rewriteAutostart((text) => removeAutostart(text, names));
   }
   private async rewriteAutostart(change: (text: string) => string): Promise<void> {
-    const text = await readFile(this.autostartFile!, 'utf8'),
+    const text = await this.readAutostart(),
       modified = change(text);
     if (modified === text) return;
-    const file = await open(this.autostartFile!, 'r+');
+    if (typeof this.autostartFile !== 'string') {
+      await this.autostartFile!.write(text, modified);
+      return;
+    }
+    const file = await open(this.autostartFile, 'r+');
     try {
       if ((await file.readFile('utf8')) !== text) throw new Refusal('autostart_changed');
       await file.write(modified, 0, 'utf8');
@@ -101,11 +111,11 @@ export class Fencing {
     } finally {
       await file.close();
     }
-    if ((await readFile(this.autostartFile!, 'utf8')) !== modified) throw new Refusal('autostart_write_failed');
+    if ((await this.readAutostart()) !== modified) throw new Refusal('autostart_write_failed');
   }
   async assertMedia(media: Mount[], installation?: Installation, workers: string[] = []): Promise<void> {
     const all = await this.docker.inventory();
-    const autostart = this.autostartFile ? await readFile(this.autostartFile, 'utf8') : '';
+    const autostart = this.autostartFile ? await this.readAutostart() : '';
     const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
     const unexpected = all.filter((c) => {
       const controller =
@@ -137,7 +147,7 @@ export class Fencing {
     const all = await this.docker.inventory();
     if (source.platform === 'unraid') {
       if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
-      const text = await readFile(this.autostartFile, 'utf8');
+      const text = await this.readAutostart(true);
       const names = source.workers
         .map((id) => all.find((c) => c.Id === id)?.Name.replace(/^\//, ''))
         .filter((s): s is string => !!s);
@@ -183,7 +193,7 @@ export class Fencing {
         : [];
       const lines =
         source.platform === 'unraid' && this.autostartFile
-          ? (await readFile(this.autostartFile, 'utf8')).split('\n')
+          ? (await this.readAutostart(true)).split('\n')
           : [];
       const record = (c: Container, role: RetiredService['role']): RetiredService => {
         const name = c.Name.replace(/^\//, '');
@@ -242,7 +252,7 @@ export class Fencing {
     }
     if (source.platform === 'unraid') {
       if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
-      const text = await readFile(this.autostartFile, 'utf8');
+      const text = await this.readAutostart(true);
       const names = source.workers.map((id) => all.find((c) => c.Id === id)!.Name.replace(/^\//, ''));
       if (removeAutostart(text, names) !== text) throw new Refusal('source_autostart_enabled');
     }

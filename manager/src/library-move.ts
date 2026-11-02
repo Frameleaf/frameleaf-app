@@ -86,9 +86,7 @@ export class LibraryMove {
     const mounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
     const location = (path: string) => LibraryMove.backing(path, mounts);
     const destination = location(root);
-    const autostart = process.env.MANAGER_UNRAID_AUTOSTART
-      ? await readFile(process.env.MANAGER_UNRAID_AUTOSTART, 'utf8')
-      : '';
+    const autostart = await this.fencing.readAutostart();
     const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
     const protectedPaths = [location(current.mounts[0].source), destination];
     for (const container of await this.docker.inventory()) {
