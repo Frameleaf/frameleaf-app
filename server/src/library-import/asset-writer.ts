@@ -57,7 +57,8 @@ export class CanonicalAssetWriter {
     this.plannedFiles = new Map(this.plan.files.map((file) => [file.id, file]));
   }
 
-  async write(input: unknown): Promise<string> {
+  /** Validated intent shared with independent destination readback; performs no database or filesystem writes. */
+  prepare(input: unknown) {
     const parsed = itemSchema.safeParse(input);
     if (!parsed.success) return refuse('ASSET_INPUT_INVALID');
     const item = parsed.data;
@@ -104,6 +105,11 @@ export class CanonicalAssetWriter {
     const recordSha256 = createHash('sha256')
       .update(JSON.stringify({ type: item.type, fileModifiedAt: item.fileModifiedAt, asset, files, ownerId }))
       .digest('hex');
+    return structuredClone({ item, asset, metadata, ownerId, files, primary, bytes, recordSha256 });
+  }
+
+  async write(input: unknown): Promise<string> {
+    const { item, asset, metadata, ownerId, files, primary, bytes, recordSha256 } = this.prepare(input);
     try {
       return await new LibraryImportJournal(this.db).create(
         this.binding,
