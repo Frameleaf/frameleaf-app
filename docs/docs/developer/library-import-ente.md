@@ -16,10 +16,10 @@ The helper validates positive signed 64-bit source identities as decimal strings
 | -------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
 | File ID and inventory owner ID         | Exact identity join; no email matching                            | Full account mapping and destination creation          |
 | Image or video                         | One `original` component                                          | Native media varieties and destination import          |
-| Live Photo                             | Retain both `image` and `video` components under the same file ID | Native Live Photo export and pairing                   |
+| Live Photo                             | Retain both `image` and `video` components under the same file ID | Apple-device acceptance and destination pairing        |
 | Component size                         | Reject fractional, negative or unsafe JSON integers               | Independently verify every file's bytes                |
 | Component hash                         | Retain Ente's base64 BLAKE2b-512 evidence separately              | Independently compute destination SHA256               |
-| Albums, favourites and manual metadata | Retain source records for subsequent mapping                      | Resolve every source relationship and conflicting edit |
+| Albums, favourites and manual metadata | Retain source records for subsequent mapping                      | Destination relationship mapping and conflicting edits |
 | Owners, sharees and public links       | Require complete authenticated evidence                           | Equivalent or stricter destination access              |
 | Unsupported metadata                   | Requires a protected migration archive                            | Archive creation and review are not implemented here   |
 
@@ -31,7 +31,11 @@ The sanitized fixture records the published CLI archive and executable hashes, t
 
 One opaque 32-byte original was encrypted, uploaded, decrypted and exported by both its owner and a VIEWER sharee. The fixture preserves their distinct account identities, the original file owner, album membership and the absence of the owner's private file metadata in the sharee's export. The actual Server Node 22 resolver matched both exported originals, byte lengths, BLAKE2b-512 values and independently computed SHA256 values. Root verifiers, exporter recovery state, encrypted keys, raw API records and credentials are omitted from the public fixture.
 
-This qualifies the small export-component contract exercised here. It does not qualify JPEG/RAW/video decoding, Live Photos, hardlinks, export interruptions, complete-library inventory stability, permissions mapping or a destination migration. Live Photo shape tests are synthetic and do not replace native qualification.
+The extended native fixture uses generated JPEG and H264 MOV originals, including an Ente-recognized ZIP Live Photo pair. Alice has 131 logical files and Bob sees 132, including a separate Bob-owned file with identical JPEG bytes. The exporter traversed its 128-record local file-page boundary. The actual Server Node 22 resolver verified all 134 Alice and 133 Bob physical copies, complete source-ID sets, every exported album membership, lengths, BLAKE2b-512 and independent SHA256 values.
+
+Before/after authenticated `--all` file and album inventories matched. Three Alice placements of the manually edited first photo were hardlinked to the same inode; the same bytes owned by Bob retained a distinct source ID, owner and inode. Native Favorites is exported as an album as well as a per-account favourite flag. Owner-only album membership and private file visibility were absent from the sharee's inventory. Generated media, representative sidecars and complete source-ID inventories are included in the sanitized media fixture. The JPEG's intentionally stale embedded date remains in the original bytes while native manual name, caption, date/time-zone and location edits remain in the sidecars and authenticated inventory.
+
+This qualifies the small export-component contract exercised here. It does not qualify destination media decoding, RAW, Apple-device Live Photo acceptance, contained symlinks, transfer/adoption/relocation recovery, export interruptions, the Museum API’s larger page boundary, changing-source refusal, source trash completeness, permissions mapping or a destination migration. The generated Live Photo pair proves the native Ente export/component contract; it is not a captured iOS Live Photo or a device acceptance test.
 
 ## Storage and recovery
 
