@@ -159,7 +159,7 @@ test('reconciliation refuses unrelated host edits', async () => {
   } };
   try {
     await assert.rejects((new Fencing({} as any, store, file) as any).rewriteAutostart((current: string) => current), { message: 'autostart_changed', status: 409,
-      detail: 'The Unraid autostart list changed after an interrupted write. Restore the list to its original or intended content, then try again.' });
+      detail: 'The Unraid autostart list changed after an interrupted write. Follow “Recover an interrupted Unraid autostart update” in the Manager guide to save the current list, retrieve the recorded versions, and retry safely. Do not delete the pending journal or re-enable fenced services.' });
     assert.equal(current, 'new-neighbour\n');
     assert.equal(writes, 0);
     for (const restored of ['immich\nother\n', 'other\n']) {

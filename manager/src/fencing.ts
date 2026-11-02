@@ -140,7 +140,7 @@ export class Fencing {
         throw new Refusal(
           'autostart_changed',
           409,
-          'The Unraid autostart list changed after an interrupted write. Restore the list to its original or intended content, then try again.',
+          'The Unraid autostart list changed after an interrupted write. Follow “Recover an interrupted Unraid autostart update” in the Manager guide to save the current list, retrieve the recorded versions, and retry safely. Do not delete the pending journal or re-enable fenced services.',
         );
       await this.writeAutostart(current, pending.modified);
     }

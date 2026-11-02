@@ -124,6 +124,84 @@ Import, restore, update, backup and lifecycle operations all have a retry action
 
 If Manager cannot start, its private `stack/compose.json` can be used with the host's Compose v2 command and its recorded project name. The protected configuration export includes that project identity and the database host path. Store exports privately: they contain recovery secrets. A database-only export is not a media recovery checkpoint.
 
+## Recover an interrupted Unraid autostart update
+
+Use this procedure only when Manager reports `autostart_changed` after an
+interrupted write and refuses to resume or cancel. It exports the two recorded
+versions without editing Manager's database. Keep the source and Frameleaf
+services in the state Manager left them; do not start them or change their
+restart policies while resolving this conflict.
+
+Run these commands in Unraid's root terminal. Replace `frameleaf-manager` if the
+container has a different name. First stop Manager and its autostart helpers,
+then preserve the current host list in a private recovery folder:
+
+```bash
+set -euo pipefail
+manager_name=frameleaf-manager
+manager_state=$(docker exec "$manager_name" node -p 'process.env.MANAGER_DATA')
+manager_image=$(docker inspect --format '{{.Image}}' "$manager_name")
+docker_root=$(docker info --format '{{.DockerRootDir}}')
+test -n "$manager_state" && test -f "$docker_root/unraid-autostart" || exit 1
+recovery=$(mktemp -d /root/frameleaf-autostart-recovery.XXXXXX)
+chmod 700 "$recovery"
+docker stop "$manager_name"
+helper_ids_text=$(docker ps -aq --filter "label=app.frameleaf.manager.autostart=$manager_state")
+if [[ -n "$helper_ids_text" ]]; then
+  mapfile -t helper_ids <<< "$helper_ids_text"
+  docker rm --force "${helper_ids[@]}"
+fi
+cp -p -- "$docker_root/unraid-autostart" "$recovery/current.txt"
+```
+
+Export only the pending journal through the Node/SQLite runtime already in the
+Manager image. The database connection is read-only; its state mapping permits
+SQLite's WAL bookkeeping. Do not modify `manager.sqlite` or delete journal rows.
+If there is no pending record, stop here and investigate the operation's error
+rather than changing the host list.
+
+```bash
+docker run --rm --pull never --network none --read-only \
+  --mount "type=bind,source=$manager_state,target=/state" \
+  --entrypoint node "$manager_image" --input-type=module -e '
+import { DatabaseSync } from "node:sqlite";
+const db = new DatabaseSync("/state/manager.sqlite", { readOnly: true });
+const row = db.prepare("SELECT value FROM settings WHERE key=?").get("autostart-write");
+const pending = row && JSON.parse(row.value);
+if (!pending || typeof pending.text !== "string" || typeof pending.modified !== "string")
+  throw new Error("No pending autostart write; leave the host list unchanged");
+process.stdout.write(JSON.stringify(pending));
+db.close();
+' > "$recovery/journal.json" || exit 1
+for version in text modified; do
+  docker run --rm -i --pull never --network none --read-only \
+    --entrypoint node "$manager_image" -e '
+let input = "";
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => process.stdout.write(JSON.parse(input)[process.argv[1]]));
+' "$version" < "$recovery/journal.json" > "$recovery/$version.txt" || exit 1
+done
+```
+
+`text.txt` is the original list immediately before the interrupted write;
+`modified.txt` is Manager's intended result. Compare both with `current.txt` and
+record any unrelated changes made since then. Retain all three files. Restore
+the intended version **in place**, then start Manager and use **Resume** or
+**Cancel safely** for the interrupted operation:
+
+```bash
+cat "$recovery/modified.txt" > "$docker_root/unraid-autostart"
+sync "$docker_root/unraid-autostart"
+docker start "$manager_name"
+```
+
+Manager verifies the restored content and advances or clears its pending journal
+through the normal recovery flow. If it refuses recovery, leave the saved files
+and journal intact. Once the operation has safely completed or been cancelled,
+reapply only the unrelated changes you recorded, using Unraid's Docker page.
+Do not copy the old list back wholesale or re-enable services that Manager kept
+fenced; source-service restoration belongs to Manager's recovery action.
+
 ## Validation and distribution status
 
 The live Svelte interface follows `design/frameleaf-manager/`: setup and import review, overview, service controls and sanitized logs, mounted storage, encrypted database checkpoints and restore, eligible updates, operation history, and Manager settings. The local administrator can change name/password, revoke previous sessions, export the existing recovery key, and download a protected recovery configuration. Each credential change or secret export requires fresh password proof. Capacity and library counts come from the mounted filesystem and the managed database; unavailable data is shown explicitly.
