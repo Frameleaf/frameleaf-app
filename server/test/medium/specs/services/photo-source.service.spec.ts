@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -190,6 +191,23 @@ it('an external-only result can never satisfy a managed copy', async () => {
     f.service.verify(f.auth, f.source.id, f.run.id, f.item.id, { uploadResourceId: f.upload.id }),
   ).rejects.toThrow('photo_source_managed_original_unavailable');
   expect(await readFile(f.path)).toEqual(f.bytes);
+});
+it('the hidden motion half of a Live Photo is verified unless its still is Locked', async () => {
+  // The phone backed this Live Photo up first: the desktop's copy of its video is a duplicate of the hidden half.
+  for (const still of ['open', 'locked', 'none'] as const) {
+    const f = await setup();
+    await db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', f.asset.id).execute();
+    if (still !== 'none') {
+      const { asset } = await f.ctx.newAsset({ ownerId: f.auth.user.id, livePhotoVideoId: f.asset.id });
+      if (still === 'locked') {
+        await db.insertInto('asset_lock').values({ assetId: asset.id, reason: AssetLockReason.Marked }).execute();
+      }
+    }
+    const verify = f.service.verify(f.auth, f.source.id, f.run.id, f.item.id, { uploadResourceId: f.upload.id });
+    await (still === 'open'
+      ? expect(verify).resolves.toMatchObject({ assetId: f.asset.id })
+      : expect(verify).rejects.toThrow('photo_source_managed_original_unavailable'));
+  }
 });
 it('revocation during hashing fences the final receipt and leaves existing media untouched', async () => {
   const f = await setup();
