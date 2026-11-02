@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Operations } from '../src/operations.js';
+import { Releases } from '../src/releases.js';
 import { compareReleases } from '../src/release-order.js';
 import { Store } from '../src/store.js';
-import { Refusal } from '../src/contracts.js';
 import {
   navSection,
   newerReleases,
@@ -116,7 +116,8 @@ test('navigation highlights the section an installed server operation belongs to
 });
 
 // Issue 626: a failed update keeps the operation lock, so Resume must move off a withdrawn release.
-test('resuming an update whose release was withdrawn retries with the newest offered release', async () => {
+for (const missing of [false, true])
+test(`resuming an update whose release was ${missing ? 'removed' : 'withdrawn'} retries with the newest offered release`, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-update-retarget-'));
   const store = new Store(directory);
   try {
@@ -141,10 +142,16 @@ test('resuming an update whose release was withdrawn retries with the newest off
       'frameleaf-v1.1.19',
     ]);
     const acquired: string[] = [];
+    t.mock.method(globalThis, 'fetch', async (url: string) => {
+      const tag = url.split('/').at(-1)!;
+      if (missing && !offered.has(tag)) return new Response('{}', { status: 404 });
+      return new Response(JSON.stringify({
+        draft: false, prerelease: false, body: offered.has(tag) ? '' : 'withdrawn: unsafe',
+      }));
+    });
+    const client = new Releases(directory, 'seed');
     const releases = {
-      eligible: async (tag: string) => {
-        if (!offered.has(tag)) throw new Refusal('release_not_eligible');
-      },
+      eligible: client.eligible.bind(client),
       // Publication order, not version order: a 1.1.18 backport published after 1.1.19.
       available: async () => [
         { tag: 'frameleaf-v1.1.18' },
@@ -169,6 +176,7 @@ test('resuming an update whose release was withdrawn retries with the newest off
       'stop-application',
       'database-checkpoint',
     ];
+    operation.step = 'apply-release';
     operation.receipts['database-checkpoint'] = 'snapshot';
     store.save(operation);
     const review = {

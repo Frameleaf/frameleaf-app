@@ -27,7 +27,10 @@ async function github(path: string): Promise<any> {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Frameleaf-Manager' },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Refusal('release_service_unavailable', 503);
+  if (response.status === 404 && path.startsWith('releases/tags/'))
+    throw new Refusal('release_not_eligible', 409, 'This release is no longer available on GitHub (HTTP 404).');
+  if (!response.ok)
+    throw new Refusal('release_service_unavailable', 503, `GitHub returned HTTP ${response.status}.`);
   const text = await response.text();
   if (text.length > 4_000_000) throw new Refusal('invalid_release_response');
   return JSON.parse(text);
