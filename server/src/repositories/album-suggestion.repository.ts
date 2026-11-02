@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { LibraryScope } from 'src/enum.js';
+import { AssetVisibility, LibraryScope } from 'src/enum.js';
 import { LOOKS_LIKE_DISTANCE, sample } from 'src/utils/album-suggestions.js';
 import {
   hiddenByOwnerRules,
@@ -41,6 +41,7 @@ const landmark = (alias: string) => sql`(
 
 export type TripPhotoRow = {
   id: string;
+  visibility: AssetVisibility;
   takenAt: Date;
   localDateTime: Date;
   latitude: number | null;
@@ -50,7 +51,7 @@ export type TripPhotoRow = {
   model: string | null;
 };
 
-export type CandidateRow = TripPhotoRow & { originalFileName: string; hasCameraDetails: boolean };
+export type CandidateRow = Omit<TripPhotoRow, 'visibility'> & { originalFileName: string; hasCameraDetails: boolean };
 
 export class AlbumSuggestionRepository {
   constructor(private db: Kysely<DB>) {}
@@ -85,6 +86,7 @@ export class AlbumSuggestionRepository {
           'photo.id',
           'photo.fileCreatedAt as takenAt',
           'photo.localDateTime',
+          'photo.visibility',
           'photo_exif.make',
           'photo_exif.model',
           ...this.located('photo'),

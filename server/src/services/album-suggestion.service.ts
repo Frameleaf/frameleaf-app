@@ -346,7 +346,12 @@ export class AlbumSuggestionService extends BaseService {
     const wanted = new Set(candidateIds.flatMap((id) => people.get(id)!.map(({ id }) => id)));
     if (wanted.size === 0) return { byAsset, trip: worn };
     const tripIds = sample(
-      trip.photoIds.filter((id) => tripPeople.get(id)?.some(({ id }) => wanted.has(id))),
+      // Hidden photos (such as a live photo's video) are never cropped, so they would stay pending for good.
+      trip.photoIds.filter(
+        (id) =>
+          references.get(id)?.visibility !== AssetVisibility.Hidden &&
+          tripPeople.get(id)?.some(({ id }) => wanted.has(id)),
+      ),
       MAX_OUTFIT_PHOTOS,
     );
 

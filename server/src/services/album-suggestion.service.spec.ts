@@ -17,8 +17,9 @@ const hours = (iso: string, offset = -6) => ({
   takenAt: new Date(`${iso}Z`),
   localDateTime: new Date(new Date(`${iso}Z`).getTime() + offset * 3_600_000),
 });
-const tripPhoto = (id: string, iso: string): TripPhotoRow => ({
+const tripPhoto = (id: string, iso: string, visibility = AssetVisibility.Timeline): TripPhotoRow => ({
   id,
+  visibility,
   ...hours(iso),
   ...LAKE,
   place: 'Lake Louise',
@@ -268,6 +269,17 @@ describe(AlbumSuggestionService.name, () => {
       suggestions.getOutfits.mockResolvedValue([outfit('wa', null, false), outfit('a4', [1, 0, 0])]);
       mocks.job.queueAll.mockRejectedValue(new Error('queue down'));
       await expect(sut.getSuggestions(auth, albumId)).resolves.toMatchObject({ needDate: [{ precision: 'trip' }] });
+    });
+
+    it('never waits on a Hidden trip photo, which is never cropped', async () => {
+      suggestions.getTripPhotos.mockResolvedValue([
+        ...trip,
+        tripPhoto('a5', '2026-08-14T18:00:00', AssetVisibility.Hidden),
+      ]);
+      suggestions.getOutfits.mockResolvedValue([outfit('wa', [1, 0, 0]), outfit('a4', [0.99, 0.05, 0])]);
+      const { needDate } = await sut.getSuggestions(auth, albumId);
+      expect(suggestions.getOutfits).toHaveBeenCalledWith(auth.user.id, ['wa', 'a1', 'a2', 'a4'], expect.any(String));
+      expect(needDate).toMatchObject([{ precision: 'day' }]);
     });
 
     it("waits for all of a person's trip crops before matching their outfit", async () => {
