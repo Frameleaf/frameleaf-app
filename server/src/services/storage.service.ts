@@ -166,7 +166,7 @@ export class StorageService extends BaseService {
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
   async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
-    const { files, removedAssetId, removedAssetOwnerId, original } = job;
+    const { files, removedAssetId, removedAssetOwnerId, original, additionalOriginals } = job;
     if (removedAssetId && removedAssetOwnerId && !(await this.assetRepository.getById(removedAssetId))) {
       await this.eventRepository.emit('AssetDelete', { assetId: removedAssetId, userId: removedAssetOwnerId });
     }
@@ -179,6 +179,8 @@ export class StorageService extends BaseService {
       }
 
       try {
+        const retainedOriginal =
+          original?.path === file ? original : additionalOriginals?.find((item) => item.path === file);
         // Every caller queues deletes for a path it believes it owns, but a
         // deduplicated path is owned by whichever asset happens to be
         // canonical — the dedup migration queued its duplicates' original
@@ -193,13 +195,13 @@ export class StorageService extends BaseService {
             removedAssetId,
             trash: {
               move,
-              ...(original?.path === file && {
+              ...(retainedOriginal && {
                 original: {
-                  checksum: Buffer.from(original.checksum, 'hex'),
-                  sizeInBytes: original.sizeInBytes,
-                  ownerId: original.ownerId,
-                  assetId: original.assetId,
-                  originalFileName: original.originalFileName,
+                  checksum: Buffer.from(retainedOriginal.checksum, 'hex'),
+                  sizeInBytes: retainedOriginal.sizeInBytes,
+                  ownerId: retainedOriginal.ownerId,
+                  assetId: retainedOriginal.assetId,
+                  originalFileName: retainedOriginal.originalFileName,
                 },
               }),
             },

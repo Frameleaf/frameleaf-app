@@ -133,6 +133,7 @@ const studioHdrSourceFingerprint = sql<Buffer>`sha256(a.checksum || convert_to(e
 export type RemovedAsset = {
   originalPath: string;
   reservationTemporaryPath: string | null;
+  additionalOriginals: { path: string; originalFileName: string; checksum: Buffer; sizeInBytes: number }[];
   /** Its generated, edited and sidecar files. */
   files: AssetFile[];
   /** Outputs of its restorations and develop revisions, whose rows go with it. */
@@ -2008,6 +2009,7 @@ export class AssetRepository {
       originalPath: lockedAsset.originalPath,
       reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
       files: lockedAsset.files,
+      additionalOriginals: lockedAsset.additionalOriginals,
       derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths, ...studioHdrPaths])],
       ...(videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: lockedAsset.pendingMoves,
@@ -2157,6 +2159,17 @@ export class AssetRepository {
       .select(['id', 'type', 'path', 'isEdited'])
       .where('assetId', '=', asUuid(id))
       .execute();
+    const additionalOriginals = await tx
+      .selectFrom('asset_original')
+      .innerJoin('physical_file', 'physical_file.id', 'asset_original.physicalFileId')
+      .select([
+        'physical_file.path',
+        'physical_file.checksum',
+        'physical_file.sizeInBytes',
+        'asset_original.originalFileName',
+      ])
+      .where('asset_original.assetId', '=', asUuid(id))
+      .execute();
     // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
     const restorations = await tx
       .selectFrom('asset_restoration')
@@ -2183,6 +2196,7 @@ export class AssetRepository {
     return {
       ...row,
       files,
+      additionalOriginals,
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? []), ...studioHdrPaths])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),

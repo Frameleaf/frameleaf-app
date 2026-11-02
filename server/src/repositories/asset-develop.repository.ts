@@ -921,6 +921,12 @@ export class AssetDevelopRepository {
             LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
             WHERE asset."libraryId" IS NULL AND asset."ownerId" = "user".id
           ) + (
+            SELECT COALESCE(sum(file."sizeInBytes"), 0)
+            FROM public.asset_original original
+            JOIN public.asset asset ON asset.id = original."assetId"
+            JOIN public.physical_file file ON file.id = original."physicalFileId"
+            WHERE asset."libraryId" IS NULL AND asset."ownerId" = "user".id
+          ) + (
             SELECT COALESCE(sum(artifact.bytes), 0) FROM ${ARTIFACTS} artifact WHERE artifact."ownerId" = "user".id
           ) + (
             SELECT COALESCE(sum(revision."batchChargedBytes"),0) FROM ${TABLE} revision WHERE revision."ownerId"="user".id

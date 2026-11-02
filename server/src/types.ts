@@ -412,6 +412,7 @@ export interface IDeleteFilesJob extends IBaseJob {
     checksum: string;
     sizeInBytes: number;
   };
+  additionalOriginals?: NonNullable<IDeleteFilesJob['original']>[];
 }
 
 export interface IDeferrableJob extends IEntityJob {
