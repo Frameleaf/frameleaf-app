@@ -71,12 +71,14 @@ The [FL-199 record](https://heroit.atlassian.net/browse/FL-199), reviewed on 202
 | Synology | Source and releases owned by private `Frameleaf/frameleaf-synology` | Package Center submission and accepted listing unverified               |
 | TrueNAS  | Community-train app source with pinned catalog-library renderer     | External catalog PR and accepted listing unverified                     |
 | Unraid   | Server and optional ML Community Apps XML templates                 | Community Apps Validate/Scan submission and accepted listing unverified |
+| HexOS    | Manager Custom Install script and catalog copy                      | hexos-app-catalog pull request and accepted listing unverified          |
 
 Before submission, retain exact release/image digests and platform versions with receipts for fresh install, restart, upgrade, failed-upgrade recovery, uninstall with data retained, and backup restore. Qualify the supported offline import and recovery on sanitized production-shaped copies, including interrupted import/resume and content/access verification. Record the submission URL or ID and final listing URL separately for each platform after those gates pass.
 
-Manager component releases include `frameleaf-manager.xml` and `frameleaf-manager.compose.yaml`.
+Manager component releases include `frameleaf-manager.xml`, `frameleaf-manager.compose.yaml` and the HexOS
+Custom Install script `frameleaf-manager.hexos.json`; see [HexOS](SUBMISSION.md#hexos).
 Their exact SHA256 digests, image, tag and source commit are part of the signed Manager predicate.
-After downloading the manifest and both installers into a directory, verify the authenticated bytes
+After downloading the manifest and all three installers into a directory, verify the authenticated bytes
 with `node .github/verify-manager-installers.cjs manager-manifest.json <directory>` before installation.
 `SHA256SUMS` alone does not authenticate an installer. The catalog builder also refuses templates
 that differ from the authenticated binding, before creating its output directory.
