@@ -130,3 +130,60 @@ describe('library import manifest trust boundary', () => {
     expect(manifestFingerprint(value)).not.toBe(manifestFingerprint(changed));
   });
 });
+
+describe('explicit primary originals', () => {
+  const multipleOriginals = () => {
+    const value = manifest();
+    value.files.push({ ...value.files[0], id: 'raw', path: 'originals/image.raw' });
+    value.assets[0].fileIds.push('raw');
+    return value;
+  };
+  const v2 = () => {
+    const value = multipleOriginals();
+    return { ...value, version: 2, assets: value.assets.map((asset) => ({ ...asset, primaryFileId: 'raw' })) };
+  };
+  it('preserves the legacy single-original contract and its fingerprint', () => {
+    const value = manifest();
+    expect(parseImportManifest(value)).toEqual(value);
+    expect(manifestFingerprint(parseImportManifest(value))).toBe(
+      manifestFingerprint(parseImportManifest(JSON.parse(JSON.stringify(value)))),
+    );
+  });
+  it('requires primary evidence rather than choosing the first of several originals', () => {
+    expect(() => parseImportManifest(multipleOriginals())).toThrow('PRIMARY_ORIGINAL_REQUIRED');
+  });
+  it('retains all physical originals with one explicit source primary in version two', () => {
+    const parsed = parseImportManifest(v2());
+    expect(parsed.version).toBe(2);
+    expect(parsed.assets[0]).toMatchObject({ primaryFileId: 'raw', fileIds: ['f1', 'raw'] });
+    expect(parsed.files).toHaveLength(2);
+  });
+  it.each(['unknown', 'sidecar', 'not-attached'])('refuses a primary that is %s', (state) => {
+    const value = v2();
+    switch (state) {
+      case 'unknown': {
+        value.assets[0].primaryFileId = 'missing';
+        break;
+      }
+      case 'sidecar': {
+        value.files[1].role = 'sidecar';
+        break;
+      }
+      case 'not-attached': {
+        value.assets[0].fileIds = ['f1'];
+        break;
+      }
+      // No default
+    }
+    expect(() => parseImportManifest(value)).toThrow('PRIMARY_ORIGINAL_INVALID');
+  });
+  it('requires explicit primaries in version two even for one original', () => {
+    expect(() => parseImportManifest({ ...manifest(), version: 2 })).toThrow();
+  });
+  it('pins primary selection in the durable manifest identity', () => {
+    const value = v2();
+    const original = manifestFingerprint(parseImportManifest(value));
+    value.assets[0].primaryFileId = 'f1';
+    expect(manifestFingerprint(parseImportManifest(value))).not.toBe(original);
+  });
+});

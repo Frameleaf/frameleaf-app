@@ -60,6 +60,29 @@ describe.skipIf(process.platform !== 'linux')('bundle original verification', ()
     expect(result).toEqual({ files: 1, bytes: String(content.length) });
     expect(await readFile(join(root, 'album/original.jpg'))).toEqual(content);
   });
+  it('verifies every version-two original even when a different file is the explicit primary', async () => {
+    const second = Buffer.from('a second synthetic original');
+    await writeFile(join(root, 'album/second.raw'), second);
+    const base = manifest();
+    const value = parseImportManifest({
+      ...base,
+      version: 2,
+      files: [
+        ...base.files,
+        {
+          id: 'raw',
+          path: 'album/second.raw',
+          bytes: String(second.length),
+          sha256: createHash('sha256').update(second).digest('hex'),
+          role: 'original',
+        },
+      ],
+      assets: [{ ...base.assets[0], fileIds: ['f1', 'raw'], primaryFileId: 'raw' }],
+    });
+    expect(await verifyBundleFiles(root, value)).toEqual({ files: 2, bytes: String(content.length + second.length) });
+    await writeFile(join(root, 'album/original.jpg'), Buffer.alloc(content.length));
+    await expect(verifyBundleFiles(root, value)).rejects.toThrow('BUNDLE_FILE_MISMATCH');
+  });
   it('refuses byte-length changes', async () => {
     await writeFile(join(root, 'album/original.jpg'), 'short');
     await expect(verifyBundleFiles(root, manifest())).rejects.toThrow('BUNDLE_FILE_MISMATCH');
