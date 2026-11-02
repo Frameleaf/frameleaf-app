@@ -631,3 +631,4 @@ test('headless TypeScript loader is an explicit exact development dependency', a
   const patch = await readFile(new URL(`../${loader.path}`, import.meta.url), 'utf8');
   assert.ok(patch.includes(`+    "tsx": "${version}",`));
 });
+import './adapter-launch.test.mjs';

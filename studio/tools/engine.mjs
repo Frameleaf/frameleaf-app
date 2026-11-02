@@ -2,7 +2,7 @@
 import { writeResourcePolicy } from './resource-policy.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -177,7 +177,7 @@ async function attest() {
   const { provenance, configuration } = await inputs();
   const engine = path.join(root, 'studio/engine');
   assert.equal(process.versions.node, configuration.node, 'Use the pinned Node version for attestation');
-  const npm = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
+  const npm = execSync('npm --version', { encoding: 'utf8' }).trim();
   assert.equal(npm, configuration.npm, 'Use the pinned npm version for attestation');
   await verifySnapshot(path.join(root, 'studio/vendor/freecut'), provenance.files);
   const source = await json(path.join(engine, 'frameleaf-source.json'));
