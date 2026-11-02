@@ -42,7 +42,8 @@ describe('studio site helpers', () => {
     expect(validDomain('https://cedar.ca')).toBe(false);
     expect(siteAddress({ slug: 'cedar' }, 'https://photos.example')).toBe('https://photos.example/studio/cedar');
     // An own domain isn't served yet, so the working address stays on this server.
-    expect(siteAddress({ slug: 'cedar' }, 'https://photos.example')).toBe('https://photos.example/studio/cedar');
+    const withDomain = { slug: 'cedar', domain: 'cedar.ca' };
+    expect(siteAddress(withDomain, 'https://photos.example')).toBe('https://photos.example/studio/cedar');
   });
 
   it('checks an inquiry', () => {

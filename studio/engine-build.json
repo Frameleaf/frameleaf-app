@@ -828,8 +828,8 @@
     {
       "path": "patches/0179-studio-ui-audit-copy-and-panel-placement.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "d62d48892b00f56e5cfc3b2896027291643a5580b5c92adccdd85d555d7b7b85"
+      "sha256": "2002490c9109c9577a914b3c908e293ed25385c6502f6c113a4c00e7694c0e26"
     }
   ],
-  "sourceSha256": "00f44ccc211e75188ab95439721cfa9bdcf2ac81213471700771c7ef8526b039"
+  "sourceSha256": "5d5bf85da874980ce86f76efd1cb90a230ef378cb1f7a4ce5354cd586dbc1400"
 }

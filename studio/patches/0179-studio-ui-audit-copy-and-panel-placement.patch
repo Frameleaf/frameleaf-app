@@ -51,7 +51,7 @@ index 58f49f0..3ec5cd5 100644
        defaultOpen={false}
      >
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
-index 9a1b49c..3a5c757 100644
+index 9a1b49c..c311e70 100644
 --- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 @@ -40,6 +40,8 @@ import type { TimelineState, TimelineActions } from '@/features/editor/deps/time
@@ -63,36 +63,53 @@ index 9a1b49c..3a5c757 100644
  import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
  import { useGizmoStore } from '@/features/editor/deps/preview'
  
-@@ -693,6 +695,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
-                 <Suspense fallback={null}>
-                   <LazySubtitleSection items={selectedItems} canvas={canvas} />
-                   <LazyCaptionLanguagesPanel />
-+                  <CaptionQualityPanel />
-                 </Suspense>
-               )}
-               {hasGifItems && <GifSection items={selectedItems} />}
-@@ -738,6 +741,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+@@ -535,7 +537,14 @@ const ClipPanelCore = memo(function ClipPanelCore({
+   // tab id for its full authoring library, preserving inspector state while the
+   // user-facing concepts remain distinct.
+   const showVideoTab = layoutFillItems.length > 0
+-  const showAudioTab = hasAudioItems
++  const hasCaptionSelection = selectedItems.some(
++    (item: TimelineItem) =>
++      item.type === 'subtitle' ||
++      (item.type === 'text' && item.textRole === 'caption') ||
++      ((item.type === 'video' || item.type === 'audio') && !!item.transcriptCaptions?.enabled),
++  )
++  // A nested composition can carry the voice or the music, so it also opens Audio for Voice over music.
++  const showAudioTab = hasAudioItems || hasCompositionItems
+   const showFullMotionLibrary = workspace === 'motion' && hasVisualItems
+   const showMotionTab = hasVisualItems
+   const showSecondTab = showAudioTab
+@@ -630,6 +639,9 @@ const ClipPanelCore = memo(function ClipPanelCore({
+ 
+   return (
+     <div className={cn(motionUsesFullHeight ? 'h-full min-h-0' : 'space-y-3')}>
++      {/* Caption quality belongs with captions of every kind: subtitles, caption text and
++          transcript captions on video or audio clips. */}
++      {hasCaptionSelection && <CaptionQualityPanel />}
+       {/* Tabbed sections */}
+       <Tabs
+         value={activeTab}
+@@ -738,6 +750,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
                <LazyAudioSection items={audioPanelItems} />
              </Suspense>
            )}
-+          {hasAudioItems && activeTab === 'audio' && <VoiceMusicPanel />}
++          {showAudioTab && activeTab === 'audio' && <VoiceMusicPanel />}
          </TabsContent>
  
          {/* Effects Tab - clip effects plus text styling and animation */}
 diff --git a/src/features/editor/components/properties-sidebar/index.tsx b/src/features/editor/components/properties-sidebar/index.tsx
-index 07c18dd..621c050 100644
+index 07c18dd..fde00b8 100644
 --- a/src/features/editor/components/properties-sidebar/index.tsx
 +++ b/src/features/editor/components/properties-sidebar/index.tsx
-@@ -23,8 +23,6 @@ import { useEditorStore } from '@/shared/state/editor'
- import { useSelectionStore } from '@/shared/state/selection'
+@@ -24,7 +24,6 @@ import { useSelectionStore } from '@/shared/state/selection'
  import type { TimelineItem } from '@/types/timeline'
  import { CanvasPanel } from './canvas-panel'
--import { CaptionQualityPanel } from './caption-quality-panel'
+ import { CaptionQualityPanel } from './caption-quality-panel'
 -import { VoiceMusicPanel } from './voice-music-panel'
  import { useSettingsStore } from '@/features/editor/deps/settings'
  import {
    EDITOR_LAYOUT_CSS_VALUES,
-@@ -343,8 +341,6 @@ export const PropertiesSidebar = memo(function PropertiesSidebar() {
+@@ -343,8 +342,6 @@ export const PropertiesSidebar = memo(function PropertiesSidebar() {
                    : 'flex-1 overflow-y-auto overflow-x-hidden p-3 [scrollbar-gutter:stable]'
                }
              >
@@ -101,6 +118,18 @@ index 07c18dd..621c050 100644
                {selectedTransitionId ? (
                  <Suspense fallback={null}>
                    <LazyTransitionPanel />
+@@ -373,7 +370,10 @@ export const PropertiesSidebar = memo(function PropertiesSidebar() {
+                     </Suspense>
+                   </div>
+                   {!hasClipSelection && (
+-                    <div>
++                    <div className="space-y-3">
++                      {/* With nothing selected, the film's caption warnings stay reachable; the
++                          panel hides itself when the film has no captions. */}
++                      <CaptionQualityPanel />
+                       <CanvasPanel />
+                     </div>
+                   )}
 diff --git a/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx b/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx
 index 788b72f..12d3a4a 100644
 --- a/src/features/editor/components/properties-sidebar/marker-panel/chapter-export.test.tsx
@@ -245,7 +274,7 @@ index cbc657a..2e6dccd 100644
    }
  }
 diff --git a/src/i18n/locales/partials/en/voice-music.json b/src/i18n/locales/partials/en/voice-music.json
-index 905db62..33be241 100644
+index 905db62..2eb752c 100644
 --- a/src/i18n/locales/partials/en/voice-music.json
 +++ b/src/i18n/locales/partials/en/voice-music.json
 @@ -1,36 +1,36 @@
@@ -273,7 +302,7 @@ index 905db62..33be241 100644
 +    "audition": "Listen to 15 seconds",
 +    "apply": "Apply",
 +    "cancel": "Stop listening",
-+    "preserved": "Clip volumes, fades and keyframes stay as they are.",
++    "preserved": "Clip volumes, fades and keyframes stay as they are. Any ducking already set on the voice clips, including which tracks it lowers, is replaced by this mix.",
      "duckChange": "Music attenuation: {{db}} dB; attack {{attack}} s, release {{release}} s.",
      "change": "{{label}}: {{lufs}} LUFS; output trim {{before}} → {{after}} dB (change {{gain}} dB).",
 -    "preparing": "Rendering audition from the playhead…",

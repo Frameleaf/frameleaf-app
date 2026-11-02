@@ -110,21 +110,29 @@
             ? { tone: 'dirty', text: $t('frameleaf_studio_site_unsaved') }
             : { tone: 'saved', text: $t('frameleaf_studio_site_all_saved') },
   );
-  let frame = $state<HTMLDivElement>();
+  let stage = $state<HTMLDivElement>();
   const canFullScreen = typeof document !== 'undefined' && !!document.fullscreenEnabled;
   /** The preview on its own, filling the screen; Esc brings the editor back. */
   function fullScreen() {
-    void frame?.requestFullscreen?.().catch(() => {});
+    // The wrapper fills the screen, so a Phone preview keeps its phone width inside it.
+    void stage?.requestFullscreen?.().catch(() => {});
   }
-  /** "Use Lake 12.jpg as cover", so each cover button says which photograph it is. */
-  function coverLabel(item: SiteItem) {
+  /**
+   * "Use IMG_0412.jpg from Maya & Theo as cover (3 of 11)": the photograph, its shoot and its place,
+   * so two shoots with the same file name still give different buttons.
+   */
+  function coverLabel(item: SiteItem, index: number) {
     const capture = captures.get(siteItemKey(item));
     const name =
       capture?.fileName ||
-      (capture ? $t('frameleaf_studio_site_photo_number', { values: { number: capture.number } }) : '');
-    return name
-      ? $t('frameleaf_studio_site_use_photo_as_cover', { values: { name } })
-      : $t('frameleaf_studio_site_use_as_cover');
+      (capture
+        ? $t('frameleaf_studio_site_photo_number', { values: { number: capture.number } })
+        : $t('frameleaf_studio_site_photo_number', { values: { number: index + 1 } }));
+    const shoot = shoots.find((entry) => entry.id === item.shootId)?.name ?? '';
+    const values = { name, shoot, position: index + 1, total: items.length };
+    return shoot
+      ? $t('frameleaf_studio_site_use_photo_from_shoot_as_cover', { values })
+      : $t('frameleaf_studio_site_use_photo_as_cover', { values });
   }
 
   function photo(item: SiteItem, alt: string): SitePhoto | null {
@@ -372,8 +380,10 @@
             >
           {/if}
         </div>
-        <div class="sse-frame" class:is-phone={phone} bind:this={frame}>
-          <StudioSite site={preview} />
+        <div class="sse-fullscreen" bind:this={stage}>
+          <div class="sse-frame" class:is-phone={phone}>
+            <StudioSite site={preview} />
+          </div>
         </div>
       </section>
 
@@ -429,12 +439,12 @@
             <h2>{$t('frameleaf_studio_site_cover')}</h2>
             {#if items.length > 0}
               <div class="sse-cover-pick">
-                {#each items as item (siteItemKey(item))}
+                {#each items as item, index (siteItemKey(item))}
                   {@const assetId = captures.get(siteItemKey(item))?.assetId}
                   <button
                     type="button"
                     aria-pressed={!!draft.cover && siteItemKey(draft.cover) === siteItemKey(item)}
-                    aria-label={coverLabel(item)}
+                    aria-label={coverLabel(item, index)}
                     onclick={() => (draft!.cover = item)}
                   >
                     {#if assetId}<img

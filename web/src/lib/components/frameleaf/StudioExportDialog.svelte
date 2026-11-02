@@ -1129,7 +1129,7 @@
           </li>
         {/each}
       </ul>
-      {#if failedResults.length > 0}
+      {#if failedResults.length > 0 && failedResults.length < deliveryResults.length}
         <p class="note">
           {$t('frameleaf_studio_export_retry_hint', { values: { shapes: joinShapeNames(failedResults) } })}
         </p>
