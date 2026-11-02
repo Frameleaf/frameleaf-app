@@ -67649,13 +67649,13 @@
       "AlbumSuggestionReasonDto": {
         "properties": {
           "assetId": {
-            "description": "The album photo it matches, for same-scene and near-identical",
+            "description": "The album photo it matches, for same-scene, near-identical and same-outfit",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
           "date": {
-            "description": "Local date (YYYY-MM-DD) for during-trip, same-scene and near-identical",
+            "description": "Local date (YYYY-MM-DD) for during-trip, same-scene, near-identical and same-outfit",
             "type": "string"
           },
           "fileName": {
@@ -67663,11 +67663,11 @@
             "type": "string"
           },
           "kind": {
-            "description": "Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical or people. Unknown kinds may be added; show nothing for them.",
+            "description": "Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical, people or same-outfit. Unknown kinds may be added; show nothing for them.",
             "type": "string"
           },
           "names": {
-            "description": "Names of the people in it who are also in the album, for people",
+            "description": "Names of the people in it who are also in the album, for people; the person wearing the same clothes, for same-outfit",
             "items": {
               "type": "string"
             },

@@ -643,6 +643,7 @@ export type JobItem =
   | { name: JobName.LandmarkMatchAll; data?: IBaseJob }
   | { name: JobName.LandmarkInfer; data?: IBaseJob & { id?: string; trigger?: 'metadata' | 'embedding' } }
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
+  | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem

@@ -4730,15 +4730,15 @@ export type MapMarkerResponseDto = {
     "type"?: AssetTypeEnum;
 };
 export type AlbumSuggestionReasonDto = {
-    /** The album photo it matches, for same-scene and near-identical */
+    /** The album photo it matches, for same-scene, near-identical and same-outfit */
     assetId?: string;
-    /** Local date (YYYY-MM-DD) for during-trip, same-scene and near-identical */
+    /** Local date (YYYY-MM-DD) for during-trip, same-scene, near-identical and same-outfit */
     date?: string;
     /** File name of that album photo */
     fileName?: string;
-    /** Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical or people. Unknown kinds may be added; show nothing for them. */
+    /** Why it was suggested: during-trip, place, same-camera, looks-like, same-scene, near-identical, people or same-outfit. Unknown kinds may be added; show nothing for them. */
     kind: string;
-    /** Names of the people in it who are also in the album, for people */
+    /** Names of the people in it who are also in the album, for people; the person wearing the same clothes, for same-outfit */
     names?: string[];
     /** Place name for place */
     place?: string;

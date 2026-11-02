@@ -7,7 +7,7 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003041-ImportAccountClaims.js';
+import { down, up } from 'src/schema/migrations/2100000003042-ImportAccountClaims.js';
 import { BaseService } from 'src/services/base.service.js';
 import { SessionFactory } from 'test/factories/session.factory.js';
 import { newMediumService } from 'test/medium.factory.js';
