@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Store } from '../src/store.js';
 import { ImportTransferJournal } from '../src/import-transfer-journal.js';
+import { reviewedImport } from './import-plan-fixture.js';
 import {
   relocateImportFiles,
   rollbackImportRelocations,
@@ -58,14 +59,10 @@ async function fixture() {
   const store = new Store(join(directory, 'journal'));
   const operation = store.start('import', 'request', {}).operation;
   const journal = new ImportTransferJournal(store);
-  journal.begin(operation.id, {
-    manifestSha256: 'a'.repeat(64),
-    planSha256: 'b'.repeat(64),
-  });
   const original = await stat(join(source, 'photo.jpg'), { bigint: true });
-  journal.intent(operation.id, {
+  const file = {
     id: 'photo',
-    mode: 'relocate',
+    mode: 'relocate' as const,
     sourceRoot: 'source',
     destinationRoot: 'destination',
     sourcePath: 'photo.jpg',
@@ -81,7 +78,7 @@ async function fixture() {
       ctimeNs: String(original.ctimeNs),
       links: String(original.nlink),
     },
-  });
+  };
   const roots: Record<string, ImportCopyRoot> = {};
   for (const [key, path] of Object.entries({ source, destination })) {
     const identity = await stat(path, { bigint: true });
@@ -91,6 +88,13 @@ async function fixture() {
       inode: String(identity.ino),
     };
   }
+  const review = reviewedImport(
+    [file],
+    Object.entries(roots).map(([id, root]) => ({ id, ...root })),
+  );
+  journal.begin(operation.id, review.binding);
+  journal.sealPlan(operation.id, review.plan);
+  journal.intent(operation.id, file);
   return {
     directory,
     source,
@@ -101,6 +105,7 @@ async function fixture() {
     operation,
     roots,
     original,
+    review,
   };
 }
 async function clean(f: Awaited<ReturnType<typeof fixture>>) {
@@ -256,6 +261,7 @@ test(
     const f = await fixture();
     try {
       await relocateImportFiles(f.journal, f.operation.id, f.roots, false);
+      f.journal.recordVerification(f.operation.id, f.review.verification);
       f.journal.writersStarting(f.operation.id);
       await assert.rejects(
         rollbackImportRelocations(f.journal, f.operation.id, f.roots),

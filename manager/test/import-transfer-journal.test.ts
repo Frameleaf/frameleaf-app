@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../src/store.js';
 import { ImportTransferJournal } from '../src/import-transfer-journal.js';
+import { reviewedImport } from './import-plan-fixture.js';
 
 const binding = { manifestSha256: 'a'.repeat(64), planSha256: 'b'.repeat(64) };
 test('native SQLite automatic transaction rollback returns a stable error', async () => {
@@ -211,7 +212,9 @@ test('checksums, activation boundary and abandonment cannot erase recovery evide
   try {
     const { operation } = store.start('import', 'request', {});
     const journal = new ImportTransferJournal(store);
-    journal.begin(operation.id, binding);
+    const review = reviewedImport([file]);
+    journal.begin(operation.id, review.binding);
+    journal.sealPlan(operation.id, review.plan);
     journal.intent(operation.id, file);
     assert.throws(
       () =>
@@ -233,6 +236,7 @@ test('checksums, activation boundary and abandonment cannot erase recovery evide
       sha256: file.sha256,
       bytes: file.bytes,
     });
+    journal.recordVerification(operation.id, review.verification);
     journal.writersStarting(operation.id);
     assert.throws(
       () => journal.rollbackIntent(operation.id, file.id),
