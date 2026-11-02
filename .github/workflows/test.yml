@@ -1110,7 +1110,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-24.04
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && !cancelled() }}
     steps:
       - name: Verify required E2E jobs succeeded
         env:

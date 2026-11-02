@@ -1459,6 +1459,13 @@ const assertIntegrationMlArchives = (w) => {
   );
 };
 
+test("a superseded Test run skips the E2E gate instead of failing it", () => {
+  const w = workflow("test.yml");
+  // A newer commit cancels the running one; that run must not leave a red check behind.
+  assert.equal(w.concurrency["cancel-in-progress"], true);
+  assert.match(w.jobs["success-check-e2e"].if, /&& !cancelled\(\) }}$/);
+});
+
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
   // Pushes to main build it; a manual dispatch on main rebuilds the current head.
