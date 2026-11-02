@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type ImportDatabase } from 'src/immich-import/types.js';
+import { type ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { sourceKinds } from 'src/library-import/manifest.js';
@@ -65,7 +65,12 @@ export class LibraryImportJournal {
       }
       if ((await db.query('SELECT 1 FROM public.frameleaf_immich_import')).length > 0)
         throw new LibraryImportRefused('DESTINATION_ALREADY_IMPORTED');
-      await assertFreshImportDestination(db);
+      try {
+        await assertFreshImportDestination(db);
+      } catch (error) {
+        if (error instanceof ImportRefused) throw new LibraryImportRefused(error.code);
+        throw error;
+      }
       await db.query(
         `INSERT INTO public.frameleaf_library_import(operation_id,binding,status) VALUES($1::uuid,$2::text::jsonb,'copying')`,
         [binding.operationId, JSON.stringify(binding)],
