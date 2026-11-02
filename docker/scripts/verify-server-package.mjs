@@ -4,6 +4,11 @@ import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+export function argon2NativePackage(platform, arch) {
+  const abi = platform === "linux" ? "-gnu" : platform === "win32" ? "-msvc" : "";
+  return `@node-rs/argon2-${platform}-${arch}${abi}`;
+}
+
 /** Inspect the real pnpm-deployed package without starting services or executing DDL. */
 export async function verifyServerPackage(
   directory,
@@ -50,7 +55,7 @@ export async function verifyServerPackage(
   const require = createRequire(resolve(root, "package.json"));
   const argonEntry = await contained(require.resolve("@node-rs/argon2"));
   const argonRequire = createRequire(argonEntry);
-  const nativeName = `@node-rs/argon2-${process.platform}-${process.arch}${process.platform === "linux" ? "-gnu" : ""}`;
+  const nativeName = argon2NativePackage(process.platform, process.arch);
   await contained(argonRequire.resolve(nativeName));
   const { hashRaw } = require("@node-rs/argon2");
   assert.equal(
