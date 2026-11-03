@@ -3,7 +3,7 @@ import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' w
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { pigallery2Projections as projections } from 'src/library-import/pigallery2-projections.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 export type Pigallery2Table = keyof typeof projections;
 export type Pigallery2Row = Record<string, SQLOutputValue>;
@@ -47,6 +47,7 @@ export const openPigallery2Snapshot = (path: string, version: string) => {
       if (!Object.hasOwn(projections, table)) throw new Pigallery2ReadError('PIGALLERY2_TABLE_NOT_ALLOWED');
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${projections[table]} FROM "${table}"`;
+        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
