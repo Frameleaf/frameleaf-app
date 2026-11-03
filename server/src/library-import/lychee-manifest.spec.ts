@@ -337,6 +337,15 @@ describe('Lychee common manifest mapping', () => {
       members: [],
     });
   });
+  it('refuses contradictory tag/person album types instead of choosing one silently', () => {
+    const id = 'ConflictingDynamicAlbum01';
+    insert('base_albums', { ...content.rows.base_albums[0], id });
+    insert('tag_albums', { id, is_and: 1, cover_id: null });
+    insert('person_albums', { id, is_and: 0 });
+    const value = input();
+    value.materializedAlbums[id] = [photo.id];
+    expect(() => read(value)).toThrow('LYCHEE_ALBUM_TYPE_UNQUALIFIED');
+  });
   it('prepares every mapped original and companion with the existing canonical writer', () => {
     const { manifest } = read(livePhoto());
     const template = planFixture.plan.files[0];
