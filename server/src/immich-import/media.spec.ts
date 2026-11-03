@@ -123,8 +123,8 @@ describe('offline media verification', () => {
     } finally {
       reads.mockRestore();
     }
-    const { dev, ino, size, mtimeNs } = await stat(path, { bigint: true });
-    expect(receipt).toHaveBeenCalledWith(`stat:${dev}:${ino}:${size}:${mtimeNs}`);
+    const { size, mtimeNs } = await stat(path, { bigint: true });
+    expect(receipt).toHaveBeenCalledWith(`stat:${size}:${mtimeNs}`);
     expect(await readFile(path, 'utf8')).toBe('original');
   });
 

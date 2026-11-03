@@ -86,7 +86,8 @@ export class FrameleafLibrarySetupController {
   }
 
   @Get('progress')
-  @Authenticated({ admin: true })
+  // Polled every 15 seconds by the setup bar: reading progress must not keep a PIN unlock or Locked key alive.
+  @Authenticated({ admin: true, refreshElevation: false })
   @Endpoint({
     operationId: 'getLibrarySetupProgress',
     summary: 'What an imported library still has to do after it opens (setup bar)',

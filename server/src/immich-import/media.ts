@@ -262,8 +262,10 @@ export const verifyMediaFile = async (
           throw new ImportRefused('ORIGINAL_CHECKSUM_MISMATCH');
         }
       }
-      // A copy is identified by its content; an in-place file by its identity, size and modification time.
-      onVerified?.(sourceDigest?.sha256 ?? `stat:${before.dev}:${before.ino}:${before.size}:${before.mtimeNs}`);
+      // A copy is identified by its content; an in-place file by its size and nanosecond modification time. Device
+      // and inode numbers stay out: a remount after a host restart can renumber them (FUSE shares such as Unraid's
+      // /mnt/user, NFS), which would wrongly refuse a resume. Same-file identity is still checked on every read above.
+      onVerified?.(sourceDigest?.sha256 ?? `stat:${before.size}:${before.mtimeNs}`);
       return mapping.target;
     } finally {
       await targetFile.close();

@@ -75,6 +75,32 @@ describe('SetupBar', () => {
     expect(screen.queryByText('Setting up your library')).not.toBeInTheDocument();
   });
 
+  it('says when setup needs attention and offers a retry instead of pause', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention }));
+    render(SetupBar);
+
+    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
+  });
+
+  it('keeps asking after a failed request', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockRejectedValueOnce(new Error('restarting'));
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.queryByText('Setting up your library')).not.toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('opens the completion window once when everything has finished', async () => {
     const done = progress({ phase: Phase.Complete, completedAt: '2026-11-03T10:00:00.000Z' });
     sdkMock.getLibrarySetupProgress.mockResolvedValue(done);

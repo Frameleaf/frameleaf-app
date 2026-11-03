@@ -23,8 +23,10 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import {
+    beginLibrarySetup,
     getLibrarySetupProgress,
     pauseLibrarySetup,
+    Phase,
     type LibrarySetupProgressDto,
     LibrarySetupStageId,
     LibrarySetupStageStatus,
@@ -53,8 +55,12 @@
   /** The first reading of the current stage, for the time-left estimate. */
   let since = $state<{ id: LibrarySetupStageId; at: number; done: number } | null>(null);
   let timer: ReturnType<typeof setInterval> | undefined;
+  let loading = false;
+  let requested = 0;
+  let applied = 0;
 
   const visible = $derived(!!progress?.active && !progress.completedAt);
+  const attention = $derived(progress?.phase === Phase.NeedsAttention);
   const current = $derived(
     progress?.stages.find(
       (stage) => stage.status === LibrarySetupStageStatus.Running || stage.status === LibrarySetupStageStatus.Paused,
@@ -114,25 +120,49 @@
     }
   };
 
-  const load = async () => {
-    try {
-      show(await getLibrarySetupProgress());
-    } catch {
-      stopPolling();
+  /** Only the newest answer is shown: a slow poll must not undo a later one, or a pause. */
+  const latest = async (request: Promise<LibrarySetupProgressDto>) => {
+    const id = ++requested;
+    const next = await request;
+    if (id > applied) {
+      applied = id;
+      show(next);
     }
   };
 
-  const togglePause = async () => {
+  const load = async () => {
+    if (loading) {
+      return;
+    }
+    loading = true;
+    try {
+      await latest(getLibrarySetupProgress());
+    } catch {
+      // A restart or a dropped connection: the next poll asks again.
+    } finally {
+      loading = false;
+    }
+  };
+
+  const act = async (work: () => Promise<unknown>) => {
     if (!progress || busy) {
       return;
     }
     busy = true;
     try {
-      show(await pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress.paused } }));
+      await work();
     } finally {
       busy = false;
     }
   };
+  const togglePause = () =>
+    act(() => latest(pauseLibrarySetup({ librarySetupPauseDto: { paused: !progress!.paused } })));
+  // A failed or cancelled file check stops setup; starting it again is the only way on (Library Care says why).
+  const retry = () =>
+    act(async () => {
+      await beginLibrarySetup();
+      await latest(getLibrarySetupProgress());
+    });
 
   const closeCelebration = () => {
     celebrating = false;
@@ -163,28 +193,39 @@
   <div
     class="fl-setup-bar"
     class:is-paused={progress.paused}
+    class:is-attention={attention}
     bind:clientHeight={height}
     use:clickOutside={{ onOutclick: () => (open = false), onEscape: () => (open = false) }}
   >
     <Icon
-      icon={progress.paused ? mdiPauseCircleOutline : mdiProgressClock}
+      icon={attention ? mdiAlertCircleOutline : progress.paused ? mdiPauseCircleOutline : mdiProgressClock}
       size="18"
       class="fl-setup-bar-icon"
       aria-hidden={true}
     />
     <p class="fl-setup-bar-text" role="status">
-      <strong>{progress.paused ? $t('setup_bar_paused_title') : $t('setup_bar_title')}</strong>
+      <strong>
+        {attention
+          ? $t('setup_bar_attention_title')
+          : progress.paused
+            ? $t('setup_bar_paused_title')
+            : $t('setup_bar_title')}
+      </strong>
       <span class="fl-setup-bar-detail">
-        {current.total > 0
-          ? $t('setup_bar_progress', {
-              values: {
-                stage: stageTitle(current.id),
-                done: current.done.toLocaleString(),
-                total: current.total.toLocaleString(),
-              },
-            })
-          : stageTitle(current.id)}
-        {#if secondsLeft !== null}
+        {#if attention}
+          {$t('setup_bar_attention_detail')}
+        {:else if current.total > 0}
+          {$t('setup_bar_progress', {
+            values: {
+              stage: stageTitle(current.id),
+              done: current.done.toLocaleString(),
+              total: current.total.toLocaleString(),
+            },
+          })}
+        {:else}
+          {stageTitle(current.id)}
+        {/if}
+        {#if secondsLeft !== null && !attention}
           · {timeLeft(secondsLeft)}
         {/if}
       </span>
@@ -207,10 +248,16 @@
       <span style:width="{part * 100}%"></span>
     </div>
     <div class="fl-setup-bar-actions">
-      <button type="button" class="button fl-setup-bar-pause" disabled={busy} onclick={togglePause}>
-        <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
-        {progress.paused ? $t('resume') : $t('pause')}
-      </button>
+      {#if attention}
+        <button type="button" class="button primary" disabled={busy} onclick={retry}>
+          {$t('retry')}
+        </button>
+      {:else}
+        <button type="button" class="button fl-setup-bar-pause" disabled={busy} onclick={togglePause}>
+          <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
+          {progress.paused ? $t('resume') : $t('pause')}
+        </button>
+      {/if}
       <button
         type="button"
         class="button"
@@ -262,10 +309,12 @@
         </ol>
         <footer>
           <p>{progress.paused ? $t('setup_bar_footer_paused') : $t('setup_bar_footer')}</p>
-          <button type="button" class="button fl-setup-bar-panel-pause" disabled={busy} onclick={togglePause}>
-            <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
-            {progress.paused ? $t('resume') : $t('pause')}
-          </button>
+          {#if !attention}
+            <button type="button" class="button fl-setup-bar-panel-pause" disabled={busy} onclick={togglePause}>
+              <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
+              {progress.paused ? $t('resume') : $t('pause')}
+            </button>
+          {/if}
           <a class="button" href={Route.libraryCare()}>
             {$t('setup_bar_library_care')}
             <Icon icon={mdiChevronRight} size="18" aria-hidden={true} />
@@ -300,6 +349,12 @@
   }
   .fl-setup-bar.is-paused :global(.fl-setup-bar-icon) {
     color: var(--fl-muted);
+  }
+  .fl-setup-bar.is-attention {
+    background: color-mix(in srgb, var(--fl-warning), var(--fl-panel) 88%);
+  }
+  .fl-setup-bar.is-attention :global(.fl-setup-bar-icon) {
+    color: var(--fl-warning);
   }
   .fl-setup-bar-text {
     display: flex;

@@ -181,6 +181,10 @@ export class FrameleafLibrarySetupService {
         scans: {},
         health: {},
         owners,
+        // A retry keeps the owner's pause and what the file check already released (FL-1146).
+        paused: previous?.paused,
+        checkReleasedAt: previous?.checkReleasedAt ?? null,
+        completedAt: previous?.completedAt ?? null,
         healthAfter: null,
         revision: null,
         quietSince: null,
@@ -275,7 +279,10 @@ export class FrameleafLibrarySetupService {
     const startedAt = new Date().toISOString();
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',${JSON.stringify(startedAt)}::text::jsonb)
       WHERE id=${run.id}::uuid`.execute(db);
-    await this.releaseStages(run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+    // A setup paused before the run was prepared stays held; resuming releases these stages.
+    if (!state.paused) {
+      await this.releaseStages(run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+    }
   }
 
   /** Lets the queue admit a held stage's items. Stages that wait for the file check are released by `advance`. */
