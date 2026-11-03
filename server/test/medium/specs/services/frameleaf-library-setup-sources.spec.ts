@@ -17,7 +17,15 @@ import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const cases = [
   ...sourceKinds.map((kind) => ({ kind, mismatch: '', outcome: '' })),
-  ...['operation', 'manifest', 'installation', 'restore-none', 'restore-other', 'restore-approved'].map((mismatch) => ({
+  ...[
+    'operation',
+    'manifest',
+    'installation',
+    'manager-marker-missing',
+    'restore-none',
+    'restore-other',
+    'restore-approved',
+  ].map((mismatch) => ({
     kind: 'photoprism' as SourceKind,
     mismatch,
     outcome: '',
@@ -227,7 +235,9 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       return;
     }
     if (mismatch) {
-      if (mismatch === 'installation')
+      if (mismatch === 'manager-marker-missing')
+        await sql`UPDATE job_run SET selection=selection-'managerSetup' WHERE id=${id}::uuid`.execute(db);
+      else if (mismatch === 'installation')
         await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,installation}','"114900000002"'::jsonb) WHERE id=${id}::uuid`.execute(
           db,
         );
@@ -241,7 +251,8 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       users.hasAdmin.mockResolvedValue(true);
       await sql`UPDATE frameleaf_library_import SET status='activated'`.execute(db);
       await make().begin();
-      expect((await marker()).startedAt).toBeNull();
+      if (mismatch === 'manager-marker-missing') expect(await marker()).toBeUndefined();
+      else expect((await marker()).startedAt).toBeNull();
       expect(await ready()).toEqual([]);
       expect(await make().progress()).toMatchObject({ active: true, phase: 'needs-attention', completedAt: null });
       await expect(make().setPaused(true)).rejects.toThrow('Imported setup identity mismatch');
