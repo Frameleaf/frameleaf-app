@@ -112,20 +112,25 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   if (proofs.size !== input.files.length) return refuse('LIBREPHOTOS_FILE_EVIDENCE_MISMATCH');
   const classified = new Map<string, ReturnType<typeof classifyLibrephotosFile>>();
   const manifestFiles: ImportManifest['files'] = [];
+  const checked = new Set<string>();
   const evidence = (id: string, path: string, role: 'original' | 'sidecar') => {
     const proof = proofs.get(id);
     if (!proof || proof.path !== path || proof.role !== role) return refuse('LIBREPHOTOS_FILE_EVIDENCE_MISMATCH');
     const { modifiedAt, ...file } = proof;
     importTimestampSchema.parse(modifiedAt);
-    manifestFiles.push(importFileSchema.parse(file));
-    return proof;
+    checked.add(id);
+    return { ...importFileSchema.parse(file), modifiedAt };
   };
   for (const [id, row] of sourceFiles) {
     const file = classifyLibrephotosFile(row, input.sourceRoot, []);
     classified.set(id, file);
-    evidence(`file:${id}`, file.path, file.role as 'original' | 'sidecar');
+    const { modifiedAt: _modifiedAt, ...proof } = evidence(
+      `file:${id}`,
+      file.path,
+      file.role as 'original' | 'sidecar',
+    );
+    manifestFiles.push(proof);
   }
-  const copies = group('api_filecopy', 'file_id');
   for (const row of rows('api_filecopy')) {
     const copy = normalizeLibrephotosFileCopy(row, input.sourceRoot);
     const original = classified.get(copy.fileId);
@@ -134,8 +139,20 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
     const primary = proofs.get(`file:${copy.fileId}`)!;
     if (proof.sha256 !== primary.sha256 || proof.bytes !== primary.bytes)
       return refuse('LIBREPHOTOS_FILE_COPY_CHANGED');
+    archive.push({
+      table: 'frameleaf_file_copy_verification',
+      value: {
+        copy_id: BigInt(copy.id),
+        file_id: copy.fileId,
+        path: copy.path,
+        sha256: proof.sha256,
+        bytes: proof.bytes,
+        modified_at: proof.modifiedAt,
+      },
+    });
   }
-  if (manifestFiles.length !== proofs.size) return refuse('LIBREPHOTOS_FILE_EVIDENCE_MISMATCH');
+  if (rows('api_filecopy').length) loss('LIBREPHOTOS_DUPLICATE_PATHS_ARCHIVED');
+  if (checked.size !== proofs.size) return refuse('LIBREPHOTOS_FILE_EVIDENCE_MISMATCH');
   const referenced = new Set<string>();
   const reviewed = new Set<string>();
   const assets: Manifest['assets'] = [];
@@ -171,10 +188,7 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
       })
     )
       return refuse('LIBREPHOTOS_MEDIA_RELATIONSHIP_REVIEW_REQUIRED');
-    const fileIds = linked.flatMap((fileId) => [
-      `file:${fileId}`,
-      ...(copies.get(fileId) ?? []).map((copy) => `copy:${key(copy.id)}`),
-    ]);
+    const fileIds = linked.map((fileId) => `file:${fileId}`);
     if (fileIds.filter((fileId) => proofs.get(fileId)!.role === 'sidecar').length > 1)
       return refuse('LIBREPHOTOS_SIDECAR_REVIEW_REQUIRED');
     const primaryId = `file:${photo.mainFileId}`;
@@ -247,18 +261,33 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   const byAsset = new Map(assets.map((asset) => [asset.id, asset]));
   const albums: ImportManifest['albums'] = [];
   const memberships = group('api_albumuser_photos', 'albumuser_id');
+  const members = group('api_albumuser_shared_to', 'albumuser_id');
   const sourceAlbums = index('api_albumuser', 'id');
   if ([...memberships.keys()].some((id) => !sourceAlbums.has(id))) return refuse('LIBREPHOTOS_RELATIONSHIPS_INVALID');
   for (const [id, row] of sourceAlbums) {
     const ownerId = key(row.owner_id);
     if (!owners.has(ownerId) || typeof row.title !== 'string') return refuse('LIBREPHOTOS_ALBUM_INVALID');
+    const visibleTo = new Set(
+      (members.get(id) ?? []).map((member) => {
+        const userId = key(member.user_id);
+        if (!owners.has(userId) || !['viewer', 'contributor'].includes(String(member.role)))
+          return refuse('LIBREPHOTOS_ALBUM_ACCESS_REVIEW_REQUIRED');
+        return userId;
+      }),
+    );
     const partitions = new Map<string, string[]>([[ownerId, []]]);
+    let archivedMembership = false;
     for (const link of memberships.get(id) ?? []) {
       const asset = byAsset.get(key(link.photo_id));
       if (!asset) return refuse('LIBREPHOTOS_RELATIONSHIPS_INVALID');
+      if (asset.ownerId !== ownerId && !visibleTo.has(asset.ownerId)) {
+        archivedMembership = true;
+        continue;
+      }
       if (!partitions.has(asset.ownerId)) partitions.set(asset.ownerId, []);
       partitions.get(asset.ownerId)!.push(asset.id);
     }
+    if (archivedMembership) loss('LIBREPHOTOS_PRIVATE_ALBUM_MEMBERSHIP_ARCHIVED', id);
     if (partitions.size > 1) loss('LIBREPHOTOS_ALBUM_PARTITIONED', id);
     for (const [partitionOwner, assetIds] of partitions)
       albums.push({

@@ -131,13 +131,13 @@ describe('LibrePhotos common manifest mapping', () => {
     expect(manifest.version).toBe(4);
     expect(manifest.users).toHaveLength(4);
     expect(manifest.assets).toHaveLength(5);
-    expect(manifest.files).toHaveLength(6);
+    expect(manifest.files).toHaveLength(5);
     const alice = manifest.assets.find((photo) => photo.id === photoId('alice'))!;
     const bob = manifest.assets.find((photo) => photo.id === photoId('bob'))!;
     expect(alice.ownerId).toBe('1');
     expect(bob.ownerId).toBe('2');
-    expect(alice.fileIds).toHaveLength(3);
-    expect(bob.fileIds).toHaveLength(2);
+    expect(alice.fileIds).toHaveLength(2);
+    expect(bob.fileIds).toHaveLength(1);
     expect(alice.fileIds).toEqual(expect.arrayContaining(bob.fileIds));
     expect(alice.metadata).toMatchObject({
       description: content.expected.sourceApi.ownerCaption,
@@ -280,7 +280,7 @@ describe('LibrePhotos common manifest mapping', () => {
       });
     });
     expect(prepared).toHaveLength(5);
-    expect(prepared.reduce((count, asset) => count + asset.files.length, 0)).toBe(8);
+    expect(prepared.reduce((count, asset) => count + asset.files.length, 0)).toBe(6);
     expect(query).not.toHaveBeenCalled();
   });
 
