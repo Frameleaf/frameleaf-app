@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  MEDIA_CONCURRENCY,
   assertMediaPolicy,
   lostOriginalPath,
   lostOriginalReason,
+  mapInOrder,
   mapMediaPath,
   verifyMediaFile,
   verifyMediaRoots,
@@ -117,6 +119,21 @@ describe('offline media verification', () => {
     await writeFile(path, 'modified');
     await expect(verifyMediaFile(path, roots, checksum, 'sha1', manager)).rejects.toThrow('ORIGINAL_CHECKSUM_MISMATCH');
     expect(await readFile(path, 'utf8')).toBe('modified');
+  });
+
+  it('reads a Manager in-place file once, since source and target are the same file', async () => {
+    const root = join(directory, 'source');
+    const path = join(root, 'photo.jpg');
+    await writeFile(path, 'original');
+    const handle = await open(path);
+    const reads = vi.spyOn(Object.getPrototypeOf(handle), 'createReadStream');
+    await handle.close();
+    try {
+      await verifyMediaFile(path, [{ source: root, target: root }], undefined, undefined, manager);
+      expect(reads).toHaveBeenCalledTimes(1);
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('uses the most specific Manager mount and rejects duplicate destinations', () => {
@@ -247,5 +264,40 @@ describe('offline media verification', () => {
     await expect(verifyMediaFile(join(directory, 'source', 'photo.jpg'), roots)).rejects.toThrow(
       'MEDIA_SYMLINK_ESCAPE',
     );
+  });
+});
+
+describe('mapInOrder', () => {
+  it('checks files concurrently up to the limit and keeps results in input order', async () => {
+    let active = 0;
+    let peak = 0;
+    const items = Array.from({ length: 250 }, (_, index) => index);
+    const results = await mapInOrder(items, async (item) => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, (item * 7) % 5));
+      active--;
+      return item * 2;
+    });
+    expect(results).toEqual(items.map((item) => item * 2));
+    expect(peak).toBe(MEDIA_CONCURRENCY);
+  });
+});
+
+describe('mapInOrder failures', () => {
+  it('starts no new item after a failure and rejects only once in-flight items finish', async () => {
+    let active = 0;
+    const started: number[] = [];
+    const items = Array.from({ length: 100 }, (_, index) => index);
+    const result = mapInOrder(items, async (item) => {
+      started.push(item);
+      active++;
+      await new Promise((resolve) => setTimeout(resolve, item === 0 ? 1 : 10));
+      active--;
+      if (item === 0) throw new Error('boom');
+      return item;
+    });
+    await expect(result).rejects.toThrow('boom');
+    expect(active).toBe(0);
+    expect(started).toHaveLength(MEDIA_CONCURRENCY);
   });
 });

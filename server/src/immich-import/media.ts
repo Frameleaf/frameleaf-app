@@ -142,6 +142,28 @@ export const lostOriginalPath = (
   policy?: ImportMediaPolicy,
 ): string => (reason === 'unmapped' ? path : mapMediaPath(path, roots, policy).target);
 
+/** Media checks wait on the share, not the CPU: a NAS answers many opens at once. Results keep input order. */
+export const MEDIA_CONCURRENCY = 16;
+export const mapInOrder = async <T, R>(items: T[], body: (item: T) => Promise<R>): Promise<R[]> => {
+  const results: R[] = [];
+  let next = 0;
+  // After a failure no new item starts, and the error waits for in-flight checks so none outlives the caller's lock.
+  let failure: { error: unknown } | undefined;
+  const worker = async () => {
+    while (!failure && next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await body(items[index]);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MEDIA_CONCURRENCY, items.length) }, worker));
+  if (failure) throw failure.error;
+  return results;
+};
+
 export const pathChecksum = (path: string): string => createHash('sha1').update(`path:${path}`).digest('hex');
 const sameFile = (left: BigIntStats, right: BigIntStats): boolean => left.dev === right.dev && left.ino === right.ino;
 const unchanged = (before: BigIntStats, after: BigIntStats): boolean =>
@@ -202,7 +224,10 @@ export const verifyMediaFile = async (
       if (!before.isFile() || !targetBefore.isFile() || before.size !== targetBefore.size) {
         throw new ImportRefused('MEDIA_FILE_MISMATCH');
       }
-      const [sourceDigest, targetDigest] = await Promise.all([fileDigests(sourceFile), fileDigests(targetFile)]);
+      // In place, source and target were just proven to be one file, so its content is read once.
+      const [sourceDigest, targetDigest] = inPlace
+        ? await fileDigests(sourceFile).then((digest) => [digest, digest])
+        : await Promise.all([fileDigests(sourceFile), fileDigests(targetFile)]);
       const [after, targetAfter, sourcePathAfter, targetPathAfter, sourceResolvedAfter, targetResolvedAfter] =
         await Promise.all([
           sourceFile.stat({ bigint: true }),
