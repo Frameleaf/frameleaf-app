@@ -16,7 +16,7 @@ describe('LibrePhotos pinned SQLite extraction', () => {
     root = await mkdtemp(join(tmpdir(), 'frameleaf-librephotos-'));
     path = join(root, 'source.sqlite');
     database = new DatabaseSync(path);
-    database.exec('PRAGMA foreign_keys=OFF');
+    database.exec('PRAGMA foreign_keys=OFF; BEGIN');
     for (const type of ['table', 'index', 'trigger', 'view']) {
       for (const object of fixture.objects) {
         if (object.type === type && object.sql && !object.name.startsWith('sqlite_')) database.exec(object.sql);
@@ -57,6 +57,7 @@ describe('LibrePhotos pinned SQLite extraction', () => {
           .run(...Object.values(row));
       }
     }
+    database.exec('COMMIT');
   });
   afterEach(async () => {
     database.close();
