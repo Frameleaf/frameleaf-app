@@ -1,0 +1,52 @@
+name: Library import qualification
+'on':
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/src/library-import/**'
+      - 'server/scripts/qualify-photoprism-mariadb.mjs'
+      - '.github/workflows/library-import-qualification.yml'
+      - 'pnpm-lock.yaml'
+      - 'server/package.json'
+  push:
+    branches: [main]
+    paths:
+      - 'server/src/library-import/**'
+      - 'server/scripts/qualify-photoprism-mariadb.mjs'
+      - '.github/workflows/library-import-qualification.yml'
+      - 'pnpm-lock.yaml'
+      - 'server/package.json'
+permissions:
+  contents: read
+concurrency:
+  group: library-import-qualification-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  photoprism-mariadb:
+    name: PhotoPrism MariaDB native reader
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: true
+          install_args: --locked
+          version: 2026.10.8
+      - name: Configure public Docker Hub mirror
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Install locked Server dependencies
+        run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Qualify native restored database extraction
+        run: node server/scripts/qualify-photoprism-mariadb.mjs
+      - name: Remove disposable Docker fixtures after cancellation
+        if: always()
+        run: |
+          docker ps -aq --filter label=app.frameleaf.test=photoprism-mariadb | xargs -r docker rm -f
+          docker volume ls -q --filter label=app.frameleaf.test=photoprism-mariadb | xargs -r docker volume rm

@@ -64,6 +64,60 @@ export type PhotoprismInventoryRecord =
     }
   | { type: 'archive'; table: PhotoprismTable; value: PhotoprismRow };
 
+export function* normalizePhotoprismInventoryRow(
+  table: PhotoprismTable,
+  row: PhotoprismRow,
+  details?: PhotoprismRow,
+): Generator<PhotoprismInventoryRecord> {
+  switch (table) {
+    case 'photos': {
+      if (typeof row.id !== 'bigint') throw new Error('PhotoPrism source refused: PHOTOPRISM_METADATA_INVALID');
+      const { archive: _archive, ...value } = normalizePhotoprismPhoto(row, details);
+      yield { type: 'photo', value };
+      break;
+    }
+    case 'files': {
+      const { archive: _archive, ...value } = classifyPhotoprismFile(row);
+      yield { type: 'file', value };
+      break;
+    }
+    case 'albums': {
+      const {
+        archive: _archive,
+        assetIds: _ids,
+        memberships: _memberships,
+        ...value
+      } = normalizePhotoprismAlbum(row, []);
+      yield { type: 'album', value };
+      break;
+    }
+    case 'users': {
+      yield { type: 'principal', value: normalizePrincipal(row) };
+      break;
+    }
+    case 'photos_albums': {
+      const result = membershipSchema.safeParse(row);
+      if (!result.success) throw new Error('PhotoPrism source refused: PHOTOPRISM_ALBUM_MEMBERSHIP_INVALID');
+      const membership = result.data;
+      yield {
+        type: 'membership',
+        value: {
+          photoId: membership.photo_uid,
+          albumId: membership.album_uid,
+          order: membership.order.toString(),
+          hidden: membership.hidden,
+          missing: membership.missing,
+        },
+      };
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+  yield { type: 'archive', table, value: row };
+}
+
 /** Streams separate logical records and credential-free archive records; it does not establish ownership, byte integrity or permission equivalence. */
 export function* readPhotoprismInventory(path: string, version: string): Generator<PhotoprismInventoryRecord, void> {
   const source = openPhotoprismSnapshot(path, version);
@@ -72,53 +126,11 @@ export function* readPhotoprismInventory(path: string, version: string): Generat
     for (const table of photoprismTables) {
       for (const batch of source.rows(table)) {
         for (const row of batch) {
-          switch (table) {
-            case 'photos': {
-              if (typeof row.id !== 'bigint') throw new Error('PhotoPrism source refused: PHOTOPRISM_METADATA_INVALID');
-              const { archive: _archive, ...value } = normalizePhotoprismPhoto(row, source.photoDetails(row.id));
-              yield { type: 'photo', value };
-              break;
-            }
-            case 'files': {
-              const { archive: _archive, ...value } = classifyPhotoprismFile(row);
-              yield { type: 'file', value };
-              break;
-            }
-            case 'albums': {
-              const {
-                archive: _archive,
-                assetIds: _ids,
-                memberships: _memberships,
-                ...value
-              } = normalizePhotoprismAlbum(row, []);
-              yield { type: 'album', value };
-              break;
-            }
-            case 'users': {
-              yield { type: 'principal', value: normalizePrincipal(row) };
-              break;
-            }
-            case 'photos_albums': {
-              const result = membershipSchema.safeParse(row);
-              if (!result.success) throw new Error('PhotoPrism source refused: PHOTOPRISM_ALBUM_MEMBERSHIP_INVALID');
-              const membership = result.data;
-              yield {
-                type: 'membership',
-                value: {
-                  photoId: membership.photo_uid,
-                  albumId: membership.album_uid,
-                  order: membership.order.toString(),
-                  hidden: membership.hidden,
-                  missing: membership.missing,
-                },
-              };
-              break;
-            }
-            default: {
-              break;
-            }
-          }
-          yield { type: 'archive', table, value: row };
+          yield* normalizePhotoprismInventoryRow(
+            table,
+            row,
+            table === 'photos' && typeof row.id === 'bigint' ? source.photoDetails(row.id) : undefined,
+          );
         }
       }
     }
