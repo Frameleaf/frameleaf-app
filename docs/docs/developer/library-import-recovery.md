@@ -273,3 +273,18 @@ ordinary restore of an independent library uses `restored_library` without an
 import adoption grant. Losing the entire run selection, even together with the
 canonical journal, cannot establish that a damaged managed run was originally
 standalone. The active import profile keeps import-derived work held.
+
+## Shared transfer runtime
+
+Server builds prepare the same copy, adoption, relocation and SQLite transfer
+journal modules used by Manager. The build compiles a fixed module list and the
+existing Linux no-replace rename helper, records source and output checksums, and
+verifies the runtime restored into the pruned production package. The final image
+installs the helper at the worker's fixed executable path. Generated workers and
+declarations remain build artifacts; changes are made to the Manager sources.
+
+This internal runtime bridge does not establish source qualification, acquire
+service fences or expose new import commands. Its callers still own exclusive
+operation execution, source/destination fencing, reviewed-root admission and the
+activation boundary. The complete public lifecycle and Manager journeys remain
+required before the combined expanded feature is released.

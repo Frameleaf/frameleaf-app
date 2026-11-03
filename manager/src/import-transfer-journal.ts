@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Refusal } from './contracts.js';
-import type { Store } from './store.js';
+import type { DatabaseSync } from 'node:sqlite';
 import {
   importHash as hash,
   importSourceIdentitySchema,
@@ -26,7 +26,7 @@ type TransferRow = { file_id: string; value: string; state: State };
 /** Durable receipts only: the transfer worker must verify mounted roots, fencing and actual filesystem effects. */
 export class ImportTransferJournal {
   private planned?: { operationId: string; files: Map<string, string> };
-  constructor(private store: Store) {
+  constructor(private store: { db: DatabaseSync }) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS library_import_runs (
       operation_id TEXT PRIMARY KEY REFERENCES operations(id), binding TEXT NOT NULL,
       writers_starting INTEGER NOT NULL DEFAULT 0, abandoned INTEGER NOT NULL DEFAULT 0);
