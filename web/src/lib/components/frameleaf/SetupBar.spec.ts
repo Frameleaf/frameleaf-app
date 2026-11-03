@@ -1,9 +1,4 @@
-import {
-  LibrarySetupStageId,
-  LibrarySetupStageStatus,
-  Phase,
-  type LibrarySetupProgressDto,
-} from '@frameleaf/sdk';
+import { LibrarySetupStageId, LibrarySetupStageStatus, Phase, type LibrarySetupProgressDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
