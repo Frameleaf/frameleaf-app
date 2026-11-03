@@ -102,7 +102,7 @@ Other users' and anonymous/shared-account votes remain in the protected archive.
 Voter identifiers never enter the destination photo metadata.
 
 A representable owner score of zero through five is retained directly, ahead of
-embedded ratings. No owner vote becomes an unrated destination value. Conflicting
+embedded ratings. An absent owner vote imports as unrated. Conflicting
 owner scores require review; values outside the destination scale are archived
 and disclosed rather than silently rescaled. The public aggregate remains a
 separate archived value. Synthetic owner/other-voter, generic-account, conflict,
