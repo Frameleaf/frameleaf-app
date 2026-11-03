@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
@@ -12,7 +13,6 @@ import enriched from 'src/library-import/fixtures/pigallery2/3.5.2-metadata.json
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
 import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
 import * as pigallery2 from 'src/library-import/pigallery2.js';
-import { type SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
 type Result = { manifest: ImportManifest; archive: SourceArchiveRecord[] };
 const rows = { ...content.rows, ...enriched.rows };
@@ -281,7 +281,7 @@ describe('PiGallery2 common manifest mapping', () => {
   );
 
   it('refuses complete keyword text containing NUL instead of importing its truncated prefix', () => {
-    database.prepare('UPDATE media_entity SET metadataKeywords=? WHERE id=6').run('a\u0000b');
+    database.prepare('UPDATE media_entity SET metadataKeywords=? WHERE id=6').run('a\0b');
     expect(database.prepare('SELECT hex(metadataKeywords) AS bytes FROM media_entity WHERE id=6').get()?.bytes).toBe(
       '610062',
     );
