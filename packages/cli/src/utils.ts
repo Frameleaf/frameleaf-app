@@ -10,9 +10,9 @@ import {
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { lstat, readFile, stat, writeFile } from 'node:fs/promises';
+import { lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import yaml from 'yaml';
 
 export interface BaseOptions {
@@ -191,7 +191,7 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
       const absolutePath = resolve(currentPath);
       // lstat, not stat: a path named on the command line may itself be a link. A link to a file is
       // uploaded through the link; a link to a folder was named on purpose, so it is crawled, but
-      // links met inside a folder are never followed (see `followSymbolicLinks` below).
+      // folders linked from inside a crawled folder are never entered (see `insideRoots` below).
       const stats = await lstat(absolutePath);
       if (stats.isFile()) {
         crawledFiles.push(absolutePath);
@@ -236,12 +236,55 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     caseSensitiveMatch: false,
     dot: includeHidden,
     ignore: [`**/${ignorePattern}`],
-    // a linked folder inside an upload root leads elsewhere (a NAS share, another library); the
-    // files behind it must not be uploaded and, with --delete, must never be removed
-    followSymbolicLinks: false,
   });
-  globbedFiles.push(...crawledFiles);
-  return globbedFiles.toSorted();
+  const files = await insideRoots(globbedFiles, patterns);
+  files.push(...crawledFiles);
+  return files.toSorted();
+};
+
+/**
+ * The files among `files` that live under one of `roots` without passing through a linked folder.
+ * A linked file is kept: it is uploaded through the link and `--delete` removes only the link. A
+ * folder linked from inside a root leads elsewhere (a NAS share, another library), so the files
+ * behind it are neither uploaded nor, with `--delete`, removed.
+ */
+const insideRoots = async (files: string[], roots: string[]): Promise<string[]> => {
+  const realRoots = new Map<string, string>();
+  for (const root of roots) {
+    try {
+      realRoots.set(root, await realpath(root));
+    } catch {
+      // a glob pattern or a path that no longer exists: nothing to compare against
+    }
+  }
+  if (realRoots.size === 0) {
+    return files;
+  }
+  // '' marks a folder whose real path could not be resolved: such files are left out
+  const realFolders = new Map<string, string>();
+  const kept: string[] = [];
+  for (const file of files) {
+    const root = realRoots.keys().find((candidate) => file === candidate || file.startsWith(candidate + sep));
+    if (!root) {
+      kept.push(file);
+      continue;
+    }
+    const folder = dirname(file);
+    let real = realFolders.get(folder);
+    if (real === undefined) {
+      try {
+        real = await realpath(folder);
+      } catch {
+        real = '';
+      }
+      realFolders.set(folder, real);
+    }
+    const realRoot = realRoots.get(root)!;
+    if (real === realRoot || real?.startsWith(realRoot + sep)) {
+      kept.push(file);
+    }
+  }
+  return kept;
 };
 
 export const sha1 = (filepath: string) => {

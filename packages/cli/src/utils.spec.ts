@@ -325,9 +325,14 @@ describe('crawl', () => {
         await symlink(elsewhere, join(directory, 'nested', 'shared'));
         await symlink(join(elsewhere, 'original.jpg'), join(directory, 'nested', 'link.jpg'));
 
-        // a crawl of the root (as `upload --delete -r` does) stays inside it
+        // a crawl of the root (as `upload --delete -r` does) stays inside it: the linked file is
+        // uploaded through its link (removing the link is harmless), the linked folder is not entered
         const inside = await crawl({ pathsToCrawl: [directory], recursive: true, extensions });
-        expect(inside.map((path) => readContent(path))).toEqual(['mine']);
+        expect(inside).toEqual([
+          join(directory, 'nested', 'deeper', 'mine.jpg'),
+          join(directory, 'nested', 'link.jpg'),
+        ]);
+        expect(inside.map((path) => readContent(path))).toEqual(['mine', 'on the nas']);
         expect(inside.some((path) => path.startsWith(elsewhere))).toBe(false);
 
         // the link itself, named on purpose, is crawled (fast-glob resolves the named folder)
