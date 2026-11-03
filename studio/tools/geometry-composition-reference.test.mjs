@@ -269,8 +269,8 @@ test('composition source bindings preserve every admitted legacy row and refuse 
   const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
     (row) => row[1],
   )
-  assert.equal(admitted.length, 57)
-  assert.equal(new Set(admitted).size, 57)
+  assert.equal(admitted.length, 58)
+  assert.equal(new Set(admitted).size, 58)
   for (const source of admitted) {
     const a = fixture()
     a.contract.binding.sourceSha256 = source
