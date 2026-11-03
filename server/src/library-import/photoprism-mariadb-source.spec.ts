@@ -2,7 +2,7 @@ import { hash } from 'bcrypt';
 import { type Connection, createConnection } from 'mysql2/promise';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
-import { connect, createServer, Socket } from 'node:net';
+import { Socket, connect, createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
@@ -197,7 +197,7 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
   it('releases the global lock when rollback stalls behind an unfinished socket write', async () => {
     const reader = readPhotoprismMariadbInventory(source);
     await reader.next();
-    let stalled: Socket | undefined;
+    const stalled = new Set<Socket>();
     const originalWrite = Socket.prototype._write;
     const write = vi.spyOn(Socket.prototype, '_write').mockImplementation(function (
       this: Socket,
@@ -206,7 +206,7 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
       callback: (error?: Error | null) => void,
     ) {
       if (this.remotePort === source.port && Buffer.isBuffer(chunk) && chunk.includes(Buffer.from('ROLLBACK'))) {
-        stalled = this;
+        stalled.add(this);
         // An unfinished write also prevents a graceful end from sending its FIN.
         return;
       }
@@ -214,11 +214,11 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
     });
     try {
       await expect(reader.return(undefined)).rejects.toThrow('PHOTOPRISM_SOURCE_UNAVAILABLE');
-      expect(stalled).toBeDefined();
+      expect(stalled.size).toBe(1);
       await admin.query("UPDATE photos SET photo_caption='unlocked after hard abort' WHERE id=1");
     } finally {
       write.mockRestore();
-      stalled?.destroy();
+      for (const socket of stalled) socket.destroy();
       await reader.return(undefined);
     }
   }, 15_000);
