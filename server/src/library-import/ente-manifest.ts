@@ -466,7 +466,13 @@ export function readEnteManifest(input: {
       });
     }
   }
-  if (accounts.values().some((account) => account.files.some((file) => file.ownerId !== account.id)))
+  if (
+    accounts.values().some(
+      (account) =>
+        account.files.some((file) => file.ownerId !== account.id) ||
+        account.albums.some((album) => album.record.ente.ownerID !== account.id),
+    )
+  )
     loss('ENTE_SHARING_RESTRICTED');
   for (const record of archive) encodeSourceArchiveRecord(record);
   const manifest = parseImportManifest({
