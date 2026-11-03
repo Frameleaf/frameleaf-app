@@ -2069,10 +2069,31 @@ test("isolated test lanes cover every shard and keep required gates fail-closed"
   ]);
   for (const job of [api, web]) assert.equal(job.strategy["fail-fast"], false);
   const image = jobs["e2e-image"].steps;
-  assert.equal(
-    image.find((s) => s.name === "Build the server image").run,
-    "docker compose build frameleaf-server\ndocker compose build e2e-auth-server\n",
+  const builds = image
+    .find((s) => s.name === "Build the server image")
+    .run.trim()
+    .split("\n")
+    .map((command) => command.replace(/^docker compose build /, "").split(" "));
+  assert.deepEqual(
+    builds[0],
+    ["frameleaf-server"],
+    "keep the server cache graph isolated",
   );
+  const compose = load(
+    readFileSync(path.join(root, "e2e/docker-compose.yml"), "utf8"),
+  );
+  const builtServices = builds.flat();
+  const saved = image.find((s) => s.name === "Save the server image").run;
+  for (const [name, service] of Object.entries(compose.services).filter(
+    ([, service]) => service.build,
+  )) {
+    assert.equal(
+      builtServices.filter((candidate) => candidate === name).length,
+      1,
+      `build ${name} explicitly exactly once`,
+    );
+    assert.ok(saved.includes(service.image), `export the built ${name} image`);
+  }
   assert.match(
     image.find((s) => s.name === "Save the server image").run,
     /frameleaf-postgres:e2e frameleaf-e2e-auth:latest/,

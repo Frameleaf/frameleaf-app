@@ -689,7 +689,7 @@ jobs:
         # Keep the server's solve separate from auth, matching the established native build cache graph.
         run: |
           docker compose build frameleaf-server
-          docker compose build e2e-auth-server
+          docker compose build database e2e-auth-server
       - name: Save the server image
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-image"
