@@ -46,7 +46,12 @@ export class CanonicalAssetWriter {
     const manifest = parseImportManifest(context.manifest);
     this.assets = new Map(manifest.assets.map((asset) => [asset.id, asset]));
     this.sourceFiles = new Map(manifest.files.map((file) => [file.id, file]));
-    this.plannedFiles = new Map(this.plan.files.map((file) => [file.id, file]));
+    this.plannedFiles = new Map(
+      this.plan.files.map((file) => [
+        'sourceAssetId' in file ? JSON.stringify([file.sourceAssetId, file.sourceFileId]) : file.id,
+        file,
+      ]),
+    );
   }
 
   /** Validated intent shared with independent destination readback; performs no database or filesystem writes. */
@@ -92,10 +97,16 @@ export class CanonicalAssetWriter {
       return refuse('ASSET_ORIGINAL_NAMES_REQUIRED');
     const ownerId = this.plan.owners.find((owner) => owner.sourceId === asset.ownerId)!.destinationId.toLowerCase();
     const files = sourceFiles.map((file) => {
-      const planned = this.plannedFiles.get(file.id)!;
+      const planned = this.plannedFiles.get(this.plan.version === 2 ? JSON.stringify([asset.id, file.id]) : file.id)!;
       const root = this.plan.roots.find((root) => root.id === planned.destinationRoot)!;
       return {
         ...file,
+        ...('sourceAssetId' in planned
+          ? {
+              transferId: planned.id,
+              transferSha256: createHash('sha256').update(JSON.stringify(planned)).digest('hex'),
+            }
+          : {}),
         path: planned.destinationPath,
         root,
         absolutePath: posix.join(root.path, planned.destinationPath),
@@ -140,7 +151,13 @@ export class CanonicalAssetWriter {
             const selected = files.filter((file) => file.root.id === rootId);
             await verifyImportFiles(
               selected[0].root.path,
-              selected.map(({ id, path, bytes, sha256, role }) => ({ id, path, bytes, sha256, role })),
+              selected.map(({ id, transferId, path, bytes, sha256, role }) => ({
+                id: transferId ?? id,
+                path,
+                bytes,
+                sha256,
+                role,
+              })),
               { device: selected[0].root.device, inode: selected[0].root.inode },
             );
           }
@@ -154,6 +171,12 @@ export class CanonicalAssetWriter {
               [id, file.sha256, file.bytes, file.absolutePath],
             );
             physical.set(file.id, id);
+            if (file.transferId !== undefined)
+              await tx.query(
+                `INSERT INTO public.frameleaf_library_import_mapping(operation_id,entity_kind,source_id,destination_id,record_sha256)
+                VALUES($1::uuid,'file',$2,$3::uuid,$4)`,
+                [this.binding.operationId, file.transferId, id, file.transferSha256],
+              );
           }
           await tx.query(
             `INSERT INTO public.asset(id,"ownerId",type,"originalPath","physicalOriginalFileId",checksum,"checksumAlgorithm",

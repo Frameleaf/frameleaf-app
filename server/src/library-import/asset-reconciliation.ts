@@ -175,6 +175,27 @@ export async function reconcileImportedAssets(
         "sizeInBytes"::text,path FROM public.physical_file ORDER BY path COLLATE "C"`);
       actualFiles.sort((a, b) => String(a.path).localeCompare(String(b.path)));
       same(expectedFiles, actualFiles);
+      if (plan.version === 2) {
+        const placements = await tx.query(
+          `SELECT m.source_id,m.record_sha256,p.path,p."canonicalAssetId"::text AS asset_id
+          FROM public.frameleaf_library_import_mapping m LEFT JOIN public.physical_file p ON p.id=m.destination_id
+          WHERE m.operation_id=$1::uuid AND m.entity_kind='file'`,
+          [binding.operationId],
+        );
+        const byPlacement = new Map(placements.map((row) => [row.source_id, row]));
+        if (placements.length !== plan.files.length || byPlacement.size !== placements.length) mismatch();
+        for (const photo of expected)
+          for (const file of photo.files) {
+            const row = byPlacement.get(file.transferId);
+            if (
+              !row ||
+              row.record_sha256 !== file.transferSha256 ||
+              row.path !== file.absolutePath ||
+              row.asset_id !== photo.id
+            )
+              mismatch();
+          }
+      }
       const expectedAdditional = expected
         .flatMap(({ id, primary, files }) =>
           files
@@ -227,7 +248,13 @@ export async function reconcileImportedAssets(
         const root = files[0].root;
         const result = await verifyImportFiles(
           root.path,
-          files.map(({ id, path, bytes, sha256, role }) => ({ id, path, bytes, sha256, role })),
+          files.map(({ id, transferId, path, bytes, sha256, role }) => ({
+            id: transferId ?? id,
+            path,
+            bytes,
+            sha256,
+            role,
+          })),
           { device: root.device, inode: root.inode },
         );
         const expectedBytes = files.reduce((total, file) => total + BigInt(file.bytes), 0n);
