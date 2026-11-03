@@ -18093,7 +18093,7 @@
   "setup_bar_status_waiting": "Waiting",
   "setup_bar_title": "Setting up your library",
   "setup_complete_albums": "albums",
-  "setup_complete_body": "Everything you imported is in Frameleaf. Every original was checked, and smart search and faces are ready to use.",
+  "setup_complete_body": "Everything you imported is in Frameleaf, and every original was checked.",
   "setup_complete_body_search_off": "Everything you imported is in Frameleaf, and every original was checked. AI processing is turned off. You can enable it later.",
   "setup_complete_flagged": "{count, plural, one {# file needs a look in Library care} other {# files need a look in Library care}}",
   "setup_complete_items": "{count, plural, one {photo or video} other {photos and videos}}",
