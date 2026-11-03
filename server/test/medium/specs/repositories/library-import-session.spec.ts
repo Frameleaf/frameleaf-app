@@ -1,7 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import { execFileSync } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { Socket, connect } from 'node:net';
+import { Socket, connect, createServer as createTcpServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSecureContext, createServer, getCACertificates, setDefaultCACertificates } from 'node:tls';
@@ -62,6 +63,47 @@ it.each([false, true])('releases session locks after callback failure=%s', async
     }>`SELECT pg_try_advisory_xact_lock(${LIBRARY_IMPORT_LOCK}::bigint) AS unlocked`.execute(db)
   ).rows;
   expect(unlocked.unlocked).toBe(true);
+});
+
+it.each([false, true])('bounds multi-host reservation with all hosts unavailable=%s', async (allUnavailable) => {
+  const listener = createTcpServer();
+  listener.listen(0, '127.0.0.1');
+  await once(listener, 'listening');
+  const address = listener.address();
+  if (!address || typeof address === 'string') throw new Error('Expected a synthetic TCP port');
+  const closed = once(listener, 'close');
+  listener.close();
+  await closed;
+  const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+  const [{ name }] = await connection.db.query('SELECT current_database() AS name');
+  url.pathname = '/' + String(name);
+  const unavailable = '127.0.0.1:' + address.port;
+  const client = connectImportDatabase(
+    url.href.replace(url.host, () => unavailable + ',' + (allUnavailable ? unavailable : url.host)),
+    false,
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const watchdog = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('synthetic reservation watchdog')), 2000);
+  });
+  const callback = vi.fn(async (session: ImportDatabase) => {
+    const pid = await backend(session);
+    expect(await backend(session)).toBe(pid);
+    return pid;
+  });
+  try {
+    const result = Promise.race([client.db.withSession!(callback), watchdog]);
+    if (allUnavailable) {
+      await expect(result).rejects.not.toThrow('synthetic reservation watchdog');
+      expect(callback).not.toHaveBeenCalled();
+    } else {
+      await expect(result).resolves.toEqual(expect.any(Number));
+      expect(callback).toHaveBeenCalledTimes(1);
+    }
+  } finally {
+    clearTimeout(timer);
+    await client.close();
+  }
 });
 
 it('refuses to reconnect a lost reserved session and leaves the root connection usable', async () => {

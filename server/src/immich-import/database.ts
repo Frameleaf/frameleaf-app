@@ -39,28 +39,38 @@ export const connectImportDatabase = (url: string, readOnly: boolean) => {
   const withSession = async <T>(body: (session: ImportDatabase) => Promise<T>): Promise<T> => {
     let transport: Socket | undefined;
     let hostIndex = 0;
+    const startupFailure = Promise.withResolvers<never>();
     const owner = createClient(async (options) => {
-      transport?.destroy();
-      const index = hostIndex++ % options.host.length;
-      const socket = Object.assign(new Socket(), {
-        host: options.host[index],
-        port: options.port[index],
-        ssl: options.ssl,
-      });
-      transport = socket;
-      const connected = once(socket, 'connect');
-      const deadline = setTimeout(
-        () => socket.destroy(new Error('IMPORT_SESSION_CONNECT_TIMEOUT')),
-        (options.connect_timeout || 30) * 1000,
-      );
-      try {
-        if (options.path) socket.connect(options.path);
-        else socket.connect(socket.port, socket.host);
-        await connected;
-        return socket;
-      } finally {
-        clearTimeout(deadline);
+      let failure: unknown;
+      for (let attempt = 0; attempt < options.host.length; attempt++) {
+        transport?.destroy();
+        const index = hostIndex++ % options.host.length;
+        const socket = Object.assign(new Socket(), {
+          host: options.host[index],
+          port: options.port[index],
+          ssl: options.ssl,
+        });
+        transport = socket;
+        const connected = once(socket, 'connect');
+        const deadline = setTimeout(
+          () => socket.destroy(new Error('IMPORT_SESSION_CONNECT_TIMEOUT')),
+          (options.connect_timeout || 30) * 1000,
+        );
+        try {
+          if (options.path) socket.connect(options.path);
+          else socket.connect(socket.port, socket.host);
+          await connected;
+          return socket;
+        } catch (error) {
+          failure = error;
+          socket.destroy();
+        } finally {
+          clearTimeout(deadline);
+        }
       }
+      // Factory rejection precedes postgres.js's close listener and cannot drive its multi-host failover.
+      startupFailure.reject(failure);
+      throw failure;
     });
     let reserved: postgres.ReservedSql | undefined;
     let failed = false;
@@ -69,7 +79,7 @@ export const connectImportDatabase = (url: string, readOnly: boolean) => {
     let active = true;
     let inTransaction = false;
     try {
-      reserved = await owner.reserve();
+      reserved = await Promise.race([owner.reserve(), startupFailure.promise]);
       const connection = reserved;
       const wrapped = wrap(connection);
       const { readSchema } = wrapped;
