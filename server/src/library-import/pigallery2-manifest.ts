@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import type { Pigallery2Row, Pigallery2Table, openPigallery2Snapshot } from 'src/library-import/pigallery2.js';
 import mysqlFixture from 'src/library-import/fixtures/pigallery2/3.5.2-mysql84.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
 import {
@@ -12,7 +13,6 @@ import {
 import { resolvePigallery2File } from 'src/library-import/pigallery2-files.js';
 import { pigallery2Projections } from 'src/library-import/pigallery2-projections.js';
 import { pigallery2SidecarCandidates } from 'src/library-import/pigallery2-sidecars.js';
-import type { Pigallery2Row, Pigallery2Table, openPigallery2Snapshot } from 'src/library-import/pigallery2.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 import { normalizeTagValue } from 'src/utils/tag.js';
 
@@ -80,11 +80,12 @@ export function readPigallery2Manifest(
     directories = index('directory_entity'),
     saved = index('album_base_entity');
   const losses: ImportManifest['losses'] = [];
-  const loss = (code: string, entityId?: string) =>
+  const loss = (code: string, entityId?: string) => {
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
-  if (archive.length) loss('PIGALLERY2_SOURCE_METADATA_ARCHIVED');
-  if (rows('sharing_entity').length || users.size > 1) loss('PIGALLERY2_SHARING_RESTRICTED');
-  if (rows('person_entry').length || rows('person_junction_table').length) loss('PIGALLERY2_PEOPLE_ARCHIVED');
+  };
+  if (archive.length > 0) loss('PIGALLERY2_SOURCE_METADATA_ARCHIVED');
+  if (rows('sharing_entity').length > 0 || users.size > 1) loss('PIGALLERY2_SHARING_RESTRICTED');
+  if (rows('person_entry').length > 0 || rows('person_junction_table').length > 0) loss('PIGALLERY2_PEOPLE_ARCHIVED');
 
   const grants = new Map<string, Set<string>>();
   for (const [userId, ids] of Object.entries(input.grants)) {
