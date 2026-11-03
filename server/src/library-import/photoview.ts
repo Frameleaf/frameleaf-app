@@ -73,3 +73,5 @@ export const openPhotoviewSnapshot = (path: string, version: string) => {
     close: () => database.close(),
   };
 };
+
+export { readPhotoviewManifest } from 'src/library-import/photoview-manifest.js';
