@@ -19,7 +19,7 @@ and updates still require the application's release-verification gates.
 
 ## Screenshots
 
-Manager 0.1.2 interface with demo data. Counts, service states, paths and releases
+Manager interface with demo data. Counts, service states, paths and releases
 shown are examples, not evidence of a qualified Unraid installation.
 
 ![Manager overview with demo data](https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg)

@@ -26,8 +26,8 @@ Install this template for the guided setup. Create your Manager administrator fr
   <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg</Screenshot>
-  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
   <Video>https://www.youtube.com/watch?v=INeVz9NFzOM</Video>
+  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
   <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>

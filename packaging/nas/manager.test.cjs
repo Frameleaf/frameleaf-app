@@ -92,6 +92,8 @@ for template in templates:
     assert app.findtext('TemplateURL') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/' + template.name
     assert app.findtext('Repository') == 'ghcr.io/frameleaf/frameleaf-manager:latest'
     assert app.findtext('Privileged') == 'false'
+    # The install walkthrough leads the app page's videos.
+    assert app.findtext('Video') == 'https://www.youtube.com/watch?v=INeVz9NFzOM'
     for config in app.findall('Config'):
         assert config.get('Description', '').strip(), config.get('Name')
 `, path.join(output, 'unraid')]);
