@@ -1916,6 +1916,7 @@ describe(AssetService.name, () => {
       const dateTimeOriginal = '2020-11-01T01:30:00' + offset + '[America/New_York]';
       mocks.asset.updateDateTimeOriginal.mockResolvedValue([]);
       await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal });
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'America/New_York');
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(
         [asset.id],
         expect.objectContaining({
