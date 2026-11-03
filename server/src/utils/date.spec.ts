@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asDateString, asDateTimeString, extractTimeZone } from 'src/utils/date.js';
+import { asDateString, asDateTimeString, extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
 
 describe('asDateString', () => {
   afterEach(() => {
@@ -57,4 +57,18 @@ describe('absolute edit timezone extraction', () => {
       expect(extractTimeZone('not-a-date')).toBeUndefined();
     },
   );
+});
+
+describe('explicit edit offsets', () => {
+  it.each([
+    ['2020-06-10T12:30:00.123456', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10T12:30:00.123456-06:00', '2020-06-10T12:30:00.123456-06:00'],
+    ['2020-06-10T12:30:00.123456+0530', '2020-06-10T12:30:00.123456+0530'],
+    ['2020-06-10T12:30:00.123456Z', '2020-06-10T12:30:00.123456Z'],
+    ['2020-06-10', '2020-06-10T00:00:00.000Z'],
+    ['not-a-date', 'not-a-date'],
+    [undefined, undefined],
+  ])('preserves precision and existing offsets for %s', (input, expected) => {
+    expect(withDateTimeOffset(input)).toBe(expected);
+  });
 });

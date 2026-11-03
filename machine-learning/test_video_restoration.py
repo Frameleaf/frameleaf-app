@@ -8,10 +8,12 @@ recorded on hardware; see machine-learning/video-restoration/README.md.
 import base64
 import hashlib
 import json
+from collections.abc import Iterator
 from datetime import date
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -20,7 +22,7 @@ from PIL import Image
 from pydantic import ValidationError
 
 from frameleaf_ml.video_restoration import media
-from frameleaf_ml.video_restoration.app import create_app
+from frameleaf_ml.video_restoration.app import MIN_UPLOAD_BYTES, create_app, upload_limit
 from frameleaf_ml.video_restoration.gpu import parse_gpu_query, parse_memory_used
 from frameleaf_ml.video_restoration.models import (
     REQUIRED_EVIDENCE,
@@ -589,6 +591,18 @@ class TestMedia:
         media.extract_frames(
             tmp_path / "in.mp4", tmp_path / "frames", start_ms=None, end_ms=None, yuv_matrix="bt709", timeout=5
         )
+        media.extract_frames(
+            tmp_path / "in2.mp4",
+            tmp_path / "frames2",
+            start_ms=None,
+            end_ms=None,
+            yuv_matrix="bt709",
+            timeout=5,
+            max_frames=300,
+        )
+        # A clip beyond the qualified length stops decoding one frame past the limit (L6).
+        bounded = calls.pop(1)
+        assert bounded[-3:] == ["-frames:v", "301", str(tmp_path / "frames2" / media.FRAME_PATTERN)]
         copied = media.encode_output(
             tmp_path / "frames",
             tmp_path / "out.mp4",
@@ -833,6 +847,10 @@ def fake_result(output: Path) -> RestorationResult:
     )
 
 
+def _boundary(body: bytes) -> str:
+    return body.split(b"\r\n", 1)[0].decode("ascii")[2:]
+
+
 class TestWorkerApp:
     def client(self, tmp_path: Path, *, token: str | None = None) -> TestClient:
         registry = RestorationRegistry(tmp_path / "models.json", tmp_path / "qualification.json", gpu_query=lambda: [])
@@ -856,6 +874,65 @@ class TestWorkerApp:
         assert client.get("/capabilities").status_code == 401
         assert client.post("/restoration/restore").status_code == 401
         assert client.get("/capabilities", headers={"Authorization": "Bearer worker-token"}).status_code == 200
+
+    def test_refuses_an_upload_beyond_the_limit_before_buffering_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        restore = mock.Mock(side_effect=RestorationFailure(RestorationErrorCode.MODEL_UNAVAILABLE, "no model"))
+        monkeypatch.setattr("frameleaf_ml.video_restoration.app.restore", restore)
+        registry = RestorationRegistry(tmp_path / "models.json", tmp_path / "qualification.json", gpu_query=lambda: [])
+        work_root = tmp_path / "work"
+        work_root.mkdir()
+        probe = TestClient(create_app(registry, work_root=work_root, refresh_on_startup=False))
+        small = probe.build_request(
+            "POST",
+            "/restoration/restore",
+            data={"request": json.dumps(request_payload())},
+            files={"media": ("clip.mp4", b"v", "video/mp4")},
+        ).read()
+        limit = len(small) + 64
+        client = TestClient(create_app(registry, work_root=work_root, refresh_on_startup=False, max_upload_bytes=limit))
+        # By Content-Length, before any of the body is read.
+        response = client.post(
+            "/restoration/restore",
+            data={"request": json.dumps(request_payload())},
+            files={"media": ("clip.mp4", b"x" * (4 * limit), "video/mp4")},
+        )
+        assert response.status_code == 413
+        assert response.json()["code"] == "unsupported-input"
+        # By counting a streamed body without a Content-Length.
+        body = client.build_request(
+            "POST",
+            "/restoration/restore",
+            data={"request": json.dumps(request_payload())},
+            files={"media": ("clip.mp4", b"x" * (4 * limit), "video/mp4")},
+        ).read()
+
+        def chunks() -> Iterator[bytes]:
+            for start in range(0, len(body), 64):
+                yield body[start : start + 64]
+
+        request = client.build_request(
+            "POST",
+            "/restoration/restore",
+            content=chunks(),
+            headers={"Content-Type": "multipart/form-data; boundary=" + _boundary(body)},
+        )
+        response = client.send(request)
+        assert response.status_code == 413
+        assert response.json()["code"] == "unsupported-input"
+        restore.assert_not_called()
+        assert list(work_root.iterdir()) == []
+        # Within the limit the request is served as before.
+        response = client.post(
+            "/restoration/restore",
+            data={"request": json.dumps(request_payload())},
+            files={"media": ("clip.mp4", b"v", "video/mp4")},
+        )
+        assert response.status_code == 409  # the mocked restore reports no model
+        restore.assert_called_once()
+        # Without an explicit limit the manifest decides, with a floor.
+        assert upload_limit(registry) == MIN_UPLOAD_BYTES
 
     def test_rejects_an_invalid_request(self, tmp_path: Path) -> None:
         response = self.client(tmp_path).post(

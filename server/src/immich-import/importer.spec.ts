@@ -210,6 +210,7 @@ describe('mapped external originals', () => {
     vi.spyOn(importer, 'preflight').mockResolvedValue({
       sourceVersion: '3.2.4',
       sourceCommit: 'fixture',
+      notImported: [],
       fingerprint: 'same',
       status: 'fresh',
       embeddings: [],
@@ -250,6 +251,7 @@ describe('mapped external originals', () => {
     vi.spyOn(importer, 'preflight').mockResolvedValue({
       sourceVersion: '3.2.4',
       sourceCommit: 'fixture',
+      notImported: [],
       fingerprint: 'same',
       status: 'verifying',
       embeddings: [],
@@ -311,5 +313,40 @@ describe('media location', () => {
     const { importer, writes } = stockCompose([]);
     await importer.run();
     expect(writes).toEqual([]);
+  });
+});
+
+describe('Noodle Gallery data that stays behind', () => {
+  const run = async (notImported: string[]) => {
+    const inserts: unknown[][] = [];
+    const destination = {
+      query: vi.fn(async (statement: string, parameters: unknown[] = []) => {
+        await Promise.resolve();
+        if (statement.includes('"isAdmin"')) return [{ id: 'admin-1' }, { id: 'admin-2' }];
+        if (statement.includes('INSERT INTO public.notification')) inserts.push(parameters);
+        return [];
+      }),
+      transaction: vi.fn(),
+    } as unknown as ImportDatabase;
+    const importer = new ImmichImportService(destination, destination, config);
+    importer.source.notImported = notImported;
+    await (importer as unknown as { reportNotImported(fingerprint: string): Promise<void> }).reportNotImported('f1');
+    return inserts;
+  };
+
+  it('tells each administrator which Gallery features held data', async () => {
+    const inserts = await run(['Spaces', 'pets']);
+    expect(inserts.map(([, userId]) => userId)).toEqual(['admin-1', 'admin-2']);
+    expect(inserts[0][3]).toContain('Spaces, pets');
+    expect(JSON.parse(String(inserts[0][4]))).toEqual({
+      kind: 'noodle-gallery-not-imported',
+      items: ['Spaces', 'pets'],
+    });
+    // A repeated verification derives the same notification ids.
+    expect((await run(['Spaces', 'pets']))[0][0]).toBe(inserts[0][0]);
+  });
+
+  it('sends nothing when no Gallery-only data held rows', async () => {
+    expect(await run([])).toEqual([]);
   });
 });

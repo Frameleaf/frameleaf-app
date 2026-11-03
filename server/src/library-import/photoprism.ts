@@ -161,15 +161,16 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
       const { name, columns } = photoprismProjections[table];
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${columns} FROM "${name}"`;
-        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         next.setReadBigInts(true);
+        assertSqliteTextSafe(database, first.sourceSQL);
         let batch = first.all();
         while (batch.length > 0) {
           const cursor = batch.at(-1)!.__frameleaf_cursor;
           yield batch.map(({ __frameleaf_cursor: _cursor, ...row }) => row);
+          assertSqliteTextSafe(database, next.sourceSQL, [cursor]);
           batch = next.all(cursor);
         }
       } catch {

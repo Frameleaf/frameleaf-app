@@ -21,7 +21,16 @@ export type PluginHostFunction = (callContext: CallContext, input: bigint) => Pr
 export type PluginLoadOptions = {
   runInWorker?: boolean;
   functions?: Record<string, PluginHostFunction>;
+  /** How long one call may run before its worker is replaced; only a worker plugin can be timed out. */
+  timeoutMs?: number;
 };
+
+/**
+ * A plugin call that never returns (a filter's regular expression backtracking on an uploaded file
+ * name, a loop) would otherwise hold the shared worker, and with it every workflow, for the life of
+ * the process. Extism ends the call and restarts the worker when this passes.
+ */
+export const PLUGIN_CALL_TIMEOUT_MS = 30_000;
 
 export type PluginMethodSearchResponse = {
   id: string;
@@ -223,7 +232,7 @@ export class PluginRepository {
     });
   }
 
-  async load({ key, label, wasmBytes }: PluginLoad, { runInWorker, functions }: PluginLoadOptions) {
+  async load({ key, label, wasmBytes }: PluginLoad, { runInWorker, functions, timeoutMs }: PluginLoadOptions) {
     const data = new Uint8Array(wasmBytes.buffer, wasmBytes.byteOffset, wasmBytes.byteLength);
     const logger = LoggingRepository.create(`Plugin:${label}`);
     const ready = Promise.withResolvers<void>();
@@ -238,6 +247,8 @@ export class PluginRepository {
                 // Workflow plugins receive bytes through host functions, never host filesystem mounts.
                 allowedPaths: {},
                 runInWorker,
+                // Extism refuses a timeout for an in-thread plugin, which it cannot interrupt
+                ...(runInWorker && { timeoutMs: timeoutMs ?? PLUGIN_CALL_TIMEOUT_MS }),
                 functions: {
                   'extism:host/user': functions ?? {},
                 },

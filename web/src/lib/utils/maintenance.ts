@@ -19,13 +19,23 @@ export function maintenanceShouldRedirect(maintenanceMode: boolean, currentUrl: 
 }
 
 /**
+ * The maintenance token the address carries: in the fragment (`#token=…`, which the browser never
+ * sends, so it stays out of server and proxy access logs) or, for links the server still issues, in
+ * the query.
+ */
+export const maintenanceTokenOf = (url: Pick<URL, 'hash' | 'search'>): string | undefined =>
+  new URLSearchParams(url.hash.replace(/^#/, '')).get('token') ??
+  new URLSearchParams(url.search).get('token') ??
+  undefined;
+
+/**
  * Signs in to maintenance with the address's `token`, or the cookie a previous sign-in left.
  * Resolves `rejected` only when the address carried a token the server refused (expired after its
  * 4 hours, or from an earlier maintenance session), so the page can say so (FL-81); without a token a
  * refusal just means the visitor is not an administrator.
  */
 export const loadMaintenanceAuth = async (): Promise<'signed-in' | 'rejected' | 'anonymous'> => {
-  const token = new URLSearchParams(location.search).get('token') ?? undefined;
+  const token = maintenanceTokenOf(location);
 
   try {
     const auth = await maintenanceLogin({

@@ -334,8 +334,16 @@ export class AlbumService extends BaseService {
 
     const readable = await this.readableParents(auth, [mappedAlbum]);
     const [withSupporters] = await this.withSupporters(auth, [mapAlbum(mappedAlbum)]);
+    // FL-83: a shared link's visitors learn a member's display name and avatar, never an email, just
+    // as they are told nothing but the link owner's name
+    const response = auth.sharedLink
+      ? {
+          ...withSupporters,
+          albumUsers: withSupporters.albumUsers.map((member) => ({ ...member, user: { ...member.user, email: '' } })),
+        }
+      : withSupporters;
     return {
-      ...this.withReadableParent(withSupporters, readable),
+      ...this.withReadableParent(response, readable),
       startDate: asDateTimeString(albumMetadataForIds?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadataForIds?.endDate ?? undefined),
       assetCount: albumMetadataForIds?.assetCount ?? 0,

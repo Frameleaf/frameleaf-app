@@ -123,6 +123,7 @@ describe(FrameleafLicenseService.name, () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await cloud.close();
     await rm(identityDir, { recursive: true, force: true });
   });
@@ -705,7 +706,9 @@ describe(FrameleafLicenseService.name, () => {
         certificate: certificate({ lic_exp: expiresAt, exp: expiresAt, grace_days: 7 }),
       });
       cloud.on('POST /api/v1/licenses/refresh', () => ({ status: 503, body: { code: 'down', message: 'down' } }));
-      await new Promise((resolve) => setTimeout(resolve, 2100));
+      // Only the clock is faked (timers stay real for the fake cloud): the licence is now past lic_exp.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime((expiresAt + 1) * 1000);
 
       await expect(sut.handleRefresh({ force: true })).resolves.toBe(JobStatus.Success);
       await expect(sut.getStatus()).resolves.toMatchObject({

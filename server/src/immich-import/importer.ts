@@ -107,6 +107,7 @@ export class ImmichImportService {
       })),
       sourceVersion: this.config.version,
       sourceCommit: this.source.fixture.commit,
+      notImported: this.source.notImported,
       fingerprint,
       status: run?.status ?? 'fresh',
     };
@@ -206,6 +207,7 @@ export class ImmichImportService {
       await assertCanonicalDestination(this.destination);
       await verifyMediaRoots(this.config.mediaRoots, this.config.media);
       await this.reportLostOriginals(report.fingerprint);
+      await this.reportNotImported(report.fingerprint);
       await this.destination.query(
         "UPDATE public.frameleaf_immich_import SET status='activated',verified_at=now() WHERE status='verifying'",
       );
@@ -557,6 +559,29 @@ export class ImmichImportService {
    * re-upload restores one, and Library care searches for the rest. Derived ids make a repeated
    * verification idempotent.
    */
+  /** Tell administrators which Noodle Gallery features held data that stayed in the source. */
+  private async reportNotImported(fingerprint: string): Promise<void> {
+    const names = this.source.notImported;
+    if (names.length === 0) {
+      return;
+    }
+    const admins = await this.destination.query(`SELECT id FROM public."user" WHERE "isAdmin" AND "deletedAt" IS NULL`);
+    for (const { id } of admins) {
+      await this.destination.query(
+        `INSERT INTO public.notification (id, "userId", level, type, title, description, data)
+        VALUES ($1::uuid, $2::uuid, 'warning', 'SystemMessage', $3, $4, $5::text::jsonb) ON CONFLICT (id) DO NOTHING`,
+        [
+          v5(JSON.stringify(['noodle-gallery-not-imported', fingerprint, id]), v5.URL),
+          id,
+          'Some Noodle Gallery data was not imported',
+          `Frameleaf doesn't have these Noodle Gallery features yet, so they stayed behind: ${names.join(', ')}. ` +
+            'Your photos, albums and people came across, and your Noodle Gallery database still holds the rest.',
+          JSON.stringify({ kind: 'noodle-gallery-not-imported', items: names }),
+        ],
+      );
+    }
+  }
+
   private async reportLostOriginals(fingerprint: string): Promise<void> {
     if (this.lostOriginals.size === 0) {
       return;

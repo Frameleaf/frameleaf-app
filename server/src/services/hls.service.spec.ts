@@ -556,18 +556,76 @@ describe(HlsService.name, () => {
   });
 
   describe('endSession', () => {
-    it('emits HlsSessionEnd', async () => {
-      const auth = factory.auth();
-      const assetId = 'asset-1';
+    const assetId = 'asset-1';
+
+    /** Starts a stream for `auth` the way a player does, so the session is bound to that principal. */
+    const issue = async (auth: ReturnType<typeof factory.auth>) => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([assetId]));
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: {
+          realtime: {
+            enabled: true,
+            videoCodecs: [VideoCodec.H264],
+            resolutions: Object.values(HlsVideoResolution),
+          },
+        },
+      });
+      mocks.videoStream.getForMainPlaylist.mockResolvedValue(eiffelTower);
+      mocks.crypto.randomUUID.mockReturnValue(sessionId);
+      mocks.websocket.serverSend.mockImplementation((event, ...rest) => {
+        if (event === 'HlsSessionRequest') {
+          const { sessionId: id } = rest[0] as { sessionId: string };
+          queueMicrotask(() => sut.onSessionResult({ sessionId: id }));
+        }
+      });
+      await sut.getMainPlaylist(auth, assetId);
+      mocks.websocket.serverSend.mockReset();
       mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId } as never);
+    };
+
+    it('emits HlsSessionEnd for the viewer who started the stream', async () => {
+      const auth = factory.auth();
+      await issue(auth);
       await sut.endSession(auth, assetId, sessionId);
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsSessionEnd', { sessionId });
     });
 
+    it("does not let another viewer of the item end someone else's stream", async () => {
+      await issue(factory.auth());
+      const other = factory.auth();
+      await expect(sut.endSession(other, assetId, sessionId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it("does not let a shared link's visitor end the link owner's stream, nor the owner a visitor's", async () => {
+      const owner = factory.auth();
+      const visitor = { ...owner, sharedLink: { ...factory.auth({ sharedLink: {} }).sharedLink! } };
+
+      await issue(owner);
+      await expect(sut.endSession(visitor, assetId, sessionId)).rejects.toBeInstanceOf(NotFoundException);
+
+      await issue(visitor);
+      await expect(sut.endSession(owner, assetId, sessionId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+
+      await issue(visitor);
+      await sut.endSession(visitor, assetId, sessionId);
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsSessionEnd', { sessionId });
+    });
+
+    it('does not end a session this API process never issued, even for a viewer of the item', async () => {
+      const auth = factory.auth();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId } as never);
+      await expect(sut.endSession(auth, assetId, sessionId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
     it('does not end a session attached to another asset', async () => {
       const auth = factory.auth();
-      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      await issue(auth);
+      mocks.videoStream.getSession.mockReset();
       mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId: 'another' } as never);
       await expect(sut.endSession(auth, 'asset-1', sessionId)).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.websocket.serverSend).not.toHaveBeenCalled();

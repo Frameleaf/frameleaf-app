@@ -10,6 +10,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  openSync,
   watch,
 } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -83,6 +84,26 @@ export class StorageRepository {
 
   createWriteStream(filepath: string, options: { flags?: 'w' | 'wx'; mode?: number } = {}): Writable {
     return createWriteStream(filepath, { flags: 'w', flush: true, ...options });
+  }
+
+  /**
+   * A write stream on a file opened here and now, rather than on the stream's first write. When the
+   * folder is gone by then (the storage template tidies an upload folder it finds empty, and may find
+   * one between an upload's `mkdirSync` and its first write), the folder is made again and the open
+   * tried once more, so the upload goes ahead instead of failing with ENOENT.
+   */
+  createWriteStreamInFolder(filepath: string): Writable {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const fd = openSync(filepath, 'w');
+        return createWriteStream(filepath, { fd, flush: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || attempt > 0) {
+          throw error;
+        }
+        mkdirSync(path.dirname(filepath), { recursive: true });
+      }
+    }
   }
 
   createOrOverwriteFile(filepath: string, buffer: Buffer) {
@@ -428,6 +449,8 @@ export class StorageRepository {
       onlyFiles: true,
       dot: includeHidden,
       ignore: exclusionPatterns,
+      // like `walkLibrary`: a link inside managed storage is never a managed file whose bytes live elsewhere
+      followSymbolicLinks: false,
     });
   }
 
@@ -446,6 +469,8 @@ export class StorageRepository {
       onlyFiles: true,
       dot: includeHidden,
       ignore: exclusionPatterns,
+      // like `walkLibrary`: a link inside managed storage is never a managed file whose bytes live elsewhere
+      followSymbolicLinks: false,
     });
 
     let batch: string[] = [];

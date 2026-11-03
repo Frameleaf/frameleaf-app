@@ -191,7 +191,8 @@ export class StorageTemplateService extends BaseService {
 
     const asset = await this.assetJobRepository.getForStorageTemplateJob(id);
     if (!asset) {
-      return JobStatus.Failed;
+      // deleted (or hidden) between the metadata extraction that queued this and now: nothing to move
+      return JobStatus.Skipped;
     }
 
     const user = await this.userRepository.get(asset.ownerId, {});

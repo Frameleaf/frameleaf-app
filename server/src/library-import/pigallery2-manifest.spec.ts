@@ -119,6 +119,13 @@ describe('PiGallery2 common manifest mapping', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('discloses unqualified global guest access even with one user and no shares', () => {
+    database.exec('DELETE FROM sharing_entity; DELETE FROM user_entity WHERE id<>1');
+    const value = input();
+    value.grants = { '1': value.grants['1'] };
+    expect(read(value).manifest.losses).toContainEqual({ code: 'PIGALLERY2_SHARING_RESTRICTED', acknowledged: false });
+  });
+
   it('preserves current native metadata and originals without importing previews or credentials', () => {
     const value = input();
     const { manifest, archive } = read(value);
