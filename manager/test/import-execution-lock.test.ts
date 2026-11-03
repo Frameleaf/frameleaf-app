@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
+import { closeSync, openSync } from 'node:fs';
 import {
   chmod,
   link,
@@ -33,15 +34,15 @@ async function fixture() {
   ]);
   const path = join(root, 'execution.lock');
   await writeFile(path, 'retained-lock-inode', { mode: 0o600 });
-  const start = async (code: string, executable = process.execPath) => {
+  const start = (code: string, executable = process.execPath) => {
     // Each invocation opens a distinct description; forked copies of one description share flock ownership.
-    const descriptor = await open(path, 'r+');
+    const descriptor = openSync(path, 'r+');
     try {
       return spawn(helper, ['--exec-locked', executable, '-e', code], {
-        stdio: ['pipe', 'pipe', 'pipe', descriptor.fd],
+        stdio: ['pipe', 'pipe', 'pipe', descriptor],
       });
     } finally {
-      await descriptor.close();
+      closeSync(descriptor);
     }
   };
   return { root, path, helper, start };
@@ -52,9 +53,9 @@ test(
   linux,
   async () => {
     const f = await fixture();
-    let owner: Awaited<ReturnType<typeof f.start>> | undefined;
+    let owner: ReturnType<typeof f.start> | undefined;
     try {
-      owner = await f.start(`
+      owner = f.start(`
       const fs = require('node:fs');
       const info = fs.readFileSync('/proc/self/fdinfo/3', 'utf8');
       if (!new RegExp('FLOCK\\\\s+ADVISORY\\\\s+WRITE\\\\s+' + process.pid + '\\\\s').test(info)) process.exit(91);
@@ -68,13 +69,13 @@ test(
         }),
       ]);
       assert.equal(ready, 'locked');
-      const contender = await f.start('process.exit(0)');
+      const contender = f.start('process.exit(0)');
       assert.deepEqual(await once(contender, 'exit'), [75, null]);
       const exit = once(owner, 'exit');
       owner.kill('SIGKILL');
       assert.deepEqual(await exit, [null, 'SIGKILL']);
       owner = undefined;
-      const resumed = await f.start('process.exit(0)');
+      const resumed = f.start('process.exit(0)');
       assert.deepEqual(await once(resumed, 'exit'), [0, null]);
       assert.equal(await readFile(f.path, 'utf8'), 'retained-lock-inode');
     } finally {
@@ -95,29 +96,29 @@ test(
     const f = await fixture();
     try {
       await chmod(f.path, 0o644);
-      assert.deepEqual(await once(await f.start('process.exit(0)'), 'exit'), [
+      assert.deepEqual(await once(f.start('process.exit(0)'), 'exit'), [
         2,
         null,
       ]);
       await chmod(f.path, 0o600);
       await link(f.path, join(f.root, 'alias'));
-      assert.deepEqual(await once(await f.start('process.exit(0)'), 'exit'), [
+      assert.deepEqual(await once(f.start('process.exit(0)'), 'exit'), [
         2,
         null,
       ]);
       await rm(join(f.root, 'alias'));
       assert.deepEqual(
-        await once(await f.start('', '/no-such-frameleaf-executable'), 'exit'),
+        await once(f.start('', '/no-such-frameleaf-executable'), 'exit'),
         [127, null],
       );
-      assert.deepEqual(await once(await f.start('process.exit(0)'), 'exit'), [
+      assert.deepEqual(await once(f.start('process.exit(0)'), 'exit'), [
         0,
         null,
       ]);
-      assert.deepEqual(
-        await once(await f.start('process.exit(0)', 'node'), 'exit'),
-        [2, null],
-      );
+      assert.deepEqual(await once(f.start('process.exit(0)', 'node'), 'exit'), [
+        2,
+        null,
+      ]);
     } finally {
       await rm(f.root, { recursive: true, force: true });
     }
@@ -177,10 +178,10 @@ test(
   linux,
   async () => {
     const f = await fixture();
-    let owner: Awaited<ReturnType<typeof f.start>> | undefined;
+    let owner: ReturnType<typeof f.start> | undefined;
     let descendant: number | undefined;
     try {
-      owner = await f.start(`
+      owner = f.start(`
       const { spawn } = require('node:child_process');
       const child = spawn(process.execPath, ['-e',
         "const fs=require('node:fs'); if(!fs.readFileSync('/proc/self/fdinfo/5','utf8').includes('FLOCK'))process.exit(92); process.stdout.write('held'); setInterval(()=>{},1000)"],
@@ -201,7 +202,7 @@ test(
       descendant = JSON.parse(String(ready)).pid;
       owner.kill('SIGKILL');
       assert.deepEqual(await exit, [null, 'SIGKILL']);
-      assert.deepEqual(await once(await f.start('process.exit(0)'), 'exit'), [
+      assert.deepEqual(await once(f.start('process.exit(0)'), 'exit'), [
         75,
         null,
       ]);
@@ -209,7 +210,7 @@ test(
       descendant = undefined;
       let resumed = false;
       for (let attempt = 0; attempt < 50; attempt++) {
-        const [code] = await once(await f.start('process.exit(0)'), 'exit');
+        const [code] = await once(f.start('process.exit(0)'), 'exit');
         if (code === 0) {
           resumed = true;
           break;

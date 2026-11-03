@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import {
   mkdir,
@@ -10,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import { adoptImportFiles } from '../src/import-adoption.js';
 import { copyImportFiles } from '../src/import-copy.js';
 import {
@@ -31,6 +34,27 @@ test(
     const root = await mkdtemp(join(tmpdir(), 'frameleaf-mixed-transfer-'));
     let store: Store | undefined;
     try {
+      const helper = join(root, 'frameleaf-import-rename');
+      childProcess.execFileSync('cc', [
+        '-std=c11',
+        '-O2',
+        '-Wall',
+        '-Wextra',
+        '-Werror',
+        fileURLToPath(new URL('../import-rename.c', import.meta.url)),
+        '-o',
+        helper,
+      ]);
+      const spawn = childProcess.spawn;
+      mock.method(childProcess, 'spawn', (command, ...args) =>
+        spawn(
+          command === '/usr/local/bin/frameleaf-import-rename'
+            ? helper
+            : command,
+          ...args,
+        ),
+      );
+      syncBuiltinESMExports();
       const source = join(root, 'source'),
         destination = join(root, 'destination');
       await mkdir(source, { mode: 0o700 });
@@ -123,6 +147,8 @@ test(
       );
       assert.throws(() => journal.writersStarting(operation.id));
     } finally {
+      mock.restoreAll();
+      syncBuiltinESMExports();
       store?.close();
       await rm(root, { recursive: true, force: true });
     }
