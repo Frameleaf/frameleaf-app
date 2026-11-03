@@ -174,6 +174,33 @@ test(
 );
 
 test(
+  'ordinary subprocess stdio does not inherit the executing process lock',
+  linux,
+  async () => {
+    const f = await fixture();
+    try {
+      const owner = f.start(`
+        const fs = require('node:fs');
+        const { spawn } = require('node:child_process');
+        if (!fs.readFileSync('/proc/self/fdinfo/3', 'utf8').includes('FLOCK')) process.exit(91);
+        const child = spawn(process.execPath, ['-e',
+          "const fs=require('node:fs'); if(fs.readFileSync('/proc/self/fdinfo/3','utf8').includes('FLOCK'))process.exit(92)"],
+          { stdio: ['ignore', 'pipe', 'pipe'] });
+        child.once('error', () => process.exit(93));
+        child.once('exit', code => process.exit(code ?? 94));
+      `);
+      assert.deepEqual(await once(owner, 'exit'), [0, null]);
+      assert.deepEqual(await once(f.start('process.exit(0)'), 'exit'), [
+        0,
+        null,
+      ]);
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
   'an in-flight descendant retains the lock after its executing parent is killed',
   linux,
   async () => {
