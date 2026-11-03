@@ -7,6 +7,9 @@ name: Library import qualification
       - 'server/src/library-import/**'
       - 'server/src/services/metadata.service.ts'
       - 'server/src/services/metadata.service.spec.ts'
+      - 'server/src/services/asset.service.ts'
+      - 'server/src/services/asset.service.spec.ts'
+      - 'server/src/repositories/asset.repository.ts'
       - 'server/scripts/cleanup-photoprism-qualification.mjs'
       - 'server/scripts/qualify-photoprism-mariadb.mjs'
       - 'server/test/photoprism-qualification-cleanup.test.mjs'
@@ -19,6 +22,9 @@ name: Library import qualification
       - 'server/src/library-import/**'
       - 'server/src/services/metadata.service.ts'
       - 'server/src/services/metadata.service.spec.ts'
+      - 'server/src/services/asset.service.ts'
+      - 'server/src/services/asset.service.spec.ts'
+      - 'server/src/repositories/asset.repository.ts'
       - 'server/scripts/cleanup-photoprism-qualification.mjs'
       - 'server/scripts/qualify-photoprism-mariadb.mjs'
       - 'server/test/photoprism-qualification-cleanup.test.mjs'
@@ -90,7 +96,7 @@ jobs:
         run: |
           node ../studio/tools/prepare-server-subtitle-runtime.mjs
           node scripts/prepare-import-transfer-runtime.mjs
-          pnpm exec vitest run --config test/vitest.config.mjs src/services/metadata.service.spec.ts --maxWorkers=1
+          pnpm exec vitest run --config test/vitest.config.mjs src/services/metadata.service.spec.ts src/services/asset.service.spec.ts --maxWorkers=1
       - name: Verify scoped cancellation cleanup
         run: node --test server/test/photoprism-qualification-cleanup.test.mjs
       - name: Qualify native restored database extraction

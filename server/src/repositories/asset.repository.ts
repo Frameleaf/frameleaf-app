@@ -739,7 +739,7 @@ export class AssetRepository {
         lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
       }))
       .where('assetId', '=', assetId)
-      .returning(['assetId', 'dateTimeOriginal'])
+      .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
       .executeTakeFirst();
   }
   @GenerateSql({ params: [DummyValue.UUID, ['description']] })
