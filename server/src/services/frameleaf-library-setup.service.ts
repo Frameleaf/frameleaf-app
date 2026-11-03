@@ -501,6 +501,9 @@ export class FrameleafLibrarySetupService {
           if (!library) {
             throw new BadRequestException('A setup library is unavailable');
           }
+          if (state.paused && !existing.rows[0]) {
+            continue; // A paused setup admits no new library scan; resuming admits it.
+          }
           state.scans[libraryId] =
             existing.rows[0]?.id ??
             (await this.scans.queue(library, { ownerId: admin.id, trigger: 'manual' })).operation.id;
@@ -589,7 +592,8 @@ export class FrameleafLibrarySetupService {
           state.phase = 'needs-attention';
         }
         const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);
-        if (!scansFinished || !healthFinished || !idle || state.phase === 'needs-attention') {
+        // Setup is not complete until the file check has released the stages that wait for it (a pause holds both).
+        if (!scansFinished || !healthFinished || !idle || !state.checkReleasedAt || state.phase === 'needs-attention') {
           state.quietSince = null;
         } else {
           state.phase = 'verifying';
