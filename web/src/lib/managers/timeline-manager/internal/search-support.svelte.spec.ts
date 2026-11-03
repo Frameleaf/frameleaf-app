@@ -76,7 +76,9 @@ describe('calendar offset navigation', () => {
         yield nextMonth;
       };
       let closed = false;
-      manager.assetsIterator = async function* ({ startTimelineMonth } = {}) {
+      manager.assetsIterator = async function* ({
+        startTimelineMonth,
+      }: Parameters<TimelineManager['assetsIterator']>[0] = {}) {
         try {
           yield startTimelineMonth === nextMonth ? assets[1] : assets[0];
         } finally {

@@ -472,13 +472,15 @@ describe('TimelineManager', () => {
         { count: 1, timeBucket: '2024-03-01T00:00:00.000Z' },
         { count: 3, timeBucket: '2024-01-01T00:00:00.000Z' },
       ]);
-      sdkMock.getTimeBucket.mockImplementation(async ({ timeBucket }, { signal } = {}) => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        if (signal?.aborted) {
-          throw new AbortError();
-        }
-        return bucketAssetsResponse[timeBucket];
-      });
+      sdkMock.getTimeBucket.mockImplementation(
+        async ({ timeBucket }, { signal }: Parameters<typeof sdkMock.getTimeBucket>[1] = {}) => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          if (signal?.aborted) {
+            throw new AbortError();
+          }
+          return bucketAssetsResponse[timeBucket];
+        },
+      );
       await timelineManager.updateViewport({ width: 1588, height: 0 });
     });
 
