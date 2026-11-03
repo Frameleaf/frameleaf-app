@@ -84,14 +84,108 @@ export function syntheticMeasurer() {
   };
 }
 
+/**
+ * Parses one TypeScript/JavaScript *data* literal (objects, arrays, quoted strings, numbers with `_`
+ * separators, true/false/null, trailing commas, line comments) without evaluating it. Identifiers
+ * other than those keywords, expressions, template strings and calls are rejected.
+ */
+export function parseDataLiteral(text) {
+  let at = 0;
+  const fail = (what) => { throw new SyntaxError(`data literal: ${what} at offset ${at}`); };
+  const skip = () => {
+    for (;;) {
+      while (at < text.length && /\s/.test(text[at])) at++;
+      if (text.startsWith('//', at)) { while (at < text.length && text[at] !== '\n') at++; continue; }
+      if (text.startsWith('/*', at)) { const close = text.indexOf('*/', at + 2); if (close < 0) fail('unterminated comment'); at = close + 2; continue; }
+      return;
+    }
+  };
+  const escapes = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', 0: '\0', '\\': '\\', "'": "'", '"': '"' };
+  const string = () => {
+    const quote = text[at++];
+    let out = '';
+    for (;;) {
+      if (at >= text.length) fail('unterminated string');
+      const char = text[at++];
+      if (char === quote) return out;
+      if (char === '\n') fail('newline in string');
+      if (char !== '\\') { out += char; continue; }
+      const next = text[at++];
+      if (next === 'u' && text[at] === '{') {
+        const close = text.indexOf('}', at);
+        if (close < 0) fail('bad unicode escape');
+        out += String.fromCodePoint(Number.parseInt(text.slice(at + 1, close), 16));
+        at = close + 1;
+      } else if (next === 'u') { out += String.fromCharCode(Number.parseInt(text.slice(at, at + 4), 16)); at += 4; }
+      else if (next === 'x') { out += String.fromCharCode(Number.parseInt(text.slice(at, at + 2), 16)); at += 2; }
+      else if (next in escapes) out += escapes[next];
+      else fail(`unsupported escape \\${next}`);
+    }
+  };
+  const value = () => {
+    skip();
+    const char = text[at];
+    if (char === '[') {
+      at++;
+      const items = [];
+      for (;;) {
+        skip();
+        if (text[at] === ']') { at++; return items; }
+        items.push(value());
+        skip();
+        if (text[at] === ',') { at++; continue; }
+        if (text[at] === ']') { at++; return items; }
+        fail('expected , or ]');
+      }
+    }
+    if (char === '{') {
+      at++;
+      const object = {};
+      for (;;) {
+        skip();
+        if (text[at] === '}') { at++; return object; }
+        let key;
+        if (text[at] === '"' || text[at] === "'") key = string();
+        else {
+          const match = /^[A-Za-z_$][\w$]*/.exec(text.slice(at));
+          if (!match) fail('expected property name');
+          key = match[0];
+          at += key.length;
+        }
+        if (key === '__proto__') fail('forbidden key');
+        skip();
+        if (text[at] !== ':') fail('expected :');
+        at++;
+        object[key] = value();
+        skip();
+        if (text[at] === ',') { at++; continue; }
+        if (text[at] === '}') { at++; return object; }
+        fail('expected , or }');
+      }
+    }
+    if (char === '"' || char === "'") return string();
+    const number = /^-?(?:0|[1-9](?:_?\d)*)(?:\.\d(?:_?\d)*)?(?:[eE][+-]?\d+)?/.exec(text.slice(at));
+    if (number && number[0].length > 0) { at += number[0].length; return Number(number[0].replaceAll('_', '')); }
+    for (const [word, literal] of [['true', true], ['false', false], ['null', null]]) {
+      if (text.startsWith(word, at) && !/[\w$]/.test(text[at + word.length] ?? '')) { at += word.length; return literal; }
+    }
+    fail('unsupported token');
+  };
+  const result = value();
+  skip();
+  if (at !== text.length) fail('trailing content');
+  return result;
+}
+
 /** The bundled title fonts: the list server/src/utils/studio-fonts.generated.ts records (families, packages, files, hashes). */
 export async function bundledTitleFonts(repository) {
   const source = await readFile(path.join(repository, 'server/src/utils/studio-fonts.generated.ts'), 'utf8');
   const start = source.indexOf('[', source.indexOf('studioBundledFonts'));
   const end = source.lastIndexOf('] as const');
   assert(start > 0 && end > start, 'studio-fonts.generated.ts has an unexpected shape');
-  // The list is a plain data literal of this repository (formatted as TypeScript, not JSON).
-  const families = new Function(`return ${source.slice(start, end + 1)};`)();
+  // The list is a plain data literal of this repository (formatted as TypeScript, not JSON). It is
+  // read with a data-only literal parser: nothing in the generated file is ever evaluated as code.
+  const families = parseDataLiteral(source.slice(start, end + 1));
   assert(Array.isArray(families) && families.every((family) => typeof family.family === 'string' && Array.isArray(family.files)));
   return families;
 }

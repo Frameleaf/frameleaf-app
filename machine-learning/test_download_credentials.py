@@ -131,10 +131,13 @@ def test_public_repository_downloads_never_inherit_a_saved_token(
     monkeypatch.delenv("HF_ENDPOINT", raising=False)
     monkeypatch.setenv("HF_TOKEN", "fake-saved-token-must-not-leave")
     module = "image_description" if model_class is ImageDescriptionModel else "nsfw_detection"
+    task = settings.image_description if model_class is ImageDescriptionModel else settings.nsfw_detection
+    monkeypatch.setattr(task, "trusted_custom_models", ["example/public"])
     with patch(f"frameleaf_ml.models.{module}.snapshot_download") as download:
         model_class("example/public", acceleration="cuda")._download()
     assert download.call_args.kwargs["token"] is False
     assert download.call_args.kwargs["endpoint"] == "https://huggingface.co"
+    assert download.call_args.kwargs["allow_patterns"]
     assert constants.HF_HUB_DISABLE_IMPLICIT_TOKEN
 
 

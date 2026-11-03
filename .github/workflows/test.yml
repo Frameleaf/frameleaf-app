@@ -791,12 +791,19 @@ jobs:
         env:
           SERVER_PING_URL: http://127.0.0.1:2285/api/server/ping
         run: |
-          if timeout 120s bash -c 'until curl --fail --silent --max-time 2 "$SERVER_PING_URL" > /dev/null; do sleep 2; done'; then
-            echo "Frameleaf server is ready"
+          # A fixture reset must not snapshot the metadata queue's temporary bootstrap pause.
+          # Match the local E2E launcher's worker readiness before touching fixture state.
+          if timeout 120s bash -o pipefail -c '
+            until docker compose logs --no-color frameleaf-server | grep -F "Frameleaf Microservices is running" > /dev/null &&
+              curl --fail --silent --max-time 2 "$SERVER_PING_URL" > /dev/null; do
+              sleep 2
+            done
+          '; then
+            echo "Frameleaf API and background worker are ready"
             exit 0
           fi
 
-          echo "::error::Frameleaf server did not become ready within 120 seconds"
+          echo "::error::Frameleaf API and background worker did not become ready within 120 seconds"
           docker compose ps
           docker compose logs --no-color --tail 200 frameleaf-server
           exit 1

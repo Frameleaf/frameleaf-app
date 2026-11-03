@@ -556,6 +556,52 @@ describe(StorageRepository.name, () => {
     }
   });
 
+  describe('managed-storage walkers and symlinks', () => {
+    it('never follows a link placed inside managed storage, unlike a real file beside it', async () => {
+      await writeFiles({ '/upload/user/ab/cd/real.jpg': 'real', '/elsewhere/secret.jpg': 'elsewhere' });
+      await fs.symlink(fixturePath('/elsewhere'), fixturePath('/upload/user/ab/linked-folder'), 'dir');
+      await fs.symlink(fixturePath('/elsewhere/secret.jpg'), fixturePath('/upload/user/ab/cd/linked.jpg'), 'file');
+
+      const crawled = await sut.crawl({ pathsToCrawl: [fixturePath('/upload/user')] });
+      const walked: string[] = [];
+      for await (const batch of sut.walk({
+        pathsToCrawl: [fixturePath('/upload/user')],
+        exclusionPatterns: [],
+        includeHidden: false,
+        take: 10,
+      })) {
+        walked.push(...batch);
+      }
+
+      expect(crawled).toEqual([fixturePath('/upload/user/ab/cd/real.jpg')]);
+      expect(walked).toEqual([fixturePath('/upload/user/ab/cd/real.jpg')]);
+    });
+  });
+
+  describe('createWriteStreamInFolder', () => {
+    const writeThrough = (stream: NodeJS.WritableStream, content: string) =>
+      new Promise<void>((resolve, reject) => stream.on('error', reject).on('finish', resolve).end(content));
+
+    it('writes into the folder as it is, and makes the folder again when it was removed meanwhile', async () => {
+      await fs.mkdir(fixturePath('/upload/user/ab/cd'), { recursive: true });
+      await writeThrough(sut.createWriteStreamInFolder(fixturePath('/upload/user/ab/cd/first.jpg')), 'first');
+      await expect(fs.readFile(fixturePath('/upload/user/ab/cd/first.jpg'), 'utf8')).resolves.toBe('first');
+
+      // the storage template's tidy removed xx/yy between the upload's mkdir and its open
+      await fs.rm(fixturePath('/upload/user/ab'), { recursive: true });
+      await writeThrough(sut.createWriteStreamInFolder(fixturePath('/upload/user/ab/cd/second.jpg')), 'second');
+      await expect(fs.readFile(fixturePath('/upload/user/ab/cd/second.jpg'), 'utf8')).resolves.toBe('second');
+    });
+
+    it('reports any other failure to open, without retrying', async () => {
+      await writeFiles({ '/upload/user/ab/cd': 'a file where the folder should be' });
+
+      expect(() => sut.createWriteStreamInFolder(fixturePath('/upload/user/ab/cd/photo.jpg'))).toThrow(
+        expect.objectContaining({ code: 'ENOTDIR' }),
+      );
+    });
+  });
+
   it('adds up the bytes of every file under a folder without following symlinks (FL-79)', async () => {
     await writeFiles({
       '/data/thumbs/a/1.webp': 'x'.repeat(100),

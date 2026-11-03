@@ -99,4 +99,63 @@ if HYGIENE_BASE_SHA="$base_report" bash check.sh > /dev/null; then
   printf '%s\n' 'FAILED: accepted report added by a base merge'
   exit 1
 fi
-printf '%s\n' 'PASS: normal source, force-add rejection, deleted-report history, merge history and base merges'
+# Narrowing or removing a private ignore rule in the same change must not let a report through.
+git checkout -qb narrowed "$base"
+sed -i 's#^reports/$#reports/x/#' .gitignore
+git check-ignore -q reports/private.md && { printf '%s\n' 'FAILED: narrowed rule still ignores'; exit 1; }
+mkdir -p reports
+printf '%s\n' private > reports/private.md
+git add .gitignore reports/private.md
+git commit -qm 'narrow the private rules'
+if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
+  printf '%s\n' 'FAILED: accepted a narrowed private ignore rule'
+  exit 1
+fi
+git checkout -qb removed "$base"
+sed -i '/^CLAUDE\.md$/d' .gitignore
+git add .gitignore
+git commit -qm 'drop a private rule'
+if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
+  printf '%s\n' 'FAILED: accepted a removed private ignore rule'
+  exit 1
+fi
+# Adding a rule, or reordering the block, is fine.
+git checkout -qb widened "$base"
+printf '%s\n' 'scratch/' >> .gitignore
+git add .gitignore
+git commit -qm 'add a private rule'
+HYGIENE_BASE_SHA="$base" bash check.sh
+# Git applies the last matching pattern: a kept rule plus a later `!` exception un-ignores the report.
+for case in '!reports/ reports/private.md' '!CLAUDE.md CLAUDE.md' '!*-report.md status-report.md'; do
+  exception=${case% *}
+  path=${case#* }
+  git checkout -qb "excepted-$RANDOM" "$base"
+  printf '%s\n' '' '# Local exception' "$exception" >> .gitignore
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' private > "$path"
+  git check-ignore -q "$path" && { printf '%s\n' "FAILED: $exception does not un-ignore $path"; exit 1; }
+  git add .gitignore "$path"
+  git commit -qm 'add an ignore exception after the private rules'
+  if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
+    printf '%s\n' "FAILED: accepted the ignore exception $exception"
+    exit 1
+  fi
+done
+# The same exception inside the private block, and an override that keeps every base rule text intact.
+git checkout -qb excepted-inside "$base"
+sed -i 's#^reports/$#reports/\n!reports/#' .gitignore
+git add .gitignore
+git commit -qm 'add an exception inside the private rules'
+if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
+  printf '%s\n' 'FAILED: accepted an exception inside the private block'
+  exit 1
+fi
+# Rules after the private block (reviewed guides, Studio output, Vitest) are not private rules: removing
+# one is allowed, and the existing reviewed exceptions stay accepted.
+git checkout -qb unrelated "$base"
+sed -i '/^\.vitest\/$/d; /^\/server\/resources\/studio\/$/d' .gitignore
+git add .gitignore
+git commit -qm 'drop unrelated ignore rules'
+HYGIENE_BASE_SHA="$base" bash check.sh
+git checkout -q -
+printf '%s\n' 'PASS: normal source, force-add rejection, deleted-report history, merge history, base merges, private-rule narrowing and ignore exceptions'

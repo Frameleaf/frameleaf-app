@@ -167,20 +167,46 @@ export class DesktopGrants {
     private store: Store,
     private security: Security,
   ) {
-    // ponytail: Docker installs may run without MANAGER_ORIGIN; desktop proofs need the native runtime, which requires it.
-    const origin = security.origin ?? UNCONFIGURED_ORIGIN;
-    store.createOnce('desktop-manager-identity', { id: randomUUID(), origin });
-    const stored = store.get<ManagerIdentity>('desktop-manager-identity');
-    if (stored?.origin === UNCONFIGURED_ORIGIN && origin !== UNCONFIGURED_ORIGIN)
-      store.set('desktop-manager-identity', { ...stored, origin });
-    const parsed = Identity.safeParse(store.get('desktop-manager-identity'));
-    if (!parsed.success || parsed.data.origin !== origin)
-      throw new Refusal('desktop_manager_identity_changed');
-    this.identity = Object.freeze(parsed.data);
     store.db
       .exec(`CREATE TABLE IF NOT EXISTS desktop_pairings (id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS desktop_grants (id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS desktop_nonces (grant_id TEXT NOT NULL, nonce TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(grant_id,nonce));`);
+    // ponytail: Docker installs may run without MANAGER_ORIGIN; desktop proofs need the native runtime, which requires it.
+    const origin = security.origin ?? UNCONFIGURED_ORIGIN;
+    store.createOnce('desktop-manager-identity', { id: randomUUID(), origin });
+    const stored = Identity.safeParse(store.get('desktop-manager-identity'));
+    if (!stored.success) throw new Refusal('desktop_manager_identity_invalid');
+    if (stored.data.origin !== origin) this.rotate(stored.data, origin);
+    const parsed = Identity.safeParse(store.get('desktop-manager-identity'));
+    if (!parsed.success || parsed.data.origin !== origin)
+      throw new Refusal('desktop_manager_identity_changed');
+    this.identity = Object.freeze(parsed.data);
+  }
+  /**
+   * Every desktop proof is signed over the Manager origin, so a changed MANAGER_ORIGIN (new hostname,
+   * port or scheme) is a grant-epoch rotation: existing grants, pending pairings and nonces are revoked
+   * and the stored identity records the new origin. Manager keeps starting; devices pair again.
+   * The first move from the unconfigured placeholder origin has no desktop devices to revoke.
+   */
+  private rotate(identity: ManagerIdentity, origin: string): void {
+    const revoked = this.transaction(() => {
+      const count = (
+        this.store.db.prepare('SELECT count(*) AS count FROM desktop_grants').get() as { count: number }
+      ).count;
+      this.store.db.exec('DELETE FROM desktop_grants; DELETE FROM desktop_pairings; DELETE FROM desktop_nonces;');
+      this.store.set('desktop-manager-identity', { ...identity, origin });
+      this.store.set('desktop-manager-identity-rotation', {
+        from: identity.origin,
+        to: origin,
+        at: Date.now(),
+        revokedGrants: count,
+      });
+      return count;
+    });
+    if (identity.origin !== UNCONFIGURED_ORIGIN)
+      console.error(
+        `manager: MANAGER_ORIGIN changed from ${identity.origin} to ${origin}; ${revoked} desktop grant(s) revoked, paired devices must pair again`,
+      );
   }
   private transaction<T>(work: () => T): T {
     this.store.db.exec('BEGIN IMMEDIATE');

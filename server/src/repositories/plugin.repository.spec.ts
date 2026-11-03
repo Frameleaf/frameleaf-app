@@ -1,6 +1,6 @@
 import { newPlugin } from '@extism/extism';
 import { vitest } from 'vitest';
-import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { PLUGIN_CALL_TIMEOUT_MS, PluginRepository } from 'src/repositories/plugin.repository.js';
 
 vi.mock('@extism/extism', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@extism/extism')>()),
@@ -63,9 +63,29 @@ describe(PluginRepository.name, () => {
       { wasm: [{ data: expect.any(Uint8Array) }] },
       expect.objectContaining({ allowedPaths: {}, runInWorker, functions: { 'extism:host/user': functions } }),
     );
+    // a worker plugin's calls are timed out (a hung call would hold every workflow); Extism refuses a
+    // timeout for an in-thread plugin, so none is passed there
+    const options = vi.mocked(newPlugin).mock.calls.at(-1)![1] as { timeoutMs?: number };
+    expect(options.timeoutMs).toBe(runInWorker ? PLUGIN_CALL_TIMEOUT_MS : undefined);
+    expect(runInWorker || !('timeoutMs' in options)).toBe(true);
     const { pool } = (
       sut as unknown as { pluginMap: Map<string, { pool: { drain(): Promise<void>; clear(): Promise<void> } }> }
     ).pluginMap.get('isolated')!;
+    await pool.drain();
+    await pool.clear();
+  });
+
+  it('passes a caller-chosen timeout to a worker plugin', async () => {
+    vi.mocked(newPlugin).mockResolvedValue({ close: vi.fn() } as never);
+    const sut = new PluginRepository({} as never, { setContext: vi.fn() } as never);
+    await sut.load(
+      { key: 'timed', label: 'timed', wasmBytes: Buffer.from('fixture') },
+      { runInWorker: true, timeoutMs: 5000 },
+    );
+    expect(newPlugin).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ timeoutMs: 5000 }));
+    const { pool } = (
+      sut as unknown as { pluginMap: Map<string, { pool: { drain(): Promise<void>; clear(): Promise<void> } }> }
+    ).pluginMap.get('timed')!;
     await pool.drain();
     await pool.clear();
   });

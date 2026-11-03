@@ -228,10 +228,10 @@ describe('the sender of a connected account', () => {
   });
 
   it('keeps a saved sender for the account’s own address and replaces any other', () => {
-    expect(connectedSender('Rivera photos <rivera@gmail.com>', 'rivera@gmail.com')).toBe(
-      'Rivera photos <rivera@gmail.com>',
+    expect(connectedSender('Rivera photos <rivera@example.com>', 'rivera@example.com')).toBe(
+      'Rivera photos <rivera@example.com>',
     );
-    expect(connectedSender('old@example.com', 'rivera@gmail.com')).toBe('rivera@gmail.com');
-    expect(connectedSender('', 'rivera@gmail.com')).toBe('rivera@gmail.com');
+    expect(connectedSender('old@example.net', 'rivera@example.com')).toBe('rivera@example.com');
+    expect(connectedSender('', 'rivera@example.com')).toBe('rivera@example.com');
   });
 });

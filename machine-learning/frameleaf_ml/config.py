@@ -48,6 +48,13 @@ class ImageDescriptionRuntimeSettings(BaseModel):
     # in OpenVINO image resize".
     openvino_max_image_edge: int = 512
     # Worker-admin consent only: API model selection must not authorize executable repository code.
+    # Also the only way to download a repository outside the curated owners (models/hub_trust.py).
+    trusted_custom_models: list[str] = []
+
+
+class NsfwDetectionRuntimeSettings(BaseModel):
+    # Hub repositories (owner/name) the worker may download for NSFW detection beyond the curated
+    # owners; a request alone never makes the worker fetch an arbitrary repository into its cache.
     trusted_custom_models: list[str] = []
 
 
@@ -105,6 +112,9 @@ class Settings(BaseSettings):
     preload: PreloadModelData | None = None
     max_batch_size: MaxBatchSize | None = None
     image_description: ImageDescriptionRuntimeSettings = ImageDescriptionRuntimeSettings()
+    nsfw_detection: NsfwDetectionRuntimeSettings = NsfwDetectionRuntimeSettings()
+    # Resident model instances in memory before the least recently used one is dropped.
+    model_cache_max_entries: int = Field(default=32, ge=1)
     # Opt in after qualifying the local CUDA runtime; auto retains a CPU-only host fallback.
     semantic_mask_device: Literal["cpu", "cuda", "auto"] = "cpu"
     # Studio captions: the Whisper model `frameleaf-transcribe` stands for. Unset picks

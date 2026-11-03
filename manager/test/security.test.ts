@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Request, Response } from 'express';
 import { Store } from '../src/store.js';
-import { Security } from '../src/security.js';
+import { Security, defaultGateway, trustedProxyList } from '../src/security.js';
 
 test('credential changes invalidate existing sessions and in-flight old-password logins', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-credentials-'));
@@ -269,4 +269,119 @@ test('HTTP sessions require an explicit header and never issue a cross-port cook
     for (const origin of ['ftp://tower.local', 'http://u:p@tower.local', 'http://tower.local/path', 'http://tower.local?x=1', 'http://tower.local#x'])
       assert.throws(() => new Security(store, origin));
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+// Review L1: behind Docker's userland proxy, rootless Docker or a NAS portal proxy every client looks like the
+// bridge gateway. Claiming must not treat that as the home network unless the deployment says who the client is.
+test('a claim from the bridge gateway is refused unless Manager is loopback-published or a trusted proxy names the client', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-gateway-'));
+  const store = new Store(directory);
+  const password = 'a private test password';
+  const gateway = () => '172.17.0.1';
+  const logged: string[] = [];
+  t.mock.method(console, 'error', (line: string) => logged.push(line));
+  try {
+    const bare = new Security(store, 'https://manager.test:9443', undefined, { bridgeGateway: gateway });
+    await assert.rejects(bare.claim('Owner', password, '172.17.0.1'), /claim_proxied_address_unverified/);
+    await assert.rejects(bare.claim('Owner', password, '::ffff:172.17.0.1'), /claim_proxied_address_unverified/);
+    assert.equal(logged.length, 2);
+    assert.match(logged[0], /172\.17\.0\.1.*gateway.*MANAGER_TRUSTED_PROXIES/);
+    // Without a trusted proxy the header is ignored: a LAN peer cannot claim as somebody else, and a
+    // forwarded address is not consulted either.
+    const request = (remoteAddress: string, forwarded?: string) =>
+      ({ socket: { remoteAddress }, headers: forwarded ? { 'x-forwarded-for': forwarded } : {} }) as unknown as Request;
+    assert.equal(bare.clientAddress(request('192.168.1.7', '10.0.0.1')), '192.168.1.7');
+    assert.equal(bare.clientAddress(request('::ffff:192.168.1.7')), '192.168.1.7');
+    assert.equal(bare.clientAddress(request('172.17.0.1', '192.168.1.9')), '172.17.0.1');
+    assert.equal(bare.clientAddress({ socket: {}, headers: {} } as unknown as Request), 'unknown');
+    assert.equal(bare.claimed(), false);
+    // A trusted proxy's X-Forwarded-For names the client: the rightmost hop no trusted proxy added.
+    const proxied = new Security(store, 'https://manager.test:9443', undefined, {
+      trustedProxies: ['172.17.0.1', '10.0.0.0/8'],
+      bridgeGateway: gateway,
+    });
+    assert.equal(proxied.clientAddress(request('172.17.0.1', '192.168.1.9')), '192.168.1.9');
+    assert.equal(proxied.clientAddress(request('172.17.0.1', '203.0.113.5, 192.168.1.9')), '192.168.1.9');
+    assert.equal(proxied.clientAddress(request('172.17.0.1', '203.0.113.5, 10.1.2.3')), '203.0.113.5');
+    assert.equal(proxied.clientAddress(request('172.17.0.1', 'garbage, 192.168.1.9')), '192.168.1.9');
+    assert.equal(proxied.clientAddress(request('172.17.0.1')), '172.17.0.1', 'a proxy that adds no header stays the client');
+    assert.equal(proxied.clientAddress(request('192.168.1.7', '10.0.0.1')), '192.168.1.7', 'an untrusted peer cannot forward');
+    await assert.rejects(proxied.claim('Owner', password, proxied.clientAddress(request('172.17.0.1'))), /claim_proxied_address_unverified/);
+    await assert.rejects(proxied.claim('Owner', password, proxied.clientAddress(request('172.17.0.1', '203.0.113.5'))), /claim_lan_only/);
+    for (const entry of ['not-an-ip', '192.168.1.0/33', '10.0.0.0/x', 'fd00::/129'])
+      assert.throws(() => new Security(store, 'https://manager.test:9443', undefined, { trustedProxies: [entry] }), /MANAGER_TRUSTED_PROXIES/);
+    // Published on 127.0.0.1 only (launch.sh default): the gateway can only carry this host's own browser.
+    const loopback = new Security(store, 'https://manager.test:9443', undefined, { bridgeGateway: gateway, loopbackPublished: true });
+    assert.equal(loopback.gatewayUnverified('172.17.0.1'), false);
+    await loopback.claim('Owner', password, '172.17.0.1');
+    assert.equal(store.get<any>('administrator').name, 'Owner');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('the bridge gateway is read from the kernel route table', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-route-'));
+  try {
+    const { writeFile } = await import('node:fs/promises');
+    const route = join(directory, 'route');
+    await writeFile(
+      route,
+      'Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n' +
+        'eth0\t000011AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n' +
+        'eth0\t00000000\t010011AC\t0003\t0\t0\t0\t00000000\t0\t0\t0\n',
+    );
+    assert.equal(defaultGateway(route), '172.17.0.1');
+    await writeFile(route, 'Iface\tDestination\tGateway\n' + 'eth0\t000011AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n');
+    assert.equal(defaultGateway(route), null);
+    assert.equal(defaultGateway(join(directory, 'missing')), null);
+    assert.deepEqual(trustedProxyList(' 172.17.0.1, 10.0.0.0/8\n fd00::1 '), ['172.17.0.1', '10.0.0.0/8', 'fd00::1']);
+    assert.deepEqual(trustedProxyList(undefined), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// Review L5: credential-bearing admin routes used to spend the anonymous login budget of the address.
+test('signed-in credential confirmations have their own per-session budget and rate limits follow the resolved client', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-confirm-budget-'));
+  const store = new Store(directory);
+  try {
+    const security = new Security(store, 'https://manager.test:9443', undefined, { trustedProxies: ['172.17.0.1'] });
+    await security.claim('Owner', 'a private test password', '::ffff:192.168.1.5');
+    const session = await security.login('a private test password');
+    const invoke = (path: string, cookie: string, forwarded = '192.168.1.5') => {
+      let status = 0, next = false;
+      const response = {
+        set: () => {},
+        status: (value: number) => { status = value; return response; },
+        json: () => {},
+      } as unknown as Response;
+      security.guard(
+        {
+          headers: { host: 'manager.test:9443', origin: 'https://manager.test:9443', cookie, 'x-csrf-token': session.csrf, 'x-forwarded-for': forwarded },
+          method: 'POST',
+          path,
+          socket: { remoteAddress: '172.17.0.1' },
+          is: () => true,
+        } as unknown as Request,
+        response,
+        () => { next = true; },
+      );
+      return { status, next };
+    };
+    const cookie = `__Host-frameleaf-manager=${session.session}`;
+    for (let i = 0; i < 20; i++) assert.equal(invoke('/manager-api/export', cookie).next, true, `export ${i}`);
+    assert.equal(invoke('/manager-api/backup-key', cookie).status, 429);
+    // The same workstation can still sign in: the login budget was never touched.
+    assert.equal(invoke('/manager-api/login', '').next, true);
+    // Anonymous credential posts still spend the login budget of the client the trusted proxy names.
+    for (let i = 0; i < 9; i++) assert.equal(invoke('/manager-api/administrator', '').status, 401, `anonymous ${i}`);
+    assert.equal(invoke('/manager-api/login', '').status, 429);
+    assert.equal(invoke('/manager-api/login', '', '192.168.1.6').next, true, 'another client behind the proxy keeps its own budget');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

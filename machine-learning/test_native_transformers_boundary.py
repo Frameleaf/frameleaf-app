@@ -193,7 +193,7 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
                     if name == "builtin"
                     else {"torch_dtype": "fp32", "trust_remote_code": True, "local_files_only": True}
                     if name == "trusted-custom"
-                    else {"torch_dtype": "auto", "local_files_only": True},
+                    else {"torch_dtype": "auto", "use_safetensors": True, "local_files_only": True},
                 )
                 factory.return_value.to.assert_called_once_with("cpu")
                 factory.return_value.eval.assert_called_once_with()

@@ -13,8 +13,17 @@ from PIL import Image
 
 from frameleaf_ml.config import model_repository_url, model_source_token, settings
 from frameleaf_ml.models.base import InferenceModel
+from frameleaf_ml.models.hub_trust import check_repository_trust
 from frameleaf_ml.schemas import ModelSession, ModelTask, ModelType
 from frameleaf_ml.sessions.ort import OrtSession
+
+# Hub owners whose ONNX classifiers this task downloads without further consent (the default is
+# onnx-community/nsfw_image_detection-ONNX). Any other repository must be listed in
+# TRUSTED_CUSTOM_MODELS_SETTING (models/hub_trust.py).
+TRUSTED_MODEL_OWNERS = frozenset({"onnx-community", "AdamCodd", "Falconsai"})
+TRUSTED_CUSTOM_MODELS_SETTING = "MACHINE_LEARNING_NSFW_DETECTION__TRUSTED_CUSTOM_MODELS"
+# The files the classifier reads: its configs and the ONNX model (`model_path`); nothing else is fetched.
+MODEL_FILE_PATTERNS = ["*.json", "*.txt", "*.onnx", "*.onnx_data", "onnx/*"]
 
 
 class NsfwDetectionModel(InferenceModel):
@@ -43,9 +52,16 @@ class NsfwDetectionModel(InferenceModel):
                 self.device = device
 
     def _download(self) -> None:
+        check_repository_trust(
+            self.hf_model_name,
+            owners=TRUSTED_MODEL_OWNERS,
+            trusted=settings.nsfw_detection.trusted_custom_models,
+            setting=TRUSTED_CUSTOM_MODELS_SETTING,
+        )
         endpoint = model_repository_url()
         snapshot_download(
             self.hf_model_name,
+            allow_patterns=MODEL_FILE_PATTERNS,
             cache_dir=self.cache_dir,
             local_dir=self.cache_dir,
             endpoint=endpoint,
