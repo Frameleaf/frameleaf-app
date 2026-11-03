@@ -115,7 +115,9 @@
     if (next.completedAt && readCelebrated() !== next.completedAt) {
       celebrating = true;
     }
-    if (!next.active || next.completedAt) {
+    // An inactive answer can come before Manager starts setup, so only a finished setup ends polling. Servers
+    // not set up from an import answer at once without reading the database.
+    if (next.completedAt) {
       stopPolling();
     }
   };
