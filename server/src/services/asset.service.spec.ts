@@ -844,7 +844,7 @@ describe(AssetService.name, () => {
         mocks.asset.getByIds.mockResolvedValue([asset] as never);
         mocks.asset.update.mockResolvedValue(getForAsset(asset));
         mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motionId, write) =>
-          write(mocks.asset, mocks.access),
+          write(mocks.asset as never, mocks.access as never),
         );
         await sut.update(authStub.admin, asset.id, {
           dateTimeOriginal: '2020-06-10T19:30:00Z',
@@ -884,7 +884,7 @@ describe(AssetService.name, () => {
         mocks.asset.getByIds.mockResolvedValue([asset] as never);
         mocks.asset.update.mockResolvedValue(getForAsset(asset));
         mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motionId, write) =>
-          write(mocks.asset, mocks.access),
+          write(mocks.asset as never, mocks.access as never),
         );
         await sut.update(authStub.admin, asset.id, {
           dateTimeOriginal: '2020-06-10T12:30:00',
@@ -1963,7 +1963,7 @@ describe(AssetService.name, () => {
       mocks.asset.updateAll.mockImplementation((_ids, value) => Promise.resolve(apply(value)));
       mocks.asset.update.mockImplementation((value) => {
         apply(value);
-        return Promise.resolve();
+        return Promise.resolve(getForAsset(asset));
       });
       mocks.asset.getByIds.mockImplementation(() => Promise.resolve([asset] as never));
       mocks.asset.updateDateTimeOriginal.mockResolvedValue([
