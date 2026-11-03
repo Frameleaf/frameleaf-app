@@ -123,7 +123,13 @@ it('coordinates protected source retention, canonical owners and independent rea
   });
   const [owner] = await connection.db.query('SELECT email,"importClaimPending" FROM public."user" WHERE NOT "isAdmin"');
   expect(owner).toEqual({ email: 'owner@example.test', importClaimPending: true });
-  expect(JSON.stringify(await controller.status())).not.toContain('owner@example.test');
+  const publicStatus = await controller.status();
+  expect(publicStatus.run).toEqual({
+    operationId: context.binding.operationId,
+    source: { kind: context.binding.source.kind, version: context.binding.source.version },
+    status: 'verifying',
+  });
+  expect(JSON.stringify(publicStatus)).not.toContain('owner@example.test');
   expect((await controller.resume(owners, descriptor, stream())).run?.status).toBe('verifying');
 });
 

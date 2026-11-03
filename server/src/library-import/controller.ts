@@ -79,7 +79,16 @@ export class LibraryImportController {
       const status = await new LibraryImportJournal(this.db).status();
       if (status.run && JSON.stringify(status.run.binding) !== JSON.stringify(this.context.binding))
         return refuse('IMPORT_BINDING_CHANGED');
-      return status;
+      return {
+        run: status.run
+          ? {
+              operationId: status.run.binding.operationId,
+              source: { kind: status.run.binding.source.kind, version: status.run.binding.source.version },
+              status: status.run.status,
+            }
+          : null,
+        mappings: status.mappings,
+      };
     });
   }
   preflight(owners: unknown) {

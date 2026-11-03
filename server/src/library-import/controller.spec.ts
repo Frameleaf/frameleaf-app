@@ -112,3 +112,28 @@ it('refuses duplicate normalized owner emails before database access', async () 
   );
   expect(db.query).not.toHaveBeenCalled();
 });
+
+it('returns progress without the protected source binding', async () => {
+  const input = context();
+  const mappings = [{ kind: 'asset', count: '1' }];
+  db.query.mockResolvedValueOnce([{ binding: input.binding, status: 'verifying' }]).mockResolvedValueOnce(mappings);
+  expect(await new LibraryImportController(db, input).status()).toEqual({
+    run: {
+      operationId: input.binding.operationId,
+      source: { kind: input.binding.source.kind, version: input.binding.source.version },
+      status: 'verifying',
+    },
+    mappings,
+  });
+});
+it('still refuses another binding before returning public progress', async () => {
+  const input = context();
+  db.query
+    .mockResolvedValueOnce([{ binding: { ...input.binding, operationId: randomUUID() }, status: 'verifying' }])
+    .mockResolvedValueOnce([]);
+  await expect(new LibraryImportController(db, input).status()).rejects.toThrow('IMPORT_BINDING_CHANGED');
+});
+it('returns empty progress before the journal exists', async () => {
+  db.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+  expect(await new LibraryImportController(db, context()).status()).toEqual({ run: null, mappings: [] });
+});
