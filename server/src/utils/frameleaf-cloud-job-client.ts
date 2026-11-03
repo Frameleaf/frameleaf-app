@@ -213,6 +213,16 @@ export class FrameleafCloudJobClient {
     return this.repository.startJob(this.gateway, jobId);
   }
 
+  /** Quote remaining work on the next retail tier; the current job keeps running. */
+  estimateUpgrade(jobId: string) {
+    return this.repository.createUpgradeEstimate(this.gateway, jobId);
+  }
+
+  /** Confirm the sealed price, retaining the job id, outputs and active assignments. */
+  upgrade(jobId: string, estimate: string, idempotencyKey: string) {
+    return this.repository.upgradeJob(this.gateway, jobId, { estimate }, idempotencyKey);
+  }
+
   /**
    * Read the job conditionally with the last ETag. `delayMs` is the cloud's `Retry-After` (else
    * `defaultMs`), kept between one second and `maxMs`.

@@ -30,6 +30,8 @@ import {
   CloudMlJobEstimateRequestDto,
   CloudMlJobEstimateResponseDto,
   CloudMlJobResponseDto,
+  CloudMlJobUpgradeDto,
+  CloudMlJobUpgradeEstimateDto,
 } from 'src/dtos/cloud-ml-job.dto.js';
 import {
   AssetType,
@@ -96,6 +98,7 @@ import {
   CloudMlJobPhase,
   CloudMlJobResult,
   CloudMlJobSnapshot,
+  CloudMlJobUpgradeRecord,
   CloudMlJobUpscale,
   CloudMlJobWorkload,
   cloudMlJobActivity,
@@ -549,7 +552,7 @@ export class CloudMlJobService {
     const output = upscale
       ? { width: upscale.input.width * upscale.appliedScale, height: upscale.input.height * upscale.appliedScale }
       : prepared.output;
-    const workers = plannedWorkers(sealed, model.rate.startFeeUsd);
+    const workers = sealed.routing?.plannedWorkers ?? plannedWorkers(sealed, model.rate.startFeeUsd);
     const quantity = video
       ? { unit: 'minute' as const, value: (prepared.durationSeconds ?? 0) / 60 }
       : { unit: 'photo' as const, value: 1 };
@@ -587,8 +590,9 @@ export class CloudMlJobService {
         holdUsd: cloudCustomerCost(sealed).hold,
         startupUsd: sealed.cost.startup,
         minimumUsd: sealed.cost.minimum,
-        startFeeUsd: model.rate.startFeeUsd,
-        perSecondUsd: model.rate.perSecondUsd,
+        startFeeUsd: sealed.routing?.startFeeUsd ?? model.rate.startFeeUsd,
+        perSecondUsd: sealed.routing?.perSecondUsd ?? model.rate.perSecondUsd,
+        ...(sealed.routing && { approvedMaximumUsd: sealed.routing.approvedMaximumUsd }),
         plannedWorkers: workers,
         coldStartSeconds: sealed.seconds.coldStart,
         runSeconds: sealed.seconds.run,
@@ -598,19 +602,28 @@ export class CloudMlJobService {
       operationId: null,
     };
     await this.keepEstimate(record, now);
+    const quotedModel = {
+      ...this.modelOf(model),
+      perSecondUsd: record.approved.perSecondUsd,
+      startFeeUsd: record.approved.startFeeUsd,
+      ...(sealed.routing && sealed.computeSku !== model.computeSku && { gpu: 'Higher GPU tier' }),
+    };
 
     return {
       estimateId: id,
       expiresAt: sealed.expiresAt,
       workload: appWorkload,
-      model: this.modelOf(model),
-      models: offered.toSorted((a, b) => a.rank - b.rank).map((entry) => this.modelOf(entry)),
+      model: quotedModel,
+      models: offered
+        .toSorted((a, b) => a.rank - b.rank)
+        .map((entry) => (entry.sku === model.sku ? quotedModel : this.modelOf(entry))),
       basis: sealed.basis,
       p50Usd: cloudCustomerCost(sealed).p50,
       p90Usd: cloudCustomerCost(sealed).p90,
       startupUsd: sealed.cost.startup,
-      startFeeUsd: model.rate.startFeeUsd,
-      perSecondUsd: model.rate.perSecondUsd,
+      startFeeUsd: record.approved.startFeeUsd,
+      perSecondUsd: record.approved.perSecondUsd,
+      ...(sealed.routing && { approvedMaximumUsd: sealed.routing.approvedMaximumUsd }),
       holdUsd: cloudCustomerCost(sealed).hold,
       minimumUsd: sealed.cost.minimum,
       plannedWorkers: workers,
@@ -626,7 +639,14 @@ export class CloudMlJobService {
       consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
       refusal: this.walletRefusal(wallet, availableUsd, cloudCustomerCost(sealed).hold),
       // everyone may see what a job would cost; only those allowed may confirm it
-      permission: await this.spendPermission(auth, cloudCustomerCost(sealed).hold, now),
+      permission: await this.spendPermission(
+        auth,
+        sealed.routing?.approvedMaximumUsd ?? cloudCustomerCost(sealed).hold,
+        now,
+        {
+          exactHold: !!sealed.routing,
+        },
+      ),
       upscale: upscale
         ? {
             requestedScale: upscale.requestedScale,
@@ -707,7 +727,43 @@ export class CloudMlJobService {
           options.excludeLocationScanId,
         )
       : await this.mediaOperationRepository.listCloudMlJobSpend(auth.user.id, cloudMlJobMonthStart(now));
-    const spent = cloudMlJobSpentUsd(rows);
+    const store = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates);
+    const reservations = new Map<string, { maximum: number; operationId: string; attemptedAt: string }>();
+    for (const upgrade of store?.upgrades ?? []) {
+      if (
+        upgrade.createdBy === auth.user.id &&
+        upgrade.attemptedAt &&
+        upgrade.operationId !== options?.excludeLocationScanId
+      ) {
+        reservations.set(upgrade.quote.jobId, {
+          maximum: Math.max(
+            reservations.get(upgrade.quote.jobId)?.maximum ?? 0,
+            upgrade.quote.routing.approvedMaximumUsd,
+          ),
+          operationId: upgrade.operationId,
+          attemptedAt: upgrade.attemptedAt,
+        });
+      }
+    }
+    const reserved = rows.map((row) => {
+      if (!('result' in row)) return row;
+      const result = parseCloudMlJobResult(row.result);
+      const jobId = result.job?.jobId ?? row.remoteJobId ?? '';
+      const reservation = reservations.get(jobId);
+      reservations.delete(jobId);
+      return !reservation || row.settledUsd !== null || result.cost
+        ? row
+        : { reservedUsd: Math.max(cloudMlJobSpentUsd([row]), reservation.maximum), settledUsd: null };
+    });
+    // An owner can approve an upgrade to a job originally confirmed by another permitted person.
+    for (const reservation of reservations.values()) {
+      const operation = await this.mediaOperationRepository.getForOwner(reservation.operationId, auth.user.id);
+      if (this.keepUpgradeReservation(operation, reservation.attemptedAt, now)) {
+        const result = parseCloudMlJobResult(operation!.result);
+        reserved.push({ reservedUsd: reservation.maximum, settledUsd: result.cost?.totalUsd ?? null });
+      }
+    }
+    const spent = cloudMlJobSpentUsd(reserved);
     // a job the queue held past its estimate may be resealed up to 10 % higher: the limit keeps room for it
     const within =
       spent + holdUsd * (options?.exactHold ? 1 : CLOUD_ML_JOB_PRICE_TOLERANCE) <= spender.monthlyCapUsd + 1e-9;
@@ -719,9 +775,20 @@ export class CloudMlJobService {
     };
   }
 
+  private keepUpgradeReservation(operation: MediaOperation | undefined, attemptedAt: string, now: Date): boolean {
+    if (!operation) return false;
+    const result = parseCloudMlJobResult(operation.result);
+    const open =
+      !result.cost &&
+      ![MediaOperationStatus.Completed, MediaOperationStatus.Failed, MediaOperationStatus.Cancelled].includes(
+        operation.status as MediaOperationStatus,
+      );
+    return open || Date.parse(attemptedAt) >= cloudMlJobMonthStart(now).getTime();
+  }
+
   /** Refuse a confirmation this person may not make, in plain words; never left to the web app. */
-  private async requireSpendPermission(auth: AuthDto, holdUsd: number, now: Date) {
-    const permission = await this.spendPermission(auth, holdUsd, now);
+  private async requireSpendPermission(auth: AuthDto, holdUsd: number, now: Date, exactHold = false) {
+    const permission = await this.spendPermission(auth, holdUsd, now, { exactHold });
     if (permission.canConfirm) {
       return;
     }
@@ -797,7 +864,12 @@ export class CloudMlJobService {
         ids: [record.assetId],
       });
       // checked under the estimates lock, so two confirmations at once cannot both fit one monthly limit
-      await this.requireSpendPermission(auth, record.approved.holdUsd, now);
+      await this.requireSpendPermission(
+        auth,
+        record.approved.approvedMaximumUsd ?? record.approved.holdUsd,
+        now,
+        record.approved.approvedMaximumUsd !== undefined,
+      );
       const source = await this.requireSource(record.assetId);
       if (Buffer.from(source.checksum).toString('hex') !== record.sourceChecksumHex) {
         throw new ConflictException('The original changed since the estimate; estimate again');
@@ -935,6 +1007,199 @@ export class CloudMlJobService {
     return activity;
   }
 
+  /** Quote only the unfinished work; reading this never changes the existing job. */
+  async estimateUpgrade(auth: AuthDto, id: string, now = new Date()): Promise<CloudMlJobUpgradeEstimateDto> {
+    const { snapshot, job } = await this.requireUpgradeJob(auth, id);
+    await this.requireCloudDestination(snapshot.destinationId, snapshot.appWorkload);
+    const gateway = await this.requireGateway();
+    try {
+      const client = new FrameleafCloudJobClient(this.frameleafCloudMlRepository, gateway);
+      const current = await client.read(job.jobId, null, POLL_TIMING);
+      if (!current.view?.routing?.upgradeAvailable || isFinalCloudJobStatus(current.view.status)) {
+        throw new ConflictException('No GPU upgrade is available for this job; it keeps trying at its approved price');
+      }
+      const quote = await client.estimateUpgrade(job.jobId);
+      if (
+        quote.modelSku !== snapshot.model.sku ||
+        quote.modelRev !== snapshot.model.rev ||
+        quote.pricingRevision !== current.view.routing.pricingRevision
+      ) {
+        throw new ConflictException('The job changed while its upgrade was estimated; estimate again');
+      }
+      const estimateId = this.cryptoRepository.randomUUID();
+      await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+        const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)) ?? {
+          records: [],
+        };
+        const upgrades = (store.upgrades ?? []).filter(
+          (entry) => entry.attemptedAt || Date.parse(entry.quote.expiresAt) > now.getTime(),
+        );
+        const theirs = upgrades.filter((entry) => entry.createdBy === auth.user.id && !entry.attemptedAt);
+        const drop = new Set(
+          theirs.slice(0, Math.max(0, theirs.length - CLOUD_ML_JOB_ESTIMATES_KEPT + 1)).map((entry) => entry.id),
+        );
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
+          ...store,
+          upgrades: [
+            ...upgrades.filter((entry) => !drop.has(entry.id)),
+            { id: estimateId, operationId: id, createdBy: auth.user.id, quote, attemptedAt: null },
+          ],
+        });
+      });
+      const wallet = await this.frameleafCloudMlRepository.getWallet(gateway);
+      return {
+        estimateId,
+        expiresAt: quote.expiresAt,
+        computeSku: quote.computeSku,
+        pricingRevision: quote.pricingRevision,
+        incurredUsd: quote.incurredUsd,
+        remainingP50Usd: cloudCustomerCost(quote).p50,
+        remainingP90Usd: cloudCustomerCost(quote).p90,
+        approvedMaximumUsd: quote.routing.approvedMaximumUsd,
+        perSecondUsd: quote.perSecondUsd,
+        startFeeUsd: quote.startFeeUsd,
+        plannedWorkers: quote.plannedWorkers,
+        permission: await this.spendPermission(auth, quote.routing.approvedMaximumUsd, now, {
+          exactHold: true,
+          excludeLocationScanId: id,
+        }),
+        refusal: this.walletRefusal(
+          wallet,
+          Math.max(0, wallet.balanceUsd - wallet.heldUsd) + current.view.charges.holdUsd,
+          quote.routing.approvedMaximumUsd,
+        ),
+      };
+    } catch (error) {
+      throw error instanceof HttpException ? error : this.clientError(error);
+    }
+  }
+
+  /** Confirm the kept quote without replacing the operation's snapshot, result or checkpoints. */
+  async upgrade(
+    auth: AuthDto,
+    id: string,
+    dto: CloudMlJobUpgradeDto,
+    now = new Date(),
+  ): Promise<CloudMlJobActivityDto> {
+    const preflight = await this.requireUpgradeJob(auth, id);
+    // Admission and token exchanges can wait on the network; unrelated estimates must stay usable.
+    await this.requireCloudDestination(preflight.snapshot.destinationId, preflight.snapshot.appWorkload);
+    const gateway = await this.requireGateway();
+    const pending = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+      const { operation, snapshot, job } = await this.requireUpgradeJob(auth, id);
+      if (
+        snapshot.destinationId !== preflight.snapshot.destinationId ||
+        snapshot.appWorkload !== preflight.snapshot.appWorkload
+      )
+        throw new ConflictException('This job changed; refresh Activity');
+      const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)) ?? {
+        records: [],
+      };
+      const record = store.upgrades?.find(
+        (entry) => entry.id === dto.estimateId && entry.operationId === id && entry.createdBy === auth.user.id,
+      );
+      if (!record || record.quote.jobId !== job.jobId)
+        throw new NotFoundException('This upgrade estimate is not known; estimate again');
+      if (!dto.acknowledgeMaximum) throw new BadRequestException('Approve the new maximum before upgrading');
+      if (!record.attemptedAt && !estimateUsable(record.quote, now.getTime())) {
+        throw new ConflictException({
+          message: 'This estimate expired; estimate again',
+          code: 'estimate-expired',
+          statusCode: HttpStatus.CONFLICT,
+        });
+      }
+      const permission = await this.spendPermission(auth, record.quote.routing.approvedMaximumUsd, now, {
+        exactHold: true,
+        excludeLocationScanId: id,
+      });
+      if (!permission.canConfirm)
+        throw new ForbiddenException({
+          message: 'This upgrade exceeds your Frameleaf Cloud spending permission',
+          code: permission.reason,
+        });
+      const attempted: CloudMlJobUpgradeRecord = {
+        ...record,
+        attemptedAt: record.attemptedAt ?? now.toISOString(),
+        attemptRevision: (record.attemptRevision ?? 0) + 1,
+      };
+      const upgrades = store.upgrades!.map((entry) => (entry.id === record.id ? attempted : entry));
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, { ...store, upgrades });
+      return { operation, job, record, attempted };
+    });
+    const { operation, job, record, attempted } = pending;
+    try {
+      const upgraded = await new FrameleafCloudJobClient(this.frameleafCloudMlRepository, gateway).upgrade(
+        job.jobId,
+        record.quote.estimate,
+        `gpu-upgrade-${record.id}`,
+      );
+      const activity = cloudMlJobActivity({
+        ...operation,
+        result: { ...parseCloudMlJobResult(operation.result), job: cloudMlJobRecordOf(upgraded, job, null) },
+      });
+      if (!activity) throw new ConflictException('This job changed; refresh Activity');
+      return activity;
+    } catch (error) {
+      // A previous or uncertain attempt retains its reservation and key. A definitive rejection
+      // may release only this fresh attempt, without overwriting concurrent estimates or retries.
+      if (
+        !record.attemptedAt &&
+        error instanceof FrameleafCloudError &&
+        error.status &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 429 &&
+        !isIdempotencyInFlight(error)
+      ) {
+        await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+          const store = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates);
+          if (!store?.upgrades) return;
+          const current = store.upgrades.find(
+            (entry) =>
+              entry.id === record.id &&
+              entry.operationId === id &&
+              entry.createdBy === auth.user.id &&
+              entry.quote.jobId === job.jobId,
+          );
+          if (
+            !current ||
+            current.attemptRevision !== attempted.attemptRevision ||
+            current.attemptedAt !== attempted.attemptedAt
+          )
+            return;
+          await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
+            ...store,
+            upgrades: store.upgrades.map((entry) => (entry === current ? { ...entry, attemptedAt: null } : entry)),
+          });
+        });
+      }
+      throw error instanceof HttpException ? error : this.clientError(error);
+    }
+  }
+
+  private async requireUpgradeJob(auth: AuthDto, id: string) {
+    const operation = await this.mediaOperationRepository.getForOwner(id, auth.user.id);
+    const snapshot =
+      operation?.kind === MediaOperationKind.CloudMlJob ? parseCloudMlJobSnapshot(operation.snapshot) : null;
+    if (!operation || !snapshot) throw new NotFoundException('Frameleaf Cloud job not found');
+    await requireAccess(this.accessRepository, {
+      auth,
+      permission: Permission.AssetEditCreate,
+      ids: [snapshot.assetId],
+    });
+    const { job } = parseCloudMlJobResult(operation.result);
+    if (
+      !job ||
+      [MediaOperationStatus.Completed, MediaOperationStatus.Failed, MediaOperationStatus.Cancelled].includes(
+        operation.status as MediaOperationStatus,
+      ) ||
+      operation.cancelRequestedAt
+    ) {
+      throw new ConflictException('This job cannot be upgraded');
+    }
+    return { operation, snapshot, job };
+  }
+
   /** What Activity shows under the job title. Customer words, not enum values. */
   private settingsOf(record: CloudMlJobEstimateRecord, destinationName: string): Record<string, unknown> {
     const smooth = record.purpose === 'smooth-motion';
@@ -1066,8 +1331,27 @@ export class CloudMlJobService {
         }
         return keep;
       });
-      if (records.length !== store.records.length || prepared.length !== (store.prepared ?? []).length || add) {
-        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, { records, prepared });
+      const upgrades: CloudMlJobUpgradeRecord[] = [];
+      for (const entry of store.upgrades ?? []) {
+        if (!entry.attemptedAt) {
+          if (Date.parse(entry.quote.expiresAt) > now.getTime()) upgrades.push(entry);
+          continue;
+        }
+        const operation = await this.mediaOperationRepository.getForOwner(entry.operationId, entry.createdBy);
+        if (this.keepUpgradeReservation(operation, entry.attemptedAt, now)) upgrades.push(entry);
+      }
+      if (
+        records.length !== store.records.length ||
+        prepared.length !== (store.prepared ?? []).length ||
+        upgrades.length !== (store.upgrades ?? []).length ||
+        add
+      ) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
+          ...store,
+          records,
+          prepared,
+          ...(store.upgrades && { upgrades }),
+        });
       }
     });
     for (const dir of removed) {
@@ -1535,8 +1819,13 @@ export class CloudMlJobService {
       );
     }
     if (
+      (snapshot.approved.approvedMaximumUsd !== undefined &&
+        (!sealed.routing ||
+          sealed.routing.perSecondUsd !== snapshot.approved.perSecondUsd ||
+          sealed.routing.startFeeUsd !== snapshot.approved.startFeeUsd)) ||
       cloudCustomerCost(sealed).p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
-      cloudCustomerCost(sealed).hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
+      cloudCustomerCost(sealed).hold >
+        (snapshot.approved.approvedMaximumUsd ?? snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE)
     ) {
       throw new CloudMlJobFailure(
         'cloud_ml_estimate_increased',

@@ -3009,6 +3009,25 @@ export type CloudMlJobCostDto = {
     /** Metered so far, never above the hold, USD; null before a worker starts */
     soFarUsd: number | null;
 };
+export type CloudMlJobRoutingDto = {
+    /** The current total approved maximum, USD */
+    approvedMaximumUsd: number;
+    priceHistory: {
+        approvedAt: string;
+        /** The total maximum approved with these prices, USD */
+        approvedMaximumUsd: number;
+        computeSku: string;
+        /** The approved GPU rate per metered second, USD */
+        perSecondUsd: number;
+        revision: number;
+        /** The approved fee per new worker, USD */
+        startFeeUsd: number;
+    }[];
+    pricingRevision: number;
+    queuedSince: string | null;
+    quotedComputeSku: string;
+    upgradeAvailable: boolean;
+};
 export type CloudMlJobActivityDto = {
     activityStage: CloudMlJobActivityStage;
     /** Frameleaf Cloud’s own state of the job, or null before it was sent */
@@ -3021,6 +3040,7 @@ export type CloudMlJobActivityDto = {
     /** items, seconds or segments, when Frameleaf Cloud reports progress */
     progressUnit: string | null;
     purpose: CloudMlJobPurpose;
+    routing?: CloudMlJobRoutingDto;
     stage: CloudMlJobStage;
     /** Workers started so far */
     workers: number;
@@ -7167,6 +7187,8 @@ export type CloudMlJobUpscaleDto = {
     requestedScale: number;
 };
 export type CloudMlJobEstimateResponseDto = {
+    /** The maximum the owner authorizes for this job, USD */
+    approvedMaximumUsd?: number;
     /** AI Wallet balance minus holds, USD */
     availableUsd: number;
     /** measured: from the model's measured GPU time; modelled: from its expected GPU time */
@@ -7212,6 +7234,32 @@ export type CloudMlJobEstimateResponseDto = {
     /** Photo upscales only (FC-46): the factor each photo really gets under the 64 MP output cap; null otherwise */
     upscale: (CloudMlJobUpscaleDto) | null;
     workload: MlWorkload;
+};
+export type CloudMlJobUpgradeDto = {
+    /** The owner explicitly approved the new total maximum */
+    acknowledgeMaximum: true;
+    estimateId: string;
+};
+export type CloudMlJobUpgradeEstimateDto = {
+    /** New total authorized maximum, including incurred charges, USD */
+    approvedMaximumUsd: number;
+    computeSku: string;
+    estimateId: string;
+    expiresAt: string;
+    /** Already incurred under previously approved prices, USD */
+    incurredUsd: number;
+    /** The next GPU tier rate per metered second, USD */
+    perSecondUsd: number;
+    permission: CloudMlJobPermissionDto;
+    plannedWorkers: number;
+    pricingRevision: number;
+    refusal: (CloudMlJobRefusalDto) | null;
+    /** Likely cost of the remaining work on the next GPU tier, USD */
+    remainingP50Usd: number;
+    /** High estimate for the remaining work on the next GPU tier, USD */
+    remainingP90Usd: number;
+    /** The start fee for each new worker, USD */
+    startFeeUsd: number;
 };
 export type ClusterGroupRequestResponseDto = {
     /** Cluster group the user is invited to join */
@@ -25724,6 +25772,36 @@ export function getCloudMlJob({ id }: {
         data: CloudMlJobActivityDto;
     }>(`/cloud/ml/jobs/${encodeURIComponent(id)}`, {
         ...opts
+    }));
+}
+/**
+ * Approve a new maximum for remaining Cloud work
+ */
+export function upgradeCloudMlJob({ id, cloudMlJobUpgradeDto }: {
+    id: string;
+    cloudMlJobUpgradeDto: CloudMlJobUpgradeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlJobActivityDto;
+    }>(`/cloud/ml/jobs/${encodeURIComponent(id)}/upgrade`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudMlJobUpgradeDto
+    })));
+}
+/**
+ * Estimate a GPU upgrade for remaining work
+ */
+export function estimateCloudMlJobUpgrade({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlJobUpgradeEstimateDto;
+    }>(`/cloud/ml/jobs/${encodeURIComponent(id)}/upgrade-estimate`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**

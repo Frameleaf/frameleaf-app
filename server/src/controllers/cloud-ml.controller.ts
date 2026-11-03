@@ -8,6 +8,8 @@ import {
   CloudMlJobEstimateRequestDto,
   CloudMlJobEstimateResponseDto,
   CloudMlJobResponseDto,
+  CloudMlJobUpgradeDto,
+  CloudMlJobUpgradeEstimateDto,
 } from 'src/dtos/cloud-ml-job.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -53,6 +55,37 @@ export class CloudMlController {
   })
   createCloudMlJob(@Auth() auth: AuthDto, @Body() dto: CloudMlJobCreateDto): Promise<CloudMlJobResponseDto> {
     return this.service.create(auth, dto);
+  }
+
+  @Post(':id/upgrade-estimate')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.CloudMlJobCreate })
+  @Endpoint({
+    operationId: 'estimateCloudMlJobUpgrade',
+    summary: 'Estimate a GPU upgrade for remaining work',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  estimateCloudMlJobUpgrade(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<CloudMlJobUpgradeEstimateDto> {
+    return this.service.estimateUpgrade(auth, id);
+  }
+
+  @Post(':id/upgrade')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.CloudMlJobCreate })
+  @Endpoint({
+    operationId: 'upgradeCloudMlJob',
+    summary: 'Approve a new maximum for remaining Cloud work',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  upgradeCloudMlJob(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: CloudMlJobUpgradeDto,
+  ): Promise<CloudMlJobActivityDto> {
+    return this.service.upgrade(auth, id, dto);
   }
 
   @Get(':id')

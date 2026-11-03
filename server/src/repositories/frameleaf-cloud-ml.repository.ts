@@ -30,6 +30,7 @@ import {
   CloudJobView,
   CloudOutputDownload,
   CloudStorageHeaders,
+  CloudUpgradeEstimate,
   CloudUploadTarget,
   CloudUsage,
   CloudWallet,
@@ -55,6 +56,8 @@ import {
   jobCreateRequestSchema,
   jobStatusSchema,
   jobViewSchema,
+  upgradeEstimateResponseSchema,
+  upgradeRequestSchema,
   uploadTargetSchema,
   uploadTargetsResponseSchema,
   usageSchema,
@@ -188,7 +191,7 @@ export class FrameleafCloudMlRepository {
       method: 'POST',
       url: `${gateway.url}/v2/estimates`,
       dpop: gateway.token,
-      headers: { 'x-frameleaf-promotion-pricing': '1' },
+      headers: { 'x-frameleaf-promotion-pricing': '1', 'X-Frameleaf-ML-Routing': '1' },
       body,
     });
   }
@@ -289,7 +292,12 @@ export class FrameleafCloudMlRepository {
     try {
       return await this.inRegion(
         gateway,
-        { url, dpop: gateway.token, maxBodyBytes: CLOUD_JOB_MAX_BODY_BYTES },
+        {
+          url,
+          dpop: gateway.token,
+          headers: { 'X-Frameleaf-ML-Routing': '1' },
+          maxBodyBytes: CLOUD_JOB_MAX_BODY_BYTES,
+        },
         (request) => this.cloud.requestJsonConditional(jobViewSchema, request, etag),
       );
     } catch (error) {
@@ -305,9 +313,62 @@ export class FrameleafCloudMlRepository {
     return await this.request(gateway, jobViewSchema, {
       method: 'POST',
       url: `${this.jobUrl(gateway, jobId)}/start`,
+      headers: { 'X-Frameleaf-ML-Routing': '1' },
       dpop: gateway.token,
       maxBodyBytes: CLOUD_JOB_MAX_BODY_BYTES,
     });
+  }
+
+  /** Quote the next retail tier while the existing job keeps trying at its approved price. */
+  async createUpgradeEstimate(gateway: CloudMlGateway, jobId: string): Promise<CloudUpgradeEstimate> {
+    const answer = await this.request(gateway, upgradeEstimateResponseSchema, {
+      method: 'POST',
+      url: `${this.jobUrl(gateway, jobId)}/upgrade-estimate`,
+      dpop: gateway.token,
+      headers: { 'X-Frameleaf-ML-Routing': '1' },
+      body: {},
+    });
+    if (answer.jobId !== jobId) {
+      throw new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        null,
+        'Frameleaf Cloud answered with an estimate for another job',
+      );
+    }
+    return answer;
+  }
+
+  /** Only an explicitly confirmed, sealed estimate can change future work's retail price. */
+  async upgradeJob(
+    gateway: CloudMlGateway,
+    jobId: string,
+    request: { estimate: string },
+    idempotencyKey: string,
+  ): Promise<CloudJobView> {
+    const body = cloudRequestBody(upgradeRequestSchema, request, 'the GPU upgrade');
+    if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      throw new FrameleafCloudError(
+        MlAdmissionRefusal.RequestInvalid,
+        null,
+        'This server did not send the upgrade: its idempotency key is invalid',
+      );
+    }
+    const answer = await this.request(gateway, jobViewSchema, {
+      method: 'POST',
+      url: `${this.jobUrl(gateway, jobId)}/upgrade`,
+      dpop: gateway.token,
+      headers: { 'X-Frameleaf-ML-Routing': '1', 'Idempotency-Key': idempotencyKey },
+      body,
+      maxBodyBytes: CLOUD_JOB_MAX_BODY_BYTES,
+    });
+    if (answer.jobId !== jobId) {
+      throw new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        null,
+        'Frameleaf Cloud answered with another job',
+      );
+    }
+    return answer;
   }
 
   /** FL-162: `GET /v2/jobs/{id}/uploads`, every input's upload target while the job takes uploads. */

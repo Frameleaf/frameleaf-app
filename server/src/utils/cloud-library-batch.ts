@@ -8,6 +8,7 @@ import {
   CLOUD_LIBRARY_FAILURE_WARNINGS,
   type CloudClipResult,
   type CloudFaceResult,
+  type CloudJobRouting,
   decodeCloudEmbedding,
 } from 'src/utils/frameleaf-cloud.js';
 
@@ -117,6 +118,7 @@ export type CloudLibraryResult = {
     ceilingUsd: number;
     admittedAt: string;
     meteredSeconds: number | null;
+    routing?: CloudJobRouting;
     started: boolean;
     etag: string | null;
   } | null;

@@ -1097,6 +1097,46 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
   });
 
   describe('estimates and jobs', () => {
+    it('accepts optional retail routing and preserves legacy estimates without it', () => {
+      const estimate = cloudContractFixture('ml/estimate-response.json');
+      const routing = {
+        quotedComputeSku: estimate.computeSku,
+        perSecondUsd: 0.01,
+        startFeeUsd: 0.1,
+        plannedWorkers: 2,
+        approvedMaximumUsd: estimate.cost.hold,
+      };
+      expect(estimateResponseSchema.parse({ ...estimate, routing }).routing).toEqual(routing);
+      expect(estimateResponseSchema.parse(estimate).routing).toBeUndefined();
+      expect(estimateResponseSchema.safeParse({ ...estimate, routing: { ...routing, perSecondUsd: -1 } }).success).toBe(
+        false,
+      );
+    });
+
+    it('preserves retail pricing history and rejects unrecognized routing fields', () => {
+      const job = cloudContractFixture('ml/job-running.json');
+      const routing = {
+        quotedComputeSku: job.computeSku,
+        approvedMaximumUsd: job.charges.ceilingUsd,
+        pricingRevision: 0,
+        queuedSince: job.createdAt,
+        upgradeAvailable: true,
+        priceHistory: [
+          {
+            revision: 0,
+            computeSku: job.computeSku,
+            perSecondUsd: 0.01,
+            startFeeUsd: 0.1,
+            approvedMaximumUsd: job.charges.ceilingUsd,
+            approvedAt: job.createdAt,
+          },
+        ],
+      };
+      expect(jobViewSchema.parse({ ...job, routing }).routing).toEqual(routing);
+      expect(jobViewSchema.parse(job).routing).toBeUndefined();
+      expect(jobViewSchema.safeParse({ ...job, routing: { ...routing, unexpected: true } }).success).toBe(false);
+    });
+
     it('sends estimate-request.json as it is, and reads the sealed estimate-response.json', () => {
       const request = cloudContractFixture<unknown>('ml/estimate-request.json');
       expect(cloudRequestBody(estimateRequestSchema, request, 'the estimate request')).toEqual(request);
