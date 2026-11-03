@@ -18090,6 +18090,7 @@
   "setup_bar_status_done": "Done",
   "setup_bar_status_paused": "Paused",
   "setup_bar_status_running": "In progress",
+  "setup_bar_status_stopped": "Stopped",
   "setup_bar_status_waiting": "Waiting",
   "setup_bar_title": "Setting up your library",
   "setup_complete_albums": "albums",
