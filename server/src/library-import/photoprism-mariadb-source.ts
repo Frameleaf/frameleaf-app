@@ -1,5 +1,5 @@
 import { type Connection, type RowDataPacket, createConnection } from 'mysql2/promise';
-import { isIP } from 'node:net';
+import { type Socket, connect, isIP } from 'node:net';
 import { z } from 'zod';
 import fixture from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
@@ -37,10 +37,14 @@ const refuse = (code: string): never => {
 };
 const quote = (name: string) => '`' + name.replaceAll('`', '``') + '`';
 const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const closeSource = async (connection: Connection | undefined, bodyFailed: boolean): Promise<void> => {
-  if (!connection) return;
+const closeSource = async (
+  connection: Connection | undefined,
+  transport: Socket | undefined,
+  bodyFailed: boolean,
+): Promise<void> => {
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
+    if (!connection) return;
     await Promise.race([
       (async () => {
         await connection.query({ sql: 'ROLLBACK', timeout: 5000 });
@@ -53,13 +57,19 @@ const closeSource = async (connection: Connection | undefined, bodyFailed: boole
     ]);
   } catch {
     try {
-      connection.destroy();
+      connection?.destroy();
     } catch {
       // Preserve the original source failure while forcing transport cleanup.
     }
     if (!bodyFailed) refuse('PHOTOPRISM_SOURCE_UNAVAILABLE');
   } finally {
     clearTimeout(deadline);
+    try {
+      // mysql2 destroy() only ends the stream; pending writes require a hard socket close.
+      transport?.destroy();
+    } catch {
+      if (!bodyFailed) refuse('PHOTOPRISM_SOURCE_UNAVAILABLE');
+    }
   }
 };
 const columnTypes = new Map(
@@ -79,10 +89,15 @@ export async function* readPhotoprismMariadbInventory(
   if (!loopback && !config.tls) return refuse('PHOTOPRISM_SOURCE_TLS_REQUIRED');
   if (!loopback && isIP(config.host)) return refuse('PHOTOPRISM_SOURCE_TLS_HOST_UNQUALIFIED');
   let connection: Connection | undefined;
+  let transport: Socket | undefined;
   let failed = false;
   let bodyFailed = false;
   try {
     connection = await createConnection({
+      stream: () => {
+        transport = connect({ host: config.host, port: config.port, noDelay: true, keepAlive: true });
+        return transport;
+      },
       host: config.host,
       port: config.port,
       user: config.user,
@@ -279,6 +294,6 @@ export async function* readPhotoprismMariadbInventory(
     if (error instanceof Error && /^PhotoPrism source refused: PHOTOPRISM_[A-Z_]+$/u.test(error.message)) throw error;
     throw new SourceError('PHOTOPRISM_SOURCE_UNAVAILABLE');
   } finally {
-    await closeSource(connection, bodyFailed);
+    await closeSource(connection, transport, bodyFailed);
   }
 }

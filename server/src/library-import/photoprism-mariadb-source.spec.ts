@@ -27,6 +27,21 @@ it('refuses remote plaintext connections before reading source credentials', asy
   );
 });
 
+it('sanitizes failed source handshakes and closes their owned transport', async () => {
+  const server = createServer((socket) => socket.destroy());
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Missing test listener');
+  try {
+    await expect(readPhotoprismMariadbInventory({ ...config, port: address.port }).next()).rejects.toThrow(
+      'PHOTOPRISM_SOURCE_UNAVAILABLE',
+    );
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 const path = process.env.FRAMELEAF_PHOTOPRISM_TEST_CONFIG;
 describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
   let admin: Connection;
