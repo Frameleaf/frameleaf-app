@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 import { z } from 'zod';
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
+import { withPasswordCallbackDeadline } from 'src/library-import/password-callback.js';
 import { ImportedPassword, ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { piwigoProjections } from 'src/library-import/piwigo-projections.js';
 import { admitPiwigoSchema } from 'src/library-import/piwigo-schema.js';
@@ -132,31 +133,43 @@ export async function* readPiwigoRestore(
     if (withPasswords) {
       let active = true;
       try {
-        await withPasswords(async (context) => {
-          try {
-            if (!active || failed || !/^[1-9]\d{0,9}$/.test(context.sourceUserId))
-              refuse('PIWIGO_PASSWORD_UNAVAILABLE');
-            const owners = await query(`SELECT status FROM ${table('user_infos')} WHERE user_id=? LIMIT 2`, [
-              context.sourceUserId,
-            ]);
-            if (!active || failed || owners.length !== 1 || typeof owners[0].status !== 'string')
-              refuse('PIWIGO_PASSWORD_UNAVAILABLE');
-            if (owners[0].status === 'guest') return;
-            const rows = await query(`SELECT password FROM ${table('users')} WHERE id=? LIMIT 2`, [
-              context.sourceUserId,
-            ]);
-            if (!active || failed || rows.length !== 1) refuse('PIWIGO_PASSWORD_UNAVAILABLE');
-            const encoded = rows[0].password;
-            if (encoded === null || encoded === '') return;
-            if (typeof encoded !== 'string') refuse('PIWIGO_PASSWORD_UNAVAILABLE');
-            const credential = await ImportedPassword.fromSource(context, 'piwigo-password', encoded);
-            if (!active || failed) refuse('PIWIGO_PASSWORD_UNAVAILABLE');
-            return credential;
-          } catch {
-            // mysql2 errors may contain SQL and values; never disclose a source verifier.
-            refuse('PIWIGO_PASSWORD_UNAVAILABLE');
-          }
-        });
+        await withPasswordCallbackDeadline(
+          (activity) =>
+            withPasswords(async (context) => {
+              try {
+                if (!active || failed || !/^[1-9]\d{0,9}$/.test(context.sourceUserId))
+                  refuse('PIWIGO_PASSWORD_UNAVAILABLE');
+                activity();
+                const owners = await query(`SELECT status FROM ${table('user_infos')} WHERE user_id=? LIMIT 2`, [
+                  context.sourceUserId,
+                ]);
+                if (!active || failed || owners.length !== 1 || typeof owners[0].status !== 'string')
+                  refuse('PIWIGO_PASSWORD_UNAVAILABLE');
+                if (owners[0].status === 'guest') {
+                  activity();
+                  return;
+                }
+                const rows = await query(`SELECT password FROM ${table('users')} WHERE id=? LIMIT 2`, [
+                  context.sourceUserId,
+                ]);
+                if (!active || failed || rows.length !== 1) refuse('PIWIGO_PASSWORD_UNAVAILABLE');
+                const encoded = rows[0].password;
+                if (encoded === null || encoded === '') {
+                  activity();
+                  return;
+                }
+                if (typeof encoded !== 'string') refuse('PIWIGO_PASSWORD_UNAVAILABLE');
+                const credential = await ImportedPassword.fromSource(context, 'piwigo-password', encoded);
+                if (!active || failed) refuse('PIWIGO_PASSWORD_UNAVAILABLE');
+                activity();
+                return credential;
+              } catch {
+                // mysql2 errors may contain SQL and values; never disclose a source verifier.
+                refuse('PIWIGO_PASSWORD_UNAVAILABLE');
+              }
+            }),
+          new PiwigoSourceError('PIWIGO_PASSWORD_CALLBACK_TIMEOUT'),
+        );
       } finally {
         active = false;
       }

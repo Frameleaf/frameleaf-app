@@ -10,6 +10,7 @@ import {
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -34,7 +35,7 @@ const setup = () => {
   const { sut, ctx } = newMediumService(MetadataService, {
     database: defaultDatabase,
     real: [AssetRepository, AssetJobRepository, PhysicalFileRepository],
-    mock: [EventRepository, StorageRepository, LoggingRepository],
+    mock: [EventRepository, JobRepository, StorageRepository, LoggingRepository],
   });
   return { metadata: sut, ctx, repository: new MediaHealthRepository(defaultDatabase) };
 };

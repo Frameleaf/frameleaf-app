@@ -1,0 +1,424 @@
+{
+  "source": {
+    "name": "PiGallery2",
+    "version": "3.5.2",
+    "commit": "ed21d7f94bb346b5ba98e846bd71cd59782b453a",
+    "archiveSha256": "e63cc03767d4b97d9f6bcc1c0f6bfb31cd7262a4afc81c3af176866eee1741d1"
+  },
+  "runtime": {
+    "appVersion": "3.5.2",
+    "nodeVersion": "v22.22.0",
+    "sqliteVersion": "3.49.2",
+    "driverVersion": "11.10.0",
+    "dataStructureVersion": 41,
+    "image": "bpatrik/pigallery2@sha256:afc40f0513831ff260171c37bdbf872e52505cd2b35fa7276f0a28566bb43739"
+  },
+  "schemaSha256": "c2cb2ba31b20e4e37d8ef198fe6eafd79327d43536b81914c4599f32388dae89",
+  "rows": {
+    "directory_entity": [
+      {
+        "id": 1,
+        "name": ".",
+        "path": "./",
+        "lastModified": 1793576456322,
+        "lastScanned": 1793576490876,
+        "parentId": null
+      },
+      {
+        "id": 2,
+        "name": "alice-private",
+        "path": "./",
+        "lastModified": 1793576456328,
+        "lastScanned": 1793576523093,
+        "parentId": 1
+      },
+      {
+        "id": 3,
+        "name": "bob-private",
+        "path": "./",
+        "lastModified": 1793576456317,
+        "lastScanned": 1793576523198,
+        "parentId": 1
+      },
+      {
+        "id": 4,
+        "name": "shared",
+        "path": "./",
+        "lastModified": 1793576456324,
+        "lastScanned": 1793576523290,
+        "parentId": 1
+      },
+      {
+        "id": 5,
+        "name": "enriched",
+        "path": "./",
+        "lastModified": 1793650250949,
+        "lastScanned": 1793650259513,
+        "parentId": null
+      }
+    ],
+    "media_entity": [
+      {
+        "id": 1,
+        "name": "duplicate.jpg",
+        "type": "PhotoEntity",
+        "directoryId": 2,
+        "metadataCaption": "Synthetic shared",
+        "metadataTitle": null,
+        "metadataCreationdate": 1552832116000,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 2351,
+        "metadataKeywords": null,
+        "metadataRating": null,
+        "metadataFaces": null,
+        "metadataPersons": null,
+        "metadataPersonslength": 0,
+        "metadataBitrate": null,
+        "metadataDuration": null,
+        "metadataSizeWidth": 640,
+        "metadataSizeHeight": 480,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      },
+      {
+        "id": 2,
+        "name": "original.jpg",
+        "type": "PhotoEntity",
+        "directoryId": 3,
+        "metadataCaption": "Synthetic bob-private",
+        "metadataTitle": null,
+        "metadataCreationdate": 1552832116000,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 2355,
+        "metadataKeywords": null,
+        "metadataRating": null,
+        "metadataFaces": null,
+        "metadataPersons": null,
+        "metadataPersonslength": 0,
+        "metadataBitrate": null,
+        "metadataDuration": null,
+        "metadataSizeWidth": 640,
+        "metadataSizeHeight": 480,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      },
+      {
+        "id": 3,
+        "name": "original.jpg",
+        "type": "PhotoEntity",
+        "directoryId": 4,
+        "metadataCaption": "Synthetic shared",
+        "metadataTitle": null,
+        "metadataCreationdate": 1552832116000,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 2351,
+        "metadataKeywords": null,
+        "metadataRating": null,
+        "metadataFaces": null,
+        "metadataPersons": null,
+        "metadataPersonslength": 0,
+        "metadataBitrate": null,
+        "metadataDuration": null,
+        "metadataSizeWidth": 640,
+        "metadataSizeHeight": 480,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      },
+      {
+        "id": 4,
+        "name": "original.jpg",
+        "type": "PhotoEntity",
+        "directoryId": 2,
+        "metadataCaption": "Synthetic alice-private",
+        "metadataTitle": null,
+        "metadataCreationdate": 1552832116000,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 2357,
+        "metadataKeywords": null,
+        "metadataRating": null,
+        "metadataFaces": null,
+        "metadataPersons": null,
+        "metadataPersonslength": 0,
+        "metadataBitrate": null,
+        "metadataDuration": null,
+        "metadataSizeWidth": 640,
+        "metadataSizeHeight": 480,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      },
+      {
+        "id": 5,
+        "name": "fallback.jpg",
+        "type": "PhotoEntity",
+        "directoryId": 5,
+        "metadataCaption": "Edited fallback caption",
+        "metadataTitle": "Edited fallback title",
+        "metadataCreationdate": 1552832116000,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 2326,
+        "metadataKeywords": "Synthetic tag",
+        "metadataRating": 4,
+        "metadataFaces": null,
+        "metadataPersons": null,
+        "metadataPersonslength": 0,
+        "metadataBitrate": null,
+        "metadataDuration": null,
+        "metadataSizeWidth": 640,
+        "metadataSizeHeight": 480,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      },
+      {
+        "id": 6,
+        "name": "priority.jpg",
+        "type": "PhotoEntity",
+        "directoryId": 5,
+        "metadataCaption": "Edited photo-1 caption",
+        "metadataTitle": "Edited photo-1 title",
+        "metadataCreationdate": 1552832116000,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 2326,
+        "metadataKeywords": "Synthetic tag",
+        "metadataRating": 4,
+        "metadataFaces": "[{\"name\":\"Synthetic Person\",\"box\":{\"width\":128,\"height\":120,\"left\":96,\"top\":180}}]",
+        "metadataPersons": "Synthetic Person",
+        "metadataPersonslength": 1,
+        "metadataBitrate": null,
+        "metadataDuration": null,
+        "metadataSizeWidth": 640,
+        "metadataSizeHeight": 480,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      },
+      {
+        "id": 7,
+        "name": "clip.mp4",
+        "type": "VideoEntity",
+        "directoryId": 5,
+        "metadataCaption": "Edited video-4 caption",
+        "metadataTitle": "Edited video-4 title",
+        "metadataCreationdate": 1793650250947,
+        "metadataCreationdateoffset": null,
+        "metadataFilesize": 1803,
+        "metadataKeywords": "Synthetic tag",
+        "metadataRating": 4,
+        "metadataFaces": null,
+        "metadataPersons": null,
+        "metadataPersonslength": 0,
+        "metadataBitrate": 45075,
+        "metadataDuration": 320,
+        "metadataSizeWidth": 128,
+        "metadataSizeHeight": 96,
+        "metadataCameraDataIso": null,
+        "metadataCameraDataModel": null,
+        "metadataCameraDataMake": null,
+        "metadataCameraDataFstop": null,
+        "metadataCameraDataExposure": null,
+        "metadataCameraDataFocallength": null,
+        "metadataCameraDataLens": null,
+        "metadataPositionDataCountry": null,
+        "metadataPositionDataState": null,
+        "metadataPositionDataCity": null,
+        "metadataPositionDataGPSDataLatitude": null,
+        "metadataPositionDataGPSDataLongitude": null
+      }
+    ],
+    "file_entity": [
+      {
+        "id": 1,
+        "name": "track.gpx",
+        "date": null,
+        "type": "FileEntity",
+        "directoryId": 5
+      },
+      {
+        "id": 2,
+        "name": "notes.md",
+        "date": 1552832116000,
+        "type": "MDFileEntity",
+        "directoryId": 5
+      }
+    ],
+    "person_entry": [
+      {
+        "id": 1,
+        "name": "Synthetic Person",
+        "isFavourite": 0
+      }
+    ],
+    "person_junction_table": [
+      {
+        "id": 1,
+        "mediaId": 6,
+        "personId": 1
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "enriched/clip.XMP",
+      "bytes": "798",
+      "sha256": "cba4318bfa4525255ea3baf9caafdb20ab66be7763dfdd25add36bbe071f6ae4"
+    },
+    {
+      "path": "enriched/clip.mp4",
+      "bytes": "1803",
+      "sha256": "fbb76a1f7c5f49726d467a4beb6354bbb36c73b6443c66eddd49f809217a52e5"
+    },
+    {
+      "path": "enriched/clip.mp4.XMP",
+      "bytes": "798",
+      "sha256": "b5b5e4356cebed3660da0dde0fcbe042f9845dce834868abc21262826ad64089"
+    },
+    {
+      "path": "enriched/clip.mp4.xmp",
+      "bytes": "798",
+      "sha256": "d4c2a012be0a14d87a7a8b809514091b95592aad016ec2730d30c1919558309c"
+    },
+    {
+      "path": "enriched/clip.xmp",
+      "bytes": "798",
+      "sha256": "06d0d16553850b4b292fe859b047d4d7419dd0448e18b60f03152720809f613c"
+    },
+    {
+      "path": "enriched/fallback.XMP",
+      "bytes": "800",
+      "sha256": "401623dc8dadfff0892cd0649258d009dbe17f4eab38722a8ab9a4f2147d706d"
+    },
+    {
+      "path": "enriched/fallback.jpg",
+      "bytes": "2326",
+      "sha256": "24a7df7b6741245fb352b5f610c52ea34bd38b9ce14c6d07a7dd2cf20f46722a"
+    },
+    {
+      "path": "enriched/notes.md",
+      "bytes": "59",
+      "sha256": "6e3a3b89abb906782e2db5e50e11b2a1bb6d287184d36dd8515d0e31e376c454"
+    },
+    {
+      "path": "enriched/priority.XMP",
+      "bytes": "798",
+      "sha256": "835e2f60499a80543fe36e5b5707fcec61b31a12f58e020c3177ec5fa61938cc"
+    },
+    {
+      "path": "enriched/priority.jpg",
+      "bytes": "2326",
+      "sha256": "24a7df7b6741245fb352b5f610c52ea34bd38b9ce14c6d07a7dd2cf20f46722a"
+    },
+    {
+      "path": "enriched/priority.jpg.XMP",
+      "bytes": "798",
+      "sha256": "278e245b7dadf9b66e658dca10859912f4a27acbbbaa6b014a9b0f91fa4bd1fe"
+    },
+    {
+      "path": "enriched/priority.jpg.xmp",
+      "bytes": "1257",
+      "sha256": "b69c7641435e8c71ee559273efaf3cd9fd90b033c7574e62a963d9b3893816e1"
+    },
+    {
+      "path": "enriched/priority.xmp",
+      "bytes": "798",
+      "sha256": "c6576dd2fc3eb5b772d24b62a131e66242602d4a1a79bca94ca96052d7d3c7c9"
+    },
+    {
+      "path": "enriched/track.gpx",
+      "bytes": "236",
+      "sha256": "b9c0551c2969df1b042f27a61f514b16e4bc6081dab7afb8e9d7f9dd6e028436"
+    }
+  ],
+  "expectations": {
+    "photoCaption": "Edited photo-1 caption",
+    "photoTitle": "Edited photo-1 title",
+    "rating": 4,
+    "videoCaption": "Edited video-4 caption",
+    "faceOrientation": 1,
+    "face": {
+      "name": "Synthetic Person",
+      "box": {
+        "width": 128,
+        "height": 120,
+        "left": 96,
+        "top": 180
+      }
+    },
+    "existingSidecars": {
+      "enriched/priority.jpg": [
+        "enriched/priority.jpg.xmp",
+        "enriched/priority.jpg.XMP",
+        "enriched/priority.xmp",
+        "enriched/priority.XMP"
+      ],
+      "enriched/fallback.jpg": [
+        "enriched/fallback.XMP"
+      ],
+      "enriched/clip.mp4": [
+        "enriched/clip.mp4.xmp",
+        "enriched/clip.mp4.XMP",
+        "enriched/clip.xmp",
+        "enriched/clip.XMP"
+      ]
+    },
+    "nativeOriginalDownloads": 3,
+    "nativeFileHashes": 14
+  }
+}

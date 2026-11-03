@@ -1,19 +1,10 @@
 import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
+import { pigallery2Projections as projections } from 'src/library-import/pigallery2-projections.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
-const projections = {
-  directory_entity: '*',
-  media_entity: '*',
-  file_entity: '*',
-  person_entry: '*',
-  person_junction_table: '*',
-  album_base_entity: '*',
-  user_entity: 'id,name,role,overrideAllowBlockList,allowQuery,blockQuery',
-  sharing_entity: 'id,searchQuery,password IS NOT NULL AS has_password,expires,timeStamp,creatorId',
-} as const;
 export type Pigallery2Table = keyof typeof projections;
 export type Pigallery2Row = Record<string, SQLOutputValue>;
 class Pigallery2ReadError extends Error {
