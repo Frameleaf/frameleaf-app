@@ -35,8 +35,25 @@ export const mapMediaPath = (
   return { source: path, target, root };
 };
 
+/** Copy and in-place imports share the private Manager provisioning identity. */
+export const managerImportAuthority = (policy?: ImportMediaPolicy) => {
+  if (process.env.FRAMELEAF_MANAGER_ORIGIN !== 'new_import') return;
+  const installation = process.env.FRAMELEAF_MANAGER_INSTALLATION;
+  const operationId = process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID;
+  if (
+    !installation ||
+    !/^[a-f0-9]{12}$/.test(installation) ||
+    !operationId?.trim() ||
+    (policy?.mode === 'manager-in-place' &&
+      (policy.deploymentId !== installation || policy.operationId !== operationId))
+  )
+    throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
+  return { installation, operationId };
+};
+
 /** Manager identity is an orchestration contract, not a substitute for fencing or filesystem checks. */
 export const assertMediaPolicy = (roots: MediaRootMap[], policy?: ImportMediaPolicy): void => {
+  managerImportAuthority(policy);
   if (!policy || policy.mode === 'independent-copy') return;
   if (
     policy.mode !== 'manager-in-place' ||

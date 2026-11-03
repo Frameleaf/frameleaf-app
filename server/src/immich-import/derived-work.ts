@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { JobName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy } from 'src/immich-import/media.js';
+import { assertMediaPolicy, managerImportAuthority } from 'src/immich-import/media.js';
 import { ImportConfig, ImportRefused } from 'src/immich-import/types.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
@@ -37,21 +37,12 @@ export async function transferImportedWork(
   config?: ImportConfig,
 ): Promise<string> {
   const media = config?.media;
-  const managed = media?.mode === 'manager-in-place';
-  if (managed) {
-    if (!config) throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
-    assertMediaPolicy(config.mediaRoots, media);
-    if (
-      !/^[a-f0-9]{12}$/.test(media.deploymentId) ||
-      process.env.FRAMELEAF_MANAGER_ORIGIN !== 'new_import' ||
-      process.env.FRAMELEAF_MANAGER_INSTALLATION !== media.deploymentId ||
-      process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID !== media.operationId
-    ) {
-      throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
-    }
-  } else if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import') {
+  if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import')
     throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
-  }
+  const authority = managerImportAuthority(media);
+  const managed = !!authority;
+  if (config) assertMediaPolicy(config.mediaRoots, media);
+  if (media?.mode === 'manager-in-place' && !authority) throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
   const runId = await db.transaction().execute(async (tx) => {
     const {
       rows: [journal],
@@ -94,8 +85,8 @@ export async function transferImportedWork(
       existing &&
       (managed
         ? !setup ||
-          setup.installation !== media.deploymentId ||
-          setup.operationId !== media.operationId ||
+          setup.installation !== authority.installation ||
+          setup.operationId !== authority.operationId ||
           (setup.paused !== undefined && typeof setup.paused !== 'boolean') ||
           (setup.preparedAt !== null &&
             (typeof setup.preparedAt !== 'string' || !Number.isFinite(Date.parse(setup.preparedAt)))) ||
@@ -116,8 +107,8 @@ export async function transferImportedWork(
         config: journal.config_fingerprint,
         ...(managed && {
           managerSetup: {
-            installation: media.deploymentId,
-            operationId: media.operationId,
+            installation: authority.installation,
+            operationId: authority.operationId,
             preparedAt: null,
             startedAt: null,
           },
