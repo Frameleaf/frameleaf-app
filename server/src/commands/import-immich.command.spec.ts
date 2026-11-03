@@ -200,6 +200,8 @@ it.each([undefined, { mode: 'independent-copy' as const }])(
   'requires private Manager identity before admitting copied imports: %s',
   (media) => {
     vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_import');
+    vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', '');
+    vi.stubEnv('FRAMELEAF_IMPORT_MANAGER_OPERATION_ID', '');
     try {
       expect(() => validateImportConfig({ ...fixture.config, media })).toThrow('MANAGER_SETUP_AUTHORITY_REQUIRED');
     } finally {
