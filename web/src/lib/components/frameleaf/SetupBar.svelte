@@ -285,6 +285,9 @@
 
     {#if open}
       <section class="fl-setup-bar-panel" id="fl-setup-bar-panel" aria-label={$t('setup_bar_title')}>
+        {#if attention}
+          <p>{$t(progress.stages.length > 0 ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}</p>
+        {/if}
         {#if progress.stages.length > 0}
           <ol>
             <li class="is-done">
