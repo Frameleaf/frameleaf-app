@@ -282,7 +282,7 @@ EOF
     nas(`docker run -d --name filebrowser --restart unless-stopped -u 0:0 -l net.unraid.docker.managed=dockerman \
       -v /mnt/user:/srv -v ${APPDATA}/filebrowser:/database filebrowser/filebrowser:latest >/dev/null`);
     // Unraid writes one container name per line (optional delay) in the order the Docker page shows.
-    nas(`printf '%s\\n' immich_redis 'immich_postgres 10' immich_server filebrowser frameleaf-manager > ${autostart}`);
+    nas(`printf '%s\\n' immich_redis 'immich_postgres 10' immich_server filebrowser Frameleaf > ${autostart}`);
   });
 
   // ---------- 4. Manager, exactly as the Unraid template renders ----------
@@ -399,7 +399,7 @@ EOF
     });
     const lines = nas(`cat ${autostart}`).split('\n').map((l) => l.split(/\s+/)[0]).filter(Boolean);
     report.autostartAfter = lines;
-    assert.deepEqual(lines, ['filebrowser', 'frameleaf-manager']);
+    assert.deepEqual(lines, ['filebrowser', 'Frameleaf']);
     assert.equal(nas(`docker inspect -f '{{.State.Running}}' filebrowser`).trim(), 'true');
   });
 }

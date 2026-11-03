@@ -1,5 +1,5 @@
 <CommunityApplications>
-  <Profile>Bring your photo and video collection home to hardware you control. Frameleaf combines a visual library, smart search, people and places, albums, sharing and editing, with optional local machine learning. Install Frameleaf Manager for guided storage setup, signed application releases, service controls and encrypted database recovery points. Experienced Docker users can choose the separate Server and Machine Learning templates. The self-hosted library needs no Cloud account; optional Cloud services are separate. Visit the Help Center for setup guides, walkthroughs and the community. Manager backups cover the database and recovery configuration; keep an independent backup of original photos and videos.</Profile>
+  <Profile>Frameleaf is a self-hosted photo and video library. Bring a lifetime of photos home, find any moment by describing it, edit photos and videos, and enjoy them on your phone, in any browser and on the TV. Faces, search and AI run on your own hardware, originals stay as ordinary files, and there's no subscription. Switch from Immich, PhotoPrism, Synology Photos and seven other photo servers, or import Google Photos and iCloud. Frameleaf Manager, the official installer, gives a guided setup with updates and database backups. Keep your own backup of original photos and videos.</Profile>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <WebPage>https://frameleaf.app</WebPage>
   <Forum>https://frameleaf.app/help/community/</Forum>
@@ -8,7 +8,8 @@
   <Twitter>https://x.com/frameleafapp</Twitter>
   <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
   <DonateText>Support Frameleaf with a supporter licence</DonateText>
-  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Photo>
+  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg</Photo>
   <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
+  <Video>https://www.youtube.com/watch?v=INeVz9NFzOM</Video>
   <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
 </CommunityApplications>
