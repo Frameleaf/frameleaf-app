@@ -68,7 +68,7 @@ beforeAll(async () => {
   db = await getKyselyDB();
 });
 beforeEach(async () => {
-  await sql`TRUNCATE public.frameleaf_library_import_mapping,public.frameleaf_library_import,public.frameleaf_immich_import`.execute(
+  await sql`TRUNCATE public.frameleaf_library_import_mapping,public.frameleaf_library_import,public.frameleaf_immich_import CASCADE`.execute(
     db,
   );
 });
@@ -227,7 +227,7 @@ it('requires the journal and exact binding before reading any retained inventory
   await expect(loadReviewedImportInputs(wrap(db), { ...context, destinationId: randomUUID() })).rejects.toThrow(
     'IMPORT_PLAN_DESTINATION_CHANGED',
   );
-  await sql`TRUNCATE frameleaf_library_import_mapping,frameleaf_library_import`.execute(db);
+  await sql`TRUNCATE frameleaf_library_import_mapping,frameleaf_library_import CASCADE`.execute(db);
   await expect(loadReviewedImportInputs(wrap(db), context)).rejects.toThrow('IMPORT_JOURNAL_MISSING');
 });
 

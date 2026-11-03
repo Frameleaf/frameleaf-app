@@ -73,6 +73,7 @@ describe('desktop inference database diagnostics', () => {
     'UPDATE public.frameleaf_library_import SET private_owners=$1::text::jsonb,private_owners_sha256=$2',
     'SELECT private_owners,private_owners_sha256 FROM public.frameleaf_library_import',
     'select * from "frameleaf_library_import"',
+    'SELECT payload FROM public.frameleaf_library_import_archive_record WHERE operation_id=$1',
     'SELECT source_id FROM public.frameleaf_library_import_mapping WHERE operation_id=$1',
     // queued job payloads (a new user's password, mail html) are bound as parameters
     'insert into job(id, queue, name, data) values ($1::uuid, $2, $3, $4::text::jsonb)',
