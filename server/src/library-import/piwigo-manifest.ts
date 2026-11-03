@@ -1,5 +1,5 @@
-import { DateTime } from 'luxon';
 import { posix } from 'node:path';
+import { DateTime } from 'luxon';
 import { z } from 'zod';
 import type { PiwigoRow, PiwigoTable } from 'src/library-import/piwigo-source.js';
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
@@ -180,15 +180,20 @@ export async function readPiwigoManifest(
   const direct = Map.groupBy(rows('user_access'), (row) => key(row.user_id));
   const granted = Map.groupBy(rows('group_access'), (row) => key(row.group_id));
   const privateGrants = new Map(
-    [...users.keys()].map((id) => [
-      id,
-      new Set([
-        ...(direct.get(id) ?? []).map((row) => key(row.cat_id)),
-        ...(userGroups.get(id) ?? []).flatMap((group) =>
-          (granted.get(key(group.group_id)) ?? []).map((row) => key(row.cat_id)),
-        ),
-      ]),
-    ]),
+    users
+      .keys()
+      .map(
+        (id) =>
+          [
+            id,
+            new Set([
+              ...(direct.get(id) ?? []).map((row) => key(row.cat_id)),
+              ...(userGroups.get(id) ?? []).flatMap((group) =>
+                (granted.get(key(group.group_id)) ?? []).map((row) => key(row.cat_id)),
+              ),
+            ]),
+          ] as const,
+      ),
   );
   const categoryAllowed = (ownerId: string, categoryId: string) => {
     const info = infos.get(ownerId),
@@ -355,7 +360,10 @@ export async function readPiwigoManifest(
       version: 3,
       source: input.source,
       inventory: input.inventory,
-      users: [...accountIds].map((id) => ({ id, name: String(users.get(id)!.username) })),
+      users: accountIds
+        .values()
+        .map((id) => ({ id, name: String(users.get(id)!.username) }))
+        .toArray(),
       files,
       assets,
       albums,
