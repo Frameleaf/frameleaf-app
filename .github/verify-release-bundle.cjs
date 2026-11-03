@@ -191,9 +191,14 @@ function verifyNasManifest(nas, release) {
       "NAS release image differs",
     );
   }
+  // The database image tag comes from the bundle (review M2): any frameleaf-postgres release build with a
+  // PostgreSQL major, optional beta/rc or minor, and its pgvector version, pinned by digest and verified as a
+  // dependency of this release. Which tag ships (e.g. the move from a beta to GA) is a release decision
+  // declared below, not a constant in this verifier.
   assert.match(
     nas.images.postgres,
-    /^ghcr\.io\/frameleaf\/frameleaf-postgres:19beta4-pgvector0\.8\.7@sha256:[a-f0-9]{64}$/,
+    POSTGRES_IMAGE,
+    "NAS database image is not a digest-pinned frameleaf-postgres build",
   );
   assert(
     release.dependencies?.some(
@@ -202,9 +207,81 @@ function verifyNasManifest(nas, release) {
     ),
     "NAS database was not verified for this release",
   );
+  verifyDatabaseImageChange(nas.databaseImageChange, nas.images.postgres);
 }
 
-module.exports = { verifyBundle, verifyNasManifest, verifyAttestedPredicate };
+const POSTGRES_IMAGE =
+  /^ghcr\.io\/frameleaf\/frameleaf-postgres:(\d+)(?:beta\d+|rc\d+|\.\d+)?-pgvector\d+\.\d+\.\d+@sha256:[a-f0-9]{64}$/;
+const POSTGRES_REFERENCE =
+  /^ghcr\.io\/frameleaf\/frameleaf-postgres:(\d+)(?:beta\d+|rc\d+|\.\d+)?-pgvector\d+\.\d+\.\d+$/;
+
+/**
+ * A release that replaces the database image in place (same PostgreSQL major, no logical restore) must say
+ * so in the signed NAS manifest: exactly which previous image references it may replace and that a
+ * checkpoint backup precedes the change. Manager refuses any undeclared database image change as an
+ * update. Absent for releases that keep their database image.
+ */
+function verifyDatabaseImageChange(change, postgres) {
+  if (change === undefined) return;
+  assert(
+    change && typeof change === "object" && !Array.isArray(change),
+    "NAS databaseImageChange must be an object",
+  );
+  assert.deepEqual(
+    Object.keys(change)
+      .filter((key) => key !== "notes")
+      .sort(),
+    ["from", "requiresBackup", "strategy", "to"],
+    "NAS databaseImageChange has unexpected fields",
+  );
+  assert.equal(change.strategy, "in-place", "NAS databaseImageChange strategy");
+  assert.equal(
+    change.requiresBackup,
+    true,
+    "NAS databaseImageChange must require a backup",
+  );
+  assert.equal(
+    change.to,
+    postgres.split("@")[0],
+    "NAS databaseImageChange target differs from the database image",
+  );
+  const major = POSTGRES_REFERENCE.exec(change.to)?.[1];
+  assert(
+    major,
+    "NAS databaseImageChange target is not a frameleaf-postgres reference",
+  );
+  assert(
+    Array.isArray(change.from) &&
+      change.from.length > 0 &&
+      new Set(change.from).size === change.from.length,
+    "NAS databaseImageChange.from must list previous image references",
+  );
+  for (const previous of change.from) {
+    const from = POSTGRES_REFERENCE.exec(previous)?.[1];
+    assert(
+      from,
+      `NAS databaseImageChange.from entry is not a frameleaf-postgres reference: ${previous}`,
+    );
+    assert.equal(
+      from,
+      major,
+      `NAS databaseImageChange crosses a PostgreSQL major (${previous}); that needs a restore`,
+    );
+    assert.notEqual(
+      previous,
+      change.to,
+      "NAS databaseImageChange.from repeats the target",
+    );
+  }
+  if (change.notes !== undefined) assert.equal(typeof change.notes, "string");
+}
+
+module.exports = {
+  verifyBundle,
+  verifyNasManifest,
+  verifyAttestedPredicate,
+  verifyDatabaseImageChange,
+};
 if (require.main === module)
   verifyBundle(process.argv[2], process.argv[3])
     .then((manifest) => console.log(`Verified ${manifest.tag} release assets`))

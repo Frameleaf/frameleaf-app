@@ -1,13 +1,23 @@
+import { type LockedKeyFile, PEPPER_BYTES, isKeyFileFormat } from '@frameleaf/locked-crypto';
 import { Injectable } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
-import type { LockedKeyFile } from '@frameleaf/locked-crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 
 const DIRECTORY = 'locked-keys';
-const FORMAT = 'frameleaf-locked-key/1';
+/**
+ * The Locked pepper: random bytes every PIN wrap's key depends on, kept apart from the key files so
+ * a copy of the media root alone is not enough to try the 10^6 PINs offline. It lives with the
+ * server's other secret files, in the identity directory (`FRAMELEAF_IDENTITY_DIR`, which should
+ * point off the media volume; by default `<media>/frameleaf/identity`), as base64 text, mode 0600.
+ * `frameleaf locked decrypt --pepper-file` reads the same file. It is never regenerated on its own:
+ * a damaged file is an error, since a new pepper would close every PIN wrap (the recovery key and a
+ * passphrase still open the key file).
+ */
+export const LOCKED_PEPPER_FILE = 'locked-pin-pepper.key';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
@@ -19,7 +29,12 @@ const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 
  */
 @Injectable()
 export class LockedKeyRepository {
-  /** Null when there is no key file, or when it is not a version-1 key file for this person. */
+  private pepperCache?: Promise<Buffer>;
+
+  /** Callers outside Nest (`locked-read.ts`, medium tests) construct it without one; only `pepper` needs it. */
+  constructor(private configRepository: ConfigRepository = new ConfigRepository()) {}
+
+  /** Null when there is no key file, or when it is not a key file (format 1 or 2) for this person. */
   async read(userId: string): Promise<LockedKeyFile | null> {
     let text: string;
     try {
@@ -31,7 +46,85 @@ export class LockedKeyRepository {
       throw error;
     }
     const file = JSON.parse(text) as Partial<LockedKeyFile> | null;
-    return file?.format === FORMAT && file.userId === userId ? (file as LockedKeyFile) : null;
+    return file && isKeyFileFormat(file.format) && file.userId === userId ? (file as LockedKeyFile) : null;
+  }
+
+  /**
+   * The server's Locked pepper (see `LOCKED_PEPPER_FILE`), made on first use. Two workers making it
+   * at once end with one file: the loser's exclusive create fails and it reads the winner's.
+   */
+  pepper(): Promise<Buffer> {
+    this.pepperCache ??= this.loadPepper().catch((error) => {
+      // a failure is not remembered: the next call tries again
+      this.pepperCache = undefined;
+      throw error;
+    });
+    return this.pepperCache;
+  }
+
+  private pepperPath() {
+    const directory =
+      this.configRepository.getEnv().frameleafCloud.identityDir ??
+      join(StorageCore.getMediaLocation(), 'frameleaf', 'identity');
+    return join(directory, LOCKED_PEPPER_FILE);
+  }
+
+  private async loadPepper(): Promise<Buffer> {
+    const path = this.pepperPath();
+    const existing = await this.readPepper(path);
+    if (existing) {
+      return existing;
+    }
+    await fs.mkdir(join(path, '..'), { recursive: true, mode: 0o700 });
+    const pepper = randomBytes(PEPPER_BYTES);
+    let handle: fs.FileHandle;
+    try {
+      handle = await fs.open(path, 'wx', 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        // another worker made it first; its file is complete once the sync below has run there,
+        // so a short empty read is retried
+        for (let attempt = 0; attempt < 50; attempt++) {
+          const winner = await this.readPepper(path, true);
+          if (winner) {
+            return winner;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      }
+      throw error;
+    }
+    try {
+      await handle.writeFile(`${pepper.toString('base64')}\n`);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await this.flush(join(path, '..'));
+    return pepper;
+  }
+
+  /** The pepper in `path`; null when there is none. A file of the wrong shape is an error, never replaced. */
+  private async readPepper(path: string, allowEmpty = false): Promise<Buffer | null> {
+    let text: string;
+    try {
+      text = await fs.readFile(path, 'utf8');
+    } catch (error) {
+      if (isMissing(error)) {
+        return null;
+      }
+      throw error;
+    }
+    if (allowEmpty && text.trim() === '') {
+      return null;
+    }
+    const pepper = Buffer.from(text.trim(), 'base64');
+    if (text.trim() === '' || pepper.length < PEPPER_BYTES || pepper.toString('base64') !== text.trim()) {
+      throw new Error(
+        `The Locked pepper file ${path} is damaged. Restore it from a backup; without it no Locked PIN opens a key file (recovery keys still do).`,
+      );
+    }
+    return pepper;
   }
 
   /**

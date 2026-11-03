@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Activity } from 'src/database.js';
 import {
@@ -49,8 +49,14 @@ export class ActivityService extends BaseService {
 
   async create(auth: AuthDto, dto: ActivityCreateDto): Promise<MaybeDuplicate<ActivityResponseDto>> {
     await this.requireAccess({ auth, permission: Permission.ActivityCreate, ids: [dto.albumId] });
-    if (auth.hideNsfwAssets && dto.assetId) {
+    if (dto.assetId) {
+      // a reaction names an item the caller can read, and one that is in this album: never another
+      // person's item, nor one the album's members could not resolve
       await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [dto.assetId] });
+      const inAlbum = await this.albumRepository.getAssetIds(dto.albumId, [dto.assetId]);
+      if (!inAlbum.has(dto.assetId)) {
+        throw new BadRequestException('Asset is not in the album');
+      }
     }
 
     const common = {

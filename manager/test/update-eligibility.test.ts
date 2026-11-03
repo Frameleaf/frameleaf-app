@@ -7,6 +7,7 @@ import { Operations } from '../src/operations.js';
 import { Releases } from '../src/releases.js';
 import { compareReleases } from '../src/release-order.js';
 import { Store } from '../src/store.js';
+import { databaseImageChangeAllowed, postgresMajor } from '../src/contracts.js';
 import {
   navSection,
   newerReleases,
@@ -118,7 +119,7 @@ test('navigation highlights the section an installed server operation belongs to
 // Issue 626: a failed update keeps the operation lock, so Resume must move off a withdrawn release.
 for (const prepared of [false, true])
 for (const missing of [false, true])
-test(`resuming an update whose release was ${missing ? 'removed' : 'withdrawn'} retries with the newest offered release (prepared=${prepared})`, async (t) => {
+test(`resuming an update whose release was ${missing ? 'removed' : 'withdrawn'} retries with the next offered release (prepared=${prepared})`, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-update-retarget-'));
   const store = new Store(directory);
   try {
@@ -205,12 +206,22 @@ test(`resuming an update whose release was ${missing ? 'removed' : 'withdrawn'} 
 
     // A release that is still offered is retried as it is.
     assert.equal(await retarget(operation, retargeted), retargeted);
-    assert.deepEqual(acquired, ['frameleaf-v1.1.19', 'frameleaf-v1.1.18']);
+    // Review L7: the lowest newer compatible release, never a jump to the newest; 1.1.19 is never fetched.
+    assert.deepEqual(acquired, ['frameleaf-v1.1.18']);
     offered.delete('frameleaf-v1.1.18');
     await assert.rejects(
       retarget(operation, retargeted),
       /release_not_eligible/,
     );
+    // Only 1.1.19 remained, and it changes PostgreSQL without declaring an in-place change.
+    assert.deepEqual(acquired, ['frameleaf-v1.1.18', 'frameleaf-v1.1.19']);
+    // An expired review is not silently retargeted: the administrator reviews the newer release.
+    offered.add('frameleaf-v1.1.18');
+    await assert.rejects(
+      retarget(operation, { ...review, expires: Date.now() - 1 }),
+      (error: any) => error.code === 'update_review_expired' && /review the newer release/.test(error.detail),
+    );
+    assert.equal(acquired.length, 2, 'nothing is fetched for an expired review');
   } finally {
     store.close();
     await rm(directory, { recursive: true });
@@ -289,4 +300,39 @@ test(`update startup boundary is durable when interrupted at ${interrupt}`, asyn
     store.close();
     await rm(directory, { recursive: true });
   }
+});
+
+// Review M2: the database image may change inside an update only for the same major and only when the
+// signed bundle declares that exact in-place transition; anything else stays on the restore path.
+test('a database image change is an in-place update only when the bundle declares it for the same major', () => {
+  const image = (tag: string, digest = 'a') => `ghcr.io/frameleaf/frameleaf-postgres:${tag}@sha256:${digest.repeat(64)}`;
+  assert.equal(postgresMajor(image('19beta4-pgvector0.8.7')), 19);
+  assert.equal(postgresMajor(image('19.1-pgvector0.8.7')), 19);
+  assert.equal(postgresMajor(image('20rc1-pgvector0.9.0')), 20);
+  assert.equal(postgresMajor('ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7'), 19);
+  assert.equal(postgresMajor('postgres:19'), null);
+  assert.equal(postgresMajor(image('latest')), null);
+  const current = image('19beta4-pgvector0.8.7');
+  const ga = image('19.0-pgvector0.8.7', 'b');
+  const declared = {
+    strategy: 'in-place' as const,
+    from: ['ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7'],
+    to: 'ghcr.io/frameleaf/frameleaf-postgres:19.0-pgvector0.8.7',
+    requiresBackup: true as const,
+  };
+  const release = (postgres: string, databaseImageChange?: any) => ({ images: { postgres } as any, databaseImageChange });
+  assert.equal(databaseImageChangeAllowed(current, release(current)), true, 'same image');
+  assert.equal(databaseImageChangeAllowed(current, release(ga)), false, 'undeclared beta to GA');
+  assert.equal(databaseImageChangeAllowed(current, release(ga, declared)), true, 'declared beta to GA');
+  assert.equal(databaseImageChangeAllowed(image('19beta3-pgvector0.8.7'), release(ga, declared)), false, 'not listed in from');
+  assert.equal(databaseImageChangeAllowed(current, release(ga, { ...declared, to: declared.from[0] })), false, 'to differs');
+  assert.equal(databaseImageChangeAllowed(current, release(ga, { ...declared, strategy: 'restore' })), false);
+  assert.equal(databaseImageChangeAllowed(current, release(ga, { ...declared, requiresBackup: false })), false);
+  const twenty = image('20.0-pgvector0.9.0', 'c');
+  assert.equal(
+    databaseImageChangeAllowed(current, release(twenty, { ...declared, to: 'ghcr.io/frameleaf/frameleaf-postgres:20.0-pgvector0.9.0' })),
+    false,
+    'a new major always restores',
+  );
+  assert.equal(databaseImageChangeAllowed('postgres:19', release(image('19.0-pgvector0.8.7'), declared)), false, 'unparseable current');
 });

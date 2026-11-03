@@ -155,6 +155,14 @@ export class LibraryMove {
       await this.execute('docker', ['rm', prior.Id]);
     }
     await mkdir(this.state(review.id), { recursive: true, mode: 0o700 });
+    // `--mount` is a CSV: a comma in any of these paths would be parsed as another field (review L6).
+    for (const path of [review.current.mounts[0].source, destination, this.state(review.id)])
+      if (/[,\n\0]/.test(path))
+        throw new Refusal(
+          'media_path_unsupported_character',
+          409,
+          `${path} contains a comma or control character, which cannot be passed to Docker. Rename the folder, then review the move again.`,
+        );
     let result: string | undefined;
     let failure: unknown;
     try {

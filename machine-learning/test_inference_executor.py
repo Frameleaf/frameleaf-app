@@ -73,7 +73,9 @@ async def test_one_worker_can_finish_a_request_with_independent_entries(monkeypa
         return "result"
 
     async def get(name, type_, task, **kwargs):
-        model = SimpleNamespace(identity=(type_, task), depends=[], loaded=loaded, load_attempts=0, predict=predict)
+        model = SimpleNamespace(
+            identity=(type_, task), depends=[], loaded=loaded, load_attempts=0, predict=predict, download=lambda: None
+        )
         model.load = lambda: setattr(model, "loaded", True)
         return model
 

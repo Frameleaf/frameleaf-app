@@ -28,8 +28,9 @@ from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.musicgen import MusicGenModel
+from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
-from frameleaf_ml.models.subject_matte import SubjectMatteModel
+from frameleaf_ml.models.subject_matte import SubjectMatteModel, open_frame
 from frameleaf_ml.models.transcribe import (
     AudioFormatError,
     TranscribeModel,
@@ -72,11 +73,16 @@ from .transcription_memory import AudioMemoryBudget
 
 MultiPartParser.spool_max_size = 2**26  # spools to disk if payload is 64 MiB or larger
 
-model_cache = ModelCache(revalidate=settings.model_ttl > 0)
+model_cache = ModelCache(revalidate=settings.model_ttl > 0, max_entries=settings.model_cache_max_entries)
 bound_predictor = BoundPredictor()
 audio_memory_budget = AudioMemoryBudget(settings.transcription_max_memory_mb * 1024 * 1024)
 thread_pool: InferenceExecutor | None = None
+# Model loads run here, never in `thread_pool`: a load waiting for `lock` behind a multi-gigabyte
+# download would otherwise hold an inference slot, and enough of them answer every request with 503.
+load_pool: InferenceExecutor | None = None
 lock = threading.Lock()
+# Downloads are serialised on their own, outside `lock`, so loads of cached models never wait for them.
+download_lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
 # Hands the memory a burst of requests used back to the system shortly after the last one finishes.
@@ -85,7 +91,7 @@ release: asyncio.TimerHandle | None = None
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-    global thread_pool
+    global thread_pool, load_pool
     source_url, source_setting = model_source()
     log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
@@ -100,6 +106,9 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         if settings.request_threads > 0:
             # asyncio is a huge bottleneck for performance, so we use a thread pool to run blocking code
             thread_pool = InferenceExecutor(settings.request_threads, initializer=flush_denormals)
+            load_pool = InferenceExecutor(
+                max(2, settings.request_threads), initializer=flush_denormals, thread_name_prefix="model-load"
+            )
             log.info(f"Initialized request thread pool with {settings.request_threads} threads.")
         if settings.model_ttl > 0 and settings.model_ttl_poll_s > 0:
             asyncio.ensure_future(idle_shutdown_task())
@@ -117,11 +126,12 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         # `log.handlers.clear()` is deferred to the end so warnings emitted
         # by the shutdown branches above are still visible to operators.
         # See ml.md Medium "Lifespan teardown doesn't release model GPU memory".
-        if thread_pool is not None:
-            try:
-                thread_pool.shutdown(wait=True)
-            except Exception as error:
-                log.warning(f"Failed to shut down thread pool during shutdown: {error}")
+        for pool in (thread_pool, load_pool):
+            if pool is not None:
+                try:
+                    pool.shutdown(wait=True)
+                except Exception as error:
+                    log.warning(f"Failed to shut down thread pool during shutdown: {error}")
         bound_predictor.close()
         # Drop strong references held by the cache so Torch/OpenVINO sessions
         # (which may hold multi-GB of pinned GPU memory) are eligible for GC
@@ -226,7 +236,10 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
         without_deps: list[InferenceEntry] = []
         with_deps: list[InferenceEntry] = []
         for task, types in request.items():
+            # An unknown task or type is a malformed request (422), not a worker fault (500).
+            ModelTask(task)
             for type, entry in types.items():
+                ModelType(type)
                 # Validate per-task option keyspace. Unknown keys are rejected
                 # to prevent schema drift / arbitrary kwargs to model constructors.
                 # See ml.md High concern "external_prompt and other ML model options".
@@ -243,7 +256,7 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
                 dep = get_model_deps(parsed["name"], type, task)
                 (with_deps if dep else without_deps).append(parsed)
         return without_deps, with_deps
-    except (orjson.JSONDecodeError, ValidationError, KeyError, AttributeError) as e:
+    except (orjson.JSONDecodeError, ValidationError, KeyError, AttributeError, ValueError, TypeError) as e:
         log.error(f"Invalid request format: {e}")
         raise HTTPException(422, "Invalid request format.")
 
@@ -833,8 +846,17 @@ async def subject_matte(
     entry = without_deps[0]
     options = dict(entry["options"])
     device = options.pop("device", None)
+    # Every frame is checked from its header (size, equality with the first) before it is decoded, so
+    # an oversized clip is refused for the cost of one header read, not MAX_FRAMES RGB buffers.
+    images: list[Image] = []
     try:
-        images = [await run(decode_pil, await frame.read()) for frame in frames]
+        for frame in frames:
+            if frame.size is not None and frame.size > SUBJECT_MATTE_MAX_FRAME_BYTES:
+                raise ValueError(f"A cut-out frame is at most {SUBJECT_MATTE_MAX_FRAME_BYTES // (1024 * 1024)} MiB")
+            data = await frame.read()
+            images.append(await run(open_frame, data, images[0].size if images else None))
+    except ValueError as error:
+        raise HTTPException(400, str(error)[:512]) from error
     except Exception as error:
         raise HTTPException(400, "A cut-out frame is not an image") from error
     sizes = {image.size for image in images}
@@ -930,11 +952,44 @@ async def run(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     return await asyncio.get_running_loop().run_in_executor(thread_pool, partial_func)
 
 
+async def run_load(func: Callable[..., T], *args: Any) -> T:
+    pool = load_pool if load_pool is not None else thread_pool
+    if pool is None:
+        return func(*args)
+    return await asyncio.get_running_loop().run_in_executor(pool, partial(func, *args))
+
+
+def fetch(model: InferenceModel) -> None:
+    """Download a model (a no-op once cached) before the global load lock is taken.
+
+    Only one download runs at a time, but loads of cached models never wait for it. A missing model is
+    reported as the load would report it; a cache the download could not write is left to the locked
+    load, whose own repair and cooldown apply.
+    """
+    try:
+        with download_lock:
+            if not model.loaded:
+                model.download()
+    except ModelUnavailableError as error:
+        raise HTTPException(503, str(error)) from error
+    except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:
+        if not settings.model_downloads:
+            model.load_retry_at = time.monotonic() + 30.0
+            raise HTTPException(503, "Staged model failed to load; repair it with the model-staging command") from error
+        log.warning(f"Failed to download model '{model.model_name}'; the load retries it.", exc_info=error)
+
+
 async def load(model: InferenceModel) -> InferenceModel:
     if model.loaded:
         return model
 
     def _load(model: InferenceModel) -> InferenceModel:
+        if model.loaded:
+            return model
+        retry_at = getattr(model, "load_retry_at", None)
+        if retry_at is not None and time.monotonic() < retry_at:
+            raise HTTPException(503, f"Model '{model.model_name}' is cooling down after a load failure")
+        fetch(model)
         with lock:
             if model.loaded:
                 return model
@@ -986,7 +1041,7 @@ async def load(model: InferenceModel) -> InferenceModel:
                 model.load_retry_at = time.monotonic() + 30.0
                 raise
 
-    return await run(_load, model)
+    return await run_load(_load, model)
 
 
 async def idle_shutdown_task() -> None:
@@ -995,7 +1050,9 @@ async def idle_shutdown_task() -> None:
             last_called is not None
             and not active_requests
             and not lock.locked()
+            and not download_lock.locked()
             and not (thread_pool is not None and thread_pool.busy)
+            and not (load_pool is not None and load_pool.busy)
             and time.time() - last_called > settings.model_ttl
         ):
             log.info("Shutting down due to inactivity.")

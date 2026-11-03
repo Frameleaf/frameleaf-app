@@ -73,6 +73,29 @@ describe('logging interceptor redaction (FL-81)', () => {
     }
   });
 
+  it('masks a secret that travels in the path: cast tokens, render-worker grants and gallery zip tickets', () => {
+    expect(redactLogUrl('/api/cast/eyJhbGciOi.signed')).toBe('/api/cast/********');
+    expect(redactLogUrl('/cast/eyJhbGciOi?size=preview')).toBe('/cast/********?size=preview');
+    expect(redactLogUrl('/api/render-workers/operations/op-1/inputs/grant-secret')).toBe(
+      '/api/render-workers/operations/op-1/inputs/********',
+    );
+    expect(redactLogUrl('/api/photography/galleries/g-1/zip/zip-ticket?key=abc')).toBe(
+      '/api/photography/galleries/g-1/zip/********?key=********',
+    );
+  });
+
+  it('keeps the rest of the cast, render-worker and gallery routes readable', () => {
+    for (const url of [
+      '/api/cast',
+      '/api/casts/1',
+      '/api/render-workers/operations/op-1/inputs',
+      '/api/photography/galleries/g-1/zip',
+      '/api/photography/galleries/g-1',
+    ]) {
+      expect(redactLogUrl(url)).toBe(url);
+    }
+  });
+
   it('leaves an address without credentials unchanged', () => {
     expect(redactLogUrl('/api/server/ping')).toBe('/api/server/ping');
     expect(redactLogUrl('/api/search?size=10&page=2')).toBe('/api/search?size=10&page=2');

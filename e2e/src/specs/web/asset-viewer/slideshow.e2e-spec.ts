@@ -155,7 +155,8 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    await page.waitForTimeout(3500);
+    // It has played: the slideshow moved on to the other item (the default delay is 5 s).
+    await expect(page).not.toHaveURL(new RegExp(`/photos/${asset.id}$`), { timeout: 20_000 });
     await expect(page.locator('#immich-asset-viewer')).not.toHaveClass(/chrome-hidden/);
     await expect(footerPause(page)).toBeVisible();
   });

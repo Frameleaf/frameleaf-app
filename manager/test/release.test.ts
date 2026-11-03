@@ -114,8 +114,14 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
       /Build provenance is not trusted/,
     );
     assert.throws(() => verifyNasManifest({ ...nas, schemaVersion: 1 }, manifest));
-    for (const image of ['postgres:19', postgres.replace(':19beta4-pgvector0.8.7', ':14')])
-      assert.throws(() => verifyNasManifest({ ...nas, images: { ...nas.images, postgres: image } }, manifest));
+    for (const image of ['postgres:19', postgres.replace(':19beta4-pgvector0.8.7', ':14'), postgres.replace(':19beta4-pgvector0.8.7', ':19.0-pgvector0.8.7')])
+      assert.throws(() => verifyNasManifest({ ...nas, images: { ...nas.images, postgres: image } }, manifest), image);
+    // Review M2: a GA build of the same major verifies once the release lists it as a verified dependency.
+    const ga = postgres.replace(':19beta4-pgvector0.8.7', ':19.0-pgvector0.8.7');
+    verifyNasManifest(
+      { ...nas, images: { ...nas.images, postgres: ga } },
+      { ...manifest, dependencies: [{ reference: ga.split('@')[0], digest: ga.split('@')[1] }] },
+    );
 
     const names = [...INSTALL_FILES, 'nas-manifest.json', 'release-manifest.json', 'SHA256SUMS'];
     const assets = await Promise.all(

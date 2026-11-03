@@ -69,13 +69,13 @@ test('signs in with Google in a new tab, then shows the account, tests it and di
   await expect(page.getByText('Waiting for you on the Google page')).toBeVisible();
   await providerPage.close();
 
-  await expect(page.getByText('Signed in with Google. Frameleaf now sends from rivera.family@gmail.com.')).toBeVisible({
+  await expect(page.getByText('Signed in with Google. Frameleaf now sends from rivera.family@example.com.')).toBeVisible({
     timeout: 15_000,
   });
   await expect(status(page).getByRole('heading', { name: 'Email is set up' })).toBeVisible();
-  await expect(status(page)).toContainText('Frameleaf sends from rivera.family@gmail.com.');
+  await expect(status(page)).toContainText('Frameleaf sends from rivera.family@example.com.');
   const account = page.locator('.kit-row').filter({ hasText: 'Signed in as' });
-  await expect(account).toContainText('rivera.family@gmail.com');
+  await expect(account).toContainText('rivera.family@example.com');
   await expect(page.getByRole('button', { name: 'Use an app password instead' })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Mail server' })).toHaveCount(0);
 
@@ -91,14 +91,14 @@ test('signs in with Google in a new tab, then shows the account, tests it and di
   expect(sent.transport).toMatchObject({ type: 'gmail', password: '' });
 
   await account.getByRole('button', { name: 'Disconnect…' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Disconnect rivera.family@gmail.com?' });
+  const dialog = page.getByRole('dialog', { name: 'Disconnect rivera.family@example.com?' });
   await expect(dialog).toContainText('Nothing is sent by email until an account is set up again.');
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   expect(mock.requests.some(({ method }) => method === 'DELETE')).toBe(false);
 
   await account.getByRole('button', { name: 'Disconnect…' }).click();
   await page
-    .getByRole('dialog', { name: 'Disconnect rivera.family@gmail.com?' })
+    .getByRole('dialog', { name: 'Disconnect rivera.family@example.com?' })
     .getByRole('button', { name: 'Disconnect', exact: true })
     .click();
   await expect(
@@ -114,7 +114,7 @@ test('says email stopped and offers to sign in again when the provider asks for 
     enabled: true,
     connection: {
       provider: 'gmail',
-      email: 'rivera.family@gmail.com',
+      email: 'rivera.family@example.com',
       status: 'needs-sign-in',
       connectedAt: '2026-10-01T10:00:00.000Z',
       needsSignInSince: '2026-10-10T18:02:00.000Z',
@@ -192,7 +192,7 @@ test('Microsoft signs in only, and disconnecting says where to remove Frameleaf'
   ]);
   await providerPage.close();
   const account = page.locator('.kit-row').filter({ hasText: 'Signed in as' });
-  await expect(account).toContainText('rivera.family@outlook.com', { timeout: 15_000 });
+  await expect(account).toContainText('rivera.family@example.net', { timeout: 15_000 });
 
   await account.getByRole('button', { name: 'Disconnect…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Disconnect', exact: true }).click();

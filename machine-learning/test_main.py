@@ -27,7 +27,8 @@ from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
 from frameleaf_ml.config import MaxBatchSize, Settings, log, model_source, settings
-from frameleaf_ml.main import load, preload_models
+from frameleaf_ml.inference_executor import InferenceExecutor
+from frameleaf_ml.main import load, preload_models, run
 from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
 from frameleaf_ml.models.cache import ModelCache
 from frameleaf_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
@@ -2563,6 +2564,49 @@ class TestCache:
         assert isinstance(profiling, dict)
         assert profiling == model_cache.cache.profiling
 
+    async def test_identity_fields_are_normalised(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        one = await model_cache.get(
+            "test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="CPU", acceleration="OpenVINO"
+        )
+        same = await model_cache.get(
+            "test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device=" cpu ", acceleration="openvino"
+        )
+        assert same is one
+        assert mock_get_model.call_count == 1
+        assert len(model_cache.cache._cache) == 1
+        # The constructor still receives the device as the caller wrote it.
+        assert mock_get_model.call_args.kwargs["device"] == "CPU"
+
+    async def test_bounded_by_least_recent_use(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache(max_entries=2)
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+
+        async def get(name: str) -> Any:
+            return await model_cache.get(name, ModelType.VISUAL, ModelTask.SEARCH)
+
+        first, second = await get("a"), await get("b")
+        assert await get("a") is first
+        await get("c")
+        assert {key[0] for key in model_cache.cache._cache} == {"a", "c"}
+        assert await get("b") is not second
+        assert {key[0] for key in model_cache.cache._cache} == {"c", "b"}
+        assert mock_get_model.call_count == 4
+
+    async def test_evicts_an_instance_that_asked_to_be_replaced(
+        self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch
+    ) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="GPU")
+        one.evict_at = 100.0
+        monkeypatch.setattr("frameleaf_ml.models.cache.time.monotonic", lambda: 99.0)
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="GPU") is one
+        monkeypatch.setattr("frameleaf_ml.models.cache.time.monotonic", lambda: 100.0)
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="GPU") is not one
+        assert mock_get_model.call_count == 2
+
     async def test_loads_mclip(self) -> None:
         model_cache = ModelCache()
 
@@ -2827,6 +2871,76 @@ class TestLoad:
         mock_model.clear_cache.assert_not_called()
         mock_model.load.assert_not_called()
 
+    async def test_downloads_before_taking_the_global_lock(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
+        model.model_name, model.model_type = "fixture", ModelType.VISUAL
+        events: list[str] = []
+        model.download.side_effect = lambda: events.append("download")
+        model.load.side_effect = lambda: events.append("load")
+        with mock.patch("frameleaf_ml.main.lock") as load_lock:
+            load_lock.__enter__.side_effect = lambda: events.append("lock")
+            assert await load(model) is model
+        assert events == ["download", "lock", "load"]
+
+    async def test_a_failed_download_leaves_the_repair_to_the_locked_load(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "model_downloads", True)
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
+        model.model_name, model.model_type = "fixture", ModelType.VISUAL
+        model.download.side_effect = OSError("network")
+        assert await load(model) is model
+        model.load.assert_called_once()
+        model.clear_cache.assert_not_called()
+
+    async def test_a_missing_model_is_reported_before_the_lock(self) -> None:
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
+        model.model_name, model.model_type = "fixture", ModelType.VISUAL
+        model.download.side_effect = ModelUnavailableError("Model 'fixture' isn't available")
+        with pytest.raises(HTTPException) as raised:
+            await load(model)
+        assert raised.value.status_code == 503
+        model.load.assert_not_called()
+
+    async def test_loads_keep_the_inference_pool_free(self, monkeypatch: MonkeyPatch) -> None:
+        # L3: a load waiting for the global lock behind a long download never holds an inference slot.
+        inference, loads = InferenceExecutor(1), InferenceExecutor(2)
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", inference)
+        monkeypatch.setattr("frameleaf_ml.main.load_pool", loads)
+        started, release = threading.Event(), threading.Event()
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
+        model.model_name, model.model_type = "slow", ModelType.VISUAL
+
+        def slow_load() -> None:
+            started.set()
+            assert release.wait(5)
+            model.loaded = True
+
+        model.load.side_effect = slow_load
+        other = mock.Mock(spec=InferenceModel)
+        other.loaded, other.load_attempts, other.load_retry_at = False, 0, None
+        other.model_name, other.model_type = "other", ModelType.VISUAL
+        try:
+            first = asyncio.create_task(load(model))
+            assert await asyncio.to_thread(started.wait, 5)
+            second = asyncio.create_task(load(other))
+            await asyncio.sleep(0.05)
+            assert not second.done()
+            assert loads.busy
+            # Inference for already loaded models is still admitted while both loads are pending.
+            assert await run(lambda: "served") == "served"
+            assert not inference.busy
+            release.set()
+            assert await first is model
+            assert await second is other
+        finally:
+            release.set()
+            inference.shutdown(wait=True)
+            loads.shutdown(wait=True)
+
     async def test_falls_back_to_onnx_if_other_format_does_not_exist(self, warning: mock.Mock) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
         mock_model.model_name = "test_model_name"
@@ -3003,6 +3117,20 @@ def test_refuses_a_model_this_container_cannot_run_without_loading_it(
     assert warning.call_count == 1
     assert to_thread.await_count == 2
     assert all(call.args[0].__name__ == "missing_runtime" for call in to_thread.await_args_list)
+
+
+def test_unknown_task_or_type_is_a_malformed_request(deployed_app: TestClient) -> None:
+    # L5: an unregistered task or type is the caller's mistake (422), not a worker fault (500).
+    for entries in (
+        {"clip": {"audio": {"modelName": "ViT-B-32__openai"}}},
+        {"bogus-task": {"visual": {"modelName": "ViT-B-32__openai"}}},
+        {"clip": "not an object"},
+        {"clip": {"visual": {"modelName": 42}}},
+    ):
+        response = deployed_app.post(
+            "http://localhost:3003/predict", data={"entries": json.dumps(entries)}, files={"image": b"fake"}
+        )
+        assert response.status_code == 422, entries
 
 
 def test_options_validation_rejects_unknown_keys(deployed_app: TestClient) -> None:

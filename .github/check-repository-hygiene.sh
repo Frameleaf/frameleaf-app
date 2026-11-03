@@ -14,6 +14,19 @@ if [[ -n "${HYGIENE_BASE_SHA:-}" ]]; then
   git cat-file -e "$HYGIENE_BASE_SHA^{commit}"
   private_line=$(awk '/^# Private agent tooling / { print NR; exit }' .gitignore)
   [[ -n "$private_line" ]] || { echo '::error::Private artifact ignore rules are missing.'; exit 1; }
+  # Incoming paths are classified with this branch's .gitignore, so the private block may only grow:
+  # a PR that removes or narrows a rule (reports/ -> reports/x/) could otherwise bring the report it
+  # unignored with it. Every private rule the base branch has must still be present here.
+  private_rules() {
+    awk 'found && !/^#/ && !/^[[:space:]]*$/ { print } /^# Private agent tooling / { found=1 }' | sort -u
+  }
+  base_rules=$(git show "$HYGIENE_BASE_SHA:.gitignore" 2>/dev/null | private_rules || true)
+  head_rules=$(private_rules < .gitignore)
+  removed_rules=$(comm -23 <(printf '%s\n' "$base_rules") <(printf '%s\n' "$head_rules"))
+  if [[ -n "$removed_rules" ]]; then
+    printf '%s\n' '::error::Private artifact ignore rules were removed or narrowed in this change. Restore them; private work products stay outside the repository.' "$removed_rules"
+    exit 1
+  fi
   # A merge that brings the base branch in is compared only with that base parent: what the base
   # already holds is not incoming, but anything the merge itself adds still is.
   incoming() {

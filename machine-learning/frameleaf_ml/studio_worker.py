@@ -8,6 +8,7 @@ in either leaves the other running, and the worker is restarted with a growing b
 
 import errno
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -42,9 +43,15 @@ def studio_worker_command(env: Mapping[str, str]) -> list[str] | None:
     return [env.get("FRAMELEAF_STUDIO_NODE", "node"), entry]
 
 
+# Variables that carry credentials. The worker enrols through the trust volume and reads only its
+# FRAMELEAF_STUDIO_* settings, so the inference service's bearer token, the model source token and
+# anything of their kind never reach it, or the browser it drives.
+SECRET_KEY_PATTERN = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_KEY|PRIVATE_KEY", re.IGNORECASE)
+
+
 def worker_env(env: Mapping[str, str]) -> dict[str, str]:
-    """The worker's environment: the container's, without the inference allocator preload."""
-    return {key: value for key, value in env.items() if key != "LD_PRELOAD"}
+    """The worker's environment: the container's, without the inference allocator preload or any credential."""
+    return {key: value for key, value in env.items() if key != "LD_PRELOAD" and SECRET_KEY_PATTERN.search(key) is None}
 
 
 def next_backoff(previous: float, ran_for: float) -> float:

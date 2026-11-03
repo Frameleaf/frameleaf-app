@@ -8,13 +8,73 @@ type MatchValueConfig = {
   caseSensitive?: boolean;
 };
 
+/** The longest regular expression a filter takes; file names and EXIF values need nothing near it. */
+export const MAX_REGEX_PATTERN_LENGTH = 256;
+
+/** `{n}`, `{n,}` or `{n,m}` at `index`: a counted quantifier (anything else there is a literal brace). */
+const countedQuantifierAt = (pattern: string, index: number) => /^\{\d+(?:,\d*)?\}/.test(pattern.slice(index));
+
+/**
+ * Whether a quantified group holds a quantifier, as in `(a+)+`, `(a*)*`, `(\d?){2,}` or `((a+)b)+`:
+ * the shapes that make a backtracking matcher try an exponential number of ways to split the input.
+ * The workflow owner writes the pattern and anyone can upload a file name for it to run against, and
+ * the plugin runtime has no backtracking limit, so such patterns are refused up front. Escapes and
+ * character classes are skipped; `(?` opens a non-capturing group or an assertion, not a quantifier.
+ */
+export const hasNestedQuantifier = (pattern: string): boolean => {
+  const enclosing: boolean[] = [];
+  let quantifierInside: boolean = false;
+  let inClass = false;
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index];
+    if (char === '\\') {
+      index++;
+    } else if (inClass) {
+      inClass = char !== ']';
+    } else if (char === '[') {
+      inClass = true;
+    } else if (char === '(') {
+      enclosing.push(quantifierInside);
+      quantifierInside = false;
+      if (pattern[index + 1] === '?') {
+        index++;
+      }
+    } else if (char === ')') {
+      const inner: boolean = quantifierInside;
+      quantifierInside = enclosing.pop() ?? false;
+      const next = pattern[index + 1];
+      const quantified = next === '*' || next === '+' || (next === '{' && countedQuantifierAt(pattern, index + 1));
+      if (inner && quantified) {
+        return true;
+      }
+      quantifierInside ||= inner || quantified;
+    } else if (char === '*' || char === '+' || char === '?' || (char === '{' && countedQuantifierAt(pattern, index))) {
+      quantifierInside = true;
+    }
+  }
+  return false;
+};
+
+/** The filter's regular expression, or a RangeError for one that could run for an unbounded time. */
+const filterRegExp = (pattern: string, flags: string) => {
+  if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
+    throw new RangeError(`Regular-expression patterns are limited to ${MAX_REGEX_PATTERN_LENGTH} characters`);
+  }
+  if (hasNestedQuantifier(pattern)) {
+    throw new RangeError(
+      'Regular-expression patterns must not quantify a group that holds a quantifier (such as (a+)+), which can take unbounded time',
+    );
+  }
+  return new RegExp(pattern, flags);
+};
+
 const matchValueResult = (value: string, config: MatchValueConfig) => {
   const { pattern, matchType = 'contains', caseSensitive = false } = config;
   if (matchType === 'regex') {
     if (typeof value !== 'string' || typeof pattern !== 'string') {
       throw new TypeError('Regular-expression inputs must be strings');
     }
-    return { workflow: { continue: new RegExp(pattern, caseSensitive ? '' : 'i').test(value) } };
+    return { workflow: { continue: filterRegExp(pattern, caseSensitive ? '' : 'i').test(value) } };
   }
   const searchName = caseSensitive ? value : value.toLowerCase();
   const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();

@@ -26,6 +26,35 @@ download_dot_env_file() {
   "${Curl[@]}" "$RepoUrl"/example.env -o ./.env
 }
 
+download_checksums() {
+  echo "Downloading release checksums..."
+  "${Curl[@]}" "$RepoUrl"/SHA256SUMS -o ./SHA256SUMS
+}
+
+# Every release publishes SHA256SUMS beside its files (the same list Frameleaf Manager verifies against the
+# signed release manifest). A download that does not match it is not used.
+verify_download() {
+  local -r name=$1 file=$2
+  local expected actual
+  expected=$(awk -v name="$name" '$2 == name { print $1 }' ./SHA256SUMS)
+  if [[ ! $expected =~ ^[a-f0-9]{64}$ ]]; then
+    echo "SHA256SUMS has no checksum for $name" >&2
+    return 1
+  fi
+  if command -v sha256sum >/dev/null; then
+    actual=$(sha256sum "$file" | awk '{ print $1 }')
+  elif command -v shasum >/dev/null; then
+    actual=$(shasum -a 256 "$file" | awk '{ print $1 }')
+  else
+    echo 'no sha256sum or shasum binary found; install coreutils and try again' >&2
+    return 1
+  fi
+  if [[ $actual != "$expected" ]]; then
+    echo "$name does not match the release checksum; refusing to use it" >&2
+    return 1
+  fi
+}
+
 generate_random_password() {
   echo "Generate random password for .env file..."
   local rand_pass
@@ -100,7 +129,16 @@ EOF
 # MAIN
 main() {
   echo "Starting Frameleaf installation..."
-  local -r RepoUrl='https://github.com/Frameleaf/frameleaf-app/releases/latest/download'
+  # FRAMELEAF_RELEASE pins one release tag (frameleaf-vX.Y.Z); otherwise the latest release is installed.
+  local RepoUrl='https://github.com/Frameleaf/frameleaf-app/releases/latest/download'
+  if [[ -n ${FRAMELEAF_RELEASE:-} ]]; then
+    if [[ ! $FRAMELEAF_RELEASE =~ ^frameleaf-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+      echo "FRAMELEAF_RELEASE must be a release tag such as frameleaf-v1.2.3" >&2
+      return 16
+    fi
+    RepoUrl="https://github.com/Frameleaf/frameleaf-app/releases/download/${FRAMELEAF_RELEASE}"
+  fi
+  readonly RepoUrl
   local -a Curl
   if command -v curl >/dev/null; then
     Curl=(curl -fsSL)
@@ -122,6 +160,14 @@ main() {
   download_dot_env_file || {
     echo 'error downloading .env'
     return 12
+  }
+  download_checksums || {
+    echo 'error downloading release checksums'
+    return 17
+  }
+  verify_download docker-compose.yml ./docker-compose.yml && verify_download example.env ./.env || {
+    echo 'error verifying the downloaded release files'
+    return 18
   }
   generate_random_password || {
     echo 'error generating database password'

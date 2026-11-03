@@ -129,6 +129,8 @@ describe(ActivityService.name, () => {
     it("keeps Locked items in view for the duplicate-like check of the caller's own reactions", async () => {
       const [albumId, assetId, userId] = newUuids();
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.album.getAssetIds.mockResolvedValue(new Set([assetId]));
       mocks.activity.search.mockResolvedValue([]);
       mocks.activity.create.mockResolvedValue(
         getForActivity(ActivityFactory.create({ userId, albumId, assetId, isLiked: true })),
@@ -177,6 +179,12 @@ describe(ActivityService.name, () => {
   });
 
   describe('addComment', () => {
+    /** The item the reaction names is readable by the caller and is in the album. */
+    const assetInAlbum = (assetId: string) => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.album.getAssetIds.mockResolvedValue(new Set([assetId]));
+    };
+
     it('should require access to the album', async () => {
       const [albumId, assetId] = newUuids();
 
@@ -190,6 +198,7 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create({ albumId, assetId, userId });
 
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      assetInAlbum(assetId);
       mocks.activity.create.mockResolvedValue(getForActivity(activity));
 
       await sut.create(AuthFactory.create({ id: userId }), {
@@ -213,7 +222,7 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create({ albumId, assetId, userId });
 
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
-      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      assetInAlbum(assetId);
       mocks.activity.create.mockResolvedValue(getForActivity(activity));
 
       await sut.create(
@@ -236,6 +245,36 @@ describe(ActivityService.name, () => {
       });
     });
 
+    it('refuses a reaction on an item the caller cannot read, whatever their hidden-content setting', async () => {
+      const [albumId, assetId, userId] = newUuids();
+
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.album.getAssetIds.mockResolvedValue(new Set([assetId]));
+
+      await expect(
+        sut.create(AuthFactory.create({ id: userId }), { albumId, assetId, type: ReactionType.COMMENT, comment: 'hi' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userId, new Set([assetId]), undefined);
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a reaction on an item that is not in the album', async () => {
+      const [albumId, assetId, userId] = newUuids();
+
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+
+      await expect(
+        sut.create(AuthFactory.create({ id: userId }), { albumId, assetId, type: ReactionType.LIKE }),
+      ).rejects.toThrow('Asset is not in the album');
+
+      expect(mocks.album.getAssetIds).toHaveBeenCalledWith(albumId, [assetId]);
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+    });
+
     it('should fail because activity is disabled for the album', async () => {
       const [albumId, assetId] = newUuids();
       const activity = ActivityFactory.create({ albumId, assetId });
@@ -253,6 +292,7 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create({ userId, albumId, assetId, isLiked: true });
 
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      assetInAlbum(assetId);
       mocks.activity.create.mockResolvedValue(getForActivity(activity));
       mocks.activity.search.mockResolvedValue([]);
 
@@ -267,6 +307,7 @@ describe(ActivityService.name, () => {
 
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      assetInAlbum(assetId);
       mocks.activity.search.mockResolvedValue([getForActivity(activity)]);
 
       await sut.create(AuthFactory.create(), { albumId, assetId, type: ReactionType.LIKE });

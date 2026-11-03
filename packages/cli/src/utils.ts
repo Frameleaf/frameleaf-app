@@ -10,7 +10,7 @@ import {
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { lstat, readFile, stat, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { join, resolve } from 'node:path';
 import yaml from 'yaml';
@@ -67,19 +67,37 @@ Please make sure your API key has the correct permissions.`,
   }
 };
 
-export const connect = async (url: string, key: string) => {
+/**
+ * The API endpoint `.well-known/immich` at `url` names, or null when there is none or it points at
+ * another origin. The API key is sent to the endpoint and the endpoint is saved to `auth.yml`, so a
+ * document that named a different host (a compromised proxy, a domain that changed hands) would hand
+ * the key to a third party for good; only an endpoint on the origin the person typed is taken.
+ */
+export const discoverEndpoint = async (url: string): Promise<string | undefined> => {
   const wellKnownUrl = new URL('.well-known/immich', url);
+  let endpoint: URL;
   try {
     // eslint-disable-next-line unicorn/prefer-await
     const wellKnown = (await fetch(wellKnownUrl).then((response) => response.json())) as { api: { endpoint: string } };
-    const endpoint = new URL(wellKnown.api.endpoint, url).href;
-    if (endpoint !== url) {
-      console.debug(`Discovered API at ${endpoint}`);
-    }
-    url = endpoint;
+    endpoint = new URL(wellKnown.api.endpoint, url);
   } catch {
-    // noop
+    return;
   }
+  if (endpoint.origin !== new URL(url).origin) {
+    console.warn(
+      `Ignoring the API endpoint ${endpoint.origin} that ${wellKnownUrl.origin}/.well-known/immich names: it is on a different origin`,
+    );
+    return;
+  }
+  return endpoint.href;
+};
+
+export const connect = async (url: string, key: string) => {
+  const endpoint = await discoverEndpoint(url);
+  if (endpoint && endpoint !== url) {
+    console.debug(`Discovered API at ${endpoint}`);
+  }
+  url = endpoint ?? url;
 
   init({ baseUrl: url, apiKey: key });
 
@@ -171,9 +189,24 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
   for await (const currentPath of pathsToCrawl) {
     try {
       const absolutePath = resolve(currentPath);
-      const stats = await stat(absolutePath);
-      if (stats.isFile() || stats.isSymbolicLink()) {
+      // lstat, not stat: a path named on the command line may itself be a link. A link to a file is
+      // uploaded through the link; a link to a folder was named on purpose, so it is crawled, but
+      // links met inside a folder are never followed (see `followSymbolicLinks` below).
+      const stats = await lstat(absolutePath);
+      if (stats.isFile()) {
         crawledFiles.push(absolutePath);
+      } else if (stats.isSymbolicLink()) {
+        let target;
+        try {
+          target = await stat(absolutePath);
+        } catch {
+          // a dangling link: uploaded (and reported) as a file
+        }
+        if (target?.isDirectory()) {
+          patterns.push(convertPathToPatternOnWin(absolutePath));
+        } else {
+          crawledFiles.push(absolutePath);
+        }
       } else {
         patterns.push(convertPathToPatternOnWin(absolutePath));
       }
@@ -203,6 +236,9 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     caseSensitiveMatch: false,
     dot: includeHidden,
     ignore: [`**/${ignorePattern}`],
+    // a linked folder inside an upload root leads elsewhere (a NAS share, another library); the
+    // files behind it must not be uploaded and, with --delete, must never be removed
+    followSymbolicLinks: false,
   });
   globbedFiles.push(...crawledFiles);
   return globbedFiles.toSorted();

@@ -38,7 +38,7 @@ The launcher refuses a state or backup folder that another container already use
 
 ## Advanced container settings
 
-Setup's **Advanced container settings** let a home-lab administrator add, per container (`frameleaf-server`, `frameleaf-machine-learning`, `database`), environment variables, extra bind-mounted folders (`/host:/container[:ro]`) and a memory or CPU limit. They are checked when the configuration is reviewed, written into the generated Compose stack, and stored with the application configuration so updates, restores and library moves keep them. Manager's own wiring stays out of reach: `DB_*`, `POSTGRES_*`, `FRAMELEAF_MANAGER_*`, `IMMICH_CONFIG_FILE` and `IMMICH_MEDIA_LOCATION` are refused, as is any folder under `/run/frameleaf`, `/var/lib/postgresql`, `/cache` or an existing media target. Extra folders are mounted with `create_host_path: false`; a missing host folder fails the install rather than being created somewhere unexpected. Settings for machine learning wait until it is turned on.
+Setup's **Advanced container settings** let a home-lab administrator add, per container (`frameleaf-server`, `frameleaf-machine-learning`, `database`), environment variables, extra bind-mounted folders (`/host:/container[:ro]`) and a memory or CPU limit. They are checked when the configuration is reviewed, written into the generated Compose stack, and stored with the application configuration so updates, restores and library moves keep them. Manager's own wiring stays out of reach: `DB_*`, `POSTGRES_*`, `FRAMELEAF_MANAGER_*`, `IMMICH_CONFIG_FILE` and `IMMICH_MEDIA_LOCATION` are refused, as is any folder under `/run/frameleaf`, `/var/lib/postgresql`, `/cache` or an existing media target. Host paths that would hand the network-exposed server the host are refused as sources whatever the request says: `/`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/boot`, `/run`, `/var/run` (the Docker socket), `/var/lib/docker` and Manager's own state folder. Every other source must lie under one of Manager's media roots, database roots or `MANAGER_MOUNT_ROOTS`, a colon-separated allow-list of further host folders the administrator has mapped into Manager at identical paths. Extra folders are mounted with `create_host_path: false`; a missing host folder fails the install rather than being created somewhere unexpected. Settings for machine learning wait until it is turned on.
 
 On an installed server the same card sits on the **Services** screen, pre-filled from the stored configuration (`GET manager-api/container-settings`). Saving (`POST manager-api/container-settings`) runs the same checks against the installation's real media mounts, then starts a journaled `reconfigure` operation: the previous settings are recorded first, the stack is re-rendered and stored, and `compose up` recreates only the containers whose definition changed. A failed apply can be resumed, or cancelled back to the recorded previous settings; like every operation it is refused while another one is running.
 
@@ -100,6 +100,9 @@ For home-lab HTTP access, set the container’s `MANAGER_ORIGIN` to the exact br
 address, such as `http://tower.local:2282`, and map that host port to container port
 9443. With `manager/launch.sh`, pass that address as the fifth argument; the launcher
 does not use `MANAGER_ORIGIN` from its environment. This serves HTTP directly.
+Changing `MANAGER_ORIGIN` later (a new hostname, port or scheme) is safe: Manager starts,
+logs the change and revokes every paired desktop device, because their signed requests
+were bound to the old origin. Pair the desktop app again; browser sessions are unaffected.
 HTTP uses an explicit session header instead of a cookie, so other services on
 the same host do not receive Manager credentials. The browser holds this session
 only in memory; reloading the page requires sign-in. HTTP sends
@@ -108,6 +111,42 @@ HTTPS origins retain certificate validation and Secure cookies. Leaving the orig
 unset retains the existing local HTTPS listener and HTTP-to-HTTPS redirect.
 The desktop-owned native Manager continues to use its private loopback TLS identity.
 
+### Network placement and proxies
+
+The first administrator can only be created from a home-network address while Manager is
+unclaimed. A connection that arrives from the container's own gateway (for example
+`172.17.0.1`) came through Docker's userland proxy, NAT or a reverse proxy, so its real
+origin is unknown; Manager refuses such a claim (`claim_proxied_address_unverified`) and
+logs why, unless one of these says who the client is:
+
+- `MANAGER_TRUSTED_PROXIES`: comma-separated addresses or CIDR prefixes of proxies whose
+  `X-Forwarded-For` header Manager trusts (for example `172.17.0.1` or `10.0.0.0/8`). The
+  rightmost address in the header that no trusted proxy added is the client; it is used for
+  the home-network check and for per-client rate limits. Without this setting the header is
+  ignored.
+- Publishing Manager's port on `127.0.0.1` only (the launcher's default `LAN_ADDRESS`, so
+  `MANAGER_BIND_ADDRESS` is loopback): then the gateway can only carry this host's own
+  browser, and it counts as home.
+
+Publish Manager directly on a LAN address whenever possible; rootless Docker and NAS portal
+proxies make every client look like the gateway.
+
+## State retention
+
+Manager's state folder (`MANAGER_DATA`) holds, per operation, the plaintext database dump and
+the recovery record that it snapshots into the encrypted Restic repository, the copy of a
+stopped Immich database taken for an import, a restored snapshot for every restore review and
+the verified release bundle of every review. Once an operation has settled (completed, or
+cancelled after a failure) Manager deletes its `checkpoints/<operation>/database.dump` and
+`recovery.json` (the `compose.json` beside them stays), its `imports/<operation>.dump`, the
+`restore-<review>` and `media-moves/<review>` folders of spent or expired reviews, and all but
+the three most recent release bundles that no open review points at. The sweep runs when
+Manager starts and after every operation; an operation that failed keeps everything it may
+need to resume. The database password lives in `manager.sqlite` and in the 0600
+`stack/database-password` file the containers read; it is no longer placed in container
+environment variables, so DockerMan templates, `docker inspect` and the compose text carry only
+the file path. The recovery export (`POST manager-api/export`) includes it explicitly.
+
 ## Backup scope
 
 Manager backs up the database and recovery configuration, including required secrets, in an encrypted Restic repository. It does **not** back up photos, videos or external libraries. Import reuses a verified Immich database recovery backup no more than 24 hours old and skips creating another recovery backup. Import still takes a current logical dump after Immich's writers stop. The frozen reader then imports the stopped source into the fresh canonical database; an older recovery backup is never used as the live import database.
@@ -115,6 +154,18 @@ Manager backs up the database and recovery configuration, including required sec
 Reuse requires a native timestamped backup from the selected source's backup folder, a complete gzip/SQL stream, and the source library's original administrator identity in that SQL. File modification time alone is insufficient. Unrecognized, incomplete, stale or mismatched backups cause Manager to create a recovery checkpoint. This format and identity check is separate from the frozen one-time importer preflight.
 
 Keep original library locations available when restoring. A database backup cannot undo media changes made after Frameleaf starts. Manager must not automatically restart Immich against media Frameleaf has modified.
+
+## Database image changes
+
+A release that ships a different `frameleaf-postgres` image is refused as an update
+(`database_image_change_requires_restore`) and taken through a restore into a new database
+folder, unless the release's signed NAS manifest declares the change in place: same PostgreSQL
+major, the installed image listed in `databaseImageChange.from`, and a checkpoint backup taken
+first (Manager always snapshots one before `apply-release`). Release engineering declares it by
+adding `docker/postgres/database-image-change.json` for the release that makes the move; the
+bundle verifier checks it, and Manager retargets a withdrawn update only to a release that is
+allowed for the installed image. Moving from a PostgreSQL beta to its GA build is such a
+declaration; a new major always restores.
 
 ## Recovery of PostgreSQL and Manager
 

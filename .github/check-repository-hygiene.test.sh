@@ -99,4 +99,31 @@ if HYGIENE_BASE_SHA="$base_report" bash check.sh > /dev/null; then
   printf '%s\n' 'FAILED: accepted report added by a base merge'
   exit 1
 fi
-printf '%s\n' 'PASS: normal source, force-add rejection, deleted-report history, merge history and base merges'
+# Narrowing or removing a private ignore rule in the same change must not let a report through.
+git checkout -qb narrowed "$base"
+sed -i 's#^reports/$#reports/x/#' .gitignore
+git check-ignore -q reports/private.md && { printf '%s\n' 'FAILED: narrowed rule still ignores'; exit 1; }
+mkdir -p reports
+printf '%s\n' private > reports/private.md
+git add .gitignore reports/private.md
+git commit -qm 'narrow the private rules'
+if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
+  printf '%s\n' 'FAILED: accepted a narrowed private ignore rule'
+  exit 1
+fi
+git checkout -qb removed "$base"
+sed -i '/^CLAUDE\.md$/d' .gitignore
+git add .gitignore
+git commit -qm 'drop a private rule'
+if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
+  printf '%s\n' 'FAILED: accepted a removed private ignore rule'
+  exit 1
+fi
+# Adding a rule, or reordering the block, is fine.
+git checkout -qb widened "$base"
+printf '%s\n' 'scratch/' >> .gitignore
+git add .gitignore
+git commit -qm 'add a private rule'
+HYGIENE_BASE_SHA="$base" bash check.sh
+git checkout -q -
+printf '%s\n' 'PASS: normal source, force-add rejection, deleted-report history, merge history, base merges and private-rule narrowing'

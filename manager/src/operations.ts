@@ -14,9 +14,13 @@ import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose,
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
+import { Retention } from './retention.js';
+import { environment } from './docker.js';
 import {
   Refusal,
+  databaseImageChangeAllowed,
   digest,
+  postgresMajor,
   recentBackup,
   releaseTag,
   type Installation,
@@ -49,6 +53,8 @@ export const ReviewInput = z
 type Review = {
   id: string;
   expires: number;
+  /** The port the administrator reached Manager on, so the stack cannot be offered Manager's own port. */
+  managerPort?: number;
   input: z.infer<typeof ReviewInput>;
   release: VerifiedRelease;
   source: Source | null;
@@ -130,6 +136,7 @@ export class Operations {
   private mediaMove: LibraryMove;
   private discovery: Discovery;
   private fencing: Fencing;
+  private retention: Retention;
   private executing = new Set<string>();
   constructor(
     readonly store: Store,
@@ -142,6 +149,7 @@ export class Operations {
   ) {
     this.discovery = new Discovery(docker);
     this.fencing = new Fencing(docker, store, autostartFile);
+    this.retention = new Retention(store, store.directory, join(store.directory, 'releases'));
     this.mediaMove = new LibraryMove(
       store,
       docker,
@@ -209,6 +217,10 @@ export class Operations {
   }
   installation(): Installation | null {
     return this.store.get('installation');
+  }
+  /** Removes dumps, recovery records, restore reviews and old release bundles no open operation needs. */
+  prune(): Promise<string[]> {
+    return this.retention.sweep();
   }
   directory(): string {
     return join(this.store.directory, 'stack');
@@ -296,7 +308,7 @@ export class Operations {
       backup: backup ? { action: 'reuse', name: backup.name, takenAt: backup.takenAt } : { action: 'create' },
     };
   }
-  async review(input: z.infer<typeof ReviewInput>) {
+  async review(input: z.infer<typeof ReviewInput>, managerPort?: number) {
     if (this.installation()) throw new Refusal('installation_already_exists');
     const compatibility = await this.docker.compatibility();
     let source: Source | null = null,
@@ -307,9 +319,9 @@ export class Operations {
       if (!input.mediaPath) throw new Refusal('media_path_required');
       await storagePath(input.mediaPath, this.roots, 1024 ** 3);
     }
-    await this.checkPort(input.port, null, source);
+    await this.checkPort(input.port, null, source, managerPort);
     // The same conflict check the stack generator runs, against the mounts this installation will have.
-    checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {});
+    checkServiceOverrides((source?.mounts ?? [{ target: '/data' }]).map(({ target }) => target), input.services ?? {}, this.mountRoots());
     const databaseStorage = await this.databaseStorage.validate(
       input.databaseRoot,
       (source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -320,6 +332,7 @@ export class Operations {
     const review: Review = {
       id: randomUUID(),
       expires: Date.now() + 900_000,
+      managerPort,
       input,
       release,
       source,
@@ -353,9 +366,26 @@ export class Operations {
    * An import may reuse the port of the Immich it replaces: Immich is stopped with restart disabled
    * before Frameleaf starts, and source recovery stops Frameleaf before restarting Immich.
    */
-  async checkPort(port: number, installation?: Installation | null, source?: Source | null): Promise<void> {
+  async checkPort(port: number, installation?: Installation | null, source?: Source | null, managerPort?: number): Promise<void> {
     const containers = await this.docker.inventory();
     const replaced = new Set(source ? [...source.workers, source.database.container] : []);
+    // Manager's own published port (review L2): the port the request came in on, and whatever the host
+    // publishes for this Manager container, so an unset MANAGER_ORIGIN cannot leave the guess at 2282.
+    // Docker's bind at compose up remains the final authority for ports used by non-container host processes.
+    const own = new Set([
+      Number(new URL(process.env.MANAGER_ORIGIN || 'https://localhost:2282').port || 443),
+      ...(managerPort ? [managerPort] : []),
+      ...containers
+        .filter(
+          (c) =>
+            c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
+            environment(c).MANAGER_DATA === this.store.directory,
+        )
+        .flatMap((c) =>
+          Object.values(c.HostConfig.PortBindings ?? {}).flatMap((values) => (values ?? []).map((v) => Number(v.HostPort))),
+        ),
+    ]);
+    if (own.has(port)) throw new Refusal('port_in_use');
     if (
       containers.some(
         (c) =>
@@ -367,9 +397,6 @@ export class Operations {
           ),
       )
     )
-      throw new Refusal('port_in_use');
-    // Docker's bind at compose up is the final authority for ports used by non-container host processes.
-    if (port === Number(new URL(process.env.MANAGER_ORIGIN || 'https://localhost:2282').port || 443))
       throw new Refusal('port_in_use');
   }
   start(reviewId: string, key: string): Operation {
@@ -403,7 +430,11 @@ export class Operations {
         );
         this.store.save(operation);
       })
-      .finally(() => this.executing.delete(operation.id));
+      .finally(() => {
+        this.executing.delete(operation.id);
+        // A settled operation no longer needs its plaintext dump, recovery record or restored snapshot.
+        void this.retention.sweep();
+      });
   }
   resume(id: string): Operation {
     const operation = this.store.history().find((o) => o.id === id);
@@ -485,7 +516,7 @@ export class Operations {
       if (this.installation()) throw new Refusal('installation_already_exists');
       await this.releases.eligible(review.input.tag);
       if (review.source) await this.discovery.revalidate(review.source);
-      await this.checkPort(review.input.port, null, review.source);
+      await this.checkPort(review.input.port, null, review.source, review.managerPort);
       await this.databaseStorage.validate(
         review.input.databaseRoot,
         (review.source?.summary.databaseBytes ?? 1024 ** 3) * 3,
@@ -973,13 +1004,24 @@ export class Operations {
     const input = { services };
     const prior = this.store.request('reconfigure', key, input);
     if (prior) return prior;
-    checkServiceOverrides(installation.mounts.map(({ target }) => target), services);
+    checkServiceOverrides(installation.mounts.map(({ target }) => target), services, this.mountRoots());
     const { operation, created } = this.store.start('reconfigure', key, input);
     if (created) this.launch(operation, () => this.applyReconfigure(operation));
     return operation;
   }
+  /**
+   * Host folders an advanced container setting may bind-mount: Manager's media and database roots (mapped
+   * into Manager at identical paths) plus MANAGER_MOUNT_ROOTS, the administrator's explicit allow-list.
+   */
+  private mountRoots(): string[] {
+    return [
+      ...this.roots,
+      ...(this.databaseStorage?.roots ?? []),
+      ...(process.env.MANAGER_MOUNT_ROOTS ?? '').split(':'),
+    ].filter(Boolean);
+  }
   private async renderServices(installation: Installation, services: ServiceOverrides): Promise<void> {
-    checkServiceOverrides(installation.mounts.map(({ target }) => target), services);
+    checkServiceOverrides(installation.mounts.map(({ target }) => target), services, this.mountRoots());
     const application = ApplicationConfig.parse({ ...this.application(), services });
     const release = await this.releases.acquire(installation.release);
     await renderCompose(release, installation, this.store.get<string>('database-password')!, this.directory(), application);
@@ -1005,7 +1047,8 @@ export class Operations {
     const compatibility = await this.docker.compatibility();
     const release = await this.releases.acquire(tag);
     const existingCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
-    if (existingCompose.services.database.image !== release.nas.images.postgres)
+    // A database image change is an update only when the signed bundle declares it in place for this major.
+    if (!databaseImageChangeAllowed(existingCompose.services.database.image, release.nas))
       throw new Refusal('database_image_change_requires_restore');
     const postgres = JSON.parse(
       await this.docker.sql(
@@ -1014,7 +1057,9 @@ export class Operations {
       'extensions',(SELECT json_agg(json_build_object('name',extname,'version',extversion) ORDER BY extname) FROM pg_extension));`,
       ),
     );
-    if (postgres.major !== 19) throw new Refusal('canonical_postgres_19_required');
+    const expectedMajor = postgresMajor(release.nas.images.postgres) ?? 19;
+    if (postgres.major !== expectedMajor)
+      throw new Refusal(expectedMajor === 19 ? 'canonical_postgres_19_required' : 'database_image_change_requires_restore');
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
     const id = randomUUID();
     this.store.set(`update:${id}`, {
@@ -1043,7 +1088,12 @@ export class Operations {
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
   }
-  /** Retry withdrawn targets with a newer compatible release, retaining targets that may have started. */
+  /**
+   * Retry withdrawn targets with the next newer compatible release, retaining targets that may have started.
+   * The administrator reviewed one release's notes: the retarget is the lowest newer release (never a jump
+   * across several), and only while that review is still valid; afterwards a fresh review-update is required
+   * (review L7).
+   */
   private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
     // Older journals cannot prove a selected target never started.
     if (
@@ -1059,21 +1109,28 @@ export class Operations {
       },
     );
     if (!withdrawn) return review;
+    if (typeof review.expires === 'number' && review.expires < Date.now())
+      throw new Refusal(
+        'update_review_expired',
+        409,
+        `${review.release.nas.tag} was withdrawn after this update was reviewed and the review has expired. Cancel this update, then review the newer release before installing it.`,
+      );
     // Same checks as reviewUpdate: a release that changes PostgreSQL or lacks this platform needs a restore instead.
     const postgres = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
     let release: VerifiedRelease | undefined;
     const newer = (await this.releases.available())
       .map(({ tag }) => tag)
       .filter((tag) => isNewerRelease(tag, review.release.nas.tag))
-      .sort((a, b) => compareReleases(b, a));
+      .sort(compareReleases);
     for (const tag of newer) {
       const candidate = await this.releases.acquire(tag);
-      if (candidate.nas.images.postgres === postgres && candidate.nas.platforms.includes(review.platform)) {
+      if (databaseImageChangeAllowed(postgres, candidate.nas) && candidate.nas.platforms.includes(review.platform)) {
         release = candidate;
         break;
       }
     }
     if (!release) throw new Refusal('release_not_eligible');
+    console.error(`manager: update target ${review.release.nas.tag} was withdrawn; retrying with the next release ${release.nas.tag}`);
     const retargeted = { ...review, release };
     this.store.set(`update:${operation.input.reviewId}`, retargeted);
     operation.completed = operation.completed.filter((step) => step !== 'download-images');
@@ -1112,10 +1169,17 @@ export class Operations {
       const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
       if (source) await this.fencing.verify(source, installation);
       await this.fencing.assertMedia(installation.mounts, installation);
-      // PostgreSQL image changes require a logical restore into a new host directory.
+      // PostgreSQL image changes require a logical restore into a new host directory, unless the signed
+      // bundle declares this exact same-major transition in place; the checkpoint above is its fallback.
       const oldCompose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
-      if (oldCompose.services.database.image !== review.release.nas.images.postgres)
+      const previousImage: string = oldCompose.services.database.image;
+      if (!databaseImageChangeAllowed(previousImage, review.release.nas))
         throw new Refusal('database_image_change_requires_restore');
+      if (previousImage !== review.release.nas.images.postgres) {
+        if (!operation.completed.includes('database-checkpoint')) throw new Refusal('database_checkpoint_required');
+        operation.receipts['database-image-change'] = { from: previousImage, to: review.release.nas.images.postgres };
+        console.error(`manager: ${review.release.nas.tag} replaces the database image in place (${previousImage} -> ${review.release.nas.images.postgres}); checkpoint ${String(operation.receipts['database-checkpoint'])} precedes it`);
+      }
       if (
         operation.receipts['release-start-state'] === undefined &&
         this.installation()?.release === review.current.release
@@ -1137,7 +1201,7 @@ export class Operations {
       return this.libraryStatus();
     });
   }
-  async reviewRestore(snapshot: string, databaseRoot: string) {
+  async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number) {
     const current = this.installation();
     await this.databaseStorage.validate(databaseRoot, 1024 ** 3);
     const id = randomUUID(),
@@ -1164,7 +1228,7 @@ export class Operations {
     const compatibility = await this.docker.compatibility();
     const release = await this.releases.acquire(recovery.installation.release);
     if (!release.nas.platforms.includes(compatibility.platform)) throw new Refusal('release_architecture_unavailable');
-    await this.checkPort(recovery.installation.port, current);
+    await this.checkPort(recovery.installation.port, current, undefined, managerPort);
     const hash = await fileHash(join(checkpoint, 'database.dump'));
     if (hash !== recovery.dumpSha256) throw new Refusal('restore_checkpoint_changed');
     const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
@@ -1363,6 +1427,7 @@ export class Operations {
       throw error;
     } finally {
       this.executing.delete(id);
+      void this.retention.sweep();
     }
   }
   private async cancelOperation(operation: Operation): Promise<void> {

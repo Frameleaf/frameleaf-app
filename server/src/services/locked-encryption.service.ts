@@ -6,6 +6,7 @@ import {
   encryptFile,
   generateKeyPair,
   generateRecoveryKey,
+  hasUnpepperedPinWrap,
   isLockedFile,
   keyId as toKeyId,
   readHeader,
@@ -61,6 +62,7 @@ import { checkSecret } from 'src/utils/secret-attempts.js';
 
 type Mode = LockedKeyFile['mode'];
 
+/** New key files start as format 1; `wrapKey` with the pepper makes them format 2 (peppered PIN wrap). */
 const FORMAT = 'frameleaf-locked-key/1';
 /**
  * One key-file change at a time per person, from reading the file to writing the row (a double
@@ -246,7 +248,7 @@ export class LockedEncryptionService {
           createdAt,
           updatedAt: createdAt,
         } as const;
-        file = await wrapKey(base, privateKey, modeKind(dto.mode), passphrase ?? dto.pinCode);
+        file = await wrapKey(base, privateKey, modeKind(dto.mode), passphrase ?? dto.pinCode, await this.pepper());
         file = await wrapKey(file, privateKey, 'recovery', recoveryKey);
         await this.lockedKeyRepository.write(file);
       } catch (error) {
@@ -467,7 +469,10 @@ export class LockedEncryptionService {
         next = switching ? removeWrap(next, 'pin') : next;
       } else {
         await this.verifyPin(userId, dto.pinCode!);
-        next = removeWrap(await wrapKey({ ...file, mode: 'pin' }, privateKey, 'pin', dto.pinCode!), 'passphrase');
+        next = removeWrap(
+          await wrapKey({ ...file, mode: 'pin' }, privateKey, 'pin', dto.pinCode!, await this.pepper()),
+          'passphrase',
+        );
       }
       await this.lockedKeyRepository.write(next);
       try {
@@ -561,7 +566,7 @@ export class LockedEncryptionService {
     let next = file;
     try {
       if (file.mode === 'pin') {
-        next = await wrapKey(file, privateKey, 'pin', dto.newPinCode!);
+        next = await wrapKey(file, privateKey, 'pin', dto.newPinCode!, await this.pepper());
       } else if (dto.newPassphrase !== undefined) {
         next = await wrapKey(file, privateKey, 'passphrase', dto.newPassphrase);
       }
@@ -758,7 +763,7 @@ export class LockedEncryptionService {
     const privateKey = file ? await this.privateKeyOf(userId, file, currentPinCode) : null;
     if (file && privateKey) {
       try {
-        next = await wrapKey(file, privateKey, 'pin', pinCode);
+        next = await wrapKey(file, privateKey, 'pin', pinCode, await this.pepper());
       } finally {
         privateKey.fill(0);
       }
@@ -822,7 +827,7 @@ export class LockedEncryptionService {
     }
     let privateKey: Buffer;
     try {
-      privateKey = await unwrapKey(file, 'pin', pinCode);
+      privateKey = await unwrapKey(file, 'pin', pinCode, await this.pepper());
     } catch (error) {
       if (!(error instanceof WrongSecretError)) {
         throw error;
@@ -838,7 +843,33 @@ export class LockedEncryptionService {
       await this.queuePartnerChecks(userId);
       return;
     }
-    this.load(userId, file, privateKey, until, decrypting);
+    const upgraded = await this.pepperPinWrap(userId, file, privateKey, pinCode);
+    this.load(userId, upgraded, privateKey, until, decrypting);
+  }
+
+  /**
+   * A format-1 PIN wrap (made before the pepper) is rewritten as a peppered one the first time the
+   * PIN opens it, so a later copy of the media root no longer holds an offline-crackable wrap. The
+   * key file keeps working as it was when the write fails; nothing else depends on it.
+   */
+  private async pepperPinWrap(
+    userId: string,
+    file: LockedKeyFile,
+    privateKey: Buffer,
+    pinCode: string,
+  ): Promise<LockedKeyFile> {
+    if (!hasUnpepperedPinWrap(file)) {
+      return file;
+    }
+    try {
+      const next = await wrapKey(file, privateKey, 'pin', pinCode, await this.pepper());
+      await this.lockedKeyRepository.write(next);
+      this.logger.log(`Rewrote the Locked PIN wrap of user ${userId} with the server pepper`);
+      return next;
+    } catch (error) {
+      this.logger.warn(`Could not rewrite the Locked PIN wrap of user ${userId} with the server pepper: ${error}`);
+      return file;
+    }
   }
 
   /** An elevated session's PIN expiry was extended (`refreshPinExpiry`): a PIN-mode key follows it. */
@@ -1005,7 +1036,7 @@ export class LockedEncryptionService {
       return null;
     }
     try {
-      return await unwrapKey(file, 'pin', pinCode);
+      return await unwrapKey(file, 'pin', pinCode, await this.pepper());
     } catch (error) {
       if (error instanceof WrongSecretError) {
         return null;
@@ -1033,6 +1064,7 @@ export class LockedEncryptionService {
         privateKey,
         'pin',
         pinCode,
+        await this.pepper(),
       );
       return { file, privateKey };
     } catch (error) {
@@ -1095,6 +1127,11 @@ export class LockedEncryptionService {
     });
   }
 
+  /** The server's Locked pepper as `wrapKey`/`unwrapKey` options; every PIN wrap is made and opened with it. */
+  private async pepper(): Promise<{ pepper: Buffer }> {
+    return { pepper: await this.lockedKeyRepository.pepper() };
+  }
+
   /** Unwraps the private key with a secret, under PIN unlock's attempt limit. 401 when it doesn't open. */
   private unwrap(userId: string, file: LockedKeyFile, kind: WrapKind, secret: string): Promise<Buffer> {
     return checkSecret(
@@ -1102,7 +1139,7 @@ export class LockedEncryptionService {
       (verify) =>
         verify(async () => {
           try {
-            return await unwrapKey(file, kind, secret);
+            return await unwrapKey(file, kind, secret, kind === 'pin' ? await this.pepper() : {});
           } catch (error) {
             if (error instanceof WrongSecretError) {
               throw new UnauthorizedException(kind === 'pin' ? 'Wrong PIN code' : `Wrong ${secretName(kind)}`);

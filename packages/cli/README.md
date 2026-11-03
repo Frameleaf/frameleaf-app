@@ -34,3 +34,5 @@ You can also build and install the CLI using
 ## Recovering encrypted Locked files
 
 `frameleaf locked decrypt --library /path/to/library --to /path/to/recovered [--user <name or ID>] [--all]` decrypts encrypted Locked files from a copy of the library. It runs offline and needs no login. It asks for your PIN, passphrase or recovery key without showing it. Exit code 0 means every file decrypted, 1 means some files were damaged and skipped, and 2 means a wrong secret, no key file or bad arguments.
+
+A PIN set on a server that has the Locked pepper (every server since key file format 2) only opens the key file together with that pepper, so a copy of the library alone is not enough to try PINs offline. The server keeps it in its identity folder (`FRAMELEAF_IDENTITY_DIR`, by default `<media>/frameleaf/identity`) as `locked-pin-pepper.key`; keep that folder off the media volume and in your private backups. Pass it with `--pepper-file /path/to/locked-pin-pepper.key`, or put the file's contents in the `FRAMELEAF_LOCKED_PEPPER` environment variable. The recovery key and a passphrase never need it.

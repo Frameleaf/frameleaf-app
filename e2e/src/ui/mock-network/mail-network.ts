@@ -103,7 +103,7 @@ export const setupMailMockApiRoutes = async (context: BrowserContext, mock: Mail
     record('POST', 'mail-connection/start', body);
     mock.finishing = {
       provider: body.provider,
-      email: body.provider === 'gmail' ? 'rivera.family@gmail.com' : 'rivera.family@outlook.com',
+      email: body.provider === 'gmail' ? 'rivera.family@example.com' : 'rivera.family@example.net',
       status: 'connected',
       connectedAt: '2026-10-11T10:00:00.000Z',
     };

@@ -44,6 +44,26 @@ type FixtureAccount = {
 type FixtureItem = { name: string; hidden: boolean; size: number; sha1: string; sha256: string };
 type FixtureState = { accounts: Record<string, FixtureAccount>; libraries: Record<string, FixtureItem[]> };
 
+/**
+ * The account's fake once it is quiet: no download waiting at the fake and the same served count
+ * on four consecutive samples 250 ms apart. Fails rather than passing vacuously if it never settles.
+ */
+const settled = async (appleId: string): Promise<FixtureAccount> => {
+  let previous: FixtureAccount | undefined;
+  let stable = 0;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const account = await fixture.account(appleId);
+    stable =
+      previous && account.downloadsWaiting === 0 && account.downloadsServed === previous.downloadsServed ? stable + 1 : 0;
+    if (stable >= 3) {
+      return account;
+    }
+    previous = account;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`${appleId} never settled`);
+};
+
 /** The fake bridge's test-only control: counters, and holding/releasing downloads mid-run. */
 const fixture = {
   state: async (): Promise<FixtureState> => {
@@ -452,9 +472,9 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
       await assetsOf(user),
       items.filter(({ name }) => atCancel.served[name] === 1),
     );
-    // Nothing keeps downloading or importing behind a cancelled run.
-    await page.waitForTimeout(5000);
-    const later = await fixture.account(ACCOUNTS.frank.appleId);
+    // Nothing keeps downloading or importing behind a cancelled run: the fake sees no download
+    // waiting and its counters hold still across consecutive samples.
+    const later = await settled(ACCOUNTS.frank.appleId);
     expect(later.downloadsServed).toBe(2);
     expect(await assetsOf(user)).toHaveLength(2);
 

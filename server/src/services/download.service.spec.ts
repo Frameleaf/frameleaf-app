@@ -430,7 +430,7 @@ describe(DownloadService.name, () => {
 
         expect(mocks.user.getMetadata).not.toHaveBeenCalled();
         expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
-        expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+        expect(archive.addFile.mock.calls).toEqual([['/edited.jpeg', 'IMG_1.jpeg']]);
       });
 
       describe('a photo without a sidecar (FL-423)', () => {
@@ -487,7 +487,8 @@ describe(DownloadService.name, () => {
 
           await sut.downloadArchive(authStub.adminSharedLink, { assetIds: [asset.id], includeSidecar: true });
 
-          const xmp = xmpOf(archive, 'IMG_1.HEIC.xmp')!;
+          // a shared link's visitor is given the published (edited) file, so its details sit beside that one
+          const xmp = xmpOf(archive, 'IMG_1.jpeg.xmp')!;
           expect(xmp).toContain('<rdf:li xml:lang="x-default">Lake Louise at dawn</rdf:li>');
           expect(xmp).not.toContain('PersonInImage');
           expect(xmp).not.toContain('Ana');
@@ -568,6 +569,20 @@ describe(DownloadService.name, () => {
         expect(mocks.asset.getCurrentDevelops).not.toHaveBeenCalled();
         expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
       });
+
+      it.each([undefined, false])(
+        "gives a shared link's visitor the published file, never the owner's original (edited: %s)",
+        async (edited) => {
+          const { archive, asset } = setup(authStub.admin.user.id);
+          mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+
+          await sut.downloadArchive(authStub.adminSharedLink, { assetIds: [asset.id], edited, includeSidecar: false });
+
+          expect(mocks.asset.getForOriginals).toHaveBeenCalledWith([asset.id], true);
+          expect(mocks.asset.getCurrentDevelops).not.toHaveBeenCalled();
+          expect(archive.addFile.mock.calls).toEqual([['/edited.jpeg', 'IMG_1.jpeg']]);
+        },
+      );
     });
   });
 
