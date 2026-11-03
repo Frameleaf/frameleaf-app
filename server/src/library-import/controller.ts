@@ -23,6 +23,7 @@ import { LibrarySourceArchive } from 'src/library-import/source-archive.js';
 import { reconcileImportedStacks } from 'src/library-import/stack-reconciliation.js';
 import { CanonicalStackWriter } from 'src/library-import/stack-writer.js';
 import { LibraryImportJournal, LibraryImportRefused, parseLibraryImportBinding } from 'src/library-import/state.js';
+import { withLibraryImportReadback } from 'src/library-import/verification.js';
 
 const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
@@ -184,28 +185,32 @@ export class LibraryImportController {
   verify() {
     return this.safe(async () => {
       await assertCanonicalDestination(this.db);
-      const status = await this.status();
-      if (status.run?.status !== 'verifying') return refuse('IMPORT_NOT_VERIFYING');
-      await loadReviewedImportInputs(this.db, this.context);
-      const owners = await loadPrivateOwnerInputs(this.db, this.context);
-      const archive = await new LibrarySourceArchive(this.db, this.context).verify();
-      if (!archive.sealed) return refuse('SOURCE_ARCHIVE_NOT_SEALED');
-      const ownerReport = await reconcileImportedOwners(this.db, this.context, owners);
-      const assets = await reconcileImportedAssets(this.db, this.context, this.items());
-      const albums = await reconcileImportedAlbums(this.db, this.context);
-      const stacks = await reconcileImportedStacks(this.db, this.context);
-      return {
-        format: 'frameleaf-library-import-verification' as const,
-        version: 1 as const,
-        operationId: this.context.binding.operationId,
-        manifestSha256: this.context.binding.manifestSha256,
-        planSha256: this.context.binding.planSha256,
-        owners: ownerReport,
-        assets,
-        albums,
-        stacks,
-        archive,
-      };
+      return withLibraryImportReadback(this.db, async (tx) => {
+        const status = await new LibraryImportJournal(tx).status();
+        if (status.run && JSON.stringify(status.run.binding) !== JSON.stringify(this.context.binding))
+          return refuse('IMPORT_BINDING_CHANGED');
+        if (status.run?.status !== 'verifying') return refuse('IMPORT_NOT_VERIFYING');
+        await loadReviewedImportInputs(tx, this.context);
+        const owners = await loadPrivateOwnerInputs(tx, this.context);
+        const archive = await new LibrarySourceArchive(tx, this.context).verify();
+        if (!archive.sealed) return refuse('SOURCE_ARCHIVE_NOT_SEALED');
+        const ownerReport = await reconcileImportedOwners(tx, this.context, owners);
+        const assets = await reconcileImportedAssets(tx, this.context, this.items());
+        const albums = await reconcileImportedAlbums(tx, this.context);
+        const stacks = await reconcileImportedStacks(tx, this.context);
+        return {
+          format: 'frameleaf-library-import-verification' as const,
+          version: 1 as const,
+          operationId: this.context.binding.operationId,
+          manifestSha256: this.context.binding.manifestSha256,
+          planSha256: this.context.binding.planSha256,
+          owners: ownerReport,
+          assets,
+          albums,
+          stacks,
+          archive,
+        };
+      });
     });
   }
   abandon() {

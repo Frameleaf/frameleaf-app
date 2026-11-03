@@ -311,3 +311,32 @@ it.skipIf(process.platform !== 'linux')(
     }
   },
 );
+
+it('checks the complete report in one native read-only repeatable-read snapshot', async () => {
+  const { context, owners } = setup();
+  await new LibraryImportController(connection.db, context).run(owners, descriptor, stream());
+  const snapshots: { id: string; readOnly: string; isolation: string }[] = [];
+  const observe = (target: ImportDatabase): ImportDatabase => ({
+    ...target,
+    query: async (statement, parameters) => {
+      const rows = await target.query(statement, parameters);
+      if (statement.includes('SELECT pg_try_advisory_xact_lock')) {
+        const [snapshot] = await target.query(`SELECT txid_current()::text AS id,
+          current_setting('transaction_read_only') AS "readOnly",
+          current_setting('transaction_isolation') AS isolation`);
+        snapshots.push(snapshot as (typeof snapshots)[number]);
+      }
+      return rows;
+    },
+    transaction: (body) => target.transaction((tx) => body(observe(tx))),
+  });
+  expect(await new LibraryImportController(observe(connection.db), context).verify()).toMatchObject({
+    owners: { owners: 1 },
+    archive: { sealed: true },
+  });
+  expect(snapshots.length).toBeGreaterThan(0);
+  expect(new Set(snapshots.map((snapshot) => snapshot.id)).size).toBe(1);
+  expect(snapshots.every((snapshot) => snapshot.readOnly === 'on' && snapshot.isolation === 'repeatable read')).toBe(
+    true,
+  );
+});
