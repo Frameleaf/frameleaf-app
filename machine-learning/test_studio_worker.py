@@ -59,6 +59,30 @@ def test_worker_env_drops_the_allocator_preload() -> None:
     assert worker_env({"LD_PRELOAD": "/usr/lib/libmimalloc.so.3", "PATH": "/bin"}) == {"PATH": "/bin"}
 
 
+def test_worker_env_drops_every_credential() -> None:
+    env = {
+        "FRAMELEAF_ML_AUTH_TOKEN": "bearer",
+        "MACHINE_LEARNING_MODEL_SOURCE_TOKEN": "hub",
+        "HF_TOKEN": "saved",
+        "SOME_SECRET": "x",
+        "DB_PASSWORD": "x",
+        "AWS_SECRET_ACCESS_KEY": "x",
+        "OPENAI_API_KEY": "x",
+        "TLS_PRIVATE_KEY": "x",
+        "studio_credential": "x",
+        "FRAMELEAF_STUDIO_WORKER_ENTRY": "/opt/worker.mjs",
+        "FRAMELEAF_STUDIO_CHROMIUM": "/usr/bin/chromium",
+        "FREECUT_CHROME_ARGS": "--no-sandbox",
+        "PATH": "/bin",
+    }
+    assert worker_env(env) == {
+        "FRAMELEAF_STUDIO_WORKER_ENTRY": "/opt/worker.mjs",
+        "FRAMELEAF_STUDIO_CHROMIUM": "/usr/bin/chromium",
+        "FREECUT_CHROME_ARGS": "--no-sandbox",
+        "PATH": "/bin",
+    }
+
+
 class TestBackoff:
     def test_grows_after_quick_failures_and_caps(self) -> None:
         assert next_backoff(MIN_BACKOFF_S, 1) == MIN_BACKOFF_S * 2

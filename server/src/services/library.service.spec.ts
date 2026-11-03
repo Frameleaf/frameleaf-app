@@ -279,9 +279,19 @@ describe(LibraryService.name, () => {
 
       mocks.library.get.mockResolvedValue(library);
 
-      await expect(sut.handleSyncFiles(mockLibraryJob)).resolves.toBe(JobStatus.Failed);
+      await expect(sut.handleSyncFiles(mockLibraryJob)).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.asset.createAll.mock.calls).toEqual([]);
+    });
+
+    it('skips, rather than fails, a library deleted after the job was queued', async () => {
+      mocks.library.get.mockResolvedValue(void 0);
+
+      await expect(sut.handleSyncFiles({ libraryId: 'gone', paths: ['/data/user1/photo.jpg'] })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
     });
   });
 

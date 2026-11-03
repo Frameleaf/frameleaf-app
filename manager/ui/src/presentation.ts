@@ -131,6 +131,18 @@ const moveRefusals: Record<string, string> = {
 const refusals: Record<string, string> = {
   container_settings_invalid: 'Fix the advanced container settings marked below, then try again.',
   service_override_conflict: 'An extra folder would replace one Frameleaf manages. Choose another path inside the container.',
+  service_override_unsafe_source:
+    'That host folder is a system path (the Docker socket, /etc, /proc, /sys, /dev, /root, /boot, Docker’s data or Manager’s own state) and cannot be mounted into Frameleaf.',
+  service_override_source_outside_roots:
+    'That host folder is outside the folders Manager may mount. Map it into Manager at the same path and add it to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
+  claim_proxied_address_unverified:
+    'This connection reached Manager through a proxy, so Manager cannot tell it came from your home network. Open Manager directly on its LAN address, or set MANAGER_TRUSTED_PROXIES for the proxy. The Manager container log has the details.',
+  update_review_expired:
+    'The reviewed release was withdrawn and this review has expired. Cancel this update, then review the newer release before installing it.',
+  database_image_change_requires_restore:
+    'This release changes the database engine image. It cannot be applied as an update; restore a recovery point into a new database folder on the new release instead.',
+  database_checkpoint_required: 'A database checkpoint must exist before the database image can change. Resume the update to take one.',
+  media_path_unsupported_character: 'A folder name contains a comma or a control character, which Docker cannot accept. Rename the folder, then review again.',
   settings_not_json: 'Settings must be a JSON object. Check for a missing comma or bracket, then save again.',
   masked_secret_missing: 'A secret value can only be kept as [unchanged] where it already exists. Enter the value, or restore the original line.',
   incompatible_settings_require_review: 'Some Immich settings aren’t recognised by Frameleaf. Review them in Advanced settings on the next step.',

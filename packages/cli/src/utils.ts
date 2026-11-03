@@ -10,9 +10,9 @@ import {
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import yaml from 'yaml';
 
 export interface BaseOptions {
@@ -67,19 +67,37 @@ Please make sure your API key has the correct permissions.`,
   }
 };
 
-export const connect = async (url: string, key: string) => {
+/**
+ * The API endpoint `.well-known/immich` at `url` names, or null when there is none or it points at
+ * another origin. The API key is sent to the endpoint and the endpoint is saved to `auth.yml`, so a
+ * document that named a different host (a compromised proxy, a domain that changed hands) would hand
+ * the key to a third party for good; only an endpoint on the origin the person typed is taken.
+ */
+export const discoverEndpoint = async (url: string): Promise<string | undefined> => {
   const wellKnownUrl = new URL('.well-known/immich', url);
+  let endpoint: URL;
   try {
     // eslint-disable-next-line unicorn/prefer-await
     const wellKnown = (await fetch(wellKnownUrl).then((response) => response.json())) as { api: { endpoint: string } };
-    const endpoint = new URL(wellKnown.api.endpoint, url).href;
-    if (endpoint !== url) {
-      console.debug(`Discovered API at ${endpoint}`);
-    }
-    url = endpoint;
+    endpoint = new URL(wellKnown.api.endpoint, url);
   } catch {
-    // noop
+    return;
   }
+  if (endpoint.origin !== new URL(url).origin) {
+    console.warn(
+      `Ignoring the API endpoint ${endpoint.origin} that ${wellKnownUrl.origin}/.well-known/immich names: it is on a different origin`,
+    );
+    return;
+  }
+  return endpoint.href;
+};
+
+export const connect = async (url: string, key: string) => {
+  const endpoint = await discoverEndpoint(url);
+  if (endpoint && endpoint !== url) {
+    console.debug(`Discovered API at ${endpoint}`);
+  }
+  url = endpoint ?? url;
 
   init({ baseUrl: url, apiKey: key });
 
@@ -166,20 +184,44 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
   }
 
   const patterns: string[] = [];
+  /** The folders behind `patterns`, as named (not glob-escaped), for the linked-folder check. */
+  const roots: string[] = [];
   const crawledFiles: string[] = [];
 
   for await (const currentPath of pathsToCrawl) {
     try {
       const absolutePath = resolve(currentPath);
-      const stats = await stat(absolutePath);
-      if (stats.isFile() || stats.isSymbolicLink()) {
+      // lstat, not stat: a path named on the command line may itself be a link. A link to a file is
+      // uploaded through the link; a link to a folder was named on purpose, so it is crawled, but
+      // folders linked from inside a crawled folder are never entered (see `insideRoots` below).
+      const stats = await lstat(absolutePath);
+      if (stats.isFile()) {
         crawledFiles.push(absolutePath);
+      } else if (stats.isSymbolicLink()) {
+        let target;
+        try {
+          target = await stat(absolutePath);
+        } catch {
+          // a dangling link: uploaded (and reported) as a file
+        }
+        if (target?.isDirectory()) {
+          patterns.push(convertPathToPatternOnWin(absolutePath));
+          roots.push(absolutePath);
+        } else {
+          crawledFiles.push(absolutePath);
+        }
       } else {
         patterns.push(convertPathToPatternOnWin(absolutePath));
+        roots.push(absolutePath);
       }
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         patterns.push(convertPathToPatternOnWin(currentPath));
+        // a wildcard pattern: its literal prefix is the folder the crawl may not leave through a link
+        const base = globBase(resolve(currentPath));
+        if (base) {
+          roots.push(base);
+        }
       } else {
         throw error;
       }
@@ -204,8 +246,86 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     dot: includeHidden,
     ignore: [`**/${ignorePattern}`],
   });
-  globbedFiles.push(...crawledFiles);
-  return globbedFiles.toSorted();
+  const files = await insideRoots(globbedFiles, roots);
+  files.push(...crawledFiles);
+  return files.toSorted();
+};
+
+/**
+ * The files among `files` that live under one of `roots` without passing through a linked folder.
+ * A linked file is kept: it is uploaded through the link and `--delete` removes only the link. A
+ * folder linked from inside a root leads elsewhere (a NAS share, another library), so the files
+ * behind it are neither uploaded nor, with `--delete`, removed.
+ */
+/**
+ * The folder a glob pattern starts from: everything before its first wildcard, cut at a separator.
+ * A filesystem root (`/` or `D:\\`) keeps its separator.
+ */
+export const globBase = (pattern: string): string | undefined => {
+  const magic = pattern.search(/[*?[\]{}()!]/);
+  if (magic < 0) {
+    return undefined;
+  }
+  const literal = pattern.slice(0, magic);
+  const cut = Math.max(literal.lastIndexOf('/'), literal.lastIndexOf('\\'));
+  if (cut < 0) {
+    return undefined;
+  }
+  const folder = literal.slice(0, cut);
+  return folder === '' || /^[A-Za-z]:$/.test(folder) ? literal.slice(0, cut + 1) : folder;
+};
+
+/** Whether `path` is `root` or lies under it; a filesystem root already ends in a separator. */
+const isUnder = (path: string, root: string) =>
+  path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+
+const insideRoots = async (files: string[], roots: string[]): Promise<string[]> => {
+  const realRoots = new Map<string, string>();
+  for (const root of roots) {
+    try {
+      realRoots.set(root, await realpath(root));
+    } catch {
+      // a glob pattern or a path that no longer exists: nothing to compare against
+    }
+  }
+  if (realRoots.size === 0) {
+    // no root could be resolved, so no globbed file can be checked against one
+    return [];
+  }
+  // '' marks a folder whose real path could not be resolved: such files are left out
+  const realFolders = new Map<string, string>();
+  const kept: string[] = [];
+  for (const file of files) {
+    const nativeFile = resolve(file);
+    // fast-glob reports forward-slash paths on Windows; compare native forms on every platform.
+    // The deepest root wins: a linked folder named on purpose inside another named root is crawled.
+    let root: string | undefined;
+    for (const candidate of realRoots.keys()) {
+      const nativeRoot = resolve(candidate);
+      if (isUnder(nativeFile, nativeRoot) && (!root || nativeRoot.length > resolve(root).length)) {
+        root = candidate;
+      }
+    }
+    if (!root) {
+      // every pattern has a root; a file none of them covers cannot be vouched for
+      continue;
+    }
+    const folder = dirname(nativeFile);
+    let real = realFolders.get(folder);
+    if (real === undefined) {
+      try {
+        real = await realpath(folder);
+      } catch {
+        real = '';
+      }
+      realFolders.set(folder, real);
+    }
+    const realRoot = realRoots.get(root)!;
+    if (real !== '' && isUnder(real, realRoot)) {
+      kept.push(file);
+    }
+  }
+  return kept;
 };
 
 export const sha1 = (filepath: string) => {

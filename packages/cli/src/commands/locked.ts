@@ -1,7 +1,9 @@
 import {
   type LockedKeyFile,
+  LockedPepperError,
   type WrapKind,
   WrongSecretError,
+  isKeyFileFormat,
   isLockedFile,
   keyId,
   openDecrypt,
@@ -20,6 +22,13 @@ import { pipeline } from 'node:stream/promises';
 
 const KEY_DIRECTORY = 'locked-keys';
 const TEMP_SUFFIX = '.fllk.tmp';
+/** The server's pepper as base64 text, for people who would rather not keep the file around. */
+export const PEPPER_ENV = 'FRAMELEAF_LOCKED_PEPPER';
+/** Where the server keeps the pepper: this file in its identity directory (`FRAMELEAF_IDENTITY_DIR`). */
+const SERVER_PEPPER_FILE = 'locked-pin-pepper.key';
+/** Where a copy of the library holds the pepper when the server's identity folder is the default one. */
+const LIBRARY_PEPPER_PATH = ['frameleaf', 'identity', SERVER_PEPPER_FILE];
+const PEPPER_HELP = `A PIN made on a server with the Locked pepper (key file format 2) needs that pepper too: pass --pepper-file <the server's identity folder>/${SERVER_PEPPER_FILE} or set ${PEPPER_ENV} to its contents (a copy of the library that holds ${LIBRARY_PEPPER_PATH.join('/')} is read on its own), or use the recovery key or passphrase instead.`;
 
 /** A problem with the arguments, the key file or the secret. The command exits with `exitCode`. */
 export class LockedCliError extends Error {
@@ -39,6 +48,10 @@ export interface LockedDecryptOptions {
   all?: boolean;
   /** Tests only: skips the hidden prompt. */
   secret?: string;
+  /** The server's Locked pepper file (base64 text), needed for PIN wraps made with it. */
+  pepperFile?: string;
+  /** The pepper itself, as the `FRAMELEAF_LOCKED_PEPPER` variable holds it; tests pass it here. */
+  pepper?: string;
 }
 
 export interface LockedDecryptResult {
@@ -165,7 +178,7 @@ const loadKeyFiles = async (library: string): Promise<LockedKeyFile[]> => {
   for (const name of names) {
     try {
       const file = JSON.parse(await readFile(path.join(directory, name), 'utf8')) as LockedKeyFile;
-      if (file.format === 'frameleaf-locked-key/1') {
+      if (isKeyFileFormat(file.format)) {
         files.push(file);
       }
     } catch {
@@ -209,20 +222,71 @@ const chooseKeyFile = async (files: LockedKeyFile[], user?: string): Promise<Loc
   return files[answer - 1];
 };
 
+/**
+ * The pepper from `--pepper-file`, the environment, or else the library copy itself (the server's
+ * default identity folder lies under the media root, so a copy of the whole library carries it);
+ * undefined when none of them has it.
+ */
+const loadPepper = async (
+  options: Pick<LockedDecryptOptions, 'pepperFile' | 'pepper'>,
+  library: string,
+): Promise<Buffer | undefined> => {
+  let text: string | undefined;
+  if (options.pepperFile) {
+    try {
+      text = await readFile(path.resolve(options.pepperFile), 'utf8');
+    } catch (error) {
+      throw new LockedCliError(`Cannot read --pepper-file: ${messageOf(error)}`);
+    }
+  } else {
+    text = options.pepper ?? process.env[PEPPER_ENV];
+  }
+  if (text === undefined) {
+    // a pepper file inside a library copy was not supplied by the person: an unusable one is ignored,
+    // so the recovery key and a passphrase still work and a PIN gets the missing-pepper hint
+    try {
+      return decodePepper(await readFile(path.join(library, ...LIBRARY_PEPPER_PATH), 'utf8'));
+    } catch {
+      return undefined;
+    }
+  }
+  const pepper = decodePepper(text);
+  if (!pepper) {
+    throw new LockedCliError(
+      `The Locked pepper is not base64 text of at least 16 bytes (${options.pepperFile ? '--pepper-file' : PEPPER_ENV})`,
+    );
+  }
+  return pepper;
+};
+
+/** The pepper that `text` (base64, at least 16 bytes) holds, or undefined when it is not one. */
+const decodePepper = (text: string): Buffer | undefined => {
+  const trimmed = text.trim();
+  const pepper = Buffer.from(trimmed, 'base64');
+  return trimmed === '' || pepper.length < 16 || pepper.toString('base64') !== trimmed ? undefined : pepper;
+};
+
 /** The private key, opened by the key file's PIN or passphrase, or else by its recovery key. */
-const openKey = async (file: LockedKeyFile, secret: string): Promise<Buffer> => {
+const openKey = async (file: LockedKeyFile, secret: string, pepper?: Buffer): Promise<Buffer> => {
   const primary: WrapKind = file.mode === 'advanced' ? 'passphrase' : 'pin';
+  let pepperProblem: LockedPepperError | undefined;
   for (const kind of [primary, 'recovery'] as const) {
     if (file.wraps.every((wrap) => wrap.kind !== kind)) {
       continue;
     }
     try {
-      return await unwrapKey(file, kind, secret);
+      return await unwrapKey(file, kind, secret, { pepper });
     } catch (error) {
-      if (!(error instanceof WrongSecretError)) {
+      if (error instanceof LockedPepperError) {
+        // the secret may still be the recovery key, which needs no pepper
+        pepperProblem = error;
+      } else if (!(error instanceof WrongSecretError)) {
         throw new LockedCliError(messageOf(error));
       }
     }
+  }
+  if (pepperProblem) {
+    throw new LockedCliError(`${pepperProblem.message}. ${PEPPER_HELP}`);
   }
   throw new LockedCliError(
     `That ${primary === 'pin' ? 'PIN' : 'passphrase'} or recovery key doesn't open ${file.label}'s key file`,
@@ -321,6 +385,7 @@ export async function lockedDecrypt(options: LockedDecryptOptions): Promise<Lock
     throw new LockedCliError('--to must be a folder outside --library; nothing is ever written into the library');
   }
 
+  const pepper = await loadPepper(options, library);
   let keyFile: LockedKeyFile;
   let secret: string;
   try {
@@ -329,7 +394,7 @@ export async function lockedDecrypt(options: LockedDecryptOptions): Promise<Lock
   } finally {
     closeStdinLines();
   }
-  const privateKey = await openKey(keyFile, secret);
+  const privateKey = await openKey(keyFile, secret, pepper);
   const myKeyId = keyId(Buffer.from(keyFile.publicKey, 'base64'));
 
   try {
@@ -419,6 +484,10 @@ export const buildLockedDecryptCommand = (exit: (code: number) => never = proces
     .requiredOption('--to <directory>', 'Where to write the decrypted files (must be outside the library)')
     .option('--user <name or ID>', "Whose files to decrypt (asked when there's more than one)")
     .option('--all', 'Also decrypt thumbnails, previews and other derived files into derived/<item ID>/', false)
+    .option(
+      '--pepper-file <file>',
+      `The server's Locked pepper file, <identity folder>/${SERVER_PEPPER_FILE} (the identity folder is FRAMELEAF_IDENTITY_DIR, by default <media>/frameleaf/identity, in which case a copy of the library carries it and it is found there). A PIN set on a server that has this file only opens the key file together with it; the recovery key and a passphrase never need it. ${PEPPER_ENV} can hold the file's contents instead.`,
+    )
     .exitOverride((error: CommanderError) => exit(error.exitCode === 0 ? 0 : 2))
     .action(async (options) => {
       process.exitCode = await runLockedDecrypt(options);

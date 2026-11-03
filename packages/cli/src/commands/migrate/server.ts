@@ -51,10 +51,14 @@ button{font:inherit;padding:.45rem .9rem;border-radius:8px;border:1px solid #bbb
 <script>
 const $=id=>document.getElementById(id);
 const pct=(a,b)=>b>0?Math.round(a/b*100):0;
-const TOKEN=new URLSearchParams(location.search).get('t')||'';
-async function post(p){await fetch(p,{method:'POST',headers:{'x-migrate-token':TOKEN}});tick()}
+const fromUrl=new URLSearchParams(location.search).get('t');
+if(fromUrl){try{sessionStorage.setItem('migrate-token',fromUrl)}catch(e){}
+  history.replaceState(null,'',location.pathname)}
+let TOKEN=fromUrl||'';try{TOKEN=TOKEN||sessionStorage.getItem('migrate-token')||''}catch(e){}
+const opts={headers:{'x-migrate-token':TOKEN}};
+async function post(p){await fetch(p,{method:'POST',...opts});tick()}
 async function tick(){
-  let s;try{s=await(await fetch('/status')).json()}catch(e){s=null}
+  let s;try{s=await(await fetch('/status',opts)).json()}catch(e){s=null}
   if(!s) return;
   const c=s.counts||{};
   $('route').textContent=s.user+'  ·  '+s.from+'  →  '+s.to;
@@ -71,7 +75,7 @@ async function tick(){
   $('stacks').textContent=(c.stacksDone||0)+' / '+(c.stacksTotal||0);
   $('people').textContent=(c.peopleDone||0)+' / '+(c.peopleTotal||0);
   if(s.phase==='done'||s.phase==='audit'){
-    try{const a=await(await fetch('/audit')).json();
+    try{const a=await(await fetch('/audit',opts)).json();
       if(a&&a.generatedAt){$('auditCard').style.display='block';
         $('auditVerdict').innerHTML=a.ok?'<span class=ok>PASS — safe to decommission A</span>':(a.complete===false?'<span class=bad>AUDIT INCOMPLETE — not a pass</span>':'<span class=bad>INCOMPLETE</span>');
         $('auditMsg').textContent='missing: '+(a.totals?a.totals.missing:'?')+', failed: '+(a.totals?a.totals.failed:'?');}}catch(e){}
@@ -82,18 +86,27 @@ setInterval(tick,1500);tick();
 
 export interface Dashboard {
   url: string;
+  /** The port that was bound (the one asked for, or the free one chosen for port 0). */
+  port: number;
   close: () => void;
 }
+
+/** The Host values a browser sends when it really is talking to this loopback server on `port`. */
+const loopbackHosts = (port: number) => new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
 
 /**
  * A tiny localhost-only dashboard. The Node process (and thus the migration) keeps running
  * regardless of the browser, so the tab can be closed and reopened freely. Read-only status
  * from SQLite COUNTs + pause/resume/stop controls. No credentials are ever exposed.
  *
- * Control endpoints require a per-run token supplied in a custom header. Binding to loopback
- * is not on its own an authorization boundary: any page the user visits can POST to
- * 127.0.0.1. A custom header can't be set by a cross-origin form, and the token isn't
- * readable by another origin, so a drive-by page can't pause or kill a running migration.
+ * Every endpoint but the page itself requires the per-run token in a custom header, reads
+ * included: `/status` names both servers and the account, and `/audit` is the whole audit.
+ * Binding to loopback is not on its own an authorization boundary: any page the user visits
+ * can POST to 127.0.0.1, and a page whose name is re-pointed at 127.0.0.1 (DNS rebinding)
+ * gets same-origin reads. So requests whose Host is not this loopback server are refused,
+ * a custom header can't be set by a cross-origin form, and the token isn't readable by
+ * another origin. The page takes the token from the printed URL once, keeps it in session
+ * storage and drops it from the address bar, so it does not sit in the browser history.
  */
 export function startDashboard(
   port: number,
@@ -104,13 +117,18 @@ export function startDashboard(
   isDryRun: boolean,
 ): Promise<Dashboard> {
   const token = randomBytes(16).toString('hex');
+  let hosts = loopbackHosts(port);
   const server = createServer(async (req, res) => {
     const url = (req.url || '/').split('?', 1)[0];
+    if (!hosts.has(req.headers.host ?? '')) {
+      res.writeHead(403).end();
+      return;
+    }
+    if (url !== '/' && req.headers['x-migrate-token'] !== token) {
+      res.writeHead(403).end();
+      return;
+    }
     if (req.method === 'POST') {
-      if (req.headers['x-migrate-token'] !== token) {
-        res.writeHead(403).end();
-        return;
-      }
       switch (url) {
         case '/pause': {
           controller.pause();
@@ -155,6 +173,10 @@ export function startDashboard(
       }
       return;
     }
+    if (url !== '/') {
+      res.writeHead(404).end();
+      return;
+    }
     res.writeHead(200, { 'content-type': 'text/html' }).end(DASHBOARD_HTML);
   });
 
@@ -169,7 +191,10 @@ export function startDashboard(
       );
     });
     server.listen(port, '127.0.0.1', () => {
-      resolve({ url: `http://127.0.0.1:${port}/?t=${token}`, close: () => server.close() });
+      const address = server.address();
+      const bound = typeof address === 'object' && address ? address.port : port;
+      hosts = loopbackHosts(bound);
+      resolve({ url: `http://127.0.0.1:${bound}/?t=${token}`, port: bound, close: () => server.close() });
     });
   });
 }

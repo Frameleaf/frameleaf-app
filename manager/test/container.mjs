@@ -64,6 +64,9 @@ try {
     `MANAGER_STORAGE_ROOTS=${directory}/media`,
     '-e',
     `MANAGER_ORIGIN=${origin}`,
+    // Published on 127.0.0.1 only: tell Manager so, or a claim arriving via the bridge gateway is refused.
+    '-e',
+    'MANAGER_BIND_ADDRESS=127.0.0.1',
     'frameleaf-manager:test',
   );
   let status;

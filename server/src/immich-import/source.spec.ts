@@ -22,6 +22,10 @@ const makeSource = (
     extraColumn?: boolean;
     missingColumn?: boolean;
     retypedColumn?: boolean;
+    noodle?: boolean;
+    /** Gallery-only tables present in the source, and those holding rows. */
+    noodleTables?: string[];
+    noodleRows?: string[];
   } = {},
 ) => {
   const columns = Object.entries(fixture.structure.tables)
@@ -55,6 +59,19 @@ const makeSource = (
       }
       if (statement.includes('has_table_privilege')) {
         return overrides.writable ? [{ present: 1 }] : [];
+      }
+      if (statement.includes('gallery_migrations')) {
+        return [{ present: false, noodle: !!overrides.noodle }];
+      }
+      if (statement.includes('jsonb_array_elements_text')) {
+        return [{ tables: overrides.noodleTables ?? [] }];
+      }
+      if (statement.includes('asset_favorite f')) {
+        return [{ rows: overrides.noodleRows?.includes('asset_favorite') ?? false }];
+      }
+      const held = /^SELECT EXISTS \(SELECT 1 FROM public\."(\w+)"\)/u.exec(statement);
+      if (held) {
+        return [{ rows: overrides.noodleRows?.includes(held[1]) ?? false }];
       }
       if (statement.includes('pg_stat_activity')) {
         return overrides.writers ? [{ present: 1 }] : [];
@@ -146,6 +163,38 @@ describe('source preflight', () => {
     await expect(new ImmichSource(source.db, { ...config, version: '3.0.0' }).preflight()).rejects.toThrow(
       'UNKNOWN_SOURCE_MIGRATIONS',
     );
+  });
+
+  it('reads Noodle Gallery through the Immich base in its ledger, not its own release number', async () => {
+    // An exact Immich ledger plus Noodle's own tables and columns: the exact catalog check would refuse it.
+    const { source } = makeSource({ noodle: true, extraColumn: true });
+    const noodle = new ImmichSource(source.db, { ...config, version: '5.9.0' });
+    await expect(noodle.preflight()).resolves.toMatch(/^[a-f\d]{64}$/u);
+    expect(noodle.fixture).toMatchObject({ commit: fixture.commit, exact: false });
+    await expect(makeSource({ noodle: true, missingColumn: true }).source.preflight()).rejects.toThrow(
+      'UNKNOWN_SOURCE_SCHEMA',
+    );
+  });
+
+  it('names the Gallery-only data that holds rows and stays behind', async () => {
+    const { source } = makeSource({
+      noodle: true,
+      noodleTables: ['shared_space', 'person_pet', 'user_group', 'asset_favorite'],
+      noodleRows: ['shared_space', 'person_pet', 'asset_favorite'],
+    });
+    await source.preflight();
+    expect(source.notImported).toEqual(['Spaces', 'pets', 'favourites set by other people']);
+    const immich = makeSource({ noodleTables: ['shared_space'], noodleRows: ['shared_space'] }).source;
+    await immich.preflight();
+    expect(immich.notImported).toEqual([]);
+  });
+
+  it('reads a Gallery release without gallery_migrations as Gallery when Manager names it', async () => {
+    // Gallery 5.8 and earlier keep their migrations beside upstream's in kysely_migrations.
+    const { source } = makeSource({ extraMigration: true, extraColumn: true });
+    const gallery = new ImmichSource(source.db, { ...config, version: '5.8.0', product: 'Noodle Gallery' });
+    await expect(gallery.preflight()).resolves.toMatch(/^[a-f\d]{64}$/u);
+    expect(gallery.fixture).toMatchObject({ commit: fixture.commit, exact: false });
   });
 
   it('refuses writersStopped=false before database access', async () => {

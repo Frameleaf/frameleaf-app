@@ -15,6 +15,16 @@ export const asDateString = (x: Date | string | null): string | null => {
   return x instanceof Date ? isoDateToDate.encode(x) : x;
 };
 
+/** Bind offsetless edits to UTC before PostgreSQL parses them, preserving source fractional precision. */
+export const withDateTimeOffset = (value?: string) => {
+  if (!value) return value;
+  const parsed = DateTime.fromISO(value, { setZone: true, zone: 'UTC' });
+  if (!parsed.isValid) return value;
+  const time = value.split('T', 2)[1];
+  if (!time) return parsed.toISO() ?? value;
+  return /(?:Z|[+-]\d{2}(?::?\d{2})?)$/iu.test(time) ? value : value + 'Z';
+};
+
 export const extractTimeZone = (dateTimeOriginal?: string | null) => {
   const extractedTimeZone = dateTimeOriginal
     ? DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }).zone

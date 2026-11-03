@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageFile
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
@@ -25,11 +25,14 @@ from frameleaf_ml.models import get_model_class
 from frameleaf_ml.models.base import ModelUnavailableError
 from frameleaf_ml.models.semantic_mask import MODEL_NAME
 from frameleaf_ml.models.subject_matte import (
+    MAX_EDGE,
+    MAX_FRAME_BYTES,
     SubjectMatteModel,
     check_frames,
     fraction_box,
     grow_face_box,
     matte_png,
+    open_frame,
     pick_person_box,
     pick_subject_box,
     prompt_points,
@@ -49,6 +52,41 @@ def synthetic_clip(frames: int = 4, width: int = 64, height: int = 48) -> list[I
 
 def decode(png: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(png)))
+
+
+def encoded(image: Image.Image, format: str = "PNG") -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format=format)
+    return buffer.getvalue()
+
+
+class TestOpenFrame:
+    def test_decodes_a_frame_to_rgb(self) -> None:
+        frame = open_frame(encoded(Image.new("L", (16, 12))))
+        assert frame.mode == "RGB" and frame.size == (16, 12)
+        assert open_frame(encoded(Image.new("RGB", (16, 12))), (16, 12)).size == (16, 12)
+
+    def test_refuses_an_oversized_frame_from_its_header_before_decoding(self, mocker: MockerFixture) -> None:
+        data = encoded(Image.new("RGB", (MAX_EDGE + 1, 8)))
+        load = mocker.spy(ImageFile.ImageFile, "load")
+        with pytest.raises(ValueError, match=f"at most {MAX_EDGE} pixels"):
+            open_frame(data)
+        load.assert_not_called()
+
+    def test_refuses_a_frame_of_another_size_than_the_first(self, mocker: MockerFixture) -> None:
+        data = encoded(Image.new("RGB", (16, 12)))
+        load = mocker.spy(ImageFile.ImageFile, "load")
+        with pytest.raises(ValueError, match="same size"):
+            open_frame(data, (16, 16))
+        load.assert_not_called()
+
+    def test_refuses_an_overlong_part(self) -> None:
+        with pytest.raises(ValueError, match="MiB"):
+            open_frame(b"\x89PNG" + b"0" * MAX_FRAME_BYTES)
+
+    def test_a_non_image_is_not_a_bounds_error(self) -> None:
+        with pytest.raises(OSError):
+            open_frame(b"not a frame")
 
 
 class TestHelpers:
@@ -263,6 +301,26 @@ class TestEndpoint:
             "http://localhost:3003/subject-matte", data={"entries": entries()}, files=frame_parts(clip)
         )
         assert response.status_code == 400
+
+    def test_refuses_an_oversized_frame_without_decoding_any(
+        self, deployed_app: TestClient, mocker: MockerFixture
+    ) -> None:
+        get = mocker.patch("frameleaf_ml.main.model_cache.get")
+        mixed = frame_parts([*synthetic_clip(2), Image.new("RGB", (MAX_EDGE + 1, 48))])
+        oversized = frame_parts([Image.new("RGB", (MAX_EDGE + 1, 48))])
+        load = mocker.spy(ImageFile.ImageFile, "load")
+        response = deployed_app.post("http://localhost:3003/subject-matte", data={"entries": entries()}, files=mixed)
+        assert response.status_code == 400
+        assert f"at most {MAX_EDGE} pixels" in response.json()["detail"]
+        # The two legal frames were decoded; the oversized one was refused from its header.
+        assert load.call_count == 2
+        get.assert_not_called()
+        response = deployed_app.post(
+            "http://localhost:3003/subject-matte", data={"entries": entries()}, files=oversized
+        )
+        assert response.status_code == 400
+        assert f"at most {MAX_EDGE} pixels" in response.json()["detail"]
+        assert load.call_count == 2
 
     def test_refuses_unknown_options_and_other_tasks(self, deployed_app: TestClient) -> None:
         response = deployed_app.post(

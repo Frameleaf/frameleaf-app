@@ -1225,6 +1225,36 @@ describe(AssetService.name, () => {
       });
     });
 
+    it.each([false, true])('keeps offsetless edits in UTC with a non-UTC SQL session (bulk: %s)', async (bulk) => {
+      await defaultDatabase.connection().execute(async (database) => {
+        const { sut, ctx } = setup(database);
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const auth = factory.auth({ user });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, timeZone: 'America/Edmonton' });
+        await sql`SET TIME ZONE 'America/Edmonton'`.execute(database);
+        try {
+          const dto = { dateTimeOriginal: '2020-06-10T12:30:00.123456' };
+          if (bulk) await sut.updateAll(auth, { ids: [asset.id], ...dto });
+          else await sut.update(auth, asset.id, dto);
+          const exif = await database
+            .selectFrom('asset_exif')
+            .select([sql<number>`extract(epoch from "dateTimeOriginal")::float8`.as('instant'), 'timeZone'])
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow();
+          expect(exif).toEqual({ instant: 1_591_792_200.123456, timeZone: 'UTC' });
+          await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
+            fileCreatedAt: new Date('2020-06-10T12:30:00.123Z'),
+            localDateTime: new Date('2020-06-10T12:30:00.123Z'),
+          });
+        } finally {
+          await sql`RESET TIME ZONE`.execute(database);
+        }
+      });
+    });
+
     it('should update dateTimeOriginal', async () => {
       const { sut, ctx } = setup();
       ctx.getMock(JobRepository).queue.mockResolvedValue();

@@ -154,6 +154,55 @@ describe(DatabaseBackupService.name, () => {
       await rm(folder, { recursive: true, force: true });
     });
 
+    it('keeps the temporary file of a dump this service is still verifying, however idle it looks', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      const { promise: verifying, resolve: verifyStarted } = Promise.withResolvers<void>();
+      const { promise: canFinish, resolve: finish } = Promise.withResolvers<void>();
+      mocks.storage.createPlainReadStream.mockImplementation((file) => {
+        verifyStarted();
+        const stream = new PassThrough();
+        void canFinish.then(() => createReadStream(local(file)).pipe(stream));
+        return stream;
+      });
+      const task = sut.createDatabaseBackup();
+      await verifying;
+      const [temporary] = await leftFiles();
+      expect(temporary).toMatch(/\.sql\.gz\.tmp$/);
+      mocks.storage.readdir.mockResolvedValue([temporary]);
+      mocks.storage.stat.mockResolvedValue({ mtimeMs: Date.now() - 2 * 60 * 60 * 1000 } as Stats);
+
+      await sut.cleanupDatabaseBackups();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+
+      finish();
+      await task;
+      // the same name, idle, once this service is done with it: a leftover of a failed dump
+      mocks.storage.readdir.mockResolvedValue([temporary]);
+      mocks.storage.unlink.mockResolvedValue(undefined);
+      await sut.cleanupDatabaseBackups();
+      expect(mocks.storage.unlink).toHaveBeenCalledExactlyOnceWith(
+        `${StorageCore.getBaseFolder(StorageFolder.Backups)}/${temporary}`,
+      );
+    });
+
+    it("touches the temporary file now and then while verifying, for another worker's cleanup", async () => {
+      const start = Date.now();
+      let now = start;
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      mocks.storage.utimes.mockResolvedValue(undefined);
+      mocks.storage.createPlainReadStream.mockImplementation((file) => {
+        now += 6 * 60 * 1000;
+        return createReadStream(local(file));
+      });
+      try {
+        const path = await sut.createDatabaseBackup();
+        expect(mocks.storage.utimes).toHaveBeenCalledWith(`${path}.tmp`, expect.any(Date), expect.any(Date));
+        expect(vi.mocked(mocks.storage.utimes).mock.calls.every(([file]) => file === `${path}.tmp`)).toBe(true);
+      } finally {
+        vi.mocked(Date.now).mockRestore();
+      }
+    });
+
     it('waits for a cancelled dump to close before cleanup or returning a retryable failure', async () => {
       const { promise: reading, resolve: readStarted } = Promise.withResolvers<void>();
       const { promise: destroying, resolve: destroyStarted } = Promise.withResolvers<void>();

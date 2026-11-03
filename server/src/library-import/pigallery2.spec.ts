@@ -61,6 +61,21 @@ describe('PiGallery2 pinned SQLite extraction', () => {
       source.close();
     }
   });
+  it('validates each page before returning it without scanning later pages', () => {
+    const insert = database.prepare('INSERT INTO user_entity(id,name,password,role) VALUES(?,?,?,3)');
+    database.exec('BEGIN');
+    for (let index = 0; index < 1001; index++)
+      insert.run(10_000 + index, index === 1000 ? 'public\0private' : `user-${index}`, 'excluded-hash');
+    database.exec('COMMIT');
+    const source = openPigallery2Snapshot(path, '3.5.2');
+    try {
+      const batches = source.rows('user_entity');
+      expect(batches.next().value).toHaveLength(1000);
+      expect(() => batches.next()).toThrow('PIGALLERY2_SNAPSHOT_READ_FAILED');
+    } finally {
+      source.close();
+    }
+  });
   it('reconciles every native projected record and directory/media relationship', () => {
     const normalize = (value: unknown) =>
       JSON.parse(JSON.stringify(value, (_key, v) => (typeof v === 'bigint' || typeof v === 'number' ? String(v) : v)));

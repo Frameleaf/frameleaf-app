@@ -43,6 +43,7 @@ export type Database = {
 export type Source = {
   id: string;
   project: string | null;
+  product: 'Immich' | 'Noodle Gallery';
   version: string;
   image: string;
   app: string;
@@ -153,7 +154,49 @@ export type NasManifest = {
   };
   platforms: string[];
   minimumVersions: { synologyDsm: string; truenas: string; unraid: string };
+  /**
+   * Declared by release engineering (docker/postgres/database-image-change.json at bundle time) when this
+   * release's database image may replace the listed previous images in place, without a logical restore.
+   * Absent for every release that keeps the same image.
+   */
+  databaseImageChange?: DatabaseImageChange;
 };
+export type DatabaseImageChange = {
+  strategy: 'in-place';
+  /** Image references (name:tag, no digest) this release may replace in place. */
+  from: string[];
+  /** This release's database image reference (name:tag, no digest). */
+  to: string;
+  /** Always true: Manager snapshots a checkpoint before the image changes. */
+  requiresBackup: true;
+  notes?: string;
+};
+/** PostgreSQL major of a frameleaf-postgres image reference, e.g. 19 for `…/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:…`. */
+export function postgresMajor(image: string): number | null {
+  const match = /frameleaf-postgres:(\d+)(?:[^@]*)?(?:@sha256:[a-f0-9]{64})?$/.exec(image);
+  return match ? Number(match[1]) : null;
+}
+/**
+ * Whether an update may switch the running database image to this release's in place (review M2): only the
+ * same PostgreSQL major, and only when the signed nas-manifest declares exactly this transition. Everything
+ * else (a new major, an undeclared beta-to-GA move) takes the restore path into a fresh directory.
+ */
+export function databaseImageChangeAllowed(current: string, release: Pick<NasManifest, 'images' | 'databaseImageChange'>): boolean {
+  const target = release.images.postgres;
+  if (current === target) return true;
+  const change = release.databaseImageChange;
+  const from = postgresMajor(current),
+    to = postgresMajor(target);
+  if (!change || from === null || to === null || from !== to) return false;
+  const reference = (image: string) => image.split('@')[0];
+  return (
+    change.strategy === 'in-place' &&
+    change.requiresBackup === true &&
+    change.to === reference(target) &&
+    Array.isArray(change.from) &&
+    change.from.includes(reference(current))
+  );
+}
 export function publicSource(source: Source) {
   const { database, environment, settings, restart, settingsBase, ...safe } = source;
   return {

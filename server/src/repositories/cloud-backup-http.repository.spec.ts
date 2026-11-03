@@ -13,7 +13,13 @@ it.each(['length', 'chunked'] as const)(
   async (framing) => {
     const bytes = Buffer.alloc(9 * 1024 * 1024, 0x61);
     const sha256 = createHash('sha256').update(bytes).digest('hex');
+    // Resolves once the peer has finished writing and its side of the GET connection has closed.
+    let peerClosed: () => void = () => {};
+    const closedByPeer = new Promise<void>((resolve) => (peerClosed = resolve));
     const server = createServer((request, response) => {
+      if (request.method === 'GET') {
+        response.on('close', peerClosed);
+      }
       response.writeHead(200, {
         ...(framing === 'length' || request.method === 'HEAD'
           ? { 'content-length': bytes.length }
@@ -38,9 +44,10 @@ it.each(['length', 'chunked'] as const)(
         async save(value) {
           journal.current = value;
           if (!delayed && value?.kind === 'download' && value.offset > 0) {
-            // A slow durable checkpoint applies real response backpressure while the peer sends FIN.
+            // A slow durable checkpoint applies real response backpressure while the peer sends FIN:
+            // hold the stream until the peer's side of the connection has actually closed (bounded).
             delayed = true;
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            await Promise.race([closedByPeer, new Promise((resolve) => setTimeout(resolve, 1000))]);
           }
         },
       };
