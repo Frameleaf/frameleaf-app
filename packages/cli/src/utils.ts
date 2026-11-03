@@ -257,16 +257,27 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
  * folder linked from inside a root leads elsewhere (a NAS share, another library), so the files
  * behind it are neither uploaded nor, with `--delete`, removed.
  */
-/** The folder a glob pattern starts from: everything before its first wildcard, cut at a separator. */
-const globBase = (pattern: string): string | undefined => {
+/**
+ * The folder a glob pattern starts from: everything before its first wildcard, cut at a separator.
+ * A filesystem root (`/` or `D:\\`) keeps its separator.
+ */
+export const globBase = (pattern: string): string | undefined => {
   const magic = pattern.search(/[*?[\]{}()!]/);
   if (magic < 0) {
     return undefined;
   }
   const literal = pattern.slice(0, magic);
   const cut = Math.max(literal.lastIndexOf('/'), literal.lastIndexOf('\\'));
-  return cut > 0 ? literal.slice(0, cut) : undefined;
+  if (cut < 0) {
+    return undefined;
+  }
+  const folder = literal.slice(0, cut);
+  return folder === '' || /^[A-Za-z]:$/.test(folder) ? literal.slice(0, cut + 1) : folder;
 };
+
+/** Whether `path` is `root` or lies under it; a filesystem root already ends in a separator. */
+const isUnder = (path: string, root: string) =>
+  path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
 
 const insideRoots = async (files: string[], roots: string[]): Promise<string[]> => {
   const realRoots = new Map<string, string>();
@@ -278,7 +289,8 @@ const insideRoots = async (files: string[], roots: string[]): Promise<string[]> 
     }
   }
   if (realRoots.size === 0) {
-    return files;
+    // no root could be resolved, so no globbed file can be checked against one
+    return [];
   }
   // '' marks a folder whose real path could not be resolved: such files are left out
   const realFolders = new Map<string, string>();
@@ -290,15 +302,12 @@ const insideRoots = async (files: string[], roots: string[]): Promise<string[]> 
     let root: string | undefined;
     for (const candidate of realRoots.keys()) {
       const nativeRoot = resolve(candidate);
-      if (
-        (nativeFile === nativeRoot || nativeFile.startsWith(nativeRoot + sep)) &&
-        (!root || nativeRoot.length > resolve(root).length)
-      ) {
+      if (isUnder(nativeFile, nativeRoot) && (!root || nativeRoot.length > resolve(root).length)) {
         root = candidate;
       }
     }
     if (!root) {
-      kept.push(file);
+      // every pattern has a root; a file none of them covers cannot be vouched for
       continue;
     }
     const folder = dirname(nativeFile);
@@ -312,7 +321,7 @@ const insideRoots = async (files: string[], roots: string[]): Promise<string[]> 
       realFolders.set(folder, real);
     }
     const realRoot = realRoots.get(root)!;
-    if (real === realRoot || real?.startsWith(realRoot + sep)) {
+    if (real !== '' && isUnder(real, realRoot)) {
       kept.push(file);
     }
   }

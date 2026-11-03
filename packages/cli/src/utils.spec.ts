@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
-import { Batcher, CrawlOptions, crawl, discoverEndpoint } from 'src/utils.js';
+import { Batcher, CrawlOptions, crawl, discoverEndpoint, globBase } from 'src/utils.js';
 import { Mock } from 'vitest';
 
 vi.mock('node:os', async (importOriginal) => {
@@ -358,6 +358,16 @@ describe('crawl', () => {
       }
     },
   );
+
+  it('globBase keeps a filesystem root with its separator and cuts other patterns at a separator', () => {
+    expect(globBase('/*')).toBe('/');
+    expect(globBase('/photos/*')).toBe('/photos');
+    expect(globBase('/photos/2024-*/**')).toBe('/photos');
+    const backslash = String.fromCodePoint(92);
+    expect(globBase(`D:${backslash}*`)).toBe(`D:${backslash}`);
+    expect(globBase(`D:${backslash}photos${backslash}*.jpg`)).toBe(`D:${backslash}photos`);
+    expect(globBase('/photos')).toBeUndefined();
+  });
 
   it('should preserve escaped glob characters in Windows ignore patterns', async () => {
     await writeFile(join(directory, 'image[1].jpg'), 'ignored');

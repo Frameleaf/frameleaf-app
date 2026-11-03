@@ -169,7 +169,7 @@ export class LockedKeyRepository {
       } catch {
         file = null;
       }
-      if (!file) {
+      if (!file || !Array.isArray(file.wraps)) {
         throw new LockedPepperFileError(
           `The Locked pepper file is missing and the key file ${join(this.directory(), name)} cannot be inspected. No new pepper is made until every key file can be read: restore the pepper file from a backup, or repair or remove that key file.`,
           'missing',
