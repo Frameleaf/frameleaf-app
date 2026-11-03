@@ -176,6 +176,19 @@ describe('SetupBar', () => {
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
   });
 
+  it('keeps Retry and the file-check warning when attention follows completed stages', async () => {
+    const value = progress({ phase: Phase.NeedsAttention });
+    value.stages = value.stages.map((stage) => ({ ...stage, status: LibrarySetupStageStatus.Done, done: stage.total }));
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
+    expect(
+      screen.getByText('A file check stopped before it finished. Retry it, or see Library care for what happened.'),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
+  });
+
   it('shows an identity warning without offering stage actions or progress', async () => {
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention, stages: [] }));
     render(SetupBar);

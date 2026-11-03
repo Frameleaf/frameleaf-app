@@ -222,7 +222,7 @@
       </strong>
       <span class="fl-setup-bar-detail">
         {#if attention}
-          {$t(current ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}
+          {$t(progress.stages.length > 0 ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}
         {:else if current && current.total > 0}
           {$t('setup_bar_progress', {
             values: {
@@ -261,7 +261,7 @@
       </div>
     {/if}
     <div class="fl-setup-bar-actions">
-      {#if attention && current}
+      {#if attention && progress.stages.length > 0}
         <button type="button" class="button primary" disabled={busy} onclick={retry}>
           {$t('retry')}
         </button>
