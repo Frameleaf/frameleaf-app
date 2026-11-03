@@ -4,6 +4,7 @@ import {
   initialCanonicalOutcomeContext,
   initialSelectionEntitlementRows,
   libraryRunPending,
+  managerImportHeld,
   selectionItemContext,
   selectionItemState,
 } from 'src/queue/selection-state.js';
@@ -359,7 +360,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
   const { rows } = await sql<Aggregate>`with runs as (
       select r.id, r.kind, r."createdAt", r."finishedAt", (r."enumerationDone" and not (${libraryRunPending(sql<string>`r.id`)})) "enumerationDone",
         ${librarySourceAttention} "librarySourceAttention",
-        coalesce(r.kind='immich-import-derived'
+        coalesce(r.kind in ('immich-import-derived','library-import-derived')
           and r.selection->'managerSetup'->>'installation' ~ '^[a-f0-9]{12}$'
           and nullif(r.selection->'managerSetup'->>'operationId','') is not null
           and r.selection->'managerSetup' ? 'startedAt'
@@ -401,7 +402,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number, runI
       coalesce(stage."dependencyUnavailable", false) "dependencyUnavailable", stage."dependencyReasons",
       coalesce(stage."dependencyFailed", false) "dependencyFailed",
       latest."meaningfulAt" "lastProgressAt", latest.stage "lastStage", ${workerAvailable} "workerAvailable",
-      coalesce(stage.ready > 0 and stage.active = 0 and not r."managerSetupPending" and
+      coalesce(stage.ready > 0 and stage.active = 0 and not ${managerImportHeld(sql<string>`r.id`)} and
         coalesce(latest."meaningfulAt", r."createdAt") < now() - interval '2 minutes', false) "noDispatchBacklog"
     from runs r left join item_counts items on items."runId" = r.id
     left join stage_counts stage on stage."runId" = r.id left join latest on latest."runId" = r.id

@@ -32,6 +32,7 @@ const cases = [
     'terminal-alias',
     'empty',
     'queued-pause',
+    'repeated-begin',
     'scans-pause',
     'pause-rollback',
   ].map((outcome) => ({
@@ -136,9 +137,9 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     return Promise.resolve({});
   });
   const operations = new MediaOperationRepository(db);
-  const make = () =>
+  const make = (connection = db) =>
     new FrameleafLibrarySetupService(
-      db,
+      connection,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
       {
@@ -285,6 +286,25 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     })}::text::jsonb WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
     if (outcome) {
       switch (outcome) {
+        case 'repeated-begin': {
+          const before = (await sql`SELECT xmin::text AS version FROM job_run WHERE id=${id}::uuid`.execute(db))
+            .rows[0];
+          await db.transaction().execute(async (blocker) => {
+            await sql`SELECT name FROM job_queue FOR NO KEY UPDATE`.execute(blocker);
+            await db.connection().execute(async (connection) => {
+              await sql`SET lock_timeout='500ms'`.execute(connection);
+              try {
+                await make(connection).begin();
+              } finally {
+                await sql`RESET lock_timeout`.execute(connection);
+              }
+            });
+          });
+          expect(
+            (await sql`SELECT xmin::text AS version FROM job_run WHERE id=${id}::uuid`.execute(db)).rows[0],
+          ).toEqual(before);
+          break;
+        }
         case 'queued-pause': {
           const store = new SqlQueueStore(db);
           const worker = randomUUID();
@@ -355,15 +375,33 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             });
           const queued = (await createScan(MediaOperationStatus.Queued)).id;
           const running = (await createScan(MediaOperationStatus.Rendering)).id;
+          const health = (
+            await operations.create({
+              ownerId,
+              kind: MediaOperationKind.MediaHealth,
+              status: MediaOperationStatus.Queued,
+              destination: MediaOperationDestination.Local,
+              label: 'Synthetic original check',
+              snapshot: {},
+              settings: {},
+            })
+          ).id;
+          await sql`UPDATE system_metadata SET value=jsonb_set(value,'{health}',${JSON.stringify({ [ownerId]: health })}::text::jsonb)
+            WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
           await sql`UPDATE system_metadata SET value=jsonb_set(value,'{scans}',${JSON.stringify({ first: queued, second: running })}::text::jsonb)
           WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+          const notified = vi.fn();
+          const unsubscribe = operations.onChange(notified);
           if (outcome === 'pause-rollback') {
             const pause = operations.requestPause.bind(operations);
-            vi.spyOn(operations, 'requestPause').mockImplementationOnce(async (...args) => {
-              await pause(...args);
-              throw new Error('synthetic pause failure');
-            });
+            vi.spyOn(operations, 'requestPause')
+              .mockImplementationOnce(pause)
+              .mockImplementationOnce(async (...args) => {
+                await pause(...args);
+                throw new Error('synthetic pause failure');
+              });
             await expect(make().setPaused(true)).rejects.toThrow('synthetic pause failure');
+            expect(notified).not.toHaveBeenCalled();
             expect((await make().progress()).paused).toBe(false);
             expect(
               (
@@ -374,6 +412,14 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             ).toBe(false);
           } else {
             await make().setPaused(true);
+            expect(notified.mock.calls.flatMap(([rows]) => rows)).toEqual(
+              expect.arrayContaining([
+                { id: queued, ownerId },
+                { id: running, ownerId },
+                { id: health, ownerId },
+              ]),
+            );
+            notified.mockClear();
             expect(
               (await sql`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)).rows[0].status,
             ).toBe(MediaOperationStatus.Paused);
@@ -385,10 +431,18 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               ).rows[0].paused,
             ).toBe(true);
             await make().setPaused(false);
+            expect(notified.mock.calls.flatMap(([rows]) => rows)).toEqual(
+              expect.arrayContaining([
+                { id: queued, ownerId },
+                { id: running, ownerId },
+                { id: health, ownerId },
+              ]),
+            );
             expect(
               (await sql`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)).rows[0].status,
             ).toBe(MediaOperationStatus.Queued);
           }
+          unsubscribe();
           expect(
             (await sql`SELECT 1 FROM media_operation WHERE "pauseRequestedAt" IS NOT NULL`.execute(db)).rows,
           ).toEqual([]);
