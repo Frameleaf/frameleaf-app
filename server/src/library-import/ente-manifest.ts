@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { resolveEnteComponents } from 'src/library-import/ente-files.js';
 import fixture from 'src/library-import/fixtures/ente/0.4.2-media.json' with { type: 'json' };
 import {
+  type ImportManifest,
   importFilePathSchema,
   importFileSchema,
   importTimestampSchema,
-  type ImportManifest,
   parseImportManifest,
 } from 'src/library-import/manifest.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
@@ -32,7 +32,7 @@ const location = z.strictObject({ latitude: z.number().min(-90).max(90), longitu
 const json = z.json().refine((value) => {
   let safe = true;
   JSON.stringify(value, (_key, field) => {
-    if (typeof field === 'number' && field === Math.trunc(field) && !Number.isSafeInteger(field)) safe = false;
+    if (typeof field === 'number' && Math.abs(field) > Number.MAX_SAFE_INTEGER) safe = false;
     return field;
   });
   return safe;
@@ -191,7 +191,7 @@ export function readEnteManifest(input: {
       return refuse('ENTE_EXPORT_INCOMPLETE');
     accounts.set(account.id, { ...account, fileIndex, albumIndex, seen: new Map(), favourites: new Map() });
   }
-  if (!accounts.size) return refuse('ENTE_EXPORT_INCOMPLETE');
+  if (accounts.size === 0) return refuse('ENTE_EXPORT_INCOMPLETE');
   const owners = new Map<
     string,
     { account: Account; file: File; components: Map<string, { proof: Placement['file']; name: string }> }
@@ -373,7 +373,7 @@ export function readEnteManifest(input: {
       )
         return refuse('ENTE_CAPTURE_TIME_INVALID');
       if (file.offsetTime === null) local = wall;
-      else if (wall.includes('.') && wall.split('.')[1].padEnd(6, '0') !== fraction.slice(1).padEnd(6, '0'))
+      else if (wall.includes('.') && wall.split('.', 2)[1].padEnd(6, '0') !== fraction.slice(1).padEnd(6, '0'))
         return refuse('ENTE_CAPTURE_TIME_INVALID');
     }
     return local;
@@ -391,7 +391,7 @@ export function readEnteManifest(input: {
     if (favorite !== nativeFavorite) return refuse('ENTE_METADATA_CONFLICT');
     const localDateTime = clock(file),
       primaryId = 'file:' + file.id + ':' + primaryRole;
-    const add = (id: string, component: { proof: Placement['file']; name: string }) =>
+    const add = (id: string, component: { proof: Placement['file']; name: string }) => {
       files.push({
         id,
         path: component.proof.path,
@@ -399,6 +399,7 @@ export function readEnteManifest(input: {
         sha256: component.proof.sha256,
         role: 'original',
       });
+    };
     add(primaryId, primary);
     if (primary.name !== file.name) loss('ENTE_ORIGINAL_NAME_ARCHIVED', file.id);
     const metadata = {
