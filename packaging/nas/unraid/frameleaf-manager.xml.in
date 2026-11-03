@@ -1,5 +1,5 @@
 <Container version="2">
-  <Name>frameleaf-manager</Name>
+  <Name>Frameleaf</Name>
   <Repository>ghcr.io/frameleaf/frameleaf-manager:latest</Repository>
   <Registry>https://github.com/orgs/Frameleaf/packages/container/package/frameleaf-manager</Registry>
   <Shell>sh</Shell>
@@ -8,26 +8,41 @@
   <Privileged>false</Privileged>
   <Project>https://frameleaf.app</Project>
   <Support>https://frameleaf.app/help/</Support>
-  <Overview>Your photos, on your own server. Frameleaf Manager guides you through installing and maintaining Frameleaf: choose the folders that hold your library, review a signed release and bring the server online.
+  <Overview>Frameleaf is your own photo and video library, running on your Unraid server. Bring a lifetime of photos home, find any moment by describing it, edit it, and enjoy it on your phone, in any browser and on the TV. Your originals stay as ordinary files on your disks, faces and search run on your own hardware, and there's no subscription or telemetry.
 
-From one local dashboard, check service health, start or stop the library, review updates, manage storage and create encrypted database recovery points. Frameleaf itself brings your photos and videos together with a timeline, smart search, people, places, albums, sharing and editing. Local use needs no Frameleaf Cloud account.
+• Library — a fast timeline for every photo and video, with albums, folders, RAW, Live Photos and your best shots picked out.
+• Search — describe what you remember: people and pets, places and landmarks, text in photos, even words spoken in videos.
+• Memories — on this day, trips and years in review, played as shows on Apple TV and Android TV.
+• Create — a photo editor; Studio, a real video editor that can make a movie from an album in one step; Boards for references and design files; and Clients for photography studios.
+• Share — a library for each person, partner sharing, shared albums and protected links.
+• Apps — iPhone, iPad and Android with camera-roll backup, plus Apple TV and Android TV.
+• Keep it safe — duplicate review, locked content and backups. Optional Frameleaf Cloud adds remote access and off-site backup.
 
-Install this template for the guided setup. Create your Manager administrator from your home network on first open, then follow the linked Unraid guide. Manager controls sibling services through Docker and needs the dedicated folder mappings shown below. Recovery points contain the database and configuration; back up photo and video originals separately. The product screenshots use demonstration data.</Overview>
-  <Category>MediaApp:Photos</Category>
-  <ExtraSearchTerms>photos videos photo-library photo-backup gallery albums family self-hosted manager install updates database recovery</ExtraSearchTerms>
-  <Requires>Unraid Docker enabled; dedicated persistent folders for Manager state, original media, the PostgreSQL database and database backups. Keep mapped host and container paths identical. Manager requires access to the Docker socket. See the installation guide for setup and hardware requirements.</Requires>
+Switching? Bring your library across from Immich, PhotoPrism, LibrePhotos, Photoview, Piwigo, Lychee, PiGallery2, Ente Photos, Nextcloud Photos and Memories, or Synology Photos, and import Google Photos Takeout or iCloud Photos.
+
+This is the official way to install Frameleaf on Unraid. Frameleaf Manager sets up Frameleaf, its database and optional machine learning, then handles updates and database backups from one dashboard. Before applying, create folders for your photos, database and backups, then open Manager and create your administrator from your home network. Frameleaf is in beta: keep your own backup of original photos and videos.</Overview>
+  <Category>MediaApp:Photos MediaApp:Video</Category>
+  <ExtraSearchTerms>photos videos photo-library photo-backup google-photos icloud gallery albums family faces people search memories video-editor ai self-hosted immich photoprism librephotos photoview piwigo lychee pigallery2 ente nextcloud-photos synology-photos</ExtraSearchTerms>
+  <Requires>Docker enabled, and folders for your photos, the database and backups created before you apply. Keep each folder's host and container paths identical. Frameleaf Manager uses the Docker socket to install and update Frameleaf. See the setup guide for hardware requirements.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <Discord>https://discord.gg/cN3U3mv4</Discord>
   <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
   <Twitter>https://x.com/frameleafapp</Twitter>
   <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
   <DonateText>Support Frameleaf with a supporter licence</DonateText>
-  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Photo>
+  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg</Photo>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-search.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-people.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-memories.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-editor.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-studio.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-boards.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-apple-tv.jpg</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg</Screenshot>
-  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
+  <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
   <Video>https://www.youtube.com/watch?v=INeVz9NFzOM</Video>
+  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
   <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>

@@ -72,7 +72,7 @@ assert profile.findtext('WebPage') == 'https://frameleaf.app'
 assert profile.findtext('Discord') == 'https://discord.gg/cN3U3mv4'
 assert profile.findtext('Twitter') == 'https://x.com/frameleafapp'
 assert profile.findtext('Video') == 'https://www.youtube.com/watch?v=rNgyZZoZoEg'
-assert profile.findtext('Photo') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg'
+assert profile.findtext('Photo') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/frameleaf-library.jpg'
 assert profile.findtext('Reddit') == 'https://www.reddit.com/r/Frameleaf/'
 assert profile.findtext('DonateLink') == 'https://frameleaf.app/pricing/#supporter'
 assert profile.findtext('DonateText') == 'Support Frameleaf with a supporter licence'
@@ -92,6 +92,10 @@ for template in templates:
     assert app.findtext('TemplateURL') == 'https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/' + template.name
     assert app.findtext('Repository') == 'ghcr.io/frameleaf/frameleaf-manager:latest'
     assert app.findtext('Privileged') == 'false'
+    # Community Apps lists Frameleaf by this name and leads with the product tour.
+    assert app.findtext('Name') == 'Frameleaf'
+    assert [v.text for v in app.findall('Video')] == ['https://www.youtube.com/watch?v=' + v for v in ['rNgyZZoZoEg', 'INeVz9NFzOM', 'bTfFBDHc6OE']]
+    assert len(app.findall('Screenshot')) == 9
     for config in app.findall('Config'):
         assert config.get('Description', '').strip(), config.get('Name')
 `, path.join(output, 'unraid')]);
