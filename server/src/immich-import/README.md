@@ -87,8 +87,11 @@ In-place verification requires identical resolved paths and device/inode identit
 checks containment, regular-file type and before/after file metadata, and reads no file
 content (FL-1146): Manager has stopped Immich and mounts the media read-only, so the
 library opens as soon as its rows are in. The source fingerprint includes each present
-referenced file's device, inode, size and modification time, so changed media still
-invalidates a resumed operation. Original checksums are compared after activation by
+referenced file's size and nanosecond modification time, so changed media still
+invalidates a resumed operation. Device and inode numbers stay out of it because a remount
+after a host restart can renumber them; they are compared only within each verification
+read, so a replacement with the same size and modification time made between reads is
+left to the background checksum scan. Original checksums are compared after activation by
 Library Care's full health scan, which first setup runs for every account: a mismatch
 is kept and listed there, and smart search, faces and identical-file merging wait for
 that scan while metadata and thumbnails start at once (setup bar in the web app).
