@@ -113,6 +113,19 @@ describe('SetupBar', () => {
     expect(await screen.findByText(/Checking original files · 312\.640 of 823\.034/)).toBeInTheDocument();
   });
 
+  it('does not promise both AI features from the combined completion stage', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(
+      progress({
+        phase: Phase.Complete,
+        completedAt: '2026-11-03T00:00:00Z',
+        stages: [{ id: LibrarySetupStageId.Search, status: LibrarySetupStageStatus.Done, done: 1, total: 1 }],
+      }),
+    );
+    render(SetupBar);
+    expect(await screen.findByRole('heading', { name: 'Your library is ready' })).toBeInTheDocument();
+    expect(screen.queryByText(/smart search and faces are ready/)).not.toBeInTheDocument();
+  });
+
   it('formats completion counts using the chosen number locale', async () => {
     locale.set('de-DE');
     sdkMock.getLibrarySetupProgress.mockResolvedValue(
