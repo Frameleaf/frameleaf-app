@@ -15,7 +15,7 @@ import { type SourceArchiveRecord } from 'src/library-import/source-archive-code
 
 type Result = { manifest: ImportManifest; archive: SourceArchiveRecord[] };
 const proof = (id: string, path: string, size: number, role = 'original') => {
-  const bytes = Buffer.alloc(size, Number(id.replace(/\D/g, '')) || 42);
+  const bytes = Buffer.alloc(size, Number(id.replaceAll(/\D/g, '')) || 42);
   return {
     id,
     path,
@@ -81,8 +81,8 @@ describe('Photoview common manifest mapping', () => {
       for (const value of captured) {
         const row: Record<string, SQLInputValue> = { ...value };
         if (table === 'users') row.password = 'excluded-user-password';
-        if (table === 'media_urls') row.media_name = 'excluded-preview-cache-name';
-        if (table === 'share_tokens') {
+        else if (table === 'media_urls') row.media_name = 'excluded-preview-cache-name';
+        else if (table === 'share_tokens') {
           row.value = 'excluded-bearer-token';
           row.password = row.has_password === 1 ? 'excluded-share-password' : null;
           delete row.has_password;
@@ -225,8 +225,8 @@ describe('Photoview common manifest mapping', () => {
   it.each(['schema', 'revision', 'writers'])('refuses changed %s evidence before reading content', (kind) => {
     const value = input();
     if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-    if (kind === 'revision') value.inventory.revisionAfter = 'changed';
-    if (kind === 'writers') value.inventory.writersStopped = false;
+    else if (kind === 'revision') value.inventory.revisionAfter = 'changed';
+    else if (kind === 'writers') value.inventory.writersStopped = false;
     expect(() => read(value)).toThrow(
       kind === 'schema' ? 'PHOTOVIEW_SCHEMA_UNQUALIFIED' : 'PHOTOVIEW_CAPTURE_INCOMPLETE',
     );
@@ -236,10 +236,10 @@ describe('Photoview common manifest mapping', () => {
     (kind) => {
       const value = input();
       if (kind === 'missing') value.files.pop();
-      if (kind === 'extra') value.files.push(proof('cache:1', 'cache/thumbnail.jpg', 5395));
-      if (kind === 'path') value.files[0].path = 'cache/thumbnail.jpg';
-      if (kind === 'size') value.files[0].bytes = '1';
-      if (kind === 'role') value.files[0].role = 'sidecar';
+      else if (kind === 'extra') value.files.push(proof('cache:1', 'cache/thumbnail.jpg', 5395));
+      else if (kind === 'path') value.files[0].path = 'cache/thumbnail.jpg';
+      else if (kind === 'size') value.files[0].bytes = '1';
+      else if (kind === 'role') value.files[0].role = 'sidecar';
       expect(() => read(value)).toThrow('PHOTOVIEW_FILE_EVIDENCE_MISMATCH');
     },
   );
@@ -250,12 +250,15 @@ describe('Photoview common manifest mapping', () => {
       expect(() => read()).toThrow('PHOTOVIEW_ORIGINAL_PATH_INVALID');
     },
   );
-  it.each(['/photos\\lab', '/photos\nlab'])('refuses an unsafe source root before stripping its prefix: %s', (root) => {
-    const value = input();
-    value.sourceRoot = root;
-    database.prepare("UPDATE media SET path=REPLACE(path,'/photos',?)").run(root);
-    expect(() => read(value)).toThrow('PHOTOVIEW_ORIGINAL_PATH_INVALID');
-  });
+  it.each([String.raw`/photos\lab`, '/photos\nlab'])(
+    'refuses an unsafe source root before stripping its prefix: %s',
+    (root) => {
+      const value = input();
+      value.sourceRoot = root;
+      database.prepare("UPDATE media SET path=REPLACE(path,'/photos',?)").run(root);
+      expect(() => read(value)).toThrow('PHOTOVIEW_ORIGINAL_PATH_INVALID');
+    },
+  );
   it('prepares every mapped original with the existing destination writer without database effects', () => {
     const { manifest } = read();
     const template = planFixture.plan.files[0];
