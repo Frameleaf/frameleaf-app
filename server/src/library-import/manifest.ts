@@ -113,6 +113,10 @@ const sealedManifestSchema = legacyManifestSchema.extend({
     }),
   ),
 });
+const stackedManifestSchema = sealedManifestSchema.extend({
+  version: z.literal(4),
+  stacks: z.array(z.strictObject({ id, ownerId: id, primaryAssetId: id, assetIds: z.array(id).min(2) })),
+});
 const manifestSchema = z.discriminatedUnion('version', [
   legacyManifestSchema,
   legacyManifestSchema.extend({
@@ -120,9 +124,10 @@ const manifestSchema = z.discriminatedUnion('version', [
     assets: z.array(legacyManifestSchema.shape.assets.element.extend({ primaryFileId: id })),
   }),
   sealedManifestSchema,
-  sealedManifestSchema.extend({
-    version: z.literal(4),
-    stacks: z.array(z.strictObject({ id, ownerId: id, primaryAssetId: id, assetIds: z.array(id).min(2) })),
+  stackedManifestSchema,
+  stackedManifestSchema.extend({
+    version: z.literal(5),
+    livePhotos: z.array(z.strictObject({ photoAssetId: id, videoAssetId: id })),
   }),
 ]);
 export type ImportManifest = z.infer<typeof manifestSchema>;
@@ -193,7 +198,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
       if (asset!.ownerId !== album.ownerId) fail('CROSS_OWNER_ALBUM_REQUIRES_PERMISSION_REVIEW');
     }
   }
-  if (value.version === 4) {
+  if (value.version === 4 || value.version === 5) {
     const grants = new Map<string, Map<string, 'viewer' | 'editor'>>();
     for (const album of value.albums) {
       for (const assetId of album.assetIds) {
@@ -225,6 +230,39 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
         if (assets.get(assetId)!.visibility !== primary.visibility) fail('STACK_VISIBILITY_MISMATCH');
         if (access(assetId) !== expectedAccess) fail('STACK_ACCESS_MISMATCH');
       }
+    }
+  }
+  if (value.version === 5) {
+    const claimed = new Set<string>();
+    for (const pair of value.livePhotos) {
+      const photo = assets.get(pair.photoAssetId),
+        video = assets.get(pair.videoAssetId);
+      if (
+        !photo ||
+        !video ||
+        !('type' in photo) ||
+        !('type' in video) ||
+        photo.type !== 'IMAGE' ||
+        video.type !== 'VIDEO'
+      )
+        fail('LIVE_PHOTO_ASSETS_INVALID');
+      if (claimed.has(pair.photoAssetId) || claimed.has(pair.videoAssetId)) fail('LIVE_PHOTO_MEMBERSHIP_CONFLICT');
+      claimed.add(pair.photoAssetId);
+      claimed.add(pair.videoAssetId);
+      if (photo!.ownerId !== video!.ownerId) fail('LIVE_PHOTO_OWNER_INVALID');
+      if (
+        photo!.visibility === 'locked' ||
+        photo!.visibility === 'trash' ||
+        video!.visibility !== 'hidden' ||
+        photo!.metadata.deletedAt !== undefined ||
+        video!.metadata.deletedAt !== undefined
+      )
+        fail('LIVE_PHOTO_STATE_UNSUPPORTED');
+      if (
+        value.albums.some((album) => album.assetIds.includes(pair.videoAssetId)) ||
+        value.stacks.some((stack) => stack.assetIds.includes(pair.videoAssetId))
+      )
+        fail('LIVE_PHOTO_MOTION_RELATIONSHIP_UNSUPPORTED');
     }
   }
   return value;

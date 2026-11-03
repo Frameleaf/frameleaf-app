@@ -2177,6 +2177,33 @@ describe(MetadataService.name, () => {
       expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();
     });
 
+    it('does not extract a replacement motion original during imported regeneration', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.job.isImportedMetadataJob.mockResolvedValue(true);
+      mockReadTags({ MotionPhoto: 1, MotionPhotoVideo: new BinaryField(0, '') });
+      mocks.metadata.extractBinaryTag.mockRejectedValue(new Error('unexpected replacement extraction'));
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalled();
+      expect(mocks.metadata.extractBinaryTag).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+    });
+
+    it.each([true, false])(
+      'preserves qualified Live Photo links during imported regeneration: %s',
+      async (imported) => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.job.isImportedMetadataJob.mockResolvedValue(imported);
+        mockReadTags({ ContentIdentifier: 'stale-embedded-pair' });
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.upsertExif).toHaveBeenCalled();
+        if (imported) expect(mocks.asset.findLivePhotoMatch).not.toHaveBeenCalled();
+        else expect(mocks.asset.findLivePhotoMatch).toHaveBeenCalled();
+      },
+    );
+
     it.each([true, false])('preserves source face assignments only for imported regeneration: %s', async (imported) => {
       const asset = AssetFactory.from().face({ sourceType: SourceType.Exif }).build();
       const originalFace = asset.faces[0];

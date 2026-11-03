@@ -20,7 +20,7 @@ export class CanonicalStackWriter {
     this.binding = structuredClone(context.binding);
     const plan = bindDestinationImportPlan(context.plan, this.binding, context.manifest, context.destinationId);
     const manifest = parseImportManifest(context.manifest);
-    this.stacks = new Map((manifest.version === 4 ? manifest.stacks : []).map((stack) => [stack.id, stack]));
+    this.stacks = new Map(('stacks' in manifest ? manifest.stacks : []).map((stack) => [stack.id, stack]));
     this.assets = new Map(manifest.assets.map((asset) => [asset.id, asset]));
     this.owners = new Map(plan.owners.map((owner) => [owner.sourceId, owner.destinationId.toLowerCase()]));
   }

@@ -506,7 +506,7 @@ export class MetadataService extends BaseService {
     const assetWidth = validate(isSidewards ? height : width);
     const assetHeight = validate(isSidewards ? width : height);
 
-    if (this.isMotionPhoto(asset, exifTags)) {
+    if (this.isMotionPhoto(asset, exifTags) && !(await this.jobRepository.isImportedMetadataJob())) {
       await this.applyMotionPhotos(source, exifTags, dates, stats);
     }
     await publishJobResult(async () => {
@@ -562,7 +562,7 @@ export class MetadataService extends BaseService {
 
       await Promise.all(tasks.map((task) => task()));
 
-      if (exifData.livePhotoCID) {
+      if (exifData.livePhotoCID && !imported) {
         await this.linkLivePhotos(asset, exifData);
       }
 
