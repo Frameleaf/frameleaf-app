@@ -1,9 +1,12 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
+import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
+import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
 import content from 'src/library-import/fixtures/librephotos/1.5.1-content.json' with { type: 'json' };
 import originals from 'src/library-import/fixtures/librephotos/1.5.1-files.json' with { type: 'json' };
 import pgContent from 'src/library-import/fixtures/librephotos/1.5.1-postgres-content.json' with { type: 'json' };
@@ -11,7 +14,7 @@ import pgSchema from 'src/library-import/fixtures/librephotos/1.5.1-postgres18.j
 import sqliteSchema from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' with { type: 'json' };
 import { createLibrephotosPostgresDecoder } from 'src/library-import/librephotos-postgres.js';
 import * as librephotos from 'src/library-import/librephotos.js';
-import type { ImportManifest } from 'src/library-import/manifest.js';
+import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
 import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
 const photoId = (name: keyof typeof content.expected.photos) => content.expected.photos[name].replaceAll('-', '');
@@ -190,6 +193,84 @@ describe('LibrePhotos common manifest mapping', () => {
         { code: 'LIBREPHOTOS_ALBUM_PARTITIONED', entityId: '1', acknowledged: false },
       ]),
     );
+  });
+
+  it('keeps duplicate-path scan bookkeeping private instead of creating new visible originals', async () => {
+    const { manifest, archive } = await read(snapshot(), input());
+    expect(manifest.files).toHaveLength(5);
+    expect(manifest.assets.find((asset) => asset.id === photoId('alice'))?.fileIds).toHaveLength(2);
+    expect(manifest.assets.find((asset) => asset.id === photoId('bob'))?.fileIds).toHaveLength(1);
+    expect(manifest.files.some((file) => file.id.startsWith('copy:'))).toBe(false);
+    expect(archive.filter((record) => record.table === 'api_filecopy')).toHaveLength(1);
+    expect(manifest.losses).toContainEqual({ code: 'LIBREPHOTOS_DUPLICATE_PATHS_ARCHIVED', acknowledged: false });
+  });
+
+  it('does not disclose a private album title to another photo owner who is not a member', async () => {
+    database.prepare('DELETE FROM api_albumuser_shared_to WHERE user_id=2').run();
+    database.prepare("UPDATE api_albumuser SET title='Private medical notes'").run();
+    const { manifest, archive } = await read(snapshot(), input());
+    expect(manifest.albums.filter((album) => album.ownerId === '2')).toEqual([]);
+    expect(manifest.albums[0]).toMatchObject({ ownerId: '1', name: 'Private medical notes' });
+    expect(archive.filter((record) => record.table === 'api_albumuser_photos')).toHaveLength(2);
+    expect(manifest.losses).toContainEqual({
+      code: 'LIBREPHOTOS_PRIVATE_ALBUM_MEMBERSHIP_ARCHIVED',
+      entityId: '1',
+      acknowledged: false,
+    });
+  });
+
+  it('prepares every mapped owner and original through the canonical importer without destination effects', async () => {
+    const { manifest } = await read(snapshot(), input());
+    const template = planFixture.plan.files[0];
+    const files = new Map(manifest.files.map((file, index) => [file.id, { ...file, inode: String(index + 1) }]));
+    const plan = parseDestinationImportPlan({
+      ...planFixture.plan,
+      source: manifest.source,
+      owners: manifest.users.map((user) => ({ sourceId: user.id, destinationId: randomUUID() })),
+      files: manifest.assets.flatMap((asset) =>
+        asset.fileIds.map((id) => {
+          const file = files.get(id)!;
+          return {
+            ...template,
+            id: `placement:${asset.id}:${id}`,
+            sourceAssetId: asset.id,
+            sourceFileId: id,
+            sourcePath: file.path,
+            destinationPath: `${asset.ownerId}/${asset.id}/${file.path}`,
+            bytes: file.bytes,
+            sha256: file.sha256,
+            sourceIdentity: { ...template.sourceIdentity, inode: file.inode, bytes: file.bytes },
+          };
+        }),
+      ),
+    });
+    const query = vi.fn();
+    const writer = new CanonicalAssetWriter(
+      { query, transaction: vi.fn() },
+      {
+        manifest,
+        plan,
+        destinationId: plan.destinationId,
+        binding: {
+          operationId: randomUUID(),
+          source: manifest.source,
+          manifestSha256: manifestFingerprint(manifest),
+          planSha256: destinationPlanFingerprint(plan),
+        },
+      },
+    );
+    const prepared = manifest.assets.map((asset) => {
+      if (!('type' in asset)) throw new Error('Sealed source asset required');
+      return writer.prepare({
+        sourceAssetId: asset.id,
+        type: asset.type,
+        fileModifiedAt: asset.fileModifiedAt,
+        originalFileNames: asset.originalFileNames,
+      });
+    });
+    expect(prepared).toHaveLength(5);
+    expect(prepared.reduce((count, asset) => count + asset.files.length, 0)).toBe(8);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('preserves hidden, archive, trash and explicitly removed location state', async () => {
