@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -119,6 +119,21 @@ describe('offline media verification', () => {
     await writeFile(path, 'modified');
     await expect(verifyMediaFile(path, roots, checksum, 'sha1', manager)).rejects.toThrow('ORIGINAL_CHECKSUM_MISMATCH');
     expect(await readFile(path, 'utf8')).toBe('modified');
+  });
+
+  it('reads a Manager in-place file once, since source and target are the same file', async () => {
+    const root = join(directory, 'source');
+    const path = join(root, 'photo.jpg');
+    await writeFile(path, 'original');
+    const handle = await open(path);
+    const reads = vi.spyOn(Object.getPrototypeOf(handle), 'createReadStream');
+    await handle.close();
+    try {
+      await verifyMediaFile(path, [{ source: root, target: root }], undefined, undefined, manager);
+      expect(reads).toHaveBeenCalledTimes(1);
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('uses the most specific Manager mount and rejects duplicate destinations', () => {
