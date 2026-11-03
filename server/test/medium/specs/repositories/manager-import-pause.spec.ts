@@ -390,6 +390,7 @@ it.each(['immich-import-derived', 'library-import-derived'])(
       { key: 'unconfirmed', runId: id, state: 'needs_attention', safeToRetry: true, data: {} },
       { key: 'cancelled', runId: id, state: 'cancelled', safeToRetry: true, data: {} },
       { key: 'domain', runId: id, state: 'failed', safeToRetry: true, data: { operationId: randomUUID() } },
+      { key: 'producer', runId: id, state: 'failed', safeToRetry: true, data: {} },
     ];
     for (const control of controls) {
       await store.enqueue([
@@ -409,6 +410,9 @@ it.each(['immich-import-derived', 'library-import-derived'])(
         db,
       );
     }
+    await sql`INSERT INTO job_selection(id,"runId","producerId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state)
+      SELECT ${randomUUID()}::uuid,${id}::uuid,j.id,'unexpected-producer',${queue},true,false,60000,'needs_attention'
+      FROM job j WHERE j.data->>'id'='producer'`.execute(db);
     await sql`UPDATE system_metadata SET value=jsonb_set(value,'{phase}','"needs-attention"'::jsonb) WHERE key=${setupKey}`.execute(
       db,
     );
@@ -430,6 +434,14 @@ it.each(['immich-import-derived', 'library-import-derived'])(
         (await sql<{ state: string }>`SELECT state FROM job WHERE data->>'id'=${control.key}`.execute(db)).rows[0]
           .state,
       ).toBe(control.state);
+    expect(
+      (await sql<{ state: string }>`SELECT state FROM job_selection WHERE stage='unexpected-producer'`.execute(db))
+        .rows,
+    ).toEqual([{ state: 'needs_attention' }]);
+    expect(
+      (await sql<{ done: boolean }>`SELECT "enumerationDone" AS done FROM job_run WHERE id=${id}::uuid`.execute(db))
+        .rows[0].done,
+    ).toBe(true);
     const [retry] = await store.claim(queue, worker, 1);
     expect(retry?.id).toBe(active.id);
     expect(await store.complete(retry, [])).toBe(true);

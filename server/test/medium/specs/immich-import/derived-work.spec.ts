@@ -361,6 +361,29 @@ describe('offline import derived-work durable ownership', () => {
     }
   });
 
+  it.each([undefined, { mode: 'independent-copy' as const }])(
+    'rejects unmanaged preparation after a copied Manager run loses its marker: %s',
+    async (media) => {
+      const config = managerConfig();
+      config.media = media;
+      config.mediaRoots = [{ source: '/source', target: '/copy' }];
+      await sql`update frameleaf_immich_import set config_fingerprint=${digest(config)}`.execute(db);
+      await seed(1);
+      await repository.dispatchImportedWork(config);
+      await sql`update job_run set selection=selection-'managerSetup'`.execute(db);
+      vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', '');
+      vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', '');
+      vi.stubEnv('FRAMELEAF_IMPORT_MANAGER_OPERATION_ID', '');
+      await expect(repositoryFor(db).dispatchImportedWork(config)).rejects.toThrow(
+        'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
+      );
+      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
+        { state: 'enumerating' },
+      ]);
+      expect(await counts()).toMatchObject({ runs: 1, stages: 5, jobs: 0 });
+    },
+  );
+
   it.each(['changed operation', 'missing marker'])(
     'rejects %s instead of retrofitting or releasing a Manager run',
     async (corruption) => {
