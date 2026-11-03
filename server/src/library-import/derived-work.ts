@@ -141,10 +141,11 @@ export async function prepareLibraryImportWork(
         prepared: true,
       };
       const { rows: runs } = await sql<{ kind: string; valid: boolean; managed: boolean; setup: unknown }>`select kind,
-        (selection - 'managerSetup'=${JSON.stringify(selection)}::text::jsonb
+        (selection - 'managerSetup' - 'managerSetupRequired'=${JSON.stringify(selection)}::text::jsonb
+          and (not selection ? 'managerSetupRequired' or selection->'managerSetupRequired'='true'::jsonb)
           and ("finishedAt" is null or ("enumerationDone" and not exists (
             select 1 from job_run_item where "runId"=job_run.id))))
-          as valid,selection ? 'managerSetup' as managed,selection->'managerSetup' as setup
+          as valid,(selection ? 'managerSetup' or selection ? 'managerSetupRequired') as managed,selection->'managerSetup' as setup
           from job_run where id=${runId}::uuid for update`.execute(tx);
       if (runs[0] && (runs[0].kind !== LIBRARY_IMPORT_DERIVED_RUN_KIND || !runs[0].valid))
         return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
@@ -163,12 +164,19 @@ export async function prepareLibraryImportWork(
       } else {
         const retained = {
           ...selection,
-          ...(manager && { managerSetup: { ...manager, preparedAt: null, startedAt: null } }),
+          ...(manager && {
+            managerSetupRequired: true,
+            managerSetup: { ...manager, preparedAt: null, startedAt: null },
+          }),
         };
         await sql`insert into job_run(id,kind,selection) values (${runId}::uuid,${LIBRARY_IMPORT_DERIVED_RUN_KIND},${JSON.stringify(retained)}::text::jsonb)`.execute(
           tx,
         );
       }
+
+      if (manager)
+        await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb
+          where id=${runId}::uuid and not selection ? 'managerSetupRequired'`.execute(tx);
 
       const cohort = sql<{ destination_id: string; ownerId: string; type: string }>`(${mappedAssets})`.as('mapped');
       const assets = tx.selectFrom(cohort).select('mapped.destination_id as id');

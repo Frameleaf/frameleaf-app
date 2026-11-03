@@ -188,14 +188,51 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
             on selected."selectionId" = original_source.id and selected."runId" = original_source."runId"
             where original_source.id = original.id and selected."rootItemKey" = child."rootItemKey" and selected.state != 'cancelled'))))`;
 
-/** Manager holds prepared imports and paused runs without stopping other queue users. */
-export const managerImportHeld = (runId: RawBuilder<string>) => sql<boolean>`exists (
-  select 1 from job_run manager_run where manager_run.id=${runId}
-    and manager_run.kind in ('immich-import-derived','library-import-derived')
-    and manager_run.selection ? 'managerSetup' and (
-      nullif(manager_run.selection #>> '{managerSetup,startedAt}','') is null
-      or coalesce(manager_run.selection #> '{managerSetup,paused}','false'::jsonb)<>'false'::jsonb
-    ))`;
+/** Current setup authority gates every Manager import admission, including already waiting jobs. */
+export const managerImportHeld = (runId: RawBuilder<string>) => {
+  const current = process.env.FRAMELEAF_MANAGER_INSTALLATION ?? '';
+  const origin = process.env.FRAMELEAF_MANAGER_ORIGIN ?? '';
+  const expected = origin === 'restored_library' ? (process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION ?? '') : current;
+  const profile = origin === 'new_import' || (origin === 'restored_library' && !!expected);
+  const validProfile = profile && /^[a-f0-9]{12}$/.test(current) && /^[a-f0-9]{12}$/.test(expected);
+  return sql<boolean>`exists (
+    select 1 from job_run manager_run cross join lateral (select (
+      (manager_run.kind='immich-import-derived' and exists (
+        select 1 from frameleaf_immich_import journal where journal.status='activated'
+          and journal.source_fingerprint=manager_run.selection->>'source'
+          and journal.config_fingerprint=manager_run.selection->>'config'
+          and not exists(select 1 from frameleaf_library_import)))
+      or (manager_run.kind='library-import-derived' and exists (
+        select 1 from frameleaf_library_import journal where journal.status='activated'
+          and journal.binding->>'operationId'=manager_run.selection->>'operationId'
+          and journal.binding->>'manifestSha256'=manager_run.selection->>'manifestSha256'
+          and journal.binding->>'planSha256'=manager_run.selection->>'planSha256'
+          and lower(journal.reviewed_plan->>'destinationId')=manager_run.selection->>'destinationId'
+          and not exists(select 1 from frameleaf_immich_import)))
+    ) as matches) journal_authority
+    where manager_run.id=${runId} and manager_run.kind in ('immich-import-derived','library-import-derived')
+      and (manager_run.selection ? 'managerSetupRequired' or manager_run.selection ? 'managerSetup'
+        or (${profile} and journal_authority.matches))
+      and (${validProfile} and journal_authority.matches and manager_run."enumerationDone"
+        and manager_run."finishedAt" is null
+        and (not manager_run.selection ? 'managerSetupRequired' or manager_run.selection->'managerSetupRequired'='true'::jsonb)
+        and jsonb_typeof(manager_run.selection->'managerSetup')='object'
+        and manager_run.selection #>> '{managerSetup,installation}'=${expected}
+        and nullif(manager_run.selection #>> '{managerSetup,operationId}','') is not null
+        and jsonb_typeof(manager_run.selection #> '{managerSetup,startedAt}')='string'
+        and pg_input_is_valid(manager_run.selection #>> '{managerSetup,startedAt}','timestamp with time zone')
+        and jsonb_typeof(manager_run.selection #> '{managerSetup,preparedAt}')='string'
+        and pg_input_is_valid(manager_run.selection #>> '{managerSetup,preparedAt}','timestamp with time zone')
+        and coalesce(manager_run.selection #> '{managerSetup,paused}','false'::jsonb)='false'::jsonb
+        and exists (select 1 from system_metadata setup where setup.key=${'frameleaf-manager-library-setup:' + current}
+          and setup.value->>'installation'=${current} and setup.value->>'origin'=${origin}
+          and setup.value->>'importRunId'=manager_run.id::text
+          and setup.value->>'importOperationId'=manager_run.selection #>> '{managerSetup,operationId}'
+          and setup.value->>'phase' in ('rescanning','verifying','complete')
+          and coalesce(setup.value->'paused','false'::jsonb)='false'::jsonb
+          and (${origin !== 'new_import'} or setup.value->'processingChoiceApplied'='true'::jsonb))) is not true
+  )`;
+};
 
 const requiredStages = (stage: string, ignored: readonly string[]) =>
   ignored.length > 0 ? sql`AND ${sql.ref(stage)}<>ALL(${[...ignored]}::text[])` : sql``;
