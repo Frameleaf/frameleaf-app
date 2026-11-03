@@ -4,13 +4,13 @@
   <Registry>https://ghcr.io</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
-  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
+  <Project>https://frameleaf.app</Project>
+  <Support>https://frameleaf.app/help/</Support>
   <Overview>Install and manage a self-hosted Frameleaf photo and video library. Manager coordinates sibling services through the Docker socket. Encrypted recovery covers the database and configuration, not media originals. Before applying, create the storage folders and follow the linked setup guide for the storage mappings. Create the administrator from your home network on first open.</Overview>
   <Category>MediaApp:Photos</Category>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
-  <ReadMe>https://github.com/Frameleaf/unraid-apps#readme</ReadMe>
+  <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>
   <WebUI>https://[IP]:[PORT:9443]</WebUI>
   <ExtraParams>--label app.frameleaf.manager.role=controller --security-opt no-new-privileges --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER</ExtraParams>

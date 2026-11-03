@@ -40,6 +40,8 @@ screenshots: []
 sources:
   - https://github.com/Frameleaf/frameleaf-app
   - https://frameleaf.app
+  - https://frameleaf.app/help/
+  - https://frameleaf.app/docs/nas/truenas/
 title: Frameleaf
 train: community
 version: 1.0.0

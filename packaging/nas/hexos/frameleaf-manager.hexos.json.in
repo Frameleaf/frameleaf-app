@@ -3,13 +3,13 @@
   "custom": true,
   "metadata": {
     "name": "Frameleaf",
-    "description": "Your photo and video library on this server. Frameleaf Manager installs and updates Frameleaf, keeps encrypted database backups and moves your library to a bigger drive when it fills up. Open it after install to create your administrator.",
+    "description": "Your photo and video library on this server. Frameleaf Manager installs and updates Frameleaf, keeps encrypted database backups and moves your library to a bigger drive when it fills up. Open it after install to create your administrator. Help center: https://frameleaf.app/help/ Installation guide: https://frameleaf.app/docs/nas/hexos/",
     "icon": "https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png",
     "version": "@MANAGER_VERSION@",
     "categories": ["media"],
     "keywords": ["frameleaf", "photos", "videos", "photo library", "backup"],
     "homepage": "https://frameleaf.app",
-    "sources": ["https://github.com/Frameleaf/frameleaf-app"]
+    "sources": ["https://github.com/Frameleaf/frameleaf-app", "https://frameleaf.app/help/", "https://frameleaf.app/docs/nas/hexos/"]
   },
   "script": {
     "version": "@MANAGER_VERSION@",

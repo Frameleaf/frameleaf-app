@@ -4,15 +4,15 @@
   <Registry>https://ghcr.io</Registry>
   <Network>frameleaf</Network>
   <Privileged>false</Privileged>
-  <Project>https://github.com/Frameleaf/frameleaf-app</Project>
-  <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
+  <Project>https://frameleaf.app</Project>
+  <Support>https://frameleaf.app/help/</Support>
   <Overview>Self-hosted Frameleaf photo and video library. Requires the Frameleaf PostgreSQL 19 container on the frameleaf network.</Overview>
   <Category>MediaApp:Photos</Category>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <WebUI>http://[IP]:[PORT:2283]</WebUI>
   <ExtraParams>--stop-timeout=10 --shm-size=2g</ExtraParams>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-server.xml</TemplateURL>
-  <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
+  <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <Config Name="Web port" Target="2283" Default="2283" Mode="tcp" Description="Frameleaf web interface" Type="Port" Display="always" Required="true" Mask="false">2283</Config>
   <Config Name="Library" Target="/data" Default="/mnt/user/appdata/frameleaf/library" Mode="rw" Description="Persistent original media and generated files; back up with the database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/library</Config>
   <Config Name="Studio worker enrolment" Target="/run/frameleaf/studio-worker" Default="/mnt/user/appdata/frameleaf/studio-worker" Mode="rw" Description="Private folder the server writes the bundled Studio render worker's enrolment to; frameleaf-ml mounts the same folder read-only" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/frameleaf/studio-worker</Config>
