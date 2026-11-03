@@ -123,7 +123,9 @@ describe('SetupBar', () => {
     );
     render(SetupBar);
     expect(await screen.findByRole('heading', { name: 'Your library is ready' })).toBeInTheDocument();
-    expect(screen.queryByText(/smart search and faces are ready/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Everything you imported is in Frameleaf, and every original was checked.'),
+    ).toBeInTheDocument();
   });
 
   it('formats completion counts using the chosen number locale', async () => {
