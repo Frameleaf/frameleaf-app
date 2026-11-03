@@ -49,6 +49,14 @@ const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
 };
 
+export const parseManagerLibrarySetup = (input: unknown, binding: LibraryImportBinding) => {
+  if (input === undefined) return;
+  const parsed = managerSchema.safeParse(input);
+  if (!parsed.success || parsed.data.operationId !== binding.operationId)
+    return refuse('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+  return parsed.data;
+};
+
 /** Retain all regeneration atomically; only the activation controller may release this held run. */
 export async function prepareLibraryImportWork(
   db: Kysely<DB>,
@@ -58,13 +66,7 @@ export async function prepareLibraryImportWork(
 ): Promise<string> {
   const binding = parseLibraryImportBinding(context.binding);
   const runId = libraryImportDerivedRunId(binding);
-  let manager: ManagerLibrarySetup | undefined;
-  if (managerInput !== undefined) {
-    const parsed = managerSchema.safeParse(managerInput);
-    if (!parsed.success || parsed.data.operationId !== binding.operationId)
-      return refuse('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
-    manager = parsed.data;
-  }
+  const manager = parseManagerLibrarySetup(managerInput, binding);
   try {
     return await db.transaction().execute(async (tx) => {
       const { rows: locks } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(

@@ -223,6 +223,43 @@ it('revalidates prepared work on the locked session without committing its outer
   }
 });
 
+it('locks the queue catalogue before waiting for the prepared run header', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  const connection = await importConnection();
+  let validation: Promise<string> | undefined;
+  try {
+    await db.transaction().execute(async (header) => {
+      await sql`SELECT id FROM job_run WHERE id=${id}::uuid FOR UPDATE`.execute(header);
+      const { promise: waiting, resolve: reached } = Promise.withResolvers<void>();
+      validation = connection.db.withSession!((session) =>
+        session.transaction((tx) =>
+          repository.validateImportedLibraryWork(
+            {
+              ...tx,
+              query: (statement, parameters) => {
+                if (statement.includes("SELECT selection #>> '{managerSetup,preparedAt}'")) reached();
+                return tx.query(statement, parameters);
+              },
+            },
+            context,
+          ),
+        ),
+      );
+      await waiting;
+      await expect(
+        db
+          .transaction()
+          .execute((worker) => sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE NOWAIT`.execute(worker)),
+      ).rejects.toMatchObject({ code: '55P03' });
+    });
+    expect(await validation).toBe(id);
+  } finally {
+    await validation?.catch(() => {});
+    await connection.close();
+  }
+});
+
 it('independently refuses a corrupt captured payload in the activation transaction', async () => {
   const { context } = await setup();
   const id = await repository.dispatchImportedLibraryWork(context);

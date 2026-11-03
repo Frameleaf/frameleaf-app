@@ -3,10 +3,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { JobName, QueueName } from 'src/enum.js';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { type ImportDatabase } from 'src/immich-import/types.js';
 import { readLibraryImportActivation, sealLibraryImportActivation } from 'src/library-import/activation-proof.js';
 import { LibraryImportController } from 'src/library-import/controller.js';
+import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import photoFixture from 'src/library-import/fixtures/photoprism/261029-files.json' with { type: 'json' };
@@ -17,6 +19,7 @@ import {
   encodeSourceArchiveRecord,
 } from 'src/library-import/source-archive-codec.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -87,7 +90,7 @@ beforeAll(async () => {
   db = await getKyselyDB();
 });
 beforeEach(async () => {
-  await sql`TRUNCATE public.frameleaf_library_import_mapping,public.frameleaf_library_import,public.frameleaf_immich_import,public."user",public.cluster_group CASCADE`.execute(
+  await sql`TRUNCATE public.job,public.job_run,public.job_queue,public.frameleaf_library_import_mapping,public.frameleaf_library_import,public.frameleaf_immich_import,public."user",public.cluster_group CASCADE`.execute(
     db,
   );
   await sql`WITH g AS (INSERT INTO public.cluster_group DEFAULT VALUES RETURNING id)
@@ -137,6 +140,195 @@ it('retains the actual canonical verification report through PostgreSQL JSONB wi
   expect(JSON.stringify(restored.report)).not.toMatch(/owner@example|Imported owner|photos/);
   expect((await controller.status()).run?.status).toBe('verifying');
 });
+const jobs = () => {
+  const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: () => {} } as never, db);
+  for (const [jobName, queueName] of [
+    [JobName.AssetExtractMetadata, QueueName.MetadataExtraction],
+    [JobName.AssetGenerateThumbnails, QueueName.ThumbnailGeneration],
+    [JobName.SmartSearch, QueueName.SmartSearch],
+    [JobName.AssetDetectFaces, QueueName.FaceDetection],
+    [JobName.AssetEncodeVideo, QueueName.VideoConversion],
+    [JobName.PersonGenerateThumbnail, QueueName.ThumbnailGeneration],
+  ] as const)
+    repository['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic import' };
+  return repository;
+};
+it.each([false, true])(
+  'atomically activates verified imports with Manager=%s and recovers a lost acknowledgement',
+  async (managed) => {
+    const { context, owners } = setup();
+    const controller = new LibraryImportController(connection.db, context);
+    await controller.run(owners, descriptor, stream());
+    const manager = managed ? { installation: '110100000001', operationId: context.binding.operationId } : undefined;
+    const source = vi.fn(async () => {});
+    const result = await controller.activate(jobs(), source, manager);
+    expect(result.runId).toBe(libraryImportDerivedRunId(context.binding));
+    expect(source).toHaveBeenCalledTimes(2);
+    const gate = new DatabaseRepository(db, { setContext: () => {} } as never, {} as never);
+    await expect(gate.assertImportActivated()).resolves.toBeUndefined();
+    const selections = await connection.db.query('SELECT state FROM job_selection WHERE "runId"=$1::uuid', [
+      result.runId,
+    ]);
+    expect(selections).toHaveLength(6);
+    expect(selections.every((row) => row.state === (managed ? 'enumerating' : 'ready'))).toBe(true);
+    expect(await connection.db.query('SELECT 1 FROM job')).toEqual([]);
+    expect(JSON.stringify(result)).not.toMatch(/owner@example|Imported owner|private source|"binding"|"source":/);
+    // Completed work can be collected; replay uses the retained proof without preparing or verifying it again.
+    await connection.db.transaction(async (tx) => {
+      await tx.query('DELETE FROM job_run_item WHERE "runId"=$1::uuid', [result.runId]);
+      await tx.query('DELETE FROM job_selection WHERE "runId"=$1::uuid', [result.runId]);
+      await tx.query('DELETE FROM job_run WHERE id=$1::uuid', [result.runId]);
+    });
+    await expect(
+      controller.activate(jobs(), () => Promise.reject(new Error('must not revisit source')), manager),
+    ).resolves.toEqual(result);
+    await expect(gate.assertImportActivated()).resolves.toBeUndefined();
+  },
+);
+
+it('keeps writers fenced and prepared work held when the source changes during verification', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const source = vi.fn(() =>
+    source.mock.calls.length === 2 ? Promise.reject(new Error('private source changed')) : Promise.resolve(),
+  );
+  await expect(controller.activate(jobs(), source)).rejects.toThrow('IMPORT_CONTROLLER_UNAVAILABLE');
+  expect((await controller.status()).run?.status).toBe('verifying');
+  expect(await connection.db.query('SELECT activation FROM frameleaf_library_import')).toEqual([{ activation: null }]);
+  expect(
+    (await connection.db.query('SELECT state FROM job_selection')).every((row) => row.state === 'enumerating'),
+  ).toBe(true);
+  await expect(controller.activate(jobs(), async () => {})).resolves.toHaveProperty('runId');
+});
+
+it('recovers a committed activation after the connection loses its acknowledgement', async () => {
+  const { context, owners } = setup();
+  await new LibraryImportController(connection.db, context).run(owners, descriptor, stream());
+  const uncertain: ImportDatabase = {
+    ...connection.db,
+    withSession: async (body) => {
+      await connection.db.withSession!(body);
+      throw new Error('synthetic lost commit acknowledgement');
+    },
+  };
+  await expect(new LibraryImportController(uncertain, context).activate(jobs(), async () => {})).rejects.toThrow(
+    'IMPORT_CONTROLLER_UNAVAILABLE',
+  );
+  expect((await new LibraryImportController(connection.db, context).status()).run?.status).toBe('activated');
+  const source = vi.fn(() => Promise.reject(new Error('source unavailable after activation')));
+  await expect(new LibraryImportController(connection.db, context).activate(jobs(), source)).resolves.toHaveProperty(
+    'runId',
+  );
+  expect(source).not.toHaveBeenCalled();
+});
+
+it('rolls back the proof and queue release together when activation cannot be committed', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const broken: ImportDatabase = {
+    ...connection.db,
+    withSession: (body) =>
+      connection.db.withSession!(async (session) =>
+        body({
+          ...session,
+          transaction: (work) =>
+            session.transaction(async (tx) => {
+              await work(tx);
+              throw new Error('synthetic failure before commit');
+            }),
+        }),
+      ),
+  };
+  await expect(new LibraryImportController(broken, context).activate(jobs(), async () => {})).rejects.toThrow(
+    'IMPORT_CONTROLLER_UNAVAILABLE',
+  );
+  expect((await controller.status()).run?.status).toBe('verifying');
+  expect(await connection.db.query('SELECT activation FROM frameleaf_library_import')).toEqual([{ activation: null }]);
+  expect(
+    (await connection.db.query('SELECT state FROM job_selection')).every((row) => row.state === 'enumerating'),
+  ).toBe(true);
+});
+
+it('independently refuses work released after preparation and requires the same Manager authority on replay', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const manager = { installation: '110100000001', operationId: context.binding.operationId };
+  let checks = 0;
+  await expect(
+    controller.activate(
+      jobs(),
+      async () => {
+        if (++checks === 2) await connection.db.query("UPDATE job_selection SET state='ready'");
+      },
+      manager,
+    ),
+  ).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+  expect((await controller.status()).run?.status).toBe('verifying');
+  await connection.db.query("UPDATE job_selection SET state='enumerating'");
+  await controller.activate(jobs(), async () => {}, manager);
+  await expect(controller.activate(jobs(), async () => {})).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+  await expect(
+    controller.activate(jobs(), async () => {}, { ...manager, installation: '110100000002' }),
+  ).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+});
+
+it('keeps competing imports fenced across source checks and final activation', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  let checks = 0;
+  await controller.activate(jobs(), async () => {
+    checks++;
+    await expect(controller.activate(jobs(), async () => {})).rejects.toThrow('IMPORT_ALREADY_RUNNING');
+  });
+  expect(checks).toBe(2);
+});
+
+it('refuses activation after losing its pinned backend and resumes safely on a new session', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  let pid: unknown;
+  const observed: ImportDatabase = {
+    ...connection.db,
+    withSession: (body) =>
+      connection.db.withSession!((session) =>
+        body({
+          ...session,
+          query: async (statement, parameters) => {
+            const result = await session.query(statement, parameters);
+            if (statement.includes('SELECT pg_try_advisory_lock'))
+              [{ pid }] = await session.query('SELECT pg_backend_pid() AS pid');
+            return result;
+          },
+        }),
+      ),
+  };
+  let checks = 0;
+  await expect(
+    new LibraryImportController(observed, context).activate(jobs(), async () => {
+      if (++checks === 2) await connection.db.query('SELECT pg_terminate_backend($1::integer)', [pid]);
+    }),
+  ).rejects.toThrow('IMPORT_CONTROLLER_UNAVAILABLE');
+  expect((await controller.status()).run?.status).toBe('verifying');
+  expect(await connection.db.query('SELECT activation FROM frameleaf_library_import')).toEqual([{ activation: null }]);
+  await expect(controller.activate(jobs(), async () => {})).resolves.toHaveProperty('runId');
+});
+
+it('refuses a claimed run ID without independently retained prepared work', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const repository = jobs();
+  vi.spyOn(repository, 'dispatchImportedLibraryWork').mockResolvedValue(libraryImportDerivedRunId(context.binding));
+  await expect(controller.activate(repository, async () => {})).rejects.toThrow('DERIVED_RUN_IDENTITY_MISMATCH');
+  expect((await controller.status()).run?.status).toBe('verifying');
+  expect(await connection.db.query('SELECT activation FROM frameleaf_library_import')).toEqual([{ activation: null }]);
+});
+
 it('requires retained activation evidence at startup and rejects destination replay', async () => {
   const { context, owners } = setup();
   const controller = new LibraryImportController(connection.db, context);
@@ -342,6 +534,9 @@ it.skipIf(process.platform !== 'linux')(
       expect((await connection.db.query('SELECT count(*)::text AS count FROM public.asset_original'))[0].count).toBe(
         '1',
       );
+      expect(await controller.activate(jobs(), async () => {})).toMatchObject({
+        report: { assets: { assets: 1, originals: 2 }, albums: { albums: 1, memberships: 1, grants: 1 } },
+      });
     } finally {
       await rm(temporary, { recursive: true, force: true });
     }

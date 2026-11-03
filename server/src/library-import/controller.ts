@@ -1,12 +1,19 @@
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { type ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
+import { readLibraryImportActivation, sealLibraryImportActivation } from 'src/library-import/activation-proof.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { reconcileImportedAlbums } from 'src/library-import/album-reconciliation.js';
 import { CanonicalAlbumWriter } from 'src/library-import/album-writer.js';
 import { reconcileImportedAssets } from 'src/library-import/asset-reconciliation.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
+import {
+  type ManagerLibrarySetup,
+  libraryImportDerivedRunId,
+  parseManagerLibrarySetup,
+} from 'src/library-import/derived-work.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
+import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { parseImportManifest } from 'src/library-import/manifest.js';
 import {
   CanonicalOwnerWriter,
@@ -24,12 +31,13 @@ import { reconcileImportedStacks } from 'src/library-import/stack-reconciliation
 import { CanonicalStackWriter } from 'src/library-import/stack-writer.js';
 import { LibraryImportJournal, LibraryImportRefused, parseLibraryImportBinding } from 'src/library-import/state.js';
 import { withLibraryImportReadback } from 'src/library-import/verification.js';
+import { type JobRepository } from 'src/repositories/job.repository.js';
 
 const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
 };
 
-/** Internal copy/readback coordinator. Caller owns qualified source fencing and journalled media transfer; activation remains separate. */
+/** Internal coordinator. Caller owns qualified source fencing and journalled media transfer. */
 export class LibraryImportController {
   private readonly context;
   constructor(
@@ -212,6 +220,77 @@ export class LibraryImportController {
           stacks,
           archive,
         };
+      });
+    });
+  }
+  private async activation(db: ImportDatabase, manager: ManagerLibrarySetup | undefined) {
+    const [row] = await db.query(
+      'SELECT binding,status,activation,activation_sha256 FROM public.frameleaf_library_import',
+    );
+    if (!row) return refuse('IMPORT_JOURNAL_MISSING');
+    if (JSON.stringify(parseLibraryImportBinding(row.binding)) !== JSON.stringify(this.context.binding))
+      return refuse('IMPORT_BINDING_CHANGED');
+    if (row.status !== 'activated') {
+      if (row.status !== 'verifying') return refuse('IMPORT_NOT_VERIFYING');
+      return null;
+    }
+    if (typeof row.activation_sha256 !== 'string') return refuse('IMPORT_ACTIVATION_PROOF_INVALID');
+    const proof = readLibraryImportActivation({ payload: row.activation, sha256: row.activation_sha256 }, this.context);
+    if (JSON.stringify(proof.manager) !== JSON.stringify(manager ?? null))
+      return refuse('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+    return { runId: proof.runId, activatedAt: proof.activatedAt, report: proof.report, sha256: row.activation_sha256 };
+  }
+  /**
+   * Caller keeps source writers fenced and verifies transfer completion; the hook rechecks the frozen source.
+   * Retained activation never revisits the source or re-holds completed work.
+   */
+  activate(jobs: JobRepository, assertSourceUnchanged: () => Promise<void>, managerInput?: ManagerLibrarySetup) {
+    return this.safe(async () => {
+      const manager = parseManagerLibrarySetup(managerInput, this.context.binding);
+      const retained = await this.activation(this.db, manager);
+      if (retained) return retained;
+      if (!this.db.withSession) return refuse('IMPORT_SESSION_REQUIRED');
+      const runId = libraryImportDerivedRunId(this.context.binding);
+      if ((await jobs.dispatchImportedLibraryWork(this.context, manager)) !== runId)
+        return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
+      return this.db.withSession(async (session) => {
+        const [lock] = await session.query('SELECT pg_try_advisory_lock($1::bigint) AS acquired', [
+          LIBRARY_IMPORT_LOCK,
+        ]);
+        if (!lock?.acquired) return refuse('IMPORT_ALREADY_RUNNING');
+        const retained = await this.activation(session, manager);
+        if (retained) return retained;
+        await assertSourceUnchanged();
+        const report = await new LibraryImportController(session, this.context).verify();
+        await assertSourceUnchanged();
+        return session.transaction(async (tx) => {
+          if ((await jobs.validateImportedLibraryWork(tx, this.context, manager)) !== runId)
+            return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
+          const sealed = sealLibraryImportActivation(this.context, report, manager, new Date().toISOString());
+          const updated = await tx.query(
+            `UPDATE public.frameleaf_library_import SET status='activated',activation=$1::text::jsonb,
+              activation_sha256=$2,updated_at=now()
+             WHERE status='verifying' AND operation_id=$3::uuid AND binding=$4::text::jsonb
+               AND activation IS NULL AND activation_sha256 IS NULL RETURNING operation_id`,
+            [
+              JSON.stringify(sealed.payload),
+              sealed.sha256,
+              this.context.binding.operationId,
+              JSON.stringify(this.context.binding),
+            ],
+          );
+          if (updated.length !== 1) return refuse('IMPORT_ACTIVATION_CHANGED');
+          if (!manager)
+            await tx.query(`UPDATE job_selection SET state='ready' WHERE "runId"=$1::uuid AND state='enumerating'`, [
+              runId,
+            ]);
+          return {
+            runId,
+            activatedAt: sealed.payload.activatedAt,
+            report: sealed.payload.report,
+            sha256: sealed.sha256,
+          };
+        });
       });
     });
   }
