@@ -83,6 +83,10 @@ export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
 
   async initialize(queues: string[], workerId?: string) {
+    // Preserve the Manager discriminator before recovery can lose the detailed marker.
+    await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb
+      where kind in ('immich-import-derived','library-import-derived')
+        and selection ? 'managerSetup' and not selection ? 'managerSetupRequired'`.execute(this.db);
     for (const name of queues) {
       await sql`insert into job_queue(name) values (${name}) on conflict do nothing`.execute(this.db);
     }
