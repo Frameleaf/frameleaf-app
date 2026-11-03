@@ -592,8 +592,16 @@ export class FrameleafLibrarySetupService {
           state.phase = 'needs-attention';
         }
         const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);
-        // Setup is not complete until the file check has released the stages that wait for it (a pause holds both).
-        if (!scansFinished || !healthFinished || !idle || !state.checkReleasedAt || state.phase === 'needs-attention') {
+        // Setup is not complete until the file check has released the stages that wait for it, nor while a pause
+        // holds them: held selections do not show in the queue counts.
+        if (
+          state.paused ||
+          !scansFinished ||
+          !healthFinished ||
+          !idle ||
+          !state.checkReleasedAt ||
+          state.phase === 'needs-attention'
+        ) {
           state.quietSince = null;
         } else {
           state.phase = 'verifying';
