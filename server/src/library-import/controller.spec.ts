@@ -98,3 +98,17 @@ it('refuses incomplete owner mappings before database access', async () => {
   );
   expect(db.query).not.toHaveBeenCalled();
 });
+it('refuses duplicate normalized owner emails before database access', async () => {
+  const input = context();
+  const second = structuredClone(owners[0]);
+  second.intent.sourceUserId = 'owner-2';
+  second.intent.email = 'OWNER@EXAMPLE.TEST';
+  input.manifest.users.push({ id: 'owner-2', name: 'Second owner' });
+  input.plan.owners.push({ sourceId: 'owner-2', destinationId: randomUUID() });
+  input.binding.manifestSha256 = manifestFingerprint(input.manifest);
+  input.binding.planSha256 = destinationPlanFingerprint(input.plan);
+  await expect(new LibraryImportController(db, input).preflight([...owners, second])).rejects.toThrow(
+    'OWNER_EMAIL_COLLISION',
+  );
+  expect(db.query).not.toHaveBeenCalled();
+});

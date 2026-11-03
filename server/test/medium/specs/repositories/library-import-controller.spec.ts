@@ -340,3 +340,19 @@ it('checks the complete report in one native read-only repeatable-read snapshot'
     true,
   );
 });
+
+it('refuses duplicate normalized owner emails without retaining a partial import journal', async () => {
+  const { context, owners } = setup();
+  const second = structuredClone(owners[0]);
+  second.intent.sourceUserId = 'second-owner';
+  second.intent.email = 'OWNER@EXAMPLE.TEST';
+  context.manifest.users.push({ id: 'second-owner', name: 'Second owner' });
+  context.plan.owners.push({ sourceId: 'second-owner', destinationId: randomUUID() });
+  context.binding.manifestSha256 = manifestFingerprint(context.manifest);
+  context.binding.planSha256 = destinationPlanFingerprint(context.plan);
+  await expect(
+    new LibraryImportController(connection.db, context).run([...owners, second], descriptor, stream()),
+  ).rejects.toThrow('OWNER_EMAIL_COLLISION');
+  expect(await connection.db.query('SELECT 1 FROM public.frameleaf_library_import')).toEqual([]);
+  expect(await connection.db.query('SELECT 1 FROM public.frameleaf_library_import_archive')).toEqual([]);
+});

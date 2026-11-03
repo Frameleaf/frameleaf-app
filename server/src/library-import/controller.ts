@@ -79,6 +79,8 @@ export class LibraryImportController {
       const { manifest } = this.context;
       if (manifest.losses.some((loss) => !loss.acknowledged)) return refuse('IMPORT_LOSSES_NOT_ACKNOWLEDGED');
       const preparedOwners = prepareImportedOwners(this.context, owners);
+      if (new Set(preparedOwners.map(({ owner }) => owner.email)).size !== preparedOwners.length)
+        return refuse('OWNER_EMAIL_COLLISION');
       const writer = new CanonicalAssetWriter(this.db, this.context);
       for (const item of this.items()) writer.prepare(item);
       if (manifest.albums.some((album) => album.members.some((member) => member.userId === album.ownerId)))
