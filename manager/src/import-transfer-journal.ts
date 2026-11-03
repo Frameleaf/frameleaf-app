@@ -3,6 +3,7 @@ import { Refusal } from './contracts.js';
 import type { Store } from './store.js';
 import {
   importHash as hash,
+  importSourceIdentitySchema,
   importTransferSchema as transferSchema,
   importPlanSha256,
   parseImportPlan,
@@ -316,7 +317,7 @@ export class ImportTransferJournal {
       .strictObject({
         sha256: hash,
         bytes: decimal,
-        sourceIdentity: transferSchema.shape.sourceIdentity,
+        sourceIdentity: importSourceIdentitySchema,
         destinationAbsent: z.literal(true),
       })
       .safeParse(receipt);

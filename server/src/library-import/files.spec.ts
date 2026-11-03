@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, open, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,6 +71,31 @@ describe.skipIf(process.platform !== 'linux')('bundle original verification', ()
       verifyImportFiles(root, manifest().files, { ...expectedRoot, inode: String(identity.ino + 1n) }),
     ).rejects.toThrow('BUNDLE_ROOT_CHANGED');
     expect(await readFile(join(root, 'album/original.jpg'))).toEqual(content);
+  });
+  it('rejects repeated destination identities across separate root verification calls', async () => {
+    const identity = await stat(root, { bigint: true });
+    const expectedRoot = { device: String(identity.dev), inode: String(identity.ino) };
+    const seen = new Set<string>();
+    await verifyImportFiles(root, manifest().files, expectedRoot, seen);
+    await expect(verifyImportFiles(root, manifest().files, expectedRoot, seen)).rejects.toThrow('BUNDLE_FILE_ALIAS');
+  });
+  it('rejects destination hardlinks while retaining source bundle support', async () => {
+    await link(join(root, 'album/original.jpg'), join(root, 'other.jpg'));
+    const identity = await stat(root, { bigint: true });
+    await expect(
+      verifyImportFiles(root, manifest().files, { device: String(identity.dev), inode: String(identity.ino) }),
+    ).rejects.toThrow('BUNDLE_FILE_LINKS');
+    await expect(verifyBundleFiles(root, manifest())).resolves.toEqual({ files: 1, bytes: String(content.length) });
+  });
+  it('rejects destination symlinks while allowing contained source export links', async () => {
+    await writeFile(join(root, 'shared.jpg'), content);
+    await rm(join(root, 'album/original.jpg'));
+    await symlink('../shared.jpg', join(root, 'album/original.jpg'));
+    const identity = await stat(root, { bigint: true });
+    await expect(
+      verifyImportFiles(root, manifest().files, { device: String(identity.dev), inode: String(identity.ino) }),
+    ).rejects.toThrow('BUNDLE_FILE_UNAVAILABLE');
+    await expect(verifyBundleFiles(root, manifest())).resolves.toEqual({ files: 1, bytes: String(content.length) });
   });
   it('verifies every version-two original even when a different file is the explicit primary', async () => {
     const second = Buffer.from('a second synthetic original');
