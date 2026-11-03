@@ -176,14 +176,14 @@ describe('SetupBar', () => {
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
   });
 
-  it('keeps Retry and the file-check warning when attention follows completed stages', async () => {
+  it('keeps Retry and a general warning when attention follows completed stages', async () => {
     const value = progress({ phase: Phase.NeedsAttention });
     value.stages = value.stages.map((stage) => ({ ...stage, status: LibrarySetupStageStatus.Done, done: stage.total }));
     sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
     render(SetupBar);
     expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
     expect(
-      screen.getByText('A file check stopped before it finished. Retry it, or see Library care for what happened.'),
+      screen.getByText('Library setup stopped before it finished. Retry it, or see Library care for what happened.'),
     ).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
@@ -200,6 +200,9 @@ describe('SetupBar', () => {
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
     expect(screen.getByRole('link', { name: 'Library care' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Setting up your library' })).toHaveTextContent(
+      'Setup could not be verified. See Library care before continuing.',
+    );
     expect(screen.queryByText('Library imported')).not.toBeInTheDocument();
     expect(screen.queryByText('0 items imported')).not.toBeInTheDocument();
   });

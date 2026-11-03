@@ -18064,7 +18064,7 @@
   "settings": "Settings",
   "settings_saved": "Settings saved",
   "setup_bar_action_error": "Unable to update library setup. Try again.",
-  "setup_bar_attention_detail": "A file check stopped before it finished. Retry it, or see Library care for what happened.",
+  "setup_bar_attention_detail": "Library setup stopped before it finished. Retry it, or see Library care for what happened.",
   "setup_bar_attention_title": "Setup needs attention",
   "setup_bar_flagged": "{count, plural, one {# file needs a look} other {# files need a look}}",
   "setup_bar_footer": "You can keep using Frameleaf. Setup carries on if you close this page or the server restarts.",
