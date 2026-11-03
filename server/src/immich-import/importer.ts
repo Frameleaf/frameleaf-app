@@ -356,12 +356,18 @@ export class ImmichImportService {
       WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
       [AssetLockReason.Marked],
     );
-    // The fork-only asset.is_nsfw column is not in the copied shape; rebuild it from the copied review or detection
-    // (2100000000010's rule). Detections hid media only while the source's "hide sensitive detections from the
-    // library" switch was on; then they lock, as 2100000000320 did, or they would surface.
+    // The fork-only asset.is_nsfw column is not in the copied shape; rebuild it from the copied metadata with the
+    // fork's own rule (ImageEnrichmentService.getEffectiveNsfw): a review decides, else a successful detection, else
+    // a successful description rating it likely sensitive with high confidence. Detections hid media only while the
+    // source's "hide sensitive detections from the library" switch was on; then they lock, as 2100000000320 did.
     await this.destination.query(`UPDATE public.asset SET is_nsfw=true FROM public.asset_metadata m
       WHERE m."assetId"=asset.id AND m.key='ml-enrichment' AND NOT asset.is_nsfw
-        AND coalesce(m.value #>> '{nsfwDetection,review,isNsfw}', m.value #>> '{nsfwDetection,result,isNsfw}')='true'`);
+        AND CASE WHEN m.value #> '{nsfwDetection,review}' IS NOT NULL
+          THEN m.value #>> '{nsfwDetection,review,isNsfw}'='true'
+          ELSE (m.value #>> '{nsfwDetection,status}'='success' AND m.value #>> '{nsfwDetection,result,isNsfw}'='true')
+            OR (m.value #>> '{description,status}'='success'
+              AND m.value #>> '{description,result,safety,is_nsfw_likely}'='true'
+              AND lower(m.value #>> '{description,result,safety,confidence}')='high') END IS TRUE`);
     const [hiding] = await this.source.db.query(
       `SELECT value #>> '{machineLearning,nsfwDetection,hideFromLibrary}' AS enabled
       FROM public.system_metadata WHERE key='system-config'`,

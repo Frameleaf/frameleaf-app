@@ -373,10 +373,10 @@ describe('fork sensitive detections', () => {
     await (importer as unknown as { convertLocks(): Promise<void> }).convertLocks();
     return statements.filter(({ sql }) => sql.includes('is_nsfw'));
   };
-  // The owner's review wins over the detection result (2100000000010), so a "safe" review stays unlocked.
+  // The fork's rule: a review (even "safe") decides; only then a successful detection or high-confidence description.
   const rebuild = expect.objectContaining({
     sql: expect.stringMatching(
-      /SET is_nsfw=true[\s\S]*coalesce\(m\.value #>> '\{nsfwDetection,review,isNsfw\}', m\.value #>> '\{nsfwDetection,result,isNsfw\}'\)='true'/,
+      /SET is_nsfw=true[\s\S]*WHEN m\.value #> '\{nsfwDetection,review\}' IS NOT NULL[\s\S]*'\{nsfwDetection,status\}'='success'[\s\S]*'\{description,status\}'='success'/,
     ),
   });
 
