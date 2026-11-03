@@ -127,7 +127,7 @@ test.describe('Explore', () => {
     await page.waitForURL(/\/explore/);
     await expect(things).toBeVisible();
     // The route restores its snapshot in the next animation frame after it becomes visible.
-    await expect.poll(async () => Math.abs((await scrollOffset(things)) - scrolled)).toBeLessThan(80);
+    await expect.poll(() => scrollOffset(things)).toBe(scrolled);
   });
 
   test('counts Favorites as the Favorites page shows them: archived included, a stack once (FL-50)', async ({
