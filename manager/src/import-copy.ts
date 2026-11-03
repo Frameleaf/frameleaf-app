@@ -131,6 +131,8 @@ export async function assertImportDestinations(
           );
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          if ((error as NodeJS.ErrnoException).code === 'ELOOP')
+            throw new Refusal('import_destination_invalid');
           throw error;
         }
         try {
@@ -150,7 +152,7 @@ export async function assertImportDestinations(
   } catch (error) {
     throw error instanceof Refusal
       ? error
-      : new Error('import_destination_inventory_unavailable');
+      : new Refusal('import_destination_inventory_unavailable');
   }
 }
 

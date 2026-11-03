@@ -35,6 +35,7 @@ for (const resume of [false, true]) {
       const alias = join(f.directory, 'alias');
       let mounted = false;
       let store: Store | undefined;
+      const failures: unknown[] = [];
       try {
         await mkdir(join(f.destination, 'sub'), { mode: 0o700 });
         await mkdir(alias, { mode: 0o700 });
@@ -111,11 +112,37 @@ for (const resume of [false, true]) {
           await assert.rejects(stat(join(alias, 'photo.png')), {
             code: 'ENOENT',
           });
+      } catch (error) {
+        failures.push(error);
       } finally {
-        store?.close();
-        f.store.close();
-        if (mounted) execFileSync('umount', [alias]);
-        await rm(f.directory, { recursive: true, force: true });
+        for (const opened of [store, f.store]) {
+          try {
+            opened?.close();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (mounted) {
+          try {
+            execFileSync('umount', [alias], { stdio: 'ignore' });
+            mounted = false;
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (!mounted) {
+          try {
+            await rm(f.directory, { recursive: true, force: true });
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (failures.length === 1) throw failures[0];
+        if (failures.length > 1)
+          throw new AggregateError(
+            failures,
+            'Bind-mount test and cleanup failed',
+          );
       }
     },
   );
@@ -354,7 +381,7 @@ test(
       );
       await assert.rejects(
         copyImportFiles(f.journal, f.operation.id, f.roots, true),
-        /import_copy_unavailable/,
+        /import_destination_invalid/,
       );
       assert.deepEqual(await readFile(join(f.source, 'photo.png')), f.bytes);
       assert.equal(f.journal.files(f.operation.id)[0].state, 'intent');
