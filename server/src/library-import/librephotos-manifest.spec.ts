@@ -4,18 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
-import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
 import content from 'src/library-import/fixtures/librephotos/1.5.1-content.json' with { type: 'json' };
 import originals from 'src/library-import/fixtures/librephotos/1.5.1-files.json' with { type: 'json' };
 import pgContent from 'src/library-import/fixtures/librephotos/1.5.1-postgres-content.json' with { type: 'json' };
 import pgSchema from 'src/library-import/fixtures/librephotos/1.5.1-postgres18.json' with { type: 'json' };
 import sqliteSchema from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' with { type: 'json' };
+import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
 import { createLibrephotosPostgresDecoder } from 'src/library-import/librephotos-postgres.js';
 import * as librephotos from 'src/library-import/librephotos.js';
 import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
-import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
 const photoId = (name: keyof typeof content.expected.photos) => content.expected.photos[name].replaceAll('-', '');
 type Snapshot = {
@@ -341,7 +341,7 @@ describe('LibrePhotos common manifest mapping', () => {
       version: pgSchema.source.version,
       schemaSha256: pgSchema.schemaSha256,
       async *rows(table) {
-        yield rows.get(table) ?? [];
+        yield await Promise.resolve(rows.get(table) ?? []);
       },
     };
     const options = input();
@@ -393,44 +393,56 @@ describe('LibrePhotos common manifest mapping', () => {
   ])('refuses incomplete or conflicting capture evidence: %s', async (failure) => {
     const options = input();
     switch (failure) {
-      case 'offset-missing':
+      case 'offset-missing': {
         options.reviewedCaptureOffsets = {};
         break;
-      case 'offset-extra':
+      }
+      case 'offset-extra': {
         options.reviewedCaptureOffsets[photoId('alice')] = -360;
         break;
-      case 'offset-invalid':
+      }
+      case 'offset-invalid': {
         options.reviewedCaptureOffsets[photoId('bob')] = 841;
         break;
-      case 'missing-proof':
+      }
+      case 'missing-proof': {
         options.files.pop();
         break;
-      case 'extra-proof':
+      }
+      case 'extra-proof': {
         options.files.push({ ...options.files[0], id: 'extra' });
         break;
-      case 'wrong-path':
+      }
+      case 'wrong-path': {
         options.files[0].path = 'wrong.png';
         break;
-      case 'wrong-alias-bytes':
+      }
+      case 'wrong-alias-bytes': {
         options.files.find((file) => file.id === 'copy:1')!.sha256 = 'a'.repeat(64);
         break;
-      case 'orphan-file':
+      }
+      case 'orphan-file': {
         database.prepare('DELETE FROM api_photo_files WHERE file_id=?').run(originals.files[1].source.hash);
         break;
-      case 'missing-primary':
+      }
+      case 'missing-primary': {
         database.prepare('UPDATE api_photo SET main_file_id=NULL WHERE id=?').run(photoId('alice'));
         break;
-      case 'companion':
+      }
+      case 'companion': {
         database
           .prepare('INSERT INTO api_file_embedded_media(from_file_id,to_file_id) VALUES(?,?)')
           .run(originals.files[0].source.hash, originals.files[1].source.hash);
         break;
-      case 'changed-schema':
+      }
+      case 'changed-schema': {
         options.source.schemaSha256 = 'a'.repeat(64);
         break;
-      case 'unknown-member-role':
+      }
+      case 'unknown-member-role': {
         database.prepare("UPDATE api_albumuser_shared_to SET role='unknown'").run();
         break;
+      }
     }
     await expect(read(snapshot(), options)).rejects.toThrow(/LIBREPHOTOS_/);
   });
