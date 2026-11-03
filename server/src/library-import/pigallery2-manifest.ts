@@ -84,7 +84,8 @@ export function readPigallery2Manifest(
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
   };
   if (archive.length > 0) loss('PIGALLERY2_SOURCE_METADATA_ARCHIVED');
-  if (rows('sharing_entity').length > 0 || users.size > 1) loss('PIGALLERY2_SHARING_RESTRICTED');
+  // Global guest authentication and allow/block rules are outside the database snapshot.
+  loss('PIGALLERY2_SHARING_RESTRICTED');
   if (rows('person_entry').length > 0 || rows('person_junction_table').length > 0) loss('PIGALLERY2_PEOPLE_ARCHIVED');
 
   const grants = new Map<string, Set<string>>();
