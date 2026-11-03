@@ -18,6 +18,7 @@ const path = z
       [...value].every((c) => c >= ' ') &&
       value.split('/').every((part) => part && part !== '.' && part !== '..'),
   );
+export const importRelativePathSchema = path;
 const legacyTransferSchema = z.strictObject({
   id,
   mode: z.enum(['copy', 'adopt', 'relocate']),
