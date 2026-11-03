@@ -20,19 +20,14 @@ export const withDateTimeOffset = (value?: string) => {
   if (!value) return value;
   const parsed = DateTime.fromISO(value, { setZone: true, zone: 'UTC' });
   if (!parsed.isValid) return value;
-  const time = value.split(/t/iu, 2)[1];
-  if (!time) return parsed.toISO() ?? value;
-  if (time.includes('[')) {
-    const normalized = parsed.toISO()!;
-    const fraction = /[.,](\d+)/u.exec(time)?.[1];
-    return fraction ? normalized.replace(/\.\d+(?=[Z+-])/u, () => '.' + fraction) : normalized;
-  }
-  return /(?:Z|[+-]\d{2}(?::?\d{2})?)$/iu.test(time) ? value : value + 'Z';
+  const fraction = /t.*?[.,](\d+)/iu.exec(value)?.[1];
+  const normalized = parsed.toISO({ suppressMilliseconds: !fraction })!;
+  return fraction ? normalized.replace(/\.\d+(?=[Z+-])/u, () => '.' + fraction) : normalized;
 };
 
 export const extractTimeZone = (dateTimeOriginal?: string | null) => {
   const extractedTimeZone = dateTimeOriginal
-    ? DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }).zone
+    ? DateTime.fromISO(withDateTimeOffset(dateTimeOriginal)!, { setZone: true, zone: 'UTC' }).zone
     : undefined;
   return extractedTimeZone?.type === 'fixed' ? extractedTimeZone : undefined;
 };
