@@ -284,7 +284,7 @@ describe('Ente common manifest mapping', () => {
     );
     expect(() => read(value)).toThrow('ENTE_VISIBILITY_REVIEW_REQUIRED');
   });
-  it('prepares all deduplicated originals and Live Photo components with the existing canonical writer', () => {
+  it('requires review of same-owner duplicate bytes without discarding their source relationships', () => {
     const { manifest } = read(),
       template = planFixture.plan.files[0];
     const files = new Map(manifest.files.map((file, index) => [file.id, { ...file, inode: String(index + 1) }]));
@@ -309,32 +309,24 @@ describe('Ente common manifest mapping', () => {
         }),
       ),
     });
-    const query = vi.fn(),
-      writer = new CanonicalAssetWriter(
-        { query, transaction: vi.fn() },
-        {
-          manifest,
-          plan,
-          destinationId: plan.destinationId,
-          binding: {
-            operationId: randomUUID(),
-            source: manifest.source,
-            manifestSha256: manifestFingerprint(manifest),
-            planSha256: destinationPlanFingerprint(plan),
+    const query = vi.fn();
+    expect(
+      () =>
+        new CanonicalAssetWriter(
+          { query, transaction: vi.fn() },
+          {
+            manifest,
+            plan,
+            destinationId: plan.destinationId,
+            binding: {
+              operationId: randomUUID(),
+              source: manifest.source,
+              manifestSha256: manifestFingerprint(manifest),
+              planSha256: destinationPlanFingerprint(plan),
+            },
           },
-        },
-      );
-    for (const asset of manifest.assets) {
-      if (!('type' in asset)) throw new Error('Sealed source asset required');
-      expect(
-        writer.prepare({
-          sourceAssetId: asset.id,
-          type: asset.type,
-          fileModifiedAt: asset.fileModifiedAt,
-          originalFileNames: asset.originalFileNames,
-        }),
-      ).toBeDefined();
-    }
+        ),
+    ).toThrow('IMPORT_PLAN_DUPLICATE_REVIEW_REQUIRED');
     expect(query).not.toHaveBeenCalled();
   });
 });
