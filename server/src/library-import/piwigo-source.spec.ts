@@ -282,6 +282,29 @@ it('paginates numeric and composite source keys without offsets', async () => {
   ).toBe(true);
   expect(query.mock.calls.some(([options]) => options.sql.includes('OFFSET'))).toBe(false);
 });
+it('paginates rating identities with their bound anonymous voter key', async () => {
+  const original = query.getMockImplementation()!;
+  query.mockImplementation((options, parameters = []) => {
+    if (options.sql.startsWith('SELECT ') && options.sql.includes('FROM `piwigo`.`flq_rate`')) {
+      return Promise.resolve([
+        parameters.length === 0
+          ? [{ element_id: 4n, user_id: 3n, anonymous_id: '2001:db8::1', rate: 4n, date: '2020-01-01' }]
+          : [],
+        [],
+      ]);
+    }
+    return original(options, parameters);
+  });
+  const batches = await collect();
+  expect(batches.filter((batch) => batch.table === 'rate')).toHaveLength(1);
+  expect(
+    query.mock.calls.some(
+      ([options, parameters]) =>
+        options.sql.includes('WHERE (`element_id`,`user_id`,`anonymous_id`)>(?,?,?)') &&
+        parameters?.join(',') === '4,3,2001:db8::1',
+    ),
+  ).toBe(true);
+});
 it('decodes full-width integers and nulls without converting decimals to numbers', async () => {
   await collect();
   const options = vi.mocked(createConnection).mock.calls[0][0] as {
