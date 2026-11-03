@@ -336,7 +336,6 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   });
   const users = owners
     .values()
-    .toArray()
     .map((row) => {
       const result = userSchema.safeParse(row);
       if (!result.success) return refuse('LIBREPHOTOS_OWNER_INVALID');
@@ -345,7 +344,8 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
         id: String(user.id),
         name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username,
       };
-    });
+    })
+    .toArray();
   return {
     manifest: parseImportManifest({
       format: 'frameleaf-library-import',
