@@ -2094,7 +2094,7 @@ describe(AssetService.name, () => {
         mocks.asset.update.mockImplementation((value) => {
           if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
           if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
-          return Promise.resolve();
+          return Promise.resolve(getForAsset(asset));
         });
         const items = [{ id: asset.id, from: new Date('2020-11-01T07:30:00Z') }];
         await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 60);
