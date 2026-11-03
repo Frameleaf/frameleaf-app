@@ -109,7 +109,7 @@ const getAssetDateTimeUpdates = (
     return {};
   }
 
-  const dateTime = DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' });
+  const dateTime = DateTime.fromISO(withDateTimeOffset(dateTimeOriginal)!, { setZone: true, zone: 'UTC' });
   if (!dateTime.isValid) {
     return {};
   }

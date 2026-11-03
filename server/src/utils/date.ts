@@ -20,8 +20,11 @@ export const withDateTimeOffset = (value?: string) => {
   if (!value) return value;
   const parsed = DateTime.fromISO(value, { setZone: true, zone: 'UTC' });
   if (!parsed.isValid) return value;
+  const explicit = /t.+(?:Z|[+-]\d{2}(?::?\d{2})?)\[/iu.test(value);
+  const resolved = explicit ? DateTime.fromISO(value.split('[', 1)[0], { setZone: true, zone: 'UTC' }) : parsed;
+  if (!resolved.isValid) return value;
   const fraction = /t.*?[.,](\d+)/iu.exec(value)?.[1];
-  const normalized = parsed.toISO({ suppressMilliseconds: !fraction })!;
+  const normalized = resolved.toISO({ suppressMilliseconds: !fraction })!;
   return fraction ? normalized.replace(/\.\d+(?=[Z+-])/u, () => '.' + fraction) : normalized;
 };
 
