@@ -37,11 +37,29 @@ const refuse = (code: string): never => {
 };
 const quote = (name: string) => '`' + name.replaceAll('`', '``') + '`';
 const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const closeSource = (connection: Connection | undefined, bodyFailed: boolean): void => {
+const closeSource = async (connection: Connection | undefined, bodyFailed: boolean): Promise<void> => {
+  if (!connection) return;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
-    connection?.destroy();
+    await Promise.race([
+      (async () => {
+        await connection.query({ sql: 'ROLLBACK', timeout: 5000 });
+        await connection.query({ sql: 'UNLOCK TABLES', timeout: 5000 });
+        await connection.end();
+      })(),
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(new SourceError('PHOTOPRISM_SOURCE_UNAVAILABLE')), 10_000);
+      }),
+    ]);
   } catch {
+    try {
+      connection.destroy();
+    } catch {
+      // Preserve the original source failure while forcing transport cleanup.
+    }
     if (!bodyFailed) refuse('PHOTOPRISM_SOURCE_UNAVAILABLE');
+  } finally {
+    clearTimeout(deadline);
   }
 };
 const columnTypes = new Map(
@@ -261,6 +279,6 @@ export async function* readPhotoprismMariadbInventory(
     if (error instanceof Error && /^PhotoPrism source refused: PHOTOPRISM_[A-Z_]+$/u.test(error.message)) throw error;
     throw new SourceError('PHOTOPRISM_SOURCE_UNAVAILABLE');
   } finally {
-    closeSource(connection, bodyFailed);
+    await closeSource(connection, bodyFailed);
   }
 }

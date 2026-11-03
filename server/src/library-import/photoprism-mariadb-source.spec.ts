@@ -1,6 +1,8 @@
 import { hash } from 'bcrypt';
 import { type Connection, createConnection } from 'mysql2/promise';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { type Socket, connect, createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import fixture from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
@@ -149,6 +151,33 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
       await reader.return(undefined);
     }
     await admin.query("UPDATE photos SET photo_caption='changed' WHERE id=1");
+  });
+  it('releases the source lock before returning even when transport teardown is delayed', async () => {
+    const peers = new Set<Socket>();
+    const proxy = createServer({ allowHalfOpen: true }, (client) => {
+      const upstream = connect({ host: '127.0.0.1', port: source.port });
+      for (const socket of [client, upstream]) {
+        peers.add(socket);
+        socket.on('error', () => {});
+        socket.on('close', () => peers.delete(socket));
+      }
+      client.pipe(upstream, { end: false });
+      upstream.pipe(client);
+    });
+    proxy.listen(0, '127.0.0.1');
+    await once(proxy, 'listening');
+    const address = proxy.address();
+    if (!address || typeof address === 'string') throw new Error('Missing proxy address');
+    const reader = readPhotoprismMariadbInventory({ ...source, port: address.port });
+    try {
+      expect((await reader.next()).done).toBe(false);
+      await reader.return(undefined);
+      await admin.query("UPDATE photos SET photo_caption='unlocked before return' WHERE id=1");
+    } finally {
+      await reader.return(undefined);
+      for (const socket of peers) socket.destroy();
+      await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    }
   });
   it('preserves qualified passwords through the protected callback and expires escaped readers', async () => {
     await admin.execute(

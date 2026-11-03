@@ -2,12 +2,17 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { qualificationImage as image } from './cleanup-photoprism-qualification.mjs';
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const image = 'mariadb@sha256:49117dcc565cf51aa57ac5fca59ab31213402ff0eae6ffc13c46a37b938f7e4b';
+
+const runId = process.env.FRAMELEAF_PHOTOPRISM_RUN_ID;
+if (runId && (!/^\d+-\d+$/u.test(runId) || basename(tmpdir()) !== `frameleaf-photoprism-${runId}`))
+  throw new Error('Invalid qualification cleanup scope');
 const id = randomBytes(4).toString('hex');
 const container = `frameleaf-photoprism-test-${id}`;
 const volume = `${container}-data`;
@@ -23,18 +28,24 @@ const run = (args) => {
 };
 const hadImage = command(['image', 'inspect', image], { stdio: 'ignore' }).status === 0;
 try {
+  if (runId) writeFileSync(join(tmpdir(), 'image.json'), JSON.stringify({ createdImage: !hadImage }), { mode: 0o600 });
   writeFileSync(join(directory, 'database.env'), `MARIADB_ROOT_PASSWORD=${password}\nMARIADB_DATABASE=${database}\n`, {
     mode: 0o600,
   });
   writeFileSync(join(directory, 'client.cnf'), `[client]\nuser=root\npassword=${password}\n`, { mode: 0o600 });
-  run(['volume', 'create', '--label', 'app.frameleaf.test=photoprism-mariadb', volume]);
+  const labels = [
+    '--label',
+    'app.frameleaf.test=photoprism-mariadb',
+    '--label',
+    `app.frameleaf.qualification-run=${runId ?? id}`,
+  ];
+  run(['volume', 'create', ...labels, volume]);
   run([
     'run',
     '-d',
     '--name',
     container,
-    '--label',
-    'app.frameleaf.test=photoprism-mariadb',
+    ...labels,
     '--env-file',
     join(directory, 'database.env'),
     '-p',

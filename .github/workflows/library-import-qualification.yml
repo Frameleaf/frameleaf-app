@@ -5,7 +5,9 @@ name: Library import qualification
     branches: [main]
     paths:
       - 'server/src/library-import/**'
+      - 'server/scripts/cleanup-photoprism-qualification.mjs'
       - 'server/scripts/qualify-photoprism-mariadb.mjs'
+      - 'server/test/photoprism-qualification-cleanup.test.mjs'
       - '.github/workflows/library-import-qualification.yml'
       - 'pnpm-lock.yaml'
       - 'server/package.json'
@@ -13,7 +15,9 @@ name: Library import qualification
     branches: [main]
     paths:
       - 'server/src/library-import/**'
+      - 'server/scripts/cleanup-photoprism-qualification.mjs'
       - 'server/scripts/qualify-photoprism-mariadb.mjs'
+      - 'server/test/photoprism-qualification-cleanup.test.mjs'
       - '.github/workflows/library-import-qualification.yml'
       - 'pnpm-lock.yaml'
       - 'server/package.json'
@@ -28,6 +32,8 @@ jobs:
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
+    env:
+      FRAMELEAF_PHOTOPRISM_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -47,10 +53,16 @@ jobs:
         run: |
           pnpm --filter @frameleaf/sdk build
           pnpm --filter @frameleaf/plugin-sdk build
+      - name: Verify scoped cancellation cleanup
+        run: node --test server/test/photoprism-qualification-cleanup.test.mjs
       - name: Qualify native restored database extraction
-        run: node server/scripts/qualify-photoprism-mariadb.mjs
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoprism-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          install -d -m700 "$TMPDIR"
+          node server/scripts/qualify-photoprism-mariadb.mjs
       - name: Remove disposable Docker fixtures after cancellation
         if: always()
-        run: |
-          docker ps -aq --filter label=app.frameleaf.test=photoprism-mariadb | xargs -r docker rm -f
-          docker volume ls -q --filter label=app.frameleaf.test=photoprism-mariadb | xargs -r docker volume rm
+        env:
+          TMPDIR: ${{ runner.temp }}/frameleaf-photoprism-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node server/scripts/cleanup-photoprism-qualification.mjs
