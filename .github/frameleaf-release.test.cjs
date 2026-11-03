@@ -3,6 +3,7 @@ const test = require("node:test");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const { createRequire } = require("node:module");
 const {
   VARIANTS,
   SOURCE,
@@ -320,18 +321,52 @@ const testJobNames = [
   "Test Web",
   "Test i18n",
   "End-to-End Lint",
+  "Medium Test Image",
+  "Medium Core Shard (1)",
+  "Medium Core Shard (2)",
+  "Medium Core Shard (3)",
+  "Medium Core Shard (4)",
+  "Medium Core Shard (5)",
+  "Medium Core Shard (6)",
+  "Medium Scale Shard (1)",
+  "Medium Scale Shard (2)",
+  "Medium Scale Shard (3)",
+  "Medium Scale Shard (4)",
+  "Medium Scale Shard (5)",
+  "Medium Scale Shard (6)",
   "Medium Tests (Server)",
   "Medium Scale Tests (Server)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-1)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-2)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-3)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, api-4)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, maintenance)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, transport)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, buddy)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, cloud)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04, accounting)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-1)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-2)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-3)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, api-4)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, maintenance)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, transport)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, cloud)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, accounting)",
   "End-to-End Image (ubuntu-24.04)",
   "End-to-End Image (ubuntu-24.04-arm)",
   "End-to-End Tests (Web) (ubuntu-24.04, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04, maintenance)",
+  "End-to-End Tests (Web) (ubuntu-24.04, icloud)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
   "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, ui)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, maintenance)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, icloud)",
   "End-to-End Tests Success",
   "Unit Test ML",
   ".github Files Formatting",
@@ -381,48 +416,60 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 26);
-  assert.deepEqual(
-    evidence.jobs
-      .filter((job) => job.name.startsWith("End-to-End Tests ("))
-      .map((job) => job.name),
-    [
-      "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-      "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 1)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 2)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 3)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
-    ],
+  assert.equal(evidence.jobs.length, 60);
+  assert.equal(
+    evidence.jobs.filter((job) =>
+      job.name.startsWith("End-to-End Tests (Server & CLI)"),
+    ).length,
+    17,
+  );
+  assert.equal(
+    evidence.jobs.filter((job) => job.name.startsWith("End-to-End Tests (Web)"))
+      .length,
+    12,
+  );
+  assert.equal(
+    evidence.jobs.some(
+      (job) =>
+        job.name ===
+        "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm, buddy)",
+    ),
+    false,
   );
 });
-test("the qualification job catalog covers the non-mobile Test workflow and both runner matrix members", async () => {
+test("the qualification job catalog covers every Test workflow axis, shard and exclusion", async () => {
   const source = await fs.readFile(
     path.join(__dirname, "workflows/test.yml"),
     "utf8",
   );
-  const jobs = source
-    .split(/^jobs:\s*$/m)[1]
-    .split(/(?=^  [a-z][a-z0-9-]*:\s*$)/m);
-  const resolved = jobs.flatMap((block) => {
-    const name = /^    name: (.+)$/m.exec(block)?.[1];
+  const { load } = createRequire(
+    path.join(__dirname, "../server/package.json"),
+  )("js-yaml");
+  const jobs = Object.values(load(source).jobs);
+  const resolved = jobs.flatMap(({ name, strategy }) => {
     if (!name) return [];
-    const matrix = /^        runner:\n((?:          - [^\n]+\n)+)/m.exec(
-      block,
-    )?.[1];
-    // FL-380: a second matrix axis (web shards) resolves as "name (runner, shard)".
-    const shards = /^        shard: \[([^\]]+)\]$/m
-      .exec(block)?.[1]
-      .split(", ");
-    return matrix
-      ? [...matrix.matchAll(/^          - (.+)$/gm)].flatMap(([, runner]) =>
-          shards
-            ? shards.map((shard) => `${name} (${runner}, ${shard})`)
-            : [`${name} (${runner})`],
-        )
-      : [name];
+    if (!strategy?.matrix) return [name];
+    const { exclude = [], ...axes } = strategy.matrix;
+    const combinations = Object.entries(axes).reduce(
+      (rows, [key, values]) =>
+        rows.flatMap((row) =>
+          values.map((value) => ({ ...row, [key]: value })),
+        ),
+      [{}],
+    );
+    return combinations
+      .filter(
+        (row) =>
+          !exclude.some((entry) =>
+            Object.entries(entry).every(([key, value]) => row[key] === value),
+          ),
+      )
+      .map(
+        (row) =>
+          `${name} (${Object.keys(axes)
+            .map((key) => row[key])
+            .join(", ")})`,
+      );
   });
   assert.deepEqual(resolved.sort(), [...testJobNames].sort());
 });
