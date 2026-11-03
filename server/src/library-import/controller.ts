@@ -123,6 +123,38 @@ export class LibraryImportController {
       };
     });
   }
+  /** Retain sealed recovery inputs before the caller starts journalled media transfer. */
+  prepare(owners: unknown, descriptor: unknown, records: AsyncIterable<unknown> | Iterable<unknown>) {
+    return this.safe(async () => {
+      const report = await this.preflight(owners);
+      if (report.status !== 'fresh' && report.status !== 'copying') return refuse('IMPORT_NOT_COPYING');
+      await this.retain(owners, descriptor, records);
+      return this.status();
+    });
+  }
+  private async retain(owners: unknown, descriptor: unknown, records: AsyncIterable<unknown> | Iterable<unknown>) {
+    const journal = new LibraryImportJournal(this.db);
+    await journal.begin(this.context.binding);
+    await retainReviewedImportInputs(this.db, this.context, {
+      manifest: this.context.manifest,
+      plan: this.context.plan,
+    });
+    await retainPrivateOwnerInputs(this.db, this.context, owners);
+    const archive = new LibrarySourceArchive(this.db, this.context);
+    await archive.begin(descriptor);
+    let offset = 0n;
+    let batch: unknown[] = [];
+    for await (const record of records) {
+      batch.push(record);
+      if (batch.length === 1000) {
+        await archive.append(String(offset), batch);
+        offset += BigInt(batch.length);
+        batch = [];
+      }
+    }
+    if (batch.length > 0) await archive.append(String(offset), batch);
+    await archive.seal();
+  }
   run(owners: unknown, descriptor: unknown, records: AsyncIterable<unknown> | Iterable<unknown>) {
     return this.copy(owners, descriptor, records, false);
   }
@@ -166,27 +198,8 @@ export class LibraryImportController {
             identities,
           );
       }
+      await this.retain(owners, descriptor, records);
       const journal = new LibraryImportJournal(this.db);
-      await journal.begin(this.context.binding);
-      await retainReviewedImportInputs(this.db, this.context, {
-        manifest: this.context.manifest,
-        plan: this.context.plan,
-      });
-      await retainPrivateOwnerInputs(this.db, this.context, owners);
-      const archive = new LibrarySourceArchive(this.db, this.context);
-      await archive.begin(descriptor);
-      let offset = 0n;
-      let batch: unknown[] = [];
-      for await (const record of records) {
-        batch.push(record);
-        if (batch.length === 1000) {
-          await archive.append(String(offset), batch);
-          offset += BigInt(batch.length);
-          batch = [];
-        }
-      }
-      if (batch.length > 0) await archive.append(String(offset), batch);
-      await archive.seal();
       const ownerWriter = new CanonicalOwnerWriter(this.db, this.context);
       for (const owner of await loadPrivateOwnerInputs(this.db, this.context))
         await ownerWriter.write(owner.intent, owner.credential);
@@ -251,9 +264,14 @@ export class LibraryImportController {
   }
   /**
    * Caller keeps source writers fenced and verifies transfer completion; the hook rechecks the frozen source.
+   * Retained destination archive checks use the supplied owning session to keep the activation fence.
    * Retained activation never revisits the source or re-holds completed work.
    */
-  activate(jobs: JobRepository, assertSourceUnchanged: () => Promise<void>, managerInput?: ManagerLibrarySetup) {
+  activate(
+    jobs: JobRepository,
+    assertSourceUnchanged: (destinationSession: ImportDatabase) => Promise<void>,
+    managerInput?: ManagerLibrarySetup,
+  ) {
     return this.safe(async () => {
       const manager = parseManagerLibrarySetup(managerInput, this.context.binding);
       const retained = await this.activation(this.db, manager);
@@ -269,9 +287,9 @@ export class LibraryImportController {
         if (!lock?.acquired) return refuse('IMPORT_ALREADY_RUNNING');
         const retained = await this.activation(session, manager);
         if (retained) return retained;
-        await assertSourceUnchanged();
+        await assertSourceUnchanged(session);
         const report = await new LibraryImportController(session, this.context).verify();
-        await assertSourceUnchanged();
+        await assertSourceUnchanged(session);
         return session.transaction(async (tx) => {
           if ((await jobs.validateImportedLibraryWork(tx, this.context, manager)) !== runId)
             return refuse('DERIVED_RUN_IDENTITY_MISMATCH');

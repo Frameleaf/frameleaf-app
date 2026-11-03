@@ -7,6 +7,7 @@ import { Refusal, containerId, imageDigest, redact, type Database, type Mount } 
 import { publishFile } from './files.js';
 import { DOCKERMAN_TEMPLATES, saveDockermanTemplates } from './dockerman.js';
 import { configureUnraidCompose } from './compose.js';
+import { importSourceKinds, type ImportPlan } from './import-plan.js';
 
 export type Container = {
   Id: string;
@@ -440,12 +441,22 @@ export class Docker {
     directory: string,
     project: string,
     operationId: string,
-    action: 'status' | 'preflight' | 'run' | 'resume' | 'verify',
+    action: 'status' | 'preflight' | 'run' | 'resume' | 'verify' | 'rollback' | 'abandon',
+    common?: { source: ImportPlan['source']['kind']; activate?: boolean },
   ): Promise<Record<string, any>> {
     if (
       !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
       !/^[a-f0-9-]{36}$/.test(operationId) ||
-      !['status', 'preflight', 'run', 'resume', 'verify'].includes(action)
+      !(
+        common
+          ? ['status', 'preflight', 'run', 'resume', 'verify', 'rollback', 'abandon']
+          : ['status', 'preflight', 'run', 'resume', 'verify']
+      ).includes(action) ||
+      (common !== undefined &&
+        (!common ||
+          !importSourceKinds.includes(common.source) ||
+          (common.activate !== undefined && typeof common.activate !== 'boolean') ||
+          (common.activate === true && action !== 'verify')))
     )
       throw new Refusal('invalid_import_command');
     const name = `${project}-import-${operationId}`;
@@ -472,10 +483,12 @@ export class Docker {
         '--entrypoint',
         SERVER_ADMIN,
         'frameleaf-server',
-        'import-immich',
+        common ? 'import-library' : 'import-immich',
         action,
+        ...(common ? ['--source', common.source] : []),
         '--config',
-        '/run/frameleaf/import.json',
+        common ? '/run/frameleaf/import-library.json' : '/run/frameleaf/import.json',
+        ...(common?.activate ? ['--activate'] : []),
       ],
       { cwd: directory, timeout: 86_400_000 },
     );

@@ -7,6 +7,7 @@ import { JobName, QueueName } from 'src/enum.js';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { type ImportDatabase } from 'src/immich-import/types.js';
 import { readLibraryImportActivation, sealLibraryImportActivation } from 'src/library-import/activation-proof.js';
+import { loadRetainedLibraryImportBundle } from 'src/library-import/bundle-input.js';
 import { LibraryImportController } from 'src/library-import/controller.js';
 import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
@@ -18,6 +19,7 @@ import {
   advanceSourceArchiveHash,
   encodeSourceArchiveRecord,
 } from 'src/library-import/source-archive-codec.js';
+import { LibrarySourceArchive } from 'src/library-import/source-archive.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { type DB } from 'src/schema/index.js';
@@ -107,6 +109,97 @@ afterEach(async () => {
 });
 afterAll(async () => {
   await db?.destroy();
+});
+
+it('seals recovery inputs before media transfer without publishing imported owners or assets', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  expect((await controller.prepare(owners, descriptor, stream())).run?.status).toBe('copying');
+  expect(await new LibrarySourceArchive(connection.db, context).verify()).toMatchObject({
+    records: '1001',
+    sealed: true,
+  });
+  expect(await connection.db.query('SELECT id FROM public."user" WHERE NOT "isAdmin"')).toEqual([]);
+  expect(await connection.db.query('SELECT id FROM public.asset')).toEqual([]);
+  expect((await controller.resume(owners, descriptor, stream())).run?.status).toBe('verifying');
+  expect(await controller.verify()).toMatchObject({
+    owners: { owners: 1 },
+    archive: { records: '1001', sealed: true },
+  });
+});
+
+it('recovers the complete sealed bundle without reopening source paths and refuses lost recovery evidence', async () => {
+  const { context, owners } = setup();
+  await new LibraryImportController(connection.db, context).prepare(owners, descriptor, stream());
+  const config = {
+    format: 'frameleaf-library-import-command' as const,
+    version: 1 as const,
+    operationId: context.binding.operationId,
+    destinationId: context.destinationId,
+    bundleDirectory: '/source-export-no-longer-mounted',
+    stateDirectory: '/private-transfer-journal',
+  };
+  const restored = await loadRetainedLibraryImportBundle(connection.db, config, context.binding.source.kind);
+  expect(restored.context).toEqual(context);
+  expect(restored.descriptor).toEqual(descriptor);
+  const recovered = [];
+  for await (const record of restored.records()) recovered.push(record);
+  expect(recovered).toEqual(records);
+  await restored.assertUnchanged();
+  const controller = new LibraryImportController(connection.db, restored.context);
+  expect((await controller.resume(restored.owners, restored.descriptor, restored.records())).run?.status).toBe(
+    'verifying',
+  );
+  expect(await controller.verify()).toMatchObject({
+    owners: { owners: 1 },
+    archive: { records: '1001', sealed: true },
+  });
+  expect((await controller.activate(jobs(), restored.assertUnchanged)).runId).toBe(
+    libraryImportDerivedRunId(context.binding),
+  );
+  await expect(
+    loadRetainedLibraryImportBundle(
+      connection.db,
+      { ...config, operationId: randomUUID() },
+      context.binding.source.kind,
+    ),
+  ).rejects.toThrow('IMPORT_BINDING_CHANGED');
+  await connection.db.query(
+    'UPDATE public.frameleaf_library_import SET private_owners=NULL,private_owners_sha256=NULL',
+  );
+  await expect(loadRetainedLibraryImportBundle(connection.db, config, context.binding.source.kind)).rejects.toThrow(
+    'IMPORT_PRIVATE_OWNERS_MISSING',
+  );
+});
+
+it('keeps abandoned recovery evidence readable without allowing forward import actions', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  const retained = {
+    ...descriptor,
+    rows: '1',
+    sha256: advanceSourceArchiveHash(EMPTY_SOURCE_ARCHIVE_HASH, encodeSourceArchiveRecord(records[0])),
+  };
+  await controller.prepare(owners, retained, [records[0]]);
+  await controller.abandon();
+  const restored = await loadRetainedLibraryImportBundle(
+    connection.db,
+    {
+      format: 'frameleaf-library-import-command',
+      version: 1,
+      operationId: context.binding.operationId,
+      destinationId: context.destinationId,
+      bundleDirectory: '/source-export-no-longer-mounted',
+      stateDirectory: '/private-transfer-journal',
+    },
+    context.binding.source.kind,
+  );
+  expect(restored.descriptor).toEqual(retained);
+  await restored.assertUnchanged();
+  await expect(controller.resume(restored.owners, restored.descriptor, restored.records())).rejects.toThrow(
+    'ABANDONED_DESTINATION_REQUIRES_FRESH_DATABASE',
+  );
+  await expect(controller.activate(jobs(), restored.assertUnchanged)).rejects.toThrow('IMPORT_NOT_VERIFYING');
 });
 
 it('coordinates protected source retention, canonical owners and independent readback without activating writers', async () => {

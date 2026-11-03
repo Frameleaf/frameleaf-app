@@ -74,11 +74,13 @@ export class CanonicalAssetWriter {
       return refuse('ASSET_PREPARED_INTENT_CHANGED');
     const metadata = asset.metadata;
     const sourceFiles = asset.fileIds.map((id) => this.sourceFiles.get(id)!);
+    const originals = sourceFiles.filter((file) => file.role === 'original');
     // shortcut: richer relationships require dedicated writers before this internal path can accept them.
     if (
       asset.visibility === 'locked' ||
       metadata.title !== undefined ||
-      sourceFiles.some((file) => file.role !== 'original')
+      sourceFiles.some((file) => file.role === 'companion') ||
+      sourceFiles.filter((file) => file.role === 'sidecar').length > 1
     )
       return refuse('ASSET_UNSUPPORTED_FIELDS');
     if (
@@ -95,8 +97,8 @@ export class CanonicalAssetWriter {
     )
       return refuse('ASSET_TRASH_STATE_INVALID');
     if (
-      Object.keys(item.originalFileNames).length !== sourceFiles.length ||
-      sourceFiles.some((file) => !Object.hasOwn(item.originalFileNames, file.id))
+      Object.keys(item.originalFileNames).length !== originals.length ||
+      originals.some((file) => !Object.hasOwn(item.originalFileNames, file.id))
     )
       return refuse('ASSET_ORIGINAL_NAMES_REQUIRED');
     const ownerId = this.plan.owners.find((owner) => owner.sourceId === asset.ownerId)!.destinationId.toLowerCase();
@@ -114,12 +116,14 @@ export class CanonicalAssetWriter {
         path: planned.destinationPath,
         root,
         absolutePath: posix.join(root.path, planned.destinationPath),
-        name: item.originalFileNames[file.id],
+        name: file.role === 'original' ? item.originalFileNames[file.id] : posix.basename(file.path),
       };
     });
-    const primaryId = 'primaryFileId' in asset ? asset.primaryFileId : sourceFiles[0].id;
+    const primaryId = 'primaryFileId' in asset ? asset.primaryFileId : originals[0].id;
     const primary = files.find((file) => file.id === primaryId)!;
-    const bytes = files.reduce((total, file) => total + BigInt(file.bytes), 0n);
+    const bytes = files
+      .filter((file) => file.role === 'original')
+      .reduce((total, file) => total + BigInt(file.bytes), 0n);
     if (bytes > 9_223_372_036_854_775_807n) return refuse('ASSET_SIZE_UNREPRESENTABLE');
     const livePhotoVideoSourceId = this.livePhotos.get(asset.id);
     const recordSha256 = createHash('sha256')
@@ -217,6 +221,7 @@ export class CanonicalAssetWriter {
           // Never upsert a path: a collision must not change another asset's bytes or ownership.
           const physical = new Map<string, string>();
           for (const file of files) {
+            if (file.role !== 'original') continue;
             const id = randomUUID();
             await tx.query(
               `INSERT INTO public.physical_file(id,type,checksum,"sizeInBytes",path)
@@ -255,6 +260,20 @@ export class CanonicalAssetWriter {
             ],
           );
           for (const file of files) {
+            if (file.role === 'sidecar') {
+              const id = randomUUID();
+              await tx.query(
+                `INSERT INTO public.asset_file(id,"assetId",type,path) VALUES($1::uuid,$2::uuid,'sidecar',$3)`,
+                [id, destinationId, file.absolutePath],
+              );
+              if (file.transferId !== undefined)
+                await tx.query(
+                  `INSERT INTO public.frameleaf_library_import_mapping(operation_id,entity_kind,source_id,destination_id,record_sha256)
+                  VALUES($1::uuid,'file',$2,$3::uuid,$4)`,
+                  [this.binding.operationId, file.transferId, id, file.transferSha256],
+                );
+              continue;
+            }
             await tx.query('UPDATE public.physical_file SET "canonicalAssetId"=$1::uuid WHERE id=$2::uuid', [
               destinationId,
               physical.get(file.id),

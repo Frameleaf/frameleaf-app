@@ -170,9 +170,11 @@ export async function copyImportFiles(
   let reviewed = false;
   const destinations = new Set<string>();
   try {
-    for (const entry of journal.files(operationId)) {
+    for (const entry of journal
+      .files(operationId)
+      .filter(({ file }) => file.mode === 'copy')) {
       const { file, state } = entry;
-      if (file.mode !== 'copy' || !['intent', 'verified'].includes(state))
+      if (!['intent', 'verified'].includes(state))
         throw new Refusal('import_copy_state_invalid');
       if (
         !Object.hasOwn(roots, file.sourceRoot) ||

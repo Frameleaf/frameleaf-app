@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -24,8 +25,26 @@ static bool number(const char *text, uintmax_t *value) {
   return !errno && !*end;
 }
 int main(int argc, char **argv) {
+  if (argc >= 3 && !strcmp(argv[1], "--exec-locked") && argv[2][0] == '/') {
+    struct stat lock;
+    if (fstat(3, &lock) || !S_ISREG(lock.st_mode) ||
+        lock.st_nlink != 1 || (lock.st_mode & 0777) != 0600 || lock.st_uid != geteuid()) return 2;
+    if (flock(3, LOCK_EX | LOCK_NB)) return errno == EWOULDBLOCK ? 75 : 1;
+    int flags = fcntl(3, F_GETFD);
+    if (flags < 0 || fcntl(3, F_SETFD, flags & ~FD_CLOEXEC)) return 1;
+    // Exec keeps the lock in the process that changes files, without a helper lifetime or lease race.
+    execv(argv[2], &argv[2]);
+    return 127;
+  }
   uintmax_t device, inode;
   struct stat source_parent, target_parent, before, after;
+  const char *execution_lock = getenv("FRAMELEAF_IMPORT_EXECUTION_LOCK_FD");
+  if (execution_lock) {
+    struct stat lock;
+    if (strcmp(execution_lock, "3") || fstat(5, &lock) || !S_ISREG(lock.st_mode) ||
+        lock.st_nlink != 1 || (lock.st_mode & 0777) != 0600 || lock.st_uid != geteuid()) return 2;
+    if (flock(5, LOCK_EX | LOCK_NB)) return errno == EWOULDBLOCK ? 75 : 1;
+  }
   if (argc != 5 || !name_ok(argv[1]) || !name_ok(argv[2]) ||
       !number(argv[3], &device) || !number(argv[4], &inode)) return 2;
   if (fstat(3, &source_parent) || fstat(4, &target_parent) ||

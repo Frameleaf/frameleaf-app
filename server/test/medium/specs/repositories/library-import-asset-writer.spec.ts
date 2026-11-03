@@ -289,7 +289,7 @@ it('refuses existing paths without overwriting their recorded identity or leavin
   ).toEqual([existing]);
 });
 
-it.each(['locked', 'title', 'sidecar', 'clock', 'trash'])(
+it.each(['locked', 'title', 'multiple-sidecars', 'clock', 'trash'])(
   'refuses unsupported or incomplete source facts: %s',
   async (kind) => {
     const { context, item } = await setup();
@@ -303,8 +303,20 @@ it.each(['locked', 'title', 'sidecar', 'clock', 'trash'])(
         asset.metadata.title = 'Source title';
         break;
       }
-      case 'sidecar': {
+      case 'multiple-sidecars': {
         context.manifest.files[0].role = 'sidecar';
+        const original = context.plan.files[0];
+        const extra = {
+          ...original,
+          id: 'extra-sidecar',
+          sourcePath: 'extra.xmp',
+          destinationPath: 'extra.xmp',
+          sourceIdentity: { ...original.sourceIdentity, inode: '43' },
+        };
+        context.plan = parseDestinationImportPlan({ ...context.plan, files: [...context.plan.files, extra] });
+        context.manifest.files.push({ ...context.manifest.files[0], id: extra.id, path: extra.sourcePath });
+        asset.fileIds.push(extra.id);
+        context.binding.planSha256 = destinationPlanFingerprint(context.plan);
         break;
       }
       case 'clock': {

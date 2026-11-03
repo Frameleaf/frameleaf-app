@@ -1,6 +1,13 @@
 /** Load replacement-local recovery authority before any application/configuration import. */
 async function start() {
   const command = process.argv[2];
+  if ((command === 'frameleaf-admin' || command === 'immich-admin') && process.argv[3] === 'import-library') {
+    const { loadLibraryImportConfig, parseLibraryImportArguments } = await import('./library-import/command-input.js');
+    const { enterImportExecutionLock } = await import('./library-import/execution-lock.js');
+    const args = parseLibraryImportArguments(process.argv.slice(4));
+    const config = await loadLibraryImportConfig(args.configPath);
+    if (!(await enterImportExecutionLock(config.stateDirectory))) return;
+  }
   if ((command === 'frameleaf-admin' || command === 'immich-admin') && process.argv[3] === 'buddy-backup') {
     // FL-509: the offline command reports its own safe messages and usage; binding failures stay generic.
     const { runBuddyBackupCommand } = await import('./utils/buddy-backup-offline.js');

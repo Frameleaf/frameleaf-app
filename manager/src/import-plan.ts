@@ -101,6 +101,8 @@ const planSchema = z.discriminatedUnion('version', [
     files: z.array(placementSchema),
   }),
 ]);
+export const importSourceKinds =
+  legacyPlanSchema.shape.source.shape.kind.options;
 export type ImportPlan = z.infer<typeof planSchema>;
 
 export function parseImportPlan(input: unknown): ImportPlan {

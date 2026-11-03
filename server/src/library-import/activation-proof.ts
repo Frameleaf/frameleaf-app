@@ -43,6 +43,7 @@ const reportSchema = z.strictObject({
     version: z.literal(2),
     assets: count,
     originals: count,
+    sidecars: count.optional(),
     tagNodes: count,
     tagAssignments: count,
     bytes: decimal,

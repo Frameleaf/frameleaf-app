@@ -19,9 +19,61 @@ import { Readable } from 'node:stream';
 import { join } from 'node:path';
 import { test, mock } from 'node:test';
 import { reviewImportFiles } from '../src/import-file-review.js';
+import { importPlanSha256 } from '../src/import-plan.js';
 import { reviewedImport } from './import-plan-fixture.js';
 
 const linux = { skip: process.platform !== 'linux' };
+test(
+  'rechecking a captured plan keeps its checksum without rereading original bytes',
+  linux,
+  async () => {
+    const f = await fixture();
+    const handle = await open(join(f.source, 'original.jpg'), 'r');
+    try {
+      const sha256 = createHash('sha256').update(f.bytes).digest('hex');
+      const input = {
+        ...f.input,
+        files: f.input.files.map((file) => ({
+          ...file,
+          expectedBytes: String(f.bytes.length),
+          expectedSha256: sha256,
+        })),
+      };
+      const captured = await reviewImportFiles(input);
+      const reader = mock.method(
+        Object.getPrototypeOf(handle),
+        'createReadStream',
+        () => {
+          throw new Error('repeat original read');
+        },
+      );
+      try {
+        const plan = await reviewImportFiles(input, 'recheck');
+        assert.deepEqual(plan, captured);
+        assert.equal(reader.mock.callCount(), 0);
+        await assert.rejects(
+          reviewImportFiles(f.input, 'recheck'),
+          /import_file_review_evidence_required/,
+        );
+        await assert.rejects(
+          reviewImportFiles(input),
+          /import_file_review_failed/,
+        );
+        await writeFile(
+          join(f.source, 'original.jpg'),
+          Buffer.alloc(f.bytes.length, 1),
+        );
+        const changed = await reviewImportFiles(input, 'recheck');
+        assert.notEqual(importPlanSha256(changed), importPlanSha256(captured));
+      } finally {
+        reader.mock.restore();
+      }
+    } finally {
+      await handle.close();
+      await f.cleanup();
+    }
+  },
+);
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'import-file-review-'));
   const source = join(root, 'source'),

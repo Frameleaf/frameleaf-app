@@ -168,13 +168,15 @@ export async function reconcileImportedAssets(
       same(expectedPhotos, actualPhotos);
       const expectedFiles = expected
         .flatMap(({ id, files }) =>
-          files.map((file) => ({
-            canonicalAssetId: id,
-            type: 'original',
-            checksum: file.sha256,
-            sizeInBytes: file.bytes,
-            path: file.absolutePath,
-          })),
+          files
+            .filter((file) => file.role === 'original')
+            .map((file) => ({
+              canonicalAssetId: id,
+              type: 'original',
+              checksum: file.sha256,
+              sizeInBytes: file.bytes,
+              path: file.absolutePath,
+            })),
         )
         .sort((a, b) => a.path.localeCompare(b.path));
       const actualFiles = await tx.query(`SELECT "canonicalAssetId"::text,type,encode(checksum,'hex') AS checksum,
@@ -183,8 +185,10 @@ export async function reconcileImportedAssets(
       same(expectedFiles, actualFiles);
       if (plan.version === 2) {
         const placements = await tx.query(
-          `SELECT m.source_id,m.record_sha256,p.path,p."canonicalAssetId"::text AS asset_id
+          `SELECT m.source_id,m.record_sha256,p.path,p."canonicalAssetId"::text AS asset_id,
+          f.path AS sidecar_path,f."assetId"::text AS sidecar_asset_id,f.type AS sidecar_type
           FROM public.frameleaf_library_import_mapping m LEFT JOIN public.physical_file p ON p.id=m.destination_id
+          LEFT JOIN public.asset_file f ON f.id=m.destination_id
           WHERE m.operation_id=$1::uuid AND m.entity_kind='file'`,
           [binding.operationId],
         );
@@ -196,8 +200,12 @@ export async function reconcileImportedAssets(
             if (
               !row ||
               row.record_sha256 !== file.transferSha256 ||
-              row.path !== file.absolutePath ||
-              row.asset_id !== photo.id
+              (file.role === 'original'
+                ? row.path !== file.absolutePath || row.asset_id !== photo.id || row.sidecar_path !== null
+                : row.sidecar_path !== file.absolutePath ||
+                  row.sidecar_asset_id !== photo.id ||
+                  row.sidecar_type !== 'sidecar' ||
+                  row.path !== null)
             )
               mismatch();
           }
@@ -205,7 +213,7 @@ export async function reconcileImportedAssets(
       const expectedAdditional = expected
         .flatMap(({ id, primary, files }) =>
           files
-            .filter((file) => file.id !== primary.id)
+            .filter((file) => file.role === 'original' && file.id !== primary.id)
             .map((file) => ({ assetId: id, path: file.absolutePath, originalFileName: file.name })),
         )
         .sort((a, b) => String(a.assetId).localeCompare(String(b.assetId)) || a.path.localeCompare(b.path));
@@ -215,6 +223,22 @@ export async function reconcileImportedAssets(
         (a, b) => String(a.assetId).localeCompare(String(b.assetId)) || String(a.path).localeCompare(String(b.path)),
       );
       same(expectedAdditional, actualAdditional);
+      const expectedSidecars = expected
+        .flatMap(({ id, files }) =>
+          files
+            .filter((file) => file.role === 'sidecar')
+            .map((file) => ({
+              assetId: id,
+              type: 'sidecar',
+              path: file.absolutePath,
+              physicalFileId: null,
+              isEdited: false,
+            })),
+        )
+        .sort((a, b) => String(a.assetId).localeCompare(String(b.assetId)));
+      const actualSidecars = await tx.query(`SELECT "assetId"::text,type,path,"physicalFileId"::text,"isEdited"
+        FROM public.asset_file ORDER BY "assetId"`);
+      same(expectedSidecars, actualSidecars);
       if ((await tx.query('SELECT 1 FROM public.asset_lock LIMIT 1')).length > 0) mismatch();
       const quota = new Map<string, bigint>();
       for (const photo of expected) quota.set(photo.ownerId, (quota.get(photo.ownerId) ?? 0n) + photo.bytes);
@@ -277,6 +301,7 @@ export async function reconcileImportedAssets(
         planSha256: binding.planSha256,
         assets: actualPhotos.length,
         originals: actualFiles.length,
+        ...(actualSidecars.length > 0 ? { sidecars: actualSidecars.length } : {}),
         tagNodes: tags.nodes.length,
         tagAssignments: tags.memberships.length,
         bytes: String(bytes),
@@ -284,6 +309,7 @@ export async function reconcileImportedAssets(
           photos: actualPhotos,
           files: actualFiles,
           additional: actualAdditional,
+          ...(actualSidecars.length > 0 ? { sidecars: actualSidecars } : {}),
           tags,
           quotas: owners.sort((a, b) => String(a.id).localeCompare(String(b.id))),
         }),
