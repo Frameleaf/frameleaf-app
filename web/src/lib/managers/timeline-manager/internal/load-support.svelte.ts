@@ -39,12 +39,11 @@ export async function loadFromTimeBuckets(
       },
       { signal },
     ).catch(async (error: unknown) => {
-      if (
-        page &&
-        (error as { status?: number } | null)?.status === 409 &&
-        timelineManager.months.includes(timelineMonth)
-      ) {
-        await timelineManager.refresh();
+      if (page && (error as { status?: number } | null)?.status === 409) {
+        // A page that a refresh has already replaced is only out of date, not a failed load.
+        if (timelineManager.months.includes(timelineMonth)) {
+          await timelineManager.refresh();
+        }
         throw superseded();
       }
       throw error;

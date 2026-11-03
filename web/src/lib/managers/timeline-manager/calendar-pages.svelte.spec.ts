@@ -1,5 +1,6 @@
 import { TimelineOrderedSort } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { handleError } from '$lib/utils/handle-error';
 import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 import { TimelineManager } from './timeline-manager.svelte';
@@ -16,6 +17,8 @@ const pages = assets.map((asset, page) => ({
   firstAssetId: asset.id,
   lastAssetId: asset.id,
 }));
+
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -160,6 +163,26 @@ it('refreshes summaries after a stale page response and discards the obsolete lo
     expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2);
     expect(manager.months).not.toContain(obsolete);
     expect(obsolete.getAssets()).toEqual([]);
+  } finally {
+    manager.destroy();
+  }
+});
+
+it('lets a stale page conflict go quietly once a refresh has already replaced the page', async () => {
+  sdkMock.getTimeBuckets.mockResolvedValue(pages);
+  let conflict!: (error: unknown) => void;
+  sdkMock.getTimeBucket.mockImplementationOnce(() => new Promise((_, reject) => (conflict = reject)));
+  const manager = new TimelineManager();
+  try {
+    await manager.updateOptions({});
+    const stale = manager.months[1];
+    const load = manager.loadTimelineMonth(stale.yearMonth);
+    // A stack change (or any other) reads the pages again while the old page is still loading.
+    await manager.refresh();
+    expect(manager.months).not.toContain(stale);
+    conflict({ status: 409 });
+    await load;
+    expect(handleError).not.toHaveBeenCalled();
   } finally {
     manager.destroy();
   }

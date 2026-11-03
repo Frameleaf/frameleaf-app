@@ -690,6 +690,11 @@
   };
 
   const applyBulk = (action: BulkActionId, ids: string[]) => {
+    // A stack change moves the counts and which members the server hides, so the page reads it again.
+    if (action === 'stack' || action === 'unstack') {
+      void manager.refresh();
+      return;
+    }
     const patch = ASSET_PATCHES[action];
     if (!patch) {
       return;
