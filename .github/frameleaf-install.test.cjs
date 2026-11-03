@@ -1,5 +1,6 @@
 // Executes the real installer with offline command fixtures; no Docker or network access.
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -30,10 +31,26 @@ function snapshot(filename) {
   };
 }
 
-function runInstaller(parent) {
+function runInstaller(parent, overrides = {}) {
   const tools = path.join(parent, "offline-tools");
   const log = path.join(parent, "commands.log");
   fs.mkdirSync(tools);
+  const compose = path.join(__dirname, "../docker/docker-compose.yml");
+  const env = path.join(__dirname, "../docker/example.env");
+  // The release publishes SHA256SUMS beside its files; the installer refuses a download that does not match it.
+  const sums = path.join(tools, "SHA256SUMS");
+  fs.writeFileSync(
+    sums,
+    [
+      [compose, "docker-compose.yml"],
+      [env, "example.env"],
+    ]
+      .map(
+        ([file, name]) =>
+          `${crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}  ${name}\n`,
+      )
+      .join(""),
+  );
   fs.writeFileSync(
     path.join(tools, "curl"),
     `#!/usr/bin/env bash
@@ -43,6 +60,7 @@ printf 'curl %s\\n' "$*" >> "$INSTALL_TEST_LOG"
 case "$2" in
   */docker-compose.yml) cp "$INSTALL_TEST_COMPOSE" "$4" ;;
   */example.env) cp "$INSTALL_TEST_ENV" "$4" ;;
+  */SHA256SUMS) cp "$INSTALL_TEST_SUMS" "$4" ;;
   *) exit 90 ;;
 esac
 `,
@@ -72,11 +90,10 @@ echo 127.0.0.1
       ...process.env,
       PATH: `${tools}${path.delimiter}${process.env.PATH}`,
       INSTALL_TEST_LOG: log,
-      INSTALL_TEST_COMPOSE: path.join(
-        __dirname,
-        "../docker/docker-compose.yml",
-      ),
-      INSTALL_TEST_ENV: path.join(__dirname, "../docker/example.env"),
+      INSTALL_TEST_COMPOSE: compose,
+      INSTALL_TEST_ENV: env,
+      INSTALL_TEST_SUMS: sums,
+      ...overrides,
     },
   });
   assert.ifError(result.error);
@@ -108,10 +125,75 @@ test("the installer creates a fresh canonical installation through offline comma
     assert.doesNotMatch(env, /^DB_PASSWORD=postgres$/m);
     assert.deepEqual(
       result.commands.map((command) => command.split(" ")[0]),
-      ["curl", "curl", "docker", "docker", "hostname"],
+      ["curl", "curl", "curl", "docker", "docker", "hostname"],
     );
     assert.match(result.stdout, /Frameleaf is running/);
     assert.doesNotMatch(result.stdout, /Redis/i);
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("a selected release downloads that release's files and pins its image tag in .env", () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "frameleaf-install-"));
+  try {
+    const result = runInstaller(parent, {
+      FRAMELEAF_RELEASE: "frameleaf-v1.2.3",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const env = fs.readFileSync(
+      path.join(parent, "frameleaf-app", ".env"),
+      "utf8",
+    );
+    assert.match(env, /^FRAMELEAF_VERSION=frameleaf-v1\.2\.3$/m);
+    assert.doesNotMatch(env, /^FRAMELEAF_VERSION=latest$/m);
+    assert.doesNotMatch(env, /^DB_PASSWORD=postgres$/m);
+    for (const command of result.commands.filter((line) =>
+      line.startsWith("curl "),
+    ))
+      assert.match(command, /releases\/download\/frameleaf-v1\.2\.3\//);
+    assert.match(result.stdout, /Frameleaf is running/);
+    // Without a selection the example's latest tag is kept.
+    const unpinned = fs.mkdtempSync(
+      path.join(os.tmpdir(), "frameleaf-install-"),
+    );
+    try {
+      assert.equal(runInstaller(unpinned).status, 0);
+      assert.match(
+        fs.readFileSync(path.join(unpinned, "frameleaf-app", ".env"), "utf8"),
+        /^FRAMELEAF_VERSION=latest$/m,
+      );
+    } finally {
+      fs.rmSync(unpinned, { recursive: true, force: true });
+    }
+    const invalid = fs.mkdtempSync(
+      path.join(os.tmpdir(), "frameleaf-install-"),
+    );
+    try {
+      const refused = runInstaller(invalid, { FRAMELEAF_RELEASE: "1.2.3" });
+      assert.equal(refused.status, 16);
+      assert.deepEqual(refused.commands, []);
+    } finally {
+      fs.rmSync(invalid, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("a download that does not match the release checksums is never started", () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "frameleaf-install-"));
+  try {
+    const tampered = path.join(parent, "tampered-compose.yml");
+    fs.writeFileSync(tampered, "services: {}\n");
+    const result = runInstaller(parent, { INSTALL_TEST_COMPOSE: tampered });
+    assert.equal(result.status, 18, result.stderr);
+    assert.match(result.stderr, /does not match the release checksum/);
+    assert.deepEqual(
+      result.commands.map((command) => command.split(" ")[0]),
+      ["curl", "curl", "curl"],
+    );
+    assert.doesNotMatch(result.stdout, /Frameleaf is running/);
   } finally {
     fs.rmSync(parent, { recursive: true, force: true });
   }

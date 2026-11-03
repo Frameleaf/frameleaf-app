@@ -26,6 +26,35 @@ download_dot_env_file() {
   "${Curl[@]}" "$RepoUrl"/example.env -o ./.env
 }
 
+download_checksums() {
+  echo "Downloading release checksums..."
+  "${Curl[@]}" "$RepoUrl"/SHA256SUMS -o ./SHA256SUMS
+}
+
+# Every release publishes SHA256SUMS beside its files (the same list Frameleaf Manager verifies against the
+# signed release manifest). A download that does not match it is not used.
+verify_download() {
+  local -r name=$1 file=$2
+  local expected actual
+  expected=$(awk -v name="$name" '$2 == name { print $1 }' ./SHA256SUMS)
+  if [[ ! $expected =~ ^[a-f0-9]{64}$ ]]; then
+    echo "SHA256SUMS has no checksum for $name" >&2
+    return 1
+  fi
+  if command -v sha256sum >/dev/null; then
+    actual=$(sha256sum "$file" | awk '{ print $1 }')
+  elif command -v shasum >/dev/null; then
+    actual=$(shasum -a 256 "$file" | awk '{ print $1 }')
+  else
+    echo 'no sha256sum or shasum binary found; install coreutils and try again' >&2
+    return 1
+  fi
+  if [[ $actual != "$expected" ]]; then
+    echo "$name does not match the release checksum; refusing to use it" >&2
+    return 1
+  fi
+}
+
 generate_random_password() {
   echo "Generate random password for .env file..."
   local rand_pass
@@ -57,6 +86,37 @@ generate_random_password() {
   done <./.env
   if [[ $found -ne 1 ]]; then
     echo '.env does not contain the generated database password' >&2
+    return 1
+  fi
+}
+
+# A selected release runs its own images, not whatever latest is by then: the verified example.env pins
+# FRAMELEAF_VERSION to the release tag (image tags are the release tags, frameleaf-vX.Y.Z).
+pin_release_version() {
+  [[ -n ${FRAMELEAF_RELEASE:-} ]] || return 0
+  echo "Pinning FRAMELEAF_VERSION to ${FRAMELEAF_RELEASE} in .env..."
+  local line found=0
+  {
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line == 'FRAMELEAF_VERSION=latest' ]]; then
+        line="FRAMELEAF_VERSION=${FRAMELEAF_RELEASE}"
+        found=$((found + 1))
+      fi
+      printf '%s\n' "$line"
+    done <./.env
+  } >./.env.new || return 1
+  if [[ $found -ne 1 ]]; then
+    rm -f ./.env.new
+    echo '.env has no single FRAMELEAF_VERSION=latest line to pin to the selected release' >&2
+    return 1
+  fi
+  mv ./.env.new ./.env || return 1
+  found=0
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == "FRAMELEAF_VERSION=${FRAMELEAF_RELEASE}" ]] && found=1
+  done <./.env
+  if [[ $found -ne 1 ]]; then
+    echo '.env does not pin the selected release' >&2
     return 1
   fi
 }
@@ -100,7 +160,16 @@ EOF
 # MAIN
 main() {
   echo "Starting Frameleaf installation..."
-  local -r RepoUrl='https://github.com/Frameleaf/frameleaf-app/releases/latest/download'
+  # FRAMELEAF_RELEASE pins one release tag (frameleaf-vX.Y.Z); otherwise the latest release is installed.
+  local RepoUrl='https://github.com/Frameleaf/frameleaf-app/releases/latest/download'
+  if [[ -n ${FRAMELEAF_RELEASE:-} ]]; then
+    if [[ ! $FRAMELEAF_RELEASE =~ ^frameleaf-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+      echo "FRAMELEAF_RELEASE must be a release tag such as frameleaf-v1.2.3" >&2
+      return 16
+    fi
+    RepoUrl="https://github.com/Frameleaf/frameleaf-app/releases/download/${FRAMELEAF_RELEASE}"
+  fi
+  readonly RepoUrl
   local -a Curl
   if command -v curl >/dev/null; then
     Curl=(curl -fsSL)
@@ -122,6 +191,22 @@ main() {
   download_dot_env_file || {
     echo 'error downloading .env'
     return 12
+  }
+  download_checksums || {
+    echo 'error downloading release checksums'
+    return 17
+  }
+  verify_download docker-compose.yml ./docker-compose.yml || {
+    echo 'error verifying the downloaded Docker Compose file'
+    return 18
+  }
+  verify_download example.env ./.env || {
+    echo 'error verifying the downloaded .env'
+    return 18
+  }
+  pin_release_version || {
+    echo 'error pinning the selected release in .env'
+    return 19
   }
   generate_random_password || {
     echo 'error generating database password'

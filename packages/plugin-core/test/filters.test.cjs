@@ -155,3 +155,42 @@ test('unknown tag matching modes retain the forward-compatible continuation defa
     workflow: { continue: true },
   });
 });
+
+// M2 of the packages review: a workflow owner's pattern runs against file names anyone can upload,
+// in a plugin runtime with no backtracking limit, so the shapes that backtrack exponentially are
+// refused before they are compiled, and over-long patterns with them.
+for (const method of ['assetFileFilter', 'assetExifFilter']) {
+  for (const pattern of ['^(a+)+$', '^(a*)*b$', '(\\d?){2,}x', '((a+)b)+', '(?:a+)+', '^(a|b+)*$']) {
+    test(`${method} refuses the nested-quantifier pattern ${pattern} without running it`, () => {
+      const started = Date.now();
+      assert.throws(
+        () => invoke(method, 'a'.repeat(40) + '!', { pattern, matchType: 'regex', property: 'make' }),
+        /must not quantify a group/,
+      );
+      assert.ok(Date.now() - started < 1000);
+    });
+  }
+  test(`${method} refuses a pattern longer than 256 characters`, () => {
+    assert.throws(
+      () => invoke(method, 'x', { pattern: 'a'.repeat(257), matchType: 'regex', property: 'make' }),
+      /limited to 256 characters/,
+    );
+    assert.deepEqual(invoke(method, 'a'.repeat(256), { pattern: 'a'.repeat(256), matchType: 'regex', property: 'make' }), {
+      workflow: { continue: true },
+    });
+  });
+  for (const [pattern, value, expected] of [
+    ['^(a+)b(c+)$', 'aabcc', true],
+    ['^(?:img|dsc)_\\d{4}\\.(jpe?g|heic)$', 'IMG_0001.jpg', true],
+    ['^[(+*]+$', '(((', true],
+    ['\\(a+\\)+', '(a)(a)', true],
+    ['^(ab)+$', 'ababx', false],
+    ['(a+)?b', 'aab', true],
+  ]) {
+    test(`${method} still takes the ordinary pattern ${pattern} / ${value}`, () => {
+      assert.deepEqual(invoke(method, value, { pattern, matchType: 'regex', property: 'make' }), {
+        workflow: { continue: expected },
+      });
+    });
+  }
+}

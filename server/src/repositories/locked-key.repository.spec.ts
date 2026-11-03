@@ -3,8 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LockedKeyFile } from '@frameleaf/locked-crypto';
+import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
+import {
+  LOCKED_PEPPER_FILE,
+  LockedKeyRepository,
+  LockedPepperFileError,
+} from 'src/repositories/locked-key.repository.js';
 
 const userId = '7d3c2a1e-4b5f-4c6d-8e9f-0a1b2c3d4e5f';
 
@@ -34,12 +39,16 @@ const keyFile = (overrides: Partial<LockedKeyFile> = {}): LockedKeyFile => ({
 
 describe(LockedKeyRepository.name, () => {
   let media: string;
+  let identityDir: string | null;
   let sut: LockedKeyRepository;
+
+  const config = () => ({ getEnv: () => ({ frameleafCloud: { identityDir } }) }) as unknown as ConfigRepository;
 
   beforeEach(async () => {
     media = await fs.mkdtemp(join(tmpdir(), 'locked-keys-'));
+    identityDir = null;
     StorageCore.setMediaLocation(media);
-    sut = new LockedKeyRepository();
+    sut = new LockedKeyRepository(config());
   });
 
   afterEach(async () => {
@@ -141,6 +150,99 @@ describe(LockedKeyRepository.name, () => {
     expect(overwritten).toHaveLength(original.length);
     expect(overwritten!.toString('latin1')).not.toContain('frameleaf-locked-key');
     expect(overwritten!.subarray(-7).equals(original.subarray(-7))).toBe(false);
+  });
+
+  it('reads a format-2 key file (peppered PIN wrap)', async () => {
+    const file = keyFile({
+      format: 'frameleaf-locked-key/2',
+      wraps: [{ ...keyFile().wraps[0], pepper: { kdf: 'hkdf-sha256', id: Buffer.alloc(8, 9).toString('base64') } }],
+    });
+    await sut.write(file);
+    await expect(sut.read(userId)).resolves.toEqual(file);
+  });
+
+  describe('pepper', () => {
+    it('is made once, as 32 base64 bytes in a 0600 file in the identity directory, and read back by every instance', async () => {
+      const pepper = await sut.pepper();
+      expect(pepper).toHaveLength(32);
+      const path = join(media, 'frameleaf', 'identity', LOCKED_PEPPER_FILE);
+      const stat = await fs.stat(path);
+      expect(stat.mode & 0o777).toBe(0o600);
+      expect((await fs.stat(join(media, 'frameleaf', 'identity'))).mode & 0o777).toBe(0o700);
+      await expect(fs.readFile(path, 'utf8')).resolves.toBe(`${pepper.toString('base64')}\n`);
+      expect(await sut.pepper()).toEqual(pepper);
+      expect(await new LockedKeyRepository(config()).pepper()).toEqual(pepper);
+      // never under locked-keys: a copy of the key files must not carry it
+      await expect(fs.readdir(join(media, 'locked-keys')).catch(() => [])).resolves.toEqual([]);
+    });
+
+    it('lives in FRAMELEAF_IDENTITY_DIR when that is set, off the media root', async () => {
+      identityDir = await fs.mkdtemp(join(tmpdir(), 'locked-identity-'));
+      try {
+        const pepper = await sut.pepper();
+        await expect(fs.readFile(join(identityDir, LOCKED_PEPPER_FILE), 'utf8')).resolves.toBe(
+          `${pepper.toString('base64')}\n`,
+        );
+        await expect(fs.stat(join(media, 'frameleaf'))).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        await fs.rm(identityDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reads a pepper an operator restored, and refuses a damaged one instead of replacing it', async () => {
+      const directory = join(media, 'frameleaf', 'identity');
+      await fs.mkdir(directory, { recursive: true });
+      const restored = Buffer.alloc(32, 5);
+      await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), `${restored.toString('base64')}\n`);
+      expect(await sut.pepper()).toEqual(restored);
+
+      await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), 'not base64 at all!!\n');
+      const fresh = new LockedKeyRepository(config());
+      await expect(fresh.pepper()).rejects.toThrow(/damaged/);
+      await expect(fresh.pepper()).rejects.toMatchObject({ name: 'LockedPepperFileError', reason: 'damaged' });
+      await expect(fs.readFile(join(directory, LOCKED_PEPPER_FILE), 'utf8')).resolves.toBe('not base64 at all!!\n');
+      await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), `${Buffer.alloc(8, 1).toString('base64')}\n`);
+      await expect(fresh.pepper()).rejects.toThrow(/damaged/);
+      // a failure is not remembered
+      await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), `${restored.toString('base64')}\n`);
+      expect(await fresh.pepper()).toEqual(restored);
+    });
+
+    it('refuses to make a pepper while a key file holds a wrap made with the lost one', async () => {
+      const peppered = keyFile({
+        format: 'frameleaf-locked-key/2',
+        wraps: [{ ...keyFile().wraps[0], pepper: { kdf: 'hkdf-sha256', id: Buffer.alloc(8, 9).toString('base64') } }],
+      });
+      await sut.write(peppered);
+      // another person's unpeppered file does not hide the peppered one
+      await sut.write(keyFile({ userId: 'a1b2c3d4-0000-4000-8000-000000000001' }));
+      const path = join(media, 'frameleaf', 'identity', LOCKED_PEPPER_FILE);
+
+      await expect(sut.pepper()).rejects.toThrow(/missing.*Restore it from a backup/);
+      await expect(sut.pepper()).rejects.toBeInstanceOf(LockedPepperFileError);
+      await expect(sut.pepper()).rejects.toMatchObject({ reason: 'missing', message: expect.stringContaining(path) });
+      await expect(fs.stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+      // the operator restores the file; nothing is remembered from the failure
+      await fs.mkdir(join(path, '..'), { recursive: true });
+      const restored = Buffer.alloc(32, 5);
+      await fs.writeFile(path, `${restored.toString('base64')}\n`);
+      expect(await sut.pepper()).toEqual(restored);
+    });
+
+    it('makes a pepper when the key files hold only unpeppered (format-1) wraps', async () => {
+      await sut.write(keyFile());
+      const pepper = await sut.pepper();
+      expect(pepper).toHaveLength(32);
+      await expect(fs.readFile(join(media, 'frameleaf', 'identity', LOCKED_PEPPER_FILE), 'utf8')).resolves.toBe(
+        `${pepper.toString('base64')}\n`,
+      );
+    });
+
+    it('two workers making the pepper at once end with one pepper', async () => {
+      const other = new LockedKeyRepository(config());
+      const [a, b] = await Promise.all([sut.pepper(), other.pepper()]);
+      expect(a).toEqual(b);
+    });
   });
 
   it('reads null for a file that is not a version-1 key file for that person', async () => {

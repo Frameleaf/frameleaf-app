@@ -220,14 +220,58 @@ test('requests bind Manager, device, installation, action, body and reject durab
       () => new DesktopGrants(store, security).authorize(signed, context),
       /desktop_request_replayed/,
     );
+    // A changed MANAGER_ORIGIN rotates the grant epoch instead of refusing to start (review M1).
     const otherOrigin = new Security(
       store,
       'https://other.test:9443',
     );
+    const rotated = new DesktopGrants(store, otherOrigin);
+    assert.equal(rotated.identity.id, grants.identity.id);
+    assert.equal(rotated.identity.origin, 'https://other.test:9443');
     assert.throws(
-      () => new DesktopGrants(store, otherOrigin),
-      /desktop_manager_identity_changed/,
+      () => rotated.authorize(proof(grants, grant), context),
+      /desktop_grant_invalid/,
     );
+  });
+});
+test('changing MANAGER_ORIGIN after pairing revokes grants and pending pairings, and Manager still starts', async (t) => {
+  await fixture(async (grants, store, security) => {
+    const { grant } = await paired(grants);
+    const pending = await grants.approve(password, { ...details, deviceId: randomUUID() });
+    assert.equal(grants.list().length, 1);
+    // Unchanged origin: nothing is rotated across a Manager restart.
+    assert.equal(new DesktopGrants(store, security).list().length, 1);
+    assert.equal(store.get('desktop-manager-identity-rotation'), null);
+    const logged: string[] = [];
+    t.mock.method(console, 'error', (line: string) => logged.push(line));
+    const moved = new DesktopGrants(store, new Security(store, 'http://tower.local:2282'));
+    assert.equal(moved.identity.id, grants.identity.id, 'the Manager identity survives; only its origin moves');
+    assert.equal(moved.identity.origin, 'http://tower.local:2282');
+    assert.deepEqual(moved.list(), []);
+    assert.equal(store.db.prepare('SELECT count(*) AS count FROM desktop_pairings').get()!.count, 0);
+    assert.equal(store.db.prepare('SELECT count(*) AS count FROM desktop_nonces').get()!.count, 0);
+    assert.throws(() => moved.authorize(proof(moved, grant), context), /desktop_grant_invalid/);
+    assert.throws(
+      () =>
+        moved.redeem({
+          pairingId: pending.pairingId,
+          secret: pending.secret,
+          signature: signature(device.secret, pairingMessage(pending)),
+        }),
+      /desktop_pairing_unavailable/,
+    );
+    const rotation = store.get<any>('desktop-manager-identity-rotation');
+    assert.equal(rotation.from, origin);
+    assert.equal(rotation.to, 'http://tower.local:2282');
+    assert.equal(rotation.revokedGrants, 1);
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /MANAGER_ORIGIN changed from https:\/\/manager.test:9443 to http:\/\/tower.local:2282; 1 desktop grant/);
+    // Devices pair again under the new origin.
+    const again = await paired(moved);
+    assert.equal(again.grant.origin, 'http://tower.local:2282');
+    assert.equal(moved.authorize(proof(moved, again.grant), context).id, again.grant.id);
+    // Reopening with the same new origin keeps the new epoch.
+    assert.equal(new DesktopGrants(store, new Security(store, 'http://tower.local:2282')).list().length, 1);
   });
 });
 test('recent Manager authentication gates every destructive scope and renews explicitly', async (t) => {

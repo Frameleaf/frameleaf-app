@@ -272,10 +272,14 @@ def test_custom_consent_never_loads_another_repositorys_cached_python(tmp_path, 
     monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", acquire)
     monkeypatch.setattr(transformers.AutoProcessor, "from_pretrained", processor)
     monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", causal_model)
-    untrusted_model.download()
+    # An owner outside the curated list that the administrator has not trusted is refused before any download.
+    with pytest.raises(ModelUnavailableError, match="not from a curated repository owner"):
+        untrusted_model.download()
+    assert acquired == []
+    assert not untrusted_model.cached
     assert not trusted_model.cached
     trusted_model.load()
-    assert acquired == [attacker, trusted]
+    assert acquired == [trusted]
     processor.assert_called_once_with(str(trusted_model.model_path), trust_remote_code=True, local_files_only=True)
     assert causal_model.call_args.args == (str(trusted_model.model_path),)
     assert json.loads((trusted_model.model_path / "config.json").read_text())["repository"] == trusted

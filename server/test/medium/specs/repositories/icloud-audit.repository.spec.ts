@@ -40,6 +40,19 @@ const verified: VerifiedMedia = {
 /** Real PostgreSQL transactions and CAS predicates; no mock of audit publication or cleanup. */
 describe(ICloudAuditRepository.name, () => {
   let db: Kysely<DB>;
+
+  /** Polls the database clock (the authority the repository compares against) until the row has expired. */
+  const untilExpired = async (query: {
+    execute: (executor: Kysely<DB>) => Promise<{ rows: { expired: boolean }[] }>;
+  }) => {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if ((await query.execute(db)).rows[0]?.expired) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('row did not expire');
+  };
   let sut: ICloudAuditRepository;
   let sync: ICloudSyncRepository;
   let identities: ICloudIdentityRepository;
@@ -749,11 +762,12 @@ describe(ICloudAuditRepository.name, () => {
 
   it('expires a resource lease during final validation without certifying its bytes', async () => {
     const fixture = await claimed();
-    await sql`UPDATE public.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '1 second'
+    await sql`UPDATE public.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '200 milliseconds'
       WHERE id=${fixture.resource.id}::uuid`.execute(db);
     expect(
       await sut.publishMatch(fixture.authority, fixture.resource, verified, async () => {
-        await new Promise((resolve) => setTimeout(resolve, 1100));
+        await untilExpired(sql`SELECT ("leaseExpiresAt"<clock_timestamp()) IS TRUE AS expired
+          FROM public.icloud_resource WHERE id=${fixture.resource.id}::uuid`);
         return verified;
       }),
     ).toBe(false);
@@ -832,11 +846,12 @@ describe(ICloudAuditRepository.name, () => {
 
   it('rechecks PIN expiry for a Locked original after final validation', async () => {
     const fixture = await claimed(true);
-    await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '1 second'
+    await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '200 milliseconds'
       WHERE id=${fixture.auth.session!.id}::uuid`.execute(db);
     expect(
       await sut.publishMatch(fixture.authority, fixture.resource, verified, async () => {
-        await new Promise((resolve) => setTimeout(resolve, 1100));
+        await untilExpired(sql`SELECT ("pinExpiresAt"<clock_timestamp()) IS TRUE AS expired
+          FROM session WHERE id=${fixture.auth.session!.id}::uuid`);
         return verified;
       }),
     ).toBe(false);

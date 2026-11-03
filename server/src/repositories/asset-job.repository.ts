@@ -647,12 +647,20 @@ export class AssetJobRepository {
     return this.storageTemplateAssetQuery().where('asset.visibility', '!=', AssetVisibility.Hidden).stream();
   }
 
+  /**
+   * Everything whose trash period is over. An external original the library scan found missing is
+   * `active` with a deletion date and `isOffline`: it is the scan's to bring back (or to keep marking),
+   * never the trash's to purge, so it stays out of here until the owner trashes it themselves.
+   */
   @GenerateSql({ params: [DummyValue.DATE], stream: true })
   streamForDeletedJob(trashedBefore: Date) {
     return this.db
       .selectFrom('asset')
       .select(['id', 'isOffline'])
       .where('asset.deletedAt', '<=', trashedBefore)
+      .where((eb) =>
+        eb.or([eb('asset.isOffline', '=', sql.lit(false)), eb('asset.status', '!=', sql.lit(AssetStatus.Active))]),
+      )
       .stream();
   }
 

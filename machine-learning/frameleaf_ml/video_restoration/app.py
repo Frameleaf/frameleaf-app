@@ -25,19 +25,20 @@ import secrets
 import shutil
 import tempfile
 import threading
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import ValidationError
 from starlette.background import BackgroundTask
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..env_aliases import read_env
 from .models import RestorationFailure, RestorationRegistry, adapter_for
@@ -60,6 +61,12 @@ MAX_AUTH_HEADER_LENGTH = 8 * 1024
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 BUSY_RETRY_AFTER_S = 30
 DEFAULT_REFRESH_S = 300
+# The upload limit derived from the manifest: the raw 16-bit RGB frames of the largest qualified clip.
+# A source compressed to more than its own raw frames is never a sensible input, and a bound set
+# before the body is read keeps a bogus upload from filling the work directory first.
+UPLOAD_BYTES_PER_PIXEL = 6
+MIN_UPLOAD_BYTES = 64 * 1024 * 1024
+RESTORE_PATH = "/restoration/restore"
 
 
 def _int_env(env: Mapping[str, str], name: str, default: int) -> int:
@@ -83,6 +90,8 @@ class WorkerSettings:
     port: int
     # How often the published capability report is rebuilt; 0 verifies at startup only.
     refresh_s: int = DEFAULT_REFRESH_S
+    # Upload bytes per request; 0 derives the limit from the models' qualified limits.
+    max_upload_bytes: int = 0
 
     @classmethod
     def from_env(cls) -> "WorkerSettings":
@@ -98,6 +107,7 @@ class WorkerSettings:
             host=env.get("FRAMELEAF_RESTORATION_HOST", "0.0.0.0"),
             port=_int_env(env, "FRAMELEAF_RESTORATION_PORT", 3004),
             refresh_s=_int_env(env, "FRAMELEAF_RESTORATION_REFRESH_S", DEFAULT_REFRESH_S),
+            max_upload_bytes=_int_env(env, "FRAMELEAF_RESTORATION_MAX_UPLOAD_BYTES", 0),
         )
 
 
@@ -127,6 +137,78 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def upload_limit(registry: RestorationRegistry) -> int:
+    """The largest upload any qualified model could use, from the manifest limits."""
+    largest = max(
+        (model.maxFrames * model.maxInputLongEdge**2 * UPLOAD_BYTES_PER_PIXEL for model in registry.report().models),
+        default=0,
+    )
+    return max(MIN_UPLOAD_BYTES, largest)
+
+
+class UploadTooLarge(HTTPException):
+    """Raised from the request's receive channel once a streamed body passes the limit.
+
+    The middleware has answered the request by then: the form parser reads the body inside a task
+    group, so what reaches FastAPI is an exception group it reports as a plain 400, and whatever the
+    app sends after the answer is dropped."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(413, f"the upload exceeds this worker's limit of {limit} bytes")
+        self.limit = limit
+
+
+def upload_too_large_response(limit: int) -> JSONResponse:
+    body = RestorationError(code=RestorationErrorCode.UNSUPPORTED_INPUT, message=UploadTooLarge(limit).detail)
+    return JSONResponse(body.model_dump(mode="json"), status_code=413)
+
+
+class UploadLimitMiddleware:
+    """Refuse a restoration upload beyond the limit before it is buffered.
+
+    A declared Content-Length is checked before the body is read at all; a body without one is
+    counted as it streams and cut off at the limit, so the work directory and the multipart spool
+    never hold more than the limit.
+    """
+
+    def __init__(self, app: ASGIApp, limit: Callable[[], int]) -> None:
+        self.app = app
+        self.limit = limit
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"].rstrip("/") != RESTORE_PATH:
+            await self.app(scope, receive, send)
+            return
+        limit = self.limit()
+        declared = Headers(scope=scope).get("content-length", "")
+        if declared.isdigit() and int(declared) > limit:
+            await upload_too_large_response(limit)(scope, receive, send)
+            return
+        received = 0
+        app_started = False
+        answered = False
+
+        async def guarded_send(message: Message) -> None:
+            nonlocal app_started
+            app_started = True
+            if not answered:
+                await send(message)
+
+        async def bounded_receive() -> Message:
+            nonlocal received, answered
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    if not app_started and not answered:
+                        answered = True
+                        await upload_too_large_response(limit)(scope, receive, send)
+                    raise UploadTooLarge(limit)
+            return message
+
+        await self.app(scope, bounded_receive, guarded_send)
+
+
 def remove_work_dir(path: Path) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
@@ -150,6 +232,7 @@ def create_app(
     refresh_on_startup: bool = True,
     refresh_s: int = DEFAULT_REFRESH_S,
     adapter_factory: AdapterFactory = adapter_for,
+    max_upload_bytes: int | None = None,
 ) -> FastAPI:
     busy = threading.Lock()
     stop = threading.Event()
@@ -186,6 +269,15 @@ def create_app(
     # The CLI server calls this before Uvicorn waits for active HTTP requests.
     app.state.shutdown_restoration = shutdown_restoration
     app.add_middleware(BearerAuthMiddleware, expected_token=auth_token)
+    app.add_middleware(
+        UploadLimitMiddleware,
+        limit=(lambda: max_upload_bytes) if max_upload_bytes else partial(upload_limit, registry),
+    )
+
+    @app.exception_handler(UploadTooLarge)
+    async def upload_too_large(_: Request, error: Exception) -> JSONResponse:
+        assert isinstance(error, UploadTooLarge)
+        return upload_too_large_response(error.limit)
 
     @app.get("/")
     def root() -> JSONResponse:
@@ -338,5 +430,6 @@ def create_app_from_env() -> tuple[FastAPI, WorkerSettings]:
         work_root=settings.work_root,
         auth_token=settings.auth_token,
         refresh_s=settings.refresh_s,
+        max_upload_bytes=settings.max_upload_bytes or None,
     )
     return app, settings
