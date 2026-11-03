@@ -198,6 +198,7 @@ export class CanonicalAssetWriter {
           await tx.query('SELECT pg_advisory_xact_lock_shared($1::bigint)', [BUDDY_CAPTURE_LOCK]);
           for (const path of files.map((file) => file.absolutePath).sort())
             await tx.query('SELECT pg_advisory_xact_lock($1::bigint)', [filePathLockKey(path)]);
+          const destinationIdentities = new Set<string>();
           for (const rootId of new Set(files.map((file) => file.root.id))) {
             const selected = files.filter((file) => file.root.id === rootId);
             await verifyImportFiles(
@@ -210,6 +211,7 @@ export class CanonicalAssetWriter {
                 role,
               })),
               { device: selected[0].root.device, inode: selected[0].root.inode },
+              destinationIdentities,
             );
           }
           // Never upsert a path: a collision must not change another asset's bytes or ownership.

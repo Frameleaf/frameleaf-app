@@ -101,6 +101,59 @@ async function checksum(file: FileHandle): Promise<string> {
   return hash.digest('hex');
 }
 
+/** Bind aliases can share a directory entry without sharing a textual path or mount ID. */
+export async function assertImportDestinations(
+  journal: ImportTransferJournal,
+  operationId: string,
+  roots: Record<string, ImportCopyRoot>,
+): Promise<void> {
+  const files =
+    journal.review(operationId).plan?.files ??
+    journal.files(operationId).map(({ file }) => file);
+  const parents = new Set<string>(),
+    identities = new Set<string>();
+  try {
+    for (const file of files) {
+      const root = roots[file.destinationRoot];
+      if (!root) throw new Refusal('import_destination_root_missing');
+      const directory = await parent(root, file.destinationPath, false);
+      try {
+        const identity = await directory.stat({ bigint: true });
+        const name = file.destinationPath.split('/').at(-1)!;
+        const key = `${identity.dev}:${identity.ino}:${name}`;
+        if (parents.has(key)) throw new Refusal('import_destination_alias');
+        parents.add(key);
+        let target: FileHandle;
+        try {
+          target = await open(
+            fdPath(directory, name),
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+          );
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
+        }
+        try {
+          const entry = await target.stat({ bigint: true });
+          if (!entry.isFile()) throw new Refusal('import_destination_invalid');
+          const key = `${entry.dev}:${entry.ino}`;
+          if (identities.has(key))
+            throw new Refusal('import_destination_alias');
+          identities.add(key);
+        } finally {
+          await target.close();
+        }
+      } finally {
+        await directory.close();
+      }
+    }
+  } catch (error) {
+    throw error instanceof Refusal
+      ? error
+      : new Error('import_destination_inventory_unavailable');
+  }
+}
+
 /** Caller supplies a private, exclusively fenced destination namespace bound to the reviewed plan. Never deletes or overwrites bytes. */
 export async function copyImportFiles(
   journal: ImportTransferJournal,
@@ -112,6 +165,8 @@ export async function copyImportFiles(
     throw new Refusal('import_copy_requires_linux');
   let count = 0,
     total = 0n;
+  let reviewed = false;
+  const destinations = new Set<string>();
   try {
     for (const entry of journal.files(operationId)) {
       const { file, state } = entry;
@@ -140,6 +195,10 @@ export async function copyImportFiles(
           true,
         );
         handles.push(destinationParent);
+        if (!reviewed) {
+          await assertImportDestinations(journal, operationId, roots);
+          reviewed = true;
+        }
         const sourceParentIdentity = await sourceParent.stat({ bigint: true }),
           destinationParentIdentity = await destinationParent.stat({
             bigint: true,
@@ -215,6 +274,10 @@ export async function copyImportFiles(
           (state === 'verified' && target.size !== before.size)
         )
           throw new Refusal('import_copy_destination_changed');
+        const destinationIdentity = `${target.dev}:${target.ino}`;
+        if (destinations.has(destinationIdentity))
+          throw new Refusal('import_destination_alias');
+        destinations.add(destinationIdentity);
         const prefix = Number(target.size),
           buffer = Buffer.alloc(1024 * 1024),
           existing = Buffer.alloc(1024 * 1024);

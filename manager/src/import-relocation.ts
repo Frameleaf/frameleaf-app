@@ -9,6 +9,7 @@ import {
   openImportRoot,
   importFdPath,
   importFileStable,
+  assertImportDestinations,
   type ImportCopyRoot,
 } from './import-copy.js';
 import type {
@@ -117,6 +118,7 @@ const transfer = async (
   const observedMounts = new Map<string, string>();
   let count = 0,
     total = 0n;
+  let reviewed = false;
   try {
     for (const { file, state } of journal.files(operationId)) {
       if (
@@ -197,6 +199,10 @@ const transfer = async (
         for (let index = 0; index < parents.length; index++)
           if ((await mountId(parents[index])) !== mountIds[index])
             throw new Refusal('import_relocation_mount_changed');
+        if (!rollback && !reviewed) {
+          await assertImportDestinations(journal, operationId, roots);
+          reviewed = true;
+        }
         const source = await openFile(sourceParent, names[0]);
         if (source) handles.push(source);
         const destination = await openFile(destinationParent, names[1]);

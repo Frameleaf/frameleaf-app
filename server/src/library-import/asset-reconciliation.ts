@@ -247,6 +247,7 @@ export async function reconcileImportedAssets(
         expected.map(({ id, ownerId, metadata }) => ({ id: String(id), ownerId, tags: metadata.tags })),
       );
       let bytes = 0n;
+      const destinationIdentities = new Set<string>();
       for (const files of Map.groupBy(
         expected.flatMap((photo) => photo.files),
         (file) => file.root.id,
@@ -262,6 +263,7 @@ export async function reconcileImportedAssets(
             role,
           })),
           { device: root.device, inode: root.inode },
+          destinationIdentities,
         );
         const expectedBytes = files.reduce((total, file) => total + BigInt(file.bytes), 0n);
         if (result.files !== files.length || result.bytes !== String(expectedBytes)) mismatch();

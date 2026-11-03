@@ -157,10 +157,15 @@ it('keeps the bound writer intent isolated from mutations of a prepared result',
   expect(writer.prepare(item)).toEqual(original);
   vi.mocked(verifyImportFiles).mockRejectedValue(new BundleVerificationError('BUNDLE_FILE_MISMATCH'));
   await expect(writer.write(item)).rejects.toThrow('BUNDLE_FILE_MISMATCH');
-  expect(verifyImportFiles).toHaveBeenCalledWith(original.files[0].root.path, expect.any(Array), {
-    device: original.files[0].root.device,
-    inode: original.files[0].root.inode,
-  });
+  expect(verifyImportFiles).toHaveBeenCalledWith(
+    original.files[0].root.path,
+    expect.any(Array),
+    {
+      device: original.files[0].root.device,
+      inode: original.files[0].root.inode,
+    },
+    expect.any(Set),
+  );
 });
 
 it.each(['type', 'clock', 'name'])('refuses changed sealed %s before touching the destination', (field) => {
