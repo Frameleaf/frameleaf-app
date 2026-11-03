@@ -1750,6 +1750,60 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it.each([false, true])(
+      'matches each retained face in its own coordinate frame (imported: %s)',
+      async (preserveImportedFaces) => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .face({
+            imageWidth: 800,
+            imageHeight: 1000,
+            boundingBoxX1: 200,
+            boundingBoxY1: 200,
+            boundingBoxX2: 400,
+            boundingBoxY2: 400,
+            personGroupId: newUuid(),
+          })
+          .face({
+            imageWidth: 200,
+            imageHeight: 250,
+            boundingBoxX1: 125,
+            boundingBoxY1: 125,
+            boundingBoxX2: 175,
+            boundingBoxY2: 175,
+            personGroupId: newUuid(),
+          })
+          .build();
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        const embeddings = ['[1,2,3]', '[4,5,6]'];
+        const boxes = [
+          { x1: 100, y1: 100, x2: 200, y2: 200 },
+          { x1: 250, y1: 250, x2: 350, y2: 350 },
+        ];
+        await sut.publishDetectedFaces(
+          asset.id,
+          {
+            previewPath: asset.files[0].path,
+            checksum: asset.checksum.toString('hex'),
+            imageWidth: 400,
+            imageHeight: 500,
+            faces: boxes.map((boundingBox, index) => ({ boundingBox, embedding: embeddings[index] })),
+          },
+          preserveImportedFaces,
+        );
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [],
+          [],
+          asset.faces.map((face, index) => ({
+            faceId: face.id,
+            embedding: embeddings[index],
+          })),
+        );
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
     it('keeps face rows and recognition intents unpublished until acceptance, refusing changed previews', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
       const face = AssetFaceFactory.create({ assetId: asset.id });

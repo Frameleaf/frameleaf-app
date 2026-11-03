@@ -533,9 +533,9 @@ describe(PersonService.name, () => {
       },
     );
 
-    it.each([false, true])(
-      'repairs an imported ML face without face_search, preserving decisions (corrected=%s)',
-      async (corrected) => {
+    it.each([false, true].flatMap((corrected) => [0.5, 1, 2].map((scale) => ({ corrected, scale }))))(
+      'repairs an imported ML face without face_search, preserving decisions (corrected=$corrected, scale=$scale)',
+      async ({ corrected, scale }) => {
         const { sut, ctx } = setup();
         const { user } = await ctx.newUser();
         const { person } = await ctx.newPerson({ ownerId: user.id });
@@ -571,15 +571,15 @@ describe(PersonService.name, () => {
         expect(await readEmbedding()).toEqual([]);
         const embedding = newEmbedding();
         ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
-          imageHeight: assetFace.imageHeight,
-          imageWidth: assetFace.imageWidth,
+          imageHeight: assetFace.imageHeight * scale,
+          imageWidth: assetFace.imageWidth * scale,
           faces: [
             {
               boundingBox: {
-                x1: assetFace.boundingBoxX1,
-                y1: assetFace.boundingBoxY1,
-                x2: assetFace.boundingBoxX2,
-                y2: assetFace.boundingBoxY2,
+                x1: assetFace.boundingBoxX1 * scale,
+                y1: assetFace.boundingBoxY1 * scale,
+                x2: assetFace.boundingBoxX2 * scale,
+                y2: assetFace.boundingBoxY2 * scale,
               },
               embedding,
               score: 1,

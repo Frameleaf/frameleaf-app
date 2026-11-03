@@ -1084,16 +1084,19 @@ export class PersonService extends BaseService {
         }
       }
 
-      const heightScale = imageHeight / (currentAsset.faces[0]?.imageHeight || 1);
-      const widthScale = imageWidth / (currentAsset.faces[0]?.imageWidth || 1);
       for (const { boundingBox, embedding } of faces) {
-        const scaledBox = {
-          x1: boundingBox.x1 * widthScale,
-          y1: boundingBox.y1 * heightScale,
-          x2: boundingBox.x2 * widthScale,
-          y2: boundingBox.y2 * heightScale,
-        };
-        const match = currentAsset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
+        const match = currentAsset.faces.find((face) => {
+          const widthScale = face.imageWidth / imageWidth;
+          const heightScale = face.imageHeight / imageHeight;
+          return (
+            this.iou(face, {
+              x1: boundingBox.x1 * widthScale,
+              y1: boundingBox.y1 * heightScale,
+              x2: boundingBox.x2 * widthScale,
+              y2: boundingBox.y2 * heightScale,
+            }) > 0.5
+          );
+        });
 
         if (match) {
           // Keep the face identity and owner decisions while refreshing derived search data.
