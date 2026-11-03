@@ -117,7 +117,7 @@ export async function readPiwigoManifest(
     while (current !== undefined) {
       if (seen.has(current) || !categories.has(current)) return refuse('PIWIGO_CATEGORY_GRAPH_INVALID');
       seen.add(current);
-      const parent = categories.get(current)!.id_uppercat;
+      const parent: PiwigoRow['id_uppercat'] = categories.get(current)!.id_uppercat;
       current = parent === null ? undefined : key(parent);
     }
   }
