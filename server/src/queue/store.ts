@@ -1004,10 +1004,12 @@ export class SqlQueueStore {
 
   /** Caller holds setup authority and catalogue/run locks; never replay cancelled or unaudited work. */
   async retryImportedWork(runId: string, db: Executor) {
+    // Producer retries would reopen the import's frozen inventory.
     for (;;) {
       const { rows } = await sql<{ id: string }>`WITH RECURSIVE eligible AS (
         SELECT j.id,j."parentId",j.state FROM job j
         WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
+          AND NOT EXISTS (SELECT 1 FROM job_selection s WHERE s."producerId"=j.id)
           AND j.state IN ('failed','blocked')
           AND (j."dedupKey" IS NULL OR NOT EXISTS (
             SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
