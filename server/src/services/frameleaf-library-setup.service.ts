@@ -146,6 +146,17 @@ export class FrameleafLibrarySetupService {
         await this.startImportedRegeneration(previous, db);
         return;
       }
+      if (retry && previous?.phase === 'needs-attention') {
+        await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+        const imported = await this.importedRun(db, true);
+        if (
+          this.importedSetupMatches(previous, imported) &&
+          imported?.journal.status === 'activated' &&
+          imported.run?.enumerationDone &&
+          imported.run.selection.managerSetup?.startedAt
+        )
+          await this.jobs.retryImportedWork(imported.run.id, db);
+      }
       const ml = process.env.FRAMELEAF_MANAGER_ML_ENABLED;
       let processingChoiceApplied = previous?.processingChoiceApplied ?? false;
       if (
