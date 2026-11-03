@@ -10,7 +10,6 @@
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
-  import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
@@ -253,8 +252,13 @@
   data-theme={appTheme}
 >
   <SkipLink text={$t('skip_to_content')} />
-  <!-- FL-1146: after an Immich import, the setup bar sits above the bar's row and adds to its height. -->
-  <SetupBar />
+  <!-- FL-1146: after an Immich import, the setup bar sits above the bar's row and adds to its height. Only
+       administrators see it, so only they load it. -->
+  {#if authManager.user?.isAdmin}
+    {#await import('$lib/components/frameleaf/SetupBar.svelte') then { default: SetupBar }}
+      <SetupBar />
+    {/await}
+  {/if}
   <div class="fl-topbar-grid">
     <!-- Brand and workspaces share the bar's leading track; on phones they sit in the grid directly. -->
     <div class="fl-topbar-start">
