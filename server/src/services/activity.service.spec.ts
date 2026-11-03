@@ -245,7 +245,7 @@ describe(ActivityService.name, () => {
       });
     });
 
-    it('refuses a reaction on an item the caller cannot read, whatever their hidden-content setting', async () => {
+    it('refuses a reaction on an item a caller who hides content cannot read', async () => {
       const [albumId, assetId, userId] = newUuids();
 
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
@@ -253,10 +253,13 @@ describe(ActivityService.name, () => {
       mocks.album.getAssetIds.mockResolvedValue(new Set([assetId]));
 
       await expect(
-        sut.create(AuthFactory.create({ id: userId }), { albumId, assetId, type: ReactionType.COMMENT, comment: 'hi' }),
+        sut.create(
+          { ...AuthFactory.create({ id: userId }), hideNsfwAssets: true },
+          { albumId, assetId, type: ReactionType.COMMENT, comment: 'hi' },
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userId, new Set([assetId]), undefined);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userId, new Set([assetId]), undefined, true);
       expect(mocks.activity.create).not.toHaveBeenCalled();
     });
 
