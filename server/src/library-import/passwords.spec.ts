@@ -3,7 +3,11 @@ import { inspect } from 'node:util';
 import argonVectors from 'src/library-import/fixtures/password-argon2-vectors.json' with { type: 'json' };
 import piwigoVectors from 'src/library-import/fixtures/password-piwigo-vectors.json' with { type: 'json' };
 import vectors from 'src/library-import/fixtures/password-vectors.json' with { type: 'json' };
-import { ImportedPassword, verifyImportedPassword } from 'src/library-import/passwords.js';
+import {
+  ImportedPassword,
+  captureImportedPasswordContext,
+  verifyImportedPassword,
+} from 'src/library-import/passwords.js';
 
 const password = 'Frameleaf migration ✓ 123';
 const context = {
@@ -184,4 +188,29 @@ it.each(piwigoVectors.legacyMd5)('preserves the native legacy Piwigo verifier: $
   const credential = await ImportedPassword.fromSource(context, 'piwigo-password', vector.hash);
   expect(await verifyImportedPassword(vector.password, credential.forImport())).toBe(vector.valid);
   expect(await verifyImportedPassword('wrong', credential.forImport())).toBe(vector.wrong);
+});
+
+it('captures a validated, immutable owner mapping without retaining caller authority', () => {
+  const input = { ...context };
+  const captured = captureImportedPasswordContext(input);
+  input.sourceUserId = 'other-owner';
+  expect(captured).toEqual(context);
+  expect(Object.isFrozen(captured)).toBe(true);
+  expect(() => Object.assign(captured, { sourceUserId: 'other-owner' })).toThrow();
+});
+it('refuses malformed mappings and throwing properties without disclosing their values', () => {
+  for (const input of [
+    { ...context, sourceUserId: '' },
+    { ...context, destinationUserId: 'private-invalid-identity' },
+    { ...context, extra: 'private-unreviewed-authority' },
+    {
+      ...context,
+      get sourceUserId() {
+        throw new Error('private-getter-diagnostic');
+      },
+    },
+  ])
+    expect(() => captureImportedPasswordContext(input)).toThrow(
+      /^Imported password refused: SOURCE_PASSWORD_UNSUPPORTED$/,
+    );
 });
