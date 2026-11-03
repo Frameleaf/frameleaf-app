@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { type ImportDatabase } from 'src/immich-import/types.js';
+import { readLibraryImportActivation, sealLibraryImportActivation } from 'src/library-import/activation-proof.js';
 import { LibraryImportController } from 'src/library-import/controller.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
@@ -120,6 +121,20 @@ it('coordinates protected source retention, canonical owners and independent rea
   expect(owner).toEqual({ email: 'owner@example.test', importClaimPending: true });
   expect(JSON.stringify(await controller.status())).not.toContain('owner@example.test');
   expect((await controller.resume(owners, descriptor, stream())).run?.status).toBe('verifying');
+});
+
+it('retains the actual canonical verification report through PostgreSQL JSONB without exposing private inventory', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const report = await controller.verify();
+  const sealed = sealLibraryImportActivation(context, report, undefined, new Date().toISOString());
+  const [row] = await connection.db.query('SELECT $1::text::jsonb AS payload', [JSON.stringify(sealed.payload)]);
+  const restored = readLibraryImportActivation({ payload: row.payload, sha256: sealed.sha256 }, context);
+  expect(restored.report).toEqual(report);
+  expect(restored.manager).toBeNull();
+  expect(JSON.stringify(restored.report)).not.toMatch(/owner@example|Imported owner|photos/);
+  expect((await controller.status()).run?.status).toBe('verifying');
 });
 it('refuses an empty destination before retaining a journal that would block administrator setup', async () => {
   await sql`TRUNCATE public."user",public.cluster_group CASCADE`.execute(db);

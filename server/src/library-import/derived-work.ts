@@ -138,7 +138,9 @@ export async function prepareLibraryImportWork(
         prepared: true,
       };
       const { rows: runs } = await sql<{ kind: string; valid: boolean; managed: boolean; setup: unknown }>`select kind,
-        (selection - 'managerSetup'=${JSON.stringify(selection)}::text::jsonb and not "enumerationDone" and "finishedAt" is null)
+        (selection - 'managerSetup'=${JSON.stringify(selection)}::text::jsonb
+          and ("finishedAt" is null or ("enumerationDone" and not exists (
+            select 1 from job_run_item where "runId"=job_run.id))))
           as valid,selection ? 'managerSetup' as managed,selection->'managerSetup' as setup
           from job_run where id=${runId}::uuid for update`.execute(tx);
       if (runs[0] && (runs[0].kind !== LIBRARY_IMPORT_DERIVED_RUN_KIND || !runs[0].valid))

@@ -1055,6 +1055,11 @@ export class JobRepository {
       manager,
     );
   }
+  async dispatchImportedLibraryWork(context: ReviewedImportContext, manager?: ManagerLibrarySetup): Promise<string> {
+    const runId = await this.prepareImportedLibraryWork(context, manager);
+    await this.store.finishEnumeration(runId);
+    return runId;
+  }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
       case JobName.LandmarkInfer: {

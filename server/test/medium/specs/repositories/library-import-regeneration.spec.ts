@@ -150,6 +150,44 @@ it.each([0, 2, 301])('retains exactly the sealed %s-photo cohort and video work 
   expect(JSON.stringify(selection)).not.toMatch(/Private synthetic|fixture|synthetic-library|owner-0/);
 });
 
+it.each([0, 2])('recovers finalized held work after a lost acknowledgement with %s photos', async (count) => {
+  const { context, stageQueues } = await setup(count);
+  const id = await repository.prepareImportedLibraryWork(context);
+  await new SqlQueueStore(db).finishEnumeration(id);
+  const before = (await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows;
+  const runBefore = (await sql`SELECT * FROM job_run WHERE id=${id}::uuid`.execute(db)).rows;
+  expect(await repository.prepareImportedLibraryWork(context)).toBe(id);
+  expect((await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows).toEqual(before);
+  expect((await sql`SELECT * FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual(runBefore);
+  for (const queue of new Set(stageQueues.map(([, queue]) => queue)))
+    expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(0);
+  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+});
+
+it('finalizes generic work through the repository without releasing it or duplicating a retry', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  expect(await repository.dispatchImportedLibraryWork(context)).toBe(id);
+  expect((await sql`SELECT "enumerationDone" FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual([
+    { enumerationDone: true },
+  ]);
+  expect((await sql`SELECT DISTINCT state FROM job_selection WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
+    { state: 'enumerating' },
+  ]);
+  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+});
+
+it('refuses finalized work that has been released or has processed an item', async () => {
+  const { context } = await setup();
+  const id = await repository.prepareImportedLibraryWork(context);
+  await new SqlQueueStore(db).finishEnumeration(id);
+  await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${id}::uuid`.execute(db);
+  await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+  await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${id}::uuid`.execute(db);
+  await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid`.execute(db);
+  await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+});
+
 it.each(['copying', 'abandoned', 'activated'])('refuses %s preparation without retaining work', async (status) => {
   const { context } = await setup();
   await sql`UPDATE frameleaf_library_import SET status=${status}`.execute(db);

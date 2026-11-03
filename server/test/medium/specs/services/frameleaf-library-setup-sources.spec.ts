@@ -147,7 +147,7 @@ it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({
     for (const [jobName, queueName] of stages)
       jobs['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic setup' };
     expect(
-      await jobs.prepareImportedLibraryWork(
+      await jobs.dispatchImportedLibraryWork(
         { binding, destinationId },
         { installation, operationId: binding.operationId },
       ),
@@ -159,8 +159,6 @@ it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({
         }>`SELECT count(*)::int AS count FROM job_selection WHERE "runId"=${id}::uuid`.execute(db)
       ).rows[0].count,
     ).toBe(stages.length);
-    // Simulate activation's completed enumeration while retaining the real prepared selections.
-    await sql`UPDATE job_run SET "enumerationDone"=true WHERE id=${id}::uuid`.execute(db);
     if (mismatch.startsWith('restore-')) {
       process.env.FRAMELEAF_MANAGER_ORIGIN = 'restored_library';
       if (mismatch === 'restore-none') delete process.env.FRAMELEAF_MANAGER_IMPORT_INSTALLATION;
