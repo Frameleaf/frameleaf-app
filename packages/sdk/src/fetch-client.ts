@@ -15171,6 +15171,26 @@ export type ManagerAccessDto = {
     /** Deployment-configured HTTPS Manager origin, or null when unavailable. Requires separate Manager sign-in; configuration is not a reachability check. */
     url: string | null;
 };
+export type LibrarySetupProgressDto = {
+    /** False when this server was not set up from an import, or before its first setup */
+    active: boolean;
+    /** When everything finished; null while setup runs */
+    completedAt: string | null;
+    /** Originals listed in Library Care as missing or changed */
+    flagged: number;
+    items: number;
+    paused: boolean;
+    phase: Phase | null;
+    stages: {
+        done: number;
+        id: LibrarySetupStageId;
+        status: LibrarySetupStageStatus;
+        total: number;
+    }[];
+};
+export type LibrarySetupPauseDto = {
+    paused: boolean;
+};
 export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
@@ -31777,6 +31797,32 @@ export function getManagerAccess(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * What an imported library still has to do after it opens (setup bar)
+ */
+export function getLibrarySetupProgress(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibrarySetupProgressDto;
+    }>("/server/library-setup/progress", {
+        ...opts
+    }));
+}
+/**
+ * Pause or resume the work an imported library does after it opens
+ */
+export function pauseLibrarySetup({ librarySetupPauseDto }: {
+    librarySetupPauseDto: LibrarySetupPauseDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibrarySetupProgressDto;
+    }>("/server/library-setup/progress", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: librarySetupPauseDto
+    })));
+}
+/**
  * Warm the authenticated device catalog during setup
  */
 export function syncLibrarySetup({ warmLibrarySetupDto }: {
@@ -39524,6 +39570,17 @@ export enum Phase {
     Verifying = "verifying",
     NeedsAttention = "needs-attention",
     Complete = "complete"
+}
+export enum LibrarySetupStageId {
+    Check = "check",
+    Thumbnails = "thumbnails",
+    Search = "search"
+}
+export enum LibrarySetupStageStatus {
+    Done = "done",
+    Running = "running",
+    Paused = "paused",
+    Waiting = "waiting"
 }
 export enum Cloud {
     Available = "available",

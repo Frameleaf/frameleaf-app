@@ -6,7 +6,8 @@ import { readFile } from 'node:fs/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
-import { FrameleafWorker, QueueName, SyncEntityType } from 'src/enum.js';
+import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js';
+import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType } from 'src/enum.js';
 import {
   IMPORT_DERIVED_RUN_KIND,
   IMPORT_DERIVED_RUN_STAGES,
@@ -15,6 +16,7 @@ import {
 import { listRuns } from 'src/queue/run-query.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -37,6 +39,12 @@ type SetupState = {
   owners: string[];
   healthAfter: string | null;
   processingChoiceApplied?: boolean;
+  /** FL-1146: the owner paused setup from the setup bar. */
+  paused?: boolean;
+  /** FL-1146: when the original-file check finished and the stages that wait for it were released. */
+  checkReleasedAt?: string | null;
+  /** FL-1146: when everything finished, for the one-time completion window. */
+  completedAt?: string | null;
 };
 type ImportRunSelection = {
   source: string;
@@ -53,6 +61,12 @@ const SETUP_QUEUES = [
   QueueName.MediaHealth,
 ];
 const KEY = 'frameleaf-manager-library-setup';
+/**
+ * FL-1146 (owner 2026-11-02): an import opens before its originals are read. Metadata and thumbnails start at
+ * once; the stages below wait for Library Care's checksum scan of every original, then start by themselves.
+ */
+const EARLY_STAGES: string[] = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails];
+const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.PersonGenerateThumbnail];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
 
 /** Additive API: the existing photo, setup and synchronization endpoints keep their contracts. */
@@ -69,6 +83,7 @@ export class FrameleafLibrarySetupService {
     private checkpoints: SyncCheckpointRepository,
     private mediaHealth: MediaHealthService,
     private config: SystemConfigService,
+    private operations: MediaOperationRepository,
   ) {}
 
   private identity() {
@@ -260,8 +275,14 @@ export class FrameleafLibrarySetupService {
     const startedAt = new Date().toISOString();
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',${JSON.stringify(startedAt)}::text::jsonb)
       WHERE id=${run.id}::uuid`.execute(db);
-    await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${run.id}::uuid
-      AND "capturedAt" IS NOT NULL AND state='enumerating'`.execute(db);
+    await this.releaseStages(run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+  }
+
+  /** Lets the queue admit a held stage's items. Stages that wait for the file check are released by `advance`. */
+  private async releaseStages(runId: string, stages: string[] | null, db: Kysely<DB>) {
+    await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${runId}::uuid
+      AND "capturedAt" IS NOT NULL AND state='enumerating'
+      ${stages ? sql`AND stage=ANY(${stages}::text[])` : sql``}`.execute(db);
   }
 
   private async regenerationStatus(state: SetupState) {
@@ -311,6 +332,108 @@ export class FrameleafLibrarySetupService {
           : (summary?.reasons ?? [])
         : ['import_not_prepared'],
     };
+  }
+
+  /**
+   * FL-1146 setup bar: what an imported library still has to do after it opens. Null when this server was not
+   * set up from an import, or before its first setup started.
+   */
+  async progress(): Promise<LibrarySetupProgressDto> {
+    const inactive = { active: false, phase: null, paused: false, completedAt: null, items: 0, flagged: 0, stages: [] };
+    let identity;
+    try {
+      identity = this.identity();
+    } catch {
+      return inactive;
+    }
+    if (identity.origin === 'new_library') return inactive;
+    const state = await this.read<SetupState>(this.key());
+    if (!state || state.phase === 'awaiting-account') return inactive;
+    const imported = await this.importedRun();
+    const run = imported?.run?.selection.managerSetup?.startedAt ? imported.run : null;
+    const { rows: stages } = run
+      ? await sql<{ stage: string; total: number; done: number }>`SELECT stage, count(*)::int AS total,
+          count(*) FILTER (WHERE state IN ('completed','failed','needs_attention','cancelled'))::int AS done
+          FROM job_run_item WHERE "runId"=${run.id}::uuid GROUP BY stage`.execute(this.db)
+      : { rows: [] };
+    const sum = (names: string[]) =>
+      stages
+        .filter((row) => names.includes(row.stage))
+        .reduce((all, row) => ({ total: all.total + row.total, done: all.done + row.done }), { total: 0, done: 0 });
+    const healthIds = Object.values(state.health);
+    const {
+      rows: [check],
+    } = await sql<{ total: number; done: number; flagged: number }>`SELECT
+        coalesce(sum(corrupt."totalAssets"),0)::int AS total, coalesce(sum(corrupt."checkedAssets"),0)::int AS done,
+        (coalesce(sum(corrupt."foundAssets"),0) + coalesce(sum(missing."foundAssets"),0))::int AS flagged
+      FROM media_operation op
+      LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
+      LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
+      WHERE op.id=ANY(${healthIds}::uuid[])`.execute(this.db);
+    const {
+      rows: [{ items }],
+    } = await sql<{ items: number }>`SELECT count(*)::int AS items FROM asset WHERE "deletedAt" IS NULL`.execute(
+      this.db,
+    );
+    const thumbnails = sum([JobName.AssetGenerateThumbnails]);
+    const search = sum(SEARCH_STAGES);
+    const checked = !!state.checkReleasedAt;
+    const status = (part: { total: number; done: number }, released: boolean) =>
+      part.total > 0 && part.done >= part.total ? 'done' : !released ? 'waiting' : state.paused ? 'paused' : 'running';
+    const finished =
+      state.phase === 'complete' && checked && search.done >= search.total && thumbnails.done >= thumbnails.total;
+    if (finished && !state.completedAt) {
+      await this.locked(async (db) => {
+        const current = (await this.read<SetupState>(this.key(), db))!;
+        state.completedAt = current.completedAt ?? new Date().toISOString();
+        await this.write(this.key(), { ...current, completedAt: state.completedAt }, db);
+      });
+    }
+    return {
+      active: true,
+      phase: state.phase,
+      paused: !!state.paused,
+      completedAt: state.completedAt ?? null,
+      items,
+      flagged: check?.flagged ?? 0,
+      stages: [
+        {
+          id: 'check' as const,
+          status: checked ? ('done' as const) : state.paused ? ('paused' as const) : ('running' as const),
+          done: checked ? (check?.total ?? 0) : (check?.done ?? 0),
+          total: check?.total ?? 0,
+        },
+        { id: 'thumbnails' as const, status: status(thumbnails, !!run), ...thumbnails },
+        { id: 'search' as const, status: status(search, !!run && checked), ...search },
+      ],
+    };
+  }
+
+  /** FL-1146: Pause holds new work and Library Care's scans at their next checkpoint; nothing is lost. */
+  async setPaused(paused: boolean): Promise<LibrarySetupProgressDto> {
+    this.identity();
+    await this.locked(async (db) => {
+      const state = await this.read<SetupState>(this.key(), db);
+      if (!state || !!state.paused === paused) return;
+      state.paused = paused;
+      const imported = await this.importedRun(db, true);
+      if (imported?.run?.selection.managerSetup?.startedAt) {
+        if (paused) {
+          // Held items stay where they are: running jobs finish, and no new ones are admitted.
+          await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${imported.run.id}::uuid
+            AND state='ready'`.execute(db);
+        } else {
+          await this.releaseStages(imported.run.id, state.checkReleasedAt ? null : EARLY_STAGES, db);
+        }
+      }
+      for (const [ownerId, operationId] of Object.entries(state.health)) {
+        await (paused
+          ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth])
+          : this.operations.resume(operationId, ownerId));
+      }
+      await this.write(this.key(), state, db);
+    });
+    return this.progress();
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
@@ -386,7 +509,8 @@ export class FrameleafLibrarySetupService {
         }
         // Library Care's durable full scan covers managed uploads as well as external files,
         // including original-file integrity. Reuse its operation after a lost acknowledgement.
-        if (scansFinished) {
+        // A paused setup starts no new scan; resuming starts it.
+        if (scansFinished && !state.paused) {
           for (const ownerId of state.owners) {
             if (state.health[ownerId]) {
               continue;
@@ -422,15 +546,22 @@ export class FrameleafLibrarySetupService {
           WHERE op.id=ANY(${healthIds}::uuid[]) AND op.kind='media_health' AND op.snapshot->>'mode'='scan'
             AND NOT (op.snapshot ? 'changedSince') AND op."createdAt" >= ${state.healthAfter}::timestamptz`.execute(db)
             : { rows: [] };
-        if (health.rows.some((record) => ['failed', 'cancelled'].includes(record.status) || record.problems)) {
+        // FL-1146: a missing or changed original is kept and listed in Library Care; it never stops setup.
+        if (health.rows.some((record) => ['failed', 'cancelled'].includes(record.status))) {
           state.phase = 'needs-attention';
         }
         const healthFinished = state.owners.every((id) =>
           health.rows.some(
-            (record) =>
-              record.id === state.health[id] && record.status === 'completed' && record.verified && !record.problems,
+            (record) => record.id === state.health[id] && record.status === 'completed' && record.verified,
           ),
         );
+        if (scansFinished && healthFinished && !state.checkReleasedAt && !state.paused) {
+          const imported = await this.importedRun(db, true);
+          if (imported?.run?.selection.managerSetup?.startedAt) {
+            await this.releaseStages(imported.run.id, null, db);
+          }
+          state.checkReleasedAt = new Date().toISOString();
+        }
         // Sidecar completion enqueues metadata, which enqueues derivatives. An idle downstream
         // queue alone cannot establish a final sync revision.
         const queues = await Promise.all(SETUP_QUEUES.map((q) => this.jobs.getJobCounts(q)));

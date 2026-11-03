@@ -46357,6 +46357,104 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/server/library-setup/progress": {
+      "get": {
+        "operationId": "getLibrarySetupProgress",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupProgressDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "What an imported library still has to do after it opens (setup bar)",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "pauseLibrarySetup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibrarySetupPauseDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySetupProgressDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause or resume the work an imported library does after it opens",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/library-setup/sync": {
       "post": {
         "operationId": "syncLibrarySetup",
@@ -99244,6 +99342,114 @@
           }
         },
         "type": "object"
+      },
+      "LibrarySetupPauseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "paused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paused"
+        ],
+        "type": "object"
+      },
+      "LibrarySetupProgressDto": {
+        "properties": {
+          "active": {
+            "description": "False when this server was not set up from an import, or before its first setup",
+            "type": "boolean"
+          },
+          "completedAt": {
+            "description": "When everything finished; null while setup runs",
+            "nullable": true,
+            "type": "string"
+          },
+          "flagged": {
+            "description": "Originals listed in Library Care as missing or changed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "phase": {
+            "enum": [
+              "awaiting-account",
+              "rescanning",
+              "verifying",
+              "needs-attention",
+              "complete",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "properties": {
+                "done": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "$ref": "#/components/schemas/LibrarySetupStageId"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/LibrarySetupStageStatus"
+                },
+                "total": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "status",
+                "done",
+                "total"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "active",
+          "completedAt",
+          "flagged",
+          "items",
+          "paused",
+          "phase",
+          "stages"
+        ],
+        "type": "object"
+      },
+      "LibrarySetupStageId": {
+        "enum": [
+          "check",
+          "thumbnails",
+          "search"
+        ],
+        "type": "string"
+      },
+      "LibrarySetupStageStatus": {
+        "enum": [
+          "done",
+          "running",
+          "paused",
+          "waiting"
+        ],
+        "type": "string"
       },
       "LibrarySetupStatusDto": {
         "properties": {

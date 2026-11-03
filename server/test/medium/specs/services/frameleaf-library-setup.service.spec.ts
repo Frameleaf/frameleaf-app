@@ -51,6 +51,7 @@ it('starts the retained import regeneration during first setup once ready, resum
       {} as never,
       {} as never,
       config as never,
+      {} as never,
     );
   const run = async () =>
     (
@@ -126,8 +127,32 @@ it('starts the retained import regeneration during first setup once ready, resum
     expect(await selections()).toEqual(
       stages
         .toSorted()
-        .map((stage) => ({ stage, state: stage === JobName.AssetGenerateThumbnails ? 'cancelled' : 'ready' })),
+        // FL-1146: metadata (and thumbnails) start at once; the rest wait for the original-file check.
+        .map((stage) => ({
+          stage,
+          state:
+            stage === JobName.AssetGenerateThumbnails
+              ? 'cancelled'
+              : stage === JobName.AssetExtractMetadata
+                ? 'ready'
+                : 'enumerating',
+        })),
     );
+    // FL-1146 setup bar: smart search and faces wait for the original-file check; pause holds every stage.
+    const progress = await make().progress();
+    expect(progress).toMatchObject({ active: true, paused: false, completedAt: null });
+    expect(progress.stages.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'check', status: 'running' },
+      { id: 'thumbnails', status: 'running' },
+      { id: 'search', status: 'waiting' },
+    ]);
+    const held = await make().setPaused(true);
+    expect(held.paused).toBe(true);
+    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([]);
+    await make().setPaused(false);
+    expect((await selections()).filter((row) => row.state === 'ready')).toEqual([
+      { stage: JobName.AssetExtractMetadata, state: 'ready' },
+    ]);
     await make().begin(true); // Restart/retry must not mint a run or revive cancellation.
     expect((await run()).selection.managerSetup.startedAt).toBe(startedAt);
     expect((await sql<{ count: number }>`SELECT count(*)::int AS count FROM job_run`.execute(db)).rows[0].count).toBe(
@@ -212,6 +237,7 @@ it('applies the initial machine learning choice once through normal settings and
     {} as never,
     {} as never,
     config as never,
+    {} as never,
   );
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'aaaaaaaabbbb';
@@ -276,6 +302,7 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       { hasAdmin: vi.fn().mockResolvedValue(true), getAdmin: vi.fn().mockResolvedValue(user) } as never,
       {} as never,
       mediaHealth as never,
+      {} as never,
       {} as never,
     );
     await service.status(); // Persist the full-scan admission boundary after discovery.
@@ -366,6 +393,7 @@ it('serializes setup, resumes from persisted intent and keeps device completion 
               : [],
           ),
       } as never,
+      {} as never,
       {} as never,
       {} as never,
     );
