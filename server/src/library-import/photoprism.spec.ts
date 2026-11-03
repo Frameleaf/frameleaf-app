@@ -47,7 +47,7 @@ describe('PhotoPrism pinned SQLite extraction', () => {
     database.prepare('INSERT INTO details(photo_id,notes) VALUES(?,?)').run(photo.id, 'a\u0000private');
     const source = openPhotoprismSnapshot(path, fixture.source.version);
     try {
-      expect(() => source.photoDetails(BigInt(photo.id!))).toThrow('PHOTOPRISM_SNAPSHOT_READ_FAILED');
+      expect(() => source.photoDetails(BigInt(String(photo.id)))).toThrow('PHOTOPRISM_SNAPSHOT_READ_FAILED');
     } finally {
       source.close();
     }
