@@ -55,6 +55,11 @@ jobs:
           node ../studio/tools/prepare-server-subtitle-runtime.mjs
           node scripts/prepare-import-transfer-runtime.mjs
           pnpm exec vitest run --config test/vitest.config.mjs src/library-import/sqlite.spec.ts src/library-import/sqlite-password.spec.ts src/library-import/photoprism.spec.ts src/library-import/librephotos.spec.ts src/library-import/photoview.spec.ts src/library-import/lychee.spec.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.spec.ts --maxWorkers=1
+      - name: Lint import readers and manifest mappings
+        working-directory: server
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm exec eslint src/library-import/sqlite*.ts src/library-import/photoprism.ts src/library-import/photoprism.spec.ts src/library-import/librephotos.ts src/library-import/photoview.ts src/library-import/lychee.ts src/library-import/pigallery2.ts src/library-import/pigallery2.spec.ts src/library-import/nextcloud.ts src/library-import/*manifest*.ts --max-warnings 0
   photoprism-mariadb:
     name: PhotoPrism MariaDB native reader
     if: github.repository == 'Frameleaf/frameleaf-app'
