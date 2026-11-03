@@ -2071,7 +2071,7 @@ test("isolated test lanes cover every shard and keep required gates fail-closed"
   const image = jobs["e2e-image"].steps;
   assert.equal(
     image.find((s) => s.name === "Build the server image").run,
-    "docker compose build",
+    "docker compose build frameleaf-server\ndocker compose build e2e-auth-server\n",
   );
   assert.match(
     image.find((s) => s.name === "Save the server image").run,
