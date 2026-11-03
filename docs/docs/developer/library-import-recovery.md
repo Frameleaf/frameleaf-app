@@ -242,5 +242,6 @@ A `new_import` Manager profile is for a fresh, Manager-managed migration. Wrappi
 an already activated standalone import in that profile does not convert it into a
 managed import: missing setup authority requires review and remains held. An
 ordinary restore of an independent library uses `restored_library` without an
-import adoption grant. Missing both setup markers in a matching new-import
-profile cannot establish that a damaged managed run was originally standalone.
+import adoption grant. Losing the entire run selection, even together with the
+canonical journal, cannot establish that a damaged managed run was originally
+standalone. The active import profile keeps import-derived work held.
