@@ -95,7 +95,7 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
     // Parent integrity and cycles were checked by normalizePhotoviewAccess.
     while (current !== undefined) {
       if (owner !== undefined && (grants.get(current) ?? []).some((row) => key(row.user_id) === owner)) return owner;
-      const parent = albums.get(current)!.parent_album_id;
+      const parent: PhotoviewRow['parent_album_id'] = albums.get(current)!.parent_album_id;
       current = parent === null ? undefined : key(parent);
     }
     return refuse('PHOTOVIEW_OWNER_MAPPING_REQUIRED');
