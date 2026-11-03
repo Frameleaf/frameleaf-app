@@ -434,11 +434,11 @@ export class LibraryService extends BaseService {
     // We need to check if the library still exists as it could have been deleted after the scan was queued
     if (!library) {
       this.logger.debug(`Library ${job.libraryId} not found, skipping file import`);
-      return JobStatus.Failed;
+      return JobStatus.Skipped;
     }
     if (library.deletedAt) {
       this.logger.debug(`Library ${job.libraryId} is deleted, won't import assets into it`);
-      return JobStatus.Failed;
+      return JobStatus.Skipped;
     }
     // FL-78: never import into an account on its way out
     const owner = await this.userRepository.get(library.ownerId, { withDeleted: true });

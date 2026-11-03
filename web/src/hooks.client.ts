@@ -1,5 +1,6 @@
 import { isHttpError, type ApiHttpError } from '@frameleaf/sdk';
 import type { HandleClientError } from '@sveltejs/kit/hooks';
+import { dev } from '$app/env';
 
 const DEFAULT_MESSAGE = 'Something went wrong. Try again in a moment.';
 
@@ -12,10 +13,14 @@ const parseHTTPError = (httpError: ApiHttpError) => {
   const statusCode = httpError?.status || httpError?.data?.statusCode || 500;
   const message = httpError?.data?.message || (httpError?.data && String(httpError.data)) || httpError?.message;
 
-  console.log({
-    status: statusCode,
-    response: httpError?.data || 'No data',
-  });
+  // The full error body (validation detail, ids, correlation ids) is only worth having in development;
+  // production builds log the status and message alone so nothing server-side lingers in the console.
+  if (dev) {
+    console.log({
+      status: statusCode,
+      response: httpError?.data || 'No data',
+    });
+  }
 
   return {
     message: message || DEFAULT_MESSAGE,
@@ -43,6 +48,11 @@ export const handleError: HandleClientError = ({ error, kind }) => {
     kind === 'unknown' ? 500 : error.status,
     kind === 'unknown' ? DEFAULT_MESSAGE : error.message,
   );
-  console.error(`[hooks.client.ts]:handleError ${result.message}`, error);
+  if (dev || !isHttpError(error)) {
+    console.error(`[hooks.client.ts]:handleError ${result.message}`, error);
+  } else {
+    // An API error's body stays out of production consoles; the status and message are enough.
+    console.error(`[hooks.client.ts]:handleError ${result.code} ${result.message}`);
+  }
   return { ...result, status: result.code };
 };

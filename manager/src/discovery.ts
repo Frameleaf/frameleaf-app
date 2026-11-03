@@ -5,10 +5,16 @@ import { Refusal, digest, type Source, type Mount } from './contracts.js';
 
 // Recognised by repository name on any registry or owner (forks, mirrors, Docker Hub). Compatibility is
 // decided by the version the running server reports, never by the image name.
-const REPOSITORY = (names: string) =>
-  new RegExp(`^(?:[a-z0-9.-]+(?::\\d+)?\\/)?(?:[a-z0-9._-]+\\/)*immich-(?:${names})(?::|@)`, 'i');
-const OFFICIAL = REPOSITORY('server|microservices');
-const WORKER = REPOSITORY('server|microservices|machine-learning');
+// Noodle Gallery, an Immich fork, publishes open-noodle/gallery-server and gallery-ml.
+const REPOSITORY = (names: string, noodle: string) =>
+  new RegExp(
+    `^(?:[a-z0-9.-]+(?::\\d+)?\\/)?(?:(?:[a-z0-9._-]+\\/)*immich-(?:${names})|open-noodle\\/gallery-(?:${noodle}))(?::|@)`,
+    'i',
+  );
+const OFFICIAL = REPOSITORY('server|microservices', 'server');
+const WORKER = REPOSITORY('server|microservices|machine-learning', 'server|ml');
+// Gallery releases before 5.9 keep their own migrations in kysely_migrations, so the image also marks Gallery.
+const GALLERY = /^(?:[a-z0-9.-]+(?::\d+)?\/)?open-noodle\/gallery-server(?::|@)/i;
 export const isSourceServer = (image: string) => OFFICIAL.test(image);
 /** Where the Immich server listens inside its own container: IMMICH_PORT/IMMICH_HOST, else Immich's defaults. */
 export function versionUrl(env: Record<string, string | undefined>): string {
@@ -191,6 +197,7 @@ export class Discovery {
       'summary', json_build_object('users', (SELECT count(*) FROM public.user), 'assets', (SELECT count(*) FROM public.asset),
         'albums', (SELECT count(*) FROM public.album), 'databaseBytes', pg_database_size(current_database())),
       'settings', (SELECT value FROM public.system_metadata WHERE key='system-config'),
+      'noodle', to_regclass('public.gallery_migrations') IS NOT NULL,
       'paths', (SELECT coalesce(json_agg(path), '[]') FROM public.library CROSS JOIN LATERAL unnest("importPaths") path));`,
       ),
     );
@@ -198,7 +205,7 @@ export class Discovery {
       await this.docker
         .node(
           app.Id,
-          `fetch(process.argv[1]).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
+          `fetch(process.argv[1],{headers:{'x-gallery-app':'frameleaf-manager'}}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
           [versionUrl(env)],
         )
         .catch(() => {
@@ -231,6 +238,9 @@ export class Discovery {
       id: app.Id,
       app: app.Id,
       project,
+      // Gallery reports its own release (5.x) only to clients sending x-gallery-app, as the version check does;
+      // the importer reads its Immich base from the migration ledger.
+      product: facts.noodle || GALLERY.test(app.Config.Image) ? 'Noodle Gallery' : 'Immich',
       version,
       image: app.Image,
       workers: workers.map((c) => c.Id),

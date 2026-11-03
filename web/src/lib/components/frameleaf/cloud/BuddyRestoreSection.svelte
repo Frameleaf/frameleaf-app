@@ -133,7 +133,8 @@
         return;
       }
       const result = await applyBuddyRecovery({ buddyApplyDto: { operationId: progress.recoveryId, confirm: true } });
-      location.assign(`/maintenance?token=${encodeURIComponent(result.jwt)}`);
+      // The token travels in the fragment so it never reaches server or proxy access logs.
+      location.assign(`/maintenance#token=${encodeURIComponent(result.jwt)}`);
     });
   onDestroy(() => clearTimeout(timer));
 </script>

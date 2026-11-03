@@ -25,7 +25,7 @@ def mock_get_model() -> Iterator[mock.Mock]:
 @pytest.fixture(autouse=True)
 def isolated_thread_pool() -> Iterator[None]:
     # Each test models a fresh worker, including tests that call main.run without entering an ASGI lifespan.
-    with mock.patch("frameleaf_ml.main.thread_pool", None):
+    with mock.patch("frameleaf_ml.main.thread_pool", None), mock.patch("frameleaf_ml.main.load_pool", None):
         yield
 
 

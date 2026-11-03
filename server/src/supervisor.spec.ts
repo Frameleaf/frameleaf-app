@@ -444,6 +444,34 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(restarts()).toBe(5);
   });
 
+  it('stops the server, loudly, once an executor has failed ten times in a row without running', async () => {
+    const restarts = () => fixture.starts.filter((name) => name === 'microservices').length;
+    for (let failure = 1; failure <= 10; failure++) {
+      latest(FrameleafWorker.Microservices).emit('exit', 1);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(process.exit).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenLastCalledWith(expect.stringContaining(`failure ${failure} of 10`));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(restarts()).toBe(failure + 1);
+    }
+    latest(FrameleafWorker.Microservices).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('11 times in a row'));
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(restarts()).toBe(11);
+  });
+
+  it('stops with a failure code when the executor that gave up exited with 0', async () => {
+    for (let failure = 1; failure <= 10; failure++) {
+      latest(FrameleafWorker.Microservices).emit('exit', 0);
+      await vi.advanceTimersByTimeAsync(60_000);
+    }
+    latest(FrameleafWorker.Microservices).emit('exit', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
   // FL-646: an API start-up that lost a lock race to another worker comes back instead of stopping the server.
   it('restarts an API worker whose start-up hit a transient lock conflict, backing off while it keeps failing', async () => {
     latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);

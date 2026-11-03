@@ -58,7 +58,7 @@ def test_executor_refuses_overload_before_queueing_native_work():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("loaded", [False, True])
-async def test_one_worker_can_finish_a_request_with_independent_entries(monkeypatch, loaded):
+async def test_one_worker_can_finish_a_request_with_independent_entries(monkeypatch, tmp_path, loaded):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -73,7 +73,16 @@ async def test_one_worker_can_finish_a_request_with_independent_entries(monkeypa
         return "result"
 
     async def get(name, type_, task, **kwargs):
-        model = SimpleNamespace(identity=(type_, task), depends=[], loaded=loaded, load_attempts=0, predict=predict)
+        model = SimpleNamespace(
+            identity=(type_, task),
+            depends=[],
+            loaded=loaded,
+            cached=True,
+            cache_dir=tmp_path / name,
+            load_attempts=0,
+            predict=predict,
+            download=lambda: None,
+        )
         model.load = lambda: setattr(model, "loaded", True)
         return model
 
@@ -90,6 +99,8 @@ async def test_one_worker_can_finish_a_request_with_independent_entries(monkeypa
         monkeypatch.setattr(main, "thread_pool", pool)
         task = asyncio.create_task(main.run_inference("fixture", entries))
         while not entered.is_set():
+            if task.done():
+                await task
             await asyncio.sleep(0)
         try:
             await asyncio.sleep(0)

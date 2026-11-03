@@ -156,8 +156,6 @@ describe(MaintenanceWorkerService.name, () => {
       expect(res.redirect).not.toHaveBeenCalled();
     });
   });
-  describe.skip('detectMediaLocation');
-
   describe('setStatus', () => {
     it('should broadcast status', () => {
       sut.setStatus({
@@ -420,8 +418,6 @@ describe(MaintenanceWorkerService.name, () => {
       );
     });
   });
-
-  describe.skip('setAction'); // just calls setStatus+runAction
 
   describe('claimAction (FL-81)', () => {
     it('refuses every other action while a restore is running', async () => {

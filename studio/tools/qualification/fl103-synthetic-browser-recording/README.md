@@ -20,11 +20,11 @@ The WAV is generated in memory, never committed: 6 seconds, mono 48 kHz signed 1
 
 ## Binding and network guards
 
-The only prepared input root is `/Users/adamtaylor/.codex/worktrees/fl105-durable-sidecar/immich`, read-only. The original exact-head check refused when root integrated unrelated work; that receipt is preserved. Root authorized a replacement guard: require `d93bdd45453983700b23ff423b45a92ce0170fab` ancestry, an unchanged tracked `studio` subtree against that base, a clean input root, and separately freeze its actual current HEAD. Any change after freezing requires a new review.
+The prepared input root is the repository checkout this tool lives in, or the separate read-only prepared worktree named by `FL103_SOURCE_ROOT`; it is admitted structurally (an absolute, symlink-free git worktree root holding `studio/engine-build.json`), never by a fixed path. The original exact-head check refused when root integrated unrelated work; that receipt is preserved. Root authorized a replacement guard: require `d93bdd45453983700b23ff423b45a92ce0170fab` ancestry, an unchanged tracked `studio` subtree against that base, a clean input root, and separately freeze its actual current HEAD. Any change after freezing requires a new review.
 
 Every preflight inventories the full adapted engine and calls existing admitAdaptedSource with `5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec`. It verifies every patch and the 12 existing COMPOSITION_SOURCES hashes. Adapter sources, shared tools, packet files, configuration/provenance/lock/receipt files, installed browser resources and selected bundler/Playwright/native bundler package files are separately bound. Receipts are read and hashed, never rewritten or imported as measurements.
 
-Pinned existing Playwright is 1.60.0; headless-shell revision 1223, browser 148.0.7778.96; executable SHA-256 `aa25f2e795c02d5cb5ef5d6987745cc5bbe7d8bea58827390c7a4c81c8d2dd7b`. Source inventory and package hashes are checked before/after a run. Lockfile identity and the selected installed package inventories do not independently certify every transitive installed package against npm's published integrity.
+Pinned existing Playwright is 1.60.0; headless-shell revision 1223, browser 148.0.7778.96; executable SHA-256 `aa25f2e795c02d5cb5ef5d6987745cc5bbe7d8bea58827390c7a4c81c8d2dd7b`. The executable is looked up in Playwright's browser cache for this platform (`PLAYWRIGHT_BROWSERS_PATH`, else Playwright's default cache location) under `chromium_headless_shell-1223`, or at `FL103_BROWSER_EXECUTABLE`; whichever path is used, its bytes must match the pin before any launch. Source inventory and package hashes are checked before/after a run. Lockfile identity and the selected installed package inventories do not independently certify every transitive installed package against npm's published integrity.
 
 The runner owns its Vite instance with a reserved strict loopback port. Filesystem access is limited to the private fixture, the verified engine/dependency tree and adapter source directory; no broad user-directory allowlist. Vite cache/build output is outside the input tree. The existing deny-all cross-browser proxy is mandatory: a transparent entry GET, only proxied requests to the single origin, no overrides, tunnels, blocked external requests or proxy errors. HMR and service workers are disabled. A race for a released reservation fails strict binding rather than silently changing ports.
 
@@ -36,28 +36,27 @@ Fixture disposal failures remain refusals even if emergency native cleanup succe
 
 ## Source-only checks
 
-Use the already installed pinned Node; no installation step:
+Use the already installed pinned Node (the `node` version recorded in `studio/engine-build.json`); no installation step:
 
 ```sh
-/Users/adamtaylor/.local/share/mise/installs/node/24.21.0/bin/node --test studio/tools/qualification/fl103-synthetic-browser-recording/controls.test.mjs
+node --test studio/tools/qualification/fl103-synthetic-browser-recording/controls.test.mjs
 ```
 
 The controls cover PCM headers/energy/golden digest, every bad identity pin, exact capture flags, proxy refusal, missing-witness timeout, report bounds, cleanup ordering after throw/hang, observed detached/PID-reused process identities, and actual injected signal-target selection after original group retirement and unrelated group reuse. They are harness CPU controls, not microphone qualification or a historical production RED.
 
-The `--source-build` mode only bundles the fixture/imports through the installed Vite-plus core. It opens no server and invokes no browser or capture API. CPU bundle output and raw warning/error logs belong in the private audit directory. Production modules have been linked, but browser behavior remains unexecuted.
+The `--source-build` mode only bundles the fixture/imports through the installed Vite-plus core. It opens no server and invokes no browser or capture API. CPU bundle output and raw warning/error logs belong in the private evidence directory (`FL103_EVIDENCE`), outside the repository. Production modules have been linked, but browser behavior remains unexecuted.
 
 ## Frozen future invocation — unexecuted
 
 First root reviews the exact source commit/tree, evidence manifest and hash. This is a single-use command template for that reviewed packet, not authorization:
 
 ```sh
-FL103_SOURCE_ROOT=/Users/adamtaylor/.codex/worktrees/fl105-durable-sidecar/immich \
-FL103_EVIDENCE=/Users/adamtaylor/.codex/audits/fl103-browser-recording-gap-20261009/source-candidate \
-/Users/adamtaylor/.local/share/mise/installs/node/24.21.0/bin/node \
-/Users/adamtaylor/.codex/worktrees/fl103-synthetic-browser-recording/immich/studio/tools/qualification/fl103-synthetic-browser-recording/runner.mjs \
---execute-reviewed /Users/adamtaylor/.codex/audits/fl103-browser-recording-gap-20261009/source-candidate/frozen-binding.json <ROOT-REVIEWED-MANIFEST-SHA256>
+FL103_SOURCE_ROOT=<absolute prepared read-only worktree> \
+FL103_EVIDENCE=<absolute private mode-0700 evidence directory outside the worktree> \
+node studio/tools/qualification/fl103-synthetic-browser-recording/runner.mjs \
+--execute-reviewed <FL103_EVIDENCE>/frozen-binding.json <ROOT-REVIEWED-MANIFEST-SHA256>
 ```
 
-The same environment plus `--freeze <new absolute manifest>` performs CPU preflight only. `--attempt` requires the supervisor token and is not a standalone entrypoint. Frozen file/HEAD changes refuse; do not refresh a manifest or reuse an output directory to hide a failed attempt.
+`FL103_SOURCE_ROOT` may be omitted when the checkout holding this tool is itself the prepared root; `FL103_BROWSER_EXECUTABLE` overrides the browser cache lookup. Evidence directories are private and never committed. The same environment plus `--freeze <new absolute manifest>` performs CPU preflight only. `--attempt` requires the supervisor token and is not a standalone entrypoint. Frozen file/HEAD changes refuse; do not refresh a manifest or reuse an output directory to hide a failed attempt.
 
 No physical microphone permission UX, real device replacement/hotplug, OS acquisition delay, native latency, sample-accurate A/V sync, channel/pitch/EQ/master/monitor rendering, Safari/Firefox, native apps, backend privacy/durability/reopen, worker/export, silence/filler or caption acceptance is claimed. Full admitted-host microphone acceptance still needs a reviewed new scenario, current application image, genuine API ownership checks and fresh exact-source device admission. Source99 expiry and every production source/raster/device/admission guard remain unchanged.

@@ -88,7 +88,7 @@ describe('iCloud source identity (FL-296)', () => {
   });
 
   it('masks the Apple Account', () => {
-    expect(maskAppleAccount('alex@icloud.com')).toBe('a•••@icloud.com');
+    expect(maskAppleAccount('alex@icloud.test')).toBe('a•••@icloud.test');
     expect(maskAppleAccount('nonsense')).toBe('•••');
   });
 });

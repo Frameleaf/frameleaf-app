@@ -183,6 +183,15 @@ describe(StorageTemplateService.name, () => {
       },
     );
 
+    it('skips, rather than fails, an asset deleted after the job was queued', async () => {
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(void 0);
+
+      await expect(sut.handleMigrationSingle({ id: testAsset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.user.get).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+    });
+
     it('should skip when storage template is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: false } });
 

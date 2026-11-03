@@ -1799,6 +1799,22 @@ describe(AlbumService.name, () => {
       expect(mocks.access.album.checkSharedLinkAccess).toHaveBeenCalledWith(auth.sharedLink!.id, new Set([album.id]));
     });
 
+    it("tells a shared link's visitor the members' names, never their emails (FL-83)", async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      const result = await sut.get(AuthFactory.from().sharedLink().build(), album.id);
+
+      expect(result.albumUsers).toHaveLength(2);
+      for (const [index, { user }] of result.albumUsers.entries()) {
+        expect(user.email).toBe('');
+        expect(user.name).toBe(album.albumUsers[index].user.name);
+        expect(user.avatarColor).toBeDefined();
+      }
+    });
+
     it('should get a shared album via shared with user', async () => {
       const user = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: user.id }).build();

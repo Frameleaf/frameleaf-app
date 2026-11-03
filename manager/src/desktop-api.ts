@@ -100,9 +100,11 @@ export function desktopApi(
             request.headers['content-encoding'] !== 'identity')
         )
           throw new Refusal('desktop_json_required', 415);
+        // Redeeming a pairing is the one proof-less native route: its own strict per-client budget,
+        // separate from browser sign-in so pairings cannot lock an address out of login (review L5).
         security.limit(
-          request.socket.remoteAddress ?? 'unknown',
-          request.path === NATIVE + 'redeem' ? 'login' : 'desktop',
+          security.clientAddress(request),
+          request.path === NATIVE + 'redeem' ? 'redeem' : 'desktop',
         );
         response.set(
           'Content-Security-Policy',
@@ -112,11 +114,10 @@ export function desktopApi(
       }
       security.guard(request, response, () => {
         try {
-          // Every desktop route is rate limited per client; password-bearing POSTs use the strict login budget.
-          security.limit(
-            request.socket.remoteAddress ?? 'unknown',
-            request.method === 'POST' ? 'login' : 'desktop',
-          );
+          // Every desktop route is rate limited; password-bearing POSTs (signed in: the guard already
+          // verified the session) spend that session's confirmation budget, not the address's login budget.
+          if (request.method === 'POST') security.limit(security.session(request).hash, 'confirm');
+          else security.limit(security.clientAddress(request), 'desktop');
           json(request, response, next);
         } catch (error) {
           next(error);
