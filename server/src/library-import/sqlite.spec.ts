@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { captureSqliteSnapshot } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, captureSqliteSnapshot } from 'src/library-import/sqlite.js';
 
 describe('SQLite source snapshots', () => {
   let root: string;
@@ -68,5 +68,28 @@ describe('SQLite source snapshots', () => {
     );
     await expect(captureSqliteSnapshot(sourcePath, staging)).rejects.toThrow('SQLITE_SNAPSHOT_FAILED');
     expect(await readdir(staging)).toEqual([]);
+  });
+});
+
+describe('SQLite source text admission', () => {
+  it.each(['UTF-8', 'UTF-16le', 'UTF-16be'])('checks complete text in %s before native conversion', (encoding) => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec(`PRAGMA encoding='${encoding}'; CREATE TABLE records(id INTEGER,caption TEXT,bytes BLOB)`);
+      db.prepare('INSERT INTO records VALUES(?,?,?)').run(1, 'Café 東京', new Uint8Array([0, 1]));
+      db.prepare('INSERT INTO records VALUES(?,?,?)').run(2, 'a\u0000private', null);
+      const query = 'SELECT caption AS "edited""caption",id,bytes,NULL AS absent FROM records WHERE id=?';
+      expect(() => assertSqliteTextSafe(db, query, [1])).not.toThrow();
+      expect(() => assertSqliteTextSafe(db, query, [2])).toThrow(/^SQLite source refused: SQLITE_TEXT_UNQUALIFIED$/);
+      expect(db.prepare('SELECT hex(caption) AS bytes FROM records WHERE id=2').get()?.bytes).toBe(
+        encoding === 'UTF-8'
+          ? '610070726976617465'
+          : encoding === 'UTF-16le'
+            ? '610000007000720069007600610074006500'
+            : '006100000070007200690076006100740065',
+      );
+    } finally {
+      db.close();
+    }
   });
 });

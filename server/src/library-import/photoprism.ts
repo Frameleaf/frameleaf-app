@@ -2,7 +2,7 @@ import { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/photoprism/261029-sqlite.json' with { type: 'json' };
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 const contentTables = [
   'photos',
@@ -100,6 +100,8 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
     if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256) {
       throw new PhotoprismReadError('PHOTOPRISM_SCHEMA_UNQUALIFIED');
     }
+    assertSqliteTextSafe(database, 'SELECT id,error,finished_at FROM migrations');
+    assertSqliteTextSafe(database, 'SELECT version,error,migrated_at FROM versions ORDER BY id DESC LIMIT 1');
     const required = new Set(fixture.migrations.map(({ id }) => id));
     // Go's zero completion timestamp is year 0001, not a completed migration.
     const finished = (value: SQLOutputValue | undefined) =>
@@ -148,6 +150,7 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
     },
     photoDetails: (id: bigint) => {
       try {
+        assertSqliteTextSafe(database, 'SELECT * FROM details WHERE photo_id=?', [id]);
         return photoDetails.get(id);
       } catch {
         throw new PhotoprismReadError('PHOTOPRISM_SNAPSHOT_READ_FAILED');
@@ -158,6 +161,7 @@ export const openPhotoprismSnapshot = (path: string, version: string) => {
       const { name, columns } = photoprismProjections[table];
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${columns} FROM "${name}"`;
+        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);

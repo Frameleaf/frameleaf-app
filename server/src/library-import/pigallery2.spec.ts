@@ -52,6 +52,15 @@ describe('PiGallery2 pinned SQLite extraction', () => {
     }
   };
 
+  it('refuses embedded NUL metadata before returning a truncated batch', () => {
+    database.prepare('UPDATE media_entity SET metadataCaption=?').run('public\u0000private');
+    const source = openPigallery2Snapshot(path, '3.5.2');
+    try {
+      expect(() => source.rows('media_entity').next()).toThrow('PIGALLERY2_SNAPSHOT_READ_FAILED');
+    } finally {
+      source.close();
+    }
+  });
   it('reconciles every native projected record and directory/media relationship', () => {
     const normalize = (value: unknown) =>
       JSON.parse(JSON.stringify(value, (_key, v) => (typeof v === 'bigint' || typeof v === 'number' ? String(v) : v)));

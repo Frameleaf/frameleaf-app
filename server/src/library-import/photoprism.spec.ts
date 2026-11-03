@@ -38,6 +38,20 @@ describe('PhotoPrism pinned SQLite extraction', () => {
     database.close();
     await rm(root, { recursive: true, force: true });
   });
+  it('refuses a migration error hidden after an embedded NUL', () => {
+    database.prepare('UPDATE migrations SET error=?').run('\u0000unfinished');
+    expect(() => openPhotoprismSnapshot(path, fixture.source.version)).toThrow('PHOTOPRISM_SNAPSHOT_UNAVAILABLE');
+  });
+  it('refuses embedded NUL in separately queried photo details', () => {
+    const photo = database.prepare('SELECT id FROM photos LIMIT 1').get()!;
+    database.prepare('INSERT INTO details(photo_id,notes) VALUES(?,?)').run(photo.id, 'a\u0000private');
+    const source = openPhotoprismSnapshot(path, fixture.source.version);
+    try {
+      expect(() => source.photoDetails(BigInt(String(photo.id)))).toThrow('PHOTOPRISM_SNAPSHOT_READ_FAILED');
+    } finally {
+      source.close();
+    }
+  });
   it('reads the mapped owner verifier separately from content and retains source trimming rules', async () => {
     const encoded = await hash('synthetic owner password', 12);
     database.prepare('INSERT INTO passwords(uid,hash) VALUES(?,?)').run('u-fixture', encoded);

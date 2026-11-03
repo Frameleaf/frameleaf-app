@@ -2,7 +2,7 @@ import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/nextcloud/35-8-10.2-sqlite.json' with { type: 'json' };
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 // Wildcards cover content-only tables in this exact fingerprinted app installation.
 const projections = {
@@ -48,6 +48,11 @@ export const openNextcloudSnapshot = (path: string, version: string) => {
     database.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; BEGIN');
     if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256)
       throw new NextcloudReadError('NEXTCLOUD_SCHEMA_UNQUALIFIED');
+    assertSqliteTextSafe(
+      database,
+      "SELECT appid,configkey,configvalue FROM oc_appconfig WHERE appid IN ('photos','memories') AND configkey IN ('installed_version','enabled') ORDER BY appid,configkey",
+    );
+    assertSqliteTextSafe(database, 'SELECT app,version FROM oc_migrations ORDER BY app,version');
     const state = database
       .prepare(
         "SELECT appid,configkey,configvalue FROM oc_appconfig WHERE appid IN ('photos','memories') AND configkey IN ('installed_version','enabled') ORDER BY appid,configkey",
@@ -75,6 +80,7 @@ export const openNextcloudSnapshot = (path: string, version: string) => {
       if (!Object.hasOwn(projections, table)) throw new NextcloudReadError('NEXTCLOUD_TABLE_NOT_ALLOWED');
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${projections[table]} FROM "${table}"`;
+        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
