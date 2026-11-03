@@ -1075,9 +1075,23 @@ export class CloudMlJobService {
   }
 
   /** Confirm the kept quote without replacing the operation's snapshot, result or checkpoints. */
-  upgrade(auth: AuthDto, id: string, dto: CloudMlJobUpgradeDto, now = new Date()): Promise<CloudMlJobActivityDto> {
-    return this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+  async upgrade(
+    auth: AuthDto,
+    id: string,
+    dto: CloudMlJobUpgradeDto,
+    now = new Date(),
+  ): Promise<CloudMlJobActivityDto> {
+    const preflight = await this.requireUpgradeJob(auth, id);
+    // Admission and token exchanges can wait on the network; unrelated estimates must stay usable.
+    await this.requireCloudDestination(preflight.snapshot.destinationId, preflight.snapshot.appWorkload);
+    const gateway = await this.requireGateway();
+    const pending = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
       const { operation, snapshot, job } = await this.requireUpgradeJob(auth, id);
+      if (
+        snapshot.destinationId !== preflight.snapshot.destinationId ||
+        snapshot.appWorkload !== preflight.snapshot.appWorkload
+      )
+        throw new ConflictException('This job changed; refresh Activity');
       const store = (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)) ?? {
         records: [],
       };
@@ -1103,41 +1117,64 @@ export class CloudMlJobService {
           message: 'This upgrade exceeds your Frameleaf Cloud spending permission',
           code: permission.reason,
         });
-      await this.requireCloudDestination(snapshot.destinationId, snapshot.appWorkload);
-      const gateway = await this.requireGateway();
-      const attempted: CloudMlJobUpgradeRecord = { ...record, attemptedAt: record.attemptedAt ?? now.toISOString() };
+      const attempted: CloudMlJobUpgradeRecord = {
+        ...record,
+        attemptedAt: record.attemptedAt ?? now.toISOString(),
+        attemptRevision: (record.attemptRevision ?? 0) + 1,
+      };
       const upgrades = store.upgrades!.map((entry) => (entry.id === record.id ? attempted : entry));
       await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, { ...store, upgrades });
-      try {
-        const upgraded = await new FrameleafCloudJobClient(this.frameleafCloudMlRepository, gateway).upgrade(
-          job.jobId,
-          record.quote.estimate,
-          `gpu-upgrade-${record.id}`,
-        );
-        const activity = cloudMlJobActivity({
-          ...operation,
-          result: { ...parseCloudMlJobResult(operation.result), job: cloudMlJobRecordOf(upgraded, job, null) },
-        });
-        if (!activity) throw new ConflictException('This job changed; refresh Activity');
-        return activity;
-      } catch (error) {
-        // A lost response retains its reservation and key so retry cannot spend twice.
-        if (
-          error instanceof FrameleafCloudError &&
-          error.status &&
-          error.status >= 400 &&
-          error.status < 500 &&
-          error.status !== 429 &&
-          !isIdempotencyInFlight(error)
-        ) {
+      return { operation, job, record, attempted };
+    });
+    const { operation, job, record, attempted } = pending;
+    try {
+      const upgraded = await new FrameleafCloudJobClient(this.frameleafCloudMlRepository, gateway).upgrade(
+        job.jobId,
+        record.quote.estimate,
+        `gpu-upgrade-${record.id}`,
+      );
+      const activity = cloudMlJobActivity({
+        ...operation,
+        result: { ...parseCloudMlJobResult(operation.result), job: cloudMlJobRecordOf(upgraded, job, null) },
+      });
+      if (!activity) throw new ConflictException('This job changed; refresh Activity');
+      return activity;
+    } catch (error) {
+      // A previous or uncertain attempt retains its reservation and key. A definitive rejection
+      // may release only this fresh attempt, without overwriting concurrent estimates or retries.
+      if (
+        !record.attemptedAt &&
+        error instanceof FrameleafCloudError &&
+        error.status &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 429 &&
+        !isIdempotencyInFlight(error)
+      ) {
+        await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlJobEstimates, async () => {
+          const store = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudMlJobEstimates);
+          if (!store?.upgrades) return;
+          const current = store.upgrades.find(
+            (entry) =>
+              entry.id === record.id &&
+              entry.operationId === id &&
+              entry.createdBy === auth.user.id &&
+              entry.quote.jobId === job.jobId,
+          );
+          if (
+            !current ||
+            current.attemptRevision !== attempted.attemptRevision ||
+            current.attemptedAt !== attempted.attemptedAt
+          )
+            return;
           await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudMlJobEstimates, {
             ...store,
-            upgrades: upgrades.map((entry) => (entry.id === record.id ? record : entry)),
+            upgrades: store.upgrades.map((entry) => (entry === current ? { ...entry, attemptedAt: null } : entry)),
           });
-        }
-        throw error instanceof HttpException ? error : this.clientError(error);
+        });
       }
-    });
+      throw error instanceof HttpException ? error : this.clientError(error);
+    }
   }
 
   private async requireUpgradeJob(auth: AuthDto, id: string) {

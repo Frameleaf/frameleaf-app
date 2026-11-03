@@ -2997,6 +2997,115 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.mediaOperation.setBulkResult).not.toHaveBeenCalled();
     });
 
+    it('persists the reservation but releases the shared estimates lock before the remote upgrade', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      let depth = 0;
+      let duringRequest = -1;
+      const preflightDepths: number[] = [];
+      mocks.database.withLock.mockImplementation(async (_lock, callback) => {
+        depth++;
+        try {
+          return await callback();
+        } finally {
+          depth--;
+        }
+      });
+      const probe = mocks.machineLearning.probe.getMockImplementation()!;
+      mocks.machineLearning.probe.mockImplementation((...args) => {
+        preflightDepths.push(depth);
+        return probe(...args);
+      });
+      const token = mocks.frameleafCloud.accessToken.getMockImplementation()!;
+      mocks.frameleafCloud.accessToken.mockImplementation((...args) => {
+        preflightDepths.push(depth);
+        return token(...args);
+      });
+      const original = mocks.frameleafCloudMl.upgradeJob.getMockImplementation()!;
+      mocks.frameleafCloudMl.upgradeJob.mockImplementation((...args) => {
+        duringRequest = depth;
+        expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+          upgrades: [expect.objectContaining({ attemptedAt: now.toISOString() })],
+        });
+        return original(...args);
+      });
+      await sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      expect(duringRequest).toBe(0);
+      expect(preflightDepths.length).toBeGreaterThan(0);
+      expect(preflightDepths.every((value) => value === 0)).toBe(true);
+    });
+
+    it('preserves concurrent estimates when a fresh remote upgrade is definitively refused', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      const response = Promise.withResolvers<CloudJobView>();
+      mocks.frameleafCloudMl.upgradeJob.mockImplementationOnce(() => response.promise);
+      const request = sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now);
+      const rejected = expect(request).rejects.toThrow();
+      await vi.waitFor(() => expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(1));
+      mocks.crypto.randomUUID.mockReturnValueOnce('concurrent-estimate');
+      const concurrent = await sut.estimate(owner, preview(), now);
+      response.reject(new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 409, 'Stale revision'));
+      await rejected;
+      expect(estimates().some((entry) => entry.id === concurrent.estimateId)).toBe(true);
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+        upgrades: [expect.objectContaining({ attemptedAt: null, attemptRevision: 1 })],
+      });
+    });
+
+    it('does not let an older refusal clear a concurrent retry with an unknown outcome', async () => {
+      const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+      const first = Promise.withResolvers<CloudJobView>();
+      const second = Promise.withResolvers<CloudJobView>();
+      mocks.frameleafCloudMl.upgradeJob
+        .mockImplementationOnce(() => first.promise)
+        .mockImplementationOnce(() => second.promise);
+      const dto = { estimateId: quote.estimateId, acknowledgeMaximum: true } as const;
+      const rejectedFirst = expect(sut.upgrade(owner, OPERATION_ID, dto, now)).rejects.toThrow();
+      await vi.waitFor(() => expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(1));
+      const rejectedSecond = expect(sut.upgrade(owner, OPERATION_ID, dto, now)).rejects.toThrow();
+      await vi.waitFor(() => expect(mocks.frameleafCloudMl.upgradeJob).toHaveBeenCalledTimes(2));
+      first.reject(new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 409, 'Stale revision'));
+      await rejectedFirst;
+      second.reject(new Error('Lost response'));
+      await rejectedSecond;
+      expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+        upgrades: [expect.objectContaining({ attemptedAt: now.toISOString(), attemptRevision: 2 })],
+      });
+      const calls = mocks.frameleafCloudMl.upgradeJob.mock.calls;
+      expect(calls[0].slice(1)).toEqual(calls[1].slice(1));
+      configure({ spenders: [{ userId: owner.user.id, monthlyCapUsd: 3 }] });
+      mocks.mediaOperation.listCloudMlJobSpend.mockResolvedValue([]);
+      expect(await sut.spendPermission(owner, 0.2, now, { exactHold: true })).toMatchObject({
+        canConfirm: false,
+        spentThisMonthUsd: 2.9,
+      });
+    });
+
+    it.each(['cancelled', 'access'] as const)(
+      'rechecks %s after slow destination preflight before reserving an upgrade',
+      async (change) => {
+        const quote = await sut.estimateUpgrade(owner, OPERATION_ID, now);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        mocks.machineLearning.probe.mockImplementationOnce(async () => {
+          entered.resolve();
+          await release.promise;
+          return { ...mlProbeStub.frameleafCloud, workloads, cloud: facts };
+        });
+        const rejected = expect(
+          sut.upgrade(owner, OPERATION_ID, { estimateId: quote.estimateId, acknowledgeMaximum: true }, now),
+        ).rejects.toThrow();
+        await entered.promise;
+        if (change === 'cancelled') created!.cancelRequestedAt = now;
+        else mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set());
+        release.resolve();
+        await rejected;
+        expect(mocks.frameleafCloudMl.upgradeJob).not.toHaveBeenCalled();
+        expect(metadata.get(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toMatchObject({
+          upgrades: [expect.objectContaining({ attemptedAt: null })],
+        });
+      },
+    );
+
     it('rejects upgrades for another owner, without asset access, and with no routing support', async () => {
       mocks.mediaOperation.getForOwner.mockResolvedValueOnce(undefined);
       await expect(sut.estimateUpgrade(owner, OPERATION_ID, now)).rejects.toMatchObject({ status: 404 });

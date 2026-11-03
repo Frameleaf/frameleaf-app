@@ -297,6 +297,8 @@ export type CloudMlJobUpgradeRecord = {
   createdBy: string;
   quote: CloudUpgradeEstimate;
   attemptedAt: string | null;
+  /** Monotonic submission fence; a stale refusal cannot release a newer retry's reservation. */
+  attemptRevision?: number;
 };
 
 /** What happened so far; the one mutable part of the job. */
