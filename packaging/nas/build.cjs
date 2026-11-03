@@ -46,7 +46,7 @@ async function build(directory, expectedTag, output, verification = {}) {
     write(`truenas/ix-dev/community/frameleaf/${name}`, render(source(`truenas/${name}`)));
   }
   write('truenas/ix-dev/community/frameleaf/README.md',
-    `Frameleaf ${manifest.tag}. Maintained by Frameleaf. Install on TrueNAS 24.10.2.2 or later.\n`);
+    `# Frameleaf\n\nFrameleaf ${manifest.tag}. Maintained by Frameleaf. Install on TrueNAS 24.10.2.2 or later.\n`);
   write('nas-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
 }
 

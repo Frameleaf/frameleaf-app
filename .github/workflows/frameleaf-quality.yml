@@ -64,10 +64,11 @@ jobs:
           test ! -e "$catalog"
           git init "$catalog"
           git -C "$catalog" remote add origin https://github.com/truenas/apps.git
-          git -C "$catalog" sparse-checkout set ix-dev/community/actual-budget/templates/library/base_v2_3_4
-          git -C "$catalog" fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a
+          git -C "$catalog" sparse-checkout set library/2.3.18
+          git -C "$catalog" fetch --depth=1 origin 99df68c9497e3966d33ee4e0990df7009e3f49a9
           git -C "$catalog" checkout --detach FETCH_HEAD
-          test "$(git -C "$catalog" rev-parse HEAD)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a
+          test "$(git -C "$catalog" rev-parse HEAD)" = 99df68c9497e3966d33ee4e0990df7009e3f49a9
+          python3 -c 'import shutil, sys; shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns("tests", "__pycache__"))' "$catalog/library/2.3.18" "$RUNNER_TEMP/base_v2_3_18"
           python3 -m venv "$RUNNER_TEMP/nas-render-venv"
           source "$RUNNER_TEMP/nas-render-venv/bin/activate"
           python3 -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r packaging/nas/requirements-render.lock
@@ -75,7 +76,7 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/nas-render-venv/bin" >> "$GITHUB_PATH"
       - name: Validate NAS package fixtures
         env:
-          TRUENAS_LIBRARY: ${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4
+          TRUENAS_LIBRARY: ${{ runner.temp }}/base_v2_3_18
           FRAMELEAF_REQUIRE_TRUENAS_RENDER: 'true'
           PYTHONDONTWRITEBYTECODE: '1'
         run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
