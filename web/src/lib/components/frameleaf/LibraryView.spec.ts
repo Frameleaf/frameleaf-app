@@ -1092,6 +1092,82 @@ describe('LibraryView', () => {
       await waitFor(() => expect(session.selection).toEqual([]));
     });
 
+    // A stack change from the selection bar shows at once: the server decides which members it hides.
+    describe('stacking from the selection bar', () => {
+      const at = fromISODateTimeUTCToObject('2024-03-10T12:00:00.000Z');
+      const onDay = (id: string, stack: TimelineAsset['stack'] = null) =>
+        timelineAssetFactory.build({ id, ownerId: 'owner', fileCreatedAt: at, localDateTime: at, stack });
+
+      const renderLibrary = async () => {
+        authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+        authManager.setPreferences(preferencesFactory.build());
+        const session = new LibrarySessionStore({ storage: null, transientStorage: null });
+        const timeline = { manager: undefined as TimelineManager | undefined };
+        render(LibraryView, {
+          options: { visibility: AssetVisibility.Timeline, withStacked: true },
+          destination: { kind: 'library' },
+          syncUrl: false,
+          session,
+          get timelineManager() {
+            return timeline.manager;
+          },
+          set timelineManager(value) {
+            timeline.manager = value;
+          },
+        });
+        await waitFor(() => expect(timeline.manager?.months.length).toBe(1));
+        await timeline.manager!.updateViewport({ width: 1000, height: 400 });
+        await waitFor(() => expect(timeline.manager?.months[0]?.isLoaded).toBe(true));
+        return { session, manager: () => timeline.manager! };
+      };
+
+      const ids = (manager: TimelineManager) =>
+        manager.months.flatMap((month) => month.getAssets().map(({ id }) => id));
+
+      it('collapses the stacked items into one tile', async () => {
+        const [first, second] = [onDay('first'), onDay('second')];
+        const stacked = { id: 'stack', primaryAssetId: 'first', assetCount: 2 };
+        let server = [first, second];
+        sdkMock.getTimeBuckets.mockImplementation(async () => [{ timeBucket: '2024-03-01', count: server.length }]);
+        sdkMock.getTimeBucket.mockImplementation(async () => toResponseDto(...server));
+        sdkMock.createStack.mockImplementation(async () => {
+          server = [{ ...first, stack: stacked }];
+          return { id: 'stack', primaryAssetId: 'first', assets: [] } as never;
+        });
+        const { session, manager } = await renderLibrary();
+        session.dispatch({ type: 'selection', ids: ['first', 'second'] });
+        await tick();
+
+        await fireEvent.keyDown(document, { key: 's' });
+
+        await waitFor(() => expect(sdkMock.createStack).toHaveBeenCalled());
+        await waitFor(() => expect(ids(manager())).toEqual(['first']));
+        expect(manager().assetCount).toBe(1);
+      });
+
+      it('shows the members again once the stack is gone', async () => {
+        const stacked = { id: 'stack', primaryAssetId: 'first', assetCount: 2 };
+        let server = [onDay('first', stacked)];
+        sdkMock.getTimeBuckets.mockImplementation(async () => [{ timeBucket: '2024-03-01', count: server.length }]);
+        sdkMock.getTimeBucket.mockImplementation(async () => toResponseDto(...server));
+        sdkMock.deleteStacks.mockImplementation(async () => {
+          server = [onDay('first'), onDay('second')];
+          return undefined as never;
+        });
+        const { session, manager } = await renderLibrary();
+        session.dispatch({ type: 'selection', ids: ['first'] });
+        await tick();
+
+        await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_selection_more_actions' })[0]);
+        await fireEvent.click(await screen.findByRole('menuitem', { name: 'frameleaf_bulk_unstack' }));
+
+        await waitFor(() => expect(sdkMock.deleteStacks).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['stack'] } }));
+        await waitFor(() => expect(ids(manager())).toEqual(['first', 'second']));
+        expect(manager().assetCount).toBe(2);
+        expect(manager().months[0].getAssets()[0].stack).toBeNull();
+      });
+    });
+
     it('draws no heading of its own where the page gives no title', async () => {
       await setupLibrary({ options: { isFavorite: true }, destination: { kind: 'favorites' } });
       expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
