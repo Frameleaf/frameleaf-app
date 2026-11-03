@@ -106,7 +106,7 @@ export function readPigallery2Manifest(
     if (!grants.get(input.owners[id])?.has(id)) return refuse('PIGALLERY2_OWNER_REVIEW_REQUIRED');
 
   const directoryPaths = new Map<string, string>();
-  let roots = 0;
+  const usedDirectoryPaths = new Set<string>();
   for (const id of directories.keys()) {
     const chain: string[] = [],
       seen = new Set<string>();
@@ -121,9 +121,23 @@ export function readPigallery2Manifest(
     }
     for (const child of chain.reverse()) {
       const row = directories.get(child)!;
+      // Separately indexed subfolders can have no parent link; their stored path remains authoritative.
       if (row.parentId === null) {
-        if (row.name !== '.' || row.path !== './' || ++roots !== 1) return refuse('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
-        directoryPaths.set(child, '');
+        if (row.name === '.' && row.path === './') directoryPaths.set(child, '');
+        else {
+          if (
+            typeof row.name !== 'string' ||
+            row.name.includes('/') ||
+            !importFilePathSchema.safeParse(row.name).success ||
+            typeof row.path !== 'string' ||
+            !row.path.endsWith('/')
+          )
+            return refuse('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
+          const prefix = row.path === './' ? '' : row.path.slice(0, -1);
+          if (row.path !== './' && !importFilePathSchema.safeParse(prefix).success)
+            return refuse('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
+          directoryPaths.set(child, prefix ? prefix + '/' + row.name : row.name);
+        }
       } else {
         const parentPath = directoryPaths.get(key(row.parentId));
         if (
@@ -136,9 +150,11 @@ export function readPigallery2Manifest(
           return refuse('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
         directoryPaths.set(child, parentPath ? parentPath + '/' + row.name : row.name);
       }
+      const path = directoryPaths.get(child)!;
+      if (usedDirectoryPaths.has(path)) return refuse('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
+      usedDirectoryPaths.add(path);
     }
   }
-  if (roots !== 1) return refuse('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
 
   const proofs = new Map(input.files.map((file) => [file.id, file]));
   if (proofs.size !== input.files.length) return refuse('PIGALLERY2_FILE_EVIDENCE_MISMATCH');
