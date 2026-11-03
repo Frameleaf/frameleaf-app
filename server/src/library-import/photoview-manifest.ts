@@ -106,7 +106,7 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
       typeof root !== 'string' ||
       !posix.isAbsolute(root) ||
       posix.normalize(root) !== root ||
-      (root !== '/' && root.endsWith('/'))
+      (root !== '/' && !importFilePathSchema.safeParse(root.slice(1)).success)
     )
       return refuse('PHOTOVIEW_ORIGINAL_PATH_INVALID');
     const prefix = root === '/' ? '/' : root + '/';
@@ -119,6 +119,7 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
   const loss = (code: string, entityId?: string) =>
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
   if (archive.length) loss('PHOTOVIEW_SOURCE_METADATA_ARCHIVED');
+  // shortcut: archive face geometry and directory ancestry until their destination mappings are qualified.
   if (rows('face_groups').length || rows('image_faces').length) loss('PHOTOVIEW_PEOPLE_ARCHIVED');
   if (rows('albums').some((row) => row.parent_album_id !== null)) loss('PHOTOVIEW_DIRECTORY_HIERARCHY_ARCHIVED');
   if (rows('share_tokens').length || [...access.values()].some((row) => row.readerIds.length > 1))

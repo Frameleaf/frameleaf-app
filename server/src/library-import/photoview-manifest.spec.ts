@@ -15,7 +15,7 @@ import { type SourceArchiveRecord } from 'src/library-import/source-archive-code
 
 type Result = { manifest: ImportManifest; archive: SourceArchiveRecord[] };
 const proof = (id: string, path: string, size: number, role = 'original') => {
-  const bytes = Buffer.alloc(size, 42);
+  const bytes = Buffer.alloc(size, Number(id.replace(/\D/g, '')) || 42);
   return {
     id,
     path,
@@ -309,10 +309,11 @@ describe('Photoview common manifest mapping', () => {
     expect(prepared.reduce((count, asset) => count + asset.files.length, 0)).toBe(4);
     expect(query).not.toHaveBeenCalled();
   });
-  it('refuses half-known GPS coordinates and invalid dates', () => {
+  it('refuses half-known GPS coordinates', () => {
     database.prepare('UPDATE media_exif SET gps_latitude=? WHERE id=1').run(45);
     expect(() => read()).toThrow('PHOTOVIEW_METADATA_INVALID');
-    database.prepare('UPDATE media_exif SET gps_latitude=NULL WHERE id=1').run();
+  });
+  it('refuses invalid source dates', () => {
     database.prepare('UPDATE media SET date_shot=? WHERE id=1').run('invalid');
     expect(() => read()).toThrow('PHOTOVIEW_CAPTURE_TIME_INVALID');
   });
