@@ -13,7 +13,7 @@ import { listRuns } from 'src/queue/run-query.js';
 import { unfinishedRunItems } from 'src/queue/selection-state.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -229,6 +229,15 @@ export class FrameleafLibrarySetupService {
   private async startImportedRegeneration(state: SetupState, db: Kysely<DB>) {
     const installation = this.importInstallation(state);
     if (!installation || !(await this.users.hasAdmin()) || !(await this.processingSettingsReady(state))) return;
+    const current = await this.importedRun(db);
+    if (
+      this.importedSetupMatches(state, current) &&
+      current?.journal.status === 'activated' &&
+      current.run?.enumerationDone &&
+      current.run.selection.managerSetup?.startedAt &&
+      current.run.selection.managerSetup.paused === !!state.paused
+    )
+      return;
     await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
     // Queue claims and pause changes serialize before the run and selection locks.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
@@ -247,7 +256,9 @@ export class FrameleafLibrarySetupService {
     )
       return;
     await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(!!state.paused)}::text::jsonb)
-      WHERE id=${run.id}::uuid`.execute(db);
+      WHERE id=${run.id}::uuid AND selection #> '{managerSetup,paused}' IS DISTINCT FROM ${JSON.stringify(!!state.paused)}::text::jsonb`.execute(
+      db,
+    );
     if (marker.startedAt) return;
     if (state.origin === 'restored_library') {
       const summary = (await listRuns(db, 1, 0, run.id))[0];
@@ -450,6 +461,7 @@ export class FrameleafLibrarySetupService {
   /** FL-1146: Pause holds new work and Library Care's scans at their next checkpoint; nothing is lost. */
   async setPaused(paused: boolean): Promise<LibrarySetupProgressDto> {
     this.identity();
+    const changed: (MediaOperation | undefined)[] = [];
     await this.locked(async (db) => {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || !!state.paused === paused) return;
@@ -472,21 +484,26 @@ export class FrameleafLibrarySetupService {
         }
       }
       for (const [ownerId, operationId] of Object.entries(state.health)) {
-        await (paused
-          ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
-          : this.operations.resume(operationId, ownerId, db));
+        changed.push(
+          await (paused
+            ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
+            : this.operations.resume(operationId, ownerId, db)),
+        );
       }
       const { rows: scans } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
         WHERE id=ANY(${[...new Set(Object.values(state.scans))]}::uuid[]) AND kind=${MediaOperationKind.LibraryScan} FOR UPDATE`.execute(
         db,
       );
       for (const scan of scans) {
-        await (paused
-          ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
-          : this.operations.resume(scan.id, scan.ownerId, db));
+        changed.push(
+          await (paused
+            ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
+            : this.operations.resume(scan.id, scan.ownerId, db)),
+        );
       }
       await this.write(this.key(), state, db);
     });
+    for (const row of changed) this.operations.notifyCancellation(row);
     return this.progress();
   }
 

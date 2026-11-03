@@ -172,6 +172,8 @@ describe('SetupBar', () => {
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
     expect(screen.getByRole('link', { name: 'Library care' })).toBeInTheDocument();
+    expect(screen.queryByText('Library imported')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 items imported')).not.toBeInTheDocument();
   });
 
   it.each([false, true])('reports rejected setup actions and clears busy, retry=%s', async (retry) => {
