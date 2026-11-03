@@ -184,6 +184,8 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
   }
 
   const patterns: string[] = [];
+  /** The folders behind `patterns`, as named (not glob-escaped), for the linked-folder check. */
+  const roots: string[] = [];
   const crawledFiles: string[] = [];
 
   for await (const currentPath of pathsToCrawl) {
@@ -204,11 +206,13 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
         }
         if (target?.isDirectory()) {
           patterns.push(convertPathToPatternOnWin(absolutePath));
+          roots.push(absolutePath);
         } else {
           crawledFiles.push(absolutePath);
         }
       } else {
         patterns.push(convertPathToPatternOnWin(absolutePath));
+        roots.push(absolutePath);
       }
     } catch (error: any) {
       if (error.code === 'ENOENT') {
@@ -237,7 +241,7 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     dot: includeHidden,
     ignore: [`**/${ignorePattern}`],
   });
-  const files = await insideRoots(globbedFiles, patterns);
+  const files = await insideRoots(globbedFiles, roots);
   files.push(...crawledFiles);
   return files.toSorted();
 };
@@ -264,12 +268,17 @@ const insideRoots = async (files: string[], roots: string[]): Promise<string[]> 
   const realFolders = new Map<string, string>();
   const kept: string[] = [];
   for (const file of files) {
-    const root = realRoots.keys().find((candidate) => file === candidate || file.startsWith(candidate + sep));
+    // fast-glob reports forward-slash paths on Windows; compare native forms on every platform
+    const nativeFile = resolve(file);
+    const root = realRoots.keys().find((candidate) => {
+      const nativeRoot = resolve(candidate);
+      return nativeFile === nativeRoot || nativeFile.startsWith(nativeRoot + sep);
+    });
     if (!root) {
       kept.push(file);
       continue;
     }
-    const folder = dirname(file);
+    const folder = dirname(nativeFile);
     let real = realFolders.get(folder);
     if (real === undefined) {
       try {

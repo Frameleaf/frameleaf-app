@@ -49,19 +49,6 @@ export class ActivityService extends BaseService {
 
   async create(auth: AuthDto, dto: ActivityCreateDto): Promise<MaybeDuplicate<ActivityResponseDto>> {
     await this.requireAccess({ auth, permission: Permission.ActivityCreate, ids: [dto.albumId] });
-    if (dto.assetId) {
-      // a reaction names an item that is in this album: never one the album's members could not
-      // resolve. Album membership, not asset read access, is the rule: a like left before the item
-      // moved into the Locked folder must still be found again (see the medium spec). Hidden content
-      // stays a read check so a filtered item cannot be reacted to.
-      if (auth.hideNsfwAssets) {
-        await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [dto.assetId] });
-      }
-      const inAlbum = await this.albumRepository.getAssetIds(dto.albumId, [dto.assetId]);
-      if (!inAlbum.has(dto.assetId)) {
-        throw new BadRequestException('Asset is not in the album');
-      }
-    }
 
     const common = {
       userId: auth.user.id,
@@ -73,8 +60,6 @@ export class ActivityService extends BaseService {
     const searchCommon = { ...common, ...this.nsfwOptions(auth), includeLocked: true };
 
     let activity: Activity | undefined;
-    let isDuplicate = false;
-
     if (dto.type === ReactionType.LIKE) {
       delete dto.comment;
       [activity] = await this.activityRepository.search({
@@ -83,7 +68,19 @@ export class ActivityService extends BaseService {
         assetId: dto.assetId ?? null,
         isLiked: true,
       });
-      isDuplicate = !!activity;
+    }
+    const isDuplicate = !!activity;
+
+    if (dto.assetId && !isDuplicate) {
+      // a new reaction names an item the caller can read (Locked and hidden items stay out of view, as
+      // in the album listing) and one that is in this album. The read check runs first so membership
+      // never tells a member whether a Locked item is in the album. A duplicate like is exempt: it
+      // only reports the caller's own earlier reaction and writes nothing.
+      await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [dto.assetId] });
+      const inAlbum = await this.albumRepository.getAssetIds(dto.albumId, [dto.assetId]);
+      if (!inAlbum.has(dto.assetId)) {
+        throw new BadRequestException('Asset is not in the album');
+      }
     }
 
     if (!activity) {

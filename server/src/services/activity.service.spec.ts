@@ -267,6 +267,7 @@ describe(ActivityService.name, () => {
       const [albumId, assetId, userId] = newUuids();
 
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      mocks.activity.search.mockResolvedValue([]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
       mocks.album.getAssetIds.mockResolvedValue(new Set());
 

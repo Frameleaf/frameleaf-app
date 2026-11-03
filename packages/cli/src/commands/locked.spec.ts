@@ -312,6 +312,19 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
       ).rejects.toMatchObject({ exitCode: 2 });
     });
 
+    it('ignores an unusable pepper file inside the library copy: the PIN gets the missing-pepper hint', async () => {
+      const damaged = join(root, `library-${randomUUID()}`);
+      await cp(library, damaged, { recursive: true });
+      await mkdir(join(damaged, 'frameleaf', 'identity'), { recursive: true });
+      await writeFile(join(damaged, 'frameleaf', 'identity', 'locked-pin-pepper.key'), 'not a pepper\n');
+      const to = join(root, `damaged-${randomUUID()}`);
+      const hint = expect.stringMatching(/needs the server's Locked pepper/);
+      await expect(lockedDecrypt({ library: damaged, to, user: 'Cara', secret: '735102' })).rejects.toMatchObject({
+        exitCode: 2,
+        message: hint,
+      });
+    });
+
     it('without the pepper the PIN is refused with a hint naming --pepper-file, exit code 2, nothing written', async () => {
       await expect(lockedDecrypt({ library, to, user: 'Cara', secret: '735102' })).rejects.toMatchObject({
         exitCode: 2,

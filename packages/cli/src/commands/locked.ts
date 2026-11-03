@@ -242,20 +242,28 @@ const loadPepper = async (
     text = options.pepper ?? process.env[PEPPER_ENV];
   }
   if (text === undefined) {
+    // a pepper file inside a library copy was not supplied by the person: an unusable one is ignored,
+    // so the recovery key and a passphrase still work and a PIN gets the missing-pepper hint
     try {
-      text = await readFile(path.join(library, ...LIBRARY_PEPPER_PATH), 'utf8');
+      return decodePepper(await readFile(path.join(library, ...LIBRARY_PEPPER_PATH), 'utf8'));
     } catch {
       return undefined;
     }
   }
-  const trimmed = text.trim();
-  const pepper = Buffer.from(trimmed, 'base64');
-  if (trimmed === '' || pepper.length < 16 || pepper.toString('base64') !== trimmed) {
+  const pepper = decodePepper(text);
+  if (!pepper) {
     throw new LockedCliError(
       `The Locked pepper is not base64 text of at least 16 bytes (${options.pepperFile ? '--pepper-file' : PEPPER_ENV})`,
     );
   }
   return pepper;
+};
+
+/** The pepper that `text` (base64, at least 16 bytes) holds, or undefined when it is not one. */
+const decodePepper = (text: string): Buffer | undefined => {
+  const trimmed = text.trim();
+  const pepper = Buffer.from(trimmed, 'base64');
+  return trimmed === '' || pepper.length < 16 || pepper.toString('base64') !== trimmed ? undefined : pepper;
 };
 
 /** The private key, opened by the key file's PIN or passphrase, or else by its recovery key. */
