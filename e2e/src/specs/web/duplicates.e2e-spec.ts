@@ -84,6 +84,10 @@ test.describe('Duplicate review', () => {
   });
 
   test.beforeEach(async ({ context }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+  });
+
+  const createDefaultGroup = async () => {
     [firstAsset, secondAsset] = await Promise.all([
       utils.createAsset(admin.accessToken, takenAt(SAME_INSTANT)),
       utils.createAsset(admin.accessToken, takenAt(SAME_INSTANT)),
@@ -98,9 +102,7 @@ test.describe('Duplicate review', () => {
       },
       { headers: asBearerAuth(admin.accessToken) },
     );
-
-    await utils.setAuthCookies(context, admin.accessToken);
-  });
+  };
 
   const reviewGroups = () => getDuplicateReview({ headers: asBearerAuth(admin.accessToken) });
 
@@ -112,6 +114,7 @@ test.describe('Duplicate review', () => {
   };
 
   test('opens a copy in the viewer and steps through its group with the arrow keys', async ({ page }) => {
+    await createDefaultGroup();
     await page.goto('/utilities/duplicates');
     await page
       .getByRole('button', { name: /^Open / })
@@ -134,6 +137,7 @@ test.describe('Duplicate review', () => {
   });
 
   test('keeps every copy with one key, without a confirmation, and undoes it after a reload', async ({ page }) => {
+    await createDefaultGroup();
     const initialGroups = await reviewGroups();
     const before = initialGroups.length;
     await page.goto('/utilities/duplicates');
@@ -477,6 +481,7 @@ test.describe('Duplicate review', () => {
   });
 
   test('lists only the signed-in account’s groups, each complete', async () => {
+    await createDefaultGroup();
     const groups = await reviewGroups();
     const ids = groups.flatMap((group) => group.assets.map((asset) => asset.id));
     expect(ids).toEqual(expect.arrayContaining([firstAsset.id, secondAsset.id]));

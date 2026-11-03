@@ -27,7 +27,11 @@ test("required medium tests use the production native runtime and complete suite
     command[2],
     /require\("\/usr\/local\/lib\/frameleaf\/image-hdr.node"\)/,
   );
-  assert.ok(command[2].endsWith("pnpm run test:medium --run"));
+  assert.ok(
+    command[2].endsWith(
+      "pnpm run test:medium --run --shard=${FRAMELEAF_MEDIUM_SHARD:-1/1}",
+    ),
+  );
   assert.doesNotMatch(
     command[2],
     /--exclude|--testNamePattern|(?:^|\s)-t\s|\.spec\.ts/,
@@ -54,16 +58,21 @@ test("required medium tests use the production native runtime and complete suite
 test("normal medium job supplies only owned fixture paths and cleans its container", () => {
   const workflow = read(".github/workflows/test.yml");
   const job = workflow
-    .split("  server-medium-tests:\n")[1]
-    .split("  e2e-tests-server-cli:\n")[0];
-  assert.match(job, /target: medium-test/);
-  assert.match(job, /load: true/);
+    .split("  server-medium-core-tests:\n")[1]
+    .split("  server-medium-scale-tests:\n")[0];
+  const build = workflow
+    .split("  server-medium-image:\n")[1]
+    .split("  server-medium-core-tests:\n")[0];
+  assert.match(build, /target: medium-test/);
+  assert.match(build, /load: true/);
+  assert.match(job, /needs: server-medium-image/);
+  assert.match(job, /docker load -i/);
   // FL-380: main's registry cache, read only; the Actions cache evicted itself.
   assert.match(
-    job,
+    build,
     /cache-from: type=registry,ref=ghcr\.io\/frameleaf\/frameleaf-server-build-cache:ci-linux-amd64/,
   );
-  assert.doesNotMatch(job, /cache-to:|type=gha/);
+  assert.doesNotMatch(build, /cache-to:|type=gha/);
   assert.match(job, /bash scripts\/checkout-test-assets.sh/);
   assert.match(job, /docker_cli=\$\(readlink -f "\$\(command -v docker\)"\)/);
   assert.match(
