@@ -364,3 +364,17 @@ it('refuses destination paths that collide through different reviewed roots', ()
   plan.files[1].destinationPath = 'camera.jpg';
   expect(() => parseDestinationImportPlan(plan)).toThrow('IMPORT_PLAN_INVALID');
 });
+
+it.each(['mtimeNs', 'ctimeNs'] as const)('preserves signed filesystem clock evidence: %s', (field) => {
+  const plan = structuredClone(placements.plan);
+  for (const file of plan.files) file.sourceIdentity[field] = '-123456789';
+  expect(parseDestinationImportPlan(plan).files[0].sourceIdentity[field]).toBe('-123456789');
+});
+
+it.each(['-0', '01', '-01'])('refuses noncanonical filesystem clock evidence: %s', (value) => {
+  for (const field of ['mtimeNs', 'ctimeNs'] as const) {
+    const plan = structuredClone(placements.plan);
+    for (const file of plan.files) file.sourceIdentity[field] = value;
+    expect(() => parseDestinationImportPlan(plan)).toThrow('IMPORT_PLAN_INVALID');
+  }
+});

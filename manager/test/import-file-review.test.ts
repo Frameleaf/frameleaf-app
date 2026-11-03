@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
   open,
+  utimes,
   rename,
   mkdtemp,
   mkdir,
@@ -444,6 +445,32 @@ test(
     } finally {
       // Never remove a directory while a synthetic mount remains attached.
       if (mounted) execFileSync('umount', [alias]);
+      await f.cleanup();
+    }
+  },
+);
+
+test(
+  'reviews originals with modification dates before the Unix epoch',
+  linux,
+  async () => {
+    const f = await fixture();
+    try {
+      await utimes(
+        join(f.source, 'original.jpg'),
+        new Date('1965-01-02T03:04:05Z'),
+        new Date('1965-01-02T03:04:05Z'),
+      );
+      const before = await stat(join(f.source, 'original.jpg'), {
+        bigint: true,
+      });
+      assert.ok(before.mtimeNs < 0n);
+      const plan = await reviewImportFiles(f.input);
+      assert.equal(
+        plan.files[0].sourceIdentity.mtimeNs,
+        String(before.mtimeNs),
+      );
+    } finally {
       await f.cleanup();
     }
   },

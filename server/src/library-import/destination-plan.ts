@@ -11,6 +11,7 @@ import { type LibraryImportBinding, LibraryImportRefused } from 'src/library-imp
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const decimal = z.string().regex(/^(0|[1-9]\d*)$/);
+const nanoseconds = z.string().regex(/^(0|-?[1-9]\d*)$/);
 const id = z.string().min(1).max(1024);
 const transferSchema = z.strictObject({
   id,
@@ -25,8 +26,8 @@ const transferSchema = z.strictObject({
     device: decimal,
     inode: decimal,
     bytes: decimal,
-    mtimeNs: decimal,
-    ctimeNs: decimal,
+    mtimeNs: nanoseconds,
+    ctimeNs: nanoseconds,
     links: decimal,
   }),
   destinationDevice: decimal,
