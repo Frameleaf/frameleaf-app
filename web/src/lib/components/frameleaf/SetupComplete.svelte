@@ -5,6 +5,7 @@
    */
   import { confetti } from '$lib/frameleaf/confetti';
   import { Route } from '$lib/route';
+  import { locale } from '$lib/stores/preferences.store';
   import type { LibrarySetupProgressDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
@@ -58,7 +59,7 @@
     {#each facts as [icon, value, label] (label)}
       <li>
         <Icon {icon} size="18" aria-hidden={true} />
-        <strong>{value.toLocaleString()}</strong>
+        <strong>{value.toLocaleString($locale)}</strong>
         <span>{label}</span>
       </li>
     {/each}

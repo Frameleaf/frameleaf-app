@@ -1,10 +1,12 @@
+import { prefersReducedMotion } from '$lib/frameleaf/motion';
+
 /**
  * One burst of confetti (FL-1146 completion window). Draws on a temporary canvas inside `parent` and removes it
  * when the last piece has fallen. A modal dialog sits in the browser's top layer, so pass the dialog as `parent`
  * to draw above it. Does nothing for people who ask for reduced motion.
  */
 export function confetti({ parent = document.body, count = 220, duration = 4500 } = {}): () => void {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (prefersReducedMotion()) {
     return () => {};
   }
   const canvas = document.createElement('canvas');
