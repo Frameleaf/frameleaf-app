@@ -1,8 +1,8 @@
 import { posix } from 'node:path';
 import { z } from 'zod';
+import type { LycheeRow, LycheeTable, openLycheeSnapshot } from 'src/library-import/lychee.js';
 import fixture from 'src/library-import/fixtures/lychee/7.12.0-sqlite.json' with { type: 'json' };
 import { resolveLycheeOriginals } from 'src/library-import/lychee-files.js';
-import type { LycheeRow, LycheeTable, openLycheeSnapshot } from 'src/library-import/lychee.js';
 import {
   type ImportManifest,
   importFileSchema,
@@ -126,17 +126,18 @@ export function readLycheeManifest(snapshot: ReturnType<typeof openLycheeSnapsho
   }
   if (Object.keys(input.materializedAlbums).some((id) => !dynamic.has(id))) return refuse('LYCHEE_MAPPING_CHANGED');
   const losses: ImportManifest['losses'] = [];
-  const loss = (code: string, entityId?: string) =>
+  const loss = (code: string, entityId?: string) => {
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
-  if (archive.length) loss('LYCHEE_SOURCE_METADATA_ARCHIVED');
-  if (rows('access_permissions').length || rows('user_groups').length || rows('users_user_groups').length)
+  };
+  if (archive.length > 0) loss('LYCHEE_SOURCE_METADATA_ARCHIVED');
+  if (rows('access_permissions').length > 0 || rows('user_groups').length > 0 || rows('users_user_groups').length > 0)
     loss('LYCHEE_SHARING_RESTRICTED');
   // shortcut: archive face geometry, directory ancestry and album tags until their destination mappings are qualified.
-  if (rows('persons').length || rows('faces').length) loss('LYCHEE_PEOPLE_ARCHIVED');
+  if (rows('persons').length > 0 || rows('faces').length > 0) loss('LYCHEE_PEOPLE_ARCHIVED');
   if (rows('albums').some((row) => row.parent_id !== null)) loss('LYCHEE_ALBUM_HIERARCHY_ARCHIVED');
-  if (rows('albums_tags').length) loss('LYCHEE_ALBUM_TAGS_ARCHIVED');
+  if (rows('albums_tags').length > 0) loss('LYCHEE_ALBUM_TAGS_ARCHIVED');
   const variants = Map.groupBy(rows('size_variants'), (row) => key(row.photo_id));
-  if ([...variants.keys()].some((id) => !photos.has(id))) return refuse('LYCHEE_RELATIONSHIPS_INVALID');
+  if (variants.keys().some((id) => !photos.has(id))) return refuse('LYCHEE_RELATIONSHIPS_INVALID');
   const photoTags = new Map<string, string[]>();
   for (const row of rows('photos_tags')) {
     const photoId = key(row.photo_id),

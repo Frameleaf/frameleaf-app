@@ -96,7 +96,7 @@ describe('Lychee common manifest mapping', () => {
             token: `excluded-api-token-${row.id}`,
             remember_token: 'excluded-session-token',
           });
-        if (table === 'access_permissions') {
+        else if (table === 'access_permissions') {
           row.password = row.has_password === 1 ? 'excluded-share-password' : null;
           delete row.has_password;
         }
@@ -404,12 +404,13 @@ describe('Lychee common manifest mapping', () => {
     (kind) => {
       const value = input();
       if (kind === 'missing') value.files.pop();
-      if (kind === 'no-original') database.prepare('DELETE FROM size_variants WHERE id=?').run(original(photo.id).id);
-      if (kind === 'extra') value.files.push({ ...value.files[0], id: 'preview:1', path: 'preview/image.jpg' });
-      if (kind === 'path') value.files[0].path = 'preview/image.jpg';
-      if (kind === 'size') value.files[0].bytes = '1';
-      if (kind === 'hash') value.files[0].sha256 = 'source-checksum';
-      if (kind === 'remote')
+      else if (kind === 'no-original')
+        database.prepare('DELETE FROM size_variants WHERE id=?').run(original(photo.id).id);
+      else if (kind === 'extra') value.files.push({ ...value.files[0], id: 'preview:1', path: 'preview/image.jpg' });
+      else if (kind === 'path') value.files[0].path = 'preview/image.jpg';
+      else if (kind === 'size') value.files[0].bytes = '1';
+      else if (kind === 'hash') value.files[0].sha256 = 'source-checksum';
+      else if (kind === 'remote')
         database
           .prepare('UPDATE size_variants SET storage_disk=? WHERE id=?')
           .run('s3', original(content.originals[0].photoId).id);
@@ -430,23 +431,23 @@ describe('Lychee common manifest mapping', () => {
   ])('refuses unqualified %s state before destination effects', (kind) => {
     const value = input();
     if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-    if (kind === 'revision') value.inventory.revisionAfter = 'changed';
-    if (kind === 'writers') value.inventory.writersStopped = false;
-    if (kind === 'owner') database.prepare('UPDATE photos SET owner_id=999 WHERE id=?').run(photo.id);
-    if (kind === 'album-cycle')
+    else if (kind === 'revision') value.inventory.revisionAfter = 'changed';
+    else if (kind === 'writers') value.inventory.writersStopped = false;
+    else if (kind === 'owner') database.prepare('UPDATE photos SET owner_id=999 WHERE id=?').run(photo.id);
+    else if (kind === 'album-cycle')
       database.prepare('UPDATE albums SET parent_id=id WHERE id=?').run(content.rows.albums[0].id);
-    if (kind === 'stale-snapshot') value.materializedAlbums.unknown = [photo.id];
-    if (kind === 'timezone-invalid')
+    else if (kind === 'stale-snapshot') value.materializedAlbums.unknown = [photo.id];
+    else if (kind === 'timezone-invalid')
       database
         .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?')
         .run('2020-06-10 18:30:00.000000', 'Mars/Olympus', photo.id);
-    if (kind === 'timezone')
+    else if (kind === 'timezone')
       database
         .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=NULL WHERE id=?')
         .run('2020-06-10 18:30:00.000000', photo.id);
-    if (kind === 'date')
+    else if (kind === 'date')
       database.prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?').run('invalid', 'UTC', photo.id);
-    if (kind === 'gps') database.prepare('UPDATE photos SET latitude=45,longitude=NULL WHERE id=?').run(photo.id);
+    else if (kind === 'gps') database.prepare('UPDATE photos SET latitude=45,longitude=NULL WHERE id=?').run(photo.id);
     expect(() => read(value)).toThrow(/LYCHEE_/);
   });
 });
