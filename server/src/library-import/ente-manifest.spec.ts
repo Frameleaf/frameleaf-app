@@ -110,6 +110,7 @@ describe('Ente common manifest mapping', () => {
   });
   it('preserves owning-account manual edits ahead of stale embedded data and sharee preferences', () => {
     const { manifest } = read();
+    if (manifest.version !== 5) throw new Error('Live Photo manifest required');
     const asset = manifest.assets.find((asset) => asset.id === media.ids.first)!;
     expect(asset).toMatchObject({
       ownerId: media.users.alice,
@@ -124,7 +125,7 @@ describe('Ente common manifest mapping', () => {
         favorite: true,
       },
     });
-    expect('originalFileNames' in asset && Object.values(asset.originalFileNames)).toEqual(['Manual cover.jpg']);
+    expect(Object.values(asset.originalFileNames)).toEqual(['Manual cover.jpg']);
     expect(asset.metadata).not.toHaveProperty('timeZone');
   });
   it('keeps equal bytes belonging to different source IDs and owners distinct', () => {
