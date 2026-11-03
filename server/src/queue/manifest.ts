@@ -172,15 +172,18 @@ export async function freezeSelection(
       await sql`update job_run set "enumerationDone" = true where id = ${result.runId}::uuid`.execute(tx);
     }
   };
+  const captureDirect = async (tx: Transaction<DB>) => {
+    // A direct selection has no durable producer to retry it. Keep its new run/header atomic
+    // with capture, including when domain preparation already owns the transaction.
+    const attached = await attach(tx);
+    await capture(tx, attached);
+    return attached;
+  };
   const result = claim
     ? await db.transaction().execute(attach)
-    : await db.transaction().execute(async (tx) => {
-        // A direct selection has no durable producer to retry it. Keep its new run/header atomic
-        // with capture. A supplied setup gate additionally serializes on its existing run.
-        const attached = await attach(tx);
-        await capture(tx, attached);
-        return attached;
-      });
+    : db.isTransaction
+      ? await captureDirect(db as Transaction<DB>)
+      : await db.transaction().execute(captureDirect);
   if (context) {
     // Attachment survives interruption of the later capture transaction.
     context.claim.runId = result.runId;

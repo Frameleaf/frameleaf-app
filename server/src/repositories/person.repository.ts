@@ -393,7 +393,7 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true);
   }
-  selectionForThumbnails(force: boolean, ownerId?: string) {
+  selectionForThumbnails(force: boolean, ownerId?: string, ownAssetsOnly = false) {
     return this.db
       .selectFrom('person')
       .innerJoinLateral(
@@ -404,6 +404,7 @@ export class PersonRepository {
             .select(['asset_face.id', 'asset_face.assetId'])
             .where(libraryScopePredicate(LibraryScope.Personal))
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
+            .$if(ownAssetsOnly, (qb) => qb.whereRef('asset.ownerId', '=', 'person.ownerId'))
             .$if(ownerId !== undefined, (qb) => qb.where('asset.ownerId', '=', ownerId!))
             .where('asset_face.deletedAt', 'is', null)
             .where('asset_face.isVisible', '=', true)

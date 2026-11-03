@@ -516,9 +516,10 @@ export class MetadataService extends BaseService {
         throw new Error('Metadata source changed before publication');
       }
       const currentMetadata = await this.assetRepository.getForMetadataExtractionTags(asset.id);
+      const imported = await this.jobRepository.isImportedMetadataJob();
       // EXIF locks and revisions also protect the capture clocks stored on the asset row.
       const preserveCaptureTime =
-        lockedProperties.includes('dateTimeOriginal') || currentMetadata?.updateId !== previous?.updateId;
+        imported || lockedProperties.includes('dateTimeOriginal') || currentMetadata?.updateId !== previous?.updateId;
       const tasks = [
         () =>
           this.assetRepository.update({
@@ -528,7 +529,7 @@ export class MetadataService extends BaseService {
               localDateTime: dates.localDateTime,
               fileCreatedAt: dates.dateTimeOriginal ?? undefined,
             }),
-            fileModifiedAt: stats.mtime,
+            fileModifiedAt: imported ? undefined : stats.mtime,
 
             // Keep unedited assets in sync with the file on disk, but don't overwrite edited dimensions.
             width: !current.isEdited || current.width === null ? assetWidth : undefined,
@@ -553,7 +554,8 @@ export class MetadataService extends BaseService {
       if (
         current.libraryScope !== LibraryScope.Design &&
         isFaceImportEnabled(metadata) &&
-        this.hasTaggedFaces(exifTags)
+        this.hasTaggedFaces(exifTags) &&
+        !imported
       ) {
         tasks.push(() => this.applyTaggedFaces(asset, exifTags));
       }
