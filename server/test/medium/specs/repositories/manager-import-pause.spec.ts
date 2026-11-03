@@ -213,8 +213,12 @@ for (const kind of ['immich-import-derived', 'library-import-derived'])
       }
       expect(await store.complete(active, [])).toBe(true);
       await enqueue();
-      const claims = await store.claim(queue, worker, 1);
-      expect(claims).toHaveLength(1);
+      // Admission uses SKIP LOCKED: retry an empty scan, but inspect the first actual claim.
+      const claims = await vi.waitFor(async () => {
+        const claims = await store.claim(queue, worker, 1);
+        expect(claims).toHaveLength(1);
+        return claims;
+      });
       expect(claims[0].runId).toBeNull();
       expect(
         (
