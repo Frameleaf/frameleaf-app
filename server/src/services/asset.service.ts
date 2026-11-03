@@ -579,7 +579,7 @@ export class AssetService extends BaseService {
         const updatedDateTimes =
           (dateTimeRelative !== undefined && dateTimeRelative !== 0) ||
           timeZone !== undefined ||
-          extractedTimeZone?.type === 'fixed'
+          extractedTimeZone !== undefined
             ? await this.assetRepository.updateDateTimeOriginal(
                 ids,
                 dateTimeRelative,
