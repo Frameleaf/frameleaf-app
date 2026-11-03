@@ -23,7 +23,7 @@ export async function reconcileImportedStacks(
   const binding = parseLibraryImportBinding(context.binding);
   const plan = bindDestinationImportPlan(context.plan, binding, context.manifest, context.destinationId);
   const manifest = parseImportManifest(context.manifest);
-  const source = manifest.version === 4 ? manifest.stacks : [];
+  const source = 'stacks' in manifest ? manifest.stacks : [];
   const sourceAssets = new Map(manifest.assets.map((asset) => [asset.id, asset]));
   try {
     return await db.transaction(async (tx) => {
