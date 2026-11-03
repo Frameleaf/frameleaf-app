@@ -1921,6 +1921,7 @@ describe(MetadataService.name, () => {
       mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockImplementation(async () => [...locks]);
       mocks.asset.unlockProperties.mockImplementation(async (_id, properties) => {
         for (const property of properties) locks.delete(property);
+        return [];
       });
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
