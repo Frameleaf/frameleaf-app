@@ -224,11 +224,9 @@ it.each([undefined, { mode: 'independent-copy' as const }])(
   },
 );
 
-it('admits only the source products Manager names', () => {
-  for (const product of ['Immich', 'Noodle Gallery'] as const) {
-    expect(() => validateImportConfig({ ...fixture.config, product })).not.toThrow();
-  }
-  expect(() => validateImportConfig({ ...fixture.config, product: 'gallery' } as never)).toThrow(
+it('admits a product name only as a string', () => {
+  expect(() => validateImportConfig({ ...fixture.config, product: 'Noodle Gallery' })).not.toThrow();
+  expect(() => validateImportConfig({ ...fixture.config, product: 5 } as never)).toThrow(
     'INVALID_IMPORT_CONFIGURATION',
   );
 });
