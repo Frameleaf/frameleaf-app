@@ -1231,13 +1231,19 @@ describe(AssetService.name, () => {
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
       const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, description: 'test' });
+      await ctx.newExif({ assetId: asset.id, description: 'test', timeZone: 'America/Edmonton' });
 
       await sut.update(auth, asset.id, { dateTimeOriginal: '2023-11-19T18:11:00' });
 
       await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toEqual(
         expect.objectContaining({
-          exifInfo: expect.objectContaining({ dateTimeOriginal: '2023-11-19T18:11:00+00:00', timeZone: null }),
+          fileCreatedAt: new Date('2023-11-19T18:11:00Z'),
+          localDateTime: new Date('2023-11-19T18:11:00Z'),
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: '2023-11-19T18:11:00+00:00',
+            timeZone: 'UTC',
+            lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'timeZone']),
+          }),
         }),
       );
     });
@@ -1471,13 +1477,19 @@ describe(AssetService.name, () => {
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
       const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, description: 'test' });
+      await ctx.newExif({ assetId: asset.id, description: 'test', timeZone: 'America/Edmonton' });
 
       await sut.updateAll(auth, { ids: [asset.id], dateTimeOriginal: '2023-11-19T18:11:00' });
 
       await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toEqual(
         expect.objectContaining({
-          exifInfo: expect.objectContaining({ dateTimeOriginal: '2023-11-19T18:11:00+00:00', timeZone: null }),
+          fileCreatedAt: new Date('2023-11-19T18:11:00Z'),
+          localDateTime: new Date('2023-11-19T18:11:00Z'),
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: '2023-11-19T18:11:00+00:00',
+            timeZone: 'UTC',
+            lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'timeZone']),
+          }),
         }),
       );
     });
