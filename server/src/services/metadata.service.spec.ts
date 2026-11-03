@@ -3141,6 +3141,22 @@ describe(MetadataService.name, () => {
       expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
     });
 
+    it('keeps a known source zone in the sidecar even when only the capture date is locked', async () => {
+      const asset = AssetFactory.from({
+        fileCreatedAt: new Date('2020-06-10T18:30:00.123Z'),
+        localDateTime: new Date('2020-06-10T12:30:00.123Z'),
+      })
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00.123Z'), timeZone: 'America/Edmonton' })
+        .build();
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal']);
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(asset.files[0].path, {
+        DateTimeOriginal: '2020-06-10T12:30:00.123-06:00',
+      });
+    });
+
     it.each(['UTC', 'Pacific/Auckland'])(
       'writes unknown-zone capture times without adopting the server zone (%s)',
       async (serverZone) => {
