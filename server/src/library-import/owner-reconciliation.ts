@@ -237,7 +237,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
         return refuse('OWNER_RECONCILIATION_MISMATCH');
       const actual =
         await tx.query(`SELECT id::text,email,name,password,"pinCode","oauthId","isAdmin",status,"deletedAt",
-        "clusterGroupId"::text,"importClaimPending","shouldChangePassword","passwordLinkHash","passwordLinkExpiresAt",
+        "clusterGroupId"::text,"importClaimPending","importOperationId"::text,"shouldChangePassword","passwordLinkHash","passwordLinkExpiresAt",
         "profileImagePath","profileImageAssetId"::text,"avatarColor","storageLabel","uploadsPaused","quotaSizeInBytes"::text FROM public."user" ORDER BY id`);
       const byId = new Map(actual.map((row) => [row.id, row]));
       const ownerIds = expected.map(({ owner }) => owner.destinationUserId);
@@ -271,6 +271,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
             row.status !== 'active' ||
             row.deletedAt !== null ||
             row.importClaimPending !== claim ||
+            row.importOperationId !== bound.binding.operationId ||
             row.shouldChangePassword !== !credential ||
             row.pinCode !== null ||
             row.oauthId !== null ||
