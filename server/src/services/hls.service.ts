@@ -17,7 +17,10 @@ import { getCodecString, getOutputSize } from 'src/utils/media.js';
 
 type AssetWithStreamInfo = { videoStream: VideoStreamInfo & { timeBase: number }; packets: VideoPacketInfo };
 type Segmentation = { fps: number; framesPerSegment: number; segmentCount: number; segmentDuration: number };
-type ApiSession = { lastRequestedSegment: number | null; lastVariantIndex: number | null };
+type ApiSession = { lastRequestedSegment: number | null; lastVariantIndex: number | null; principal?: string };
+
+/** Who started a stream: a shared link's visitors are one principal, distinct from the link's owner. */
+const principalOf = (auth: AuthDto) => (auth.sharedLink ? `shared-link:${auth.sharedLink.id}` : `user:${auth.user.id}`);
 
 @Injectable()
 export class HlsService extends BaseService {
@@ -73,7 +76,7 @@ export class HlsService extends BaseService {
     await this.pendingSessions.wait(sessionId, () => {
       this.websocketRepository.serverSend('HlsSessionRequest', { sessionId, assetId, ownerId: auth.user.id });
     });
-    this.trackSession(sessionId);
+    this.trackSession(sessionId).principal = principalOf(auth);
 
     return playlist;
   }
@@ -149,7 +152,10 @@ export class HlsService extends BaseService {
     if (!session) {
       return;
     }
-    if (session.assetId !== assetId) {
+    // Only whoever started the stream may end it: another viewer of the same item (one of a shared
+    // link's visitors, say) holding the session id reads as not found, as does a session this API
+    // process did not issue, which the worker's lease and inactivity cleanup retire instead
+    if (session.assetId !== assetId || this.sessions.get(sessionId)?.principal !== principalOf(auth)) {
       throw new NotFoundException('Session not found');
     }
 
@@ -252,7 +258,7 @@ export class HlsService extends BaseService {
   private trackSession(id: string, variantIndex: number | null = null) {
     const session = this.sessions.get(id);
     if (!session) {
-      const newSession = { lastRequestedSegment: null, lastVariantIndex: variantIndex };
+      const newSession: ApiSession = { lastRequestedSegment: null, lastVariantIndex: variantIndex };
       this.sessions.set(id, newSession);
       return newSession;
     }

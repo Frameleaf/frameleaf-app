@@ -153,6 +153,8 @@ def test_nsfw_repository_switch_downloads_the_selected_repository(
 ) -> None:
     monkeypatch.setattr(settings, "cache_folder", tmp_path)
     monkeypatch.setattr(settings, "model_downloads", True)
+    # A repository outside the curated owners is staged only once the administrator lists it.
+    monkeypatch.setattr(settings.nsfw_detection, "trusted_custom_models", ["private-team/nsfw_image_detection-ONNX"])
     original = NsfwDetectionModel("onnx-community/nsfw_image_detection-ONNX", model_format=ModelFormat.ONNX)
     selected = NsfwDetectionModel("private-team/nsfw_image_detection-ONNX", model_format=ModelFormat.ONNX)
 
@@ -189,6 +191,7 @@ def test_nsfw_offline_loading_does_not_adopt_a_legacy_basename_cache(
 def test_refresh_does_not_restore_obsolete_paths_for_the_selected_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(settings.nsfw_detection, "trusted_custom_models", ["example/nsfw"])
     model = NsfwDetectionModel("example/nsfw", cache_dir=tmp_path / "cache")
 
     def acquire(repo: str, **kwargs: Any) -> None:

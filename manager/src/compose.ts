@@ -1,11 +1,11 @@
 import { readFile, readdir, writeFile, mkdir, realpath, statfs, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { constants, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { load } from 'js-yaml';
 import { z } from 'zod';
 import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, type Source } from './contracts.js';
 import type { VerifiedRelease } from './releases.js';
-import { atomicJson } from './files.js';
+import { atomicJson, atomicSecret } from './files.js';
 import { command, environment, type Container } from './docker.js';
 import { UNRAID_ICON } from './dockerman.js';
 
@@ -115,6 +115,49 @@ export async function releaseImages(
 export const RESERVED_ENVIRONMENT = /^(DB_|POSTGRES_|FRAMELEAF_MANAGER_|IMMICH_CONFIG_FILE$|IMMICH_MEDIA_LOCATION$)/;
 /** Container paths Manager mounts itself; an extra folder may not shadow them. */
 const RESERVED_TARGETS = ['/run/frameleaf', '/var/lib/postgresql', '/cache'];
+/**
+ * Host paths that are never bind-mounted into the network-exposed stack, whatever an administrator (or a
+ * stolen Manager session) asks for: the Docker socket and data root, kernel and device trees, system
+ * configuration, the boot flash, root's home and Manager's own state (review L4). Blast radius, not
+ * escalation: a later server-side flaw must not become host root.
+ */
+export const DENIED_MOUNT_SOURCES = Object.freeze([
+  '/', '/etc', '/proc', '/sys', '/dev', '/root', '/boot', '/run', '/var/run', '/var/lib/docker',
+  '/var/run/docker.sock', '/run/docker.sock',
+]);
+const under = (path: string, root: string) => root === '/' ? true : path === root || path.startsWith(`${root}/`);
+function deniedMountSource(source: string, managerData = process.env.MANAGER_DATA): boolean {
+  const path = resolve(source);
+  if (path === '/') return true;
+  return (
+    DENIED_MOUNT_SOURCES.filter((denied) => denied !== '/').some((denied) => under(path, denied)) ||
+    (!!managerData && under(path, resolve(managerData)))
+  );
+}
+/**
+ * The real path of an extra folder. `resolve()` keeps symlinks, so a link under an approved root that points
+ * at /etc (or Manager's state) would pass the lexical checks while Docker binds what it points at: the
+ * resolved path is what the deny-list and root checks see, and a source that resolves elsewhere is refused
+ * (storagePath does the same). A missing tail is resolved through its nearest existing ancestor, so a
+ * linked parent is still seen; Docker never creates it (create_host_path: false) and a saved stack whose
+ * folder is absent for now still regenerates. Anything else the filesystem refuses (a link loop, no
+ * permission) is refused as unsafe rather than escaping as an I/O error.
+ */
+function realMountSource(name: string, source: string): string {
+  let path = resolve(source);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(path), ...missing);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if ((code !== 'ENOENT' && code !== 'ENOTDIR') || path === '/')
+        throw new Refusal('service_override_unsafe_source', 409, `${name}: ${source} cannot be resolved on this host (${code ?? error}).`);
+      missing.unshift(basename(path));
+      path = dirname(path);
+    }
+  }
+}
 export const OVERRIDABLE_SERVICES = ['frameleaf-server', 'frameleaf-machine-learning', 'database'] as const;
 const containerPath = z.string().regex(/^\/(?!$)[^\n\0:]+$/).max(4096);
 /** What a home-lab administrator may add to one container on top of Manager's own compose service. */
@@ -158,6 +201,19 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
     for (const mount of override.mounts) {
       if (targets.has(mount.target) || RESERVED_TARGETS.some((r) => mount.target === r || mount.target.startsWith(`${r}/`)))
         throw new Refusal('service_override_conflict', 409, `${name}: ${mount.target} is managed by Frameleaf.`);
+      const real = mount.source === resolve(mount.source) ? realMountSource(name, mount.source) : mount.source;
+      if (mount.source !== resolve(mount.source) || deniedMountSource(mount.source) || deniedMountSource(real))
+        throw new Refusal(
+          'service_override_unsafe_source',
+          409,
+          `${name}: ${mount.source} is a host system path (or Manager's own state) that may not be mounted into Frameleaf.`,
+        );
+      if (real !== mount.source)
+        throw new Refusal(
+          'service_override_unsafe_source',
+          409,
+          `${name}: ${mount.source} is a symbolic link (it resolves to ${real}); add the real folder instead.`,
+        );
       targets.add(mount.target);
       service.volumes = [
         ...(service.volumes ?? []),
@@ -177,8 +233,12 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
   }
 }
 export type ApplicationConfig = z.infer<typeof ApplicationConfig>;
-/** The conflict check renderCompose runs, against the media targets this installation has, before anything is journaled. */
-export function checkServiceOverrides(mediaTargets: string[], overrides: ServiceOverrides): void {
+/**
+ * The conflict and deny-list checks renderCompose runs, against the media targets this installation has,
+ * before anything is journaled. With `sourceRoots`, every extra folder must also lie under one of them:
+ * Manager's media and database roots plus any folder the administrator allow-listed in MANAGER_MOUNT_ROOTS.
+ */
+export function checkServiceOverrides(mediaTargets: string[], overrides: ServiceOverrides, sourceRoots?: string[]): void {
   applyServiceOverrides(
     {
       'frameleaf-server': { volumes: mediaTargets.map((target) => ({ target })) },
@@ -187,11 +247,22 @@ export function checkServiceOverrides(mediaTargets: string[], overrides: Service
     },
     overrides,
   );
+  const roots = (sourceRoots ?? []).filter(Boolean).map((root) => resolve(root));
+  if (!roots.length) return;
+  for (const [name, override] of Object.entries(overrides))
+    for (const mount of override?.mounts ?? [])
+      if (!roots.some((root) => under(resolve(mount.source), root) && under(realMountSource(name, mount.source), root)))
+        throw new Refusal(
+          'service_override_source_outside_roots',
+          409,
+          `${name}: ${mount.source} is outside the folders Manager may mount (${roots.join(', ')}). Map it into Manager at the same path and add it to MANAGER_MOUNT_ROOTS to allow it.`,
+        );
 }
 
 /** Paths are explicitly mounted into Manager at the same absolute host path by the launcher. */
 export async function storagePath(path: string, roots: string[], bytes: number): Promise<string> {
-  if (!path.startsWith('/') || /[\n\0]/.test(path) || path !== resolve(path)) throw new Refusal('invalid_storage_path');
+  // A comma would split the `--mount` CSV the media-move helper and launcher build from this path (review L6).
+  if (!path.startsWith('/') || /[\n\0,]/.test(path) || path !== resolve(path)) throw new Refusal('invalid_storage_path');
   const actual = await realpath(path).catch(() => {
     throw new Refusal('storage_inaccessible');
   });
@@ -207,6 +278,14 @@ export async function storagePath(path: string, roots: string[], bytes: number):
 /** FL-408: the bundled Studio worker's enrolment, shared by the server (rw) and machine learning (ro). */
 export const STUDIO_WORKER_VOLUME = 'studio-worker';
 export const STUDIO_WORKER_TARGET = '/run/frameleaf/studio-worker';
+/**
+ * The library database password lives in one 0600 file in Manager's stack directory, read by the server
+ * (DB_PASSWORD_FILE, start.sh) and PostgreSQL (POSTGRES_PASSWORD_FILE) through a read-only bind mount. It no
+ * longer appears in the containers' environment, so DockerMan templates saved to Unraid's flash drive,
+ * `docker inspect` output and the exported compose text carry a path, not the secret (review L9).
+ */
+export const DATABASE_PASSWORD_FILE = 'database-password';
+export const DATABASE_PASSWORD_TARGET = '/run/frameleaf/database-password';
 function composeMount(m: Mount, volumes: Record<string, unknown>, index: number) {
   if (m.type === 'bind')
     return {
@@ -299,7 +378,7 @@ export async function renderCompose(
     DB_PORT: '5432',
     DB_USERNAME: 'frameleaf',
     DB_DATABASE_NAME: 'frameleaf',
-    DB_PASSWORD: password,
+    DB_PASSWORD_FILE: DATABASE_PASSWORD_TARGET,
     FRAMELEAF_MANAGER_INSTALLATION: installation.id,
     FRAMELEAF_MANAGER_ORIGIN: installation.origin,
     FRAMELEAF_MANAGER_TOKEN_FILE: '/run/frameleaf/manager-token',
@@ -316,6 +395,15 @@ export async function renderCompose(
     read_only: true,
     bind: { create_host_path: false },
   });
+  await atomicSecret(join(directory, DATABASE_PASSWORD_FILE), password);
+  const passwordMount = {
+    type: 'bind',
+    source: join(directory, DATABASE_PASSWORD_FILE),
+    target: DATABASE_PASSWORD_TARGET,
+    read_only: true,
+    bind: { create_host_path: false },
+  };
+  media.push(passwordMount);
   media.push({
     type: 'volume',
     source: STUDIO_WORKER_VOLUME,
@@ -355,7 +443,7 @@ export async function renderCompose(
       shm_size: '128mb',
       environment: {
         POSTGRES_USER: 'frameleaf',
-        POSTGRES_PASSWORD: password,
+        POSTGRES_PASSWORD_FILE: DATABASE_PASSWORD_TARGET,
         POSTGRES_DB: 'frameleaf',
         POSTGRES_INITDB_ARGS: '--data-checksums',
       },
@@ -366,6 +454,7 @@ export async function renderCompose(
           target: '/var/lib/postgresql',
           bind: { create_host_path: false },
         },
+        passwordMount,
       ],
       healthcheck: {
         test: ['CMD-SHELL', 'pg_isready -U frameleaf -d frameleaf'],

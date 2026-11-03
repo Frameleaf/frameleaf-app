@@ -78,6 +78,11 @@ const DUMP_COMPLETE = /-- PostgreSQL database dump complete/;
 /** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
 const DUMP_TAIL_BYTES = 4096;
 const FAILED_BACKUP_IDLE_MS = 60 * 60 * 1000;
+/**
+ * While a dump is verified (read only, so its modification time stands still) its temporary file is
+ * touched this often, so that another worker's cleanup, which has only idle time to go by, keeps it.
+ */
+const BACKUP_VERIFY_HEARTBEAT_MS = 5 * 60 * 1000;
 
 export class DatabaseBackupVerificationError extends Error {
   constructor(reason: string) {
@@ -88,6 +93,9 @@ export class DatabaseBackupVerificationError extends Error {
 
 @Injectable()
 export class DatabaseBackupService {
+  /** Temporary files of the dumps this service is writing or verifying right now; cleanup never touches them. */
+  private readonly activeTemporaryFiles = new Set<string>();
+
   constructor(
     private readonly logger: LoggingRepository,
     private readonly storageRepository: StorageRepository,
@@ -297,6 +305,7 @@ export class DatabaseBackupService {
     let pgdump: Duplex | undefined;
     let gzip: Duplex | undefined;
 
+    this.activeTemporaryFiles.add(temporaryFilePath);
     try {
       pgdump = this.processRepository.spawnDuplexStream(bin, args, {
         signal,
@@ -312,7 +321,10 @@ export class DatabaseBackupService {
 
       await pipeline(pgdump, gzip, fileStream, { signal });
       if (verify) {
-        await this.verifyDatabaseBackup(temporaryFilePath, { signal, progress });
+        await this.verifyDatabaseBackup(temporaryFilePath, {
+          signal,
+          progress: this.keepingAlive(temporaryFilePath, progress),
+        });
       }
       signal?.throwIfAborted();
       await this.storageRepository.rename(temporaryFilePath, backupFilePath);
@@ -328,10 +340,26 @@ export class DatabaseBackupService {
 
         .catch((error) => this.logger.error(`Failed to delete failed backup file: ${error}`));
       throw error;
+    } finally {
+      this.activeTemporaryFiles.delete(temporaryFilePath);
     }
 
     this.logger.log(`Database Backup Success`);
     return backupFilePath;
+  }
+
+  /** `progress`, also touching the file's modification time now and then while it is only read. */
+  private keepingAlive(filePath: string, progress: (bytes: number) => void): (bytes: number) => void {
+    let touchedAt = Date.now();
+    return (bytes) => {
+      progress(bytes);
+      const now = Date.now();
+      if (now - touchedAt >= BACKUP_VERIFY_HEARTBEAT_MS) {
+        touchedAt = now;
+        const at = new Date(now);
+        void this.storageRepository.utimes(filePath, at, at).catch(() => void 0);
+      }
+    };
   }
 
   /**
@@ -605,10 +633,15 @@ export class DatabaseBackupService {
         backups.push(filename);
       }
       // Routine dumps can run at the same time (the backup schedule and "Take a snapshot now"), so a
-      // temporary file still being written belongs to another dump. Only an idle one has failed.
-      // ponytail: idle time, not a lock; a dump that writes nothing for an hour is treated as failed.
+      // temporary file still being written belongs to another dump: one of this service's own is known
+      // by name; another worker's is known by idle time, which it keeps resetting while it verifies.
+      // Only an idle one has failed.
       if (isFailedDatabaseBackupName(filename)) {
-        const stats = await this.storageRepository.stat(path.join(backupsFolder, filename)).catch(() => null);
+        const temporaryFilePath = path.join(backupsFolder, filename);
+        if (this.activeTemporaryFiles.has(temporaryFilePath)) {
+          continue;
+        }
+        const stats = await this.storageRepository.stat(temporaryFilePath).catch(() => null);
         if (stats && Date.now() - stats.mtimeMs > FAILED_BACKUP_IDLE_MS) {
           failedBackups.push(filename);
         }

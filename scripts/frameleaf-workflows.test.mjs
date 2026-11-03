@@ -30,6 +30,68 @@ const excluded = new Set([
   "nsfw-unraid-docker.yml",
 ]);
 
+test("E2E readiness waits for both the API and worker bootstrap", () => {
+  const step = workflow("test.yml").jobs["e2e-tests-server-cli"].steps.find(
+    (step) => step.id === "server-ready",
+  );
+  const directory = mkdtempSync(path.join(tmpdir(), "frameleaf-e2e-ready-"));
+  try {
+    for (const [name, body] of Object.entries({
+      timeout:
+        '[[ "$1" == 120s ]] || exit 42\nshift\n[[ "$NEVER_READY" != 1 ]] || exit 124\nexec "$@"',
+      curl: 'echo api >> "$CALLS"\n[[ "$API_DELAY" != 1 || -f "$STATE/api" ]] && exit 0\ntouch "$STATE/api"\nexit 1',
+      docker:
+        'echo "docker $*" >> "$CALLS"\n[[ "$*" == "compose logs --no-color frameleaf-server" ]] || exit 0\nif [[ "$WORKER_DELAY" == 1 && ! -f "$STATE/worker" ]]; then\n  touch "$STATE/worker"\n  echo "Initializing metadata service"\nelse\n  echo "Frameleaf Microservices is running [testing]"\nfi',
+      sleep: 'echo waiting >> "$CALLS"',
+    })) {
+      writeFileSync(path.join(directory, name), `#!/bin/bash\n${body}\n`, {
+        mode: 0o755,
+      });
+    }
+    for (const scenario of ["WORKER_DELAY", "API_DELAY", "NEVER_READY"]) {
+      const calls = path.join(directory, "calls");
+      writeFileSync(calls, "");
+      const result = spawnSync(
+        "bash",
+        ["-e", "-o", "pipefail", "-c", step.run],
+        {
+          encoding: "utf8",
+          timeout: 3000,
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            SERVER_PING_URL: "http://fixture.invalid/api/server/ping",
+            STATE: directory,
+            CALLS: calls,
+            [scenario]: "1",
+          },
+        },
+      );
+      assert.equal(result.error, undefined);
+      const observed = readFileSync(calls, "utf8");
+      if (scenario === "NEVER_READY") {
+        assert.equal(result.status, 1);
+        assert.match(observed, /compose ps/);
+        assert.match(
+          observed,
+          /compose logs --no-color --tail 200 frameleaf-server/,
+        );
+      } else {
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(
+          observed,
+          /waiting/,
+          `${scenario} must delay test startup`,
+        );
+        assert.match(observed, /api/);
+        assert.match(observed, /compose logs --no-color frameleaf-server/);
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Studio browser provisioning uses the exact official image and fails closed before qualification", () => {
   const engine = workflow("frameleaf-studio-engine.yml").jobs.engine;
   const step = engine.steps.find(

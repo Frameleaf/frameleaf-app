@@ -34,7 +34,7 @@ export async function run() {
   const nested = await import('/node_modules/kokoro-js/node_modules/@huggingface/transformers/src/utils/hub.js');
   const rootEnv = (await import('/node_modules/@huggingface/transformers/src/env.js')).env;
   const nestedEnv = (await import('/node_modules/kokoro-js/node_modules/@huggingface/transformers/src/env.js')).env;
-  check(rootEnv.version==='4.1.0' && nestedEnv.version==='3.8.1','actual installed versions');
+  check(rootEnv.version==='4.3.1' && nestedEnv.version==='3.8.1','actual installed versions');
   check(nestedEnv.allowLocalModels===false,'Kokoro installed browser runtime disables local files');
   for(const env of [rootEnv,nestedEnv]) { env.allowLocalModels=false;env.allowRemoteModels=true;env.useBrowserCache=true;env.useFSCache=false;env.useCustomCache=false; }
   for(const [version,hub] of [[4,root],[3,nested]]) {

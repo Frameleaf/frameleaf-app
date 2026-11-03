@@ -219,8 +219,13 @@ def extract_frames(
     end_ms: int | None,
     yuv_matrix: str,
     timeout: float,
+    max_frames: int | None = None,
 ) -> int:
-    """Decode the video frames of ``source`` (optionally one segment) to RGB PNG files."""
+    """Decode the video frames of ``source`` (optionally one segment) to RGB PNG files.
+
+    With ``max_frames`` the decoder stops one frame past it: the caller refuses a longer clip from the
+    count, without every frame of it having been written first.
+    """
     frames_dir.mkdir(parents=True, exist_ok=False)
     _run(
         [
@@ -237,6 +242,7 @@ def extract_frames(
             "-vf",
             # The source's own range tag decides limited or full range.
             f"scale=in_color_matrix={yuv_matrix}:in_range=auto,format=rgb24",
+            *(["-frames:v", str(max_frames + 1)] if max_frames is not None else []),
             str(frames_dir / FRAME_PATTERN),
         ],
         timeout=timeout,

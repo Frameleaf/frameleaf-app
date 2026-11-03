@@ -39,6 +39,12 @@ for path in "$state" "$media" "$backups" "$appdata"; do
   case "$path" in /*) ;; *) echo 'Use absolute existing host folders' >&2; exit 2;; esac
   test -d "$path" || { echo 'A required host folder is missing' >&2; exit 2; }
   test "$(realpath "$path")" = "$path" || { echo 'Use canonical paths, not symlinks' >&2; exit 2; }
+  # Each folder becomes a `--mount` CSV value below: a comma or colon would split it (MANAGER_STORAGE_ROOTS
+  # is colon separated too); quotes, `$` and control characters never belong in a Docker argument here.
+  if printf '%s' "$path" | LC_ALL=C grep '[[:cntrl:]:,"$`\\]' >/dev/null; then
+    echo "Unsupported characters in folder path: $path (commas, colons, quotes and control characters cannot be passed to Docker --mount; rename the folder)" >&2
+    exit 2
+  fi
 done
 docker_root=$(docker info --format '{{.DockerRootDir}}')
 case "$docker_root" in /*) ;; *) echo 'Cannot verify the Docker storage location' >&2; exit 2;; esac
