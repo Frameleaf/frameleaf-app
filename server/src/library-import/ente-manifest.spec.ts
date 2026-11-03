@@ -289,6 +289,24 @@ describe('Ente common manifest mapping', () => {
       else expect(() => read(value)).not.toThrow();
     },
   );
+  it.each([false, true])('discloses empty shared albums without requiring shared files (shared: %s)', (shared) => {
+    const value = input();
+    for (const account of value.accounts) {
+      account.files = account.files.filter((file) => file.ownerId === account.id);
+      const owned = new Set(account.files.map((file) => file.id));
+      account.placements = account.placements.filter((placement) => owned.has(placement.record.ente.fileID));
+      account.albums = account.albums.filter((album) => album.record.ente.ownerID === account.id);
+    }
+    if (shared) {
+      const album = structuredClone(value.accounts[0].albums[0]);
+      album.record.ente.albumID = '777777';
+      album.directory = 'empty-shared';
+      for (const account of value.accounts) account.albums.push(structuredClone(album));
+    }
+    const losses = read(value).manifest.losses.map((loss) => loss.code);
+    expect(losses.includes('ENTE_SHARING_RESTRICTED')).toBe(shared);
+  });
+
   it('refuses conflicting public metadata between account inventories', () => {
     const value = input();
     value.accounts[1].files.find((file) => file.id === media.ids.first)!.caption = 'Conflicting caption';
