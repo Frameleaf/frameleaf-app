@@ -1810,6 +1810,51 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalled();
     });
 
+    it('shifts an unknown-zone wall clock by the same amount as its capture instant', async () => {
+      const asset = AssetFactory.create({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-11-01T07:30:00Z'),
+        localDateTime: new Date('2020-11-01T01:30:00Z'),
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getByIds.mockResolvedValue([asset] as never);
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-11-01T08:30:00Z'), timeZone: null },
+      ]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeRelative: 60 });
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: asset.id,
+        fileCreatedAt: new Date('2020-11-01T08:30:00Z'),
+        localDateTime: new Date('2020-11-01T02:30:00Z'),
+      });
+    });
+
+    it('keeps the final shifted clocks when an absolute date and relative shift are supplied together', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      const apply = (value: { fileCreatedAt?: unknown; localDateTime?: unknown }) => {
+        if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
+        if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
+      };
+      mocks.asset.updateAll.mockImplementation(async (_ids, value) => apply(value));
+      mocks.asset.update.mockImplementation(async (value) => {
+        apply(value);
+        return undefined;
+      });
+      mocks.asset.getByIds.mockImplementation(async () => [asset] as never);
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: asset.id, dateTimeOriginal: new Date('2020-06-11T01:05:00Z'), timeZone: 'America/Edmonton' },
+      ]);
+      await sut.updateAll(authStub.admin, {
+        ids: [asset.id],
+        dateTimeOriginal: '2020-06-10T18:30:00-06:00',
+        dateTimeRelative: 35,
+        timeZone: 'America/Edmonton',
+      });
+      expect(asset.fileCreatedAt.toISOString()).toBe('2020-06-11T01:05:00.000Z');
+      expect(asset.localDateTime.toISOString()).toBe('2020-06-10T19:05:00.000Z');
+    });
+
     it('should update exif table if dateTimeRelative and timeZone field is provided', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
       const dateTimeRelative = 35;
@@ -1826,7 +1871,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: 'asset-1',
         fileCreatedAt: new Date('2020-02-25T04:41:00.000Z'),
-        localDateTime: new Date('2020-02-25T04:41:00.000Z'),
+        localDateTime: new Date('2020-02-25T06:41:00.000Z'),
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
@@ -1906,6 +1951,36 @@ describe(AssetService.name, () => {
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
     });
+
+    it.each(['America/Edmonton', null])(
+      'keeps a durable date shift correct across retries (zone: %s)',
+      async (timeZone) => {
+        const asset = AssetFactory.create({
+          id: 'asset-1',
+          fileCreatedAt: new Date('2020-11-01T07:30:00Z'),
+          localDateTime: new Date('2020-11-01T01:30:00Z'),
+        });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getByIds.mockImplementation(async () => [asset] as never);
+        mocks.asset.setDateTimeOriginal.mockResolvedValue({
+          assetId: asset.id,
+          dateTimeOriginal: new Date('2020-11-01T08:30:00Z'),
+          timeZone,
+        } as never);
+        mocks.asset.update.mockImplementation(async (value) => {
+          if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
+          if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
+          return undefined;
+        });
+        const items = [{ id: asset.id, from: new Date('2020-11-01T07:30:00Z') }];
+        await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 60);
+        const expected = timeZone ? '2020-11-01T01:30:00.000Z' : '2020-11-01T02:30:00.000Z';
+        expect(asset.localDateTime.toISOString()).toBe(expected);
+        await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 60);
+        expect(asset.localDateTime.toISOString()).toBe(expected);
+        expect(asset.fileCreatedAt.toISOString()).toBe('2020-11-01T08:30:00.000Z');
+      },
+    );
 
     it("makes the shifted date the owner's on partner copies and passes it to copies that follow (FL-326)", async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
@@ -2657,6 +2732,49 @@ describe(AssetService.name, () => {
 
     beforeEach(() => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
+    });
+
+    it('releases only the capture lock for an explicitly copied sidecar before extraction is queued', async () => {
+      const locks = new Set(['dateTimeOriginal', 'timeZone', 'tags']);
+      const source = forCopy('source', { files: [sidecar('source', '/synthetic/source.xmp')] });
+      const target = forCopy('target', {});
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      mocks.asset.unlockProperties.mockImplementation(async (_id, properties) => {
+        for (const property of properties) locks.delete(property);
+        return [];
+      });
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+      expect(locks).toEqual(new Set(['timeZone', 'tags']));
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetExtractMetadata, data: { id: 'target' } });
+      expect(mocks.asset.unlockProperties.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queue.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('retains the capture lock and queues no extraction when an explicit sidecar copy fails', async () => {
+      const source = forCopy('source', { files: [sidecar('source', '/synthetic/source.xmp')] });
+      const target = forCopy('target', {});
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      mocks.storage.copyFile.mockRejectedValue(new Error('synthetic copy failure'));
+      await expect(
+        sut.copy(authStub.user1, {
+          sourceId: 'source',
+          targetId: 'target',
+          albums: false,
+          sharedLinks: false,
+          stack: false,
+          favorite: false,
+        }),
+      ).rejects.toThrow('synthetic copy failure');
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('copies into a fresh managed directory without deleting a read-only library source sidecar', async () => {
