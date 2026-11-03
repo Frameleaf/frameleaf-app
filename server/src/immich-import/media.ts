@@ -189,7 +189,7 @@ export const verifyMediaFile = async (
   checksum?: string,
   algorithm?: string,
   policy?: ImportMediaPolicy,
-  onVerified?: (sha256: string) => void,
+  onVerified?: (identity: string) => void,
 ): Promise<string> => {
   await verifyMediaRoots(roots, policy);
   const inPlace = policy?.mode === 'manager-in-place';
@@ -224,9 +224,10 @@ export const verifyMediaFile = async (
       if (!before.isFile() || !targetBefore.isFile() || before.size !== targetBefore.size) {
         throw new ImportRefused('MEDIA_FILE_MISMATCH');
       }
-      // In place, source and target were just proven to be one file, so its content is read once.
+      // In place, source and target were just proven to be one file and Manager mounts it read-only, so the
+      // import reads no content: the background original-file check compares it with Immich's checksum later.
       const [sourceDigest, targetDigest] = inPlace
-        ? await fileDigests(sourceFile).then((digest) => [digest, digest])
+        ? [null, null]
         : await Promise.all([fileDigests(sourceFile), fileDigests(targetFile)]);
       const [after, targetAfter, sourcePathAfter, targetPathAfter, sourceResolvedAfter, targetResolvedAfter] =
         await Promise.all([
@@ -238,7 +239,7 @@ export const verifyMediaFile = async (
           realpath(mapping.target),
         ]);
       if (
-        sourceDigest.sha256 !== targetDigest.sha256 ||
+        sourceDigest?.sha256 !== targetDigest?.sha256 ||
         !unchanged(before, after) ||
         !unchanged(targetBefore, targetAfter) ||
         !unchanged(before, sourcePathAfter) ||
@@ -248,20 +249,21 @@ export const verifyMediaFile = async (
       ) {
         throw new ImportRefused('MEDIA_CHANGED_OR_MISMATCHED');
       }
-      if (checksum) {
+      if (checksum && (sourceDigest || algorithm === 'sha1-path')) {
         const actual =
           algorithm === 'sha1-path'
             ? pathChecksum(path)
             : algorithm === 'sha1'
-              ? sourceDigest.sha1
+              ? sourceDigest?.sha1
               : algorithm === 'sha256'
-                ? sourceDigest.sha256
+                ? sourceDigest?.sha256
                 : null;
         if (actual !== checksum.replace(/^\\x/u, '')) {
           throw new ImportRefused('ORIGINAL_CHECKSUM_MISMATCH');
         }
       }
-      onVerified?.(sourceDigest.sha256);
+      // A copy is identified by its content; an in-place file by its identity, size and modification time.
+      onVerified?.(sourceDigest?.sha256 ?? `stat:${before.dev}:${before.ino}:${before.size}:${before.mtimeNs}`);
       return mapping.target;
     } finally {
       await targetFile.close();
