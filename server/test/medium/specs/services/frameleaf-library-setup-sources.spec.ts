@@ -220,7 +220,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         db,
       );
       await make().begin();
-      if (mismatch === 'restore-other') {
+      if (mismatch === 'restore-other' || mismatch === 'restore-none') {
         expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
         await expect(make().setPaused(true)).rejects.toThrow('Imported setup identity mismatch');
       } else {
@@ -230,8 +230,7 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
       expect(await ready()).toEqual(
         mismatch === 'restore-approved' ? [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].sort() : [],
       );
-      if (mismatch === 'restore-none')
-        expect((await make().progress()).stages.find(({ id }) => id === 'thumbnails')?.status).toBe('waiting');
+      if (mismatch === 'restore-none') expect((await make().progress()).stages).toEqual([]);
       return;
     }
     if (mismatch) {
@@ -270,6 +269,15 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
     await make().begin();
     const startedAt = (await marker()).startedAt;
     expect(startedAt).toEqual(expect.any(String));
+    expect(
+      (
+        await sql<{
+          run: string;
+          operation: string;
+        }>`SELECT value->>'importRunId' AS run,value->>'importOperationId' AS operation
+      FROM system_metadata WHERE key=${'frameleaf-manager-library-setup:' + installation}`.execute(db)
+      ).rows[0],
+    ).toEqual({ run: id, operation: binding.operationId });
     const early = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].sort();
     expect(await ready()).toEqual(early);
     expect(await make().progress()).toMatchObject({ active: true, paused: false, completedAt: null });

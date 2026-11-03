@@ -13,6 +13,7 @@ import { LibraryImportRefused, parseLibraryImportBinding } from 'src/library-imp
 import { type DB } from 'src/schema/index.js';
 
 type SetupSelection = Record<string, unknown> & {
+  managerSetupRequired?: unknown;
   managerSetup?: {
     installation: string;
     operationId: string;
@@ -51,11 +52,26 @@ export async function readImportedSetupRun(db: Kysely<DB>, lock = false) {
     const run = runs[0];
     const selection = run?.selection;
     const object = selection !== null && typeof selection === 'object' && !Array.isArray(selection);
+    const marker = selection?.managerSetup;
+    const timestamp = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value));
+    const managed = object && (selection.managerSetupRequired !== undefined || marker !== undefined);
+    const markerValid =
+      !!marker &&
+      typeof marker === 'object' &&
+      !Array.isArray(marker) &&
+      typeof marker.installation === 'string' &&
+      /^[a-f0-9]{12}$/.test(marker.installation) &&
+      typeof marker.operationId === 'string' &&
+      !!marker.operationId.trim() &&
+      (marker.preparedAt === null || timestamp(marker.preparedAt)) &&
+      (marker.startedAt === null || (timestamp(marker.startedAt) && timestamp(marker.preparedAt))) &&
+      (marker.paused === undefined || typeof marker.paused === 'boolean');
     const identityMatches =
       !!run &&
       object &&
       run.kind === kind &&
-      (selection.managerSetup?.paused === undefined || typeof selection.managerSetup.paused === 'boolean') &&
+      (selection.managerSetupRequired === undefined || selection.managerSetupRequired === true) &&
+      (!managed || markerValid) &&
       (binding
         ? selection.version === 1 &&
           selection.prepared === true &&

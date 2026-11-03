@@ -27,6 +27,9 @@ type SetupState = {
   origin: 'new_import' | 'new_library' | 'restored_library';
   phase: 'awaiting-account' | 'rescanning' | 'verifying' | 'needs-attention' | 'complete';
   startedAt: string;
+  /** Retained separately from the mutable run marker for queue recovery. */
+  importRunId?: string;
+  importOperationId?: string;
   failedBaseline?: Record<string, number>;
   libraries: string[];
   scans: Record<string, string>;
@@ -175,6 +178,8 @@ export class FrameleafLibrarySetupService {
         owners,
         // A retry keeps the owner's pause and what the file check already released (FL-1146).
         paused: previous?.paused,
+        importRunId: previous?.importRunId,
+        importOperationId: previous?.importOperationId,
         checkReleasedAt: previous?.checkReleasedAt ?? null,
         completedAt: previous?.completedAt ?? null,
         healthAfter: null,
@@ -205,12 +210,23 @@ export class FrameleafLibrarySetupService {
       : null;
   }
 
+  private importedSetupRequired(state: SetupState, imported: Awaited<ReturnType<typeof readImportedSetupRun>>) {
+    return (
+      !!this.importInstallation(state) ||
+      imported?.run?.selection.managerSetupRequired !== undefined ||
+      imported?.run?.selection.managerSetup !== undefined
+    );
+  }
+
   private importedSetupMatches(state: SetupState, imported: Awaited<ReturnType<typeof readImportedSetupRun>>) {
     const installation = this.importInstallation(state);
     return (
       !!installation &&
       !!imported?.identityMatches &&
-      imported.run?.selection.managerSetup?.installation === installation
+      imported.run?.selection.managerSetup?.installation === installation &&
+      (state.importRunId === undefined || state.importRunId === imported.run.id) &&
+      (state.importOperationId === undefined ||
+        state.importOperationId === imported.run.selection.managerSetup.operationId)
     );
   }
 
@@ -232,10 +248,20 @@ export class FrameleafLibrarySetupService {
     const current = await this.importedRun(db);
     if (
       this.importedSetupMatches(state, current) &&
+      current?.run?.selection.managerSetup &&
+      (state.importRunId === undefined || state.importOperationId === undefined)
+    ) {
+      state.importRunId = current.run.id;
+      state.importOperationId = current.run.selection.managerSetup.operationId;
+      await this.write(this.key(), state, db);
+    }
+    if (
+      this.importedSetupMatches(state, current) &&
       current?.journal.status === 'activated' &&
       current.run?.enumerationDone &&
       current.run.selection.managerSetup?.startedAt &&
-      current.run.selection.managerSetup.paused === !!state.paused
+      current.run.selection.managerSetup.paused === !!state.paused &&
+      current.run.selection.managerSetupRequired === true
     )
       return;
     await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
@@ -248,17 +274,16 @@ export class FrameleafLibrarySetupService {
     if (
       journal.status !== 'activated' ||
       !run ||
-      !imported.identityMatches ||
+      !this.importedSetupMatches(state, imported) ||
       marker?.installation !== installation ||
       !marker.operationId ||
       !marker.preparedAt ||
       !run.enumerationDone
     )
       return;
-    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(!!state.paused)}::text::jsonb)
-      WHERE id=${run.id}::uuid AND selection #> '{managerSetup,paused}' IS DISTINCT FROM ${JSON.stringify(!!state.paused)}::text::jsonb`.execute(
-      db,
-    );
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(!!state.paused)}::text::jsonb) || '{"managerSetupRequired":true}'::jsonb
+      WHERE id=${run.id}::uuid AND (selection #> '{managerSetup,paused}' IS DISTINCT FROM ${JSON.stringify(!!state.paused)}::text::jsonb
+        OR selection->'managerSetupRequired' IS DISTINCT FROM 'true'::jsonb)`.execute(db);
     if (marker.startedAt) return;
     if (state.origin === 'restored_library') {
       const summary = (await listRuns(db, 1, 0, run.id))[0];
@@ -300,7 +325,13 @@ export class FrameleafLibrarySetupService {
     const marker = run?.selection.managerSetup;
     const installation = this.importInstallation(state);
     // Canonical fresh/independent-copy libraries have no Manager-held import to recover.
-    if (state.origin === 'restored_library' && !marker && !installation) return null;
+    if (
+      state.origin === 'restored_library' &&
+      !marker &&
+      !installation &&
+      run?.selection.managerSetupRequired === undefined
+    )
+      return null;
     const matches = !!run && this.importedSetupMatches(state, imported);
     const summary = matches ? (await listRuns(this.db, 1, 0, run.id))[0] : null;
     const pending =
@@ -372,7 +403,7 @@ export class FrameleafLibrarySetupService {
     const state = await this.read<SetupState>(this.key());
     if (!state || state.phase === 'awaiting-account') return inactive;
     const imported = await this.importedRun();
-    if (this.importInstallation(state) && !this.importedSetupMatches(state, imported))
+    if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
       return { ...inactive, active: true, phase: 'needs-attention', paused: !!state.paused };
     const run =
       this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt
@@ -468,7 +499,7 @@ export class FrameleafLibrarySetupService {
       state.paused = paused;
       await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
       const imported = await this.importedRun(db, true);
-      if (this.importInstallation(state) && !this.importedSetupMatches(state, imported))
+      if (this.importedSetupRequired(state, imported) && !this.importedSetupMatches(state, imported))
         throw new BadRequestException('Imported setup identity mismatch');
       if (this.importedSetupMatches(state, imported) && imported?.run) {
         await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
@@ -536,7 +567,8 @@ export class FrameleafLibrarySetupService {
     return this.locked(async (db) => {
       const state = (await this.read<SetupState>(this.key(), db))!;
       if (state.phase === 'rescanning' || state.phase === 'verifying') {
-        if (this.importInstallation(state) && !this.importedSetupMatches(state, await this.importedRun(db))) {
+        const boundImport = await this.importedRun(db);
+        if (this.importedSetupRequired(state, boundImport) && !this.importedSetupMatches(state, boundImport)) {
           state.phase = 'needs-attention';
           await this.write(this.key(), state, db);
           return state;
@@ -649,7 +681,7 @@ export class FrameleafLibrarySetupService {
         }
         const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);
         let importedUnfinished = false;
-        if (this.importInstallation(state)) {
+        if (this.importedSetupRequired(state, boundImport)) {
           // Lock before the fresh pending-work read: idle queues do not account for unadmitted run items.
           const imported = await this.importedRun(db, true);
           importedUnfinished = true;
@@ -685,7 +717,7 @@ export class FrameleafLibrarySetupService {
           state.phase = 'verifying';
           state.quietSince ??= Date.now();
           if (Date.now() - state.quietSince >= 10_000) {
-            if (state.origin === 'new_import') {
+            if (this.importedSetupRequired(state, boundImport)) {
               const imported = await this.importedRun(db, true);
               if (!this.importedSetupMatches(state, imported) || imported?.journal.status !== 'activated') {
                 throw new BadRequestException('Import activation is not verified');

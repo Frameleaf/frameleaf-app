@@ -260,6 +260,7 @@ describe('offline import derived-work durable ownership', () => {
         selection: {
           source: 'source-fixture',
           config: digest(config),
+          managerSetupRequired: true,
           managerSetup: {
             installation: 'abcdef123456',
             operationId: 'fixture-operation',
