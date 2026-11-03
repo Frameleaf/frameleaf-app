@@ -27,6 +27,8 @@ test('regeneration does not show zero counts before the run is counted', () => {
   });
   assert.doesNotMatch(display.detail, /\b0\b/);
   assert.match(display.detail, /in place/);
+  // The same words must hold once the run has started but is not counted yet.
+  assert.doesNotMatch(display.detail, /once this starts/);
 });
 
 test('a finished run with nothing to do keeps its counts', () => {
