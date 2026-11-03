@@ -13,7 +13,7 @@ const activated = () => ({
   activation: structuredClone(sealed.payload),
   activationSha256: sealed.sha256,
 });
-const check = async (rows: unknown[]) => {
+const check = async (rows: Record<string, unknown>[]) => {
   const { db } = scriptedKysely(() => ({ rows }));
   try {
     const repository = new DatabaseRepository(db, { setContext: vi.fn() } as never, {} as never);
