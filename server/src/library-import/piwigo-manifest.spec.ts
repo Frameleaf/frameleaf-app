@@ -1,8 +1,11 @@
-import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { createHash, randomUUID } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
+import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
+import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
+import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
 import content from 'src/library-import/fixtures/piwigo/16.4.0-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
-import { type ImportManifest } from 'src/library-import/manifest.js';
+import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
 import { piwigoProjections } from 'src/library-import/piwigo-projections.js';
 import * as piwigo from 'src/library-import/piwigo-source.js';
 import { type SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
@@ -92,6 +95,60 @@ describe('Piwigo common manifest mapping', () => {
         createHash('sha256').update(Buffer.from(original.originalBase64, 'base64')).digest('hex'),
       );
   });
+  it('prepares all mapped metadata with the canonical destination writer', async () => {
+    const { manifest } = await read(),
+      template = planFixture.plan.files[0];
+    const files = new Map(manifest.files.map((file) => [file.id, file]));
+    const plan = parseDestinationImportPlan({
+      ...planFixture.plan,
+      source: manifest.source,
+      owners: manifest.users.map((user) => ({ sourceId: user.id, destinationId: randomUUID() })),
+      files: manifest.assets.flatMap((asset) =>
+        asset.fileIds.map((id, index) => {
+          const file = files.get(id)!;
+          return {
+            ...template,
+            id: 'placement:' + asset.id + ':' + id,
+            sourceAssetId: asset.id,
+            sourceFileId: id,
+            sourcePath: file.path,
+            destinationPath: asset.ownerId + '/' + asset.id + '/' + file.path,
+            bytes: file.bytes,
+            sha256: file.sha256,
+            sourceIdentity: { ...template.sourceIdentity, inode: String(index + 1), bytes: file.bytes },
+          };
+        }),
+      ),
+    });
+    const query = vi.fn();
+    const writer = new CanonicalAssetWriter(
+      { query, transaction: vi.fn() },
+      {
+        manifest,
+        plan,
+        destinationId: plan.destinationId,
+        binding: {
+          operationId: randomUUID(),
+          source: manifest.source,
+          manifestSha256: manifestFingerprint(manifest),
+          planSha256: destinationPlanFingerprint(plan),
+        },
+      },
+    );
+    for (const asset of manifest.assets) {
+      if (!('type' in asset)) throw new Error('Sealed source asset required');
+      expect(
+        writer.prepare({
+          sourceAssetId: asset.id,
+          type: asset.type,
+          fileModifiedAt: asset.fileModifiedAt,
+          originalFileNames: asset.originalFileNames,
+        }),
+      ).toBeDefined();
+    }
+    expect(manifest.losses).toContainEqual({ code: 'PIWIGO_TITLE_ARCHIVED', entityId: '4', acknowledged: false });
+    expect(query).not.toHaveBeenCalled();
+  });
   it.each(Object.entries(content.expected.visibleImageIds))(
     'matches independently captured visibility for %s',
     async (name, ids) => {
@@ -104,6 +161,19 @@ describe('Piwigo common manifest mapping', () => {
       }
     },
   );
+  it('keeps private category metadata from an owner who sees the photo through another category', async () => {
+    const value = input();
+    value.photoOwners['6'] = '4';
+    const records = rows();
+    records.image_category.push({ image_id: 6n, category_id: 2n, rank: 99n });
+    const { manifest } = await read(value, records);
+    expect(manifest.albums.some((album) => album.id === '2:owner:4')).toBe(false);
+    expect(manifest.losses).toContainEqual({
+      code: 'PIWIGO_ALBUM_MEMBERSHIP_RESTRICTED',
+      entityId: '2:6',
+      acknowledged: false,
+    });
+  });
   it('does not infer ownership from uploader, displayed author or matching email', async () => {
     const value = input();
     delete value.photoOwners['4'];

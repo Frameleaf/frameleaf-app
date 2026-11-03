@@ -1,3 +1,4 @@
+export { readPiwigoManifest } from 'src/library-import/piwigo-manifest.js';
 import { type Connection, type RowDataPacket, createConnection } from 'mysql2/promise';
 import { isIP } from 'node:net';
 import { z } from 'zod';
