@@ -191,9 +191,9 @@ it('releases a restored prepared import once with a real admin and effective set
     const marker = (await run()).selection.managerSetup;
     expect(marker).toMatchObject({ installation: original, operationId, startedAt: expect.any(String) });
     // FL-1146: metadata and thumbnails start at once; the rest wait for the original-file check.
-    const early: string[] = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails];
+    const early = new Set<string>([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]);
     expect((await selections()).map((row) => row.state)).toEqual(
-      captured.map((row) => (row.state === 'enumerating' && early.includes(row.stage) ? 'ready' : row.state)),
+      captured.map((row) => (row.state === 'enumerating' && early.has(row.stage) ? 'ready' : row.state)),
     );
     expect((await selections()).map((row) => row.capturedAt)).toEqual(captured.map((row) => row.capturedAt));
     expect(await setup.sut.getAdminConfigWithRevision()).toEqual(settings);
