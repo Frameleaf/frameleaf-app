@@ -30,7 +30,15 @@ beforeEach(async () => {
 const setup = async (count = 2) => {
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [0, 1].map((index) => ({ sourceId: `owner-${index}`, destinationId: randomUUID() }));
-  if (count === 0) plan.files = [];
+  const original = plan.files[0];
+  plan.files = Array.from({ length: count }, (_, index) => ({
+    ...original,
+    id: `file-${index}`,
+    sourcePath: `original-${index}.jpg`,
+    destinationPath: `owner-${index % 2}/original-${index}.jpg`,
+    sha256: index.toString(16).padStart(64, '0'),
+    sourceIdentity: { ...original.sourceIdentity, inode: String(index + 3) },
+  }));
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
     version: 3,
@@ -54,9 +62,9 @@ const setup = async (count = 2) => {
     assets: Array.from({ length: count }, (_, index) => ({
       id: `source-${index}`,
       ownerId: plan.owners[index % 2].sourceId,
-      fileIds: ['file-1'],
-      primaryFileId: 'file-1',
-      originalFileNames: { 'file-1': 'original.jpg' },
+      fileIds: [plan.files[index].id],
+      primaryFileId: plan.files[index].id,
+      originalFileNames: { [plan.files[index].id]: 'original.jpg' },
       type: index % 2 ? 'VIDEO' : 'IMAGE',
       fileModifiedAt: '2020-01-02T03:04:05Z',
       visibility: 'timeline',
