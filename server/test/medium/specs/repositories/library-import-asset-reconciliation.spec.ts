@@ -370,6 +370,7 @@ it('rehashes every original through the reviewed root and refuses incomplete byt
       })),
     ),
     { device: context.plan.roots[1].device, inode: context.plan.roots[1].inode },
+    expect.any(Set),
   );
   vi.mocked(verifyImportFiles).mockResolvedValue({ files: 1, bytes: '3' });
   await expect(reconcileImportedAssets(wrap(db), context, [item])).rejects.toThrow('ASSET_RECONCILIATION_MISMATCH');

@@ -4,6 +4,7 @@ import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { BundleVerificationError, verifyImportFiles } from 'src/library-import/files.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
+import placements from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 
 vi.mock('src/library-import/files.js', async (importOriginal) => ({
@@ -72,6 +73,58 @@ beforeEach(() => {
   vi.mocked(verifyImportFiles).mockReset();
 });
 
+it('prepares independent placements without changing the source file identity', () => {
+  const plan = parseDestinationImportPlan(placements.plan);
+  const manifest = parseImportManifest({
+    format: 'frameleaf-library-import',
+    version: 2,
+    source: plan.source,
+    inventory: {
+      complete: true,
+      ownershipComplete: true,
+      privacyComplete: true,
+      writersStopped: true,
+      revisionBefore: plan.source.revision,
+      revisionAfter: plan.source.revision,
+    },
+    users: [
+      { id: 'owner-1', name: 'Synthetic' },
+      { id: 'owner-2', name: 'Other synthetic' },
+    ],
+    files: [{ id: 'file-1', path: 'camera.jpg', bytes: '14', sha256: plan.files[0].sha256, role: 'original' }],
+    assets: ['asset-1', 'asset-2'].map((id) => ({
+      id,
+      ownerId: id === 'asset-1' ? 'owner-1' : 'owner-2',
+      fileIds: ['file-1'],
+      primaryFileId: 'file-1',
+      visibility: 'timeline',
+      metadata: { takenAt: '2020-01-02T03:04:05Z', timeZone: 'UTC' },
+    })),
+    albums: [],
+    losses: [],
+  });
+  const binding = {
+    operationId: randomUUID(),
+    source: plan.source,
+    manifestSha256: manifestFingerprint(manifest),
+    planSha256: destinationPlanFingerprint(plan),
+  };
+  const query = vi.fn();
+  const db: ImportDatabase = { query, transaction: (body) => body(db) };
+  const writer = new CanonicalAssetWriter(db, { binding, plan, manifest, destinationId: plan.destinationId });
+  const prepared = ['asset-1', 'asset-2'].map((sourceAssetId) =>
+    writer.prepare({
+      sourceAssetId,
+      type: 'IMAGE',
+      fileModifiedAt: '2020-01-02T03:04:05Z',
+      originalFileNames: { 'file-1': sourceAssetId + '.jpg' },
+    }),
+  );
+  expect(prepared.map((photo) => photo.files[0].path)).toEqual(['owner/camera.jpg', 'second/camera.jpg']);
+  expect(prepared.map((photo) => photo.files[0].id)).toEqual(['file-1', 'file-1']);
+  expect(query).not.toHaveBeenCalled();
+});
+
 it.each(['BUNDLE_FILE_MISMATCH', 'BUNDLE_ROOT_CHANGED', 'BUNDLE_FILE_UNAVAILABLE'])(
   'retains the stable verification refusal before any database writes: %s',
   async (code) => {
@@ -104,10 +157,15 @@ it('keeps the bound writer intent isolated from mutations of a prepared result',
   expect(writer.prepare(item)).toEqual(original);
   vi.mocked(verifyImportFiles).mockRejectedValue(new BundleVerificationError('BUNDLE_FILE_MISMATCH'));
   await expect(writer.write(item)).rejects.toThrow('BUNDLE_FILE_MISMATCH');
-  expect(verifyImportFiles).toHaveBeenCalledWith(original.files[0].root.path, expect.any(Array), {
-    device: original.files[0].root.device,
-    inode: original.files[0].root.inode,
-  });
+  expect(verifyImportFiles).toHaveBeenCalledWith(
+    original.files[0].root.path,
+    expect.any(Array),
+    {
+      device: original.files[0].root.device,
+      inode: original.files[0].root.inode,
+    },
+    expect.any(Set),
+  );
 });
 
 it.each(['type', 'clock', 'name'])('refuses changed sealed %s before touching the destination', (field) => {

@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtemp,
@@ -14,8 +14,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { Store } from '../src/store.js';
 import { ImportTransferJournal } from '../src/import-transfer-journal.js';
+import { importPlanSha256 } from '../src/import-plan.js';
+import { reviewedImport } from './import-plan-fixture.js';
 import {
   closeImportCopyHandles,
   copyImportFiles,
@@ -23,6 +26,215 @@ import {
 } from '../src/import-copy.js';
 
 const linux = { skip: process.platform !== 'linux' };
+for (const resume of [false, true]) {
+  test(
+    `refuses bind-mounted destination aliases before effects, resume=${resume}`,
+    linux,
+    async (t) => {
+      const f = await fixture();
+      const alias = join(f.directory, 'alias');
+      let mounted = false;
+      let store: Store | undefined;
+      const failures: unknown[] = [];
+      try {
+        await mkdir(join(f.destination, 'sub'), { mode: 0o700 });
+        await mkdir(alias, { mode: 0o700 });
+        try {
+          execFileSync('mount', ['--bind', join(f.destination, 'sub'), alias], {
+            stdio: 'ignore',
+          });
+          mounted = true;
+        } catch {
+          t.skip('Requires bind-mount capability');
+          return;
+        }
+        const identity = await stat(alias, { bigint: true });
+        const roots = {
+          ...f.roots,
+          alias: {
+            path: alias,
+            device: String(identity.dev),
+            inode: String(identity.ino),
+          },
+        };
+        const original = f.journal.files(f.operation.id)[0].file;
+        const first = {
+          ...original,
+          id: 'first',
+          sourceAssetId: 'one',
+          sourceFileId: 'shared',
+          destinationPath: 'sub/photo.png',
+        };
+        const second = {
+          ...first,
+          id: 'second',
+          sourceAssetId: 'two',
+          destinationRoot: 'alias',
+          destinationPath: 'photo.png',
+        };
+        const plan = {
+          ...reviewedImport([]).plan,
+          version: 2,
+          roots: Object.entries(roots).map(([id, root]) => ({ id, ...root })),
+          files: [first, second],
+        };
+        store = new Store(join(f.directory, 'alias-journal'));
+        const { operation } = store.start('import', 'aliases', {});
+        const journal = new ImportTransferJournal(store);
+        journal.begin(operation.id, {
+          manifestSha256: 'a'.repeat(64),
+          planSha256: importPlanSha256(plan),
+        });
+        journal.sealPlan(operation.id, plan);
+        journal.intent(operation.id, first);
+        journal.intent(operation.id, second);
+        if (resume) {
+          await writeFile(join(f.destination, 'sub/photo.png'), f.bytes, {
+            mode: 0o600,
+          });
+          journal.verified(operation.id, first.id, {
+            sha256: first.sha256,
+            bytes: first.bytes,
+          });
+        }
+        await assert.rejects(
+          copyImportFiles(journal, operation.id, roots, resume),
+          /import_destination_alias/,
+        );
+        assert.deepEqual(await readFile(join(f.source, 'photo.png')), f.bytes);
+        assert.deepEqual(
+          journal.files(operation.id).map(({ state }) => state),
+          [resume ? 'verified' : 'intent', 'intent'],
+        );
+        if (resume)
+          assert.deepEqual(await readFile(join(alias, 'photo.png')), f.bytes);
+        else
+          await assert.rejects(stat(join(alias, 'photo.png')), {
+            code: 'ENOENT',
+          });
+      } catch (error) {
+        failures.push(error);
+      } finally {
+        for (const opened of [store, f.store]) {
+          try {
+            opened?.close();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (mounted) {
+          try {
+            execFileSync('umount', [alias], { stdio: 'ignore' });
+            mounted = false;
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (!mounted) {
+          try {
+            await rm(f.directory, { recursive: true, force: true });
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (failures.length === 1) throw failures[0];
+        if (failures.length > 1)
+          throw new AggregateError(
+            failures,
+            'Bind-mount test and cleanup failed',
+          );
+      }
+    },
+  );
+}
+test(
+  'shared originals resume into separate verified copies after acknowledgement loss',
+  linux,
+  async () => {
+    const f = await fixture();
+    let store = new Store(join(f.directory, 'shared-journal'));
+    try {
+      const { operation } = store.start('import', 'shared-original', {});
+      const original = f.journal.files(f.operation.id)[0].file;
+      const first = {
+        ...original,
+        id: 'placement-one',
+        sourceAssetId: 'photo-one',
+        sourceFileId: 'shared-file',
+      };
+      const second = {
+        ...first,
+        id: 'placement-two',
+        sourceAssetId: 'photo-two',
+        destinationPath: 'second.png',
+      };
+      const plan = {
+        ...reviewedImport([]).plan,
+        version: 2,
+        roots: Object.entries(f.roots).map(([id, root]) => ({ id, ...root })),
+        files: [first, second],
+      };
+      const binding = {
+        manifestSha256: 'a'.repeat(64),
+        planSha256: importPlanSha256(plan),
+      };
+      let journal = new ImportTransferJournal(store);
+      journal.begin(operation.id, binding);
+      journal.sealPlan(operation.id, plan);
+      journal.intent(operation.id, first);
+      journal.intent(operation.id, second);
+      const acknowledge = journal.verified.bind(journal);
+      const interrupted = mock.method(
+        journal,
+        'verified',
+        (...args: Parameters<typeof acknowledge>) => {
+          acknowledge(...args);
+          throw new Error('synthetic acknowledgement loss');
+        },
+      );
+      await assert.rejects(
+        copyImportFiles(journal, operation.id, f.roots, false),
+      );
+      interrupted.mock.restore();
+      assert.deepEqual(
+        journal.files(operation.id).map(({ state }) => state),
+        ['verified', 'intent'],
+      );
+      store.close();
+      store = new Store(join(f.directory, 'shared-journal'));
+      store.interrupt();
+      journal = new ImportTransferJournal(store);
+      assert.deepEqual(
+        await copyImportFiles(journal, operation.id, f.roots, true),
+        { files: 2, bytes: String(f.bytes.length * 2) },
+      );
+      const paths = [
+        join(f.source, 'photo.png'),
+        join(f.destination, 'photo.png'),
+        join(f.destination, 'second.png'),
+      ];
+      for (const path of paths) assert.deepEqual(await readFile(path), f.bytes);
+      assert.equal(
+        new Set(
+          await Promise.all(
+            paths.map(async (path) =>
+              String((await stat(path, { bigint: true })).ino),
+            ),
+          ),
+        ).size,
+        3,
+      );
+      assert.deepEqual(
+        journal.files(operation.id).map(({ state }) => state),
+        ['verified', 'verified'],
+      );
+    } finally {
+      store.close();
+      f.store.close();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  },
+);
 test('cleanup attempts all handles after a close failure', async () => {
   const closed: number[] = [];
   await assert.rejects(
@@ -169,7 +381,7 @@ test(
       );
       await assert.rejects(
         copyImportFiles(f.journal, f.operation.id, f.roots, true),
-        /import_copy_unavailable/,
+        /import_destination_invalid/,
       );
       assert.deepEqual(await readFile(join(f.source, 'photo.png')), f.bytes);
       assert.equal(f.journal.files(f.operation.id)[0].state, 'intent');

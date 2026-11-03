@@ -1,11 +1,7 @@
-import {
-  importPlanSha256,
-  type ImportPlan,
-  type ImportTransfer,
-} from '../src/import-plan.js';
+import { importPlanSha256, type ImportPlan } from '../src/import-plan.js';
 
 export function reviewedImport(
-  files: ImportTransfer[],
+  files: Extract<ImportPlan, { version: 1 }>['files'],
   roots?: ImportPlan['roots'],
 ) {
   const devices = new Map<string, string>();
