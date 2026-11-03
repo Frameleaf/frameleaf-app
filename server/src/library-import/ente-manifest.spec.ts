@@ -201,6 +201,7 @@ describe('Ente common manifest mapping', () => {
       for (const placement of account.placements.filter((placement) => placement.record.ente.fileID === file.id)) {
         placement.record.photoTakenTime.timestamp = '1700000000';
         placement.record.creationTime.timestamp = '1700000000';
+        Reflect.set(placement.record.ente.metadata, 'creationTime', 1_700_000_000_123_456);
       }
     }
     const { manifest } = read(value);
