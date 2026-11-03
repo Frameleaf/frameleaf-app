@@ -16,6 +16,7 @@ import {
   advanceSourceArchiveHash,
   encodeSourceArchiveRecord,
 } from 'src/library-import/source-archive-codec.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -136,6 +137,26 @@ it('retains the actual canonical verification report through PostgreSQL JSONB wi
   expect(JSON.stringify(restored.report)).not.toMatch(/owner@example|Imported owner|photos/);
   expect((await controller.status()).run?.status).toBe('verifying');
 });
+it('requires retained activation evidence at startup and rejects destination replay', async () => {
+  const { context, owners } = setup();
+  const controller = new LibraryImportController(connection.db, context);
+  await controller.run(owners, descriptor, stream());
+  const sealed = sealLibraryImportActivation(context, await controller.verify(), undefined, new Date().toISOString());
+  const gate = new DatabaseRepository(db, { setContext: () => {} } as never, {} as never);
+  await connection.db.query("UPDATE public.frameleaf_library_import SET status='activated'");
+  await expect(gate.assertImportActivated()).rejects.toThrow('DESTINATION_IMPORT_NOT_ACTIVATED');
+  await connection.db.query(
+    'UPDATE public.frameleaf_library_import SET activation=$1::text::jsonb,activation_sha256=$2',
+    [JSON.stringify(sealed.payload), sealed.sha256],
+  );
+  await expect(gate.assertImportActivated()).resolves.toBeUndefined();
+  await connection.db.query(
+    "UPDATE public.frameleaf_library_import SET reviewed_plan=jsonb_set(reviewed_plan,'{destinationId}',$1::text::jsonb)",
+    [JSON.stringify(randomUUID())],
+  );
+  await expect(gate.assertImportActivated()).rejects.toThrow('DESTINATION_IMPORT_NOT_ACTIVATED');
+});
+
 it('refuses an empty destination before retaining a journal that would block administrator setup', async () => {
   await sql`TRUNCATE public."user",public.cluster_group CASCADE`.execute(db);
   const { context, owners } = setup();
