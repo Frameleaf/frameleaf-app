@@ -707,13 +707,14 @@ export class MetadataService extends BaseService {
       ? values
       : pick(values, lockedProperties);
 
+    const sidecarTimeZone = timeZone ?? asset.exifInfo.timeZone;
     const exif = omitBy(
       <Tags>{
         Description: description,
         ImageDescription: description,
         DateTimeOriginal: dateTimeOriginal
-          ? timeZone
-            ? mergeTimeZone(dateTimeOriginal, timeZone)?.toISO()
+          ? sidecarTimeZone
+            ? mergeTimeZone(dateTimeOriginal, sidecarTimeZone)?.toISO()
             : asset.localDateTime.toISOString().slice(0, -1)
           : undefined,
         GPSLatitude: latitude,
