@@ -16,8 +16,8 @@ export type ImportMediaPolicy =
   | { mode: 'manager-in-place'; authority: 'frameleaf-manager'; operationId: string; deploymentId: string };
 export type ImportConfig = {
   version: string;
-  /** The source product Manager found. 'Noodle Gallery' versions are Gallery's own release, not its upstream base. */
-  product?: string;
+  /** Set by Manager for a Noodle Gallery source, whose version is Gallery's own release, not its upstream base. */
+  product?: 'Noodle Gallery';
   sourceId: string;
   writersStopped: boolean;
   mediaRoots: MediaRootMap[];

@@ -101,7 +101,7 @@ export const validateImportConfig = (config: ImportConfig): void => {
   if (
     !config ||
     typeof config.version !== 'string' ||
-    (config.product !== undefined && typeof config.product !== 'string') ||
+    (config.product !== undefined && config.product !== 'Noodle Gallery') ||
     typeof config.sourceId !== 'string' ||
     config.sourceId.length < 8 ||
     typeof config.writersStopped !== 'boolean' ||

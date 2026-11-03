@@ -224,9 +224,9 @@ it.each([undefined, { mode: 'independent-copy' as const }])(
   },
 );
 
-it('admits a product name only as a string', () => {
+it('admits only Noodle Gallery as a named source product', () => {
   expect(() => validateImportConfig({ ...fixture.config, product: 'Noodle Gallery' })).not.toThrow();
-  expect(() => validateImportConfig({ ...fixture.config, product: 5 } as never)).toThrow(
-    'INVALID_IMPORT_CONFIGURATION',
-  );
+  for (const product of ['NoodleGallery', 'gallery', 5]) {
+    expect(() => validateImportConfig({ ...fixture.config, product } as never)).toThrow('INVALID_IMPORT_CONFIGURATION');
+  }
 });
