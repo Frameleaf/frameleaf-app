@@ -781,6 +781,7 @@ export class Operations {
     };
     const config = {
       version: source.version.replace(/^v/, ''),
+      ...(source.product === 'Noodle Gallery' && { product: source.product }),
       sourceId: source.id,
       writersStopped: true,
       media: {
