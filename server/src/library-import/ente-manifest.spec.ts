@@ -265,6 +265,15 @@ describe('Ente common manifest mapping', () => {
     value.accounts[0].placements[0].file[field] = field === 'path' ? '../outside.jpg' : 'invalid';
     expect(() => read(value)).toThrow('ENTE_FILE_EVIDENCE_MISMATCH');
   });
+  it.each([1.25, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1])(
+    'keeps JSON numbers lossless (%s)',
+    (number) => {
+      const value = input();
+      Reflect.set(value.accounts[0].placements[0].record.ente.metadata, 'syntheticNumber', number);
+      if (number > Number.MAX_SAFE_INTEGER) expect(() => read(value)).toThrow('ENTE_EXPORT_INVALID');
+      else expect(() => read(value)).not.toThrow();
+    },
+  );
   it('refuses conflicting public metadata between account inventories', () => {
     const value = input();
     value.accounts[1].files.find((file) => file.id === media.ids.first)!.caption = 'Conflicting caption';

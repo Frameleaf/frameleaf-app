@@ -32,7 +32,7 @@ const location = z.strictObject({ latitude: z.number().min(-90).max(90), longitu
 const json = z.json().refine((value) => {
   let safe = true;
   JSON.stringify(value, (_key, field) => {
-    if (typeof field === 'number' && Number.isInteger(field) && !Number.isSafeInteger(field)) safe = false;
+    if (typeof field === 'number' && field === Math.trunc(field) && !Number.isSafeInteger(field)) safe = false;
     return field;
   });
   return safe;
@@ -164,12 +164,14 @@ export function readEnteManifest(input: {
     if (
       account.id !== account.root.userID ||
       accounts.has(account.id) ||
-      [...directories].some(
-        (path) =>
-          path === account.directory ||
-          path.startsWith(account.directory + '/') ||
-          account.directory.startsWith(path + '/'),
-      )
+      directories
+        .values()
+        .some(
+          (path) =>
+            path === account.directory ||
+            path.startsWith(account.directory + '/') ||
+            account.directory.startsWith(path + '/'),
+        )
     )
       return refuse('ENTE_ACCOUNT_BINDING_INVALID');
     directories.add(account.directory);
@@ -196,8 +198,9 @@ export function readEnteManifest(input: {
   >();
   const archive: SourceArchiveRecord[] = [];
   const losses: ImportManifest['losses'] = [{ code: 'ENTE_SOURCE_METADATA_ARCHIVED', acknowledged: false }];
-  const loss = (code: string, entityId?: string) =>
+  const loss = (code: string, entityId?: string) => {
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
+  };
   for (const account of accounts.values()) {
     archive.push({
       table: 'ente_account',
@@ -450,7 +453,7 @@ export function readEnteManifest(input: {
         }
     for (const [albumId, album] of account.albumIndex) {
       const members = memberships.get(albumId) ?? [];
-      if (!members.length && album.record.ente.ownerID !== account.id) continue;
+      if (members.length === 0 && album.record.ente.ownerID !== account.id) continue;
       const dynamic = !['album', 'folder'].includes(album.record.ente.type);
       if (dynamic) loss('ENTE_DYNAMIC_ALBUM_SNAPSHOT', account.id + ':' + albumId);
       albums.push({
@@ -462,7 +465,7 @@ export function readEnteManifest(input: {
       });
     }
   }
-  if ([...accounts.values()].some((account) => account.files.some((file) => file.ownerId !== account.id)))
+  if (accounts.values().some((account) => account.files.some((file) => file.ownerId !== account.id)))
     loss('ENTE_SHARING_RESTRICTED');
   for (const record of archive) encodeSourceArchiveRecord(record);
   const manifest = parseImportManifest({
@@ -470,7 +473,10 @@ export function readEnteManifest(input: {
     version: 5,
     source: input.source,
     inventory: input.inventory,
-    users: [...accounts.values()].map((account) => ({ id: account.id, name: account.name })),
+    users: accounts
+      .values()
+      .map((account) => ({ id: account.id, name: account.name }))
+      .toArray(),
     files,
     assets,
     albums,
