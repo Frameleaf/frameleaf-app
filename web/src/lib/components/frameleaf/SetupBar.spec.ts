@@ -61,6 +61,11 @@ describe('SetupBar', () => {
 
     expect(sdkMock.pauseLibrarySetup).toHaveBeenCalledWith({ librarySetupPauseDto: { paused: true } });
     expect(await screen.findByText('Setup is paused')).toBeInTheDocument();
+
+    sdkMock.pauseLibrarySetup.mockResolvedValue(progress({ paused: false }));
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Resume' })[0]);
+    expect(sdkMock.pauseLibrarySetup).toHaveBeenLastCalledWith({ librarySetupPauseDto: { paused: false } });
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
   });
 
   it('is not shown to members, or when the server was not set up from an import', async () => {
