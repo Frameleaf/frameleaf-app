@@ -165,8 +165,12 @@ main() {
     echo 'error downloading release checksums'
     return 17
   }
-  verify_download docker-compose.yml ./docker-compose.yml && verify_download example.env ./.env || {
-    echo 'error verifying the downloaded release files'
+  verify_download docker-compose.yml ./docker-compose.yml || {
+    echo 'error verifying the downloaded Docker Compose file'
+    return 18
+  }
+  verify_download example.env ./.env || {
+    echo 'error verifying the downloaded .env'
     return 18
   }
   generate_random_password || {
