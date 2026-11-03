@@ -80,12 +80,24 @@ describe('Photoview common manifest mapping', () => {
     for (const [table, captured] of Object.entries(content.rows)) {
       for (const value of captured) {
         const row: Record<string, SQLInputValue> = { ...value };
-        if (table === 'users') row.password = 'excluded-user-password';
-        else if (table === 'media_urls') row.media_name = 'excluded-preview-cache-name';
-        else if (table === 'share_tokens') {
-          row.value = 'excluded-bearer-token';
-          row.password = row.has_password === 1 ? 'excluded-share-password' : null;
-          delete row.has_password;
+        switch (table) {
+          case 'users': {
+            row.password = 'excluded-user-password';
+            break;
+          }
+          case 'media_urls': {
+            row.media_name = 'excluded-preview-cache-name';
+            break;
+          }
+          case 'share_tokens': {
+            row.value = 'excluded-bearer-token';
+            row.password = row.has_password === 1 ? 'excluded-share-password' : null;
+            delete row.has_password;
+            break;
+          }
+          default: {
+            break;
+          }
         }
         const names = Object.keys(row);
         database
@@ -247,9 +259,20 @@ describe('Photoview common manifest mapping', () => {
   });
   it.each(['schema', 'revision', 'writers'])('refuses changed %s evidence before reading content', (kind) => {
     const value = input();
-    if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-    else if (kind === 'revision') value.inventory.revisionAfter = 'changed';
-    else if (kind === 'writers') value.inventory.writersStopped = false;
+    switch (kind) {
+      case 'schema': {
+        value.source.schemaSha256 = '0'.repeat(64);
+        break;
+      }
+      case 'revision': {
+        value.inventory.revisionAfter = 'changed';
+        break;
+      }
+      case 'writers': {
+        value.inventory.writersStopped = false;
+        break;
+      }
+    }
     expect(() => read(value)).toThrow(
       kind === 'schema' ? 'PHOTOVIEW_SCHEMA_UNQUALIFIED' : 'PHOTOVIEW_CAPTURE_INCOMPLETE',
     );
@@ -258,11 +281,28 @@ describe('Photoview common manifest mapping', () => {
     'refuses %s original evidence instead of using path hashes or cache entries',
     (kind) => {
       const value = input();
-      if (kind === 'missing') value.files.pop();
-      else if (kind === 'extra') value.files.push(proof('cache:1', 'cache/thumbnail.jpg', 5395));
-      else if (kind === 'path') value.files[0].path = 'cache/thumbnail.jpg';
-      else if (kind === 'size') value.files[0].bytes = '1';
-      else if (kind === 'role') value.files[0].role = 'sidecar';
+      switch (kind) {
+        case 'missing': {
+          value.files.pop();
+          break;
+        }
+        case 'extra': {
+          value.files.push(proof('cache:1', 'cache/thumbnail.jpg', 5395));
+          break;
+        }
+        case 'path': {
+          value.files[0].path = 'cache/thumbnail.jpg';
+          break;
+        }
+        case 'size': {
+          value.files[0].bytes = '1';
+          break;
+        }
+        case 'role': {
+          value.files[0].role = 'sidecar';
+          break;
+        }
+      }
       expect(() => read(value)).toThrow('PHOTOVIEW_FILE_EVIDENCE_MISMATCH');
     },
   );
