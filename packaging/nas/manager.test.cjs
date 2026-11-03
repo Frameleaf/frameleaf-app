@@ -94,7 +94,7 @@ for template in templates:
     assert app.findtext('Privileged') == 'false'
     # Community Apps lists Frameleaf by this name and leads with the product tour.
     assert app.findtext('Name') == 'Frameleaf'
-    assert app.findtext('Video') == 'https://www.youtube.com/watch?v=rNgyZZoZoEg'
+    assert [v.text for v in app.findall('Video')] == ['https://www.youtube.com/watch?v=' + v for v in ['rNgyZZoZoEg', 'INeVz9NFzOM', 'bTfFBDHc6OE']]
     assert len(app.findall('Screenshot')) == 9
     for config in app.findall('Config'):
         assert config.get('Description', '').strip(), config.get('Name')
