@@ -33,7 +33,7 @@ The native view-only share reports download and full-original rights disabled fo
 
 ## Outstanding acceptance
 
-Broader restored-application cases, global configuration/privacy defaults, group/inherited access, public/password-protected albums, non-empty photo/tag-album tags, ratings/people, orientation conversion, RAW/JPEG pairs, Live Photos, video, missing files, S3/remote/encrypted storage, alternate database engines and source versions need further native qualification. File/storage resolution, protected unsupported metadata, destination accounts and relationships, durable regeneration, transfer/recovery and Manager/Server lifecycle integration remain incomplete. This reader is not exposed as a migration command or UI. Protected Unraid shares are entirely outside qualification and agent access.
+Broader restored-application cases, global configuration/privacy defaults, group/inherited access, public/password-protected albums, non-empty photo/tag-album tags, ratings/people, orientation conversion, RAW/JPEG pairs, Live Photos, video, missing files, S3/remote/encrypted storage, alternate database engines and source versions need further native qualification. Trusted source capture, complete permission/account eligibility checks, durable regeneration, transfer/recovery and Manager/Server lifecycle integration remain incomplete. This reader is not exposed as a migration command or UI. Protected Unraid shares are entirely outside qualification and agent access.
 
 ## Original-file resolution
 
@@ -44,3 +44,13 @@ A recorded Live Photo video path becomes a separate companion on the original va
 The caller must establish the storage-root mapping, path containment, mount identity, symlink/hardlink policy, source fencing, actual original bytes, explicit owners and download/privacy restrictions before transfer or activation. This helper does not expose a CLI or complete a migration.
 
 The protected account-password channel reads only local (`is_ldap=0`) verifiers. Qualified PHP bcrypt and Argon2 formats can retain the password; LDAP uses the claim fallback. Ordinary content projections still omit credentials. Global hashing configuration, multi-factor requirements and account eligibility must be verified independently before activating any mapped owner. See [account authentication](./library-import-adapters.md#php-account-password-formats) for format and resource limits.
+
+## Common manifest assembly
+
+`readLycheeManifest` maps the admitted SQLite snapshot into the existing version 5 manifest. It requires an unchanged, complete stopped-source inventory and independently captured path, byte-count, SHA256 and modification-time evidence for every original/RAW variant. Source checksums, thumbnails and watermarked paths do not establish original-byte identity. Storage resolution and manifest construction do not authorize source capture or destination activation.
+
+The mapper retains explicit owners, current captions (including cleared captions), dates and original time zones, coordinates (including removed locations), photo tags, highlight state and the owner's rating. Another viewer's rating and the computed average never replace the owner's preference. Fixed-offset captures retain their exact local clock; absent capture dates use independently captured file modification time with a disclosed preservation difference. Unvalidated content stays hidden. Compatible account passwords continue through the separate protected credential channel, not content manifests or archives.
+
+Regular albums retain owner, title, description and owner-specific memberships. Cross-owner memberships remain in the protected archive with a preservation difference until equivalent access is qualified. Tag/person albums require an explicitly captured membership snapshot and are labelled `(snapshot)`; ambiguous album types are refused. Source titles, people/face geometry, album hierarchy/tags and other unsupported fields remain in the protected credential-free archive with unacknowledged losses rather than being silently discarded.
+
+A Live Photo requires the source's explicit companion relationship and matching content identifiers independently inspected from the original and motion files. The motion file becomes a separate hidden video original linked through the common Live Photo relationship. These synthetic mapping checks do not qualify native Live Photo playback, RAW decoding or full migration acceptance. Frameleaf regenerates previews and embeddings.

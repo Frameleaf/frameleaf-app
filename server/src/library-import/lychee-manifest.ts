@@ -107,10 +107,13 @@ export function readLycheeManifest(snapshot: ReturnType<typeof openLycheeSnapsho
     albums = index('base_albums'),
     regular = index('albums'),
     tags = index('tags');
-  const dynamic = new Set([...index('tag_albums').keys(), ...index('person_albums').keys()]);
+  const tagAlbums = index('tag_albums'),
+    personAlbums = index('person_albums');
+  const dynamic = new Set([...tagAlbums.keys(), ...personAlbums.keys()]);
   for (const id of [...regular.keys(), ...dynamic]) if (!albums.has(id)) return refuse('LYCHEE_RELATIONSHIPS_INVALID');
   for (const id of albums.keys())
-    if (Number(regular.has(id)) + Number(dynamic.has(id)) !== 1) return refuse('LYCHEE_ALBUM_TYPE_UNQUALIFIED');
+    if (Number(regular.has(id)) + Number(tagAlbums.has(id)) + Number(personAlbums.has(id)) !== 1)
+      return refuse('LYCHEE_ALBUM_TYPE_UNQUALIFIED');
   for (const id of regular.keys()) {
     const seen = new Set<string>();
     let current: string | undefined = id;
