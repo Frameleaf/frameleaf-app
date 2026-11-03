@@ -5,6 +5,8 @@ import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
+export { readLibrephotosManifest } from 'src/library-import/librephotos-manifest.js';
+
 export type LibrephotosTable = keyof typeof projections;
 export type LibrephotosRow = Record<string, SQLOutputValue>;
 
