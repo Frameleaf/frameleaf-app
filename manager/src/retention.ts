@@ -63,10 +63,17 @@ export class Retention {
   async sweep(now = Date.now()): Promise<string[]> {
     const removed: string[] = [];
     try {
+      // Every directory is listed before the journal is read: an operation that starts between the two
+      // would be missing from an earlier snapshot, so its new checkpoint would look settled and lose its
+      // dump while the checkpoint is still being taken. Listed first, every entry's operation is in the snapshot.
+      const checkpoints = await this.entries(join(this.directory, 'checkpoints'));
+      const imports = await this.entries(join(this.directory, 'imports'));
+      const stateEntries = await this.entries(this.directory);
+      const mediaMoves = await this.entries(join(this.directory, 'media-moves'));
       const operations = this.store.history();
       // Checkpoints of settled operations: restic holds the dump and recovery record; compose.json stays
       // (a library move reads the checkpoint's compose.json while the operation is open; it is small).
-      for (const id of await this.entries(join(this.directory, 'checkpoints'))) {
+      for (const id of checkpoints) {
         if (!UUID.test(id) || !this.settled(operations, id)) continue;
         for (const name of CHECKPOINT_SNAPSHOT_FILES) {
           const file = join(this.directory, 'checkpoints', id, name);
@@ -74,21 +81,21 @@ export class Retention {
         }
       }
       // The copy of the stopped Immich database taken for an import, once that import has settled.
-      for (const name of await this.entries(join(this.directory, 'imports'))) {
+      for (const name of imports) {
         const id = name.replace(/\.dump$/, '');
         if (!name.endsWith('.dump') || !UUID.test(id) || !this.settled(operations, id)) continue;
         await this.remove(join(this.directory, 'imports', name), removed);
       }
       // A restore review restores a whole snapshot into restore-<review>; spent or expired reviews lose it.
       const restores = this.reviews('restore');
-      for (const name of await this.entries(this.directory)) {
+      for (const name of stateEntries) {
         const id = name.replace(/^restore-/, '');
         if (!name.startsWith('restore-') || !UUID.test(id)) continue;
         if (this.live(restores.get(id), id, operations, now)) continue;
         await this.remove(join(this.directory, name), removed);
       }
       const moves = this.reviews('media-move');
-      for (const id of await this.entries(join(this.directory, 'media-moves'))) {
+      for (const id of mediaMoves) {
         if (!UUID.test(id) || this.live(moves.get(id), id, operations, now)) continue;
         await this.remove(join(this.directory, 'media-moves', id), removed);
       }

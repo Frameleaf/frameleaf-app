@@ -834,7 +834,7 @@ func (b *bridge) download(w http.ResponseWriter, r *http.Request, q *request) er
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}
-	body, typ, err := b.openResource(ctx, target, start, end, size)
+	body, typ, err := b.openResource(ctx, target, start, end, size, touch)
 	if err != nil {
 		return err
 	}
@@ -863,9 +863,13 @@ func (b *bridge) download(w http.ResponseWriter, r *http.Request, q *request) er
 			panic(http.ErrAbortHandler)
 		}
 		reopens++
-		if body, _, err = b.openResource(ctx, target, offset, end, size); err != nil {
+		// `body` keeps the closed previous body until the reopen succeeds: the deferred Close must
+		// never run on a nil interface, which would turn the abort into a logged runtime panic.
+		reopened, _, openErr := b.openResource(ctx, target, offset, end, size, touch)
+		if openErr != nil {
 			panic(http.ErrAbortHandler)
 		}
+		body = reopened
 	}
 }
 
@@ -903,8 +907,9 @@ func parseRange(header string, size int64) (start, end int64, partial bool, err 
 // openResource starts the upstream transfer of bytes offset..end of a `size`-byte resource and answers
 // a body that yields exactly those bytes, with the resource's media type. Apple's signed URLs serve
 // ranges; a server that ignores the Range header is read from its start and the bytes before
-// `offset` are discarded, so a resume still continues where the previous transfer stopped.
-func (b *bridge) openResource(ctx context.Context, target string, offset, end, size int64) (io.ReadCloser, string, error) {
+// `offset` are discarded, so a resume still continues where the previous transfer stopped. `touch`
+// reports every discarded byte as progress, so the idle timer does not expire while skipping.
+func (b *bridge) openResource(ctx context.Context, target string, offset, end, size int64, touch func()) (io.ReadCloser, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil, "", upstream()
@@ -937,7 +942,7 @@ func (b *bridge) openResource(ctx context.Context, target string, offset, end, s
 			return nil, "", upstream()
 		}
 		if offset > 0 {
-			if _, err := io.CopyN(io.Discard, resp.Body, offset); err != nil {
+			if _, err := io.CopyN(io.Discard, touchReader{resp.Body, touch}, offset); err != nil {
 				resp.Body.Close()
 				return nil, "", upstream()
 			}

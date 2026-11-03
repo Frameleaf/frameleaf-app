@@ -273,7 +273,12 @@ function verifyDatabaseImageChange(change, postgres) {
       "NAS databaseImageChange.from repeats the target",
     );
   }
-  if (change.notes !== undefined) assert.equal(typeof change.notes, "string");
+  if (change.notes !== undefined)
+    assert.equal(
+      typeof change.notes,
+      "string",
+      "NAS databaseImageChange notes must be text",
+    );
 }
 
 module.exports = {

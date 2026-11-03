@@ -867,6 +867,72 @@ func TestDownloadTruncatedUpstreamAbortsTheStream(t *testing.T) {
 	}
 }
 
+func TestDownloadFailedReopenAbortsWithoutNilBody(t *testing.T) {
+	const content = "abcdef"
+	b := newBridge([]byte(testToken))
+	opens := 0
+	b.http = downloadTransport(t, content, func(call int, r *http.Request) *http.Response {
+		opens++
+		if call > 1 {
+			// The resume is refused: openResource answers an error and no body.
+			resp := response("")
+			resp.StatusCode = http.StatusServiceUnavailable
+			return resp
+		}
+		resp := response(content)
+		resp.Body = &failingBody{Reader: strings.NewReader(content), after: 3}
+		return resp
+	})
+	// abortsHandler fails on any panic other than http.ErrAbortHandler, including the nil-pointer
+	// dereference a deferred Close on a nil body would raise.
+	w := abortsHandler(t, b, downloadRequest(t, ""))
+	if w.Body.String() != "abc" || opens != 2 {
+		t.Fatalf("partial bytes %q after %d opens", w.Body, opens)
+	}
+}
+
+func TestDownloadSkipToOffsetResetsIdleTimer(t *testing.T) {
+	const content = "0123456789"
+	previous := downloadIdleTimeout
+	downloadIdleTimeout = 100 * time.Millisecond
+	defer func() { downloadIdleTimeout = previous }()
+	b := newBridge([]byte(testToken))
+	// Apple ignores the Range header and the whole body trickles in slower than one idle timeout.
+	b.http = downloadTransport(t, content, func(_ int, r *http.Request) *http.Response {
+		resp := response(content)
+		resp.Body = &tricklingBody{ctx: r.Context(), data: content, delay: 25 * time.Millisecond}
+		return resp
+	})
+	w := httptest.NewRecorder()
+	b.ServeHTTP(w, downloadRequest(t, "bytes=8-"))
+	if w.Code != 206 || w.Body.String() != "89" {
+		t.Fatalf("skip to the resume offset was cut short by the idle timer: %d %q", w.Code, w.Body)
+	}
+}
+
+// tricklingBody yields one byte per delay and, like a real connection, fails once the request
+// context is cancelled.
+type tricklingBody struct {
+	ctx   context.Context
+	data  string
+	delay time.Duration
+}
+
+func (b *tricklingBody) Read(p []byte) (int, error) {
+	if len(b.data) == 0 {
+		return 0, io.EOF
+	}
+	select {
+	case <-b.ctx.Done():
+		return 0, b.ctx.Err()
+	case <-time.After(b.delay):
+	}
+	p[0] = b.data[0]
+	b.data = b.data[1:]
+	return 1, nil
+}
+func (*tricklingBody) Close() error { return nil }
+
 func TestDownloadAbandonsAStalledTransfer(t *testing.T) {
 	const content = "abcdef"
 	previous := downloadIdleTimeout

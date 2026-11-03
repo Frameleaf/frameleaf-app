@@ -1,6 +1,6 @@
 import { readFile, readdir, writeFile, mkdir, realpath, statfs, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { constants, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { load } from 'js-yaml';
 import { z } from 'zod';
 import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, type Source } from './contracts.js';
@@ -134,6 +134,30 @@ function deniedMountSource(source: string, managerData = process.env.MANAGER_DAT
     (!!managerData && under(path, resolve(managerData)))
   );
 }
+/**
+ * The real path of an extra folder. `resolve()` keeps symlinks, so a link under an approved root that points
+ * at /etc (or Manager's state) would pass the lexical checks while Docker binds what it points at: the
+ * resolved path is what the deny-list and root checks see, and a source that resolves elsewhere is refused
+ * (storagePath does the same). A missing tail is resolved through its nearest existing ancestor, so a
+ * linked parent is still seen; Docker never creates it (create_host_path: false) and a saved stack whose
+ * folder is absent for now still regenerates. Anything else the filesystem refuses (a link loop, no
+ * permission) is refused as unsafe rather than escaping as an I/O error.
+ */
+function realMountSource(name: string, source: string): string {
+  let path = resolve(source);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(path), ...missing);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if ((code !== 'ENOENT' && code !== 'ENOTDIR') || path === '/')
+        throw new Refusal('service_override_unsafe_source', 409, `${name}: ${source} cannot be resolved on this host (${code ?? error}).`);
+      missing.unshift(basename(path));
+      path = dirname(path);
+    }
+  }
+}
 export const OVERRIDABLE_SERVICES = ['frameleaf-server', 'frameleaf-machine-learning', 'database'] as const;
 const containerPath = z.string().regex(/^\/(?!$)[^\n\0:]+$/).max(4096);
 /** What a home-lab administrator may add to one container on top of Manager's own compose service. */
@@ -177,11 +201,18 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
     for (const mount of override.mounts) {
       if (targets.has(mount.target) || RESERVED_TARGETS.some((r) => mount.target === r || mount.target.startsWith(`${r}/`)))
         throw new Refusal('service_override_conflict', 409, `${name}: ${mount.target} is managed by Frameleaf.`);
-      if (mount.source !== resolve(mount.source) || deniedMountSource(mount.source))
+      const real = mount.source === resolve(mount.source) ? realMountSource(name, mount.source) : mount.source;
+      if (mount.source !== resolve(mount.source) || deniedMountSource(mount.source) || deniedMountSource(real))
         throw new Refusal(
           'service_override_unsafe_source',
           409,
           `${name}: ${mount.source} is a host system path (or Manager's own state) that may not be mounted into Frameleaf.`,
+        );
+      if (real !== mount.source)
+        throw new Refusal(
+          'service_override_unsafe_source',
+          409,
+          `${name}: ${mount.source} is a symbolic link (it resolves to ${real}); add the real folder instead.`,
         );
       targets.add(mount.target);
       service.volumes = [
@@ -220,7 +251,7 @@ export function checkServiceOverrides(mediaTargets: string[], overrides: Service
   if (!roots.length) return;
   for (const [name, override] of Object.entries(overrides))
     for (const mount of override?.mounts ?? [])
-      if (!roots.some((root) => under(resolve(mount.source), root)))
+      if (!roots.some((root) => under(resolve(mount.source), root) && under(realMountSource(name, mount.source), root)))
         throw new Refusal(
           'service_override_source_outside_roots',
           409,

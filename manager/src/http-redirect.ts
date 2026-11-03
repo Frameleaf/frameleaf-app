@@ -6,6 +6,11 @@ const HOST = /^host:[ \t]*([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:\d{1,5})?[ \t]*\r
 const END_OF_HEADERS = /\r?\n\r?\n/;
 /** Plain-HTTP request heads are read up to this size; a Host line is in the first few hundred bytes. */
 const HEAD_LIMIT = 8192;
+/**
+ * The whole head must arrive within this long. The socket timeout only measures inactivity, so a client
+ * sending one byte every few seconds could otherwise hold a connection (and its 8 KiB) for hours.
+ */
+export const HEAD_DEADLINE = 30_000;
 
 /**
  * One port for both protocols. Browsers turn a typed "IP:port" into http://, which a TLS-only
@@ -14,15 +19,18 @@ const HEAD_LIMIT = 8192;
  * accumulated until its blank line (or 8 KiB), so a client whose first segment stops before the
  * Host line still gets the redirect rather than a 400 (review L10).
  */
-export function sharePortWithRedirect(https: TlsServer): Server {
+export function sharePortWithRedirect(https: TlsServer, headDeadline = HEAD_DEADLINE): Server {
   const front = createServer((socket: Socket) => {
     socket.setTimeout(10_000, () => socket.destroy());
     socket.on('error', () => socket.destroy());
+    const deadline = setTimeout(() => socket.destroy(), headDeadline);
+    socket.once('close', () => clearTimeout(deadline));
     let head = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
       if (!head.length && chunk[0] === 0x16) {
         socket.removeListener('data', onData);
         socket.setTimeout(0);
+        clearTimeout(deadline); // TLS has its own handshake timeout
         socket.pause();
         socket.unshift(chunk);
         https.emit('connection', socket);
@@ -35,6 +43,7 @@ export function sharePortWithRedirect(https: TlsServer): Server {
       if (!end && head.length < HEAD_LIMIT) return; // the Host line may still be on its way
       socket.removeListener('data', onData);
       socket.setTimeout(0);
+      clearTimeout(deadline);
       const host = end ? HOST.exec(text.slice(0, end.index)) : null;
       socket.end(
         host

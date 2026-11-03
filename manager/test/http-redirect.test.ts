@@ -83,3 +83,43 @@ test('plain HTTP on the Manager port redirects to HTTPS on the same host and por
     await rm(directory, { recursive: true });
   }
 });
+
+test('a request head that trickles in is dropped at an absolute deadline, not only on inactivity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-redirect-deadline-'));
+  const key = join(directory, 'tls.key'),
+    cert = join(directory, 'tls.crt');
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost', '-keyout', key, '-out', cert], { stdio: 'ignore' });
+  const https = createHttps({ key: await readFile(key), cert: await readFile(cert) }, (_request, response) => {
+    response.end('manager');
+  });
+  const front = sharePortWithRedirect(https, 400);
+  await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
+  const { port } = front.address() as AddressInfo;
+  try {
+    // One byte every 100 ms keeps the 10 s inactivity timeout happy forever; the deadline still closes it.
+    const started = Date.now();
+    const outcome = await new Promise<{ reply: string; elapsed: number }>((resolve, reject) => {
+      let reply = '';
+      const socket = connect(port, '127.0.0.1');
+      const drip = setInterval(() => socket.write('G'), 100);
+      socket.on('data', (chunk) => (reply += chunk));
+      socket.on('close', () => (clearInterval(drip), resolve({ reply, elapsed: Date.now() - started })));
+      socket.on('error', () => {}); // EPIPE/ECONNRESET after the server drops it is the expected end
+      socket.on('timeout', reject);
+    });
+    assert.equal(outcome.reply, '', 'no response is written for an incomplete head');
+    assert.ok(outcome.elapsed >= 350 && outcome.elapsed < 5_000, `closed after ${outcome.elapsed} ms`);
+    // A head that completes within the deadline is still answered, and the deadline does not outlive it.
+    const prompt = await get(httpRequest, port, `tower.local:${port}`);
+    assert.equal(prompt.status, 308);
+    // TLS connections are handed off and keep working past the plain-HTTP deadline.
+    const secure = await get(httpsRequest, port, `tower.local:${port}`);
+    assert.equal(secure.status, 200);
+    await new Promise((pause) => setTimeout(pause, 500));
+    assert.equal((await get(httpsRequest, port, `tower.local:${port}`)).body, 'manager');
+  } finally {
+    front.close();
+    https.close();
+    await rm(directory, { recursive: true });
+  }
+});

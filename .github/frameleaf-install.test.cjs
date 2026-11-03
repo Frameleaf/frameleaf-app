@@ -134,6 +134,53 @@ test("the installer creates a fresh canonical installation through offline comma
   }
 });
 
+test("a selected release downloads that release's files and pins its image tag in .env", () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "frameleaf-install-"));
+  try {
+    const result = runInstaller(parent, {
+      FRAMELEAF_RELEASE: "frameleaf-v1.2.3",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const env = fs.readFileSync(
+      path.join(parent, "frameleaf-app", ".env"),
+      "utf8",
+    );
+    assert.match(env, /^FRAMELEAF_VERSION=frameleaf-v1\.2\.3$/m);
+    assert.doesNotMatch(env, /^FRAMELEAF_VERSION=latest$/m);
+    assert.doesNotMatch(env, /^DB_PASSWORD=postgres$/m);
+    for (const command of result.commands.filter((line) =>
+      line.startsWith("curl "),
+    ))
+      assert.match(command, /releases\/download\/frameleaf-v1\.2\.3\//);
+    assert.match(result.stdout, /Frameleaf is running/);
+    // Without a selection the example's latest tag is kept.
+    const unpinned = fs.mkdtempSync(
+      path.join(os.tmpdir(), "frameleaf-install-"),
+    );
+    try {
+      assert.equal(runInstaller(unpinned).status, 0);
+      assert.match(
+        fs.readFileSync(path.join(unpinned, "frameleaf-app", ".env"), "utf8"),
+        /^FRAMELEAF_VERSION=latest$/m,
+      );
+    } finally {
+      fs.rmSync(unpinned, { recursive: true, force: true });
+    }
+    const invalid = fs.mkdtempSync(
+      path.join(os.tmpdir(), "frameleaf-install-"),
+    );
+    try {
+      const refused = runInstaller(invalid, { FRAMELEAF_RELEASE: "1.2.3" });
+      assert.equal(refused.status, 16);
+      assert.deepEqual(refused.commands, []);
+    } finally {
+      fs.rmSync(invalid, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test("a download that does not match the release checksums is never started", () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "frameleaf-install-"));
   try {

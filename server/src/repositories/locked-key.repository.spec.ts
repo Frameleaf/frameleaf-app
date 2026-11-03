@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LockedKeyFile } from '@frameleaf/locked-crypto';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { LOCKED_PEPPER_FILE, LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
+import {
+  LOCKED_PEPPER_FILE,
+  LockedKeyRepository,
+  LockedPepperFileError,
+} from 'src/repositories/locked-key.repository.js';
 
 const userId = '7d3c2a1e-4b5f-4c6d-8e9f-0a1b2c3d4e5f';
 
@@ -195,12 +199,43 @@ describe(LockedKeyRepository.name, () => {
       await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), 'not base64 at all!!\n');
       const fresh = new LockedKeyRepository(config());
       await expect(fresh.pepper()).rejects.toThrow(/damaged/);
+      await expect(fresh.pepper()).rejects.toMatchObject({ name: 'LockedPepperFileError', reason: 'damaged' });
       await expect(fs.readFile(join(directory, LOCKED_PEPPER_FILE), 'utf8')).resolves.toBe('not base64 at all!!\n');
       await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), `${Buffer.alloc(8, 1).toString('base64')}\n`);
       await expect(fresh.pepper()).rejects.toThrow(/damaged/);
       // a failure is not remembered
       await fs.writeFile(join(directory, LOCKED_PEPPER_FILE), `${restored.toString('base64')}\n`);
       expect(await fresh.pepper()).toEqual(restored);
+    });
+
+    it('refuses to make a pepper while a key file holds a wrap made with the lost one', async () => {
+      const peppered = keyFile({
+        format: 'frameleaf-locked-key/2',
+        wraps: [{ ...keyFile().wraps[0], pepper: { kdf: 'hkdf-sha256', id: Buffer.alloc(8, 9).toString('base64') } }],
+      });
+      await sut.write(peppered);
+      // another person's unpeppered file does not hide the peppered one
+      await sut.write(keyFile({ userId: 'a1b2c3d4-0000-4000-8000-000000000001' }));
+      const path = join(media, 'frameleaf', 'identity', LOCKED_PEPPER_FILE);
+
+      await expect(sut.pepper()).rejects.toThrow(/missing.*Restore it from a backup/);
+      await expect(sut.pepper()).rejects.toBeInstanceOf(LockedPepperFileError);
+      await expect(sut.pepper()).rejects.toMatchObject({ reason: 'missing', message: expect.stringContaining(path) });
+      await expect(fs.stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
+      // the operator restores the file; nothing is remembered from the failure
+      await fs.mkdir(join(path, '..'), { recursive: true });
+      const restored = Buffer.alloc(32, 5);
+      await fs.writeFile(path, `${restored.toString('base64')}\n`);
+      expect(await sut.pepper()).toEqual(restored);
+    });
+
+    it('makes a pepper when the key files hold only unpeppered (format-1) wraps', async () => {
+      await sut.write(keyFile());
+      const pepper = await sut.pepper();
+      expect(pepper).toHaveLength(32);
+      await expect(fs.readFile(join(media, 'frameleaf', 'identity', LOCKED_PEPPER_FILE), 'utf8')).resolves.toBe(
+        `${pepper.toString('base64')}\n`,
+      );
     });
 
     it('two workers making the pepper at once end with one pepper', async () => {

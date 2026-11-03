@@ -57,7 +57,12 @@ export function trustedProxyList(value: string | undefined): string[] {
 export type NetworkOptions = {
   /** Proxies allowed to set X-Forwarded-For; empty means the TCP peer is always the client. */
   trustedProxies?: string[];
-  /** Manager's own port is published on loopback only, so the bridge gateway can only carry host-local clients. */
+  /**
+   * Manager's own port is published on loopback only, so the bridge gateway can only carry host-local clients.
+   * A host process is still one of them: a reverse proxy on this host that is not declared in `trustedProxies`
+   * forwards remote clients to the loopback port and they arrive as the gateway, so this does not stop remote
+   * access through such a proxy; declare the proxy, or complete the initial claim before exposing Manager.
+   */
   loopbackPublished?: boolean;
   /** The bridge gateway address; replaces /proc/net/route detection in tests. */
   bridgeGateway?: () => string | null;
@@ -155,6 +160,11 @@ export class Security {
    * A connection from the bridge gateway came through Docker's userland proxy, NAT or a host reverse proxy,
    * so its real origin is unknown: it is not evidence of the home network unless Manager's port is published
    * on loopback only (then only this host can reach it) or a trusted proxy supplied the client address.
+   * Limitation: a loopback-only publish proves the connection came from this host, not that the client did. A
+   * reverse proxy on the host that MANAGER_TRUSTED_PROXIES does not name forwards remote requests to the
+   * loopback port without a validated client address (its headers are ignored or may be absent), and the
+   * claim then passes as local. Operators who front Manager with a proxy must declare it so the client
+   * address is validated, or complete the initial claim before exposing Manager through the proxy.
    */
   gatewayUnverified(address: string | undefined): boolean {
     if (this.loopbackPublished) return false;

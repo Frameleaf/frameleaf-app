@@ -66,6 +66,38 @@ test('settled operations lose their plaintext dump and recovery record; open one
   }
 });
 
+// An operation that starts while the sweep lists the directories must be in the journal snapshot the sweep
+// judges those listings by; a checkpoint written in that window was collected as "forgotten" otherwise.
+test('the journal is read after the directories are listed, so a checkpoint that appears mid-sweep is kept', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retention-race-'));
+  const store = new Store(directory);
+  try {
+    let started: string | undefined;
+    const retention = new Retention(store, directory, join(directory, 'releases'));
+    const entries = (retention as any).entries.bind(retention);
+    (retention as any).entries = async (path: string) => {
+      const listed = await entries(path);
+      if (path.endsWith('checkpoints') && !started) {
+        // The listing has happened; now an operation starts and takes its checkpoint before history() is read.
+        const operation = store.start('backup', 'late', {}).operation;
+        started = operation.id;
+        await checkpoint(directory, operation.id);
+        return listed.concat(operation.id);
+      }
+      return listed;
+    };
+    await mkdir(join(directory, 'checkpoints'));
+    await mkdir(join(directory, 'imports'));
+    const removed = await retention.sweep();
+    assert.ok(started);
+    assert.deepEqual(removed, []);
+    assert.deepEqual((await readdir(join(directory, 'checkpoints', started!))).sort(), ['compose.json', 'database.dump', 'recovery.json']);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('restore reviews, move state and release bundles are kept only while a review or open operation needs them', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-retention-reviews-'));
   const store = new Store(directory);

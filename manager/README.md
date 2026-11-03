@@ -126,7 +126,10 @@ logs why, unless one of these says who the client is:
   ignored.
 - Publishing Manager's port on `127.0.0.1` only (the launcher's default `LAN_ADDRESS`, so
   `MANAGER_BIND_ADDRESS` is loopback): then the gateway can only carry this host's own
-  browser, and it counts as home.
+  browser, and it counts as home. A reverse proxy running on the host is also "this host":
+  a loopback-only publish does not stop remote access through a proxy that is not declared
+  in `MANAGER_TRUSTED_PROXIES`, so declare the proxy (then the client address is validated)
+  or complete the initial claim before exposing Manager through it.
 
 Publish Manager directly on a LAN address whenever possible; rootless Docker and NAS portal
 proxies make every client look like the gateway.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ApplicationConfig, DATABASE_PASSWORD_TARGET, DENIED_MOUNT_SOURCES, ServiceOverrides, applyServiceOverrides, checkServiceOverrides, renderCompose } from '../src/compose.js';
@@ -139,5 +139,47 @@ test('host system paths, Manager state and folders outside the allowed roots are
   } finally {
     if (previous === undefined) delete process.env.MANAGER_DATA;
     else process.env.MANAGER_DATA = previous;
+  }
+});
+
+// Review: resolve() keeps symlinks, so a link under an approved root could hand the stack /etc or Manager's state.
+test('an extra folder is checked by its real path: links to denied paths, Manager state or elsewhere are refused', async () => {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'manager-override-links-')));
+  const previous = process.env.MANAGER_DATA;
+  process.env.MANAGER_DATA = join(dir, 'manager');
+  try {
+    await mkdir(join(dir, 'real'));
+    await mkdir(join(dir, 'manager'));
+    await mkdir(join(dir, 'nested'));
+    await symlink('/etc', join(dir, 'etc-link'));
+    await symlink(join(dir, 'manager'), join(dir, 'manager-link'));
+    await symlink(join(dir, 'real'), join(dir, 'nested', 'alias'));
+    await symlink(join(dir, 'loop'), join(dir, 'loop'));
+    const mount = (source: string) => ({ 'frameleaf-server': { environment: {}, mounts: [{ source, target: '/extra', readOnly: true }] } });
+    const refused = (source: string, detail: RegExp) =>
+      assert.throws(
+        () => applyServiceOverrides({ 'frameleaf-server': { volumes: [] } }, mount(source)),
+        (error: any) => error.code === 'service_override_unsafe_source' && detail.test(error.detail),
+        source,
+      );
+    refused(join(dir, 'etc-link'), /host system path/);
+    refused(join(dir, 'etc-link', 'passwd'), /host system path/);
+    refused(join(dir, 'etc-link', 'does-not-exist'), /host system path/); // the linked parent is still seen
+    refused(join(dir, 'manager-link'), /host system path/);
+    refused(join(dir, 'manager-link', 'stack'), /host system path/);
+    refused(join(dir, 'nested', 'alias'), /symbolic link/);
+    refused(join(dir, 'nested', 'alias', 'photos'), /symbolic link/);
+    refused(join(dir, 'loop'), /cannot be resolved/);
+    for (const source of [join(dir, 'real'), join(dir, 'real', 'not-yet-created'), join(dir, 'nested')])
+      assert.doesNotThrow(() => applyServiceOverrides({ 'frameleaf-server': { volumes: [] } }, mount(source)), source);
+    // The allow-list sees the real path too: a link inside a root that leaves it is refused.
+    await symlink(join(dir, 'nested'), join(dir, 'real', 'escape'));
+    assert.throws(() => checkServiceOverrides(['/data'], mount(join(dir, 'real', 'escape')), [join(dir, 'real')]), /service_override_unsafe_source/);
+    assert.throws(() => checkServiceOverrides(['/data'], mount(join(dir, 'real', 'escape', 'x')), [join(dir, 'real')]), /service_override_unsafe_source/);
+    assert.doesNotThrow(() => checkServiceOverrides(['/data'], mount(join(dir, 'real', 'x')), [join(dir, 'real')]));
+  } finally {
+    if (previous === undefined) delete process.env.MANAGER_DATA;
+    else process.env.MANAGER_DATA = previous;
+    await rm(dir, { recursive: true, force: true });
   }
 });

@@ -9,6 +9,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from functools import partial
+from pathlib import Path
 from typing import Any, AsyncGenerator, Callable
 from zipfile import BadZipFile
 
@@ -83,6 +84,10 @@ load_pool: InferenceExecutor | None = None
 lock = threading.Lock()
 # Downloads are serialised on their own, outside `lock`, so loads of cached models never wait for them.
 download_lock = threading.Lock()
+# The cache directories a download is writing right now. A partly written directory can already
+# report `cached`, so a load of that model still waits for its download instead of skipping the lock.
+downloading: set[Path] = set()
+downloading_lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
 # Hands the memory a burst of requests used back to the system shortly after the last one finishes.
@@ -959,17 +964,36 @@ async def run_load(func: Callable[..., T], *args: Any) -> T:
     return await asyncio.get_running_loop().run_in_executor(pool, partial(func, *args))
 
 
+def is_downloading(cache_dir: Path) -> bool:
+    with downloading_lock:
+        return cache_dir in downloading
+
+
 def fetch(model: InferenceModel) -> None:
     """Download a model (a no-op once cached) before the global load lock is taken.
 
     Only one download runs at a time, but loads of cached models never wait for it. A missing model is
     reported as the load would report it; a cache the download could not write is left to the locked
-    load, whose own repair and cooldown apply.
+    load, whose own repair and cooldown apply. Staged models (downloads off) are verified under the
+    lock, which no download ever holds for long.
     """
     try:
+        if model.loaded:
+            return
+        # `cached` is read before `downloading`: a download registers its directory before it writes
+        # a byte, so a partial cache seen here is still found registered afterwards.
+        if settings.model_downloads and model.cached and not is_downloading(model.cache_dir):
+            return
         with download_lock:
-            if not model.loaded:
+            if model.loaded:
+                return
+            with downloading_lock:
+                downloading.add(model.cache_dir)
+            try:
                 model.download()
+            finally:
+                with downloading_lock:
+                    downloading.discard(model.cache_dir)
     except ModelUnavailableError as error:
         raise HTTPException(503, str(error)) from error
     except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:

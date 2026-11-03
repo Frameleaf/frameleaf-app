@@ -253,6 +253,7 @@ test("the verifier accepts any digest-pinned frameleaf-postgres build the releas
             { ...nas, images: { ...nas.images, postgres } },
             manifest,
           ),
+        /NAS database (?:image is not a digest-pinned|was not verified)/,
         postgres,
       );
     // A declared in-place change: same major, exact target, backup required, previous images listed once.
@@ -294,15 +295,24 @@ test("the verifier accepts any digest-pinned frameleaf-postgres build the releas
       ["extra field", { ...declared, pgUpgrade: true }],
       ["notes type", { ...declared, notes: 7 }],
     ])
-      assert.throws(() => verifyDatabaseImageChange(change, ga), label);
-    assert.throws(() =>
-      verifyNasManifest(
-        {
-          ...nas,
-          databaseImageChange: { ...declared, to: image("19.1-pgvector0.8.7") },
-        },
-        manifest,
-      ),
+      assert.throws(
+        () => verifyDatabaseImageChange(change, ga),
+        /NAS databaseImageChange/,
+        label,
+      );
+    assert.throws(
+      () =>
+        verifyNasManifest(
+          {
+            ...nas,
+            databaseImageChange: {
+              ...declared,
+              to: image("19.1-pgvector0.8.7"),
+            },
+          },
+          manifest,
+        ),
+      /NAS databaseImageChange target differs/,
     );
     // createBundle embeds docker/postgres/database-image-change.json after validating it against the image.
     await fs.writeFile(

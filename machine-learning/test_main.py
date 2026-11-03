@@ -2767,6 +2767,7 @@ class TestLoad:
     async def test_cache_recovery_keeps_the_load_lock(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
         model = mock.Mock(spec=InferenceModel)
+        model.cached = False
         model.loaded, model.load_attempts = False, 0
         model.model_name, model.model_type = "fixture", ModelType.VISUAL
         model.load.side_effect = [OSError("broken cache"), None]
@@ -2794,6 +2795,7 @@ class TestLoad:
     async def test_rechecks_loaded_state_after_acquiring_lock(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
         model = mock.Mock(spec=InferenceModel)
+        model.cached = False
         model.loaded, model.load_attempts = False, 0
 
         def complete_other_load() -> None:
@@ -2807,6 +2809,7 @@ class TestLoad:
 
     async def test_load(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.cached = False
         mock_model.loaded = False
         mock_model.load_attempts = 0
 
@@ -2818,6 +2821,7 @@ class TestLoad:
 
     async def test_load_returns_model_if_loaded(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.cached = False
         mock_model.loaded = True
 
         res = await load(mock_model)
@@ -2827,6 +2831,7 @@ class TestLoad:
 
     async def test_load_clears_cache_and_retries_if_os_error(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.cached = False
         mock_model.model_name = "test_model_name"
         mock_model.model_type = ModelType.VISUAL
         mock_model.model_task = ModelTask.SEARCH
@@ -2842,6 +2847,7 @@ class TestLoad:
 
     async def test_load_reports_missing_model_without_clearing_cache(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.cached = False
         mock_model.model_name = "buffalo_l"
         mock_model.model_type = ModelType.RECOGNITION
         mock_model.model_task = ModelTask.FACIAL_RECOGNITION
@@ -2859,6 +2865,7 @@ class TestLoad:
 
     async def test_load_raises_if_os_error_and_already_retried(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.cached = False
         mock_model.model_name = "test_model_name"
         mock_model.model_type = ModelType.VISUAL
         mock_model.model_task = ModelTask.SEARCH
@@ -2874,6 +2881,7 @@ class TestLoad:
     async def test_downloads_before_taking_the_global_lock(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
         model = mock.Mock(spec=InferenceModel)
+        model.cached = False
         model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
         model.model_name, model.model_type = "fixture", ModelType.VISUAL
         events: list[str] = []
@@ -2887,6 +2895,7 @@ class TestLoad:
     async def test_a_failed_download_leaves_the_repair_to_the_locked_load(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "model_downloads", True)
         model = mock.Mock(spec=InferenceModel)
+        model.cached = False
         model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
         model.model_name, model.model_type = "fixture", ModelType.VISUAL
         model.download.side_effect = OSError("network")
@@ -2896,6 +2905,7 @@ class TestLoad:
 
     async def test_a_missing_model_is_reported_before_the_lock(self) -> None:
         model = mock.Mock(spec=InferenceModel)
+        model.cached = False
         model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
         model.model_name, model.model_type = "fixture", ModelType.VISUAL
         model.download.side_effect = ModelUnavailableError("Model 'fixture' isn't available")
@@ -2911,6 +2921,7 @@ class TestLoad:
         monkeypatch.setattr("frameleaf_ml.main.load_pool", loads)
         started, release = threading.Event(), threading.Event()
         model = mock.Mock(spec=InferenceModel)
+        model.cached = False
         model.loaded, model.load_attempts, model.load_retry_at = False, 0, None
         model.model_name, model.model_type = "slow", ModelType.VISUAL
 
@@ -2921,6 +2932,7 @@ class TestLoad:
 
         model.load.side_effect = slow_load
         other = mock.Mock(spec=InferenceModel)
+        other.cached = False
         other.loaded, other.load_attempts, other.load_retry_at = False, 0, None
         other.model_name, other.model_type = "other", ModelType.VISUAL
         try:
@@ -2941,8 +2953,50 @@ class TestLoad:
             inference.shutdown(wait=True)
             loads.shutdown(wait=True)
 
+    async def test_a_cached_model_loads_while_another_download_holds_the_lock(self, monkeypatch: MonkeyPatch) -> None:
+        # The docstring promise of `fetch`: a load of a cached model never waits for an unrelated download.
+        monkeypatch.setattr(settings, "model_downloads", True)
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
+        loads = InferenceExecutor(3)
+        monkeypatch.setattr("frameleaf_ml.main.load_pool", loads)
+        started, release = threading.Event(), threading.Event()
+        slow = mock.Mock(spec=InferenceModel)
+        slow.loaded, slow.load_attempts, slow.load_retry_at, slow.cached = False, 0, None, False
+        slow.model_name, slow.model_type, slow.cache_dir = "slow", ModelType.VISUAL, Path("/cache/slow")
+
+        def slow_download() -> None:
+            started.set()
+            assert release.wait(5)
+
+        slow.download.side_effect = slow_download
+        cached = mock.Mock(spec=InferenceModel)
+        cached.loaded, cached.load_attempts, cached.load_retry_at, cached.cached = False, 0, None, True
+        cached.model_name, cached.model_type, cached.cache_dir = "cached", ModelType.VISUAL, Path("/cache/cached")
+        # Reports `cached` while its directory is still being written by `slow`'s download.
+        partial = mock.Mock(spec=InferenceModel)
+        partial.loaded, partial.load_attempts, partial.load_retry_at, partial.cached = False, 0, None, True
+        partial.model_name, partial.model_type, partial.cache_dir = "partial", ModelType.VISUAL, slow.cache_dir
+        try:
+            first = asyncio.create_task(load(slow))
+            assert await asyncio.to_thread(started.wait, 5)
+            assert await asyncio.wait_for(load(cached), 5) is cached
+            cached.download.assert_not_called()
+            cached.load.assert_called_once()
+            third = asyncio.create_task(load(partial))
+            await asyncio.sleep(0.05)
+            assert not third.done()
+            partial.load.assert_not_called()
+            release.set()
+            assert await first is slow
+            assert await third is partial
+            partial.download.assert_called_once()
+        finally:
+            release.set()
+            loads.shutdown(wait=True)
+
     async def test_falls_back_to_onnx_if_other_format_does_not_exist(self, warning: mock.Mock) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.cached = False
         mock_model.model_name = "test_model_name"
         mock_model.model_type = ModelType.VISUAL
         mock_model.model_task = ModelTask.SEARCH

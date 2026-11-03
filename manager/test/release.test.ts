@@ -115,7 +115,11 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
     );
     assert.throws(() => verifyNasManifest({ ...nas, schemaVersion: 1 }, manifest));
     for (const image of ['postgres:19', postgres.replace(':19beta4-pgvector0.8.7', ':14'), postgres.replace(':19beta4-pgvector0.8.7', ':19.0-pgvector0.8.7')])
-      assert.throws(() => verifyNasManifest({ ...nas, images: { ...nas.images, postgres: image } }, manifest), image);
+      assert.throws(
+        () => verifyNasManifest({ ...nas, images: { ...nas.images, postgres: image } }, manifest),
+        /NAS database (?:image is not a digest-pinned|was not verified)/,
+        image,
+      );
     // Review M2: a GA build of the same major verifies once the release lists it as a verified dependency.
     const ga = postgres.replace(':19beta4-pgvector0.8.7', ':19.0-pgvector0.8.7');
     verifyNasManifest(

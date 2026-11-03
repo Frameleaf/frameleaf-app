@@ -120,6 +120,14 @@ type RestoreReview = {
   current: Installation | null;
 };
 type UpdateReview = { expires: number; current: Installation; release: VerifiedRelease; platform: string };
+/**
+ * Whether an update may have started its target release: apply-release completed, or it journaled
+ * `release-start-state = 'starting'` right before `compose up`. An update that failed inside apply-release
+ * before that point (eligibility, fencing or database-image checks) never ran the target and stays
+ * cancellable even when its selected release was withdrawn and cannot be retargeted (review: operations.ts).
+ */
+const updateStarted = (operation: Pick<Operation, 'completed' | 'receipts'>): boolean =>
+  operation.completed.includes('apply-release') || operation.receipts['release-start-state'] === 'starting';
 type Cancellation = {
   kind: 'backup' | 'update' | 'source' | 'restore' | 'reconfigure';
   installation: Installation | null;
@@ -1396,9 +1404,7 @@ export class Operations {
             ? 'restore'
             : operation.kind === 'backup'
               ? 'backup'
-              : operation.kind === 'update' &&
-                  !operation.completed.includes('apply-release') &&
-                  operation.step !== 'apply-release'
+              : operation.kind === 'update' && !updateStarted(operation)
                 ? 'update'
                 : operation.kind === 'reconfigure'
                   ? 'reconfigure'
@@ -1502,12 +1508,25 @@ export class Operations {
     }
     if (intent.kind === 'update') {
       if (!installation) throw new Refusal('no_installation');
+      // 'prepared' means apply-release rendered the target's stack (and may have recorded it as the
+      // installation) but never journaled its start: the previous release's record and compose.json are
+      // put back before anything is started. Before that point nothing on disk changed.
+      let previous = installation;
+      if (operation.receipts['release-start-state'] === 'prepared') {
+        const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
+        if (!review) throw new Refusal('review_missing');
+        previous = review.current;
+      }
       await this.step(operation, 'cancel-restart-previous', async () => {
-        await this.databaseStorage.verify(installation);
-        await this.fencing.assertMedia(installation.mounts, installation);
-        if (installation.sourceId)
-          await this.fencing.verify(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
-        await this.docker.compose(this.directory(), installation.project, 'up');
+        if (previous !== installation) {
+          this.store.set('installation', previous);
+          await this.renderServices(previous, this.application().services);
+        }
+        await this.databaseStorage.verify(previous);
+        await this.fencing.assertMedia(previous.mounts, previous);
+        if (previous.sourceId)
+          await this.fencing.verify(this.store.get<Source>(`source:${previous.sourceId}`)!, previous);
+        await this.docker.compose(this.directory(), previous.project, 'up');
         return true;
       });
       operation.receipts['cancelled'] = 'update_cancelled_previous_release_running';
@@ -1606,9 +1625,7 @@ export class Operations {
           ? !receipts['move-writes-intent']
           : operation.kind === 'backup' ||
             operation.kind === 'reconfigure' ||
-            (operation.kind === 'update' &&
-              operation.step !== 'apply-release' &&
-              !operation.completed.includes('apply-release')) ||
+            (operation.kind === 'update' && !updateStarted({ ...operation, receipts })) ||
             !this.installation()?.mayHaveWrittenMedia ||
             (operation.kind === 'restore' &&
               this.installation()?.id === this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current?.id)),

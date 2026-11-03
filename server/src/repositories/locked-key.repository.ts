@@ -23,6 +23,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
 /**
+ * The pepper file cannot be used: it is damaged, or missing while key files hold PIN wraps made with
+ * it. Either needs an operator (restore the file from a backup); the server never replaces it.
+ */
+export class LockedPepperFileError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: 'missing' | 'damaged',
+  ) {
+    super(message);
+    this.name = 'LockedPepperFileError';
+  }
+}
+
+/**
  * FL-721 (spec §4.2): the Locked key files, `<media root>/locked-keys/<userId>.json`, mode 0600. They
  * hold only the public key and the wrapped private key; they are the source of truth (the
  * `locked_encryption` table mirrors state only) and are self-contained for the recovery CLI.
@@ -51,7 +65,9 @@ export class LockedKeyRepository {
 
   /**
    * The server's Locked pepper (see `LOCKED_PEPPER_FILE`), made on first use. Two workers making it
-   * at once end with one file: the loser's exclusive create fails and it reads the winner's.
+   * at once end with one file: the loser's exclusive create fails and it reads the winner's. A file
+   * that is missing although a key file holds a peppered wrap is a `LockedPepperFileError`, never
+   * replaced: a new pepper would close every PIN wrap.
    */
   pepper(): Promise<Buffer> {
     this.pepperCache ??= this.loadPepper().catch((error) => {
@@ -74,6 +90,12 @@ export class LockedKeyRepository {
     const existing = await this.readPepper(path);
     if (existing) {
       return existing;
+    }
+    if (await this.hasPepperedWrap()) {
+      throw new LockedPepperFileError(
+        `The Locked pepper file ${path} is missing, but key files hold PIN wraps made with it. Restore it from a backup; a new pepper would close every Locked PIN wrap (recovery keys still open the key files).`,
+        'missing',
+      );
     }
     await fs.mkdir(join(path, '..'), { recursive: true, mode: 0o700 });
     const pepper = randomBytes(PEPPER_BYTES);
@@ -120,11 +142,18 @@ export class LockedKeyRepository {
     }
     const pepper = Buffer.from(text.trim(), 'base64');
     if (text.trim() === '' || pepper.length < PEPPER_BYTES || pepper.toString('base64') !== text.trim()) {
-      throw new Error(
+      throw new LockedPepperFileError(
         `The Locked pepper file ${path} is damaged. Restore it from a backup; without it no Locked PIN opens a key file (recovery keys still do).`,
+        'damaged',
       );
     }
     return pepper;
+  }
+
+  /** Whether any key file on disk holds a wrap made with the pepper (a format-2 PIN wrap). */
+  private async hasPepperedWrap(): Promise<boolean> {
+    const files = await this.list();
+    return files.some((file) => file.wraps.some((wrap) => wrap.pepper !== undefined));
   }
 
   /**

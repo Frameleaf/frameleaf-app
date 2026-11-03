@@ -13,6 +13,7 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
@@ -22,6 +23,7 @@ import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { JobName, JobStatus } from 'src/enum.js';
 import { type LockedSealState } from 'src/repositories/locked-file.repository.js';
+import { LockedPepperFileError } from 'src/repositories/locked-key.repository.js';
 import { LockedEncryptionService, LockedKeyUnavailableException } from 'src/services/locked-encryption.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
@@ -814,6 +816,47 @@ describe(LockedEncryptionService.name, () => {
       expect(lockedKeys.has(userId)).toBe(true);
       expect(fileOf()).toEqual(legacy);
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('pepper'));
+    });
+
+    it('onPinVerified reports a lost pepper file as 503 with what to do, logged in full for the operator', async () => {
+      await enablePin();
+      lockedKeys.clear();
+      mocks.lockedKey.write.mockClear();
+      mocks.lockedKey.pepper.mockRejectedValue(
+        new LockedPepperFileError('The Locked pepper file /identity/locked-pin-pepper.key is missing', 'missing'),
+      );
+
+      const unlock = sut.onPinVerified(userId, PIN);
+
+      await expect(unlock).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(unlock).rejects.toThrow(/administrator must restore it from a backup/);
+      expect(lockedKeys.has(userId)).toBe(false);
+      // the key pair is kept: this is not a PIN that does not open it
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('/identity/locked-pin-pepper.key is missing'),
+      );
+    });
+
+    it('a pepper that is not the one the PIN wrap was made with is 503, never a wrong PIN or a replaced key pair', async () => {
+      await enablePin();
+      lockedKeys.clear();
+      mocks.lockedKey.write.mockClear();
+      mocks.lockedKey.pepper.mockResolvedValue(Buffer.alloc(32, 8));
+
+      await expect(sut.onPinVerified(userId, PIN)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(sut.onPinSet(userId, '654321', PIN)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(
+        sut.update(auth, { mode: 'advanced', currentSecret: PIN, newPassphrase: PASSPHRASE }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(fileOf().mode).toBe('pin');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('pepper'));
+      // the right pepper, restored, opens it again
+      mocks.lockedKey.pepper.mockResolvedValue(PEPPER);
+      await sut.onPinVerified(userId, PIN);
+      expect(lockedKeys.has(userId)).toBe(true);
     });
 
     it('onPinVerified creates and loads a key pair for a PIN with no key file', async () => {

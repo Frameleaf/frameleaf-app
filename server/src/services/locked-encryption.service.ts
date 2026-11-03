@@ -1,6 +1,7 @@
 import {
   type LockedFileInfo,
   type LockedKeyFile,
+  LockedPepperError,
   type WrapKind,
   WrongSecretError,
   encryptFile,
@@ -21,6 +22,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { stat } from 'node:fs/promises';
@@ -48,7 +50,7 @@ import {
   type LockedEncryptionAsset,
   LockedEncryptionRepository,
 } from 'src/repositories/locked-encryption.repository.js';
-import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
+import { LockedKeyRepository, LockedPepperFileError } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -829,6 +831,9 @@ export class LockedEncryptionService {
     try {
       privateKey = await unwrapKey(file, 'pin', pinCode, await this.pepper());
     } catch (error) {
+      if (error instanceof LockedPepperError) {
+        throw this.pepperUnavailable(error);
+      }
       if (!(error instanceof WrongSecretError)) {
         throw error;
       }
@@ -1041,6 +1046,9 @@ export class LockedEncryptionService {
       if (error instanceof WrongSecretError) {
         return null;
       }
+      if (error instanceof LockedPepperError) {
+        throw this.pepperUnavailable(error);
+      }
       throw error;
     }
   }
@@ -1129,7 +1137,27 @@ export class LockedEncryptionService {
 
   /** The server's Locked pepper as `wrapKey`/`unwrapKey` options; every PIN wrap is made and opened with it. */
   private async pepper(): Promise<{ pepper: Buffer }> {
-    return { pepper: await this.lockedKeyRepository.pepper() };
+    try {
+      return { pepper: await this.lockedKeyRepository.pepper() };
+    } catch (error) {
+      if (error instanceof LockedPepperFileError) {
+        throw this.pepperUnavailable(error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * A pepper the server cannot use (its file missing or damaged, or not the one a PIN wrap was made
+   * with) is an operator problem, never a wrong PIN: it is logged in full, with the file's path, and
+   * answered as 503 with what the person can do (an administrator restores the file; recovery keys
+   * still open the key file).
+   */
+  private pepperUnavailable(error: LockedPepperError | LockedPepperFileError): ServiceUnavailableException {
+    this.logger.error(`Locked PIN wraps can’t be opened: ${error.message}`);
+    return new ServiceUnavailableException(
+      'The server’s Locked pepper is missing or isn’t the one your PIN wrap was made with. An administrator must restore it from a backup; your recovery key still opens Locked.',
+    );
   }
 
   /** Unwraps the private key with a secret, under PIN unlock's attempt limit. 401 when it doesn't open. */
@@ -1143,6 +1171,9 @@ export class LockedEncryptionService {
           } catch (error) {
             if (error instanceof WrongSecretError) {
               throw new UnauthorizedException(kind === 'pin' ? 'Wrong PIN code' : `Wrong ${secretName(kind)}`);
+            }
+            if (error instanceof LockedPepperError) {
+              throw this.pepperUnavailable(error);
             }
             throw error;
           }

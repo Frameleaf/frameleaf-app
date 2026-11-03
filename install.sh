@@ -90,6 +90,37 @@ generate_random_password() {
   fi
 }
 
+# A selected release runs its own images, not whatever latest is by then: the verified example.env pins
+# FRAMELEAF_VERSION to the release tag (image tags are the release tags, frameleaf-vX.Y.Z).
+pin_release_version() {
+  [[ -n ${FRAMELEAF_RELEASE:-} ]] || return 0
+  echo "Pinning FRAMELEAF_VERSION to ${FRAMELEAF_RELEASE} in .env..."
+  local line found=0
+  {
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line == 'FRAMELEAF_VERSION=latest' ]]; then
+        line="FRAMELEAF_VERSION=${FRAMELEAF_RELEASE}"
+        found=$((found + 1))
+      fi
+      printf '%s\n' "$line"
+    done <./.env
+  } >./.env.new || return 1
+  if [[ $found -ne 1 ]]; then
+    rm -f ./.env.new
+    echo '.env has no single FRAMELEAF_VERSION=latest line to pin to the selected release' >&2
+    return 1
+  fi
+  mv ./.env.new ./.env || return 1
+  found=0
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == "FRAMELEAF_VERSION=${FRAMELEAF_RELEASE}" ]] && found=1
+  done <./.env
+  if [[ $found -ne 1 ]]; then
+    echo '.env does not pin the selected release' >&2
+    return 1
+  fi
+}
+
 start_docker_compose() {
   echo "Starting Frameleaf's docker containers"
 
@@ -172,6 +203,10 @@ main() {
   verify_download example.env ./.env || {
     echo 'error verifying the downloaded .env'
     return 18
+  }
+  pin_release_version || {
+    echo 'error pinning the selected release in .env'
+    return 19
   }
   generate_random_password || {
     echo 'error generating database password'
