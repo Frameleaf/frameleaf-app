@@ -1,14 +1,33 @@
 <Container version="2">
   <Name>frameleaf-manager</Name>
   <Repository>ghcr.io/frameleaf/frameleaf-manager:latest</Repository>
-  <Registry>https://ghcr.io</Registry>
+  <Registry>https://github.com/orgs/Frameleaf/packages/container/package/frameleaf-manager</Registry>
+  <Shell>sh</Shell>
+  <DefaultTagDescription>Latest published Frameleaf Manager</DefaultTagDescription>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <Project>https://frameleaf.app</Project>
   <Support>https://frameleaf.app/help/</Support>
-  <Overview>Install and manage a self-hosted Frameleaf photo and video library. Manager coordinates sibling services through the Docker socket. Encrypted recovery covers the database and configuration, not media originals. Before applying, create the storage folders and follow the linked setup guide for the storage mappings. Create the administrator from your home network on first open.</Overview>
+  <Overview>Your photos, on your own server. Frameleaf Manager guides you through installing and maintaining Frameleaf: choose the folders that hold your library, review a signed release and bring the server online.
+
+From one local dashboard, check service health, start or stop the library, review updates, manage storage and create encrypted database recovery points. Frameleaf itself brings your photos and videos together with a timeline, smart search, people, places, albums, sharing and editing. Local use needs no Frameleaf Cloud account.
+
+Install this template for the guided setup. Create your Manager administrator from your home network on first open, then follow the linked Unraid guide. Manager controls sibling services through Docker and needs the dedicated folder mappings shown below. Recovery points contain the database and configuration; back up photo and video originals separately. The product screenshots use demonstration data.</Overview>
   <Category>MediaApp:Photos</Category>
+  <ExtraSearchTerms>photos videos photo-library photo-backup gallery albums family self-hosted manager install updates database recovery</ExtraSearchTerms>
+  <Requires>Unraid Docker enabled; dedicated persistent folders for Manager state, original media, the PostgreSQL database and database backups. Keep mapped host and container paths identical. Manager requires access to the Docker socket. See the installation guide for setup and hardware requirements.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
+  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
+  <Twitter>https://x.com/frameleafapp</Twitter>
+  <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
+  <DonateText>Support Frameleaf with a supporter licence</DonateText>
+  <Photo>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Photo>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg</Screenshot>
+  <Video>https://www.youtube.com/watch?v=bTfFBDHc6OE</Video>
+  <Video>https://www.youtube.com/watch?v=INeVz9NFzOM</Video>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
   <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>

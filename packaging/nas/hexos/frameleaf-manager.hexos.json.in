@@ -3,13 +3,38 @@
   "custom": true,
   "metadata": {
     "name": "Frameleaf",
-    "description": "Your photo and video library on this server. Frameleaf Manager installs and updates Frameleaf, keeps encrypted database backups and moves your library to a bigger drive when it fills up. Open it after install to create your administrator. Help center: https://frameleaf.app/help/ Installation guide: https://frameleaf.app/docs/nas/hexos/",
+    "description": "Your photos. Your server. Everywhere.\n\nBring photos and videos together in a library with a timeline, albums, smart search, people, places, sharing and editing. Your server holds the originals; local use needs no Cloud account.\n\nThis package installs Frameleaf Manager. Manager guides storage setup, installs the application from a signed release, monitors services, handles updates and keeps encrypted database recovery points. HexOS creates dedicated folders in your selected storage locations. Open Manager after installation to create your local administrator and set up the photo library.\n\nManager needs Docker access to manage the application containers. Its backups cover the database and configuration, so keep a separate backup of original photos and videos. Product screenshots show demonstration data.\n\nInstallation: https://frameleaf.app/docs/nas/hexos/\nHelp center: https://frameleaf.app/help/\nCommunity: https://frameleaf.app/help/community/",
     "icon": "https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png",
     "version": "@MANAGER_VERSION@",
-    "categories": ["media"],
-    "keywords": ["frameleaf", "photos", "videos", "photo library", "backup"],
+    "categories": [
+      "media"
+    ],
+    "keywords": [
+      "photos",
+      "videos",
+      "photo library",
+      "self-hosted",
+      "gallery",
+      "albums",
+      "smart search",
+      "face recognition",
+      "backup",
+      "manager"
+    ],
     "homepage": "https://frameleaf.app",
-    "sources": ["https://github.com/Frameleaf/frameleaf-app", "https://frameleaf.app/help/", "https://frameleaf.app/docs/nas/hexos/"]
+    "sources": [
+      "https://github.com/Frameleaf/frameleaf-app",
+      "https://frameleaf.app/help/",
+      "https://frameleaf.app/docs/nas/hexos/",
+      "https://frameleaf.app/help/community/",
+      "https://www.youtube.com/@frameleafapp",
+      "https://www.reddit.com/r/Frameleaf/"
+    ],
+    "screenshots": [
+      "https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-overview.jpg",
+      "https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-storage.jpg",
+      "https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/images/manager-backups.jpg"
+    ]
   },
   "script": {
     "version": "@MANAGER_VERSION@",

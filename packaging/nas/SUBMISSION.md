@@ -100,8 +100,10 @@ This package pins and tests catalog library **2.3.18**, the latest version at
 TrueNAS apps commit `99df68c9497e3966d33ee4e0990df7009e3f49a9`. Before submission,
 check for a newer catalog library and qualify any replacement in both ML modes.
 In the catalog checkout, generate the matching library and run its checks.
-The GitHub-hosted icon is a source asset: the submission copy must use a
-reviewer-supplied TrueNAS CDN URL before metadata validation can pass. Run the
+The icon and screenshots use public Frameleaf source assets. Attach the icon
+and the three screenshots listed in `app.yaml` to the submission. The reviewer
+must provide TrueNAS CDN URLs; replace both `app.yaml` and `item.yaml` media
+URLs before metadata validation can pass. Run the
 metadata generator to refresh catalog fields; with the required floating
 `:latest` images, it sets `app_version` to `latest`. Keep the signed release
 manifest as evidence of the application version used for qualification.

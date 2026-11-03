@@ -1,17 +1,37 @@
 <Container version="2">
   <Name>frameleaf-server</Name>
   <Repository>ghcr.io/frameleaf/frameleaf-server:latest</Repository>
-  <Registry>https://ghcr.io</Registry>
+  <Registry>https://github.com/orgs/Frameleaf/packages/container/package/frameleaf-server</Registry>
+  <Shell>sh</Shell>
+  <DefaultTagDescription>Latest published Frameleaf Server</DefaultTagDescription>
   <Network>frameleaf</Network>
   <Privileged>false</Privileged>
   <Project>https://frameleaf.app</Project>
   <Support>https://frameleaf.app/help/</Support>
-  <Overview>Self-hosted Frameleaf photo and video library. Requires the Frameleaf PostgreSQL 19 container on the frameleaf network.</Overview>
+  <Overview>A home for your photos and videos on hardware you own. Browse a timeline, organise albums and folders, explore people and places, edit photos, and share selected memories with family. Add the separate Machine Learning container for local smart search and recognition.
+
+This is the application server for a manual Docker installation. It provides the Frameleaf web app and the APIs used by Frameleaf clients. New to self-hosting? Install Frameleaf Manager instead for guided storage setup, release management and database recovery.
+
+Before starting, create a fresh Frameleaf PostgreSQL 19 database on the frameleaf network, configure matching database credentials, and map persistent library storage. A container image change does not convert an existing database. Back up both the database and original media before updating. The self-hosted library needs no Cloud account; optional Cloud services are separate.</Overview>
   <Category>MediaApp:Photos</Category>
+  <ExtraSearchTerms>photos videos photo-library gallery timeline albums sharing editing self-hosted photo-backup people places</ExtraSearchTerms>
+  <Requires>A fresh Frameleaf PostgreSQL 19 database using the matching release image and credentials; the frameleaf Docker network; persistent media storage. Optional local search and recognition require the separate frameleaf-ml container. See the Unraid installation guide.</Requires>
   <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png</Icon>
   <WebUI>http://[IP]:[PORT:2283]</WebUI>
   <ExtraParams>--stop-timeout=10 --shm-size=2g</ExtraParams>
+  <Discord>https://discord.gg/cN3U3mv4</Discord>
+  <Reddit>https://www.reddit.com/r/Frameleaf/</Reddit>
+  <Twitter>https://x.com/frameleafapp</Twitter>
+  <DonateLink>https://frameleaf.app/pricing/#supporter</DonateLink>
+  <DonateText>Support Frameleaf with a supporter licence</DonateText>
+  <Photo>https://frameleaf.app/web/library-grid.webp?v=2026-10-30</Photo>
+  <Screenshot>https://frameleaf.app/web/library-grid.webp?v=2026-10-30</Screenshot>
+  <Screenshot>https://frameleaf.app/web/explore.webp?v=2026-10-30</Screenshot>
+  <Screenshot>https://frameleaf.app/web/shared-links.webp?v=2026-10-30</Screenshot>
+  <Video>https://www.youtube.com/watch?v=rNgyZZoZoEg</Video>
+  <Video>https://www.youtube.com/watch?v=A-QotzqIXlA</Video>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-server.xml</TemplateURL>
+  <License>https://github.com/Frameleaf/frameleaf-app/blob/main/LICENSE</License>
   <ReadMe>https://frameleaf.app/docs/nas/unraid/</ReadMe>
   <Config Name="Web port" Target="2283" Default="2283" Mode="tcp" Description="Frameleaf web interface" Type="Port" Display="always" Required="true" Mask="false">2283</Config>
   <Config Name="Library" Target="/data" Default="/mnt/user/appdata/frameleaf/library" Mode="rw" Description="Persistent original media and generated files; back up with the database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/library</Config>
