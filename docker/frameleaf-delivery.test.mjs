@@ -1125,3 +1125,20 @@ test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
   assert.equal(probe.env.EXPECTED_PGVECTOR, "0.8.7");
   assert.match(probe.run, /USING hnsw/);
 });
+
+test("the production Server installs the verified helper where relocation executes it", () => {
+  const worker = read("manager/src/import-relocation.ts");
+  const executable = worker.match(
+    /['"](\/usr\/local\/bin\/frameleaf-import-rename)['"]/,
+  )[1];
+  const production = read("server/Dockerfile")
+    .split(/^FROM base-server-prod AS prod\s*$/m)[1]
+    .split(/^FROM\s/m)[0];
+  assert.match(
+    production,
+    new RegExp(
+      `^COPY --from=server /output/server-pruned/resources/library-import/frameleaf-import-rename ${executable}$`,
+      "m",
+    ),
+  );
+});

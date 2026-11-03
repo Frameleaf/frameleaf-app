@@ -13,25 +13,25 @@
     "resources"
   ],
   "scripts": {
-    "build": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" nest build",
+    "build": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" nest build",
     "format": "prettier --cache --check .",
     "help:snapshot": "curl -sf https://frameleaf.app/help-index.json -o resources/help/help-index.json",
     "format:fix": "prettier --cache --write --list-different .",
     "start": "pnpm run start:dev",
     "nest": "nest",
-    "start:dev": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --watch --",
-    "start:debug": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --debug 0.0.0.0:9230 --watch --",
-    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" node scripts/lint.mjs",
+    "start:dev": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && nest start --watch --",
+    "start:debug": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && nest start --debug 0.0.0.0:9230 --watch --",
+    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" node scripts/lint.mjs",
     "lint:fix": "pnpm run lint --fix",
     "test:lint": "node --test test/lint-batches.test.mjs",
-    "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" tsc --noEmit",
+    "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" tsc --noEmit",
     "check:code": "pnpm run format && pnpm run lint && pnpm run check",
     "check:all": "pnpm run check:code && pnpm run test:cov",
-    "test": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.mjs",
-    "test:cov": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.mjs --coverage",
+    "test": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest --config test/vitest.config.mjs",
+    "test:cov": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest --config test/vitest.config.mjs --coverage",
     "test:runtime": "pnpm run build && node --test test/runtime/*.test.mjs",
-    "test:medium": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.medium.mjs",
-    "test:model-mirror": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest run --config test/vitest.config.model-mirror.mjs",
+    "test:medium": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest --config test/vitest.config.medium.mjs",
+    "test:model-mirror": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && vitest run --config test/vitest.config.model-mirror.mjs",
     "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate --debug",
     "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations generate",
     "migrations:create": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/frameleaf} migrations create",
@@ -180,6 +180,7 @@
     "sharp": "^0.35.5"
   },
   "imports": {
-    "#studio-subtitle-sidecar": "./resources/studio/subtitle-sidecar.mjs"
+    "#studio-subtitle-sidecar": "./resources/studio/subtitle-sidecar.mjs",
+    "#library-import-transfer/*": "./resources/library-import/*.js"
   }
 }

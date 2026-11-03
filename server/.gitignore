@@ -44,3 +44,7 @@ core
 .reverse-geocoding-dump/
 
 **/node_modules/**
+
+# Shared transfer workers generated from the Manager sources during Server builds
+/resources/library-import/
+/resources/.import-runtime-*/

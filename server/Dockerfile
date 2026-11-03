@@ -382,6 +382,9 @@ COPY ./server/package.json ./server/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'frameleaf...' install --frozen-lockfile
 
 COPY ./server ./server/
+COPY ./manager/package.json ./manager/package.json
+COPY ./manager/src/contracts.ts ./manager/src/import-plan.ts ./manager/src/import-transfer-journal.ts ./manager/src/import-copy.ts ./manager/src/import-adoption.ts ./manager/src/import-relocation.ts ./manager/src/
+COPY ./manager/import-rename.c ./manager/import-rename.c
 COPY ./studio/runtime/subtitle-sidecar.mjs ./studio/runtime/subtitle-sidecar.d.mts ./studio/runtime/
 COPY ./studio/tools/owned-subtitle-runtime.mjs ./studio/tools/prepare-server-subtitle-runtime.mjs ./studio/tools/
 COPY ./docker/scripts/verify-server-package.mjs /build/verify-server-package.mjs
@@ -404,8 +407,10 @@ RUN set -eu; \
   esac
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   pnpm --filter frameleaf build && \
+  install -m 755 server/resources/library-import/frameleaf-import-rename /usr/local/bin/frameleaf-import-rename && \
   pnpm --filter frameleaf --prod --no-optional deploy /output/server-pruned
 RUN node /build/preserve-import-crypto-runtime.mjs /usr/src/app/server /output/server-pruned
+RUN node ./server/scripts/prepare-import-transfer-runtime.mjs --package /output/server-pruned
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
 RUN node /build/verify-server-package.mjs /output/server-pruned /usr/src/app/studio/runtime
@@ -524,6 +529,7 @@ ENV NODE_ENV=production \
   NVIDIA_VISIBLE_DEVICES=all
 
 COPY --from=server /output/server-pruned ./server
+COPY --from=server /output/server-pruned/resources/library-import/frameleaf-import-rename /usr/local/bin/frameleaf-import-rename
 COPY --from=web /usr/src/app/web/build /build/www
 COPY --from=cli /output/cli-pruned ./cli
 COPY --from=plugins /usr/src/app/packages/plugin-core/dist /build/plugins/immich-plugin-core/dist
