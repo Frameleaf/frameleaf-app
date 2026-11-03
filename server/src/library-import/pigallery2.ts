@@ -5,6 +5,8 @@ import { pigallery2Projections as projections } from 'src/library-import/pigalle
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
+export { readPigallery2Manifest } from 'src/library-import/pigallery2-manifest.js';
+
 export type Pigallery2Table = keyof typeof projections;
 export type Pigallery2Row = Record<string, SQLOutputValue>;
 class Pigallery2ReadError extends Error {
