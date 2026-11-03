@@ -1,12 +1,15 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
+import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
+import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
 import content from 'src/library-import/fixtures/photoview/2.4.0-content.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
-import { type ImportManifest } from 'src/library-import/manifest.js';
+import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
 import * as photoview from 'src/library-import/photoview.js';
 import { type SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
@@ -247,6 +250,65 @@ describe('Photoview common manifest mapping', () => {
       expect(() => read()).toThrow('PHOTOVIEW_ORIGINAL_PATH_INVALID');
     },
   );
+  it.each(['/photos\\lab', '/photos\nlab'])('refuses an unsafe source root before stripping its prefix: %s', (root) => {
+    const value = input();
+    value.sourceRoot = root;
+    database.prepare("UPDATE media SET path=REPLACE(path,'/photos',?)").run(root);
+    expect(() => read(value)).toThrow('PHOTOVIEW_ORIGINAL_PATH_INVALID');
+  });
+  it('prepares every mapped original with the existing destination writer without database effects', () => {
+    const { manifest } = read();
+    const template = planFixture.plan.files[0];
+    const files = new Map(manifest.files.map((file, index) => [file.id, { ...file, inode: String(index + 1) }]));
+    const plan = parseDestinationImportPlan({
+      ...planFixture.plan,
+      source: manifest.source,
+      owners: manifest.users.map((user) => ({ sourceId: user.id, destinationId: randomUUID() })),
+      files: manifest.assets.flatMap((asset) =>
+        asset.fileIds.map((id) => {
+          const file = files.get(id)!;
+          return {
+            ...template,
+            id: `placement:${asset.id}:${id}`,
+            sourceAssetId: asset.id,
+            sourceFileId: id,
+            sourcePath: file.path,
+            destinationPath: `${asset.ownerId}/${asset.id}/${file.path}`,
+            bytes: file.bytes,
+            sha256: file.sha256,
+            sourceIdentity: { ...template.sourceIdentity, inode: file.inode, bytes: file.bytes },
+          };
+        }),
+      ),
+    });
+    const query = vi.fn();
+    const writer = new CanonicalAssetWriter(
+      { query, transaction: vi.fn() },
+      {
+        manifest,
+        plan,
+        destinationId: plan.destinationId,
+        binding: {
+          operationId: randomUUID(),
+          source: manifest.source,
+          manifestSha256: manifestFingerprint(manifest),
+          planSha256: destinationPlanFingerprint(plan),
+        },
+      },
+    );
+    const prepared = manifest.assets.map((asset) => {
+      if (!('type' in asset)) throw new Error('Sealed source asset required');
+      return writer.prepare({
+        sourceAssetId: asset.id,
+        type: asset.type,
+        fileModifiedAt: asset.fileModifiedAt,
+        originalFileNames: asset.originalFileNames,
+      });
+    });
+    expect(prepared).toHaveLength(4);
+    expect(prepared.reduce((count, asset) => count + asset.files.length, 0)).toBe(4);
+    expect(query).not.toHaveBeenCalled();
+  });
   it('refuses half-known GPS coordinates and invalid dates', () => {
     database.prepare('UPDATE media_exif SET gps_latitude=? WHERE id=1').run(45);
     expect(() => read()).toThrow('PHOTOVIEW_METADATA_INVALID');
