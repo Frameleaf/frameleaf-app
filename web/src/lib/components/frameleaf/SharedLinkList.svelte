@@ -588,8 +588,8 @@
   }
   .sl-tabs {
     display: inline-flex;
-    gap: 2px;
-    padding: 3px;
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-1);
     border-radius: var(--fl-radius-control);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
@@ -604,7 +604,7 @@
     font: inherit;
     font-size: 0.8125rem;
     min-height: 32px;
-    padding: 4px 12px;
+    padding: 4px var(--fl-space-4);
     border-radius: var(--fl-radius-xs);
     cursor: pointer;
     transition:
