@@ -20,7 +20,7 @@ export const withDateTimeOffset = (value?: string) => {
   if (!value) return value;
   const parsed = DateTime.fromISO(value, { setZone: true, zone: 'UTC' });
   if (!parsed.isValid) return value;
-  const time = value.split('T', 2)[1];
+  const time = value.split(/t/iu, 2)[1];
   if (!time) return parsed.toISO() ?? value;
   return /(?:Z|[+-]\d{2}(?::?\d{2})?)$/iu.test(time) ? value : value + 'Z';
 };
