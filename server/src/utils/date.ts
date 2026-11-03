@@ -16,7 +16,9 @@ export const asDateString = (x: Date | string | null): string | null => {
 };
 
 export const extractTimeZone = (dateTimeOriginal?: string | null) => {
-  const extractedTimeZone = dateTimeOriginal ? DateTime.fromISO(dateTimeOriginal, { setZone: true }).zone : undefined;
+  const extractedTimeZone = dateTimeOriginal
+    ? DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }).zone
+    : undefined;
   return extractedTimeZone?.type === 'fixed' ? extractedTimeZone : undefined;
 };
 
