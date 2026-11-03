@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -107,33 +107,25 @@ describe('offline media verification', () => {
     await expect(verifyMediaRoots([{ source, target: join(directory, 'file') }])).rejects.toThrow('DIRECTORY');
   });
 
-  it('retains Manager media at exactly the same path while checking original bytes', async () => {
+  it('retains Manager media at exactly the same path, identified by its file identity, without reading it', async () => {
     const root = join(directory, 'source');
     const path = join(root, 'photo.jpg');
     await writeFile(path, 'original');
     const roots = [{ source: root, target: root }];
-    const checksum = createHash('sha1').update('original').digest('hex');
     const receipt = vi.fn();
-    await expect(verifyMediaFile(path, roots, checksum, 'sha1', manager, receipt)).resolves.toBe(path);
-    expect(receipt).toHaveBeenCalledWith(createHash('sha256').update('original').digest('hex'));
-    await writeFile(path, 'modified');
-    await expect(verifyMediaFile(path, roots, checksum, 'sha1', manager)).rejects.toThrow('ORIGINAL_CHECKSUM_MISMATCH');
-    expect(await readFile(path, 'utf8')).toBe('modified');
-  });
-
-  it('reads a Manager in-place file once, since source and target are the same file', async () => {
-    const root = join(directory, 'source');
-    const path = join(root, 'photo.jpg');
-    await writeFile(path, 'original');
     const handle = await open(path);
     const reads = vi.spyOn(Object.getPrototypeOf(handle), 'createReadStream');
     await handle.close();
     try {
-      await verifyMediaFile(path, [{ source: root, target: root }], undefined, undefined, manager);
-      expect(reads).toHaveBeenCalledTimes(1);
+      // A changed original is the background check's to report (Library care), not a reason to stop the import.
+      await expect(verifyMediaFile(path, roots, '0'.repeat(40), 'sha1', manager, receipt)).resolves.toBe(path);
+      expect(reads).not.toHaveBeenCalled();
     } finally {
       reads.mockRestore();
     }
+    const { size, mtimeNs } = await stat(path, { bigint: true });
+    expect(receipt).toHaveBeenCalledWith(`stat:${size}:${mtimeNs}`);
+    expect(await readFile(path, 'utf8')).toBe('original');
   });
 
   it('uses the most specific Manager mount and rejects duplicate destinations', () => {

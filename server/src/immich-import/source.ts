@@ -99,8 +99,8 @@ export class ImmichSource {
       if (typeof path !== 'string' || !path) continue;
       parts.push(canonicalJson({ column, path }));
       try {
-        await verifyMediaFile(path, this.config.mediaRoots, undefined, undefined, this.config.media, (sha256) => {
-          parts.push(sha256);
+        await verifyMediaFile(path, this.config.mediaRoots, undefined, undefined, this.config.media, (identity) => {
+          parts.push(identity);
         });
       } catch (error) {
         const lost =

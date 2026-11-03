@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Put, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Writable } from 'node:stream';
 import { finished } from 'node:stream/promises';
@@ -7,6 +7,8 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   FinishLibrarySetupDto,
+  LibrarySetupPauseDto,
+  LibrarySetupProgressDto,
   LibrarySetupStatusDto,
   WarmLibrarySetupDto,
 } from 'src/dtos/frameleaf-library-setup.dto.js';
@@ -81,6 +83,29 @@ export class FrameleafLibrarySetupController {
   })
   status(@Auth() auth: AuthDto): Promise<LibrarySetupStatusDto> {
     return this.setup.status(auth);
+  }
+
+  @Get('progress')
+  // Polled every 15 seconds by the setup bar: reading progress must not keep a PIN unlock or Locked key alive.
+  @Authenticated({ admin: true, refreshElevation: false })
+  @Endpoint({
+    operationId: 'getLibrarySetupProgress',
+    summary: 'What an imported library still has to do after it opens (setup bar)',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  progress(): Promise<LibrarySetupProgressDto> {
+    return this.setup.progress();
+  }
+
+  @Put('progress')
+  @Authenticated({ admin: true })
+  @Endpoint({
+    operationId: 'pauseLibrarySetup',
+    summary: 'Pause or resume the work an imported library does after it opens',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  pause(@Body() dto: LibrarySetupPauseDto): Promise<LibrarySetupProgressDto> {
+    return this.setup.setPaused(dto.paused);
   }
 
   @Post('begin')

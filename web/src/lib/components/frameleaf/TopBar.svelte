@@ -252,6 +252,13 @@
   data-theme={appTheme}
 >
   <SkipLink text={$t('skip_to_content')} />
+  <!-- FL-1146: after an Immich import, the setup bar sits above the bar's row and adds to its height. Only
+       administrators see it, so only they load it. -->
+  {#if authManager.user?.isAdmin}
+    {#await import('$lib/components/frameleaf/SetupBar.svelte') then { default: SetupBar }}
+      <SetupBar />
+    {/await}
+  {/if}
   <div class="fl-topbar-grid">
     <!-- Brand and workspaces share the bar's leading track; on phones they sit in the grid directly. -->
     <div class="fl-topbar-start">
@@ -457,7 +464,7 @@
     display: flex;
     align-items: center;
     column-gap: 1.125rem;
-    height: 100%;
+    height: calc(100% - var(--fl-setup-bar-height, 0px));
     padding: 0 max(1.5rem, var(--fl-safe-right)) 0 max(1.125rem, var(--fl-safe-left));
   }
   .fl-topbar-start {

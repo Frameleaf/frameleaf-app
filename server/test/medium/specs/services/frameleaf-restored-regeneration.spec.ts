@@ -50,6 +50,7 @@ it('releases a restored prepared import once with a real admin and effective set
       // Setup scans every account, including the asset-less admin made below.
       { startMissingScan: vi.fn().mockResolvedValue({ operationId: randomUUID() }) } as never,
       setup.sut,
+      {} as never,
     );
   const run = async () =>
     (
@@ -189,8 +190,10 @@ it('releases a restored prepared import once with a real admin and effective set
     await Promise.all([make().begin(), make().begin()]);
     const marker = (await run()).selection.managerSetup;
     expect(marker).toMatchObject({ installation: original, operationId, startedAt: expect.any(String) });
+    // FL-1146: metadata and thumbnails start at once; the rest wait for the original-file check.
+    const early = new Set<string>([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails]);
     expect((await selections()).map((row) => row.state)).toEqual(
-      captured.map((row) => (row.state === 'enumerating' ? 'ready' : row.state)),
+      captured.map((row) => (row.state === 'enumerating' && early.has(row.stage) ? 'ready' : row.state)),
     );
     expect((await selections()).map((row) => row.capturedAt)).toEqual(captured.map((row) => row.capturedAt));
     expect(await setup.sut.getAdminConfigWithRevision()).toEqual(settings);
@@ -249,6 +252,7 @@ it.each(['bound-missing-run', 'bound-missing-marker', 'unbound-markerless'] as c
       {} as never,
       {} as never,
       { getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: mapAdminConfig(defaults) }) } as never,
+      {} as never,
     );
     try {
       process.env.FRAMELEAF_MANAGER_INSTALLATION = 'aaaabbbbcccc';
