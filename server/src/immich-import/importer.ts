@@ -27,6 +27,7 @@ import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
 import { assertFreshImportDestination } from 'src/library-import/admission.js';
 import { LIBRARY_IMPORT_LOCK as IMPORT_LOCK } from 'src/library-import/lock.js';
+import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 const localColumns = new Set(['updateId', 'createId']);
 const LOST_REPORT_ITEMS = 1000;
@@ -356,18 +357,21 @@ export class ImmichImportService {
       WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
       [AssetLockReason.Marked],
     );
-    // The fork-only asset.is_nsfw column is not in the copied shape; rebuild it from the copied metadata with the
-    // fork's own rule (ImageEnrichmentService.getEffectiveNsfw): a review decides, else a successful detection, else
-    // a successful description rating it likely sensitive with high confidence. Detections hid media only while the
-    // source's "hide sensitive detections from the library" switch was on; then they lock, as 2100000000320 did.
-    await this.destination.query(`UPDATE public.asset SET is_nsfw=true FROM public.asset_metadata m
-      WHERE m."assetId"=asset.id AND m.key='ml-enrichment' AND NOT asset.is_nsfw
-        AND CASE WHEN m.value #> '{nsfwDetection,review}' IS NOT NULL
-          THEN m.value #>> '{nsfwDetection,review,isNsfw}'='true'
-          ELSE (m.value #>> '{nsfwDetection,status}'='success' AND m.value #>> '{nsfwDetection,result,isNsfw}'='true')
-            OR (m.value #>> '{description,status}'='success'
-              AND m.value #>> '{description,result,safety,is_nsfw_likely}'='true'
-              AND lower(m.value #>> '{description,result,safety,confidence}')='high') END IS TRUE`);
+    // The fork-only asset.is_nsfw column is not in the copied shape; rebuild it with the server's own rule
+    // (deriveIsNsfwFromMetadata: a review decides, else a successful detection, else a high-confidence description
+    // with strong indicators). SQL only narrows the candidates. Detections hid media only while the source's "hide
+    // sensitive detections from the library" switch was on; then they lock, as 2100000000320 did.
+    const candidates = await this.destination.query(`SELECT "assetId" AS id, value FROM public.asset_metadata
+      WHERE key='ml-enrichment' AND (value #>> '{nsfwDetection,review,isNsfw}'='true'
+        OR value #>> '{nsfwDetection,result,isNsfw}'='true' OR value #>> '{description,result,safety,is_nsfw_likely}'='true')`);
+    const sensitive = candidates.filter((row) => deriveIsNsfwFromMetadata(row.value) === true).map((row) => row.id);
+    for (let index = 0; index < sensitive.length; index += 10_000) {
+      await this.destination.query(
+        `UPDATE public.asset SET is_nsfw=true WHERE NOT is_nsfw
+        AND id IN (SELECT jsonb_array_elements_text($1::text::jsonb)::uuid)`,
+        [JSON.stringify(sensitive.slice(index, index + 10_000))],
+      );
+    }
     const [hiding] = await this.source.db.query(
       `SELECT value #>> '{machineLearning,nsfwDetection,hideFromLibrary}' AS enabled
       FROM public.system_metadata WHERE key='system-config'`,

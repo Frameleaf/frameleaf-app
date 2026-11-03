@@ -352,13 +352,46 @@ describe('Noodle Gallery data that stays behind', () => {
 });
 
 describe('fork sensitive detections', () => {
+  const metadata = [
+    { id: 'detected', value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } } },
+    { id: 'failed', value: { nsfwDetection: { status: 'failed', result: { isNsfw: true } } } },
+    {
+      id: 'reviewed-safe',
+      value: { nsfwDetection: { status: 'success', result: { isNsfw: true }, review: { isNsfw: false } } },
+    },
+    { id: 'reviewed', value: { nsfwDetection: { review: { isNsfw: true } } } },
+    {
+      id: 'described',
+      value: {
+        description: {
+          status: 'success',
+          result: {
+            description: 'A beach',
+            safety: { is_nsfw_likely: true, confidence: 'High', indicators: ['nudity'], reason: '' },
+          },
+        },
+      },
+    },
+    {
+      id: 'described-weak',
+      value: {
+        description: {
+          status: 'success',
+          result: {
+            description: 'A beach',
+            safety: { is_nsfw_likely: true, confidence: 'high', indicators: ['swimwear'], reason: 'swimwear' },
+          },
+        },
+      },
+    },
+  ];
   const convert = async (hideFromLibrary: string | null) => {
     const statements: { sql: string; parameters: unknown[] }[] = [];
     const destination = {
       query: vi.fn(async (sql: string, parameters: unknown[] = []) => {
         await Promise.resolve();
         statements.push({ sql, parameters });
-        return [];
+        return sql.includes('FROM public.asset_metadata') && sql.includes('is_nsfw_likely') ? metadata : [];
       }),
       transaction: vi.fn(),
     } as unknown as ImportDatabase;
@@ -371,21 +404,21 @@ describe('fork sensitive detections', () => {
     } as unknown as ImportDatabase;
     const importer = new ImmichImportService(destination, source, config);
     await (importer as unknown as { convertLocks(): Promise<void> }).convertLocks();
-    return statements.filter(({ sql }) => sql.includes('is_nsfw'));
+    const rebuilt = statements.find(({ sql }) => sql.includes('SET is_nsfw=true'));
+    const locked = statements.filter(({ sql }) => sql.includes('WHERE is_nsfw'));
+    return { rebuilt: rebuilt && JSON.parse(rebuilt.parameters[0] as string), locked };
   };
-  // The fork's rule: a review (even "safe") decides; only then a successful detection or high-confidence description.
-  const rebuild = expect.objectContaining({
-    sql: expect.stringMatching(
-      /SET is_nsfw=true[\s\S]*WHEN m\.value #> '\{nsfwDetection,review\}' IS NOT NULL[\s\S]*'\{nsfwDetection,status\}'='success'[\s\S]*'\{description,status\}'='success'/,
-    ),
+
+  it("rebuilds is_nsfw with the server's rule: reviews decide, failed detections and weak descriptions do not count", async () => {
+    expect((await convert(null)).rebuilt).toEqual(['detected', 'reviewed', 'described']);
   });
 
   it('locks detections when the source hid them from the library', async () => {
-    expect(await convert('true')).toEqual([rebuild, expect.objectContaining({ parameters: ['detected'] })]);
+    expect((await convert('true')).locked).toEqual([expect.objectContaining({ parameters: ['detected'] })]);
   });
 
   it('leaves detections unlocked when hiding was off or never saved', async () => {
-    expect(await convert('false')).toEqual([rebuild]);
-    expect(await convert(null)).toEqual([rebuild]);
+    expect((await convert('false')).locked).toEqual([]);
+    expect((await convert(null)).locked).toEqual([]);
   });
 });

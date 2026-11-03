@@ -244,8 +244,9 @@ For every source, assets in the upstream Locked folder become `asset_lock` recor
 visibility `timeline` (`hidden` for a live photo's video), the fork's Mark Sensitive review
 becomes a `marked` lock, whole stacks and live photos lock together, and locked media stops being
 an album cover or a person's face thumbnail, as in `2100000000320-AddAssetLock`. Verification
-accepts exactly those rewrites. The fork-only `asset.is_nsfw` is rebuilt from the copied metadata with the fork's rule (a review
-decides, else a successful detection or a high-confidence description), and
+accepts exactly those rewrites. The fork-only `asset.is_nsfw` is rebuilt from the copied metadata with the server's own rule
+(`deriveIsNsfwFromMetadata`: a review decides, else a successful detection or a high-confidence
+description with strong indicators), and
 detections become `detected` locks when the source had "hide sensitive detections from the library" switched on, and stay unlocked
 otherwise, since only then did the fork hide them.
 
