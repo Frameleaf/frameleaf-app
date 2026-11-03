@@ -349,14 +349,29 @@ export class ImmichImportService {
     await this.destination.query(`UPDATE public.asset SET visibility=CASE
       WHEN EXISTS (SELECT 1 FROM public.asset still WHERE still."livePhotoVideoId"=asset.id) THEN 'hidden'
       ELSE 'timeline' END::asset_visibility_enum WHERE visibility='locked'`);
-    // ponytail: fork sensitive *detections* (asset.is_nsfw) are not carried; they only hid media when the admin
-    // switched detection hiding on. Owner marks are, from the imported ml-enrichment review.
+    // Owner marks come from the imported ml-enrichment review.
     await this.destination.query(
       `INSERT INTO public.asset_lock("assetId",reason,"lockedAt")
       SELECT "assetId",$1,"updatedAt" FROM public.asset_metadata
       WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
       [AssetLockReason.Marked],
     );
+    // The fork-only asset.is_nsfw column is not in the copied shape; rebuild it from the copied review or detection
+    // (2100000000010's rule). Detections hid media only while the source's "hide sensitive detections from the
+    // library" switch was on; then they lock, as 2100000000320 did, or they would surface.
+    await this.destination.query(`UPDATE public.asset SET is_nsfw=true FROM public.asset_metadata m
+      WHERE m."assetId"=asset.id AND m.key='ml-enrichment' AND NOT asset.is_nsfw
+        AND coalesce(m.value #>> '{nsfwDetection,review,isNsfw}', m.value #>> '{nsfwDetection,result,isNsfw}')='true'`);
+    const [hiding] = await this.source.db.query(
+      `SELECT value #>> '{machineLearning,nsfwDetection,hideFromLibrary}' AS enabled
+      FROM public.system_metadata WHERE key='system-config'`,
+    );
+    if (hiding?.enabled === 'true') {
+      await this.destination.query(
+        `INSERT INTO public.asset_lock("assetId",reason) SELECT id,$1 FROM public.asset WHERE is_nsfw ON CONFLICT DO NOTHING`,
+        [AssetLockReason.Detected],
+      );
+    }
     // Stacks and live photos lock as a whole, from any member or either part. Repeat until no lock is added,
     // so a lock reached through one relationship spreads through the others.
     for (let added = true; added;) {

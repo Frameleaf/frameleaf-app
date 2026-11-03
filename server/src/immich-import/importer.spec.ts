@@ -350,3 +350,37 @@ describe('Noodle Gallery data that stays behind', () => {
     expect(await run([])).toEqual([]);
   });
 });
+
+describe('fork sensitive detections', () => {
+  const convert = async (hideFromLibrary: string | null) => {
+    const statements: { sql: string; parameters: unknown[] }[] = [];
+    const destination = {
+      query: vi.fn(async (sql: string, parameters: unknown[] = []) => {
+        await Promise.resolve();
+        statements.push({ sql, parameters });
+        return [];
+      }),
+      transaction: vi.fn(),
+    } as unknown as ImportDatabase;
+    const source = {
+      query: vi.fn(async (sql: string) => {
+        await Promise.resolve();
+        return sql.includes('hideFromLibrary') && hideFromLibrary !== null ? [{ enabled: hideFromLibrary }] : [];
+      }),
+      transaction: vi.fn(),
+    } as unknown as ImportDatabase;
+    const importer = new ImmichImportService(destination, source, config);
+    await (importer as unknown as { convertLocks(): Promise<void> }).convertLocks();
+    return statements.filter(({ sql }) => sql.includes('is_nsfw'));
+  };
+  const rebuild = expect.objectContaining({ sql: expect.stringContaining('SET is_nsfw=true') });
+
+  it('locks detections when the source hid them from the library', async () => {
+    expect(await convert('true')).toEqual([rebuild, expect.objectContaining({ parameters: ['detected'] })]);
+  });
+
+  it('leaves detections unlocked when hiding was off or never saved', async () => {
+    expect(await convert('false')).toEqual([rebuild]);
+    expect(await convert(null)).toEqual([rebuild]);
+  });
+});

@@ -24,7 +24,11 @@ export function regenerationPresentation(status: RegenerationStatus) {
   };
   return {
     label: labels[status.state] ?? 'Waiting for regeneration status',
-    detail: `${status.completed.toLocaleString()} of ${status.total.toLocaleString()} items complete · ${status.failed.toLocaleString()} failed · ${status.blocked.toLocaleString()} blocked · ${status.needsAttention.toLocaleString()} need attention`,
+    // Before the run is counted every figure is 0, which read as "0 files imported" on the success screen.
+    detail:
+      status.total === 0
+        ? 'Your photos are in place. Thumbnails, faces and search are rebuilt in the background once this starts.'
+        : `${status.completed.toLocaleString()} of ${status.total.toLocaleString()} items complete · ${status.failed.toLocaleString()} failed · ${status.blocked.toLocaleString()} blocked · ${status.needsAttention.toLocaleString()} need attention`,
     attention: ['blocked', 'needs_attention', 'completed_with_errors', 'cancelled'].includes(status.state),
   };
 }

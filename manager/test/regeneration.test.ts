@@ -15,3 +15,16 @@ test('regeneration reports durable pending, blocked and error states without cla
   assert.equal(regenerationPresentation({ state: 'completed', ...counts }).label, 'Regeneration complete');
   assert.equal(regenerationPresentation({ state: 'unknown', ...counts }).label, 'Waiting for regeneration status');
 });
+
+test('regeneration does not show zero counts before the run is counted', () => {
+  const display = regenerationPresentation({
+    state: 'pending_first_setup',
+    completed: 0,
+    total: 0,
+    failed: 0,
+    blocked: 0,
+    needsAttention: 0,
+  });
+  assert.doesNotMatch(display.detail, /\b0\b/);
+  assert.match(display.detail, /in place/);
+});
