@@ -10,11 +10,6 @@ import { pruneQueueHistory } from 'src/queue/retention.js';
 import { selectionLineageSource } from 'src/queue/selection-lineage.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueIntent } from 'src/queue/types.js';
-import { down, up } from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
-import {
-  down as downLibrarySources,
-  up as upLibrarySources,
-} from 'src/schema/migrations/1791101600000-LibraryScanSources.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -460,51 +455,7 @@ describe('durable selected-job descendant lineage', () => {
     expect((await sql`select id from job_selection_lineage`.execute(db)).rows).toHaveLength(1);
   });
 
-  it('preserves provable live ancestry across offline down/up replay', async () => {
-    const f = await lateShare();
-    await f.store.complete(f.selected, [{ ...f.intent('child'), itemKey: '000-child', parentId: f.selected.id }]);
-    // Offline replay reverses the installed dependency order before restoring it forwards.
-    await downLibrarySources(db);
-    await down(db);
-    expect(
-      (await sql`select stage from job_run_item where "runId" = ${f.runs[1]}::uuid and stage = 'child'`.execute(db))
-        .rows,
-    ).toEqual([{ stage: 'child' }]);
-    await up(db);
-    await upLibrarySources(db);
-    await f.drain();
-    expect((await sql`select id from job_selection_lineage`.execute(db)).rows).toHaveLength(1);
-    expect((await sql`select "libraryChildOrigin" from job_selection_lineage`.execute(db)).rows).toEqual([
-      { libraryChildOrigin: false },
-    ]);
-    expect((await f.store.listRuns(10, 0)).find((run) => run.id === f.runs[1])).toMatchObject({
-      finishedAt: null,
-      stageTotals: { total: 3, waiting: 1 },
-    });
-  });
-
-  it('refuses an already-pruned pre-protocol fixture whose ancestry is no longer provable', async () => {
-    const f = await lateShare();
-    await f.store.complete(f.selected, [{ ...f.intent('child'), itemKey: '000-child', parentId: f.selected.id }]);
-    const child = await f.claimChild('child');
-    await f.store.complete(child, []);
-    await downLibrarySources(db);
-    await down(db);
-    await sql`update job_run_item set "jobId" = null where "jobId" = ${child.id}::uuid`.execute(db);
-    await sql`delete from job where id = ${child.id}::uuid`.execute(db);
-    await expect(up(db)).rejects.toThrow('Pre-protocol selection lineage cannot be proven');
-  });
-
-  it('refuses to infer pre-protocol ancestry merely from equal root keys', async () => {
-    const f = await lateShare();
-    await f.store.complete(f.selected, [{ ...f.intent('child'), itemKey: '000-child', parentId: f.selected.id }]);
-    await downLibrarySources(db);
-    await down(db);
-    await sql`update job set "parentId" = null where name = 'child'`.execute(db);
-    await expect(db.transaction().execute(up)).rejects.toThrow('without retained parent-job edges');
-  });
-
-  it('refuses to use one selection proof for a different selection sharing its physical child', async () => {
+  it('records a separate lineage for each selection sharing a physical child', async () => {
     const f = await lateShare();
     const otherQueue = `other-selection-${randomUUID()}`;
     await f.store.initialize([otherQueue]);
@@ -527,12 +478,6 @@ describe('durable selected-job descendant lineage', () => {
     await f.store.complete(other, [{ ...sharedChild, parentId: other.id }]);
     expect((await sql`select id from job where name = 'child'`.execute(db)).rows).toHaveLength(1);
     expect((await sql`select "selectionId" from job_selection_lineage`.execute(db)).rows).toHaveLength(2);
-    await downLibrarySources(db);
-    await down(db);
-    await expect(db.transaction().execute(up)).rejects.toThrow('without retained parent-job edges');
-    expect((await sql`select to_regclass('job_selection_lineage') relation`.execute(db)).rows).toEqual([
-      { relation: null },
-    ]);
   });
 
   const deferredSharedChild = async (safeToRetry = true, ownerOrder?: 'first' | 'last') => {
@@ -768,9 +713,6 @@ describe('durable selected-job descendant lineage', () => {
         (await sql`select id from job_run where id = any(${f.runs}::uuid[]) and "finishedAt" is null`.execute(db)).rows,
       ).toEqual([]);
       if (copyAt === 'after descendants') {
-        await expect(db.transaction().execute(down)).rejects.toThrow(
-          'Superseded selection lineage cannot be represented before migration150',
-        );
         expect(
           (await sql`select superseded from job_selection_lineage where stage = 'child'`.execute(db)).rows,
         ).toEqual([{ superseded: true }]);

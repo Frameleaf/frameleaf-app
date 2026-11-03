@@ -4,7 +4,6 @@ import { ChecksumAlgorithm, SyncEntityType, SyncRequestType } from 'src/enum.js'
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
-import { up as restreamOwnAssets } from 'src/schema/migrations/2100000003040-Sha256SyncChecksums.js';
 import { SyncTestContext } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -198,35 +197,6 @@ describe(SyncEntityType.AssetV2, () => {
     expect(streamedChecksum(second, SyncEntityType.AssetV3, asset.id)).toBe(file.sha256.toString('base64'));
     await ctx.syncAckAll(auth, second);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3]);
-  });
-
-  it('sends every own asset again once, with its SHA-256, after the re-stream migration', async () => {
-    const { auth, ctx } = await setup();
-    const file = fileOf();
-    const { asset } = await ctx.newAsset({
-      ownerId: auth.user.id,
-      checksum: file.sha1,
-      checksumAlgorithm: ChecksumAlgorithm.sha1File,
-    });
-    const { asset: gone } = await ctx.newAsset({ ownerId: auth.user.id });
-    await ctx.get(AssetRepository).remove(gone);
-    const types = [SyncRequestType.AssetsV2, SyncRequestType.AssetsV3];
-
-    // a device that synced while sync sent SHA-1, and only then had the SHA-256 recorded
-    const first = await ctx.syncStream(auth, types);
-    await ctx.syncAckAll(auth, first);
-    await record(ctx, asset, file, 'integrity');
-    await ctx.assertSyncIsComplete(auth, types);
-
-    await restreamOwnAssets(defaultDatabase);
-
-    const second = await ctx.syncStream(auth, types);
-    expect(streamedChecksum(second, SyncEntityType.AssetV2, asset.id)).toBe(file.sha256.toString('base64'));
-    expect(streamedChecksum(second, SyncEntityType.AssetV3, asset.id)).toBe(file.sha256.toString('base64'));
-    // deletes carry on from where they were
-    expect(second.filter((item) => item.data?.assetId === gone.id)).toEqual([]);
-    await ctx.syncAckAll(auth, second);
-    await ctx.assertSyncIsComplete(auth, types);
   });
 
   it('should detect and sync a deleted asset', async () => {

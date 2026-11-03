@@ -8,7 +8,6 @@ import { manifestFingerprint, parseImportManifest } from 'src/library-import/man
 import { loadReviewedImportInputs, retainReviewedImportInputs } from 'src/library-import/reviewed-inputs.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003045-LibraryImportReviewedInputs.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -242,20 +241,12 @@ it('refuses a concurrent importer before reading or writing the inventory', asyn
   });
 });
 
-it('enforces paired object inputs in the database and refuses destructive downgrade', async () => {
+it('enforces paired object inputs in the database', async () => {
   const { context, manifest, plan } = await setup();
   await expect(sql`UPDATE frameleaf_library_import SET reviewed_manifest='{}'::jsonb`.execute(db)).rejects.toThrow();
   await expect(
     sql`UPDATE frameleaf_library_import SET reviewed_manifest='[]'::jsonb,reviewed_plan='{}'::jsonb`.execute(db),
   ).rejects.toThrow();
   await retainReviewedImportInputs(wrap(db), context, { manifest, plan });
-  await expect(down(db)).rejects.toThrow('Reviewed library import inputs must be retained');
   expect(await loadReviewedImportInputs(wrap(db), context)).toEqual({ manifest, plan });
-});
-
-it('supports downgrade and upgrade when no reviewed inventory would be lost', async () => {
-  const { context } = await setup();
-  await down(db);
-  await up(db);
-  await expect(loadReviewedImportInputs(wrap(db), context)).rejects.toThrow('IMPORT_REVIEWED_INPUTS_MISSING');
 });

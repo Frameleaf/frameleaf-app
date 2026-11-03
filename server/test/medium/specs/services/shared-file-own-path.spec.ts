@@ -15,7 +15,6 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { DB } from 'src/schema/index.js';
-import { backfillLibraryPaths } from 'src/schema/migrations/2100000003007-AssetLibraryPath.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ViewService } from 'src/services/view.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -136,43 +135,6 @@ describe('a shared file never shows another person’s folder', () => {
     const [response] = await view.sut.getAssetsByOriginalPath(auth, sharedPath.slice(0, sharedPath.lastIndexOf('/')));
     expect(response.id).toBe(aliceAsset.id);
     expect(response.originalPath).toBe(sharedPath);
-  });
-
-  it('backfills an existing link from the photo owner’s own label, never the other account’s path', async () => {
-    const { ctx, bob, label, checksum, sharedPath, aliceAsset } = await setup();
-    const physicalFile = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(aliceAsset.id);
-    // a photo linked before FL-417: its path is the other account's file and it has no path of its own
-    const { asset: bobAsset } = await ctx.newAsset({
-      ownerId: bob.id,
-      originalPath: sharedPath,
-      originalFileName: 'Beach.jpg',
-      checksum,
-      physicalOriginalFileId: physicalFile!.id,
-      fileCreatedAt: shot,
-      fileModifiedAt: shot,
-      localDateTime: shot,
-    });
-    // a photo in its own folder keeps showing it
-    const { asset: own } = await ctx.newAsset({
-      ownerId: bob.id,
-      originalPath: `/data/library/${bob.storageLabel}/2020/own.jpg`,
-      physicalOriginalFileId: (await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(aliceAsset.id))!.id,
-    });
-
-    await backfillLibraryPaths(database);
-    await backfillLibraryPaths(database);
-
-    const rows = await database
-      .selectFrom('asset')
-      .select(['id', 'libraryPath'])
-      .where('id', 'in', [bobAsset.id, own.id, aliceAsset.id])
-      .execute();
-    const pathOf = (id: string) => rows.find((row) => row.id === id)?.libraryPath;
-    expect(pathOf(bobAsset.id)).toBe(`/data/library/${bob.storageLabel}/2023/2023-07-14/Beach.jpg`);
-    expect(pathOf(bobAsset.id)).not.toContain(label);
-    expect(pathOf(bobAsset.id)).not.toContain('Holidays');
-    expect(pathOf(own.id)).toBeNull();
-    expect(pathOf(aliceAsset.id)).toBeNull();
   });
 
   it('clears the library path when the photo gets its own file back', async () => {

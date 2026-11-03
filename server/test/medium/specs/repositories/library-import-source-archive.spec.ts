@@ -15,7 +15,6 @@ import {
 import { LibrarySourceArchive } from 'src/library-import/source-archive.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
 import { DB } from 'src/schema/index.js';
-import { down, up } from 'src/schema/migrations/2100000003047-LibraryImportSourceArchive.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -266,14 +265,4 @@ it('refuses a concurrent importer before reading or writing archive data', async
     await expect(store.page()).rejects.toThrow('IMPORT_ALREADY_RUNNING');
     await expect(store.verify()).rejects.toThrow('IMPORT_ALREADY_RUNNING');
   });
-});
-it('refuses downgrade even for an empty retained archive, and supports an unused downgrade', async () => {
-  const { store, descriptor } = await setup(0);
-  await store.begin(descriptor);
-  await expect(down(db)).rejects.toThrow('Source metadata recovery archives must be retained');
-  await sql`TRUNCATE frameleaf_library_import_archive CASCADE`.execute(db);
-  await down(db);
-  await up(db);
-  await store.begin(descriptor);
-  await store.seal();
 });

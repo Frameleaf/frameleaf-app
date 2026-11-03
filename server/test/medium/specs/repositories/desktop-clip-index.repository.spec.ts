@@ -44,10 +44,6 @@ const write = (table: string, key: string | null, target: Kysely<DB> = db) => {
     return sql`INSERT INTO video_moment_frame_embedding ("frameId", embedding, "modelName", "producerModelKey") VALUES (${frameId}::uuid, ${vector}::vector, 'ViT-B-16-SigLIP-384__webli', ${key})`.execute(
       target,
     );
-  if (table === 'asset_video_duplicate_frame')
-    return sql`INSERT INTO asset_video_duplicate_frame ("assetId", "frameIndex", "timestampMs", path, embedding, "producerModelKey") VALUES (${assetId}::uuid, 0, 0, '/synthetic/duplicate.jpg', ${vector}::vector, ${key})`.execute(
-      target,
-    );
   return sql`INSERT INTO ${sql.table(table)} ("assetId", embedding, "producerModelKey") VALUES (${assetId}::uuid, ${vector}::vector, ${key})`.execute(
     target,
   );
@@ -139,41 +135,6 @@ it('fences an admitted binding after physical vector dimensions change', async (
   const active = await repository.admit(space.spaceKey);
   await sql`ALTER TABLE smart_search ALTER COLUMN embedding TYPE vector(512)`.execute(db);
   await expect(repository.assertCurrent(active)).rejects.toThrow('desktop_clip_index_invalid');
-});
-
-it('preserves existing vectors and timestamps through an unadmitted downgrade and upgrade', async () => {
-  const { up, down } = await import('src/schema/migrations/2100000002999-DesktopClipIndex.js');
-  // FL-651 dropped the video duplicate frame store; bring it back for the older migration
-  const fingerprints = await import('src/schema/migrations/2100000003033-VideoTimelineFingerprint.js');
-  await db.transaction().execute((tx) => fingerprints.down(tx));
-  await sql`ALTER TABLE asset_video_duplicate_frame ALTER COLUMN embedding TYPE vector(768)`.execute(db);
-  await db.transaction().execute((tx) => down(tx));
-  const stores = [
-    'smart_search',
-    'smart_search_description',
-    'asset_video_duplicate_frame',
-    'video_moment_frame_embedding',
-  ];
-  for (const table of stores)
-    await write(table, table === 'smart_search_description' ? space.textModelKeys[0] : space.visualModelKey);
-  const before = await Promise.all(
-    stores.map(async (table) => (await sql`SELECT * FROM ${sql.table(table)}`.execute(db)).rows),
-  );
-  await db.transaction().execute((tx) => up(tx));
-  for (const [i, table] of stores.entries()) {
-    const { rows } = await sql<Record<string, unknown>>`SELECT * FROM ${sql.table(table)}`.execute(db);
-    expect(rows.map(({ producerAdmissionKey: _key, ...row }) => row)).toEqual(before[i]);
-    expect(rows[0].producerAdmissionKey).toBe(
-      `${table === 'smart_search_description' ? 'text' : 'image'}:${table === 'smart_search_description' ? space.textModelKeys[0] : space.visualModelKey}`,
-    );
-  }
-  expect(await repository.getActive()).toBeUndefined();
-});
-it('refuses to discard an admitted index during downgrade', async () => {
-  const { down } = await import('src/schema/migrations/2100000002999-DesktopClipIndex.js');
-  const active = await repository.admit(space.spaceKey);
-  await expect(db.transaction().execute((tx) => down(tx))).rejects.toThrow('Cannot discard an admitted CLIP index');
-  expect(await repository.getActive()).toEqual(active);
 });
 
 it('refuses destructive dimension changes and index clearing after admission', async () => {

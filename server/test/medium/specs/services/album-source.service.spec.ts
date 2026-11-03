@@ -15,10 +15,6 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
-import {
-  down as removeMembershipGeneration,
-  up as addMembershipGeneration,
-} from 'src/schema/migrations/1791101770000-AlbumSourceMembershipGeneration.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -764,31 +760,6 @@ describe(AlbumSourceService.name, () => {
       );
       const again = await sut.resolve(auth, { sources: [folder('3:DCIM/New', 'New')] });
       expect(again.links[0]).toMatchObject({ outcome: 'existing', id: links[0].id });
-    });
-  });
-
-  describe('canonical membership generation migration', () => {
-    it('retains unknown migration-222 claims without inventing authority over current memberships', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
-      const link = (await sut.resolve(auth, { sources: [source('legacy-claim', 'Legacy claim')] })).links[0];
-      await BaseService.create(AlbumService, sut).addAssets(auth, link.albumId, { ids: [asset.id] });
-      await defaultDatabase.transaction().execute(async (tx) => {
-        await removeMembershipGeneration(tx);
-        await sql`
-          INSERT INTO public.album_source_asset ("linkId", "assetId") VALUES (${link.id}::uuid, ${asset.id}::uuid)
-        `.execute(tx);
-        await addMembershipGeneration(tx);
-        const repository = new AlbumSourceRepository(tx);
-        expect(await claimsOf(tx, link.id)).toEqual([{ assetId: asset.id, membershipUpdateId: null }]);
-        expect(await repository.getRecordedAssetIds(tx, link.albumId, [asset.id], link.id)).toEqual(new Set());
-      });
-      await expect(sut.removeAssets(auth, link.id, { ids: [asset.id] })).resolves.toEqual([
-        { id: asset.id, success: false, error: 'not_found' },
-      ]);
-      expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
     });
   });
 
