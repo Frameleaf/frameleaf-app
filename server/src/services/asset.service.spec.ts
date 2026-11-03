@@ -1896,12 +1896,12 @@ describe(AssetService.name, () => {
         if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
         if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
       };
-      mocks.asset.updateAll.mockImplementation(async (_ids, value) => apply(value));
-      mocks.asset.update.mockImplementation(async (value) => {
+      mocks.asset.updateAll.mockImplementation((_ids, value) => Promise.resolve(apply(value)));
+      mocks.asset.update.mockImplementation((value) => {
         apply(value);
-        return undefined;
+        return Promise.resolve();
       });
-      mocks.asset.getByIds.mockImplementation(async () => [asset] as never);
+      mocks.asset.getByIds.mockImplementation(() => Promise.resolve([asset] as never));
       mocks.asset.updateDateTimeOriginal.mockResolvedValue([
         { assetId: asset.id, dateTimeOriginal: new Date('2020-06-11T01:05:00Z'), timeZone: 'America/Edmonton' },
       ]);
@@ -2021,16 +2021,16 @@ describe(AssetService.name, () => {
           localDateTime: new Date('2020-11-01T01:30:00Z'),
         });
         mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-        mocks.asset.getByIds.mockImplementation(async () => [asset] as never);
+        mocks.asset.getByIds.mockImplementation(() => Promise.resolve([asset] as never));
         mocks.asset.setDateTimeOriginal.mockResolvedValue({
           assetId: asset.id,
           dateTimeOriginal: new Date('2020-11-01T08:30:00Z'),
           timeZone,
         } as never);
-        mocks.asset.update.mockImplementation(async (value) => {
+        mocks.asset.update.mockImplementation((value) => {
           if (value.fileCreatedAt instanceof Date) asset.fileCreatedAt = value.fileCreatedAt;
           if (value.localDateTime instanceof Date) asset.localDateTime = value.localDateTime;
-          return undefined;
+          return Promise.resolve();
         });
         const items = [{ id: asset.id, from: new Date('2020-11-01T07:30:00Z') }];
         await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 60);
@@ -2799,9 +2799,9 @@ describe(AssetService.name, () => {
       const source = forCopy('source', { files: [sidecar('source', '/synthetic/source.xmp')] });
       const target = forCopy('target', {});
       mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
-      mocks.asset.unlockProperties.mockImplementation(async (_id, properties) => {
+      mocks.asset.unlockProperties.mockImplementation((_id, properties) => {
         for (const property of properties) locks.delete(property);
-        return [];
+        return Promise.resolve([]);
       });
       await sut.copy(authStub.user1, {
         sourceId: 'source',
