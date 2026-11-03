@@ -1,6 +1,6 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { reconcileImportedAssets } from 'src/library-import/asset-reconciliation.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
@@ -9,10 +9,13 @@ import { verifyImportFiles } from 'src/library-import/files.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { createImportedOwner } from 'src/library-import/owners.js';
+import { retainReviewedImportInputs } from 'src/library-import/reviewed-inputs.js';
 import { reconcileImportedStacks } from 'src/library-import/stack-reconciliation.js';
 import { CanonicalStackWriter } from 'src/library-import/stack-writer.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -366,4 +369,34 @@ it.each([
     }
   }
   await expect(reconcileImportedStacks(wrap(db), context)).rejects.toThrow('STACK_RECONCILIATION_MISMATCH');
+});
+
+it('holds regeneration for the sealed stack cohort without changing its relationships', async () => {
+  const { context } = await setup();
+  await new CanonicalStackWriter(wrap(db), context).write('source-stack');
+  await retainReviewedImportInputs(wrap(db), context, { manifest: context.manifest, plan: context.plan });
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  const before = (await sql`SELECT id,"stackId" FROM public.asset ORDER BY id`.execute(db)).rows;
+  const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+  const stages = [
+    [JobName.AssetExtractMetadata, QueueName.MetadataExtraction],
+    [JobName.AssetGenerateThumbnails, QueueName.ThumbnailGeneration],
+    [JobName.SmartSearch, QueueName.SmartSearch],
+    [JobName.AssetDetectFaces, QueueName.FaceDetection],
+    [JobName.AssetEncodeVideo, QueueName.VideoConversion],
+    [JobName.PersonGenerateThumbnail, QueueName.ThumbnailGeneration],
+  ] as const;
+  for (const [jobName, queueName] of stages)
+    repository['handlers'][jobName] = { jobName, queueName, handler: vi.fn(), label: 'synthetic import' };
+  const run = await repository.prepareImportedLibraryWork(context);
+  expect(await repository.prepareImportedLibraryWork(context)).toBe(run);
+  expect((await sql`SELECT id,"stackId" FROM public.asset ORDER BY id`.execute(db)).rows).toEqual(before);
+  expect((await sql`SELECT count(*)::text AS count FROM job_run_item`.execute(db)).rows).toEqual([{ count: '12' }]);
+  expect((await sql`SELECT state FROM job_selection`.execute(db)).rows).toEqual(
+    Array.from({ length: 6 }, () => ({ state: 'enumerating' })),
+  );
+  for (const queue of new Set(stages.map(([, queue]) => queue)))
+    expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(0);
+  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  expect((await sql`SELECT "enumerationDone" FROM job_run`.execute(db)).rows).toEqual([{ enumerationDone: false }]);
 });
