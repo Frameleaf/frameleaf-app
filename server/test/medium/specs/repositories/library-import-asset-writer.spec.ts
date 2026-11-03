@@ -9,6 +9,7 @@ import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { ty
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { createImportedOwner } from 'src/library-import/owners.js';
 import { LibraryImportJournal } from 'src/library-import/state.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -22,7 +23,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (tags?: string[]) => {
+const setup = async (tags?: string[], locationRemoved = false) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = [{ sourceId: 'owner', destinationId: ownerId }];
@@ -76,8 +77,8 @@ const setup = async (tags?: string[]) => {
           timeZone: 'America/Edmonton',
           description: 'Manual caption',
           rating: 5,
-          latitude: 51.1,
-          longitude: -114.1,
+          latitude: locationRemoved ? null : 51.1,
+          longitude: locationRemoved ? null : -114.1,
           favorite: true,
           ...(tags === undefined ? {} : { tags }),
         },
@@ -179,6 +180,23 @@ it('commits the selected primary, every original, clocks, source metadata and ex
       .quotaUsageInBytes,
   ).toBe(17);
   expect(verifyImportFiles).toHaveBeenCalled();
+});
+
+it('keeps source-removed coordinates empty when regeneration encounters embedded GPS', async () => {
+  const { context, item } = await setup(undefined, true);
+  const id = await new CanonicalAssetWriter(wrap(db), context).write(item);
+  await new AssetRepository(db).upsertExif({
+    exif: { assetId: id, latitude: 51.1, longitude: -114.1 },
+    lockedPropertiesBehavior: 'skip',
+  });
+  const exif = await db
+    .selectFrom('asset_exif')
+    .select(['latitude', 'longitude', 'lockedProperties'])
+    .where('assetId', '=', id)
+    .executeTakeFirstOrThrow();
+  expect(exif.latitude).toBeNull();
+  expect(exif.longitude).toBeNull();
+  expect(exif.lockedProperties).toEqual(expect.arrayContaining(['latitude', 'longitude']));
 });
 
 it('does not create database records when destination bytes cannot be verified', async () => {

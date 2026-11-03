@@ -32,6 +32,21 @@ describe('library import manifest trust boundary', () => {
   it('accepts an explicit complete inventory without changing privacy', () => {
     expect(parseImportManifest(manifest()).assets[0].visibility).toBe('hidden');
   });
+  it('preserves an explicit cleared location for regeneration locks', () => {
+    const value = manifest();
+    Object.assign(value.assets[0].metadata, { latitude: null, longitude: null });
+    expect(parseImportManifest(value).assets[0].metadata).toMatchObject({ latitude: null, longitude: null });
+  });
+  it.each([
+    { latitude: null },
+    { longitude: null },
+    { latitude: null, longitude: 12 },
+    { latitude: 12, longitude: null },
+  ])('refuses an incomplete cleared location case %#', (coordinates) => {
+    const value = manifest();
+    Object.assign(value.assets[0].metadata, coordinates);
+    expect(() => parseImportManifest(value)).toThrow();
+  });
   it.each(['complete', 'ownershipComplete', 'privacyComplete', 'writersStopped'])(
     'refuses missing %s evidence',
     (key) => {

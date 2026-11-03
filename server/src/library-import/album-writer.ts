@@ -68,10 +68,10 @@ export class CanonicalAlbumWriter {
           );
           if (assets.length !== album.assetIds.length) throw new LibraryImportRefused('ALBUM_ASSETS_INCOMPLETE');
           // Source comments/activities need their own preservation contract before enabling new ones.
-          await tx.query(`INSERT INTO public.album(id,"albumName","isActivityEnabled") VALUES($1::uuid,$2,false)`, [
-            destinationId,
-            album.name,
-          ]);
+          await tx.query(
+            `INSERT INTO public.album(id,"albumName",description,"isActivityEnabled") VALUES($1::uuid,$2,$3,false)`,
+            [destinationId, album.name, album.description ?? null],
+          );
           for (const grant of grants)
             await tx.query(
               `INSERT INTO public.album_user("albumId","userId",role)

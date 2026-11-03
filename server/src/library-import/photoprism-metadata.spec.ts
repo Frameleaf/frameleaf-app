@@ -106,11 +106,18 @@ describe('PhotoPrism source photo normalization', () => {
       ),
     ).toBe(expectedHour);
   });
+  it.each(['manual', 'batch', 'auto'])(
+    'preserves absent source coordinates even when provenance is %s',
+    (place_src) => {
+      const result = normalizePhotoprismPhoto({ ...photo, photo_lat: 0, photo_lng: 0, place_src }, details);
+      expect(result.metadata).toMatchObject({ latitude: null, longitude: null });
+    },
+  );
   it('does not turn an unresolved source Local zone into the destination machine zone', () => {
     const result = normalizePhotoprismPhoto({ ...photo, time_zone: 'Local', photo_lat: 0, photo_lng: 0 }, details);
     expect(result.metadata.timeZone).toBeUndefined();
-    expect(result.metadata.latitude).toBeUndefined();
-    expect(result.metadata.longitude).toBeUndefined();
+    expect(result.metadata.latitude).toBeNull();
+    expect(result.metadata.longitude).toBeNull();
     expect(result.review).toEqual(['LOCAL_TIME_ZONE_UNRESOLVED']);
     expect(result.archive.photo.time_zone).toBe('Local');
   });
@@ -140,6 +147,7 @@ const album = {
   album_uid: 'album-fixture',
   created_by: 'source-owner',
   album_title: 'Restricted album',
+  album_description: 'Manual album description',
   album_type: 'album',
   album_filter: '',
   album_private: 1n,
