@@ -47,15 +47,16 @@ export const openPigallery2Snapshot = (path: string, version: string) => {
       if (!Object.hasOwn(projections, table)) throw new Pigallery2ReadError('PIGALLERY2_TABLE_NOT_ALLOWED');
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${projections[table]} FROM "${table}"`;
-        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
         next.setReadBigInts(true);
+        assertSqliteTextSafe(database, first.sourceSQL);
         let batch = first.all();
         while (batch.length > 0) {
           const cursor = batch.at(-1)!.__frameleaf_cursor;
           yield batch.map(({ __frameleaf_cursor: _cursor, ...row }) => row);
+          assertSqliteTextSafe(database, next.sourceSQL, [cursor]);
           batch = next.all(cursor);
         }
       } catch {
