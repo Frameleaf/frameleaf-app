@@ -29,10 +29,8 @@ export const withDateTimeOffset = (value?: string) => {
 };
 
 export const extractTimeZone = (dateTimeOriginal?: string | null) => {
-  const extractedTimeZone = dateTimeOriginal
-    ? DateTime.fromISO(withDateTimeOffset(dateTimeOriginal)!, { setZone: true, zone: 'UTC' }).zone
-    : undefined;
-  return extractedTimeZone?.type === 'fixed' ? extractedTimeZone : undefined;
+  const parsed = dateTimeOriginal ? DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }) : undefined;
+  return parsed?.isValid && (parsed.zone.type === 'fixed' || parsed.zone.type === 'iana') ? parsed.zone : undefined;
 };
 
 export const mergeTimeZone = (dateTimeOriginal?: string | null, timeZone?: string | null) => {
