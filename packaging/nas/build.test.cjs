@@ -250,6 +250,11 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     assert(unraidServer.includes('<Repository>ghcr.io/frameleaf/frameleaf-server:latest</Repository>'));
     assert(read('unraid/templates/frameleaf-ml.xml').includes('<Repository>ghcr.io/frameleaf/frameleaf-machine-learning:latest</Repository>'));
     assert.match(read('truenas/ix-dev/community/frameleaf/README.md'), /^# Frameleaf\n\n/);
+    const { load } = createRequire(path.resolve(__dirname, '../../server/package.json'))('js-yaml');
+    const metadata = load(read('truenas/ix-dev/community/frameleaf/app.yaml'));
+    assert.deepEqual(load(read('truenas/ix-dev/community/frameleaf/item.yaml')), {
+      categories: metadata.categories, icon_url: metadata.icon, screenshots: metadata.screenshots, tags: metadata.keywords,
+    });
     const ixValues = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     for (const tag of ['latest', 'latest-cuda', 'latest-rocm', 'latest-openvino']) assert(ixValues.includes(`tag: ${tag}\n`), tag);
     // FL-291: the stop timeout must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
