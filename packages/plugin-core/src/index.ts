@@ -8,8 +8,11 @@ type MatchValueConfig = {
   caseSensitive?: boolean;
 };
 
+// Only the plugin methods may be exported from this module: the Extism JS runtime resolves a call
+// by the position of the export, so any other export shifts every method onto its neighbour.
+
 /** The longest regular expression a filter takes; file names and EXIF values need nothing near it. */
-export const MAX_REGEX_PATTERN_LENGTH = 256;
+const MAX_REGEX_PATTERN_LENGTH = 256;
 
 /** `{n}`, `{n,}` or `{n,m}` at `index`: a counted quantifier (anything else there is a literal brace). */
 const countedQuantifierAt = (pattern: string, index: number) => /^\{\d+(?:,\d*)?\}/.test(pattern.slice(index));
@@ -21,7 +24,7 @@ const countedQuantifierAt = (pattern: string, index: number) => /^\{\d+(?:,\d*)?
  * the plugin runtime has no backtracking limit, so such patterns are refused up front. Escapes and
  * character classes are skipped; `(?` opens a non-capturing group or an assertion, not a quantifier.
  */
-export const hasNestedQuantifier = (pattern: string): boolean => {
+const hasNestedQuantifier = (pattern: string): boolean => {
   const enclosing: boolean[] = [];
   let quantifierInside: boolean = false;
   let inClass = false;
