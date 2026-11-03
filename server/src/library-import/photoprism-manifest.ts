@@ -149,7 +149,7 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
       id: album.id,
       ownerId,
       name: album.name,
-      description: album.description,
+      ...(album.description === undefined ? {} : { description: album.description }),
       assetIds,
       members: [],
     });

@@ -99,6 +99,16 @@ const setup = () => {
 };
 
 describe('PhotoPrism common manifest assembly', () => {
+  it.each([null, ''])('preserves nullable and empty album description semantics: %j', (description) => {
+    const { rows, input, album } = setup();
+    const records = rows.filter((row) => row.type !== 'album' && !(row.type === 'archive' && row.table === 'albums'));
+    records.push(...normalizePhotoprismInventoryRow('albums', { ...album, album_description: description }));
+    const result = assemblePhotoprismManifest(records, input);
+    expect(result.manifest.albums[0].description).toBe(description ?? undefined);
+    expect(Object.hasOwn(result.manifest.albums[0], 'description')).toBe(description !== null);
+    expect(result.archive.find((row) => row.table === 'albums')?.value.album_description).toBe(description);
+  });
+
   it('prepares the mapped metadata through the actual canonical writer without generated media work', () => {
     const { rows, input, file } = setup();
     rows.push(

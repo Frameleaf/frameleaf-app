@@ -45,4 +45,13 @@ describe('imported album descriptions', () => {
     );
     expect(normalizePhotoprismAlbum(row, []).description).toBe(photoprism.expectedAlbum.Description);
   });
+
+  it('retains a nullable source description as absent without changing the archived row', () => {
+    const row = Object.fromEntries(
+      Object.entries(photoprism.album).map(([key, value]) => [key, typeof value === 'number' ? BigInt(value) : value]),
+    );
+    const album = normalizePhotoprismAlbum({ ...row, album_description: null }, []);
+    expect(album.description).toBeUndefined();
+    expect(album.archive.album.album_description).toBeNull();
+  });
 });
