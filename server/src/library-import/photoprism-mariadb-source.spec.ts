@@ -2,8 +2,8 @@ import { hash } from 'bcrypt';
 import { type Connection, createConnection } from 'mysql2/promise';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
-import { type Socket, connect, createServer } from 'node:net';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { connect, createServer, Socket } from 'node:net';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import { verifyImportedPassword } from 'src/library-import/passwords.js';
 import { readPhotoprismMariadbInventory } from 'src/library-import/photoprism-mariadb-source.js';
@@ -179,6 +179,34 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
       await new Promise<void>((resolve) => proxy.close(() => resolve()));
     }
   });
+  it('releases the global lock when rollback stalls behind an unfinished socket write', async () => {
+    const reader = readPhotoprismMariadbInventory(source);
+    await reader.next();
+    let stalled: Socket | undefined;
+    const originalWrite = Socket.prototype._write;
+    const write = vi.spyOn(Socket.prototype, '_write').mockImplementation(function (
+      this: Socket,
+      chunk: unknown,
+      encoding: BufferEncoding,
+      callback: (error?: Error | null) => void,
+    ) {
+      if (this.remotePort === source.port && Buffer.isBuffer(chunk) && chunk.includes(Buffer.from('ROLLBACK'))) {
+        stalled = this;
+        // An unfinished write also prevents a graceful end from sending its FIN.
+        return;
+      }
+      originalWrite.call(this, chunk, encoding, callback);
+    });
+    try {
+      await expect(reader.return(undefined)).rejects.toThrow('PHOTOPRISM_SOURCE_UNAVAILABLE');
+      expect(stalled).toBeDefined();
+      await admin.query("UPDATE photos SET photo_caption='unlocked after hard abort' WHERE id=1");
+    } finally {
+      write.mockRestore();
+      stalled?.destroy();
+      await reader.return(undefined);
+    }
+  }, 15_000);
   it('preserves qualified passwords through the protected callback and expires escaped readers', async () => {
     await admin.execute(
       "INSERT INTO auth_users (user_uid,user_name,auth_provider,can_login) VALUES ('owner-test','owner','local',1)",
