@@ -594,6 +594,9 @@ export class JobRepository {
   clear(name: QueueName, _type: QueueCleanType) {
     return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
   }
+  retryImportedWork(runId: string, db: Kysely<DB>) {
+    return this.store.retryImportedWork(runId, db);
+  }
   retryFailed(name: QueueName) {
     return this.store.retryFailed(name);
   }
