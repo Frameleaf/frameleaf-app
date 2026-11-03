@@ -1031,7 +1031,7 @@ export class SqlQueueStore {
     await sql`UPDATE job_run_item i SET state='pending' FROM job_selection s
       WHERE i."runId"=${runId}::uuid AND i.state='failed' AND i."jobId" IS NULL
         AND s.id=i."selectionId" AND s."runId"=i."runId" AND s."sourceKind"='frozen'
-        AND s."producerId" IS NULL AND s."capturedAt" IS NOT NULL AND s.state='ready' AND s."safeToRetry"
+        AND s."producerId" IS NULL AND s."capturedAt" IS NOT NULL AND s.state IN ('ready','enumerating') AND s."safeToRetry"
         AND NOT s.sensitive AND jsonb_typeof(i.selection->'id')='string' AND i.selection->>'id'=i."itemKey"
         AND i.selection->>'operationId' IS NULL
         AND (i.stage<>${JobName.AssetDetectFaces} OR i.selection->'preserveImportedFaces'='true'::jsonb)`.execute(db);
