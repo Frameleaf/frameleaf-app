@@ -266,6 +266,28 @@ describe('PiGallery2 common manifest mapping', () => {
     database.prepare('UPDATE media_entity SET metadataCreationdateoffset=? WHERE id=6').run(offset);
     expect(() => read()).toThrow('PIGALLERY2_CAPTURE_TIME_INVALID');
   });
+  it.each(['a,,b', 'a,a', 'a,', '/a', 'a//b'])(
+    'refuses unrepresentable keyword tags before producing a manifest (%s)',
+    (keywords) => {
+      database.prepare('UPDATE media_entity SET metadataKeywords=? WHERE id=6').run(keywords);
+      expect(database.prepare('SELECT hex(metadataKeywords) AS bytes FROM media_entity WHERE id=6').get()?.bytes).toBe(
+        Buffer.from(keywords).toString('hex').toUpperCase(),
+      );
+      const probe = pigallery2.openPigallery2Snapshot(path, '3.5.2');
+      opened.push(probe);
+      expect([...probe.rows('media_entity')].flat().find((row) => row.id === 6n)?.metadataKeywords).toBe(keywords);
+      expect(() => read()).toThrow('PIGALLERY2_METADATA_INVALID');
+    },
+  );
+
+  it('refuses complete keyword text containing NUL instead of importing its truncated prefix', () => {
+    database.prepare('UPDATE media_entity SET metadataKeywords=? WHERE id=6').run('a\u0000b');
+    expect(database.prepare('SELECT hex(metadataKeywords) AS bytes FROM media_entity WHERE id=6').get()?.bytes).toBe(
+      '610062',
+    );
+    expect(() => read()).toThrow('PIGALLERY2_SNAPSHOT_READ_FAILED');
+  });
+
   it('refuses a directory cycle even when the source lacks a cycle constraint', () => {
     database.exec('UPDATE directory_entity SET parentId=5 WHERE id=5');
     expect(() => read()).toThrow('PIGALLERY2_DIRECTORY_GRAPH_INVALID');

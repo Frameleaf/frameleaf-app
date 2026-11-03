@@ -14,6 +14,7 @@ import { pigallery2Projections } from 'src/library-import/pigallery2-projections
 import { pigallery2SidecarCandidates } from 'src/library-import/pigallery2-sidecars.js';
 import type { Pigallery2Row, Pigallery2Table, openPigallery2Snapshot } from 'src/library-import/pigallery2.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
+import { normalizeTagValue } from 'src/utils/tag.js';
 
 type Input = {
   source: ImportManifest['source'];
@@ -212,6 +213,12 @@ export function readPigallery2Manifest(
     )
       return refuse('PIGALLERY2_METADATA_INVALID');
     if (row.metadataTitle) loss('PIGALLERY2_TITLE_ARCHIVED', id);
+    const tags = keywords.data === null || keywords.data === '' ? [] : keywords.data.split(',');
+    if (
+      new Set(tags).size !== tags.length ||
+      tags.some((tag) => !tag || tag.includes('\0') || normalizeTagValue(tag) !== tag)
+    )
+      return refuse('PIGALLERY2_METADATA_INVALID');
     const ownerId = input.owners[id];
     assets.push({
       id,
@@ -229,7 +236,7 @@ export function readPigallery2Manifest(
         latitude: latitude.data,
         longitude: longitude.data,
         rating: Number(rating),
-        tags: keywords.data === null || keywords.data === '' ? [] : keywords.data.split(','),
+        tags,
       },
     });
     const byOwner = folderMembers.get(directoryId) ?? new Map<string, string[]>();

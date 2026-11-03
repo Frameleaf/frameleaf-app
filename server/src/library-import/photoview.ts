@@ -2,7 +2,7 @@ import { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 // Wildcards cover content-only tables in the exact fingerprinted source schema.
 const projections = {
@@ -56,6 +56,7 @@ export const openPhotoviewSnapshot = (path: string, version: string) => {
       if (!Object.hasOwn(projections, table)) throw new PhotoviewReadError('PHOTOVIEW_TABLE_NOT_ALLOWED');
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${projections[table]} FROM "${table}"`;
+        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);

@@ -1,11 +1,11 @@
 import { posix } from 'node:path';
 import { z } from 'zod';
-import sqlite from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' with { type: 'json' };
+import type { LibrephotosRow, LibrephotosTable } from 'src/library-import/librephotos.js';
 import postgres from 'src/library-import/fixtures/librephotos/1.5.1-postgres18.json' with { type: 'json' };
+import sqlite from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' with { type: 'json' };
 import { classifyLibrephotosFile, normalizeLibrephotosFileCopy } from 'src/library-import/librephotos-files.js';
 import { normalizeLibrephotosPhoto } from 'src/library-import/librephotos-metadata.js';
 import { librephotosProjections } from 'src/library-import/librephotos-projections.js';
-import type { LibrephotosRow, LibrephotosTable } from 'src/library-import/librephotos.js';
 import {
   type ImportManifest,
   importFileSchema,
@@ -93,18 +93,19 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   const tags = index('api_tag', 'id');
   const photoFiles = group('api_photo_files', 'photo_id');
   const photoTags = group('api_tag_photos', 'photo_id');
-  if (rows('api_file_embedded_media').length) return refuse('LIBREPHOTOS_COMPANIONS_REVIEW_REQUIRED');
+  if (rows('api_file_embedded_media').length > 0) return refuse('LIBREPHOTOS_COMPANIONS_REVIEW_REQUIRED');
   const losses: ImportManifest['losses'] = [];
-  const loss = (code: string, entityId?: string) =>
+  const loss = (code: string, entityId?: string) => {
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
-  if (archive.length) loss('LIBREPHOTOS_SOURCE_METADATA_ARCHIVED');
-  if (rows('api_person').length || rows('api_face').length) loss('LIBREPHOTOS_PEOPLE_ARCHIVED');
+  };
+  if (archive.length > 0) loss('LIBREPHOTOS_SOURCE_METADATA_ARCHIVED');
+  if (rows('api_person').length > 0 || rows('api_face').length > 0) loss('LIBREPHOTOS_PEOPLE_ARCHIVED');
   if (
-    rows('api_albumuser_shared_to').length ||
-    rows('api_photo_shared_to').length ||
-    rows('api_libraryshare').length ||
-    rows('api_albumusershare').length ||
-    rows('api_photoshare').length ||
+    rows('api_albumuser_shared_to').length > 0 ||
+    rows('api_photo_shared_to').length > 0 ||
+    rows('api_libraryshare').length > 0 ||
+    rows('api_albumusershare').length > 0 ||
+    rows('api_photoshare').length > 0 ||
     rows('api_photo').some((photo) => photo.public === 1n)
   )
     loss('LIBREPHOTOS_SHARING_RESTRICTED');
@@ -151,7 +152,7 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
       },
     });
   }
-  if (rows('api_filecopy').length) loss('LIBREPHOTOS_DUPLICATE_PATHS_ARCHIVED');
+  if (rows('api_filecopy').length > 0) loss('LIBREPHOTOS_DUPLICATE_PATHS_ARCHIVED');
   if (checked.size !== proofs.size) return refuse('LIBREPHOTOS_FILE_EVIDENCE_MISMATCH');
   const referenced = new Set<string>();
   const reviewed = new Set<string>();
@@ -201,12 +202,12 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
     } else if (!takenAt) {
       if (!Object.hasOwn(input.reviewedCaptureOffsets, id)) return refuse('LIBREPHOTOS_CAPTURE_OFFSET_REVIEW_REQUIRED');
       const offset = input.reviewedCaptureOffsets[id];
-      if (!Number.isInteger(offset) || Math.abs(offset) > 840) return refuse('LIBREPHOTOS_CAPTURE_OFFSET_INVALID');
+      if (!Number.isSafeInteger(offset) || Math.abs(offset) > 840) return refuse('LIBREPHOTOS_CAPTURE_OFFSET_INVALID');
       reviewed.add(id);
       const [seconds, fraction] = photo.localDateTime.split('.', 2);
       takenAt = new Date(Date.parse(seconds + 'Z') - offset * 60_000)
         .toISOString()
-        .replace(/\.\d{3}Z$/u, fraction ? `.${fraction}Z` : 'Z');
+        .replace(/\.\d{3}Z$/u, () => (fraction ? `.${fraction}Z` : 'Z'));
       archive.push({
         table: 'frameleaf_capture_offset_review',
         value: { photo_id: id, offset_minutes: BigInt(offset) },
@@ -253,7 +254,7 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   }
   if (
     referenced.size !== sourceFiles.size ||
-    [...photoFiles.keys(), ...photoTags.keys(), ...details.keys(), ...captions.keys()].some((id) => !photos.has(id))
+    [photoFiles, photoTags, details, captions].some((records) => records.keys().some((id) => !photos.has(id)))
   )
     return refuse('LIBREPHOTOS_RELATIONSHIPS_INVALID');
   if (Object.keys(input.reviewedCaptureOffsets).some((id) => !reviewed.has(id)))
@@ -263,7 +264,7 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   const memberships = group('api_albumuser_photos', 'albumuser_id');
   const members = group('api_albumuser_shared_to', 'albumuser_id');
   const sourceAlbums = index('api_albumuser', 'id');
-  if ([...memberships.keys()].some((id) => !sourceAlbums.has(id))) return refuse('LIBREPHOTOS_RELATIONSHIPS_INVALID');
+  if (memberships.keys().some((id) => !sourceAlbums.has(id))) return refuse('LIBREPHOTOS_RELATIONSHIPS_INVALID');
   for (const [id, row] of sourceAlbums) {
     const ownerId = key(row.owner_id);
     if (!owners.has(ownerId) || typeof row.title !== 'string') return refuse('LIBREPHOTOS_ALBUM_INVALID');
@@ -301,7 +302,7 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
   const membershipsByStack = group('api_photo_stacks', 'photostack_id');
   const sourceStacks = index('api_photostack', 'id');
   const stackClaims = group('api_photo_stacks', 'photo_id');
-  if ([...membershipsByStack.keys()].some((id) => !sourceStacks.has(id)))
+  if (membershipsByStack.keys().some((id) => !sourceStacks.has(id)))
     return refuse('LIBREPHOTOS_STACK_RELATIONSHIPS_INVALID');
   const stacks: Manifest['stacks'] = [];
   for (const [id, row] of sourceStacks) {
@@ -333,12 +334,18 @@ export async function readLibrephotosManifest(snapshot: Snapshot, input: Input) 
     last_name: z.string(),
     is_active: z.union([z.literal(0n), z.literal(1n)]),
   });
-  const users = [...owners.values()].map((row) => {
-    const result = userSchema.safeParse(row);
-    if (!result.success) return refuse('LIBREPHOTOS_OWNER_INVALID');
-    const user = result.data;
-    return { id: String(user.id), name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username };
-  });
+  const users = owners
+    .values()
+    .toArray()
+    .map((row) => {
+      const result = userSchema.safeParse(row);
+      if (!result.success) return refuse('LIBREPHOTOS_OWNER_INVALID');
+      const user = result.data;
+      return {
+        id: String(user.id),
+        name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username,
+      };
+    });
   return {
     manifest: parseImportManifest({
       format: 'frameleaf-library-import',
