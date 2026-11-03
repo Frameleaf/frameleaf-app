@@ -223,7 +223,9 @@ export function readEnteManifest(input: {
       });
     }
     for (const album of account.albums) {
-      if (!accounts.has(album.record.ente.ownerID)) return refuse('ENTE_OWNER_EXPORT_REQUIRED');
+      const ownerId = album.record.ente.ownerID;
+      const authoritative = accounts.get(ownerId)?.albumIndex.get(album.record.ente.albumID);
+      if (!authoritative || authoritative.record.ente.ownerID !== ownerId) return refuse('ENTE_OWNER_EXPORT_REQUIRED');
       const view =
         album.record.ente.ownerID === account.id
           ? album.record.ente.magicMetadata

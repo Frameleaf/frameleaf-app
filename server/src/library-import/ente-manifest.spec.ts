@@ -270,11 +270,17 @@ describe('Ente common manifest mapping', () => {
     value.accounts[1].files.find((file) => file.id === media.ids.first)!.caption = 'Conflicting caption';
     expect(() => read(value)).toThrow('ENTE_METADATA_CONFLICT');
   });
-  it('requires the album owner to export the same source album identity', () => {
+  it.each(['missing', 'conflicting'] as const)('refuses %s authoritative album ownership', (kind) => {
     const value = input();
     const bob = value.accounts.find((account) => account.id === media.users.bob)!;
     const album = bob.albums.find((album) => album.record.ente.albumID === media.ids.bobAlbum)!;
     album.record.ente.ownerID = media.users.alice;
+    if (kind === 'conflicting') {
+      const view = structuredClone(album);
+      view.record.ente.ownerID = media.users.bob;
+      view.directory = 'conflicting-owner-view';
+      value.accounts.find((account) => account.id === media.users.alice)!.albums.push(view);
+    }
     expect(() => read(value)).toThrow('ENTE_OWNER_EXPORT_REQUIRED');
   });
   it('refuses an unknown current owner rather than assigning the exporting account', () => {
