@@ -151,6 +151,8 @@ The credential-free result is separate photo/original evidence, not a complete a
 
 Manifest version 3 seals each photo's media type, microsecond modified timestamp and per-original filenames into the manifest fingerprint before its first write. Original names must cover exactly that photo's original file IDs and remain safe basenames. The writer refuses supplied preparation values that differ from those sealed fields. Version 1 and 2 parsing and fingerprints remain compatible for existing internal consumers; their separate prepared inventories still require protected retention and qualification. Source qualification, review/fencing and activation requirements apply to every manifest version.
 
+Manifest version 4 additionally seals [explicit stack relationships](library-import-stacks.md). Its writer and independent readback preserve the selected primary and exact same-owner membership; incompatible visibility or effective album access refuses grouping. Legacy manifest versions retain their existing behavior.
+
 ## Internal owner intent and readback
 
 `CanonicalOwnerWriter` binds the complete manifest and destination plan before deriving source names and explicit destination owner UUIDs. It normalizes the privately supplied email and derives the owner mapping fingerprint itself, including the qualified password capability, source-login evidence and explicit password/claim disposition. A missing password capability never silently selects a claim. Replay refuses changed email, credentials or disposition; account creation and its separate private group commit atomically with the mapping, without email-based account merging or source administration.
