@@ -261,8 +261,6 @@ questions:
                                         description: machine-learning
                                       - value: postgres
                                         description: postgres
-                                      - value: permissions
-                                        description: permissions
                                 - variable: config
                                   label: Container Network Configuration
                                   schema:
@@ -756,8 +754,6 @@ questions:
                             description: machine-learning
                           - value: postgres
                             description: postgres
-                          - value: permissions
-                            description: permissions
   - variable: resources
     label: ""
     group: Resources Configuration
