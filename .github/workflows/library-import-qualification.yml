@@ -5,6 +5,7 @@ name: Library import qualification
     branches: [main]
     paths:
       - 'server/**'
+      - 'scripts/**'
       - 'manager/src/contracts.ts'
       - 'manager/src/import*.ts'
       - 'manager/import-rename.c'
@@ -23,6 +24,7 @@ name: Library import qualification
     branches: [main]
     paths:
       - 'server/**'
+      - 'scripts/**'
       - 'manager/src/contracts.ts'
       - 'manager/src/import*.ts'
       - 'manager/import-rename.c'
