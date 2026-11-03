@@ -14,7 +14,7 @@ import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobNameSchema, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
-import { prepareLibraryImportWork } from 'src/library-import/derived-work.js';
+import { type ManagerLibrarySetup, prepareLibraryImportWork } from 'src/library-import/derived-work.js';
 import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
@@ -1047,8 +1047,13 @@ export class JobRepository {
     return runId;
   }
   /** Generic import preparation stays held until separately verified activation. */
-  prepareImportedLibraryWork(context: ReviewedImportContext): Promise<string> {
-    return prepareLibraryImportWork(this.store.db, (name) => this.intent({ name, data: {} } as JobItem), context);
+  prepareImportedLibraryWork(context: ReviewedImportContext, manager?: ManagerLibrarySetup): Promise<string> {
+    return prepareLibraryImportWork(
+      this.store.db,
+      (name) => this.intent({ name, data: {} } as JobItem),
+      context,
+      manager,
+    );
   }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {

@@ -1,18 +1,23 @@
 import { Kysely, sql } from 'kysely';
 import { v5 } from 'uuid';
+import { z } from 'zod';
 import { JobName } from 'src/enum.js';
 import { bindDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
 import { parseImportManifest } from 'src/library-import/manifest.js';
 import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
-import { LibraryImportRefused, parseLibraryImportBinding } from 'src/library-import/state.js';
+import {
+  type LibraryImportBinding,
+  LibraryImportRefused,
+  parseLibraryImportBinding,
+} from 'src/library-import/state.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QueueIntent } from 'src/queue/types.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 
-const KIND = 'library-import-derived';
-const STAGES = [
+export const LIBRARY_IMPORT_DERIVED_RUN_KIND = 'library-import-derived';
+export const LIBRARY_IMPORT_DERIVED_RUN_STAGES = [
   JobName.AssetExtractMetadata,
   JobName.AssetGenerateThumbnails,
   JobName.SmartSearch,
@@ -20,6 +25,26 @@ const STAGES = [
   JobName.AssetEncodeVideo,
   JobName.PersonGenerateThumbnail,
 ] as const;
+const managerSchema = z.strictObject({
+  installation: z.string().regex(/^[a-f0-9]{12}$/u),
+  operationId: z.uuid().transform((value) => value.toLowerCase()),
+});
+export type ManagerLibrarySetup = z.infer<typeof managerSchema>;
+const setupMarkerSchema = managerSchema.extend({
+  preparedAt: z
+    .string()
+    .refine((value) => Number.isFinite(Date.parse(value)))
+    .nullable(),
+  startedAt: z
+    .string()
+    .refine((value) => Number.isFinite(Date.parse(value)))
+    .nullable(),
+});
+export const libraryImportDerivedRunId = (binding: LibraryImportBinding): string =>
+  v5(
+    JSON.stringify([LIBRARY_IMPORT_DERIVED_RUN_KIND, binding.operationId, binding.manifestSha256, binding.planSha256]),
+    v5.URL,
+  );
 const refuse = (code: string): never => {
   throw new LibraryImportRefused(code);
 };
@@ -29,9 +54,17 @@ export async function prepareLibraryImportWork(
   db: Kysely<DB>,
   intentFor: (name: JobName) => QueueIntent,
   context: ReviewedImportContext,
+  managerInput?: ManagerLibrarySetup,
 ): Promise<string> {
   const binding = parseLibraryImportBinding(context.binding);
-  const runId = v5(JSON.stringify([KIND, binding.operationId, binding.manifestSha256, binding.planSha256]), v5.URL);
+  const runId = libraryImportDerivedRunId(binding);
+  let manager: ManagerLibrarySetup | undefined;
+  if (managerInput !== undefined) {
+    const parsed = managerSchema.safeParse(managerInput);
+    if (!parsed.success || parsed.data.operationId !== binding.operationId)
+      return refuse('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+    manager = parsed.data;
+  }
   try {
     return await db.transaction().execute(async (tx) => {
       const { rows: locks } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(
@@ -84,7 +117,7 @@ export async function prepareLibraryImportWork(
           where u.id is null or u.status<>'active' or u."deletedAt" is not null or u."isAdmin")`.execute(tx);
       if (invalidAssets.length > 0) return refuse('DERIVED_ASSET_COHORT_MISMATCH');
 
-      const stages = STAGES.map((name) => {
+      const stages = LIBRARY_IMPORT_DERIVED_RUN_STAGES.map((name) => {
         const intent = intentFor(name);
         if (intent.name !== name || Object.keys(intent.data).length > 0) return refuse('DERIVED_INTENT_INVALID');
         return {
@@ -104,14 +137,33 @@ export async function prepareLibraryImportWork(
         planSha256: binding.planSha256,
         prepared: true,
       };
-      const { rows: runs } = await sql<{ kind: string; valid: boolean }>`select kind,
-        (selection=${JSON.stringify(selection)}::text::jsonb and not "enumerationDone" and "finishedAt" is null)
-          as valid from job_run where id=${runId}::uuid for update`.execute(tx);
-      if (runs[0] && (runs[0].kind !== KIND || !runs[0].valid)) return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
-      if (!runs[0])
-        await sql`insert into job_run(id,kind,selection) values (${runId}::uuid,${KIND},${JSON.stringify(selection)}::text::jsonb)`.execute(
+      const { rows: runs } = await sql<{ kind: string; valid: boolean; managed: boolean; setup: unknown }>`select kind,
+        (selection - 'managerSetup'=${JSON.stringify(selection)}::text::jsonb and not "enumerationDone" and "finishedAt" is null)
+          as valid,selection ? 'managerSetup' as managed,selection->'managerSetup' as setup
+          from job_run where id=${runId}::uuid for update`.execute(tx);
+      if (runs[0] && (runs[0].kind !== LIBRARY_IMPORT_DERIVED_RUN_KIND || !runs[0].valid))
+        return refuse('DERIVED_RUN_IDENTITY_MISMATCH');
+      if (runs[0]) {
+        const marker = setupMarkerSchema.safeParse(runs[0].setup);
+        if (
+          manager
+            ? !runs[0].managed ||
+              !marker.success ||
+              marker.data.installation !== manager.installation ||
+              marker.data.operationId !== manager.operationId ||
+              marker.data.startedAt !== null
+            : runs[0].managed
+        )
+          return refuse('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+      } else {
+        const retained = {
+          ...selection,
+          ...(manager && { managerSetup: { ...manager, preparedAt: null, startedAt: null } }),
+        };
+        await sql`insert into job_run(id,kind,selection) values (${runId}::uuid,${LIBRARY_IMPORT_DERIVED_RUN_KIND},${JSON.stringify(retained)}::text::jsonb)`.execute(
           tx,
         );
+      }
 
       const cohort = sql<{ destination_id: string; ownerId: string; type: string }>`(${mappedAssets})`.as('mapped');
       const assets = tx.selectFrom(cohort).select('mapped.destination_id as id');
@@ -163,6 +215,9 @@ export async function prepareLibraryImportWork(
         tx,
       );
       if (invalidState.length > 0) return refuse('DERIVED_WORK_MANIFEST_MISMATCH');
+      if (manager)
+        await sql`update job_run set selection=jsonb_set(selection,'{managerSetup,preparedAt}',to_jsonb(clock_timestamp()))
+          where id=${runId}::uuid and selection #>> '{managerSetup,preparedAt}' is null`.execute(tx);
       return runId;
     });
   } catch (error) {

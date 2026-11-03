@@ -515,3 +515,48 @@ it('rolls back both the run and captured work when import preparation is interru
     ).rows,
   ).toEqual([{ runs: 0, selections: 0, items: 0, executions: 0 }]);
 });
+
+it('retains immutable Manager setup authority with the held generic work', async () => {
+  const { context } = await setup();
+  const manager = { installation: '114900000001', operationId: context.binding.operationId };
+  const id = await repository.prepareImportedLibraryWork(context, manager);
+  const read = async () =>
+    (
+      await sql<{
+        selection: { managerSetup: { installation: string; operationId: string; preparedAt: string; startedAt: null } };
+      }>`SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)
+    ).rows[0].selection.managerSetup;
+  const first = await read();
+  expect(first).toEqual({ ...manager, preparedAt: expect.any(String), startedAt: null });
+  expect(await repository.prepareImportedLibraryWork(context, manager)).toBe(id);
+  expect(await read()).toEqual(first);
+  await expect(
+    repository.prepareImportedLibraryWork(context, { ...manager, installation: '114900000002' }),
+  ).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+  await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow(
+    'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
+  );
+  expect(
+    (await sql`SELECT 1 FROM job_selection WHERE "runId"=${id}::uuid AND state<>'enumerating'`.execute(db)).rows,
+  ).toEqual([]);
+  expect((await sql`SELECT 1 FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([]);
+});
+
+it.each(['installation', 'operation', 'extra-field'])(
+  'refuses invalid Manager %s authority before retaining work',
+  async (change) => {
+    const { context } = await setup();
+    const manager = { installation: '114900000001', operationId: context.binding.operationId };
+    const invalid =
+      change === 'installation'
+        ? { ...manager, installation: 'invalid' }
+        : change === 'operation'
+          ? { ...manager, operationId: randomUUID() }
+          : { ...manager, apiKey: 'synthetic-not-an-accepted-field' };
+    await expect(repository.prepareImportedLibraryWork(context, invalid as never)).rejects.toThrow(
+      'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
+    );
+    expect((await sql`SELECT 1 FROM job_run`.execute(db)).rows).toEqual([]);
+    expect((await sql`SELECT 1 FROM job_selection`.execute(db)).rows).toEqual([]);
+  },
+);
