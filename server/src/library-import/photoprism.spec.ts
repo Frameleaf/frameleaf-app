@@ -39,12 +39,12 @@ describe('PhotoPrism pinned SQLite extraction', () => {
     await rm(root, { recursive: true, force: true });
   });
   it('refuses a migration error hidden after an embedded NUL', () => {
-    database.prepare('UPDATE migrations SET error=?').run('\u0000unfinished');
+    database.prepare('UPDATE migrations SET error=?').run('\0unfinished');
     expect(() => openPhotoprismSnapshot(path, fixture.source.version)).toThrow('PHOTOPRISM_SNAPSHOT_UNAVAILABLE');
   });
   it('refuses embedded NUL in separately queried photo details', () => {
     const photo = database.prepare('SELECT id FROM photos LIMIT 1').get()!;
-    database.prepare('INSERT INTO details(photo_id,notes) VALUES(?,?)').run(photo.id, 'a\u0000private');
+    database.prepare('INSERT INTO details(photo_id,notes) VALUES(?,?)').run(photo.id, 'a\0private');
     const source = openPhotoprismSnapshot(path, fixture.source.version);
     try {
       expect(() => source.photoDetails(BigInt(String(photo.id)))).toThrow('PHOTOPRISM_SNAPSHOT_READ_FAILED');

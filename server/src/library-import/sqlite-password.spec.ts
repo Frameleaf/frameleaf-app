@@ -53,7 +53,7 @@ it('refuses a valid verifier prefix followed by embedded NUL text', async () => 
   const db = new DatabaseSync(':memory:');
   try {
     db.exec('CREATE TABLE users(id TEXT PRIMARY KEY,password TEXT)');
-    db.prepare('INSERT INTO users VALUES(?,?)').run('owner', `${vectors.go.vectors[0].hash}\u0000suffix`);
+    db.prepare('INSERT INTO users VALUES(?,?)').run('owner', `${vectors.go.vectors[0].hash}\0suffix`);
     await expect(readSqlitePassword(db, context, 'bcrypt', 'SELECT password FROM users WHERE id=?')).rejects.toThrow(
       /^Imported password refused: SOURCE_PASSWORD_UNAVAILABLE$/,
     );
