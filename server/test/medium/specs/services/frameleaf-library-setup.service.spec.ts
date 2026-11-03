@@ -36,9 +36,12 @@ it('starts the retained import regeneration during first setup once ready, resum
     getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),
   };
   const config = {
-    getAdminConfigWithRevision: vi
-      .fn()
-      .mockResolvedValue({ config: { machineLearning: { enabled: true, urls: [] } }, revision: 'first' }),
+    getAdminConfigWithRevision: vi.fn().mockResolvedValue({
+      config: {
+        machineLearning: { enabled: true, urls: [], clip: { enabled: true }, facialRecognition: { enabled: true } },
+      },
+      revision: 'first',
+    }),
     updateAdminConfigWithRevision: vi.fn().mockResolvedValue({}),
   };
   const make = () =>

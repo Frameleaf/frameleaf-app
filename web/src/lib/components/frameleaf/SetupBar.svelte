@@ -64,8 +64,10 @@
   const attention = $derived(progress?.phase === Phase.NeedsAttention);
   const current = $derived(
     progress?.stages.find(
-      (stage) => stage.status === LibrarySetupStageStatus.Running || stage.status === LibrarySetupStageStatus.Paused,
-    ) ?? progress?.stages.find((stage) => stage.status === LibrarySetupStageStatus.Waiting),
+      (stage) =>
+        !stage.disabled &&
+        (stage.status === LibrarySetupStageStatus.Running || stage.status === LibrarySetupStageStatus.Paused),
+    ) ?? progress?.stages.find((stage) => !stage.disabled && stage.status === LibrarySetupStageStatus.Waiting),
   );
   const part = $derived(current && current.total > 0 ? Math.min(1, current.done / current.total) : 0);
   const percent = $derived(Math.floor(part * 100));
@@ -79,10 +81,12 @@
   });
 
   const stageTitle = (id: LibrarySetupStageId) => $t(`setup_bar_stage_${id}`);
-  const stageDetail = (id: LibrarySetupStageId, status: LibrarySetupStageStatus) =>
-    id === LibrarySetupStageId.Search && status === LibrarySetupStageStatus.Waiting
-      ? $t('setup_bar_stage_search_waiting')
-      : $t(`setup_bar_stage_${id}_detail`);
+  const stageDetail = (id: LibrarySetupStageId, status: LibrarySetupStageStatus, disabled = false) =>
+    disabled
+      ? $t('setup_bar_stage_search_disabled')
+      : id === LibrarySetupStageId.Search && status === LibrarySetupStageStatus.Waiting
+        ? $t('setup_bar_stage_search_waiting')
+        : $t(`setup_bar_stage_${id}_detail`);
   const statusIcon = {
     [LibrarySetupStageStatus.Done]: mdiCheckCircle,
     [LibrarySetupStageStatus.Running]: mdiProgressClock,
@@ -296,19 +300,31 @@
           </li>
           {#each progress.stages as stage (stage.id)}
             {@const share = stage.total > 0 ? stage.done / stage.total : 0}
-            {@const partial = share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
+            {@const partial =
+              !stage.disabled && share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
             <li
               class:is-done={stage.status === LibrarySetupStageStatus.Done}
               class:is-running={stage.status === LibrarySetupStageStatus.Running}
               class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
             >
-              <Icon icon={statusIcon[stage.status]} size="18" class="fl-setup-stage-icon" aria-hidden={true} />
+              <Icon
+                icon={stage.disabled ? mdiPauseCircleOutline : statusIcon[stage.status]}
+                size="18"
+                class="fl-setup-stage-icon"
+                aria-hidden={true}
+              />
               <div>
                 <div class="fl-setup-stage-head">
                   <strong>{stageTitle(stage.id)}</strong>
-                  <span>{partial ? `${Math.floor(share * 100)}%` : $t(`setup_bar_status_${stage.status}`)}</span>
+                  <span
+                    >{partial
+                      ? `${Math.floor(share * 100)}%`
+                      : stage.disabled
+                        ? $t('setup_bar_status_disabled')
+                        : $t(`setup_bar_status_${stage.status}`)}</span
+                  >
                 </div>
-                <p>{stageDetail(stage.id, stage.status)}</p>
+                <p>{stageDetail(stage.id, stage.status, stage.disabled)}</p>
                 {#if partial}
                   <div class="fl-setup-bar-progress is-stage" aria-hidden="true">
                     <span style:width="{share * 100}%"></span>

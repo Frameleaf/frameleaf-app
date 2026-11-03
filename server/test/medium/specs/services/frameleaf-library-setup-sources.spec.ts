@@ -1,23 +1,34 @@
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { v5 } from 'uuid';
+import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { type SourceKind, manifestFingerprint, parseImportManifest, sourceKinds } from 'src/library-import/manifest.js';
+import { queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
-import { getKyselyDB } from 'test/utils.js';
+import { PersonService } from 'src/services/person.service.js';
+import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const cases = [
-  ...sourceKinds.map((kind) => ({ kind, mismatch: '' })),
+  ...sourceKinds.map((kind) => ({ kind, mismatch: '', outcome: '' })),
   ...['operation', 'manifest', 'installation', 'restore-none', 'restore-other', 'restore-approved'].map((mismatch) => ({
     kind: 'photoprism' as SourceKind,
     mismatch,
+    outcome: '',
+  })),
+  ...['disabled', 'failed', 'needs_attention', 'cancelled', 'blocked', 'terminal-alias'].map((outcome) => ({
+    kind: 'photoprism' as SourceKind,
+    mismatch: '',
+    outcome,
   })),
 ];
-it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({ kind, mismatch }) => {
-  const db = await getKyselyDB(`manager_setup_${kind}_${mismatch.replaceAll('-', '_') || 'valid'}`);
+it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch, outcome }) => {
+  const db = await getKyselyDB(`manager_setup_${kind}_${(mismatch || outcome).replaceAll('-', '_') || 'valid'}`);
   const previous = {
     FRAMELEAF_MANAGER_INSTALLATION: process.env.FRAMELEAF_MANAGER_INSTALLATION,
     FRAMELEAF_MANAGER_ORIGIN: process.env.FRAMELEAF_MANAGER_ORIGIN,
@@ -94,17 +105,21 @@ it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({
     getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),
   };
   const config = {
-    getAdminConfigWithRevision: vi
-      .fn()
-      .mockResolvedValue({ config: { machineLearning: { enabled: true, urls: [] } }, revision: 'first' }),
-    updateAdminConfigWithRevision: vi.fn().mockResolvedValue({}),
+    getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: mapAdminConfig(defaults), revision: 'first' }),
+    updateAdminConfigWithRevision: vi.fn(),
   };
+  config.updateAdminConfigWithRevision.mockImplementation(({ config: saved }) => {
+    config.getAdminConfigWithRevision.mockResolvedValue({ config: saved, revision: 'updated' });
+    return Promise.resolve({});
+  });
   const make = () =>
     new FrameleafLibrarySetupService(
       db,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
-      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      {
+        getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+      } as never,
       users as never,
       { getNow: vi.fn().mockResolvedValue({ nowId: randomUUID() }) } as never,
       {} as never,
@@ -126,7 +141,7 @@ it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({
   try {
     process.env.FRAMELEAF_MANAGER_INSTALLATION = installation;
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_import';
-    process.env.FRAMELEAF_MANAGER_ML_ENABLED = 'false';
+    process.env.FRAMELEAF_MANAGER_ML_ENABLED = outcome === 'disabled' ? 'false' : 'true';
     await sql`INSERT INTO frameleaf_library_import(operation_id,binding,status,reviewed_manifest,reviewed_plan)
       VALUES(${binding.operationId}::uuid,${JSON.stringify(binding)}::text::jsonb,'verifying',
         ${JSON.stringify(manifest)}::text::jsonb,${JSON.stringify(plan)}::text::jsonb)`.execute(db);
@@ -243,6 +258,79 @@ it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({
       checkReleasedAt: new Date().toISOString(),
       quietSince: Date.now() - 11_000,
     })}::text::jsonb WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+    if (outcome) {
+      if (outcome === 'terminal-alias') {
+        const store = new SqlQueueStore(db);
+        const worker = randomUUID();
+        await store.initialize([QueueName.SmartSearch], worker);
+        await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+          db,
+        );
+        await store.feedManifest(QueueName.SmartSearch);
+        const [claim] = await store.claim(QueueName.SmartSearch, worker, 1);
+        expect(await store.complete(claim, [])).toBe(true);
+        await sql`UPDATE job_run_item SET state='active' WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+          db,
+        );
+        expect((await make().status()).phase).toBe('complete');
+        expect(await make().progress()).toMatchObject({ completedAt: expect.any(String) });
+      } else if (outcome === 'disabled') {
+        const store = new SqlQueueStore(db);
+        const worker = randomUUID();
+        const smart = newTestService(SmartInfoService).sut;
+        const faces = newTestService(PersonService).sut;
+        const disabled = structuredClone(defaults);
+        disabled.machineLearning.enabled = false;
+        vi.spyOn(smart, 'getConfig').mockResolvedValue(disabled);
+        vi.spyOn(faces, 'getConfig').mockResolvedValue(disabled);
+        await store.initialize([QueueName.SmartSearch, QueueName.FaceDetection], worker);
+        for (const [stage, queue] of [
+          [JobName.SmartSearch, QueueName.SmartSearch],
+          [JobName.AssetDetectFaces, QueueName.FaceDetection],
+        ] as const) {
+          await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
+          await store.feedManifest(queue);
+          const [claim] = await store.claim(queue, worker, 1);
+          expect(claim).toBeDefined();
+          const invoke = () =>
+            stage === JobName.SmartSearch
+              ? smart.handleEncodeClip({ id: assetId })
+              : faces.handleDetectFaces({ id: assetId });
+          await expect(
+            queueExecution.run(
+              {
+                claim,
+                signal: new AbortController().signal,
+                progress: () => {},
+                followups: [],
+                adoptions: [],
+                buffering: false,
+                progressUnits: 0,
+              },
+              invoke,
+            ),
+          ).rejects.toMatchObject({ reason: 'workload-disabled' });
+          expect(await store.defer(claim, 'workload-disabled')).toBe(true);
+        }
+        expect((await make().status()).phase).toBe('complete');
+        expect(await make().progress()).toMatchObject({
+          completedAt: expect.any(String),
+          stages: expect.arrayContaining([{ id: 'search', status: 'waiting', disabled: true, done: 0, total: 0 }]),
+        });
+        expect((await sql`SELECT "dependencyReason" FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
+          { dependencyReason: 'workload-disabled' },
+          { dependencyReason: 'workload-disabled' },
+        ]);
+      } else {
+        await sql`UPDATE job_run_item SET state=${outcome} WHERE "runId"=${id}::uuid AND stage=${JobName.SmartSearch}`.execute(
+          db,
+        );
+        expect((await make().status()).phase).toBe('needs-attention');
+        expect(await make().progress()).toMatchObject({ phase: 'needs-attention', completedAt: null });
+        expect((await make().progress()).stages.find(({ id }) => id === 'search')?.status).not.toBe('done');
+      }
+      return;
+    }
     for (const stage of [JobName.SmartSearch, JobName.AssetDetectFaces]) {
       await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
       await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)

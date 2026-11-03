@@ -322,6 +322,16 @@ export class FrameleafLibrarySetupService {
     };
   }
 
+  private async disabledImportStages() {
+    const {
+      config: { machineLearning },
+    } = await this.config.getAdminConfigWithRevision();
+    return [
+      ...(!machineLearning.enabled || !machineLearning.clip.enabled ? [JobName.SmartSearch] : []),
+      ...(!machineLearning.enabled || !machineLearning.facialRecognition.enabled ? [JobName.AssetDetectFaces] : []),
+    ];
+  }
+
   /**
    * FL-1146 setup bar: what an imported library still has to do after it opens. Null when this server was not
    * set up from an import, or before its first setup started.
@@ -354,10 +364,12 @@ export class FrameleafLibrarySetupService {
       this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt
         ? imported.run
         : null;
+    const disabled = run ? await this.disabledImportStages() : [];
     const { rows: stages } = run
-      ? await sql<{ stage: string; total: number; done: number }>`SELECT stage, count(*)::int AS total,
-          count(*) FILTER (WHERE state IN ('completed','failed','needs_attention','cancelled'))::int AS done
-          FROM job_run_item WHERE "runId"=${run.id}::uuid GROUP BY stage`.execute(this.db)
+      ? await sql<{ stage: string; total: number; done: number }>`SELECT i.stage, count(*)::int AS total,
+          count(*) FILTER (WHERE coalesce(j.state,i.state)='completed')::int AS done
+          FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
+          WHERE i."runId"=${run.id}::uuid AND i.stage<>all(${disabled}::text[]) GROUP BY i.stage`.execute(this.db)
       : { rows: [] };
     const sum = (names: string[]) => {
       const part = { total: 0, done: 0 };
@@ -416,7 +428,12 @@ export class FrameleafLibrarySetupService {
           total: check?.total ?? 0,
         },
         { id: 'thumbnails' as const, status: status(thumbnails, !!run), ...thumbnails },
-        { id: 'search' as const, status: status(search, !!run && checked), ...search },
+        {
+          id: 'search' as const,
+          status: disabled.length === 2 && search.total === 0 ? ('waiting' as const) : status(search, !!run && checked),
+          disabled: disabled.length === 2 && search.total === 0,
+          ...search,
+        },
       ],
     };
   }
@@ -597,9 +614,19 @@ export class FrameleafLibrarySetupService {
           const imported = await this.importedRun(db, true);
           importedUnfinished = true;
           if (this.importedSetupMatches(state, imported) && imported?.run?.enumerationDone) {
-            const { rows } = await sql<{ unfinished: boolean }>`SELECT
-              ${unfinishedRunItems(sql<string>`${imported.run.id}::uuid`)} AS unfinished`.execute(db);
+            const disabled = await this.disabledImportStages();
+            const { rows } = await sql<{ unfinished: boolean; failed: boolean }>`SELECT
+              (${unfinishedRunItems(sql<string>`${imported.run.id}::uuid`, disabled)}
+                OR EXISTS(SELECT 1 FROM job WHERE "runId"=${imported.run.id}::uuid AND state='active')
+                OR EXISTS(SELECT 1 FROM job_run_item i WHERE i."runId"=${imported.run.id}::uuid AND i.state='active'
+                  AND NOT EXISTS(SELECT 1 FROM job j WHERE j.id=i."jobId" AND j.state NOT IN ('pending','waiting','active')))) AS unfinished,
+              (EXISTS(SELECT 1 FROM job_run_item i LEFT JOIN job j ON j.id=i."jobId"
+                WHERE i."runId"=${imported.run.id}::uuid AND
+                  (i.state IN ('failed','needs_attention','cancelled','blocked') OR j.state IN ('failed','needs_attention','cancelled','blocked')))
+                OR EXISTS(SELECT 1 FROM job_selection WHERE "runId"=${imported.run.id}::uuid
+                  AND state IN ('needs_attention','cancelled'))) AS failed`.execute(db);
             importedUnfinished = rows[0]?.unfinished ?? true;
+            if (rows[0]?.failed) state.phase = 'needs-attention';
           }
         }
         // Setup is not complete until the file check has released the stages that wait for it, nor while a pause

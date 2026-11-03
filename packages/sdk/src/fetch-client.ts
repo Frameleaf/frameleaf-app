@@ -15185,6 +15185,8 @@ export type LibrarySetupProgressDto = {
     people: number;
     phase: Phase | null;
     stages: {
+        /** Optional processing is turned off; retained work can resume when enabled */
+        disabled?: boolean;
         done: number;
         id: LibrarySetupStageId;
         status: LibrarySetupStageStatus;
