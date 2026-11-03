@@ -243,6 +243,28 @@ it.each(cases)('uses one Manager setup contract for $kind ($mismatch)', async ({
       checkReleasedAt: new Date().toISOString(),
       quietSince: Date.now() - 11_000,
     })}::text::jsonb WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+    for (const stage of [JobName.SmartSearch, JobName.AssetDetectFaces]) {
+      await sql`UPDATE job_run_item SET state='pending' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
+      await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
+        WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
+      expect((await make().status()).phase).toBe('verifying');
+      expect(
+        (
+          await sql<{ quiet: unknown }>`SELECT value->'quietSince' AS quiet FROM system_metadata
+        WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db)
+        ).rows[0].quiet,
+      ).toBeNull();
+      await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid AND stage=${stage}`.execute(db);
+    }
+    const unrelated = randomUUID();
+    await sql`INSERT INTO job_run(id,kind,selection,"enumerationDone")
+      VALUES(${unrelated}::uuid,'synthetic-unrelated','{}'::jsonb,true)`.execute(db);
+    await sql`INSERT INTO job_run_item("runId","itemKey",stage,queue,state,selection)
+      VALUES(${unrelated}::uuid,'unrelated',${JobName.SmartSearch},${QueueName.SmartSearch},'pending','{}'::jsonb)`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=jsonb_set(value,'{quietSince}',${JSON.stringify(Date.now() - 11_000)}::text::jsonb)
+      WHERE key=${`frameleaf-manager-library-setup:${installation}`}`.execute(db);
     expect((await make().status()).phase).toBe('complete');
     expect(await make().progress()).toMatchObject({ phase: 'complete', completedAt: expect.any(String) });
     expect(
