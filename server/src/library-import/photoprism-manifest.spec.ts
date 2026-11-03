@@ -204,6 +204,7 @@ describe('PhotoPrism common manifest assembly', () => {
     const path = join(root, 'snapshot.sqlite');
     const db = new DatabaseSync(path);
     try {
+      db.exec('BEGIN');
       const insert = (table: string, row: Record<string, SQLInputValue>) => {
         const keys = Object.keys(row);
         const quotedTable = '"' + table.replaceAll('"', '""') + '"';
@@ -221,6 +222,7 @@ describe('PhotoPrism common manifest assembly', () => {
       for (const [name, rows] of Object.entries(recordsFixture.tables))
         for (const row of rows)
           insert(name === 'users' ? 'auth_users' : name === 'shares' ? 'auth_users_shares' : name, row);
+      db.exec('COMMIT');
       db.exec("PRAGMA journal_mode=WAL; UPDATE photos SET time_zone='UTC'");
       const ownerId = recordsFixture.tables.users.find((user) => user.user_name === 'admin')!.user_uid;
       const { input } = setup();
