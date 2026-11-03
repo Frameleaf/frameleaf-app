@@ -83,6 +83,40 @@ describe('Frameleaf Activity page', () => {
     return result;
   };
 
+  it('offers a GPU upgrade only when the Cloud job reports available capacity repricing', async () => {
+    const cloudJob = {
+      purpose: 'restoration',
+      stage: 'full',
+      activityStage: 'queued',
+      model: 'Restore',
+      modelSku: 'ms_54S55W7C',
+      plannedWorkers: 1,
+      workers: 0,
+      cloudStatus: 'queued',
+      progressUnit: null,
+      cost: {
+        estimatedP50Usd: 1,
+        estimatedP90Usd: 1.5,
+        holdUsd: 2,
+        soFarUsd: null,
+        settledUsd: null,
+        outcome: null,
+        note: null,
+      },
+      routing: {
+        quotedComputeSku: 'cs_KGECTVQ0',
+        approvedMaximumUsd: 2,
+        pricingRevision: 0,
+        queuedSince: '2026-09-26T03:59:00.000Z',
+        upgradeAvailable: true,
+        priceHistory: [],
+      },
+    };
+    await mount([operation({ kind: MediaOperationKind.CloudMlJob, cloudJob } as never)]);
+    expect(await screen.findByRole('button', { name: 'Upgrade GPU' })).toBeInTheDocument();
+    expect(screen.getByText('Authorized maximum')).toBeInTheDocument();
+  });
+
   it('names the destination on every job so cloud work is never implicit', async () => {
     await mount([operation()]);
 

@@ -4,7 +4,7 @@ import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { HelpIndex } from 'src/dtos/help.dto.js';
 import type { IdenticalFilesState } from 'src/dtos/identical-files.dto.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
-import type { CloudMlJobEstimateRecord } from 'src/utils/cloud-ml-job.js';
+import type { CloudMlJobEstimateRecord, CloudMlJobUpgradeRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
@@ -1538,6 +1538,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafCloudDescriptionEstimates]: { records: CloudDescriptionEstimateRecord[] };
   [SystemMetadataKey.FrameleafCloudMlJobEstimates]: {
     records: CloudMlJobEstimateRecord[];
+    upgrades?: CloudMlJobUpgradeRecord[];
     /** FL-162: whole videos prepared once for their estimates, dropped a day after nothing uses them. */
     prepared?: { dir: string; ownerId: string; at: string }[];
   };

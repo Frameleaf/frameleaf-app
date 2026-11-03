@@ -110,6 +110,30 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('retains a separate sealing obligation for each accepted publication while coalescing live work per asset', async () => {
+    const publication = async (id: string, token: string) => {
+      const execution = context();
+      execution.claim.id = id;
+      execution.claim.token = token;
+      execution.claim.rootItemKey = 'asset';
+      await queueExecution.run(execution, () =>
+        sut.collectFollowups(() => sut.queue({ name: JobName.LockedSeal, data: { id: 'asset' } })),
+      );
+      return execution.followups[0];
+    };
+    const first = await publication('thumbnail-parent', 'first-attempt');
+    const replay = await publication('thumbnail-parent', 'first-attempt');
+    const edited = await publication('edited-parent', 'edited-attempt');
+    const newer = await publication('thumbnail-parent', 'next-publication');
+    expect(first.itemKey).toBe(replay.itemKey);
+    expect(new Set([first.itemKey, edited.itemKey, newer.itemKey]).size).toBe(3);
+    for (const intent of [first, edited, newer]) {
+      expect(intent).toMatchObject({ runId: 'run', rootItemKey: 'asset', data: { id: 'asset' } });
+      expect(intent.options).toEqual({ deduplication: { id: 'LockedSeal:asset', keepLastIfActive: true } });
+      expect(intent.itemKey).not.toMatch(/first-attempt|edited-attempt|next-publication/);
+    }
+  });
+
   it.each(['asset', 'lockedFile'] as const)('holds %s sealing until staged files publish', async (source) => {
     const execution = context();
     const adopt = vi.fn();

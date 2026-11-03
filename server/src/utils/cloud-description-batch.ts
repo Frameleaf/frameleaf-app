@@ -4,7 +4,12 @@ import type { DatabaseRepository } from 'src/repositories/database.repository.js
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import type { CloudJobUploadState } from 'src/utils/frameleaf-cloud-job-client.js';
-import type { CloudCatalogEntry, CloudConsentFeatures, CloudEstimate } from 'src/utils/frameleaf-cloud.js';
+import type {
+  CloudCatalogEntry,
+  CloudConsentFeatures,
+  CloudEstimate,
+  CloudJobRouting,
+} from 'src/utils/frameleaf-cloud.js';
 import { DatabaseLock, MlAdmissionRefusal, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { cloudRouteAllows } from 'src/utils/ml-destination.js';
 
@@ -160,6 +165,7 @@ export type CloudDescriptionResult = {
     ceilingUsd: number;
     admittedAt: string;
     meteredSeconds: number | null;
+    routing?: CloudJobRouting;
     /** Every photo is uploaded and the job was started (`POST /v2/jobs/{id}/start`). */
     started?: boolean;
     /** The last ETag of `GET /v2/jobs/{id}`, sent back with `If-None-Match`. */

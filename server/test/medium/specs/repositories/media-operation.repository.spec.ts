@@ -18,6 +18,7 @@ import {
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { cloudMlJobSpentUsd } from 'src/utils/cloud-ml-job.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
@@ -72,6 +73,19 @@ describe(MediaOperationRepository.name, () => {
       settings: { resolution: '3840×2160' },
       ...overrides,
     });
+
+  it('reserves a routed approved maximum before remote admission, with the legacy hold available separately', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    await newOperation(sut, user.id, {
+      kind: MediaOperationKind.CloudMlJob,
+      snapshot: { approved: { holdUsd: 2, approvedMaximumUsd: 3 }, consent: { acceptedBy: user.id } },
+    });
+    const rows = await sut.listCloudMlJobSpend(user.id, new Date('2026-01-01T00:00:00Z'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ holdUsd: 2, approvedMaximumUsd: 3 });
+    expect(cloudMlJobSpentUsd(rows)).toBe(3);
+  });
 
   it('excludes internal speech before public pagination and aggregates without changing internal claims', async () => {
     const { ctx, sut } = setup();

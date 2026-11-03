@@ -134,6 +134,23 @@ export const cloudCostFacts = (cloud: ActivityCloudJob, stage: ActivityStage): C
       value: estimateRange(cloud.cost.estimatedUsd, cloud.cost.estimatedHighUsd),
     },
   ];
+  if (cloud.routing) {
+    facts.push({
+      labelKey: 'frameleaf_cloud_job_authorized_maximum',
+      value: formatUsd(cloud.routing.approvedMaximumUsd),
+    });
+    if (cloud.routing.priceHistory.length > 1) {
+      facts.push({
+        labelKey: 'frameleaf_cloud_gpu_price_history',
+        value: cloud.routing.priceHistory
+          .map(
+            (price) =>
+              `${formatRatePerMinute(price.perSecondUsd)}/min + ${formatUsd(price.startFeeUsd)} · ≤ ${formatUsd(price.approvedMaximumUsd)}`,
+          )
+          .join(' → '),
+      });
+    }
+  }
   if (isEndedStage(stage)) {
     const settled = cloud.cost.settledUsd;
     let valueKey: Translations | undefined;

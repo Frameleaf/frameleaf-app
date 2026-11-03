@@ -1750,6 +1750,120 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it.each([false, true])(
+      'preserves both competing identities before overlap preference (imported=%s)',
+      async (preserveImportedFaces) => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .face({
+            imageWidth: 400,
+            imageHeight: 500,
+            boundingBoxX1: 100,
+            boundingBoxY1: 100,
+            boundingBoxX2: 200,
+            boundingBoxY2: 200,
+            personGroupId: newUuid(),
+          })
+          .face({
+            imageWidth: 400,
+            imageHeight: 500,
+            boundingBoxX1: 120,
+            boundingBoxY1: 120,
+            boundingBoxX2: 220,
+            boundingBoxY2: 220,
+            personGroupId: newUuid(),
+          })
+          .build();
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        await sut.publishDetectedFaces(
+          asset.id,
+          {
+            previewPath: asset.files[0].path,
+            checksum: asset.checksum.toString('hex'),
+            imageWidth: 400,
+            imageHeight: 500,
+            faces: [
+              { boundingBox: { x1: 105, y1: 105, x2: 205, y2: 205 }, embedding: '[1,2,3]' },
+              { boundingBox: { x1: 90, y1: 90, x2: 190, y2: 190 }, embedding: '[4,5,6]' },
+            ],
+          },
+          preserveImportedFaces,
+        );
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [],
+          [],
+          [
+            { faceId: asset.faces[1].id, embedding: '[1,2,3]' },
+            { faceId: asset.faces[0].id, embedding: '[4,5,6]' },
+          ],
+        );
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(
+      [false, true].flatMap((preserveImportedFaces) =>
+        [false, true].flatMap((overlap) =>
+          [false, true].map((reverse) => ({ preserveImportedFaces, overlap, reverse })),
+        ),
+      ),
+    )(
+      'matches each retained face once in its own frame (imported=$preserveImportedFaces, overlap=$overlap, reverse=$reverse)',
+      async ({ preserveImportedFaces, overlap, reverse }) => {
+        const asset = AssetFactory.from()
+          .file({ type: AssetFileType.Preview })
+          .exif()
+          .face({
+            imageWidth: 800,
+            imageHeight: 1000,
+            boundingBoxX1: 200,
+            boundingBoxY1: 200,
+            boundingBoxX2: 400,
+            boundingBoxY2: 400,
+            personGroupId: newUuid(),
+          })
+          .face({
+            imageWidth: 200,
+            imageHeight: 250,
+            boundingBoxX1: overlap ? 55 : 125,
+            boundingBoxY1: overlap ? 55 : 125,
+            boundingBoxX2: overlap ? 105 : 175,
+            boundingBoxY2: overlap ? 105 : 175,
+            personGroupId: newUuid(),
+          })
+          .build();
+        const retained = [...asset.faces];
+        if (reverse) asset.faces.reverse();
+        mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+        const embeddings = ['[1,2,3]', '[4,5,6]'];
+        const boxes = [
+          { x1: 100, y1: 100, x2: 200, y2: 200 },
+          overlap ? { x1: 110, y1: 110, x2: 210, y2: 210 } : { x1: 250, y1: 250, x2: 350, y2: 350 },
+        ];
+        await sut.publishDetectedFaces(
+          asset.id,
+          {
+            previewPath: asset.files[0].path,
+            checksum: asset.checksum.toString('hex'),
+            imageWidth: 400,
+            imageHeight: 500,
+            faces: boxes.map((boundingBox, index) => ({ boundingBox, embedding: embeddings[index] })),
+          },
+          preserveImportedFaces,
+        );
+        expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+          [],
+          [],
+          retained.map((face, index) => ({
+            faceId: face.id,
+            embedding: embeddings[index],
+          })),
+        );
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
     it('keeps face rows and recognition intents unpublished until acceptance, refusing changed previews', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
       const face = AssetFaceFactory.create({ assetId: asset.id });

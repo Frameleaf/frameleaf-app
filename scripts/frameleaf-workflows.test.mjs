@@ -668,11 +668,11 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
   assert.match(prepare.run, /https:\/\/github\.com\/truenas\/apps\.git/);
   assert.match(
     prepare.run,
-    /fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/,
+    /fetch --depth=1 origin 99df68c9497e3966d33ee4e0990df7009e3f49a9/,
   );
   assert.match(
     prepare.run,
-    /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/,
+    /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = 99df68c9497e3966d33ee4e0990df7009e3f49a9/,
   );
   assert.match(prepare.run, /python3 -m venv "\$RUNNER_TEMP\/nas-render-venv"/);
   assert.match(
@@ -685,7 +685,7 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
   assert.equal(fixtures.env.PYTHONDONTWRITEBYTECODE, "1");
   assert.equal(
     fixtures.env.TRUENAS_LIBRARY,
-    "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4",
+    "${{ runner.temp }}/base_v2_3_18",
   );
   assert.equal(
     fixtures.run,

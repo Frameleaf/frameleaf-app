@@ -91,18 +91,26 @@ identical to its container path. Map only approved storage roots.
 For a catalog submission, use the generated direct-stack app source and the
 [TrueNAS apps contribution guide](https://github.com/truenas/apps/blob/master/CONTRIBUTIONS.md).
 The current catalog target is `truenas/apps`, branch `master`, under
-`ix-dev/community/frameleaf`. Check for existing issues/PRs, then open a draft
+`ix-dev/community/frameleaf`. Check for existing issues/PRs, then open a
 catalog PR with the generated app files, installation notes and image evidence.
 Use the catalog's required TrueNAS maintainer metadata. Attach the Frameleaf icon
 and screenshots so the reviewer can supply TrueNAS CDN URLs.
 
-The current catalog library is 2.3.17; this repository deliberately pins and tests
-2.3.4. Update and qualify the submission copy against the catalog's current
-library before requesting catalog review. Keep this package's pinned renderer
-unchanged until its replacement has passed both ML modes. In the catalog checkout:
+This package pins and tests catalog library **2.3.18**, the latest version at
+TrueNAS apps commit `99df68c9497e3966d33ee4e0990df7009e3f49a9`. Before submission,
+check for a newer catalog library and qualify any replacement in both ML modes.
+In the catalog checkout, generate the matching library and run its checks.
+The icon and screenshots use public Frameleaf source assets. Attach the icon
+and the three screenshots listed in `app.yaml` to the submission. The reviewer
+must provide TrueNAS CDN URLs; replace both `app.yaml` and `item.yaml` media
+URLs before metadata validation can pass. Run the
+metadata generator to refresh catalog fields; with the required floating
+`:latest` images, it sets `app_version` to `latest`. Keep the signed release
+manifest as evidence of the application version used for qualification.
 
 ```sh
-devbox run copy-lib
+python3 .github/scripts/prepare_libs.py --train community --app frameleaf
+python3 .github/scripts/generate_metadata.py --train community --app frameleaf
 ./.github/scripts/port_validation.py
 ./.github/scripts/ci.py --app frameleaf --train community --test-file basic-values.yaml --render-only=true
 ./.github/scripts/ci.py --app frameleaf --train community --test-file basic-values.yaml

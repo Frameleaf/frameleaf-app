@@ -95,7 +95,9 @@ describe('WorkflowParameter tag and album pickers (FL-647)', () => {
   });
 
   it("shows a saved workflow's albums by name", async () => {
-    sdkMock.getAllAlbums.mockImplementation(async ({ id } = {}) => (id === FAMILY ? [album(FAMILY, 'Family')] : []));
+    sdkMock.getAllAlbums.mockImplementation(async ({ id }: Parameters<typeof sdkMock.getAllAlbums>[0] = {}) =>
+      id === FAMILY ? [album(FAMILY, 'Family')] : [],
+    );
     render(WorkflowParameter, { schema: albums, value: [FAMILY], label: 'Albums', onChange: vi.fn() });
 
     expect(await screen.findByText('Family')).toBeInTheDocument();
@@ -104,7 +106,7 @@ describe('WorkflowParameter tag and album pickers (FL-647)', () => {
 
   it('searches the server as the person types and adds the chosen tag', async () => {
     const onChange = vi.fn();
-    sdkMock.searchTags.mockImplementation(async ({ search } = {}) =>
+    sdkMock.searchTags.mockImplementation(async ({ search }: Parameters<typeof sdkMock.searchTags>[0] = {}) =>
       search === 'tri' ? [tag(TRIP, 'Travel/Trip')] : [tag(FAMILY, 'Family')],
     );
     render(WorkflowParameter, { schema: tags, value: [], label: 'Tags', onChange });

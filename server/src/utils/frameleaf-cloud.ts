@@ -953,10 +953,41 @@ export const estimateUpscaleSchema = z
   });
 export type CloudEstimateUpscale = z.infer<typeof estimateUpscaleSchema>;
 
+/** Optional retail pricing, negotiated by the routing protocol header. */
+export const estimateRoutingSchema = z.strictObject({
+  quotedComputeSku: computeSkuSchema,
+  perSecondUsd: gatewayUsd(),
+  startFeeUsd: gatewayUsd(),
+  plannedWorkers: z.int().min(1).max(5),
+  approvedMaximumUsd: gatewayUsd(),
+});
+
+export const jobRoutingSchema = z.strictObject({
+  quotedComputeSku: computeSkuSchema,
+  approvedMaximumUsd: gatewayUsd(),
+  pricingRevision: z.int().min(0),
+  queuedSince: gatewayTimestamp().nullable(),
+  upgradeAvailable: z.boolean(),
+  priceHistory: z
+    .array(
+      z.strictObject({
+        revision: z.int().min(0),
+        computeSku: computeSkuSchema,
+        perSecondUsd: gatewayUsd(),
+        startFeeUsd: gatewayUsd(),
+        approvedMaximumUsd: gatewayUsd(),
+        approvedAt: gatewayTimestamp(),
+      }),
+    )
+    .max(100),
+});
+export type CloudJobRouting = z.infer<typeof jobRoutingSchema>;
+
 /** `POST /v2/estimates` answer (FC-66 `EstimateResponse`): the sealed estimate and what it quotes. */
 export const estimateResponseSchema = z
   .strictObject({
     estimate: sealedEstimateSchema,
+    routing: estimateRoutingSchema.optional(),
     expiresAt: gatewayTimestamp(),
     modelSku: modelSkuSchema,
     modelRev: modelRevSchema,
@@ -1003,6 +1034,19 @@ export const estimateResponseSchema = z
     }
   });
 export type CloudEstimate = z.infer<typeof estimateResponseSchema>;
+
+/** The next retail tier, for the unfinished work of this exact job and pricing revision. */
+export const upgradeEstimateResponseSchema = estimateResponseSchema.safeExtend({
+  routing: estimateRoutingSchema,
+  jobId: z.uuid(),
+  pricingRevision: z.int().min(0),
+  incurredUsd: gatewayUsd(),
+  perSecondUsd: gatewayUsd(),
+  startFeeUsd: gatewayUsd(),
+  plannedWorkers: z.int().min(1).max(5),
+});
+export type CloudUpgradeEstimate = z.infer<typeof upgradeEstimateResponseSchema>;
+export const upgradeRequestSchema = z.strictObject({ estimate: sealedEstimateSchema });
 
 /** Approval and wallet checks use the quoted payment; the sealed gross tariff stays unchanged. */
 export const cloudCustomerCost = (estimate: Pick<CloudEstimate, 'cost' | 'promotion'>): CloudEstimate['cost'] =>
@@ -1361,6 +1405,7 @@ export const jobViewSchema = z.strictObject({
   modelSku: modelSkuSchema,
   modelRev: modelRevSchema,
   computeSku: computeSkuSchema,
+  routing: jobRoutingSchema.optional(),
   clientRef: z.string().max(200).nullable(),
   progress: jobProgressSchema.nullable(),
   run: jobRunSchema,

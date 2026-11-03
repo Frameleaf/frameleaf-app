@@ -1438,7 +1438,17 @@ export class CloudMlBatchService extends BaseService {
 
     run.result = {
       ...run.result,
-      job: { ...job, status: view.status, meteredSeconds: view.run.meteredSeconds, etag: read.etag },
+      job: {
+        ...job,
+        status: view.status,
+        meteredSeconds: view.run.meteredSeconds,
+        etag: read.etag,
+        ...(view.routing
+          ? { routing: view.routing }
+          : job.routing
+            ? { routing: { ...job.routing, upgradeAvailable: false } }
+            : {}),
+      },
       waiting: null,
     };
     if (!(await this.save(run))) {
