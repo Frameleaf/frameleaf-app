@@ -111,10 +111,13 @@ test.describe('Explore', () => {
     await page.goto('/explore');
 
     const things = page.getByRole('region', { name: 'Things in your photos' });
-    await things.scrollIntoViewIfNeeded();
+    const beach = things.getByRole('link', { name: /beach/ });
+    // Clicking waits for the entrance animation and can scroll the link; sample the actual departure position.
+    await beach.click({ trial: true });
     const scrolled = await scrollOffset(things);
+    expect(scrolled).toBeGreaterThan(0);
 
-    await things.getByRole('link', { name: /beach/ }).click();
+    await beach.click();
     await page.waitForURL(/\/search\?query=.*tagIds/);
     await page.locator('[data-asset-id]').first().click();
     await expect(page.locator('#immich-asset-viewer')).toBeVisible();
