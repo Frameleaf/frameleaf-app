@@ -140,15 +140,25 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
       const { key, select } = plans[table];
       let cursor: string | undefined;
       try {
+        const counts = await reserved.unsafe(`SELECT count(*)::text AS count FROM ONLY public."${table}"`);
+        if (counts.length !== 1 || typeof counts[0].count !== 'string' || !/^(0|[1-9]\d*)$/.test(counts[0].count))
+          throw new Error('Invalid source inventory count');
+        const expected = BigInt(counts[0].count);
+        let read = 0n;
         while (true) {
           if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
           const where = cursor === undefined ? '' : ` WHERE "${key}">$1`;
           const page = await reserved.unsafe(
-            `SELECT ${select} FROM ONLY public."${table}"${where} ORDER BY "${key}" LIMIT 1000`,
+            `SELECT ${select} FROM ONLY public."${table}"${where} ORDER BY "${table}"."${key}" LIMIT 1000`,
             cursor === undefined ? [] : [cursor],
           );
           if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
-          if (page.length === 0) return;
+          if (page.length === 0) {
+            if (read !== expected) throw new Error('Incomplete source inventory');
+            return;
+          }
+          read += BigInt(page.length);
+          if (read > expected) throw new Error('Source inventory exceeded');
           const next = page.at(-1)!.__frameleaf_cursor;
           if (page.length > 1000 || typeof next !== 'string' || next === cursor) throw new Error('Invalid source page');
           const batch = page.map(({ __frameleaf_cursor: _cursor, ...row }) =>
