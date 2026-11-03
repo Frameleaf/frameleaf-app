@@ -361,14 +361,12 @@ jobs:
           path: ${{ runner.temp }}/e2e-format.patch
           retention-days: 7
     timeout-minutes: 60
-  server-medium-tests:
+  server-medium-image:
     env:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
-    # The suite is split by server/test/vitest.medium-suites.mjs: this protected check runs every medium
-    # spec except the listed scale specs, which server-medium-scale-tests runs beside it.
-    name: Medium Tests (Server)
+    name: Medium Test Image
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
@@ -382,9 +380,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Retrieve frozen media fixtures
-        working-directory: .
-        run: bash scripts/checkout-test-assets.sh
       - name: Configure public Docker Hub mirror
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
@@ -415,13 +410,67 @@ jobs:
           # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
           cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}
+      - name: Save the medium runner image
+        working-directory: .
+        run: |
+          mkdir -p "$RUNNER_TEMP/medium-image"
+          docker save frameleaf-medium:${{ github.sha }} -o "$RUNNER_TEMP/medium-image/medium.tar"
+      - name: Hand the native image to the medium shards
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: medium-image
+          path: ${{ runner.temp }}/medium-image/medium.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
+    timeout-minutes: 90
+  server-medium-core-tests:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
+      RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    # Each shard owns its runner and PostgreSQL; files remain serial inside it.
+    name: Medium Core Shard
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    needs: server-medium-image
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve frozen media fixtures
+        working-directory: .
+        run: bash scripts/checkout-test-assets.sh
+      - name: Configure public Docker Hub mirror
+        working-directory: .
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Fetch the medium runner image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: medium-image
+          path: ${{ runner.temp }}/medium-image
+      - name: Load the medium runner image
+        working-directory: .
+        run: docker load -i "$RUNNER_TEMP/medium-image/medium.tar"
       - name: Run all medium tests in the native runner
         if: ${{ !cancelled() }}
         working-directory: .
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
           FRAMELEAF_MEDIUM_SUITE: core
+          FRAMELEAF_MEDIUM_SHARD: ${{ matrix.shard }}/6
         run: |
           set -euo pipefail
           docker_cli=$(readlink -f "$(command -v docker)")
@@ -438,11 +487,12 @@ jobs:
             --env FRAMELEAF_CI_POSTGRES_IMAGE \
             --env RYUK_CONTAINER_IMAGE \
             --env FRAMELEAF_MEDIUM_SUITE \
+            --env FRAMELEAF_MEDIUM_SHARD \
             "$MEDIUM_IMAGE"
       - name: Remove medium runner after failure or cancellation
         if: always()
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
         run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
     timeout-minutes: 90
   server-medium-scale-tests:
@@ -450,11 +500,15 @@ jobs:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
-    # The queue pipeline run and the scale specs (25,000 items each by default, FRAMELEAF_SCALE_ITEMS for
-    # more), with a database of their own.
-    name: Medium Scale Tests (Server)
+    # Each shard owns its runner and PostgreSQL; files remain serial inside it.
+    name: Medium Scale Shard
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    needs: server-medium-image
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     permissions:
       contents: read
       packages: read
@@ -472,40 +526,22 @@ jobs:
       - name: Configure public Docker Hub mirror
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
-      - name: Setup native runner builder
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Fetch the medium runner image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
-          buildkitd-config-inline: |
-            [registry."docker.io"]
-              mirrors = ["mirror.gcr.io"]
-      - name: Login to owned GHCR namespace for the build cache
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Build medium native runner
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: server/Dockerfile
-          target: medium-test
-          build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
-          load: true
-          tags: frameleaf-medium:${{ github.sha }}
-          # main's registry cache (e2e-build-cache.yml). The Actions cache is not
-          # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
-          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
-          secrets: mise_github_token=${{ github.token }}
+          name: medium-image
+          path: ${{ runner.temp }}/medium-image
+      - name: Load the medium runner image
+        working-directory: .
+        run: docker load -i "$RUNNER_TEMP/medium-image/medium.tar"
       - name: Run the medium scale suite in the native runner
         if: ${{ !cancelled() }}
         working-directory: .
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           MEDIUM_IMAGE: frameleaf-medium:${{ github.sha }}
           FRAMELEAF_MEDIUM_SUITE: scale
+          FRAMELEAF_MEDIUM_SHARD: ${{ matrix.shard }}/6
           FRAMELEAF_MEDIUM_DIAGNOSTICS: '1'
         run: |
           set -euo pipefail
@@ -527,6 +563,7 @@ jobs:
             --env FRAMELEAF_CI_POSTGRES_IMAGE \
             --env RYUK_CONTAINER_IMAGE \
             --env FRAMELEAF_MEDIUM_SUITE \
+            --env FRAMELEAF_MEDIUM_SHARD \
             --env FRAMELEAF_MEDIUM_DIAGNOSTICS \
             "$MEDIUM_IMAGE" || medium_exit_status=$?
           exit "$medium_exit_status"
@@ -534,7 +571,7 @@ jobs:
         if: always()
         working-directory: .
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/frameleaf-medium-scale-artifacts"
@@ -574,7 +611,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: medium-scale-diagnostics
+          name: medium-scale-diagnostics-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/frameleaf-medium-scale-artifacts/container-state.json
             ${{ runner.temp }}/frameleaf-medium-scale-artifacts/vitest.xml
@@ -583,9 +620,35 @@ jobs:
       - name: Remove medium runner after failure or cancellation
         if: always()
         env:
-          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
+          MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
         run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
     timeout-minutes: 90
+  server-medium-tests:
+    name: Medium Tests (Server)
+    needs: server-medium-core-tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    if: ${{ always() && github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    steps:
+      - name: Verify every medium shard succeeded
+        env:
+          RESULT: ${{ needs.server-medium-core-tests.result }}
+        run: test "$RESULT" = success
+    timeout-minutes: 5
+  server-medium-scale-success:
+    name: Medium Scale Tests (Server)
+    needs: server-medium-scale-tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    if: ${{ always() && github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    steps:
+      - name: Verify every medium shard succeeded
+        env:
+          RESULT: ${{ needs.server-medium-scale-tests.result }}
+        run: test "$RESULT" = success
+    timeout-minutes: 5
   # FL-380: the server image is built once per architecture and handed to every end-to-end job, which
   # used to build it themselves. The registry cache it reads is written by e2e-build-cache.yml.
   e2e-image:
@@ -623,11 +686,14 @@ jobs:
         working-directory: ./e2e
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: docker compose build frameleaf-server
+        # Keep the server's solve separate from auth, matching the established native build cache graph.
+        run: |
+          docker compose build frameleaf-server
+          docker compose build database e2e-auth-server
       - name: Save the server image
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-image"
-          docker save frameleaf-server:latest -o "$RUNNER_TEMP/e2e-image/server.tar"
+          docker save frameleaf-server:latest frameleaf-postgres:e2e frameleaf-e2e-auth:latest -o "$RUNNER_TEMP/e2e-image/server.tar"
       - name: Hand the server image to the end-to-end jobs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -658,6 +724,21 @@ jobs:
         runner:
           - ubuntu-24.04
           - ubuntu-24.04-arm
+        suite:
+          [
+            api-1,
+            api-2,
+            api-3,
+            api-4,
+            maintenance,
+            transport,
+            buddy,
+            cloud,
+            accounting,
+          ]
+        exclude:
+          - runner: ubuntu-24.04-arm
+            suite: buddy
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -678,12 +759,8 @@ jobs:
         run:
           pnpm --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk install --frozen-lockfile && pnpm
           --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk build
-      - name: Run setup web
-        run: pnpm install --frozen-lockfile && pnpm exec svelte-kit sync
-        working-directory: ./web
-        if: ${{ !cancelled() }}
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm --filter 'frameleaf-e2e...' --filter 'frameleaf...' install --frozen-lockfile
         if: ${{ !cancelled() }}
       - name: Configure public Docker Hub mirror
         working-directory: .
@@ -703,11 +780,12 @@ jobs:
           name: e2e-image-${{ matrix.runner }}
           path: ${{ runner.temp }}/e2e-image
       - name: Load the server image
+        id: load-image
         run: docker load -i "$RUNNER_TEMP/e2e-image/server.tar"
       - name: Start Docker Compose
         id: docker
-        run: docker compose up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
-        if: ${{ !cancelled() }}
+        run: docker compose up -d --no-build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+        if: ${{ !cancelled() && (startsWith(matrix.suite, 'api-') || matrix.suite == 'maintenance') }}
       - name: Wait for Frameleaf server readiness
         id: server-ready
         env:
@@ -722,9 +800,9 @@ jobs:
           docker compose ps
           docker compose logs --no-color --tail 200 frameleaf-server
           exit 1
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && (startsWith(matrix.suite, 'api-') || matrix.suite == 'maintenance') }}
       - name: Prepare bounded fatal-signal evidence
-        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' && startsWith(matrix.suite, 'api-') }}
         run: |
           trace_instance="/sys/kernel/tracing/instances/frameleaf-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           {
@@ -765,10 +843,11 @@ jobs:
       - name: Run e2e tests (api & cli)
         env:
           VITEST_DISABLE_DOCKER_SETUP: true
-        run: pnpm test
-        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+          API_SHARD: ${{ matrix.suite }}
+        run: pnpm test --shard="${API_SHARD#api-}/4"
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' && startsWith(matrix.suite, 'api-') }}
       - name: Capture server diagnostics after API tests
-        if: always()
+        if: ${{ always() && startsWith(matrix.suite, 'api-') }}
         working-directory: ./e2e
         run: |
           trace_instance="/sys/kernel/tracing/instances/frameleaf-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -794,10 +873,10 @@ jobs:
         env:
           VITEST_DISABLE_DOCKER_SETUP: true
         run: pnpm test:maintenance
-        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' && matrix.suite == 'maintenance' }}
       # The next fixture recreates these containers, so retain maintenance restart failures first.
       - name: Capture server diagnostics after maintenance tests
-        if: always()
+        if: ${{ always() && matrix.suite == 'maintenance' }}
         run: |
           {
             date --utc --iso-8601=seconds
@@ -812,7 +891,7 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
           timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
-        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.load-image.outcome == 'success' && matrix.suite == 'transport' }}
       - name: Run upload relay and proxy transport tests
         working-directory: ./server
         env:
@@ -822,19 +901,19 @@ jobs:
           FL225_EDGE_SECRET: fl225-local-transport-only-secret
           FL285_RESTART_OWNED_FIXTURE: 'true'
         run: pnpm exec vitest run --config test/vitest.config.transport.mjs
-        if: ${{ !cancelled() && steps.upload-fixture.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.upload-fixture.outcome == 'success' && matrix.suite == 'transport' }}
       - name: Capture upload transport Docker logs
-        if: always()
+        if: ${{ always() && matrix.suite == 'transport' }}
         run: docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml logs --no-color > docker-upload-transport-logs.txt
       # FL-310: two real app/PG stacks, with only the coordinator and edge enrollment substituted.
       # The first bounded lane qualifies direct HTTPS on x64; relay/real-Cloud/two-network acceptance is separate.
       - name: Prepare disposable Buddy TLS and storage
         id: buddy-prepare
-        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' && matrix.suite == 'buddy' }}
         run: bash buddy-fixture-tls.sh
       - name: Start the two-server Buddy fixture
         id: buddy-fixture
-        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' && matrix.suite == 'buddy' }}
         env:
           BUDDY_PREPARE_OUTCOME: ${{ steps.buddy-prepare.outcome }}
         run: |
@@ -842,15 +921,13 @@ jobs:
             echo '::error::Two-server Buddy preparation failed; fixture startup refused.'
             exit 1
           fi
-          # Stop the previous owned fixture after its diagnostics to bound runner resource use.
-          docker compose stop
           docker compose -f docker-compose.buddy.yml up -d --no-build --wait --wait-timeout 300
           for port in 3285 3286; do
             timeout 120s bash -c 'until curl --fail --silent --max-time 2 "http://127.0.0.1:$1/api/server/ping" > /dev/null; do sleep 2; done' -- "$port"
           done
       - name: Run two-server direct Buddy acceptance
         id: buddy-test
-        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' && matrix.suite == 'buddy' }}
         working-directory: ./server
         env:
           BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
@@ -863,7 +940,7 @@ jobs:
           fi
           pnpm exec vitest run --config test/vitest.config.buddy.mjs
       - name: Capture redacted Buddy diagnostics
-        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' && matrix.suite == 'buddy' }}
         run: |
           # This file intentionally excludes raw app/fixture logs, environment, auth headers, kits and media.
           {
@@ -886,13 +963,13 @@ jobs:
       # The fixed diagnostic above names the error class but not the competing writer (55P03 on the restore
       # after the restart). Both app containers hold only disposable fixture accounts, keys and media.
       - name: Capture Buddy app logs
-        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' && matrix.suite == 'buddy' }}
         run: |
           if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
             docker compose -f docker-compose.buddy.yml logs --no-color --timestamps buddy-a buddy-b > docker-buddy-logs.txt 2>&1 || true
           fi
       - name: Remove the owned Buddy fixture
-        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' && matrix.suite == 'buddy' }}
         run: |
           if [ -n "${BUDDY_ROOT:-}" ]; then
             case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
@@ -901,7 +978,7 @@ jobs:
             rm -rf -- "$BUDDY_ROOT"
           fi
       # FL-201: the same image, now pointed at the fake Frameleaf Cloud (vendored contract fixtures), for the
-      # processing-consent specs. Runs after the main suite, whose specs expect the default cloud address.
+      # processing-consent specs, isolated from the main suite and its default cloud address.
       # The whole stack starts fresh (new database and volumes): the server must record its media location
       # against a new database, never against one an earlier container initialised.
       - name: Start the fake Frameleaf Cloud
@@ -909,15 +986,15 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
           timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
-        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.load-image.outcome == 'success' && matrix.suite == 'cloud' }}
       - name: Run e2e tests (Frameleaf Cloud consent)
         run: pnpm test:cloud
-        if: ${{ !cancelled() && steps.cloud-fixture.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.cloud-fixture.outcome == 'success' && matrix.suite == 'cloud' }}
       - name: Capture Docker logs
-        if: always()
+        if: ${{ always() && matrix.suite == 'cloud' }}
         run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-compose-logs.txt
         working-directory: ./e2e
-      # Preserve the consent logs above before resetting the whole stack for the accounting journey.
+      # Accounting owns a fresh stack, separate from the consent lane.
       - name: Start the description accounting fixture
         id: cloud-accounting-fixture
         env:
@@ -925,18 +1002,18 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
           timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
-        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.load-image.outcome == 'success' && matrix.suite == 'accounting' }}
       - name: Run e2e tests (Frameleaf Cloud description accounting)
         run: pnpm exec vitest run --config vitest.cloud-accounting.config.ts --reporter=default --silent=false
-        if: ${{ !cancelled() && steps.cloud-accounting-fixture.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.cloud-accounting-fixture.outcome == 'success' && matrix.suite == 'accounting' }}
       - name: Capture description accounting Docker logs
-        if: always()
+        if: ${{ always() && matrix.suite == 'accounting' }}
         run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-cloud-accounting-logs.txt
       - name: Archive Docker logs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: e2e-server-docker-logs-${{ matrix.runner }}
+          name: e2e-server-docker-logs-${{ matrix.runner }}-${{ matrix.suite }}
           path: |
             e2e/docker-compose-logs.txt
             e2e/docker-diagnostics-after-api-tests.txt
@@ -970,8 +1047,8 @@ jobs:
           - ubuntu-24.04
           - ubuntu-24.04-arm
         # FL-380: the specs are split by file across three stacks of their own. The web project shares
-        # one server and database per stack, so it stays on one worker; more stacks, not more workers.
-        shard: [1, 2, 3]
+        # one server and database per stack, so it stays on one worker; each extra project owns a lane.
+        shard: [1, 2, 3, ui, maintenance, icloud]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1023,33 +1100,33 @@ jobs:
           name: e2e-image-${{ matrix.runner }}
           path: ${{ runner.temp }}/e2e-image
       - name: Load the server image
+        id: load-image
         run: docker load -i "$RUNNER_TEMP/e2e-image/server.tar"
       - name: Docker build
         id: docker
-        run: docker compose -f docker-compose.yml -f docker-compose.ml-fixture.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
-        if: ${{ !cancelled() }}
+        run: docker compose -f docker-compose.yml -f docker-compose.ml-fixture.yml up -d --no-build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+        if: ${{ !cancelled() && matrix.shard != 'icloud' }}
       - name: Run e2e tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
           FL144_ML_FIXTURE: 'true'
         run: pnpm test:web --shard=${{ matrix.shard }}/3
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && (matrix.shard == 1 || matrix.shard == 2 || matrix.shard == 3) }}
       - name: Archive e2e test (web) results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: success() || failure()
+        if: ${{ (success() || failure()) && (matrix.shard == 1 || matrix.shard == 2 || matrix.shard == 3) }}
         with:
           name: e2e-web-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
       - name: Run ui tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
-        # Not sharded: this project is fully parallel, so shards split it test by test and put the
-        # heavy timeline specs together on one runner, where they timed out. Shard 3 runs it whole.
+        # Keep UI whole: test-level sharding previously grouped the heavy timeline cases and timed out.
         run: pnpm test:web:ui
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 3 }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 'ui' }}
       - name: Archive ui test (web) results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: success() || failure()
+        if: ${{ (success() || failure()) && matrix.shard == 'ui' }}
         with:
           name: e2e-ui-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
@@ -1057,10 +1134,10 @@ jobs:
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
         run: pnpm test:web:maintenance
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 1 }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 'maintenance' }}
       - name: Archive maintenance tests (web) results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: success() || failure()
+        if: ${{ (success() || failure()) && matrix.shard == 'maintenance' }}
         with:
           name: e2e-maintenance-isolated-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
@@ -1079,7 +1156,7 @@ jobs:
       - name: Start the fake iCloud bridge
         id: icloud-fixture
         run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 2 }}
+        if: ${{ !cancelled() && steps.load-image.outcome == 'success' && matrix.shard == 'icloud' }}
       - name: Run e2e tests (iCloud sync)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true

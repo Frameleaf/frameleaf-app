@@ -513,7 +513,7 @@ FROM server AS medium-test
 COPY --from=plugins /usr/src/app/packages/plugin-core/dist ./packages/plugin-core/dist
 COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json ./packages/plugin-core/manifest.json
 WORKDIR /usr/src/app/server
-CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run"]
+CMD ["bash", "-ec", "docker version --format '{{.Client.Version}} {{.Server.Version}}'; node -e 'console.log(require(\"/usr/local/lib/frameleaf/image-hdr.node\").capabilities())'; pnpm run test:medium --run --shard=${FRAMELEAF_MEDIUM_SHARD:-1/1}"]
 
 FROM base-server-prod AS prod
 

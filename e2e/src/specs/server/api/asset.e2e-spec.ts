@@ -47,7 +47,6 @@ describe('/asset', () => {
 
   let user1: LoginResponseDto;
   let user2: LoginResponseDto;
-  let timeBucketUser: LoginResponseDto;
   let quotaUser: LoginResponseDto;
   let statsUser: LoginResponseDto;
 
@@ -63,13 +62,12 @@ describe('/asset', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup({ onboarding: false });
 
-    [websocket, user1, user2, statsUser, quotaUser, timeBucketUser] = await Promise.all([
+    [websocket, user1, user2, statsUser, quotaUser] = await Promise.all([
       utils.connectWebsocket(admin.accessToken),
       utils.userSetup(admin.accessToken, createUserDto.create('1')),
       utils.userSetup(admin.accessToken, createUserDto.create('2')),
       utils.userSetup(admin.accessToken, createUserDto.create('stats')),
       utils.userSetup(admin.accessToken, createUserDto.userQuota),
-      utils.userSetup(admin.accessToken, createUserDto.create('time-bucket')),
     ]);
 
     await utils.createPartner(user1.accessToken, user2.userId);
@@ -108,13 +106,6 @@ describe('/asset', () => {
     ]);
 
     user2Assets = [await utils.createAsset(user2.accessToken)];
-
-    await Promise.all([
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-01-01').toISOString() }),
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-02-10').toISOString() }),
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-02-11').toISOString() }),
-      utils.createAsset(timeBucketUser.accessToken, { fileCreatedAt: new Date('1970-02-11').toISOString() }),
-    ]);
 
     for (const asset of [...user1Assets, ...user2Assets]) {
       expect(asset.status).toBe(AssetMediaStatus.Created);

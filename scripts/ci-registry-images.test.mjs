@@ -50,8 +50,7 @@ function checkRoutes(workflows) {
   );
   for (const job of [
     workflows.manager.jobs.manager,
-    workflows.tests.jobs["server-medium-tests"],
-    workflows.tests.jobs["server-medium-scale-tests"],
+    workflows.tests.jobs["server-medium-image"],
   ]) {
     env(job, "FRAMELEAF_CI_NODE_IMAGE", "node");
     env(job, "FRAMELEAF_CI_POSTGRES_IMAGE", "postgres");
@@ -78,7 +77,7 @@ function checkRoutes(workflows) {
     /--build-arg POSTGRES_IMAGE="\$FRAMELEAF_CI_POSTGRES_IMAGE"/,
   );
   for (const [id, name] of [
-    ["server-medium-tests", "Run all medium tests in the native runner"],
+    ["server-medium-core-tests", "Run all medium tests in the native runner"],
     [
       "server-medium-scale-tests",
       "Run the medium scale suite in the native runner",
@@ -144,7 +143,7 @@ test("CI route contract rejects missing nested propagation, bootstrap, and diges
     },
     (w) => {
       const s = step(
-        w.tests.jobs["server-medium-tests"],
+        w.tests.jobs["server-medium-core-tests"],
         "Run all medium tests in the native runner",
       );
       s.run = s.run.replace(
