@@ -17,6 +17,12 @@ export async function up(db: Kysely<any>): Promise<void> {
       throw new Error(`Frameleaf immutable baseline failed at statement ${index + 1}`, { cause: error });
     }
   }
+  // A schema-only dump carries no rows; these are the defaults the consolidated chain seeded on a fresh database.
+  await sql`INSERT INTO public.desktop_clip_index VALUES ('unadmitted', uuid_generate_v4(), NULL)`.execute(db);
+  await sql`INSERT INTO public.desktop_clip_producer (key) VALUES ('legacy')`.execute(db);
+  await sql`INSERT INTO public.ml_processing_order (scope, sources) VALUES ('default', '["local","desktops","cloud"]'::jsonb)`.execute(
+    db,
+  );
 }
 
 export function down(): Promise<never> {
