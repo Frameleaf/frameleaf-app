@@ -31,6 +31,13 @@ export async function atomicJson(destination: string, data: unknown): Promise<vo
   await writeFile(temporary, JSON.stringify(data, null, 2), { mode: 0o600, flag: 'wx' });
   await publishFile(temporary, destination);
 }
+/** A private text file (mode 0600) replaced atomically, e.g. a credential the stack reads through a bind mount. */
+export async function atomicSecret(destination: string, text: string): Promise<void> {
+  const temporary = `${destination}.partial`;
+  await rm(temporary, { force: true });
+  await writeFile(temporary, text, { mode: 0o600, flag: 'wx' });
+  await publishFile(temporary, destination);
+}
 export async function copyVerified(source: string, destination: string, expected: string): Promise<void> {
   try {
     if ((await fileHash(destination)) === expected) return;

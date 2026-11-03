@@ -114,7 +114,8 @@ export class FileUploadInterceptor implements NestInterceptor {
         this.assetService.getUploadFilename(uploadRequest),
       );
 
-      const writeStream = this.storageRepository.createWriteStream(path);
+      // opened now, with the folder `getUploadFolder` just made; made again if a tidy removed it meanwhile
+      const writeStream = this.storageRepository.createWriteStreamInFolder(path);
       // SHA-256 over SHA-1 (CWE-327, SHAttered):
       // - The persisted digest is 32 bytes; the column is `bytea` so length is
       //   variable and pre-existing 20-byte SHA-1 rows are unaffected.

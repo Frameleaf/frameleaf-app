@@ -191,6 +191,7 @@ def restore(
                 end_ms=end_ms,
                 yuv_matrix=source.yuv_matrix,
                 timeout=MEDIA_TIMEOUT_S,
+                max_frames=selected.spec.limits.maxFrames,
             )
     except media.MediaError as error:
         code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED

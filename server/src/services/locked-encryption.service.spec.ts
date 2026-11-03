@@ -1,9 +1,19 @@
-import { type LockedKeyFile, encryptFile, keyId, readHeader, unwrapKey } from '@frameleaf/locked-crypto';
+import {
+  type LockedKeyFile,
+  LockedPepperError,
+  encryptFile,
+  generateKeyPair,
+  keyId,
+  readHeader,
+  unwrapKey,
+  wrapKey,
+} from '@frameleaf/locked-crypto';
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
@@ -13,6 +23,7 @@ import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { JobName, JobStatus } from 'src/enum.js';
 import { type LockedSealState } from 'src/repositories/locked-file.repository.js';
+import { LockedPepperFileError } from 'src/repositories/locked-key.repository.js';
 import { LockedEncryptionService, LockedKeyUnavailableException } from 'src/services/locked-encryption.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { publishLockedKey } from 'src/utils/locked-key-ipc.js';
@@ -26,6 +37,8 @@ const RECOVERY_KEY = /^FLRK(-[A-Z2-7]{4}){8}$/;
 const PIN = '123456';
 const PASSPHRASE = 'correct horse battery staple';
 const HOUR = 60 * 60 * 1000;
+/** The server-held pepper every PIN wrap is made with (M1 of the packages review). */
+const PEPPER = Buffer.alloc(32, 7);
 
 type Row = { userId: string; mode: 'pin' | 'advanced'; status: 'encrypting' | 'on' | 'decrypting' } & Record<
   string,
@@ -82,6 +95,7 @@ describe(LockedEncryptionService.name, () => {
     });
     mocks.lockedEncryption.getAllUserIds.mockImplementation(() => Promise.resolve(rows.keys().toArray()));
     mocks.lockedKey.userIds.mockImplementation(() => Promise.resolve(files.keys().toArray()));
+    mocks.lockedKey.pepper.mockResolvedValue(PEPPER);
     mocks.lockedEncryption.getLockedAssets.mockResolvedValue([]);
     mocks.user.getForPinCode.mockImplementation(() =>
       Promise.resolve({ pinCode: `${PIN} (hashed)`, password: 'password (hashed)' }),
@@ -116,9 +130,20 @@ describe(LockedEncryptionService.name, () => {
       expect(publishLockedKey).toHaveBeenCalledWith(expect.objectContaining({ action: 'load', userId }));
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LockedSweep, data: { userId } });
       // both wraps open the same key
-      const viaPin = await unwrapKey(fileOf(), 'pin', PIN);
+      const viaPin = await unwrapKey(fileOf(), 'pin', PIN, { pepper: PEPPER });
       const viaRecovery = await unwrapKey(fileOf(), 'recovery', recoveryKey);
       expect(viaPin.equals(viaRecovery)).toBe(true);
+    });
+
+    it('enable(pin) makes a format-2 PIN wrap that needs the server pepper, so a copy of the key file alone is not enough', async () => {
+      await enablePin();
+      expect(fileOf().format).toBe('frameleaf-locked-key/2');
+      expect(fileOf().wraps.find(({ kind }) => kind === 'pin')).toMatchObject({ pepper: { kdf: 'hkdf-sha256' } });
+      await expect(unwrapKey(fileOf(), 'pin', PIN)).rejects.toBeInstanceOf(LockedPepperError);
+      await expect(unwrapKey(fileOf(), 'pin', PIN, { pepper: Buffer.alloc(32, 8) })).rejects.toBeInstanceOf(
+        LockedPepperError,
+      );
+      await expect(unwrapKey(fileOf(), 'pin', PIN, { pepper: PEPPER })).resolves.toHaveLength(32);
     });
 
     it('enable(pin) from a session that is not PIN-unlocked leaves the key closed (sealing needs only the public key)', async () => {
@@ -520,7 +545,7 @@ describe(LockedEncryptionService.name, () => {
         { pinCode: `${PIN} (hashed)`, password: 'password (hashed)' },
         '654321 (hashed)',
       );
-      await expect(unwrapKey(fileOf(), 'pin', '654321')).resolves.toHaveLength(32);
+      await expect(unwrapKey(fileOf(), 'pin', '654321', { pepper: PEPPER })).resolves.toHaveLength(32);
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', userId);
     }, 20_000);
 
@@ -693,16 +718,16 @@ describe(LockedEncryptionService.name, () => {
       const undo = await sut.onPinSet(userId, '654321', PIN);
 
       expect(fileOf().publicKey).toBe(before);
-      await expect(unwrapKey(fileOf(), 'pin', '654321')).resolves.toHaveLength(32);
+      await expect(unwrapKey(fileOf(), 'pin', '654321', { pepper: PEPPER })).resolves.toHaveLength(32);
       await undo();
-      await expect(unwrapKey(fileOf(), 'pin', PIN)).resolves.toHaveLength(32);
+      await expect(unwrapKey(fileOf(), 'pin', PIN, { pepper: PEPPER })).resolves.toHaveLength(32);
     }, 20_000);
 
     it('onPinSet refuses while encryption is on and neither the old PIN nor a loaded key opens the file', async () => {
       await enablePin();
       lockedKeys.clear();
       await expect(sut.onPinSet(userId, '654321')).rejects.toThrow(ConflictException);
-      await expect(unwrapKey(fileOf(), 'pin', PIN)).resolves.toHaveLength(32);
+      await expect(unwrapKey(fileOf(), 'pin', PIN, { pepper: PEPPER })).resolves.toHaveLength(32);
     });
 
     it('onPinSet changes nothing in Advanced Security', async () => {
@@ -728,6 +753,110 @@ describe(LockedEncryptionService.name, () => {
       await sut.onPinVerified(userId, PIN);
 
       expect(lockedKeys.expiresAt(userId)).toEqual(until);
+    });
+
+    it('onPinVerified opens a format-1 key file (no pepper) and rewrites its PIN wrap with the pepper', async () => {
+      const { publicKey, privateKey } = generateKeyPair();
+      const legacy = await wrapKey(
+        {
+          format: 'frameleaf-locked-key/1',
+          userId,
+          label: 'Taylor',
+          publicKey: publicKey.toString('base64'),
+          mode: 'pin',
+          encrypting: false,
+          createdAt: '2026-10-31T00:00:00.000Z',
+          updatedAt: '2026-10-31T00:00:00.000Z',
+        },
+        privateKey,
+        'pin',
+        PIN,
+      );
+      files.set(userId, legacy);
+      const until = new Date(Date.now() + HOUR);
+      mocks.session.getPinUnlockedUntil.mockResolvedValue(until);
+
+      await sut.onPinVerified(userId, PIN);
+
+      expect(lockedKeys.expiresAt(userId)).toEqual(until);
+      expect(fileOf()).toMatchObject({ format: 'frameleaf-locked-key/2', publicKey: legacy.publicKey });
+      expect(fileOf().wraps.find(({ kind }) => kind === 'pin')).toMatchObject({ pepper: { kdf: 'hkdf-sha256' } });
+      await expect(unwrapKey(fileOf(), 'pin', PIN)).rejects.toBeInstanceOf(LockedPepperError);
+      await expect(unwrapKey(fileOf(), 'pin', PIN, { pepper: PEPPER })).resolves.toEqual(privateKey);
+      // a second unlock finds nothing to rewrite
+      mocks.lockedKey.write.mockClear();
+      lockedKeys.clear();
+      await sut.onPinVerified(userId, PIN);
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+    });
+
+    it('onPinVerified keeps a format-1 key file as it is when the peppered rewrite cannot be written', async () => {
+      const { publicKey, privateKey } = generateKeyPair();
+      const legacy = await wrapKey(
+        {
+          format: 'frameleaf-locked-key/1',
+          userId,
+          label: 'Taylor',
+          publicKey: publicKey.toString('base64'),
+          mode: 'pin',
+          encrypting: false,
+          createdAt: '2026-10-31T00:00:00.000Z',
+          updatedAt: '2026-10-31T00:00:00.000Z',
+        },
+        privateKey,
+        'pin',
+        PIN,
+      );
+      files.set(userId, legacy);
+      mocks.lockedKey.write.mockRejectedValueOnce(new Error('EROFS'));
+      mocks.session.getPinUnlockedUntil.mockResolvedValue(new Date(Date.now() + HOUR));
+
+      await sut.onPinVerified(userId, PIN);
+
+      expect(lockedKeys.has(userId)).toBe(true);
+      expect(fileOf()).toEqual(legacy);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('pepper'));
+    });
+
+    it('onPinVerified reports a lost pepper file as 503 with what to do, logged in full for the operator', async () => {
+      await enablePin();
+      lockedKeys.clear();
+      mocks.lockedKey.write.mockClear();
+      mocks.lockedKey.pepper.mockRejectedValue(
+        new LockedPepperFileError('The Locked pepper file /identity/locked-pin-pepper.key is missing', 'missing'),
+      );
+
+      const unlock = sut.onPinVerified(userId, PIN);
+
+      await expect(unlock).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(unlock).rejects.toThrow(/administrator must restore it from a backup/);
+      expect(lockedKeys.has(userId)).toBe(false);
+      // the key pair is kept: this is not a PIN that does not open it
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('/identity/locked-pin-pepper.key is missing'),
+      );
+    });
+
+    it('a pepper that is not the one the PIN wrap was made with is 503, never a wrong PIN or a replaced key pair', async () => {
+      await enablePin();
+      lockedKeys.clear();
+      mocks.lockedKey.write.mockClear();
+      mocks.lockedKey.pepper.mockResolvedValue(Buffer.alloc(32, 8));
+
+      await expect(sut.onPinVerified(userId, PIN)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(sut.onPinSet(userId, '654321', PIN)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(
+        sut.update(auth, { mode: 'advanced', currentSecret: PIN, newPassphrase: PASSPHRASE }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(lockedKeys.has(userId)).toBe(false);
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(fileOf().mode).toBe('pin');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('pepper'));
+      // the right pepper, restored, opens it again
+      mocks.lockedKey.pepper.mockResolvedValue(PEPPER);
+      await sut.onPinVerified(userId, PIN);
+      expect(lockedKeys.has(userId)).toBe(true);
     });
 
     it('onPinVerified creates and loads a key pair for a PIN with no key file', async () => {

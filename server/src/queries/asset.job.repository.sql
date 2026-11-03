@@ -1085,6 +1085,10 @@ from
   "asset"
 where
   "asset"."deletedAt" <= $1
+  and (
+    "asset"."isOffline" = false
+    or "asset"."status" != 'active'
+  )
 
 -- AssetJobRepository.streamForSidecar
 select

@@ -149,7 +149,8 @@ test.describe('Album roles', () => {
     await member.waitForURL(/\/albums(?:\?|$)/);
     await expect(member.getByRole('article', { name: 'Last member' })).toHaveCount(0);
     // Leaving is one navigation: the page's own removal handling ignores the leave it caused.
-    await member.waitForTimeout(1000);
+    // Once the album list has loaded and the network is quiet, the removal event has been handled.
+    await member.waitForLoadState('networkidle');
     await expect(member).toHaveURL(/\/albums(?:\?|$)/);
     await expect(member.getByText('You are no longer a member of “Last member”.')).toHaveCount(0);
     await memberContext.close();

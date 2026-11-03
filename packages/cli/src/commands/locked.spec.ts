@@ -8,7 +8,7 @@ import {
 } from '@frameleaf/locked-crypto';
 import { Command } from 'commander';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { chmod, copyFile, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -59,15 +59,22 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
   let to: string;
   const alice = generateKeyPair();
   const bea = generateKeyPair();
+  const cara = generateKeyPair();
   const aliceId = randomUUID();
   const beaId = randomUUID();
+  const caraId = randomUUID();
   const aliceRecovery = generateRecoveryKey();
   const beaRecovery = generateRecoveryKey();
+  const caraRecovery = generateRecoveryKey();
+  /** Cara's PIN wrap was made on a server with the Locked pepper (key file format 2). */
+  const pepper = randomBytes(32);
+  let pepperFile: string;
   const plain = {
     photo1: randomBytes(70_000),
     photo2: randomBytes(1000),
     beaPhoto: randomBytes(500),
     shared: randomBytes(300),
+    caraPhoto: randomBytes(400),
   };
   let tamperedPath: string;
 
@@ -105,8 +112,17 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
       'correct horse battery',
     );
     b = await wrapKey(b, bea.privateKey, 'recovery', beaRecovery);
+    let c = await wrapKey(keyFile(caraId, 'Cara', cara, 'pin'), cara.privateKey, 'pin', '735102', { pepper });
+    c = await wrapKey(c, cara.privateKey, 'recovery', caraRecovery);
+    expect(c.format).toBe('frameleaf-locked-key/2');
     await writeFile(join(library, 'locked-keys', `${aliceId}.json`), JSON.stringify(a));
     await writeFile(join(library, 'locked-keys', `${beaId}.json`), JSON.stringify(b));
+    await writeFile(join(library, 'locked-keys', `${caraId}.json`), JSON.stringify(c));
+    // the pepper file as the server writes it: base64 text and a newline, outside the library
+    pepperFile = join(root, 'identity', 'locked-pin-pepper.key');
+    await mkdir(join(root, 'identity'), { recursive: true });
+    await writeFile(pepperFile, `${pepper.toString('base64')}\n`);
+    await seal('upload/c/1.bin', plain.caraPhoto, [{ publicKey: cara.publicKey }], { originalFileName: 'cara.png' });
 
     const aliceOnly = [{ publicKey: alice.publicKey }];
     await seal('upload/a/1.bin', plain.photo1, aliceOnly, { originalFileName: 'IMG_0001.jpg' });
@@ -240,6 +256,116 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
       const result = await lockedDecrypt({ library, to: out, user, secret });
       expect(result.written).toBeGreaterThan(0);
     }
+  });
+
+  describe('a PIN wrap made with the server pepper (key file format 2)', () => {
+    it('opens with the PIN and --pepper-file, and with the PIN and FRAMELEAF_LOCKED_PEPPER', async () => {
+      const result = await lockedDecrypt({ library, to, user: 'Cara', secret: '735102', pepperFile });
+      expect(result).toMatchObject({ written: 1, failed: [] });
+      expect(await readFile(join(to, 'cara.png'))).toEqual(plain.caraPhoto);
+
+      const viaEnvironment = join(root, `env-${randomUUID()}`);
+      vi.stubEnv('FRAMELEAF_LOCKED_PEPPER', pepper.toString('base64'));
+      try {
+        await expect(
+          lockedDecrypt({ library, to: viaEnvironment, user: 'Cara', secret: '735102' }),
+        ).resolves.toMatchObject({ written: 1 });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      // the --pepper-file flag reaches the command
+      const viaFlag = join(root, `flag-${randomUUID()}`);
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const stdin = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+      Object.defineProperty(process, 'stdin', { configurable: true, value: Readable.from(['735102\n']) });
+      try {
+        await run(['--library', library, '--to', viaFlag, '--user', 'Cara', '--pepper-file', pepperFile]);
+        expect(process.exitCode).toBe(0);
+        expect(await readFile(join(viaFlag, 'cara.png'))).toEqual(plain.caraPhoto);
+      } finally {
+        process.exitCode = undefined;
+        Object.defineProperty(process, 'stdin', stdin);
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('finds the pepper inside a copy of the library that carries the default identity folder', async () => {
+      const withIdentity = join(root, `library-${randomUUID()}`);
+      await cp(library, withIdentity, { recursive: true });
+      await mkdir(join(withIdentity, 'frameleaf', 'identity'), { recursive: true });
+      await writeFile(
+        join(withIdentity, 'frameleaf', 'identity', 'locked-pin-pepper.key'),
+        `${pepper.toString('base64')}\n`,
+      );
+      const found = join(root, `found-${randomUUID()}`);
+      await expect(
+        lockedDecrypt({ library: withIdentity, to: found, user: 'Cara', secret: '735102' }),
+      ).resolves.toMatchObject({ written: 1, failed: [] });
+      expect(await readFile(join(found, 'cara.png'))).toEqual(plain.caraPhoto);
+      // an explicit pepper still wins over the copy's file
+      const wrongPepper = randomBytes(32).toString('base64');
+      const wrong = join(root, `wrong-${randomUUID()}`);
+      await expect(
+        lockedDecrypt({ library: withIdentity, to: wrong, user: 'Cara', secret: '735102', pepper: wrongPepper }),
+      ).rejects.toMatchObject({ exitCode: 2 });
+    });
+
+    it('ignores an unusable pepper file inside the library copy: the PIN gets the missing-pepper hint', async () => {
+      const damaged = join(root, `library-${randomUUID()}`);
+      await cp(library, damaged, { recursive: true });
+      await mkdir(join(damaged, 'frameleaf', 'identity'), { recursive: true });
+      await writeFile(join(damaged, 'frameleaf', 'identity', 'locked-pin-pepper.key'), 'not a pepper\n');
+      const to = join(root, `damaged-${randomUUID()}`);
+      const hint = expect.stringMatching(/needs the server's Locked pepper/);
+      await expect(lockedDecrypt({ library: damaged, to, user: 'Cara', secret: '735102' })).rejects.toMatchObject({
+        exitCode: 2,
+        message: hint,
+      });
+    });
+
+    it('without the pepper the PIN is refused with a hint naming --pepper-file, exit code 2, nothing written', async () => {
+      await expect(lockedDecrypt({ library, to, user: 'Cara', secret: '735102' })).rejects.toMatchObject({
+        exitCode: 2,
+        message: expect.stringMatching(/needs the server's Locked pepper.*--pepper-file/s),
+      });
+      await expect(readdir(to)).rejects.toThrow();
+      // a wrong pepper is told apart from a wrong PIN
+      await expect(
+        lockedDecrypt({ library, to, user: 'Cara', secret: '735102', pepper: randomBytes(32).toString('base64') }),
+      ).rejects.toMatchObject({ exitCode: 2, message: expect.stringMatching(/not the one this key file/) });
+      // and a wrong PIN with the right pepper is just a wrong PIN
+      await expect(lockedDecrypt({ library, to, user: 'Cara', secret: '000000', pepperFile })).rejects.toMatchObject({
+        exitCode: 2,
+        message: expect.stringMatching(/doesn't open Cara's key file/),
+      });
+    });
+
+    it('the recovery key never needs the pepper', async () => {
+      const result = await lockedDecrypt({ library, to, user: 'Cara', secret: caraRecovery });
+      expect(result).toMatchObject({ written: 1, failed: [] });
+    });
+
+    it('a pepper that is not base64 text, or a missing pepper file, is refused with exit code 2', async () => {
+      await expect(
+        lockedDecrypt({ library, to, user: 'Cara', secret: '735102', pepper: 'nope!' }),
+      ).rejects.toMatchObject({ exitCode: 2, message: expect.stringMatching(/not base64/) });
+      await expect(
+        lockedDecrypt({ library, to, user: 'Cara', secret: '735102', pepperFile: join(root, 'missing.key') }),
+      ).rejects.toMatchObject({ exitCode: 2, message: expect.stringMatching(/Cannot read --pepper-file/) });
+    });
+
+    it("Alice's format-1 key file still opens with just her PIN, whether or not a pepper is offered", async () => {
+      const withPepper = join(root, `p-${randomUUID()}`);
+      const plain = await lockedDecrypt({ library, to, user: 'Alice', secret: '482915' });
+      const peppered = await lockedDecrypt({ library, to: withPepper, user: 'Alice', secret: '482915', pepperFile });
+      for (const result of [plain, peppered]) {
+        expect(result.written).toBeGreaterThan(0);
+        // only the deliberately tampered file fails
+        expect(result.failed).toEqual([expect.stringContaining('bad.bin')]);
+      }
+    });
   });
 
   it('never writes inside --library', async () => {

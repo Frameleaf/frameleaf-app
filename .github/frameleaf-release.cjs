@@ -1573,6 +1573,26 @@ async function createBundle(
       unraid: "7.0",
     },
   };
+  // Review M2: a release that moves the database image in place (e.g. PostgreSQL 19 beta to GA) declares
+  // it in docker/postgres/database-image-change.json; it is attested with the rest of the manifest and
+  // Manager updates the image only when this declaration names the installed image. The file is removed
+  // again once no supported release runs the previous image.
+  const change = await fs
+    .readFile(
+      path.join(root, "docker/postgres/database-image-change.json"),
+      "utf8",
+    )
+    .then(JSON.parse, (error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+  if (change !== undefined) {
+    const {
+      verifyDatabaseImageChange,
+    } = require("./verify-release-bundle.cjs");
+    verifyDatabaseImageChange(change, nas.images.postgres);
+    nas.databaseImageChange = change;
+  }
   await fs.writeFile(
     path.join(directory, "nas-manifest.json"),
     JSON.stringify(nas, null, 2) + "\n",

@@ -2,7 +2,12 @@ import { getMaintenanceStatus, MaintenanceAction } from '@frameleaf/sdk';
 import { get } from 'svelte/store';
 import { maintenanceStore } from '$lib/stores/maintenance.store';
 import { websocketStore } from '$lib/stores/websocket';
-import { loadMaintenanceStatus, maintenanceCreateUrl, maintenanceReturnUrl } from '$lib/utils/maintenance';
+import {
+  loadMaintenanceStatus,
+  maintenanceCreateUrl,
+  maintenanceReturnUrl,
+  maintenanceTokenOf,
+} from '$lib/utils/maintenance';
 
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
@@ -54,6 +59,21 @@ describe('maintenance', () => {
 
     it('should reject a cross-origin continue url', () => {
       expect(maintenanceReturnUrl(new URLSearchParams({ continue: 'https://malicious.site/evil' }))).toBe('/');
+    });
+  });
+
+  describe(maintenanceTokenOf.name, () => {
+    it('reads the token from the fragment', () => {
+      expect(maintenanceTokenOf(new URL('https://photos.example.com/maintenance#token=abc%2Fdef'))).toBe('abc/def');
+    });
+
+    it('still reads the query of a link the server issued', () => {
+      expect(maintenanceTokenOf(new URL('https://photos.example.com/maintenance?token=abc&continue=%2F'))).toBe('abc');
+    });
+
+    it('prefers the fragment and is undefined without a token', () => {
+      expect(maintenanceTokenOf(new URL('https://photos.example.com/maintenance?token=query#token=hash'))).toBe('hash');
+      expect(maintenanceTokenOf(new URL('https://photos.example.com/maintenance'))).toBeUndefined();
     });
   });
 

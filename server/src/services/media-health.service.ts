@@ -86,6 +86,7 @@ import { BulkMediaHealthEntry, BulkOperationItem, bulkErrorMessage } from 'src/u
 import { getConfig } from 'src/utils/config.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { fileIdentity } from 'src/utils/file-trash.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -137,6 +138,12 @@ export const LIBRARY_CARE_FULL_SCAN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const OPEN_RUN_STATES: ReadonlySet<string> = new Set(['running', 'paused', 'retrying']);
 /** A trash job is created just after its findings are queued; leave them this long before releasing them. */
 const TRASH_QUEUE_GRACE_MS = 10 * 60_000;
+/**
+ * An untracked file written this recently may be an upload still streaming into its final path (a
+ * classic multipart upload goes straight to `upload/<user>/xx/yy/<uuid>.<ext>`). The next scan sees
+ * it once it has settled, as a tracked row or as a leftover of an aborted upload.
+ */
+const UNTRACKED_FILE_SETTLE_MS = 5 * 60_000;
 
 type CandidateValidation = {
   status: MediaHealthStatus;
@@ -2438,11 +2445,21 @@ export class MediaHealthService {
           continue;
         }
 
+        const settled = await this.settledUntrackedFile(candidatePath);
+        if (!settled) {
+          continue;
+        }
         let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
         try {
           digests = await this.cryptoRepository.hashFileDigests(candidatePath);
         } catch (error) {
           this.logger.warn(`Skipping unreadable recovered file ${candidatePath}: ${getErrorMessage(error)}`);
+          continue;
+        }
+        // the digests speak for the file only if it is still the same file, unchanged, that was read
+        const after = await fileIdentity(this.storageRepository, candidatePath);
+        if (!after || after.key !== settled.key || digests.sizeInBytes !== settled.size) {
+          this.logger.debug(`Skipping recovered file ${candidatePath}: it changed while it was read`);
           continue;
         }
         const checksumAssets = await this.assetRepository.getByChecksums(userId, [digests.sha1, digests.sha256]);
@@ -2465,13 +2482,6 @@ export class MediaHealthService {
           continue;
         }
 
-        let stat: Awaited<ReturnType<StorageRepository['stat']>>;
-        try {
-          stat = await this.storageRepository.stat(candidatePath);
-        } catch (error) {
-          this.logger.warn(`Skipping missing recovered file ${candidatePath}: ${getErrorMessage(error)}`);
-          continue;
-        }
         let asset: Awaited<ReturnType<AssetRepository['create']>> | undefined;
         try {
           asset = await this.assetRepository.create({
@@ -2480,9 +2490,9 @@ export class MediaHealthService {
             checksum: digests.sha256,
             checksumAlgorithm: ChecksumAlgorithm.sha256File,
             originalPath: path.normalize(candidatePath),
-            fileCreatedAt: stat.mtime,
-            fileModifiedAt: stat.mtime,
-            localDateTime: stat.mtime,
+            fileCreatedAt: settled.mtime,
+            fileModifiedAt: settled.mtime,
+            localDateTime: settled.mtime,
             type: mimeTypes.assetType(candidatePath),
             isFavorite: false,
             duration: null,
@@ -2527,6 +2537,33 @@ export class MediaHealthService {
         }
       }
     }
+  }
+
+  /**
+   * The untracked file as it is before it is read: a regular file that nothing has written to for a
+   * while, with what identifies it (so the read can be checked against it afterwards) and its
+   * modification time. Null for anything else: a file still being written, a non-file, or one that is
+   * gone already.
+   */
+  private async settledUntrackedFile(
+    candidatePath: string,
+  ): Promise<{ key: string; size: number; mtime: Date } | null> {
+    let stat: Awaited<ReturnType<StorageRepository['stat']>>;
+    try {
+      stat = await this.storageRepository.stat(candidatePath);
+    } catch (error) {
+      this.logger.warn(`Skipping missing recovered file ${candidatePath}: ${getErrorMessage(error)}`);
+      return null;
+    }
+    if (!stat.isFile()) {
+      return null;
+    }
+    if (Date.now() - stat.mtimeMs < UNTRACKED_FILE_SETTLE_MS) {
+      this.logger.debug(`Skipping recovered file ${candidatePath}: it was written moments ago and may still be`);
+      return null;
+    }
+    const identity = await fileIdentity(this.storageRepository, candidatePath);
+    return identity ? { ...identity, mtime: stat.mtime } : null;
   }
 
   private async restoreLostOriginalFrom(

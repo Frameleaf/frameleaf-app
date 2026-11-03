@@ -25,7 +25,7 @@ import { Store } from './store.js';
 import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
-import { Security } from './security.js';
+import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
 import { Releases } from './releases.js';
 import { Operations, ReviewInput } from './operations.js';
@@ -59,7 +59,14 @@ const native = runtime === 'native'
   ? await createNativeService(store, process.stdin, origin!, join(backupRoot, 'frameleaf-database'))
   : null;
 const docker = new Docker();
-const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN);
+// Proxies named in MANAGER_TRUSTED_PROXIES may forward the client address; a loopback-only publish (launch.sh
+// default) means a connection from the bridge gateway can only be this host. Otherwise a gateway-sourced
+// claim is refused (review L1): Docker's userland proxy and NAS portal proxies hide the real client.
+const bindAddress = process.env.MANAGER_BIND_ADDRESS?.replace(/^::ffff:(?=\d+\.)/, '') ?? '';
+const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN, {
+  trustedProxies: trustedProxyList(process.env.MANAGER_TRUSTED_PROXIES),
+  loopbackPublished: runtime === 'docker' && (bindAddress === '::1' || /^127\./.test(bindAddress)),
+});
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
@@ -92,6 +99,8 @@ const operations = new Operations(
   process.env.MANAGER_UNRAID_AUTOSTART ?? (defaults.platform === 'unraid' ? new HostAutostart(docker, directory) : undefined),
 );
 const lifecycle = native ?? operations;
+/** The port the administrator reached Manager on: never offered to, or accepted for, the Frameleaf stack. */
+const managerPort = (request: Request) => Number(new URL(security.requestOrigin(request)).port || 443);
 const RequestKey = z.string().uuid();
 const Password = z.string().min(14).max(256);
 
@@ -127,7 +136,7 @@ class Api {
       .object({ name: z.string().min(1).max(120), password: Password })
       .strict()
       .parse(input);
-    await security.claim(value.name, value.password, request.socket.remoteAddress);
+    await security.claim(value.name, value.password, security.clientAddress(request));
     const session = await security.login(value.password);
     security.issueSession(response, session.session);
     return { csrf: session.csrf };
@@ -258,8 +267,8 @@ class Api {
   @Get('releases') available() {
     return releases.available();
   }
-  @Post('review') review(@Body() input: unknown) {
-    return operations.review(ReviewInput.parse(input));
+  @Post('review') review(@Body() input: unknown, @Req() request: Request) {
+    return operations.review(ReviewInput.parse(input), managerPort(request));
   }
   @Post('install') install(@Body() input: unknown) {
     const value = z.object({ reviewId: z.string().uuid(), key: RequestKey }).strict().parse(input);
@@ -325,12 +334,12 @@ class Api {
     response.setHeader('Content-Disposition', 'attachment; filename="frameleaf-manager-recovery-key.txt"');
     response.type('application/octet-stream').send(key);
   }
-  @Post('review-restore') reviewRestore(@Body() input: unknown) {
+  @Post('review-restore') reviewRestore(@Body() input: unknown, @Req() request: Request) {
     const { snapshot, databaseRoot } = z
       .object({ snapshot: z.string().regex(/^[a-f0-9]{64}$/), databaseRoot: ReviewInput.shape.databaseRoot })
       .strict()
       .parse(input);
-    return operations.reviewRestore(snapshot, databaseRoot);
+    return operations.reviewRestore(snapshot, databaseRoot, managerPort(request));
   }
   @Post('review-move') reviewMove(@Body() input: unknown) {
     const { root } = z
@@ -406,6 +415,8 @@ class Api {
         schemaVersion: 1,
         installation: operations.installation(),
         compose: await readFile(join(operations.directory(), 'compose.json'), 'utf8'),
+        // The stack reads the password from a mounted file, so the compose text no longer carries it.
+        databasePassword: store.get('database-password'),
         application: store.get('application-config'),
         recoveryKey: await backups.recoveryKey().catch((error: NodeJS.ErrnoException) => {
           if (error.code === 'ENOENT') return null;
@@ -456,6 +467,8 @@ async function main() {
     ? native.httpsOptions()
     : http ? undefined : { cert: await readFile(cert), key: await readFile(key) };
   store.interrupt();
+  // Dumps, recovery records and restore reviews left by settled operations, and old release bundles.
+  if (!native) await operations.prune();
   const app = await NestFactory.create(ManagerModule, {
     logger: false,
     bodyParser: false,

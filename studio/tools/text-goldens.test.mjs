@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { compareCase, decodeBuffer, sha256 } from './render-goldens.mjs';
 import {
   SINE_TOLERANCE, SINE_PRESETS, STYLE_FIELDS, IMAGE_SIZE, TEXT_MOTION_PRESETS,
-  syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, randomRanks, bundledTitleFonts, bundledFontRecords,
+  syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, randomRanks, bundledTitleFonts, bundledFontRecords, parseDataLiteral,
   SYNTHETIC_MEASURER_TABLE, sameWithin, usesSine, referenceImage, imageTolerance, referenceRequiredHeight, referenceColour,
   layoutCases, autoHeightCases, paintCases, styleScaleCases, motionCases, slotCases, unitCases, imageCases,
   referenceLayout, referenceAutoHeight, referencePaint, referenceAnimatedStyle, referenceMotionState, referenceCoarseSlot, referenceUnits,
@@ -235,4 +235,16 @@ test('text.md is clean-room prose, cites tags X1 to X22 and names every field an
     assert(page.includes(`| \`${preset.id}\` |`), `text.md template spans of ${preset.id}`);
   }
   for (const font of goldens.fonts) assert(page.includes(`| \`${font.file}\` | \`${font.sha256}\` | \`${font.decoded.sha256}\` |`), `text.md does not name ${font.file} with its two hashes`);
+});
+
+test('the bundled-font list is read as data: literals parse, code and expressions are refused', async () => {
+  assert.deepEqual(
+    parseDataLiteral("[{ a: 'x\\'y', b: 23_664, c: null, d: true, 'e': -1.5e3 }, [\"q\", false], /* note */ 1, // tail\n]"),
+    [{ a: "x'y", b: 23_664, c: null, d: true, e: -1500 }, ['q', false], 1],
+  );
+  for (const code of ['process.exit()', '[1 + 1]', '`x`', '{ a: foo }', '[1] 2', '{ __proto__: 1 }', '[new Date()]', '(() => 1)()']) {
+    assert.throws(() => parseDataLiteral(code), SyntaxError, code);
+  }
+  const families = await bundledTitleFonts(repository);
+  assert(families.length > 0 && families.every((family) => family.files.every((entry) => Number.isInteger(entry.size))));
 });

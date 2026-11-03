@@ -78,9 +78,16 @@ describe(HelpPalette.name, () => {
     const field = screen.getByRole('combobox');
     await fireEvent.input(field, { target: { value: 'shared albums' } });
     expect(screen.getByRole('option', { name: /Sharing › Shared albums/ })).toBeInTheDocument();
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(field).toHaveAttribute('aria-expanded', 'true');
     await fireEvent.keyDown(field, { key: 'Enter' });
     await waitFor(() => expect(sdkMock.getHelpArticle).toHaveBeenCalledWith({ section: 'using', slug: 'sharing' }));
     expect(await screen.findByText('Pick people.')).toBeInTheDocument();
+    // the reader is document content, not options of the listbox the field controls
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.getByRole('region', { name: 'frameleaf_help_panel_title' })).toBeInTheDocument();
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(field).not.toHaveAttribute('aria-controls');
   });
 
   it('asks Frameleaf with the screen and shows the cited sources', async () => {
@@ -93,6 +100,7 @@ describe(HelpPalette.name, () => {
     });
     await fireEvent.click(screen.getByRole('option', { name: 'frameleaf_help_panel_starter_share' }));
     await screen.findByText('Open the album and choose Share.');
+    expect(screen.queryByRole('listbox')).toBeNull();
     expect(sdkMock.askHelp).toHaveBeenCalledWith(
       { helpAskDto: { question: 'frameleaf_help_panel_starter_share', turns: [], screen: 'photos' } },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),

@@ -59,7 +59,7 @@ import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.s
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { extractTimeZone } from 'src/utils/date.js';
+import { extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -556,7 +556,7 @@ export class AssetService extends BaseService {
             longitude: clearLocation ? undefined : (longitude ?? undefined),
             rating,
             description,
-            dateTimeOriginal,
+            dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
           },
           isUndefined,
         );
@@ -1011,6 +1011,8 @@ export class AssetService extends BaseService {
       .minus(Duration.fromObject({ days: trashedDays }))
       .toJSDate();
 
+    // an external original the library scan found missing is active with a deletion date; the scan,
+    // not this check, decides its fate, and `streamForDeletedJob` leaves it out
     for await (const assets of batched(this.assetJobRepository.streamForDeletedJob(trashedBefore))) {
       await this.jobRepository.queueAll(
         assets.map(({ id, isOffline }) => ({ name: JobName.AssetDelete, data: { id, deleteOnDisk: !isOffline } })),
@@ -1423,7 +1425,7 @@ export class AssetService extends BaseService {
     const writes = omitBy(
       {
         description,
-        dateTimeOriginal,
+        dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
         latitude: clearLocation ? undefined : (latitude ?? undefined),
         longitude: clearLocation ? undefined : (longitude ?? undefined),
