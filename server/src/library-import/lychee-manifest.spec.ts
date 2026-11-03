@@ -93,7 +93,7 @@ describe('Lychee common manifest mapping', () => {
         if (table === 'users')
           Object.assign(row, {
             password: 'excluded-password',
-            token: 'excluded-api-token',
+            token: `excluded-api-token-${row.id}`,
             remember_token: 'excluded-session-token',
           });
         if (table === 'access_permissions') {
