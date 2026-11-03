@@ -254,3 +254,19 @@ mappings and reviewed-plan owners; downgrade refuses to discard provenance. Lega
 accounts without this generic provenance keep their existing claim behavior. A
 partial restore that has already lost every record of an older account's origin
 cannot reconstruct that origin and is not qualified by this migration.
+
+The common setup Retry action recovers safe failed regeneration and eligible
+blocked dependencies only within the same verified import run. It preserves the
+owner's pause, frozen membership, completed outcomes and original payloads, and
+leaves unrelated, cancelled, unsafe, domain-operation and manual-review work alone.
+Interrupted frozen roots can resume only with intact identifiers and preservation
+flags. If history pruning erased a handler payload, setup keeps that failure for
+review in Library care; it never invents a replacement payload or recaptures a
+changed source inventory. Source migration rollback remains a separate operation.
+
+A `new_import` Manager profile is for a fresh, Manager-managed migration. Wrapping
+an already activated standalone import in that profile does not convert it into a
+managed import: missing setup authority requires review and remains held. An
+ordinary restore of an independent library uses `restored_library` without an
+import adoption grant. Missing both setup markers in a matching new-import
+profile cannot establish that a damaged managed run was originally standalone.

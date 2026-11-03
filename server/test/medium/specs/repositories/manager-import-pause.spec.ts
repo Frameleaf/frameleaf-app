@@ -2,9 +2,15 @@ import { type Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
 import { importDerivedRunId } from 'src/immich-import/derived-work.js';
+import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
+import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
+import { freezeSelection } from 'src/queue/manifest.js';
+import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
+import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { getKyselyDB } from 'test/utils.js';
 
 // Synthetic queue admission only; these rows do not qualify a source or a canonical import.
@@ -29,11 +35,19 @@ afterAll(async () => {
   await db?.destroy();
 });
 const run = async (kind: string, started: boolean) => {
-  const id = randomUUID(),
-    operationId = randomUUID(),
+  const operationId = randomUUID(),
     destinationId = randomUUID();
-  const binding = { operationId, manifestSha256: 'a'.repeat(64), planSha256: 'b'.repeat(64) };
+  const binding = {
+    operationId,
+    manifestSha256: 'a'.repeat(64),
+    planSha256: 'b'.repeat(64),
+    source: fixture.plan.source,
+  };
   const source = { source: 'synthetic-source', config: 'synthetic-config' };
+  const id =
+    kind === 'library-import-derived'
+      ? libraryImportDerivedRunId(binding)
+      : importDerivedRunId(source.source, source.config);
   const selection = {
     ...(kind === 'library-import-derived' ? { ...binding, destinationId, version: 1, prepared: true } : source),
     managerSetupRequired: true,
@@ -321,3 +335,213 @@ it('keeps the original bound operation when retry follows an identity failure', 
   ).toEqual({ run: id, operation: operationId });
   expect(await store.claim(queue, worker, 1)).toEqual([]);
 });
+
+it.each(['immich-import-derived', 'library-import-derived'])(
+  'retries safe failed %s work through the common setup action',
+  async (kind) => {
+    const worker = randomUUID();
+    await store.initialize([queue], worker);
+    await sql`UPDATE job_queue SET concurrency=1 WHERE name=${queue}`.execute(db);
+    const id = await run(kind, true);
+    await enqueue(id);
+    const [active] = await store.claim(queue, worker, 1);
+    expect(active?.runId).toBe(id);
+    await store.enqueue([
+      {
+        queue,
+        name: JobName.AssetGenerateThumbnails,
+        data: { id: randomUUID() },
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 60_000,
+        runId: id,
+        itemKey: 'blocked-child',
+        parentId: active.id,
+      },
+    ]);
+    await sql`UPDATE job SET attempt="retryBaseAttempt"+2 WHERE id=${active.id}::uuid`.execute(db);
+    expect(await store.fail(active, 'synthetic exhausted retry')).toBe(true);
+    expect(
+      (await sql<{ state: string }>`SELECT state FROM job WHERE "parentId"=${active.id}::uuid`.execute(db)).rows[0]
+        .state,
+    ).toBe('blocked');
+    const controls = [
+      { key: 'unrelated', runId: undefined, state: 'failed', safeToRetry: true, data: {} },
+      { key: 'unsafe', runId: id, state: 'failed', safeToRetry: false, data: {} },
+      { key: 'unconfirmed', runId: id, state: 'needs_attention', safeToRetry: true, data: {} },
+      { key: 'cancelled', runId: id, state: 'cancelled', safeToRetry: true, data: {} },
+      { key: 'domain', runId: id, state: 'failed', safeToRetry: true, data: { operationId: randomUUID() } },
+    ];
+    for (const control of controls) {
+      await store.enqueue([
+        {
+          queue,
+          name: JobName.AssetGenerateThumbnails,
+          data: { ...control.data, id: control.key },
+          safeToRetry: control.safeToRetry,
+          sensitive: false,
+          deadlineMs: 60_000,
+          runId: control.runId,
+          itemKey: control.key,
+        },
+      ]);
+      await sql`UPDATE job SET state=${control.state},"finishedAt"=now() WHERE data->>'id'=${control.key}`.execute(db);
+      await sql`UPDATE job_run_item i SET state=j.state FROM job j WHERE i."jobId"=j.id AND j.data->>'id'=${control.key}`.execute(
+        db,
+      );
+    }
+    await sql`UPDATE system_metadata SET value=jsonb_set(value,'{phase}','"needs-attention"'::jsonb) WHERE key=${setupKey}`.execute(
+      db,
+    );
+    const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    const setup = new FrameleafLibrarySetupService(
+      db,
+      { getAll: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      jobs,
+      { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await setup.begin(true);
+    for (const control of controls)
+      expect(
+        (await sql<{ state: string }>`SELECT state FROM job WHERE data->>'id'=${control.key}`.execute(db)).rows[0]
+          .state,
+      ).toBe(control.state);
+    const [retry] = await store.claim(queue, worker, 1);
+    expect(retry?.id).toBe(active.id);
+    expect(await store.complete(retry, [])).toBe(true);
+    const [child] = await store.claim(queue, worker, 1);
+    expect(child?.itemKey).toBe('blocked-child');
+    expect(await store.complete(child, [])).toBe(true);
+  },
+);
+
+it.each(
+  ['immich-import-derived', 'library-import-derived'].flatMap((kind) =>
+    [false, true].map((paused) => ({ kind, paused })),
+  ),
+)(
+  'recovers interrupted frozen $kind roots with retained payload and preserves paused=$paused',
+  async ({ kind, paused }) => {
+    const worker = randomUUID();
+    await store.initialize([queue], worker);
+    const id = await run(kind, true);
+    const asset = randomUUID();
+    for (const safe of [true, false])
+      await freezeSelection(
+        db,
+        {
+          queue: safe ? queue : QueueName.MetadataExtraction,
+          name: safe ? JobName.AssetGenerateThumbnails : JobName.AssetExtractMetadata,
+          data: { fixture: 'retained-original-payload' },
+          safeToRetry: safe,
+          sensitive: false,
+          deadlineMs: 60_000,
+        },
+        db.selectNoFrom(sql<string>`${asset}::text`.as('id')),
+        undefined,
+        id,
+      );
+    await sql`UPDATE job_run_item SET state='failed' WHERE "runId"=${id}::uuid`.execute(db);
+    await sql`UPDATE job_run SET "finishedAt"=now() WHERE id=${id}::uuid`.execute(db);
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ phase: 'needs-attention', paused })}::text::jsonb WHERE key=${setupKey}`.execute(
+      db,
+    );
+    const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    const setup = new FrameleafLibrarySetupService(
+      db,
+      { getAll: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      jobs,
+      { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await setup.begin(true);
+    const items = (
+      await sql<{
+        stage: string;
+        state: string;
+        selection: unknown;
+      }>`SELECT stage,state,selection FROM job_run_item WHERE "runId"=${id}::uuid ORDER BY stage`.execute(db)
+    ).rows;
+    expect(items.find((item) => item.stage === JobName.AssetGenerateThumbnails)).toMatchObject({
+      state: 'pending',
+      selection: { fixture: 'retained-original-payload', id: asset },
+    });
+    expect(items.find((item) => item.stage === JobName.AssetExtractMetadata)?.state).toBe('failed');
+    expect(
+      (await sql<{ done: boolean }>`SELECT "enumerationDone" AS done FROM job_run WHERE id=${id}::uuid`.execute(db))
+        .rows[0].done,
+    ).toBe(true);
+    await store.feedManifest(queue);
+    const claims = await store.claim(queue, worker, 1);
+    if (paused) expect(claims).toEqual([]);
+    else {
+      expect(claims[0]?.data).toEqual({ fixture: 'retained-original-payload', id: asset });
+      expect(await store.complete(claims[0], [])).toBe(true);
+    }
+  },
+);
+
+it.each(['immich-import-derived', 'library-import-derived'])(
+  'keeps $0 work restricted after actual pruning erased its payload',
+  async (kind) => {
+    const worker = randomUUID();
+    await store.initialize([queue], worker);
+    const id = await run(kind, true);
+    await freezeSelection(
+      db,
+      {
+        queue,
+        name: JobName.AssetGenerateThumbnails,
+        data: {},
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 60_000,
+      },
+      db.selectNoFrom(sql<string>`${randomUUID()}::text`.as('id')),
+      undefined,
+      id,
+    );
+    await store.feedManifest(queue);
+    const [active] = await store.claim(queue, worker, 1);
+    expect(active?.runId).toBe(id);
+    await sql`UPDATE job SET attempt="retryBaseAttempt"+2 WHERE id=${active.id}::uuid`.execute(db);
+    expect(await store.fail(active, 'synthetic exhausted retry')).toBe(true);
+    await recordStoppedAttempt(db, active.id, active.token);
+    await sql`UPDATE job SET "finishedAt"=now()-interval '40 days' WHERE id=${active.id}::uuid`.execute(db);
+    expect(await pruneQueueHistory(db)).toBe(1);
+    expect(
+      (await sql`SELECT selection,"jobId",state FROM job_run_item WHERE "runId"=${id}::uuid`.execute(db)).rows,
+    ).toEqual([{ selection: {}, jobId: null, state: 'failed' }]);
+    await sql`UPDATE system_metadata SET value=jsonb_set(value,'{phase}','"needs-attention"'::jsonb) WHERE key=${setupKey}`.execute(
+      db,
+    );
+    const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    const setup = new FrameleafLibrarySetupService(
+      db,
+      { getAll: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+      jobs,
+      { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await setup.begin(true);
+    expect(
+      (await sql<{ state: string }>`SELECT state FROM job_run_item WHERE "runId"=${id}::uuid`.execute(db)).rows[0]
+        .state,
+    ).toBe('failed');
+    await store.feedManifest(queue);
+    expect(await store.claim(queue, worker, 1)).toEqual([]);
+  },
+);
