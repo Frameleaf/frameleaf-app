@@ -358,10 +358,16 @@ export class FrameleafLibrarySetupService {
           count(*) FILTER (WHERE state IN ('completed','failed','needs_attention','cancelled'))::int AS done
           FROM job_run_item WHERE "runId"=${run.id}::uuid GROUP BY stage`.execute(this.db)
       : { rows: [] };
-    const sum = (names: string[]) =>
-      stages
-        .filter((row) => names.includes(row.stage))
-        .reduce((all, row) => ({ total: all.total + row.total, done: all.done + row.done }), { total: 0, done: 0 });
+    const sum = (names: string[]) => {
+      const part = { total: 0, done: 0 };
+      for (const row of stages) {
+        if (names.includes(row.stage)) {
+          part.total += row.total;
+          part.done += row.done;
+        }
+      }
+      return part;
+    };
     const healthIds = Object.values(state.health);
     const {
       rows: [check],
