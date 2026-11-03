@@ -72,6 +72,7 @@ const ADMIN_ROUTES = new Set([
   'GET queues/:name/jobs',
   'GET queues/:name/statistics',
   'GET server/library-setup/manager-access',
+  'GET server/library-setup/progress',
   'GET server/statistics',
   'GET system-config',
   'GET system-config/config-file/activation',
@@ -108,6 +109,7 @@ const ADMIN_ROUTES = new Set([
   'PUT jobs/:name',
   'PUT libraries/:id',
   'PUT queues/:name',
+  'PUT server/library-setup/progress',
   'PUT system-config',
   'PUT system-metadata/frameleaf-setup',
 ]);

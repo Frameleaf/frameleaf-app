@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
+import { locale } from '$lib/stores/preferences.store';
 import en from '../../../../../i18n/en.json';
 
 const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true } }));
@@ -30,11 +31,13 @@ beforeAll(() => {
   HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
     this.open = true;
   };
-  vi.stubGlobal('matchMedia', () => ({ matches: true }));
+  // Reduced motion, so the completion window draws no confetti.
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
 });
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  locale.set('en-US');
   auth.user.isAdmin = true;
 });
 
@@ -50,6 +53,23 @@ describe('SetupBar', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
     expect(screen.getByText('Starts by itself when the file check is finished.')).toBeInTheDocument();
+  });
+
+  it('formats progress using the chosen number locale', async () => {
+    locale.set('de-DE');
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    render(SetupBar);
+    expect(await screen.findByText(/Checking original files · 312\.640 of 823\.034/)).toBeInTheDocument();
+  });
+
+  it('formats completion counts using the chosen number locale', async () => {
+    locale.set('de-DE');
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(
+      progress({ phase: Phase.Complete, completedAt: '2026-11-03T10:00:00.000Z' }),
+    );
+    render(SetupBar);
+    expect(await screen.findByText('Your library is ready')).toBeInTheDocument();
+    expect(screen.getByText('1.286')).toBeInTheDocument();
   });
 
   it('pauses and resumes setup', async () => {

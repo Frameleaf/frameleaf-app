@@ -19,9 +19,9 @@
    * and smart search and faces wait for the check. When everything has finished, the completion window opens once.
    */
   import { clickOutside } from '$lib/actions/click-outside';
-  import SetupComplete from '$lib/components/frameleaf/SetupComplete.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { locale } from '$lib/stores/preferences.store';
   import {
     beginLibrarySetup,
     getLibrarySetupProgress,
@@ -220,8 +220,8 @@
           {$t('setup_bar_progress', {
             values: {
               stage: stageTitle(current.id),
-              done: current.done.toLocaleString(),
-              total: current.total.toLocaleString(),
+              done: current.done.toLocaleString($locale),
+              total: current.total.toLocaleString($locale),
             },
           })}
         {:else}
@@ -282,7 +282,9 @@
                 <strong>{$t('setup_bar_stage_import')}</strong>
                 <span>{$t('setup_bar_status_done')}</span>
               </div>
-              <p>{$t('setup_bar_stage_import_detail', { values: { count: progress.items.toLocaleString() } })}</p>
+              <p>
+                {$t('setup_bar_stage_import_detail', { values: { count: progress.items.toLocaleString($locale) } })}
+              </p>
             </div>
           </li>
           {#each progress.stages as stage (stage.id)}
@@ -328,7 +330,10 @@
 {/if}
 
 {#if celebrating && progress}
-  <SetupComplete {progress} onClose={closeCelebration} />
+  <!-- Loaded only when it opens: it shows once per library. -->
+  {#await import('$lib/components/frameleaf/SetupComplete.svelte') then { default: SetupComplete }}
+    <SetupComplete {progress} onClose={closeCelebration} />
+  {/await}
 {/if}
 
 <style>
@@ -416,14 +421,14 @@
     flex-shrink: 0;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    margin-inline-start: auto;
   }
 
   /* Details: a panel under the bar, aligned with its right gutter. */
   .fl-setup-bar-panel {
     position: absolute;
     top: calc(100% + 8px);
-    right: 24px;
+    inset-inline-end: 24px;
     width: min(440px, calc(100vw - 32px));
     padding: 20px;
     border: 1px solid var(--fl-border);
@@ -511,14 +516,13 @@
     }
     .fl-setup-bar-progress:not(.is-stage) {
       position: absolute;
-      right: 0;
+      inset-inline: 0;
       bottom: -1px;
-      left: 0;
       height: 3px;
       border-radius: 0;
     }
     .fl-setup-bar-panel {
-      right: 16px;
+      inset-inline-end: 16px;
     }
     .fl-setup-bar-panel footer {
       flex-wrap: wrap;
