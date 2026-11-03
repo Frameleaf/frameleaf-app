@@ -63,6 +63,7 @@ export async function transferImportedWork(
       selection: {
         source: string;
         config: string;
+        managerSetupRequired?: unknown;
         managerSetup?: {
           installation: string;
           operationId: string;
@@ -81,6 +82,8 @@ export async function transferImportedWork(
       throw new ImportRefused('DERIVED_RUN_IDENTITY_MISMATCH');
     }
     const setup = existing?.selection?.managerSetup;
+    if (existing?.selection?.managerSetupRequired !== undefined && existing.selection.managerSetupRequired !== true)
+      throw new ImportRefused('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
     if (
       existing &&
       (managed
@@ -106,6 +109,7 @@ export async function transferImportedWork(
         source: journal.source_fingerprint,
         config: journal.config_fingerprint,
         ...(managed && {
+          managerSetupRequired: true,
           managerSetup: {
             installation: authority.installation,
             operationId: authority.operationId,
@@ -117,6 +121,10 @@ export async function transferImportedWork(
       await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${IMPORT_DERIVED_RUN_KIND},
         ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
     }
+    if (managed && existing && existing.selection?.managerSetupRequired === undefined)
+      await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb where id=${id}::uuid`.execute(
+        tx,
+      );
     return id;
   });
 
