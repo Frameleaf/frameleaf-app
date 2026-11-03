@@ -1935,14 +1935,18 @@ test("canonical TypeScript SDK generation has no workflow or mise raw bypass", (
   assert.doesNotMatch(mise, /oazapfts\s+--/u);
 });
 
-test("action upgrades preserve later mise authentication and the existing uv cache policy", () => {
+test("action upgrades preserve scoped mise authentication and the existing uv cache policy", () => {
   for (const file of readdirSync(path.join(root, ".github/workflows")).filter(
     (file) => /\.ya?ml$/.test(file),
   )) {
     for (const job of Object.values(workflow(file).jobs)) {
       for (const step of job.steps ?? []) {
         if (step.uses?.startsWith("jdx/mise-action@")) {
-          assert.equal(step.with.persist_github_token, true, file);
+          assert.equal(
+            step.with.persist_github_token,
+            file !== "library-import-qualification.yml",
+            file,
+          );
         }
       }
     }
