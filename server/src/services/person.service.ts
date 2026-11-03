@@ -80,6 +80,7 @@ import {
   matchAnchoredFaces,
   sameChecksum,
 } from 'src/utils/face-anchor.js';
+import { assignFaceCandidates } from 'src/utils/face-assignment.js';
 import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import {
@@ -1084,17 +1085,29 @@ export class PersonService extends BaseService {
         }
       }
 
-      const heightScale = imageHeight / (currentAsset.faces[0]?.imageHeight || 1);
-      const widthScale = imageWidth / (currentAsset.faces[0]?.imageWidth || 1);
-      for (const { boundingBox, embedding } of faces) {
-        const scaledBox = {
-          x1: boundingBox.x1 * widthScale,
-          y1: boundingBox.y1 * heightScale,
-          x2: boundingBox.x2 * widthScale,
-          y2: boundingBox.y2 * heightScale,
-        };
-        const match = currentAsset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
-
+      const retainedFaces = new Map(currentAsset.faces.map((face) => [face.id, face]));
+      const assignments = assignFaceCandidates(
+        faces.map(({ boundingBox }) =>
+          currentAsset.faces
+            .map((face) => {
+              const widthScale = face.imageWidth / imageWidth;
+              const heightScale = face.imageHeight / imageHeight;
+              return {
+                faceId: face.id,
+                overlap: this.iou(face, {
+                  x1: boundingBox.x1 * widthScale,
+                  y1: boundingBox.y1 * heightScale,
+                  x2: boundingBox.x2 * widthScale,
+                  y2: boundingBox.y2 * heightScale,
+                }),
+              };
+            })
+            .filter(({ overlap }) => overlap > 0.5),
+        ),
+      );
+      for (const [index, { boundingBox, embedding }] of faces.entries()) {
+        const matchId = assignments.get(index);
+        const match = matchId === undefined ? undefined : retainedFaces.get(matchId);
         if (match) {
           // Keep the face identity and owner decisions while refreshing derived search data.
           // Imported ML faces can have no face_search row even though detection still matches them.
