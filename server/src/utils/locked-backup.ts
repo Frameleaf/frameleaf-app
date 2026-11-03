@@ -1,4 +1,4 @@
-import { type LockedKeyFile, isLockedFile, keyId, readHeader } from '@frameleaf/locked-crypto';
+import { type LockedKeyFile, isKeyFileFormat, isLockedFile, keyId, readHeader } from '@frameleaf/locked-crypto';
 import fs from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import type { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
@@ -172,11 +172,11 @@ export async function isEncryptedWithOlderKey(path: string, liveKeyIds: Readonly
   return owner !== null && !liveKeyIds.has(owner);
 }
 
-/** A version-1 key file for this person at `path`; null when it is missing, unreadable or someone else's. */
+/** A key file (format 1 or 2) for this person at `path`; null when it is missing, unreadable or someone else's. */
 export async function readLockedKeyFile(path: string, userId: string): Promise<LockedKeyFile | null> {
   try {
     const file = JSON.parse(await fs.readFile(path, 'utf8')) as Partial<LockedKeyFile> | null;
-    return file?.format === 'frameleaf-locked-key/1' && file.userId === userId && typeof file.publicKey === 'string'
+    return file && isKeyFileFormat(file.format) && file.userId === userId && typeof file.publicKey === 'string'
       ? (file as LockedKeyFile)
       : null;
   } catch {

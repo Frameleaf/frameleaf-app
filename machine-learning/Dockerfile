@@ -201,6 +201,11 @@ ENV TRANSFORMERS_CACHE=/cache \
     FRAMELEAF_STUDIO_WORKER_ENTRY=/opt/frameleaf-studio/studio/tools/bundled-worker.mjs \
     FRAMELEAF_STUDIO_CHROMIUM=/usr/local/bin/frameleaf-studio-browser \
     FREECUT_CHROME_ARGS=--no-sandbox
+# Chromium's own sandbox needs unprivileged user namespaces, which Docker's default seccomp profile
+# refuses, so the engine's browser runs without it. The worker itself runs unprivileged (below) and
+# gets none of the service's credentials (frameleaf_ml/studio_worker.py). A deployment with a
+# seccomp profile that allows user namespaces (or --security-opt seccomp=unconfined) can set
+# FREECUT_CHROME_ARGS= (empty) to keep the sandbox.
 
 # The GPU runtimes' JIT caches live beside the models, so a recreated container keeps what they compiled.
 ENV CUDA_CACHE_PATH=/cache/jit/cuda \
@@ -242,7 +247,16 @@ LABEL org.opencontainers.image.source="https://github.com/${BUILD_SOURCE_REPOSIT
 # store huggingface in /cache subfolder to enable rootless deployment with a single volume
 ENV HF_HOME=/cache/hf-cache
 
-ENTRYPOINT ["tini", "--"]
+# The service, the Studio worker and its browser run as this user. The entrypoint drops to it when the
+# container starts as root, after making the cache volume its own (scripts/entrypoint.sh); `user:` in
+# Compose (rootless) is honoured as it is. /cache is created owned by the user so a new named volume
+# inherits that ownership.
+RUN groupadd --gid 10001 frameleaf && \
+    useradd --uid 10001 --gid 10001 --create-home --home-dir /home/frameleaf --shell /usr/sbin/nologin frameleaf && \
+    mkdir -p /cache && chown frameleaf:frameleaf /cache
+COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/frameleaf-ml-entrypoint
+
+ENTRYPOINT ["tini", "--", "frameleaf-ml-entrypoint"]
 CMD ["python", "-m", "frameleaf_ml"]
 
 HEALTHCHECK CMD python3 healthcheck.py

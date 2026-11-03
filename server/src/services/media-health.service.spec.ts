@@ -36,6 +36,13 @@ import { ServiceMocks, getMocks } from 'test/utils.js';
 
 /** A non-administrator in an unlocked (PIN-elevated) session. */
 const elevatedOwner = { ...authStub.user1, session: { id: 'token-id-elevated', hasElevatedPermission: true } } as never;
+/** A regular file's stat as a recovery expects it: written long enough ago to be complete. */
+const settledStat = ({ size, mtime = new Date(Date.now() - 60 * 60_000) }: { size: number; mtime?: Date }) => ({
+  size,
+  mtime,
+  mtimeMs: mtime.getTime(),
+  isFile: () => true,
+});
 
 describe(MediaHealthService.name, () => {
   let sut: MediaHealthService;
@@ -123,7 +130,8 @@ describe(MediaHealthService.name, () => {
     vi.mocked(mediaHealthRepository.count).mockResolvedValue(0);
     vi.mocked(mocks.user.getList).mockResolvedValue([]);
     vi.mocked(mocks.library.getAll).mockResolvedValue([]);
-    vi.mocked(mocks.storage.stat).mockResolvedValue({ size: 10, mtime: new Date() } as never);
+    // a regular file that settled long ago; a recovery never touches a file still being written
+    vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 10 }) as never);
     vi.mocked(mocks.storage.walkWithCursor).mockImplementation(async function* (cursor) {
       for await (const batch of mocks.storage.walk({
         pathsToCrawl: cursor.map(({ path }) => path),
@@ -1746,7 +1754,9 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1, sha256, sizeInBytes: 10 });
       vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([]);
       vi.mocked(mocks.forkSchema.hasAssetChecksum).mockResolvedValue(false);
-      vi.mocked(mocks.storage.stat).mockResolvedValue({ mtime: new Date('2026-09-04T00:00:00Z') } as never);
+      vi.mocked(mocks.storage.stat).mockResolvedValue(
+        settledStat({ size: 10, mtime: new Date('2026-09-04T00:00:00Z') }) as never,
+      );
       vi.mocked(mocks.asset.create).mockResolvedValue({ id: 'restored-asset' } as never);
 
       await expect(
@@ -1760,6 +1770,7 @@ describe(MediaHealthService.name, () => {
           originalPath: '/data/library/owner/restored.jpg',
           checksum: sha256,
           checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          fileCreatedAt: new Date('2026-09-04T00:00:00Z'),
         }),
       );
       expect(mocks.forkSchema.recordAssetChecksums).toHaveBeenCalledWith(
@@ -1770,6 +1781,84 @@ describe(MediaHealthService.name, () => {
         data: { id: 'restored-asset', source: 'upload' },
       });
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+    });
+
+    const untrackedUpload = (file = '/data/upload/user-1/ab/cd/in-flight.mp4') => {
+      vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
+        // eslint-disable-next-line require-yield
+        (async function* () {
+          await Promise.resolve();
+        })() as never,
+      );
+      vi.mocked(mocks.user.get).mockResolvedValue({
+        id: 'user-1',
+        storageLabel: null,
+        quotaSizeInBytes: null,
+        quotaUsageInBytes: 0,
+      } as never);
+      vi.mocked(mocks.storage.walk).mockReturnValue(
+        (async function* () {
+          await Promise.resolve();
+          yield [file];
+        })() as never,
+      );
+      vi.mocked(mediaHealthRepository.getTrackedPaths).mockResolvedValue(new Set());
+      vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({
+        sha1: Buffer.alloc(20, 1),
+        sha256: Buffer.alloc(32, 2),
+        sizeInBytes: 10,
+      });
+      vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([]);
+      vi.mocked(mocks.forkSchema.hasAssetChecksum).mockResolvedValue(false);
+      vi.mocked(mocks.asset.create).mockResolvedValue({ id: 'restored-asset' } as never);
+    };
+
+    // an upload streams straight into its final path; a scan that passes by meanwhile must not adopt it
+    it('leaves an untracked file written moments ago alone, without reading it', async () => {
+      untrackedUpload();
+      vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 10, mtime: new Date() }) as never);
+
+      await sut.handleMissingScan({ missingRunId: 'missing-run', corruptRunId: 'corrupt-run', userId: 'user-1' });
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves an untracked file that changed while it was read alone', async () => {
+      untrackedUpload();
+      const before = settledStat({ size: 10 });
+      vi.mocked(mocks.storage.stat)
+        .mockResolvedValueOnce(before as never)
+        .mockResolvedValueOnce(before as never)
+        .mockResolvedValueOnce({ ...before, size: 11, mtimeMs: before.mtimeMs + 1 } as never);
+
+      await sut.handleMissingScan({ missingRunId: 'missing-run', corruptRunId: 'corrupt-run', userId: 'user-1' });
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves an untracked entry that is not a regular file alone', async () => {
+      untrackedUpload();
+      vi.mocked(mocks.storage.stat).mockResolvedValue({ ...settledStat({ size: 10 }), isFile: () => false } as never);
+
+      await sut.handleMissingScan({ missingRunId: 'missing-run', corruptRunId: 'corrupt-run', userId: 'user-1' });
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('restores an untracked file that settled, keeping its identity across the read', async () => {
+      untrackedUpload();
+
+      await expect(
+        sut.handleMissingScan({ missingRunId: 'missing-run', corruptRunId: 'corrupt-run', userId: 'user-1' }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.storage.stat).toHaveBeenCalledTimes(3);
+      expect(mocks.asset.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalPath: '/data/upload/user-1/ab/cd/in-flight.mp4' }),
+      );
     });
 
     it('does not restore an untracked path when either digest already belongs to the user', async () => {

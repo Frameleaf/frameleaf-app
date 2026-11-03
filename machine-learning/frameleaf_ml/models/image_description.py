@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 import unicodedata
 from collections.abc import Callable, Iterable
 from functools import cache
@@ -21,6 +22,7 @@ from PIL import Image
 from frameleaf_ml.config import HUGGING_FACE_HOST, log, model_repository_url, model_source, model_source_token, settings
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.florence_manifest import florence_manifest, verify_florence_snapshot
+from frameleaf_ml.models.hub_trust import check_repository_trust
 from frameleaf_ml.schemas import ImageDescriptionAcceleration, ModelTask, ModelType
 
 # KEEP IN SYNC WITH: server/src/services/prompt-assembler.service.ts (JSON_SCHEMA_BLOCK)
@@ -102,6 +104,27 @@ OPENVINO_MODEL_ALIASES = {
     "Qwen/Qwen2.5-VL-7B-Instruct": "llmware/qwen2.5-vl-7b-ov",
 }
 OPENVINO_GENAI_MISSING = "openvino-genai is required for image description models"
+# Hub owners whose repositories this task downloads without further consent: the curated families
+# above. Any other repository must be listed in TRUSTED_CUSTOM_MODELS_SETTING (models/hub_trust.py).
+TRUSTED_MODEL_OWNERS = frozenset({"microsoft", "Qwen", "OpenVINO", "llmware"})
+TRUSTED_CUSTOM_MODELS_SETTING = "MACHINE_LEARNING_IMAGE_DESCRIPTION__TRUSTED_CUSTOM_MODELS"
+# The files the loaders read: configs, tokenizers and chat templates, safetensors weights for
+# transformers, OpenVINO IR for GenAI. Nothing else in a repository is fetched; in particular no
+# pickled weights. Explicitly trusted custom Florence repositories also need their Python.
+MODEL_FILE_PATTERNS = [
+    "*.json",
+    "*.txt",
+    "*.model",
+    "*.jinja",
+    "*.tiktoken",
+    "*.safetensors",
+    "*.xml",
+    "openvino_*.bin",
+]
+# After an OpenVINO dimension failure the instance runs on the CPU; this long after, its cache entry
+# is dropped so a request loads it on the configured device again (observability and recovery
+# without reloading a multi-gigabyte model on every request).
+FALLBACK_RELOAD_S = 300.0
 
 
 @cache
@@ -390,9 +413,16 @@ class ImageDescriptionModel(InferenceModel):
         if reason := self.missing_runtime():
             raise ModelRuntimeUnavailable(reason)
         self._check_custom_florence_trust()
+        check_repository_trust(
+            self.hf_model_name,
+            owners=TRUSTED_MODEL_OWNERS,
+            trusted=settings.image_description.trusted_custom_models,
+            setting=TRUSTED_CUSTOM_MODELS_SETTING,
+        )
         endpoint = model_repository_url()
         snapshot_download(
             self.hf_model_name,
+            allow_patterns=MODEL_FILE_PATTERNS + (["*.py"] if self._is_florence_model() else []),
             cache_dir=self.cache_dir,
             local_dir=self.cache_dir,
             endpoint=endpoint,
@@ -434,13 +464,11 @@ class ImageDescriptionModel(InferenceModel):
                     )
                     self.session = self._load_openvino("CPU")
                     self.device = "CPU"
-                    # NOTE: the ModelCache key is computed at request time from
-                    # the requested kwargs (see models/cache.py), so a future
-                    # request with device='GPU' will still find this instance —
-                    # which is now CPU-bound. The log line above is the only
-                    # observable signal. Operators who want to force a GPU
-                    # reload after a fallback should set MACHINE_LEARNING_MODEL_TTL
-                    # to a small value, or restart the container.
+                    # The ModelCache key still names the configured device while this instance runs
+                    # on the CPU. The cache drops the entry once this passes (models/cache.py), so a
+                    # later request loads the model on the configured device again; until then the
+                    # answers report the CPU as their device.
+                    self.evict_at = time.monotonic() + FALLBACK_RELOAD_S
             result = self._generate_openvino(prompt, images)
 
         text = self._result_text(result)
@@ -513,6 +541,8 @@ class ImageDescriptionModel(InferenceModel):
             model = AutoModelForImageTextToText.from_pretrained(
                 str(self.cache_dir),
                 torch_dtype="auto",
+                # Only safetensors are downloaded; never fall back to pickled weights left in a cache.
+                use_safetensors=True,
                 local_files_only=True,
             )
 

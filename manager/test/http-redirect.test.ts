@@ -52,6 +52,71 @@ test('plain HTTP on the Manager port redirects to HTTPS on the same host and por
     });
     assert.match(raw, /^HTTP\/1\.1 400 /);
     assert.doesNotMatch(raw, /Location/i);
+    // Review L10: the Host line may arrive in a later TCP segment than the request line.
+    const exchange = (segments: string[], gapMs = 30) =>
+      new Promise<string>((resolve, reject) => {
+        let reply = '';
+        const socket = connect(port, '127.0.0.1', async () => {
+          for (const segment of segments) {
+            socket.write(segment);
+            await new Promise((pause) => setTimeout(pause, gapMs));
+          }
+        });
+        socket.on('data', (chunk) => (reply += chunk));
+        socket.on('end', () => resolve(reply));
+        socket.on('error', reject);
+      });
+    const slow = await exchange(['GET / HTTP/1.1\r\n', `Host: 192.168.1.20:${port}\r\nUser-Agent: slow\r\n`, '\r\n']);
+    assert.match(slow, /^HTTP\/1\.1 308 /);
+    assert.match(slow, new RegExp(`Location: https://192\\.168\\.1\\.20:${port}/`));
+    const bare = await exchange(['GET / HTTP/1.1\n', 'Host: tower.local\n\n']);
+    assert.match(bare, /Location: https:\/\/tower\.local\//);
+    // A head that never ends is answered once 8 KiB have arrived, not held forever.
+    const oversized = await exchange(['GET / HTTP/1.1\r\n', `X-Padding: ${'a'.repeat(9000)}\r\n`]);
+    assert.match(oversized, /^HTTP\/1\.1 400 /);
+    // A Host line after the blank line belongs to the body, not the head.
+    const body = await exchange(['GET / HTTP/1.1\r\nContent-Length: 20\r\n\r\n', 'Host: evil.test\r\n']);
+    assert.match(body, /^HTTP\/1\.1 400 /);
+  } finally {
+    front.close();
+    https.close();
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('a request head that trickles in is dropped at an absolute deadline, not only on inactivity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-redirect-deadline-'));
+  const key = join(directory, 'tls.key'),
+    cert = join(directory, 'tls.crt');
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost', '-keyout', key, '-out', cert], { stdio: 'ignore' });
+  const https = createHttps({ key: await readFile(key), cert: await readFile(cert) }, (_request, response) => {
+    response.end('manager');
+  });
+  const front = sharePortWithRedirect(https, 400);
+  await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
+  const { port } = front.address() as AddressInfo;
+  try {
+    // One byte every 100 ms keeps the 10 s inactivity timeout happy forever; the deadline still closes it.
+    const started = Date.now();
+    const outcome = await new Promise<{ reply: string; elapsed: number }>((resolve, reject) => {
+      let reply = '';
+      const socket = connect(port, '127.0.0.1');
+      const drip = setInterval(() => socket.write('G'), 100);
+      socket.on('data', (chunk) => (reply += chunk));
+      socket.on('close', () => (clearInterval(drip), resolve({ reply, elapsed: Date.now() - started })));
+      socket.on('error', () => {}); // EPIPE/ECONNRESET after the server drops it is the expected end
+      socket.on('timeout', reject);
+    });
+    assert.equal(outcome.reply, '', 'no response is written for an incomplete head');
+    assert.ok(outcome.elapsed >= 350 && outcome.elapsed < 5_000, `closed after ${outcome.elapsed} ms`);
+    // A head that completes within the deadline is still answered, and the deadline does not outlive it.
+    const prompt = await get(httpRequest, port, `tower.local:${port}`);
+    assert.equal(prompt.status, 308);
+    // TLS connections are handed off and keep working past the plain-HTTP deadline.
+    const secure = await get(httpsRequest, port, `tower.local:${port}`);
+    assert.equal(secure.status, 200);
+    await new Promise((pause) => setTimeout(pause, 500));
+    assert.equal((await get(httpsRequest, port, `tower.local:${port}`)).body, 'manager');
   } finally {
     front.close();
     https.close();
