@@ -42,7 +42,7 @@ const cases = [
   })),
 ];
 it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch, outcome }) => {
-  const db = await getKyselyDB(`manager_setup_${kind}_${(mismatch || outcome).replaceAll('-', '_') || 'valid'}`);
+  const db = await getKyselyDB();
   const previous = {
     FRAMELEAF_MANAGER_INSTALLATION: process.env.FRAMELEAF_MANAGER_INSTALLATION,
     FRAMELEAF_MANAGER_ORIGIN: process.env.FRAMELEAF_MANAGER_ORIGIN,
