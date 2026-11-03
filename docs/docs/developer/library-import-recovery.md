@@ -233,6 +233,8 @@ The common setup Retry action recovers safe failed regeneration and eligible
 blocked dependencies only within the same verified import run. It preserves the
 owner's pause, frozen membership, completed outcomes and original payloads, and
 leaves unrelated, cancelled, unsafe, domain-operation and manual-review work alone.
+Unexpected selection producers require manual review: imports retain a frozen
+cohort, and generic producer retry would reopen enumeration and hold its own work.
 Interrupted frozen roots can resume only with intact identifiers and preservation
 flags. If history pruning erased a handler payload, setup keeps that failure for
 review in Library care; it never invents a replacement payload or recaptures a
