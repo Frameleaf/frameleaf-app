@@ -72,22 +72,21 @@ describe('SQLite source snapshots', () => {
 });
 
 describe('SQLite source text admission', () => {
-  it.each(['UTF-8', 'UTF-16le', 'UTF-16be'])('checks complete text in %s before native conversion', (encoding) => {
+  it.each([
+    ["PRAGMA encoding='UTF-8'", '610070726976617465'],
+    ["PRAGMA encoding='UTF-16le'", '610000007000720069007600610074006500'],
+    ["PRAGMA encoding='UTF-16be'", '006100000070007200690076006100740065'],
+  ])('checks complete text under %s before native conversion', (encodingSql, expectedHex) => {
     const db = new DatabaseSync(':memory:');
     try {
-      db.exec(`PRAGMA encoding='${encoding}'; CREATE TABLE records(id INTEGER,caption TEXT,bytes BLOB)`);
+      db.exec(encodingSql);
+      db.exec('CREATE TABLE records(id INTEGER,caption TEXT,bytes BLOB)');
       db.prepare('INSERT INTO records VALUES(?,?,?)').run(1, 'Café 東京', new Uint8Array([0, 1]));
-      db.prepare('INSERT INTO records VALUES(?,?,?)').run(2, 'a\u0000private', null);
+      db.prepare('INSERT INTO records VALUES(?,?,?)').run(2, 'a\0private', null);
       const query = 'SELECT caption AS "edited""caption",id,bytes,NULL AS absent FROM records WHERE id=?';
       expect(() => assertSqliteTextSafe(db, query, [1])).not.toThrow();
       expect(() => assertSqliteTextSafe(db, query, [2])).toThrow(/^SQLite source refused: SQLITE_TEXT_UNQUALIFIED$/);
-      expect(db.prepare('SELECT hex(caption) AS bytes FROM records WHERE id=2').get()?.bytes).toBe(
-        encoding === 'UTF-8'
-          ? '610070726976617465'
-          : encoding === 'UTF-16le'
-            ? '610000007000720069007600610074006500'
-            : '006100000070007200690076006100740065',
-      );
+      expect(db.prepare('SELECT hex(caption) AS bytes FROM records WHERE id=2').get()?.bytes).toBe(expectedHex);
     } finally {
       db.close();
     }
