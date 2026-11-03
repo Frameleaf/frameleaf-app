@@ -4,10 +4,10 @@ import type { Pigallery2Row, Pigallery2Table, openPigallery2Snapshot } from 'src
 import mysqlFixture from 'src/library-import/fixtures/pigallery2/3.5.2-mysql84.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
 import {
+  type ImportManifest,
   importFilePathSchema,
   importFileSchema,
   importTimestampSchema,
-  type ImportManifest,
   parseImportManifest,
 } from 'src/library-import/manifest.js';
 import { resolvePigallery2File } from 'src/library-import/pigallery2-files.js';
@@ -121,7 +121,7 @@ export function readPigallery2Manifest(
       const parent: Pigallery2Row['parentId'] = row.parentId;
       current = parent === null ? undefined : key(parent);
     }
-    for (const child of chain.reverse()) {
+    for (const child of chain.toReversed()) {
       const row = directories.get(child)!;
       // Separately indexed subfolders can have no parent link; their stored path remains authoritative.
       if (row.parentId === null) {
