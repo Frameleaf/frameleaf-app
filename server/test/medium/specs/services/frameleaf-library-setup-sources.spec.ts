@@ -358,28 +358,28 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
         }
         case 'scans-pause':
         case 'pause-rollback': {
-          const createScan = (status: MediaOperationStatus) =>
+          const createScan = () =>
             operations.create({
               ownerId,
               kind: MediaOperationKind.LibraryScan,
-              status,
               destination: MediaOperationDestination.Local,
               label: 'Synthetic library scan',
               snapshot: {},
               settings: {},
-              ...(status === MediaOperationStatus.Rendering && {
-                claimToken: randomUUID(),
-                claimedBy: 'synthetic-worker',
-                claimExpiresAt: new Date(Date.now() + 60_000),
-              }),
             });
-          const queued = (await createScan(MediaOperationStatus.Queued)).id;
-          const running = (await createScan(MediaOperationStatus.Rendering)).id;
+          const running = (await createScan()).id;
+          const claim = await operations.claimNext({
+            kinds: [MediaOperationKind.LibraryScan],
+            workerId: 'synthetic-worker',
+            leaseMs: 60_000,
+          });
+          expect(claim?.operation.id).toBe(running);
+          expect(claim?.operation.status).toBe(MediaOperationStatus.Preparing);
+          const queued = (await createScan()).id;
           const health = (
             await operations.create({
               ownerId,
               kind: MediaOperationKind.MediaHealth,
-              status: MediaOperationStatus.Queued,
               destination: MediaOperationDestination.Local,
               label: 'Synthetic original check',
               snapshot: {},
@@ -405,9 +405,9 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             expect((await make().progress()).paused).toBe(false);
             expect(
               (
-                await sql`SELECT selection #> '{managerSetup,paused}' AS paused FROM job_run WHERE id=${id}::uuid`.execute(
-                  db,
-                )
+                await sql<{
+                  paused: boolean | null;
+                }>`SELECT selection #> '{managerSetup,paused}' AS paused FROM job_run WHERE id=${id}::uuid`.execute(db)
               ).rows[0].paused,
             ).toBe(false);
           } else {
@@ -421,11 +421,17 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
             );
             notified.mockClear();
             expect(
-              (await sql`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)).rows[0].status,
+              (
+                await sql<{
+                  status: MediaOperationStatus;
+                }>`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)
+              ).rows[0].status,
             ).toBe(MediaOperationStatus.Paused);
             expect(
               (
-                await sql`SELECT "pauseRequestedAt" IS NOT NULL AS paused FROM media_operation WHERE id=${running}::uuid`.execute(
+                await sql<{
+                  paused: boolean;
+                }>`SELECT "pauseRequestedAt" IS NOT NULL AS paused FROM media_operation WHERE id=${running}::uuid`.execute(
                   db,
                 )
               ).rows[0].paused,
@@ -439,7 +445,11 @@ it.each(cases)('shared setup: $kind $mismatch $outcome', async ({ kind, mismatch
               ]),
             );
             expect(
-              (await sql`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)).rows[0].status,
+              (
+                await sql<{
+                  status: MediaOperationStatus;
+                }>`SELECT status FROM media_operation WHERE id=${queued}::uuid`.execute(db)
+              ).rows[0].status,
             ).toBe(MediaOperationStatus.Queued);
           }
           unsubscribe();

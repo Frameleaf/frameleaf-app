@@ -50,9 +50,10 @@ it.each(['immich-import-derived', 'library-import-derived'])(
     await enqueue(id, 502);
     const [active] = await store.claim(queue, worker, 1);
     expect(active.runId).toBe(id);
-    expect((await sql`SELECT count(*)::int AS count FROM job WHERE state='waiting'`.execute(db)).rows[0].count).toBe(
-      501,
-    );
+    expect(
+      (await sql<{ count: number }>`SELECT count(*)::int AS count FROM job WHERE state='waiting'`.execute(db)).rows[0]
+        .count,
+    ).toBe(501);
     await db.transaction().execute(async (tx) => {
       await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(tx);
       await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}','true'::jsonb) WHERE id=${id}::uuid`.execute(
