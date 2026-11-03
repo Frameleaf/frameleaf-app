@@ -760,7 +760,7 @@ jobs:
           pnpm --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk install --frozen-lockfile && pnpm
           --filter @frameleaf/sdk --filter @frameleaf/cli --filter @frameleaf/plugin-sdk build
       - name: Install dependencies
-        run: pnpm --filter frameleaf-e2e --filter frameleaf install --frozen-lockfile
+        run: pnpm --filter 'frameleaf-e2e...' --filter 'frameleaf...' install --frozen-lockfile
         if: ${{ !cancelled() }}
       - name: Configure public Docker Hub mirror
         working-directory: .

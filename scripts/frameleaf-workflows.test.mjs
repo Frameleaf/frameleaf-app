@@ -2039,6 +2039,11 @@ test("isolated test lanes cover every shard and keep required gates fail-closed"
     }
   }
   const api = jobs["e2e-tests-server-cli"];
+  const install = api.steps.find(
+    (step) => step.name === "Install dependencies",
+  ).run;
+  assert.match(install, /--filter 'frameleaf-e2e\.\.\.'/);
+  assert.match(install, /--filter 'frameleaf\.\.\.'/);
   assert.deepEqual(api.strategy.matrix.suite, [
     "api-1",
     "api-2",
