@@ -1,14 +1,20 @@
 import { DatabaseSync } from 'node:sqlite';
-import { ImportedPassword, ImportedPasswordContext, ImportedPasswordFormat } from 'src/library-import/passwords.js';
+import {
+  ImportedPassword,
+  ImportedPasswordContext,
+  ImportedPasswordFormat,
+  captureImportedPasswordContext,
+} from 'src/library-import/passwords.js';
 
 /** Call only on an admitted snapshot, with a fixed adapter-owned query and an explicit owner mapping. */
 export const readSqlitePassword = async (
   database: DatabaseSync,
-  context: ImportedPasswordContext,
+  input: ImportedPasswordContext,
   format: ImportedPasswordFormat,
   query: string,
 ): Promise<ImportedPassword | undefined> => {
   try {
+    const context = captureImportedPasswordContext(input);
     const row = database.prepare(query).get(context.sourceUserId);
     if (!row) throw new Error('Source owner missing');
     if (row.password === null || row.password === '') return;

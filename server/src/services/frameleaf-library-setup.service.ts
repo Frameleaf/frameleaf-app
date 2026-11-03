@@ -10,6 +10,7 @@ import { LibrarySetupProgressDto } from 'src/dtos/frameleaf-library-setup.dto.js
 import { FrameleafWorker, JobName, MediaOperationKind, QueueName, SyncEntityType } from 'src/enum.js';
 import { readImportedSetupRun } from 'src/library-import/setup-run.js';
 import { listRuns } from 'src/queue/run-query.js';
+import { unfinishedRunItems } from 'src/queue/selection-state.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -590,6 +591,17 @@ export class FrameleafLibrarySetupService {
           state.phase = 'needs-attention';
         }
         const idle = queues.every((q) => q.active === 0 && q.waiting === 0 && q.delayed === 0 && q.paused === 0);
+        let importedUnfinished = false;
+        if (this.importInstallation(state)) {
+          // Lock before the fresh pending-work read: idle queues do not account for unadmitted run items.
+          const imported = await this.importedRun(db, true);
+          importedUnfinished = true;
+          if (this.importedSetupMatches(state, imported) && imported?.run?.enumerationDone) {
+            const { rows } = await sql<{ unfinished: boolean }>`SELECT
+              ${unfinishedRunItems(sql<string>`${imported.run.id}::uuid`)} AS unfinished`.execute(db);
+            importedUnfinished = rows[0]?.unfinished ?? true;
+          }
+        }
         // Setup is not complete until the file check has released the stages that wait for it, nor while a pause
         // holds them: held selections do not show in the queue counts.
         if (
@@ -597,6 +609,7 @@ export class FrameleafLibrarySetupService {
           !scansFinished ||
           !healthFinished ||
           !idle ||
+          importedUnfinished ||
           !state.checkReleasedAt ||
           state.phase === 'needs-attention'
         ) {

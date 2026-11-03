@@ -3,7 +3,11 @@ import fixture from 'src/library-import/fixtures/librephotos/1.5.1-postgres18.js
 import { createLibrephotosPostgresDecoder } from 'src/library-import/librephotos-postgres.js';
 import { librephotosProjections } from 'src/library-import/librephotos-projections.js';
 import { LibrephotosRow, LibrephotosTable } from 'src/library-import/librephotos.js';
-import { ImportedPassword, ImportedPasswordContext } from 'src/library-import/passwords.js';
+import {
+  ImportedPassword,
+  ImportedPasswordContext,
+  captureImportedPasswordContext,
+} from 'src/library-import/passwords.js';
 import { readPostgresSourceSchema } from 'src/library-import/postgres-schema.js';
 
 class LibrephotosSnapshotError extends Error {
@@ -114,9 +118,10 @@ export const openLibrephotosPostgresSnapshot = async (url: string, version: stri
   return {
     version,
     schemaSha256: decoder.schemaSha256,
-    password: async (context: ImportedPasswordContext): Promise<ImportedPassword | undefined> => {
+    password: async (input: ImportedPasswordContext): Promise<ImportedPassword | undefined> => {
       if (closed) throw new LibrephotosSnapshotError('LIBREPHOTOS_POSTGRES_SNAPSHOT_CLOSED');
       try {
+        const context = captureImportedPasswordContext(input);
         const rows = await reserved.unsafe('SELECT password FROM ONLY public.api_user WHERE id=$1', [
           context.sourceUserId,
         ]);

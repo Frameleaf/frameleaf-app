@@ -238,7 +238,12 @@ describe.skipIf(!path)('native isolated PhotoPrism MariaDB restore', () => {
     let escaped: ((value: typeof context) => Promise<unknown>) | undefined;
     const reader = readPhotoprismMariadbInventory(source, async (read) => {
       escaped = read;
-      const password = await read(context);
+      const expected = { ...context };
+      const pending = read(context);
+      context.sourceUserId = 'other-owner';
+      context.destinationUserId = '33333333-3333-4333-8333-333333333333';
+      const password = await pending;
+      expect(password).toMatchObject(expected);
       expect(password).toBeDefined();
       expect(await verifyImportedPassword('source password', password!.forImport())).toBe(true);
       expect(await verifyImportedPassword('incorrect', password!.forImport())).toBe(false);

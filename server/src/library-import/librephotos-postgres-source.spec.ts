@@ -55,7 +55,12 @@ describe('LibrePhotos PostgreSQL snapshot stream', () => {
       destinationUserId: '22222222-2222-4222-8222-222222222222',
     };
     try {
-      const credential = await source.password(context);
+      const expected = { ...context };
+      const pending = source.password(context);
+      context.sourceUserId = 'other-owner';
+      context.destinationUserId = '33333333-3333-4333-8333-333333333333';
+      const credential = await pending;
+      expect(credential).toMatchObject(expected);
       expect(await verifyImportedPassword('Frameleaf migration ✓ 123', credential!.forImport())).toBe(true);
       expect(JSON.stringify(credential)).not.toContain(encoded);
       expect(transport.unsafe).toHaveBeenCalledWith('SELECT password FROM ONLY public.api_user WHERE id=$1', ['2']);
