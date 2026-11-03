@@ -140,6 +140,7 @@ const album = {
   album_uid: 'album-fixture',
   created_by: 'source-owner',
   album_title: 'Restricted album',
+  album_description: 'Manual album description',
   album_type: 'album',
   album_filter: '',
   album_private: 1n,

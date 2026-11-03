@@ -67,7 +67,14 @@ export async function reconcileImportedAlbums(
               return destinationId;
             })
             .sort();
-          return { id: mapping.destination_id, name: album.name, ownerId, assetIds, grants };
+          return {
+            id: mapping.destination_id,
+            name: album.name,
+            ...(album.description === undefined ? {} : { description: album.description }),
+            ownerId,
+            assetIds,
+            grants,
+          };
         })
         .sort((a, b) => String(a.id).localeCompare(String(b.id)));
       // A fresh destination has no independently created albums or sharing to exempt.
@@ -93,14 +100,17 @@ export async function reconcileImportedAlbums(
       );
       const membersByAlbum = Map.groupBy(grants, (grant) => grant.albumId);
       const photosByAlbum = Map.groupBy(memberships, (membership) => membership.albumId);
+      const expectedById = new Map(expected.map((album) => [album.id, album]));
       const actual = albums.map((album) => {
+        const wanted = expectedById.get(album.id);
         if (
+          !wanted ||
           album.kind !== 'album' ||
           album.parentId !== null ||
           album.deletedAt !== null ||
           album.isActivityEnabled !== false ||
           album.albumThumbnailAssetId !== null ||
-          album.description !== null ||
+          album.description !== (wanted.description ?? null) ||
           album.order !== 'desc' ||
           album.libraryScope !== 'personal' ||
           album.icon !== null ||
@@ -117,6 +127,7 @@ export async function reconcileImportedAlbums(
         return {
           id: album.id,
           name: album.name,
+          ...(wanted.description === undefined ? {} : { description: album.description }),
           ownerId: owner[0].userId,
           assetIds: photos.map((photo) => photo.assetId),
           grants: members.map((member) => ({ userId: member.userId, role: member.role })),

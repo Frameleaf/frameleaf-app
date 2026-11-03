@@ -271,6 +271,7 @@ describe('PhotoPrism common manifest assembly', () => {
       id: album.album_uid,
       ownerId: 'alice',
       name: metadata.album.album_title,
+      description: metadata.album.album_description,
       assetIds: [photo.photo_uid],
       members: [],
     });

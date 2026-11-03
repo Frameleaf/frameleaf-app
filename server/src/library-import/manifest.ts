@@ -91,6 +91,7 @@ const legacyManifestSchema = z.strictObject({
       id,
       ownerId: id,
       name: z.string(),
+      description: z.string().optional(),
       assetIds: z.array(id),
       members: z.array(z.strictObject({ userId: id, role: z.enum(['viewer', 'editor']) })),
     }),

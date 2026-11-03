@@ -25,7 +25,7 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async () => {
+const setup = async (description?: string) => {
   const plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = ['owner', 'viewer', 'editor', 'unrelated'].map((sourceId) => ({
     sourceId,
@@ -74,6 +74,7 @@ const setup = async () => {
         id: 'shared',
         ownerId: 'owner',
         name: 'Restricted source album',
+        ...(description === undefined ? {} : { description }),
         assetIds: ['shared'],
         members: [
           { userId: 'viewer', role: 'viewer' },
@@ -251,8 +252,8 @@ it('refuses a source member entry that would replace or duplicate album ownershi
   expect(await db.selectFrom('album').select('id').execute()).toEqual([]);
 });
 
-const readyAlbums = async () => {
-  const fixture = await setup();
+const readyAlbums = async (description?: string) => {
+  const fixture = await setup(description);
   const albums: Record<string, string> = {};
   for (const album of fixture.context.manifest.albums) {
     albums[album.id] = await new CanonicalAlbumWriter(wrap(db), fixture.context).write(album.id);
@@ -261,9 +262,47 @@ const readyAlbums = async () => {
   return { ...fixture, albums };
 };
 
+it.each(['Manual album description\nwith a second line', '', undefined])(
+  'preserves and independently verifies the source description: %j',
+  async (description) => {
+    const { context, albums } = await readyAlbums(description);
+    expect(
+      await db.selectFrom('album').select('description').where('id', '=', albums.shared).executeTakeFirstOrThrow(),
+    ).toEqual({ description: description ?? null });
+    expect(await reconcileImportedAlbums(wrap(db), context)).toMatchObject({ albums: 2, grants: 4 });
+  },
+);
+
+it.each(['changed', null])('refuses changed or lost description metadata: %j', async (description) => {
+  const { context, albums } = await readyAlbums('Manual source description');
+  await db.updateTable('album').set({ description }).where('id', '=', albums.shared).execute();
+  await expect(reconcileImportedAlbums(wrap(db), context)).rejects.toThrow('ALBUM_RECONCILIATION_MISMATCH');
+});
+
 it('independently reconciles albums, memberships and permissions after restart without writing', async () => {
-  const { context } = await readyAlbums();
+  const { context, albums, photos, users } = await readyAlbums();
   const first = await reconcileImportedAlbums(wrap(db), context);
+  const legacyRecords = [
+    {
+      id: albums.empty,
+      name: 'Empty source album',
+      ownerId: users.owner,
+      assetIds: [],
+      grants: [{ userId: users.owner, role: 'owner' }],
+    },
+    {
+      id: albums.shared,
+      name: 'Restricted source album',
+      ownerId: users.owner,
+      assetIds: [photos.shared],
+      grants: [
+        { userId: users.owner, role: 'owner' },
+        { userId: users.viewer, role: 'viewer' },
+        { userId: users.editor, role: 'editor' },
+      ].sort((a, b) => a.userId.localeCompare(b.userId)),
+    },
+  ].sort((a, b) => a.id.localeCompare(b.id));
+  expect(first.sha256).toBe(createHash('sha256').update(JSON.stringify(legacyRecords)).digest('hex'));
   expect(first).toMatchObject({
     format: 'frameleaf-album-reconciliation',
     version: 1,
@@ -285,6 +324,7 @@ it.each([
   'membership',
   'owner',
   'name',
+  'description',
   'activity',
   'mapping',
   'extra-album',
@@ -320,6 +360,10 @@ it.each([
     }
     case 'name': {
       await sql`UPDATE public.album SET "albumName"='changed' WHERE id=${albums.shared}::uuid`.execute(db);
+      break;
+    }
+    case 'description': {
+      await db.updateTable('album').set({ description: 'Unreviewed text' }).where('id', '=', albums.shared).execute();
       break;
     }
     case 'activity': {

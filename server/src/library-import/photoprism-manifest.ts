@@ -145,7 +145,14 @@ export function assemblePhotoprismManifest(records: Iterable<PhotoprismInventory
         .toSorted((a, b) => (BigInt(a.order) < BigInt(b.order) ? -1 : BigInt(a.order) > BigInt(b.order) ? 1 : 0))
         .map((row) => row.photoId);
     }
-    mappedAlbums.push({ id: album.id, ownerId, name: album.name, assetIds, members: [] });
+    mappedAlbums.push({
+      id: album.id,
+      ownerId,
+      name: album.name,
+      description: album.description,
+      assetIds,
+      members: [],
+    });
   }
   const manifest = parseImportManifest({
     format: 'frameleaf-library-import',
