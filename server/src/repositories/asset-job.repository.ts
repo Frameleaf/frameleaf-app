@@ -59,7 +59,7 @@ export class AssetJobRepository {
     return kysely
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
-      .select(['id', 'ownerId', 'originalPath', 'physicalOriginalFileId'])
+      .select(['id', 'ownerId', 'originalPath', 'physicalOriginalFileId', 'localDateTime'])
       .select((eb) =>
         eb
           .selectFrom('library')

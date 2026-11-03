@@ -3141,6 +3141,33 @@ describe(MetadataService.name, () => {
       expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
     });
 
+    it.each(['UTC', 'Pacific/Auckland'])(
+      'writes unknown-zone capture times without adopting the server zone (%s)',
+      async (serverZone) => {
+        process.env.TZ = serverZone;
+        const localDateTime = new Date('2020-06-10T12:30:00.123Z');
+        const asset = AssetFactory.from({
+          fileCreatedAt: new Date('2020-06-10T18:30:00.123Z'),
+          localDateTime,
+        })
+          .file({ type: AssetFileType.Sidecar })
+          .exif({ dateTimeOriginal: new Date('2020-06-10T18:30:00.123Z'), timeZone: null, tags: ['edited'] })
+          .build();
+        const snapshot = { ...getForSidecarWrite(asset), localDateTime };
+        mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(snapshot);
+        mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
+          'dateTimeOriginal',
+          'timeZone',
+          'tags',
+        ]);
+        await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+          asset.files[0].path,
+          expect.objectContaining({ DateTimeOriginal: '2020-06-10T12:30:00.123', TagsList: ['edited'] }),
+        );
+      },
+    );
+
     it('should write tags', async () => {
       const description = 'this is a description';
       const gps = 12;
