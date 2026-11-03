@@ -48,9 +48,22 @@ try {
   let ready = false;
   for (let attempt = 0; attempt < 45; attempt++) {
     if (
-      command(['exec', container, 'mariadb', '--defaults-extra-file=/run/secrets/client.cnf', '-N', '-e', 'SELECT 1'], {
-        stdio: 'ignore',
-      }).status === 0
+      command(
+        [
+          'exec',
+          container,
+          'mariadb',
+          '--defaults-extra-file=/run/secrets/client.cnf',
+          '--protocol=tcp',
+          '-h127.0.0.1',
+          '-N',
+          '-e',
+          'SELECT 1',
+        ],
+        {
+          stdio: 'ignore',
+        },
+      ).status === 0
     ) {
       ready = true;
       break;
