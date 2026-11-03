@@ -1,6 +1,7 @@
 import { Kysely, RawNode, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
+import { connectImportDatabase } from 'src/immich-import/database.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
@@ -148,6 +149,138 @@ it.each([0, 2, 301])('retains exactly the sealed %s-photo cohort and video work 
   ).rows;
   expect(enumerationDone).toBe(false);
   expect(JSON.stringify(selection)).not.toMatch(/Private synthetic|fixture|synthetic-library|owner-0/);
+});
+
+it.each([0, 2])('recovers finalized held work after a lost acknowledgement with %s photos', async (count) => {
+  const { context, stageQueues } = await setup(count);
+  const id = await repository.prepareImportedLibraryWork(context);
+  await new SqlQueueStore(db).finishEnumeration(id);
+  const before = (await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows;
+  const runBefore = (await sql`SELECT * FROM job_run WHERE id=${id}::uuid`.execute(db)).rows;
+  expect(await repository.prepareImportedLibraryWork(context)).toBe(id);
+  expect((await sql`SELECT * FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows).toEqual(before);
+  expect((await sql`SELECT * FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual(runBefore);
+  for (const queue of new Set(stageQueues.map(([, queue]) => queue)))
+    expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(0);
+  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+});
+
+it('finalizes generic work through the repository without releasing it or duplicating a retry', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  expect(await repository.dispatchImportedLibraryWork(context)).toBe(id);
+  expect((await sql`SELECT "enumerationDone" FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual([
+    { enumerationDone: true },
+  ]);
+  expect((await sql`SELECT DISTINCT state FROM job_selection WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([
+    { state: 'enumerating' },
+  ]);
+  expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+});
+
+it('refuses finalized work that has been released or has processed an item', async () => {
+  const { context } = await setup();
+  const id = await repository.prepareImportedLibraryWork(context);
+  await new SqlQueueStore(db).finishEnumeration(id);
+  await sql`UPDATE job_selection SET state='ready' WHERE "runId"=${id}::uuid`.execute(db);
+  await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+  await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${id}::uuid`.execute(db);
+  await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid`.execute(db);
+  await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+});
+
+const importConnection = async () => {
+  const [{ name }] = (await sql<{ name: string }>`SELECT current_database() AS name`.execute(db)).rows;
+  const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+  url.pathname = '/' + name;
+  return connectImportDatabase(url.href, false);
+};
+
+it('revalidates prepared work on the locked session without committing its outer transaction', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  const connection = await importConnection();
+  try {
+    await expect(repository.validateImportedLibraryWork(connection.db, context)).rejects.toThrow(
+      'DERIVED_WORK_PREPARATION_FAILED',
+    );
+    await expect(
+      connection.db.withSession!(async (session) => {
+        await session.query('SELECT pg_advisory_lock($1::bigint)', [LIBRARY_IMPORT_LOCK]);
+        await session.transaction(async (tx) => {
+          expect(await repository.validateImportedLibraryWork(tx, context)).toBe(id);
+          await tx.query('UPDATE job_run SET "finishedAt"=clock_timestamp() WHERE id=$1::uuid', [id]);
+          throw new Error('synthetic outer activation failure');
+        });
+      }),
+    ).rejects.toThrow('synthetic outer activation failure');
+    expect((await sql`SELECT "finishedAt" FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual([
+      { finishedAt: null },
+    ]);
+    expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  } finally {
+    await connection.close();
+  }
+});
+
+it('locks the queue catalogue before waiting for the prepared run header', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  const connection = await importConnection();
+  let validation: Promise<string> | undefined;
+  try {
+    await db.transaction().execute(async (header) => {
+      await sql`SELECT id FROM job_run WHERE id=${id}::uuid FOR UPDATE`.execute(header);
+      const { promise: waiting, resolve: reached } = Promise.withResolvers<void>();
+      validation = connection.db.withSession!((session) =>
+        session.transaction((tx) =>
+          repository.validateImportedLibraryWork(
+            {
+              ...tx,
+              query: (statement, parameters) => {
+                if (statement.includes("SELECT selection #>> '{managerSetup,preparedAt}'")) reached();
+                return tx.query(statement, parameters);
+              },
+            },
+            context,
+          ),
+        ),
+      );
+      await waiting;
+      await expect(
+        db
+          .transaction()
+          .execute((worker) => sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE NOWAIT`.execute(worker)),
+      ).rejects.toMatchObject({ code: '55P03' });
+    });
+    expect(await validation).toBe(id);
+  } finally {
+    await validation?.catch(() => {});
+    await connection.close();
+  }
+});
+
+it('independently refuses a corrupt captured payload in the activation transaction', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  const before = (await sql`SELECT stage,"itemKey",selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db))
+    .rows;
+  const connection = await importConnection();
+  try {
+    await expect(
+      connection.db.withSession!((session) =>
+        session.transaction(async (tx) => {
+          await tx.query('UPDATE job_run_item SET selection=\'{}\'::jsonb WHERE "runId"=$1::uuid', [id]);
+          await repository.validateImportedLibraryWork(tx, context);
+        }),
+      ),
+    ).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+    expect(
+      (await sql`SELECT stage,"itemKey",selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows,
+    ).toEqual(before);
+  } finally {
+    await connection.close();
+  }
 });
 
 it.each(['copying', 'abandoned', 'activated'])('refuses %s preparation without retaining work', async (status) => {
@@ -515,3 +648,48 @@ it('rolls back both the run and captured work when import preparation is interru
     ).rows,
   ).toEqual([{ runs: 0, selections: 0, items: 0, executions: 0 }]);
 });
+
+it('retains immutable Manager setup authority with the held generic work', async () => {
+  const { context } = await setup();
+  const manager = { installation: '114900000001', operationId: context.binding.operationId };
+  const id = await repository.prepareImportedLibraryWork(context, manager);
+  const read = async () =>
+    (
+      await sql<{
+        selection: { managerSetup: { installation: string; operationId: string; preparedAt: string; startedAt: null } };
+      }>`SELECT selection FROM job_run WHERE id=${id}::uuid`.execute(db)
+    ).rows[0].selection.managerSetup;
+  const first = await read();
+  expect(first).toEqual({ ...manager, preparedAt: expect.any(String), startedAt: null });
+  expect(await repository.prepareImportedLibraryWork(context, manager)).toBe(id);
+  expect(await read()).toEqual(first);
+  await expect(
+    repository.prepareImportedLibraryWork(context, { ...manager, installation: '114900000002' }),
+  ).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+  await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow(
+    'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
+  );
+  expect(
+    (await sql`SELECT 1 FROM job_selection WHERE "runId"=${id}::uuid AND state<>'enumerating'`.execute(db)).rows,
+  ).toEqual([]);
+  expect((await sql`SELECT 1 FROM job WHERE "runId"=${id}::uuid`.execute(db)).rows).toEqual([]);
+});
+
+it.each(['installation', 'operation', 'extra-field'])(
+  'refuses invalid Manager %s authority before retaining work',
+  async (change) => {
+    const { context } = await setup();
+    const manager = { installation: '114900000001', operationId: context.binding.operationId };
+    const invalid =
+      change === 'installation'
+        ? { ...manager, installation: 'invalid' }
+        : change === 'operation'
+          ? { ...manager, operationId: randomUUID() }
+          : { ...manager, apiKey: 'synthetic-not-an-accepted-field' };
+    await expect(repository.prepareImportedLibraryWork(context, invalid as never)).rejects.toThrow(
+      'DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH',
+    );
+    expect((await sql`SELECT 1 FROM job_run`.execute(db)).rows).toEqual([]);
+    expect((await sql`SELECT 1 FROM job_selection`.execute(db)).rows).toEqual([]);
+  },
+);

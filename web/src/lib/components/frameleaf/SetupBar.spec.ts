@@ -3,10 +3,13 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
+import { locale } from '$lib/stores/preferences.store';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 
 const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 const progress = (overrides: Partial<LibrarySetupProgressDto> = {}): LibrarySetupProgressDto => ({
   active: true,
@@ -36,6 +39,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  locale.set('en-US');
   auth.user.isAdmin = true;
 });
 
@@ -51,6 +55,87 @@ describe('SetupBar', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
     expect(screen.getByText('Starts by itself when the file check is finished.')).toBeInTheDocument();
+  });
+
+  it('shows intentionally disabled AI processing as off while keeping other setup visible', async () => {
+    const value = progress();
+    value.stages = value.stages.map((stage) =>
+      stage.id === LibrarySetupStageId.Search ? { ...stage, done: 0, total: 0, disabled: true } : stage,
+    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByText('Off')).toBeInTheDocument();
+    expect(screen.getByText('AI processing is turned off. You can enable it later.')).toBeInTheDocument();
+    expect(screen.queryByText('Starts by itself when the file check is finished.')).not.toBeInTheDocument();
+  });
+
+  it('keeps resume available after enabled stages finish while paused', async () => {
+    const value = progress({ paused: true, phase: Phase.Verifying });
+    value.stages = value.stages.map((stage) =>
+      stage.id === LibrarySetupStageId.Search
+        ? { ...stage, status: LibrarySetupStageStatus.Waiting, disabled: true, done: 0, total: 0 }
+        : { ...stage, status: LibrarySetupStageStatus.Done, done: stage.total },
+    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    sdkMock.pauseLibrarySetup.mockResolvedValue({ ...value, paused: false });
+    render(SetupBar);
+    expect(await screen.findByText('Setup is paused')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(sdkMock.pauseLibrarySetup).toHaveBeenCalledWith({ librarySetupPauseDto: { paused: false } });
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+  });
+
+  it('does not promise AI search when completion follows disabled processing', async () => {
+    const value = progress({ phase: Phase.Complete, completedAt: '2026-11-03T10:00:00.000Z' });
+    value.stages = value.stages.map((stage) =>
+      stage.id === LibrarySetupStageId.Search ? { ...stage, disabled: true, done: 0, total: 0 } : stage,
+    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(
+      await screen.findByText(
+        'Everything you imported is in Frameleaf, and every original was checked. AI processing is turned off. You can enable it later.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Everything you imported is in Frameleaf. Every original was checked, and smart search and faces are ready to use.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('formats progress using the chosen number locale', async () => {
+    locale.set('de-DE');
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+    render(SetupBar);
+    expect(await screen.findByText(/Checking original files · 312\.640 of 823\.034/)).toBeInTheDocument();
+  });
+
+  it('does not promise both AI features from the combined completion stage', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(
+      progress({
+        phase: Phase.Complete,
+        completedAt: '2026-11-03T00:00:00Z',
+        stages: [{ id: LibrarySetupStageId.Search, status: LibrarySetupStageStatus.Done, done: 1, total: 1 }],
+      }),
+    );
+    render(SetupBar);
+    expect(await screen.findByRole('heading', { name: 'Your library is ready' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Everything you imported is in Frameleaf, and every original was checked.'),
+    ).toBeInTheDocument();
+  });
+
+  it('formats completion counts using the chosen number locale', async () => {
+    locale.set('de-DE');
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(
+      progress({ phase: Phase.Complete, completedAt: '2026-11-03T10:00:00.000Z' }),
+    );
+    render(SetupBar);
+    expect(await screen.findByText('Your library is ready')).toBeInTheDocument();
+    expect(screen.getByText('1.286')).toBeInTheDocument();
   });
 
   it('pauses and resumes setup', async () => {
@@ -89,6 +174,53 @@ describe('SetupBar', () => {
     expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
+  });
+
+  it('keeps Retry and a general warning when attention follows completed stages', async () => {
+    const value = progress({ phase: Phase.NeedsAttention });
+    value.stages = value.stages.map((stage) => ({ ...stage, status: LibrarySetupStageStatus.Done, done: stage.total }));
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
+    expect(
+      screen.getByText('Library setup stopped before it finished. Retry it, or see Library care for what happened.'),
+    ).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(sdkMock.beginLibrarySetup).toHaveBeenCalled();
+  });
+
+  it('shows an identity warning without offering stage actions or progress', async () => {
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ phase: Phase.NeedsAttention, stages: [] }));
+    render(SetupBar);
+    expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
+    expect(screen.getByText('Setup could not be verified. See Library care before continuing.')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
+    expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByRole('link', { name: 'Library care' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Setting up your library' })).toHaveTextContent(
+      'Setup could not be verified. See Library care before continuing.',
+    );
+    expect(screen.queryByText('Library imported')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 items imported')).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])('reports rejected setup actions and clears busy, retry=%s', async (retry) => {
+    const failure = new Error('synthetic action refusal');
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(
+      progress({ phase: retry ? Phase.NeedsAttention : Phase.Rescanning }),
+    );
+    const action = retry ? sdkMock.beginLibrarySetup : sdkMock.pauseLibrarySetup;
+    action.mockRejectedValueOnce(failure);
+    render(SetupBar);
+    const button = await screen.findByRole('button', { name: retry ? 'Retry' : 'Pause' });
+    await fireEvent.click(button);
+    await vi.waitFor(() =>
+      expect(handleError).toHaveBeenCalledWith(failure, 'Unable to update library setup. Try again.'),
+    );
+    expect(button).not.toBeDisabled();
   });
 
   it('keeps asking after a failed request', async () => {

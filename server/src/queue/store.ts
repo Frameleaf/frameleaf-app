@@ -26,6 +26,7 @@ import {
 } from 'src/queue/selection-lineage.js';
 import {
   libraryRunPending,
+  managerImportHeld,
   unfinishedAdmittedRunItems,
   unfinishedQueueItems,
   unfinishedRunItems,
@@ -82,6 +83,10 @@ export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
 
   async initialize(queues: string[], workerId?: string) {
+    // Preserve the Manager discriminator before recovery can lose the detailed marker.
+    await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb
+      where kind in ('immich-import-derived','library-import-derived')
+        and selection ? 'managerSetup' and not selection ? 'managerSetupRequired'`.execute(this.db);
     for (const name of queues) {
       await sql`insert into job_queue(name) values (${name}) on conflict do nothing`.execute(this.db);
     }
@@ -378,8 +383,8 @@ export class SqlQueueStore {
         rows: [counts],
       } = await sql<{ active: number; ready: number }>`
         select count(*) filter (where state = 'active')::int active,
-          count(*) filter (where state in ('waiting','active'))::int ready
-        from job where queue = ${queue} and state in ('waiting','active')
+          count(*) filter (where state='active' or (state='waiting' and not (${managerImportHeld(sql<string>`j."runId"`)})))::int ready
+        from job j where queue = ${queue} and state in ('waiting','active')
       `.execute(tx);
       if (counts.ready <= QUEUE_LOW_WATER) {
         // Keep the ready + active set bounded even for a 15,000-item selection.
@@ -387,6 +392,7 @@ export class SqlQueueStore {
           const { numAffectedRows } = await sql`update job set state = 'waiting' where id in (
           select id from job j where queue = ${queue} and state = 'pending' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+            and not (${managerImportHeld(sql<string>`j."runId"`)})
             and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
           order by "createdAt", id limit ${Math.min(QUEUE_BATCH, slots)}
           for update skip locked
@@ -403,8 +409,9 @@ export class SqlQueueStore {
           attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
           "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
         where id in (
-          select id from job where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
+          select id from job j where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+            and not (${managerImportHeld(sql<string>`j."runId"`)})
           order by "createdAt", id limit ${capacity} for update skip locked
         ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);
@@ -993,6 +1000,47 @@ export class SqlQueueStore {
       if (!entityIds) await redactLibrarySourcePage(tx, queue);
       await this.settleRuns(tx, affectedRuns);
     });
+  }
+
+  /** Caller holds setup authority and catalogue/run locks; never replay cancelled or unaudited work. */
+  async retryImportedWork(runId: string, db: Executor) {
+    // Producer retries would reopen the import's frozen inventory.
+    for (;;) {
+      const { rows } = await sql<{ id: string }>`WITH RECURSIVE eligible AS (
+        SELECT j.id,j."parentId",j.state FROM job j
+        WHERE j."runId"=${runId}::uuid AND j."safeToRetry" AND j.data->>'operationId' IS NULL
+          AND NOT EXISTS (SELECT 1 FROM job_selection s WHERE s."producerId"=j.id)
+          AND j.state IN ('failed','blocked')
+          AND (j."dedupKey" IS NULL OR NOT EXISTS (
+            SELECT 1 FROM job d WHERE d.queue=j.queue AND d."dedupKey"=j."dedupKey" AND d.id<>j.id
+              AND (d.state IN ('pending','waiting','active') OR (d.state IN ('failed','blocked')
+                AND (d."createdAt",d.id)<(j."createdAt",j.id)))))
+      ), recoverable AS (
+        SELECT e.id FROM eligible e WHERE (e.state='failed' AND e."parentId" IS NULL) OR EXISTS (
+          SELECT 1 FROM job p WHERE p.id=e."parentId" AND p.state IN ('pending','waiting','active','completed'))
+        UNION SELECT e.id FROM eligible e JOIN recoverable p ON p.id=e."parentId"
+      ) UPDATE job SET state='pending',"availableAt"=now(),"finishedAt"=NULL,error=NULL,
+        "retryBaseAttempt"=attempt,"cancelRequestedAt"=NULL,"cancelReason"=NULL
+        WHERE id IN (SELECT id FROM recoverable LIMIT 1000) RETURNING id`.execute(db);
+      if (rows.length > 0)
+        await this.syncItem(
+          rows.map(({ id }) => id),
+          db,
+        );
+      if (rows.length < 1000) break;
+    }
+    // Replay only intact frozen payloads; history pruning may have erased required preservation flags.
+    await sql`UPDATE job_run_item i SET state='pending' FROM job_selection s
+      WHERE i."runId"=${runId}::uuid AND i.state='failed' AND i."jobId" IS NULL
+        AND s.id=i."selectionId" AND s."runId"=i."runId" AND s."sourceKind"='frozen'
+        AND s."producerId" IS NULL AND s."capturedAt" IS NOT NULL AND s.state IN ('ready','enumerating') AND s."safeToRetry"
+        AND NOT s.sensitive AND jsonb_typeof(i.selection->'id')='string' AND i.selection->>'id'=i."itemKey"
+        AND i.selection->>'operationId' IS NULL
+        AND (i.stage<>${JobName.AssetDetectFaces} OR i.selection->'preserveImportedFaces'='true'::jsonb)`.execute(db);
+    await sql`UPDATE job_run SET "finishedAt"=NULL WHERE id=${runId}::uuid
+      AND EXISTS (SELECT 1 FROM job_run_item WHERE "runId"=${runId}::uuid AND state IN ('pending','waiting','active'))`.execute(
+      db,
+    );
   }
 
   async retryFailed(queue: string) {

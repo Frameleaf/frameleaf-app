@@ -30,7 +30,15 @@ Completion checks original and destination SHA256 values, stable filesystem iden
 
 Native synthetic checks passed on the pinned Manager Node 22.23.4 ARM64 Linux image: independent original bytes, restart with a partial prefix, collisions, mismatches, symlinks, hardlinks, changed roots/sources and injected close failure. A separate isolated 128 MiB tmpfs probe produced kernel `ENOSPC`, retained a 6,123,520-byte prefix and the original, then resumed to the verified 33,554,432-byte destination after space was freed. This evidence covers the copy primitive, not full migration acceptance.
 
-The worker is not wired to a command, API or UI. Capacity preflight, durable root/namespace preparation, fencing/controller integration, cancellation, owner/library fanout, database relationships and regeneration remain outstanding. Adoption and copy-mode rollback are not implemented here. The separate relocation primitive below also remains internal. No expanded import support is released by this stage.
+The worker is not wired to a command, API or UI. Capacity preflight, durable root/namespace preparation, fencing/controller integration, cancellation, owner/library fanout, database relationships and regeneration remain outstanding. Copy-mode rollback is not implemented here. The separate relocation primitive below also remains internal. No expanded import support is released by this stage.
+
+## Verified in-place adoption
+
+`adoptImportFiles` is an internal Linux worker for a sealed plan whose transfers all use `adopt`. It requires the exact reviewed root paths and device/inode identities. Source and destination writers must remain fenced, and the caller must independently qualify the local plaintext layout and ownership/privacy mapping. A matching checksum does not authorize adopting a separate directory entry or hardlink.
+
+The worker checks the complete destination inventory, persists each planned intent, opens roots and parent directories without following symlinks, and requires source and destination to resolve to the same parent directory and filename. Nested reviewed roots may address that same entry. It rejects hardlinks, non-regular files, submount changes, changed filesystem identities and checksum mismatches. It flushes the original and parent directory, then rechecks both current directory entries and stable file metadata before recording verification. It never copies, renames, removes, changes ownership or changes permissions on media.
+
+Every retry rechecks original bytes, including transfers with a retained verification receipt. An interruption before the receipt leaves the intent resumable. Abandoned operations and the destination-writer boundary remain fenced by the journal; media and recovery records are retained. This worker does not establish source fencing, disk capacity, account/privacy equivalence, schema compatibility, rollback orchestration or source restart authority. It remains disconnected from commands and UI until the full shared workflow is implemented and qualified.
 
 ## Complete bundle file ownership
 
@@ -201,9 +209,17 @@ The asset transaction stores each version 2 transfer ID, converted-record hash a
 
 Version 1 plan serialization, fingerprints and successful single-reference writes remain unchanged. Version 1 binding now refuses shared source references because it has no way to identify independent placements. This internal contract adds no public import command, Manager activation flow or source compatibility claim. Source qualification, full duplicate review, protected unsupported metadata, fencing, space review and combined acceptance are still required before release.
 
-Before forward copy or relocation effects, the worker scans every destination in the sealed plan through pinned directory descriptors. It rejects repeated parent-directory device/inode plus filename pairs, and existing files that share a device/inode identity, across all roots. This check repeats on resume, including already verified entries. Copy also checks observed destination identities during execution. Different mount IDs do not establish independent files: bind mounts can alias the same directory entry while preserving a link count of one. A refusal retains originals, partial copies and recovery records. Rollback keeps its existing verified reversal path so an invalid forward layout cannot prevent recovery; adoption must use the same destination guard when implemented.
+Before forward copy or relocation effects, the worker scans every destination in the sealed plan through pinned directory descriptors. It rejects repeated parent-directory device/inode plus filename pairs, and existing files that share a device/inode identity, across all roots. This check repeats on resume, including already verified entries. Copy also checks observed destination identities during execution. Different mount IDs do not establish independent files: bind mounts can alias the same directory entry while preserving a link count of one. A refusal retains originals, partial copies and recovery records. Rollback keeps its existing verified reversal path so an invalid forward layout cannot prevent recovery; adoption uses the same destination guard before checking its originals.
 
 Independent Server verification checks destination inode uniqueness across every photo and root in the operation, together with byte hashes and mappings. Destination symlinks and hardlinks are refused. Contained links in an authenticated source export retain their existing source-bundle verification behavior; they do not authorize linked destination originals. Linux bind-mount checks require mount capability and are skipped when it is unavailable; qualification additionally runs them in an isolated container with that capability.
+
+## Original-byte preflight
+
+`reviewImportFiles` builds the version 2 Manager transfer plan from source-qualified file placements and reviewed root identities. Copy is the default. It reads each original independently, captures its device/inode, size, signed nanosecond timestamps and link count, computes SHA-256 and checks any available source byte count or content digest. Filesystem timestamps before the Unix epoch remain representable; sizes, inode/device IDs and link counts remain non-negative. Missing source checksums do not require trusting path hashes or inventing a baseline: this preflight computes the baseline before any transfer.
+
+The Linux reader uses the same directory-descriptor containment and stable-file checks as the transfer workers. It refuses unsafe paths, symlinks, special files, changing originals or roots, existing destination collisions, hardlinked low-space originals and cross-filesystem relocation. Adoption requires the same directory entry. Shared originals can retain separate copy placements without merging source relationships. Preflight reads media without moving, modifying permissions or deleting it. Destination parent directories must already exist in the reviewed layout.
+
+The caller still owns source application admission, complete ownership/privacy and media inventory evidence, service/restart fencing and destination layout preparation. A plan is not a qualification certificate, a completed transfer or activation authority. Source discovery, public CLI and complete Manager orchestration remain required; no expanded source is released by this helper.
 
 ## Internal copy and verification coordination
 
@@ -214,3 +230,46 @@ Run independently verifies every destination placement, including operation-wide
 Resume binds the same manifest, plan, owner intents, protected credentials and archive descriptor. Even an already verifying run compares supplied private inputs with their retained versions before returning its status. Independent verification reconciles owners, original bytes, metadata, album grants, stacks and the sealed archive within one read-only repeatable-read database snapshot. The operation and lifecycle locks remain held for that complete report; a failed readback releases both without permitting destination writes. Status exposes phases and counts without private account data. Abandon retains the destination, media and recovery records and leaves startup fenced.
 
 This is an internal coordination stage. Its verification report does not activate writers or release held regeneration. Durable activation evidence, reversible media rollback, source qualification and the public CLI/Manager workflow remain separate required work; no new source family is exposed by this class. The native database tests cover archive interruption, committed-owner acknowledgement loss, immutable resume inputs and the administrator prerequisite, including refusal of imported identities or email addresses that collide with that administrator before a journal is retained. Actual original/album integration additionally runs in Linux, where descriptor-based file verification is supported.
+
+## Shared Manager setup
+
+Manager-managed generic imports retain their installation and operation authority with the frozen regeneration run. Preparation leaves every stage held and records its completion only after the complete selected cohort is retained. Retry requires the same authority and preserves the original preparation timestamp; authority cannot be retrofitted onto an independent run.
+
+The existing library setup service resolves both legacy and generic import journals. It uses each protocol's bound run identity and stage list, so all ten source kinds share the same setup endpoints, progress bar, pause/resume and completion behavior. Only metadata and thumbnails start after activated/prepared import, administrator and processing-setting checks. Other stages wait for the existing original-file scan. A paused setup cannot complete. A mismatched operation, destination, inventory or Manager installation cannot release work or claim completion. Restored runs require the reviewed original installation authority before they can be adopted or resumed; ordinary restored-library setup remains independent of unadopted runs.
+
+Standalone activation releases its verified regeneration without creating Manager authority. An unmanaged server has no Manager setup flow to complete. Manager setup requires its provisioning identity and retained import marker; a missing marker on a managed run is an integrity failure, not permission to adopt that run.
+
+Source discovery, complete source-to-manifest conversion, activation and transfer/recovery orchestration remain required integration work. Sources without recorded content checksums use the independent original-byte preflight baseline. These internal setup contracts do not establish source qualification or expose a subset of the expanded adapters.
+
+For legacy source imports, the private Manager provisioning profile applies to both independent copies and same-layout adoption. Default or explicit copy policies still verify independent media roots; their regeneration records now retain the same Manager setup identity and remain held until first setup. Missing private identity refuses admission. Existing standalone copies outside that profile remain independent, and an already admitted unmarked run cannot be retrofitted with Manager authority.
+
+Manager queue admission checks the current private installation and setup state for every pending promotion and waiting claim. The retained run and operation binding survives setup retries. Losing or changing that authority, the canonical import journal or the detailed run marker holds managed work before workers can claim it, including immediately after restore. Already running jobs may finish; unrelated requests and genuinely unmanaged imports remain independent. Reviewed restoration authority can resume only the same bound import.
+
+Generic imported owners retain their operation ID on the account row. This internal
+provenance survives a restore that omits the import journal or mappings; it is not
+an authentication credential and is not exposed in account responses. Claims require
+the same activated operation and retained owner policy. Startup refuses imported
+owners whose operation has no activated journal. Migration backfills retained owner
+mappings and reviewed-plan owners; downgrade refuses to discard provenance. Legacy
+accounts without this generic provenance keep their existing claim behavior. A
+partial restore that has already lost every record of an older account's origin
+cannot reconstruct that origin and is not qualified by this migration.
+
+The common setup Retry action recovers safe failed regeneration and eligible
+blocked dependencies only within the same verified import run. It preserves the
+owner's pause, frozen membership, completed outcomes and original payloads, and
+leaves unrelated, cancelled, unsafe, domain-operation and manual-review work alone.
+Unexpected selection producers require manual review: imports retain a frozen
+cohort, and generic producer retry would reopen enumeration and hold its own work.
+Interrupted frozen roots can resume only with intact identifiers and preservation
+flags. If history pruning erased a handler payload, setup keeps that failure for
+review in Library care; it never invents a replacement payload or recaptures a
+changed source inventory. Source migration rollback remains a separate operation.
+
+A `new_import` Manager profile is for a fresh, Manager-managed migration. Wrapping
+an already activated standalone import in that profile does not convert it into a
+managed import: missing setup authority requires review and remains held. An
+ordinary restore of an independent library uses `restored_library` without an
+import adoption grant. Losing the entire run selection, even together with the
+canonical journal, cannot establish that a damaged managed run was originally
+standalone. The active import profile keeps import-derived work held.

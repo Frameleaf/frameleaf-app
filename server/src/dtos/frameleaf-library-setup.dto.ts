@@ -45,6 +45,7 @@ export class WarmLibrarySetupDto extends createZodDto(z.object({ reset: z.boolea
 const SetupStageSchema = z.object({
   id: z.enum(['check', 'thumbnails', 'search']).meta({ id: 'LibrarySetupStageId' }),
   status: z.enum(['done', 'running', 'paused', 'waiting']).meta({ id: 'LibrarySetupStageStatus' }),
+  disabled: z.boolean().optional().describe('Optional processing is turned off; retained work can resume when enabled'),
   done: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
 });

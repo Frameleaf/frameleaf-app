@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { JobName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy } from 'src/immich-import/media.js';
+import { assertMediaPolicy, managerImportAuthority } from 'src/immich-import/media.js';
 import { ImportConfig, ImportRefused } from 'src/immich-import/types.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
@@ -37,21 +37,12 @@ export async function transferImportedWork(
   config?: ImportConfig,
 ): Promise<string> {
   const media = config?.media;
-  const managed = media?.mode === 'manager-in-place';
-  if (managed) {
-    if (!config) throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
-    assertMediaPolicy(config.mediaRoots, media);
-    if (
-      !/^[a-f0-9]{12}$/.test(media.deploymentId) ||
-      process.env.FRAMELEAF_MANAGER_ORIGIN !== 'new_import' ||
-      process.env.FRAMELEAF_MANAGER_INSTALLATION !== media.deploymentId ||
-      process.env.FRAMELEAF_IMPORT_MANAGER_OPERATION_ID !== media.operationId
-    ) {
-      throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
-    }
-  } else if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import') {
+  if (!config && process.env.FRAMELEAF_MANAGER_ORIGIN === 'new_import')
     throw new ImportRefused('MANAGER_SETUP_CONFIG_REQUIRED');
-  }
+  const authority = managerImportAuthority(media);
+  const managed = !!authority;
+  if (config) assertMediaPolicy(config.mediaRoots, media);
+  if (media?.mode === 'manager-in-place' && !authority) throw new ImportRefused('MANAGER_SETUP_AUTHORITY_REQUIRED');
   const runId = await db.transaction().execute(async (tx) => {
     const {
       rows: [journal],
@@ -72,11 +63,13 @@ export async function transferImportedWork(
       selection: {
         source: string;
         config: string;
+        managerSetupRequired?: unknown;
         managerSetup?: {
           installation: string;
           operationId: string;
           preparedAt: string | null;
           startedAt: string | null;
+          paused?: boolean;
         };
       } | null;
     }>`select kind, selection from job_run where id = ${id}::uuid for update`.execute(tx);
@@ -90,11 +83,17 @@ export async function transferImportedWork(
     }
     const setup = existing?.selection?.managerSetup;
     if (
+      existing?.selection?.managerSetupRequired !== undefined &&
+      (existing.selection.managerSetupRequired !== true || !managed)
+    )
+      throw new ImportRefused('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+    if (
       existing &&
       (managed
         ? !setup ||
-          setup.installation !== media.deploymentId ||
-          setup.operationId !== media.operationId ||
+          setup.installation !== authority.installation ||
+          setup.operationId !== authority.operationId ||
+          (setup.paused !== undefined && typeof setup.paused !== 'boolean') ||
           (setup.preparedAt !== null &&
             (typeof setup.preparedAt !== 'string' || !Number.isFinite(Date.parse(setup.preparedAt)))) ||
           (setup.startedAt !== null &&
@@ -113,9 +112,10 @@ export async function transferImportedWork(
         source: journal.source_fingerprint,
         config: journal.config_fingerprint,
         ...(managed && {
+          managerSetupRequired: true,
           managerSetup: {
-            installation: media.deploymentId,
-            operationId: media.operationId,
+            installation: authority.installation,
+            operationId: authority.operationId,
             preparedAt: null,
             startedAt: null,
           },
@@ -124,6 +124,10 @@ export async function transferImportedWork(
       await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${IMPORT_DERIVED_RUN_KIND},
         ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
     }
+    if (managed && existing && existing.selection?.managerSetupRequired === undefined)
+      await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb where id=${id}::uuid`.execute(
+        tx,
+      );
     return id;
   });
 

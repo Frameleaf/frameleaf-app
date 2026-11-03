@@ -99,9 +99,12 @@ Independent-copy imports keep full content hashes and checksum verification.
 Missing regenerable files are recorded consistently. An original Immich had already lost
 (shown there as unavailable), one whose bytes no longer match Immich's checksum, or one
 outside every mapped root is still imported, never dropped and never a reason to stop:
-verification lists it and, before activation, notifies its owner (and every administrator,
-with the per-account list) with the file name, paths, dates, size, camera and checksum. An
-empty or absent root reads as unmounted and still stops the import, as do copy-safety
+verification lists pre-activation findings and notifies the owner (and every administrator,
+with the per-account list) with the file name, paths, dates, size, camera and checksum.
+For in-place `sha1` and `sha256` originals, content mismatches are detected and listed
+by Library Care after activation instead. External `sha1-path` references still have
+their recorded path identity checked before activation. An empty or absent root reads
+as unmounted and still stops the import, as do copy-safety
 failures (symlink escape, shared inode, a file present in Immich but not copied). After
 setup, Library Care's full scan covers every account, relinks a lost original to an
 untracked file with the same bytes in the owner's own storage, and brings other untracked
@@ -124,13 +127,15 @@ journal, and all six captured stages; it stamps `startedAt` and releases the hel
 snapshots atomically. A resumed import preserves that start and never revives cancelled
 or attention-required stages.
 
-The importer additionally requires `FRAMELEAF_MANAGER_ORIGIN=new_import`,
-`FRAMELEAF_MANAGER_INSTALLATION` matching the 12-hex-character deployment identity,
-and `FRAMELEAF_IMPORT_MANAGER_OPERATION_ID` matching the validated config. The
-configuration digest must match the import journal. Environment markers alone cannot
-authorize a Manager hold or retrofit one onto previously admitted work. `status` requires only `DB_URL` and reports the
-journal state for restart reconciliation. An omitted media policy or explicit
-`{"mode":"independent-copy"}` preserves the unmanaged independent-copy contract.
+Manager preparation requires `FRAMELEAF_MANAGER_ORIGIN=new_import`, a valid 12-hex-character
+`FRAMELEAF_MANAGER_INSTALLATION`, a non-empty `FRAMELEAF_IMPORT_MANAGER_OPERATION_ID`,
+and a supplied configuration whose digest matches the import journal. Default and explicit
+independent-copy imports use that same private setup authority and commit their work held.
+The in-place policy additionally requires its deployment and operation IDs to match the environment.
+First preparation retains that authority; retry requires the same marker and cannot retrofit
+one onto previously admitted work. Outside the Manager import profile, default and explicit
+independent-copy imports keep their standalone ready-work behavior. `status` requires only
+`DB_URL` and reports the journal state for restart reconciliation.
 
 Example configuration (write it to a private file):
 

@@ -22,6 +22,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { handleError } from '$lib/utils/handle-error';
   import {
     beginLibrarySetup,
     getLibrarySetupProgress,
@@ -63,8 +64,10 @@
   const attention = $derived(progress?.phase === Phase.NeedsAttention);
   const current = $derived(
     progress?.stages.find(
-      (stage) => stage.status === LibrarySetupStageStatus.Running || stage.status === LibrarySetupStageStatus.Paused,
-    ) ?? progress?.stages.find((stage) => stage.status === LibrarySetupStageStatus.Waiting),
+      (stage) =>
+        !stage.disabled &&
+        (stage.status === LibrarySetupStageStatus.Running || stage.status === LibrarySetupStageStatus.Paused),
+    ) ?? progress?.stages.find((stage) => !stage.disabled && stage.status === LibrarySetupStageStatus.Waiting),
   );
   const part = $derived(current && current.total > 0 ? Math.min(1, current.done / current.total) : 0);
   const percent = $derived(Math.floor(part * 100));
@@ -78,10 +81,12 @@
   });
 
   const stageTitle = (id: LibrarySetupStageId) => $t(`setup_bar_stage_${id}`);
-  const stageDetail = (id: LibrarySetupStageId, status: LibrarySetupStageStatus) =>
-    id === LibrarySetupStageId.Search && status === LibrarySetupStageStatus.Waiting
-      ? $t('setup_bar_stage_search_waiting')
-      : $t(`setup_bar_stage_${id}_detail`);
+  const stageDetail = (id: LibrarySetupStageId, status: LibrarySetupStageStatus, disabled = false) =>
+    disabled
+      ? $t('setup_bar_stage_search_disabled')
+      : id === LibrarySetupStageId.Search && status === LibrarySetupStageStatus.Waiting
+        ? $t('setup_bar_stage_search_waiting')
+        : $t(`setup_bar_stage_${id}_detail`);
   const statusIcon = {
     [LibrarySetupStageStatus.Done]: mdiCheckCircle,
     [LibrarySetupStageStatus.Running]: mdiProgressClock,
@@ -153,6 +158,8 @@
     busy = true;
     try {
       await work();
+    } catch (error) {
+      handleError(error, $t('setup_bar_action_error'));
     } finally {
       busy = false;
     }
@@ -191,7 +198,7 @@
   onDestroy(() => document.documentElement.style.removeProperty('--fl-setup-bar-height'));
 </script>
 
-{#if visible && progress && current}
+{#if visible && progress}
   <div
     class="fl-setup-bar"
     class:is-paused={progress.paused}
@@ -215,8 +222,8 @@
       </strong>
       <span class="fl-setup-bar-detail">
         {#if attention}
-          {$t('setup_bar_attention_detail')}
-        {:else if current.total > 0}
+          {$t(progress.stages.length > 0 ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}
+        {:else if current && current.total > 0}
           {$t('setup_bar_progress', {
             values: {
               stage: stageTitle(current.id),
@@ -224,14 +231,16 @@
               total: current.total.toLocaleString($locale),
             },
           })}
-        {:else}
+        {:else if current}
           {stageTitle(current.id)}
         {/if}
         {#if secondsLeft !== null && !attention}
           · {timeLeft(secondsLeft)}
         {/if}
       </span>
-      <span class="fl-setup-bar-percent">{percent}%</span>
+      {#if current}
+        <span class="fl-setup-bar-percent">{percent}%</span>
+      {/if}
     </p>
     {#if progress.flagged > 0}
       <a class="fl-setup-bar-flag" href={Route.libraryCare()}>
@@ -239,22 +248,24 @@
         {$t('setup_bar_flagged', { values: { count: progress.flagged } })}
       </a>
     {/if}
-    <div
-      class="fl-setup-bar-progress"
-      role="progressbar"
-      aria-label={stageTitle(current.id)}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={percent}
-    >
-      <span style:width="{part * 100}%"></span>
-    </div>
+    {#if current}
+      <div
+        class="fl-setup-bar-progress"
+        role="progressbar"
+        aria-label={stageTitle(current.id)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+      >
+        <span style:width="{part * 100}%"></span>
+      </div>
+    {/if}
     <div class="fl-setup-bar-actions">
-      {#if attention}
+      {#if attention && progress.stages.length > 0}
         <button type="button" class="button primary" disabled={busy} onclick={retry}>
           {$t('retry')}
         </button>
-      {:else}
+      {:else if !attention}
         <button type="button" class="button fl-setup-bar-pause" disabled={busy} onclick={togglePause}>
           <Icon icon={progress.paused ? mdiPlay : mdiPause} size="18" aria-hidden={true} />
           {progress.paused ? $t('resume') : $t('pause')}
@@ -274,43 +285,60 @@
 
     {#if open}
       <section class="fl-setup-bar-panel" id="fl-setup-bar-panel" aria-label={$t('setup_bar_title')}>
-        <ol>
-          <li class="is-done">
-            <Icon icon={mdiCheckCircle} size="18" class="fl-setup-stage-icon" aria-hidden={true} />
-            <div>
-              <div class="fl-setup-stage-head">
-                <strong>{$t('setup_bar_stage_import')}</strong>
-                <span>{$t('setup_bar_status_done')}</span>
-              </div>
-              <p>
-                {$t('setup_bar_stage_import_detail', { values: { count: progress.items.toLocaleString($locale) } })}
-              </p>
-            </div>
-          </li>
-          {#each progress.stages as stage (stage.id)}
-            {@const share = stage.total > 0 ? stage.done / stage.total : 0}
-            {@const partial = share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
-            <li
-              class:is-done={stage.status === LibrarySetupStageStatus.Done}
-              class:is-running={stage.status === LibrarySetupStageStatus.Running}
-              class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
-            >
-              <Icon icon={statusIcon[stage.status]} size="18" class="fl-setup-stage-icon" aria-hidden={true} />
+        {#if attention}
+          <p>{$t(progress.stages.length > 0 ? 'setup_bar_attention_detail' : 'setup_bar_identity_attention_detail')}</p>
+        {/if}
+        {#if progress.stages.length > 0}
+          <ol>
+            <li class="is-done">
+              <Icon icon={mdiCheckCircle} size="18" class="fl-setup-stage-icon" aria-hidden={true} />
               <div>
                 <div class="fl-setup-stage-head">
-                  <strong>{stageTitle(stage.id)}</strong>
-                  <span>{partial ? `${Math.floor(share * 100)}%` : $t(`setup_bar_status_${stage.status}`)}</span>
+                  <strong>{$t('setup_bar_stage_import')}</strong>
+                  <span>{$t('setup_bar_status_done')}</span>
                 </div>
-                <p>{stageDetail(stage.id, stage.status)}</p>
-                {#if partial}
-                  <div class="fl-setup-bar-progress is-stage" aria-hidden="true">
-                    <span style:width="{share * 100}%"></span>
-                  </div>
-                {/if}
+                <p>
+                  {$t('setup_bar_stage_import_detail', { values: { count: progress.items.toLocaleString($locale) } })}
+                </p>
               </div>
             </li>
-          {/each}
-        </ol>
+            {#each progress.stages as stage (stage.id)}
+              {@const share = stage.total > 0 ? stage.done / stage.total : 0}
+              {@const partial =
+                !stage.disabled && share > 0 && share < 1 && stage.status !== LibrarySetupStageStatus.Done}
+              <li
+                class:is-done={stage.status === LibrarySetupStageStatus.Done}
+                class:is-running={stage.status === LibrarySetupStageStatus.Running}
+                class:is-waiting={stage.status === LibrarySetupStageStatus.Waiting}
+              >
+                <Icon
+                  icon={stage.disabled ? mdiPauseCircleOutline : statusIcon[stage.status]}
+                  size="18"
+                  class="fl-setup-stage-icon"
+                  aria-hidden={true}
+                />
+                <div>
+                  <div class="fl-setup-stage-head">
+                    <strong>{stageTitle(stage.id)}</strong>
+                    <span
+                      >{partial
+                        ? `${Math.floor(share * 100)}%`
+                        : stage.disabled
+                          ? $t('setup_bar_status_disabled')
+                          : $t(`setup_bar_status_${stage.status}`)}</span
+                    >
+                  </div>
+                  <p>{stageDetail(stage.id, stage.status, stage.disabled)}</p>
+                  {#if partial}
+                    <div class="fl-setup-bar-progress is-stage" aria-hidden="true">
+                      <span style:width="{share * 100}%"></span>
+                    </div>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ol>
+        {/if}
         <footer>
           <p>{progress.paused ? $t('setup_bar_footer_paused') : $t('setup_bar_footer')}</p>
           {#if !attention}

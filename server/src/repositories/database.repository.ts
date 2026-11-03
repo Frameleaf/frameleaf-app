@@ -17,6 +17,8 @@ import {
 } from 'src/constants.js';
 import { GenerateSql } from 'src/decorators.js';
 import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
+import { readLibraryImportActivation } from 'src/library-import/activation-proof.js';
+import { parseLibraryImportBinding } from 'src/library-import/state.js';
 import { resetQueueAfterRestore } from 'src/queue/store.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -418,9 +420,34 @@ export class DatabaseRepository {
   }
 
   async assertImportActivated(): Promise<void> {
-    const { rows } = await sql<{ status: string }>`SELECT status FROM public.frameleaf_immich_import
-      UNION ALL SELECT status FROM public.frameleaf_library_import`.execute(this.db);
-    if (rows.some((row) => row.status !== 'activated')) {
+    const { rows } = await sql<{
+      family: string;
+      status: string;
+      binding: unknown;
+      destinationId: string;
+      activation: unknown;
+      activationSha256: unknown;
+    }>`SELECT 'immich' AS family, status, NULL::jsonb AS binding, NULL::text AS "destinationId",
+        NULL::jsonb AS activation, NULL::text AS "activationSha256"
+      FROM public.frameleaf_immich_import
+      UNION ALL SELECT 'library', status, binding, reviewed_plan->>'destinationId', activation, activation_sha256
+        FROM public.frameleaf_library_import`.execute(this.db);
+    try {
+      const { rows: orphaned } = await sql`SELECT 1 FROM public."user" u
+        WHERE u."importOperationId" IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM public.frameleaf_library_import i WHERE i.operation_id=u."importOperationId" AND i.status='activated')
+        LIMIT 1`.execute(this.db);
+      if (orphaned.length > 0) throw new Error('Imported owner recovery evidence is missing');
+      for (const row of rows) {
+        if (row.status !== 'activated') throw new Error('Import has not activated');
+        if (row.family === 'immich') continue;
+        if (row.family !== 'library') throw new Error('Unknown import journal');
+        readLibraryImportActivation(
+          { payload: row.activation, sha256: row.activationSha256 },
+          { binding: parseLibraryImportBinding(row.binding), destinationId: row.destinationId },
+        );
+      }
+    } catch {
       throw new Error('DESTINATION_IMPORT_NOT_ACTIVATED: finish import verification before starting Frameleaf.');
     }
   }

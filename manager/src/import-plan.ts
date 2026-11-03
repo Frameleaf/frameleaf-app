@@ -5,6 +5,7 @@ import { Refusal } from './contracts.js';
 
 export const importHash = z.string().regex(/^[a-f0-9]{64}$/);
 const decimal = z.string().regex(/^(0|[1-9]\d*)$/);
+const nanoseconds = z.string().regex(/^(0|-?[1-9]\d*)$/);
 const id = z.string().min(1).max(1024);
 const path = z
   .string()
@@ -18,6 +19,7 @@ const path = z
       [...value].every((c) => c >= ' ') &&
       value.split('/').every((part) => part && part !== '.' && part !== '..'),
   );
+export const importRelativePathSchema = path;
 const legacyTransferSchema = z.strictObject({
   id,
   mode: z.enum(['copy', 'adopt', 'relocate']),
@@ -31,8 +33,8 @@ const legacyTransferSchema = z.strictObject({
     device: decimal,
     inode: decimal,
     bytes: decimal,
-    mtimeNs: decimal,
-    ctimeNs: decimal,
+    mtimeNs: nanoseconds,
+    ctimeNs: nanoseconds,
     links: decimal,
   }),
   destinationDevice: decimal,

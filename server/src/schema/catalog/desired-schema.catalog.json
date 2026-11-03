@@ -47506,6 +47506,15 @@
           "isArray": false,
           "default": "false",
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "importOperationId",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -47968,6 +47977,24 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "activation",
+          "tableName": "frameleaf_library_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "activation_sha256",
+          "tableName": "frameleaf_library_import",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [],
@@ -48071,6 +48098,38 @@
           "definition": "CHECK (((private_owners_sha256 IS NULL) OR (private_owners_sha256 ~ '^[a-f0-9]{64}$'::text)))",
           "tableName": "frameleaf_library_import",
           "expression": "(((private_owners_sha256 IS NULL) OR (private_owners_sha256 ~ '^[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_activation_hash",
+          "definition": "CHECK (((activation_sha256 IS NULL) OR (activation_sha256 ~ '^[a-f0-9]{64}$'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((activation_sha256 IS NULL) OR (activation_sha256 ~ '^[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_activation_object",
+          "definition": "CHECK (((activation IS NULL) OR (jsonb_typeof(activation) = 'object'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((activation IS NULL) OR (jsonb_typeof(activation) = 'object'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_activation_pair",
+          "definition": "CHECK (((activation IS NULL) = (activation_sha256 IS NULL)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((activation IS NULL) = (activation_sha256 IS NULL)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "frameleaf_library_import_activation_phase",
+          "definition": "CHECK (((activation IS NULL) OR (status = 'activated'::text)))",
+          "tableName": "frameleaf_library_import",
+          "expression": "(((activation IS NULL) OR (status = 'activated'::text)))",
           "synchronize": true
         }
       ],

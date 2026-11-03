@@ -29,6 +29,8 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     listRuns: vitest.fn().mockResolvedValue([]),
     dispatchImportedWork: vitest.fn().mockResolvedValue('test-import-run'),
     prepareImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
+    dispatchImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
+    validateImportedLibraryWork: vitest.fn().mockResolvedValue('test-import-run'),
     isImportedMetadataJob: vitest.fn().mockResolvedValue(false),
     startWorkers: vitest.fn(),
     stopWorkers: vitest.fn().mockResolvedValue(undefined),
@@ -70,6 +72,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     cancelAssetJobs: vitest.fn(),
     getStoppedClaims: vitest.fn().mockResolvedValue(new Set()),
     retryFailed: vitest.fn(),
+    retryImportedWork: vitest.fn(),
     waitForQueueCompletion: vitest.fn(),
     removeJob: vitest.fn(),
   };

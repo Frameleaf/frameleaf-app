@@ -106,3 +106,22 @@ test('refuses destination paths that collide through different reviewed roots', 
   plan.files[1].destinationPath = 'camera.jpg';
   assert.throws(() => parseImportPlan(plan), /import_plan_invalid/);
 });
+
+for (const field of ['mtimeNs', 'ctimeNs'] as const)
+  test(`preserves signed filesystem clock evidence: ${field}`, () => {
+    const plan = structuredClone(placements.plan);
+    for (const file of plan.files) file.sourceIdentity[field] = '-123456789';
+    assert.equal(
+      parseImportPlan(plan).files[0].sourceIdentity[field],
+      '-123456789',
+    );
+  });
+
+for (const value of ['-0', '01', '-01'])
+  test(`refuses noncanonical filesystem clock evidence: ${value}`, () => {
+    for (const field of ['mtimeNs', 'ctimeNs'] as const) {
+      const plan = structuredClone(placements.plan);
+      for (const file of plan.files) file.sourceIdentity[field] = value;
+      assert.throws(() => parseImportPlan(plan), /import_plan_invalid/);
+    }
+  });

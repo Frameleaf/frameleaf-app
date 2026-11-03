@@ -18,6 +18,7 @@ export async function createImportedOwner(
   db: ImportDatabase,
   input: unknown,
   credential?: ImportedPassword,
+  restrictLogin = false,
 ): Promise<void> {
   const parsed = importedOwnerSchema.safeParse(input);
   if (!parsed.success) throw new Error('Library import refused: OWNER_INVALID');
@@ -38,9 +39,17 @@ export async function createImportedOwner(
       SELECT $1::uuid WHERE EXISTS (SELECT 1 FROM public."user"
         WHERE "isAdmin" AND status='active' AND "deletedAt" IS NULL AND NOT "importClaimPending")
       RETURNING id)
-      INSERT INTO public."user" (id,email,name,"clusterGroupId",password,"importClaimPending","shouldChangePassword")
-      SELECT $1::uuid,$2,$3,id,$4,$5,$5 FROM owner_group RETURNING id`,
-      [owner.destinationUserId, owner.email, owner.name, credential?.forImport() ?? null, !credential],
+      INSERT INTO public."user" (id,email,name,"clusterGroupId",password,"importClaimPending","shouldChangePassword","importOperationId")
+      SELECT $1::uuid,$2,$3,id,$4,$5,$6,$7::uuid FROM owner_group RETURNING id`,
+      [
+        owner.destinationUserId,
+        owner.email,
+        owner.name,
+        credential?.forImport() ?? null,
+        restrictLogin || !credential,
+        !credential,
+        owner.operationId,
+      ],
     );
   } catch {
     // Driver errors may contain a credential-bearing query or parameters.

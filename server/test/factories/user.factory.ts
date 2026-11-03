@@ -39,6 +39,7 @@ export class UserFactory {
       updateId: newUuidV7(),
       uploadsPaused: false,
       importClaimPending: false,
+      importOperationId: null,
       passwordLinkHash: null,
       passwordLinkExpiresAt: null,
       ...dto,

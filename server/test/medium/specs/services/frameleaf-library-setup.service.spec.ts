@@ -9,6 +9,7 @@ import {
   IMPORT_DERIVED_RUN_STAGES,
   importDerivedRunId,
 } from 'src/immich-import/derived-work.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -36,9 +37,12 @@ it('starts the retained import regeneration during first setup once ready, resum
     getAdmin: vi.fn().mockResolvedValue({ id: randomUUID() }),
   };
   const config = {
-    getAdminConfigWithRevision: vi
-      .fn()
-      .mockResolvedValue({ config: { machineLearning: { enabled: true, urls: [] } }, revision: 'first' }),
+    getAdminConfigWithRevision: vi.fn().mockResolvedValue({
+      config: {
+        machineLearning: { enabled: true, urls: [], clip: { enabled: true }, facialRecognition: { enabled: true } },
+      },
+      revision: 'first',
+    }),
     updateAdminConfigWithRevision: vi.fn().mockResolvedValue({}),
   };
   const make = () =>
@@ -46,7 +50,10 @@ it('starts the retained import regeneration during first setup once ready, resum
       db,
       { getAll: vi.fn().mockResolvedValue([]) } as never,
       {} as never,
-      { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
+      {
+        getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+        retryImportedWork: (runId: string, tx: typeof db) => new SqlQueueStore(db).retryImportedWork(runId, tx),
+      } as never,
       users as never,
       {} as never,
       {} as never,

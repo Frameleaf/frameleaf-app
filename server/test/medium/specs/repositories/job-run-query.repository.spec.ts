@@ -1,5 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { importDerivedRunId } from 'src/immich-import/derived-work.js';
+import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
+import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
+import { parseLibraryImportBinding } from 'src/library-import/state.js';
 import { RUN_OUTCOMES, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -10,14 +14,16 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.destroy();
 });
+const installation = '333333334444';
+const setupKey = 'frameleaf-manager-library-setup:' + installation;
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(async () => {
   await sql`truncate job_attempt, job, job_run_item, job_run, job_worker, job_queue cascade`.execute(db);
   await sql`insert into job_queue(name) values ('test'), ('paused')`.execute(db);
   await sql`update job_queue set paused = true where name = 'paused'`.execute(db);
   await sql`insert into job_worker(id) values (${randomUUID()}::uuid)`.execute(db);
 });
-const run = async (enumerationDone = true) => {
-  const id = randomUUID();
+const run = async (enumerationDone = true, id: string = randomUUID()) => {
   await sql`insert into job_run(id, kind, selection, "enumerationDone", "createdAt")
     values (${id}::uuid, 'test', '{"mediaNames":["private-name"]}', ${enumerationDone}, now() - interval '5 minutes')`.execute(
     db,
@@ -88,52 +94,111 @@ it('reads an exact retained run outside the global page without changing default
   expect(await listRuns(db, 25, 0)).toEqual(page);
 });
 
-it('explains an old first-setup hold without a dispatch alert, then restores genuine backlog and terminal outcomes', async () => {
-  const id = await run(); // More than the ordinary two-minute dispatch warning boundary.
-  const marker = {
-    installation: '333333334444',
-    operationId: randomUUID(),
-    preparedAt: new Date().toISOString(),
-    startedAt: null,
-  };
-  await sql`UPDATE job_run SET kind='immich-import-derived',selection=${JSON.stringify({ managerSetup: marker })}::text::jsonb WHERE id=${id}::uuid`.execute(
-    db,
-  );
-  const item = await stage(id, 'private-root', 'Thumbnail', 'pending');
-  const selectionId = randomUUID();
-  await sql`INSERT INTO job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"capturedAt")
+it.each(['immich-import-derived', 'library-import-derived'])(
+  'explains a %s setup hold without a false dispatch alert',
+  async (kind) => {
+    vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', installation);
+    vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_import');
+    vi.stubEnv('FRAMELEAF_MANAGER_IMPORT_INSTALLATION', '');
+    await sql`TRUNCATE frameleaf_immich_import,frameleaf_library_import CASCADE`.execute(db);
+    const operationId = randomUUID(),
+      destinationId = randomUUID();
+    const binding = parseLibraryImportBinding({
+      operationId,
+      manifestSha256: 'a'.repeat(64),
+      planSha256: 'b'.repeat(64),
+      source: fixture.plan.source,
+    });
+    const source = { source: 'synthetic-source', config: 'synthetic-config' };
+    const id = await run(
+      true,
+      kind === 'library-import-derived'
+        ? libraryImportDerivedRunId(binding)
+        : importDerivedRunId(source.source, source.config),
+    );
+    if (kind === 'immich-import-derived')
+      await sql`INSERT INTO frameleaf_immich_import(source_fingerprint,config_fingerprint,source_version,status)
+        VALUES(${source.source},${source.config},'synthetic','activated')`.execute(db);
+    else
+      await sql`INSERT INTO frameleaf_library_import(operation_id,binding,status,reviewed_manifest,reviewed_plan)
+        VALUES(${operationId}::uuid,${JSON.stringify(binding)}::text::jsonb,'activated','{}'::jsonb,
+          ${JSON.stringify({ destinationId })}::text::jsonb)`.execute(db);
+    await sql`INSERT INTO system_metadata(key,value) VALUES(${setupKey},
+      ${JSON.stringify({
+        installation,
+        origin: 'new_import',
+        phase: 'rescanning',
+        processingChoiceApplied: true,
+        importRunId: id,
+        importOperationId: operationId,
+      })}::text::jsonb)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`.execute(db);
+    const marker = {
+      installation,
+      operationId,
+      preparedAt: new Date().toISOString(),
+      startedAt: null,
+    };
+    const selection = {
+      ...(kind === 'library-import-derived' ? { ...binding, destinationId, version: 1, prepared: true } : source),
+      managerSetupRequired: true,
+      managerSetup: marker,
+    };
+    await sql`UPDATE job_run SET kind=${kind},selection=${JSON.stringify(selection)}::text::jsonb WHERE id=${id}::uuid`.execute(
+      db,
+    );
+    const item = await stage(id, 'private-root', 'Thumbnail', 'pending');
+    const selectionId = randomUUID();
+    await sql`INSERT INTO job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state,"capturedAt")
     VALUES (${selectionId}::uuid,${id}::uuid,'Thumbnail','test',true,false,1000,'enumerating',now())`.execute(db);
-  await sql`UPDATE job_run_item SET "selectionId"=${selectionId}::uuid WHERE "runId"=${id}::uuid AND "itemKey"=${item}`.execute(
-    db,
-  );
-  let [summary] = await listRuns(db, 1, 0, id);
-  expect(summary).toMatchObject({ enumerationDone: true, state: 'blocked', noDispatchBacklog: false });
-  expect(summary.reasons).toContain('first_setup_pending');
-  expect(summary.reasons).not.toContain('enumerating');
-  expect(summary.reasons).not.toContain('no_dispatch_backlog');
-  await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
-    db,
-  );
-  await sql`UPDATE job_selection SET state='ready' WHERE id=${selectionId}::uuid`.execute(db);
-  [summary] = await listRuns(db, 1, 0, id);
-  expect(summary).toMatchObject({ state: 'waiting', noDispatchBacklog: true });
-  expect(summary.reasons).not.toContain('first_setup_pending');
-  expect(summary.reasons).toContain('no_dispatch_backlog');
-  await sql`UPDATE job_run SET selection='{}' WHERE id=${id}::uuid`.execute(db); // Legacy/independent-copy import stays ungated.
-  expect((await listRuns(db, 1, 0, id))[0]).toMatchObject({ state: 'waiting', noDispatchBacklog: true });
-  await sql`UPDATE job_run SET selection=${JSON.stringify({ managerSetup: marker })}::text::jsonb WHERE id=${id}::uuid`.execute(
-    db,
-  );
-  await sql`UPDATE job_selection SET state='cancelled' WHERE id=${selectionId}::uuid`.execute(db);
-  [summary] = await listRuns(db, 1, 0, id);
-  expect(summary).toMatchObject({ state: 'cancelled', noDispatchBacklog: false });
-  expect(summary.reasons).not.toContain('first_setup_pending');
-  await sql`UPDATE job_selection SET state='needs_attention' WHERE id=${selectionId}::uuid`.execute(db);
-  [summary] = await listRuns(db, 1, 0, id);
-  expect(summary).toMatchObject({ state: 'completed_with_errors', noDispatchBacklog: false });
-  expect(summary.reasons).not.toContain('first_setup_pending');
-  expect(summary.reasons).toContain('needs_attention');
-});
+    await sql`UPDATE job_run_item SET "selectionId"=${selectionId}::uuid WHERE "runId"=${id}::uuid AND "itemKey"=${item}`.execute(
+      db,
+    );
+    let [summary] = await listRuns(db, 1, 0, id);
+    expect(summary).toMatchObject({ enumerationDone: true, state: 'blocked', noDispatchBacklog: false });
+    expect(summary.reasons).toContain('first_setup_pending');
+    expect(summary.reasons).not.toContain('enumerating');
+    expect(summary.reasons).not.toContain('no_dispatch_backlog');
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,startedAt}',to_jsonb(now()::text)) WHERE id=${id}::uuid`.execute(
+      db,
+    );
+    await sql`UPDATE job_selection SET state='ready' WHERE id=${selectionId}::uuid`.execute(db);
+    [summary] = await listRuns(db, 1, 0, id);
+    expect(summary).toMatchObject({ state: 'waiting', noDispatchBacklog: true });
+    expect(summary.reasons).not.toContain('first_setup_pending');
+    expect(summary.reasons).toContain('no_dispatch_backlog');
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}','true') WHERE id=${id}::uuid`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=jsonb_set(value,'{paused}','true') WHERE key=${setupKey}`.execute(db);
+    [summary] = await listRuns(db, 1, 0, id);
+    expect(summary.noDispatchBacklog).toBe(false);
+    expect(summary.reasons).not.toContain('no_dispatch_backlog');
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}','false') WHERE id=${id}::uuid`.execute(
+      db,
+    );
+    await sql`UPDATE system_metadata SET value=jsonb_set(value,'{paused}','false') WHERE key=${setupKey}`.execute(db);
+    expect((await listRuns(db, 1, 0, id))[0].noDispatchBacklog).toBe(true);
+    await sql`UPDATE job_run SET selection='{}' WHERE id=${id}::uuid`.execute(db);
+    expect((await listRuns(db, 1, 0, id))[0]).toMatchObject({ state: 'waiting', noDispatchBacklog: false });
+    // Independent imports outside a Manager import profile stay ungated.
+    vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', '');
+    vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', '');
+    expect((await listRuns(db, 1, 0, id))[0]).toMatchObject({ state: 'waiting', noDispatchBacklog: true });
+    vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', installation);
+    vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_import');
+    await sql`UPDATE job_run SET selection=${JSON.stringify(selection)}::text::jsonb WHERE id=${id}::uuid`.execute(db);
+    await sql`UPDATE job_selection SET state='cancelled' WHERE id=${selectionId}::uuid`.execute(db);
+    [summary] = await listRuns(db, 1, 0, id);
+    expect(summary).toMatchObject({ state: 'cancelled', noDispatchBacklog: false });
+    expect(summary.reasons).not.toContain('first_setup_pending');
+    await sql`UPDATE job_selection SET state='needs_attention' WHERE id=${selectionId}::uuid`.execute(db);
+    [summary] = await listRuns(db, 1, 0, id);
+    expect(summary).toMatchObject({ state: 'completed_with_errors', noDispatchBacklog: false });
+    expect(summary.reasons).not.toContain('first_setup_pending');
+    expect(summary.reasons).toContain('needs_attention');
+  },
+);
 
 it('counts 15,000 selected roots once despite multiple face subjects, stages and a coordinator', async () => {
   const id = await run();

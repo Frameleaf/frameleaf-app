@@ -41,7 +41,7 @@ const readPrivateRow = async (tx: ImportDatabase): Promise<PrivateRow> => {
   if (!row) return refuse('IMPORT_JOURNAL_MISSING');
   return row as PrivateRow;
 };
-const restore = (row: PrivateRow, context: PrivateContext) => {
+export const restorePrivateOwnerInputs = (row: PrivateRow, context: PrivateContext) => {
   if (row.private_owners === null && row.private_owners_sha256 === null) return refuse('IMPORT_PRIVATE_OWNERS_MISSING');
   const parsed = archiveSchema.safeParse(row.private_owners);
   if (
@@ -75,7 +75,7 @@ const restore = (row: PrivateRow, context: PrivateContext) => {
   const prepared = prepare(context, inventory);
   if (!timingSafeEqual(Buffer.from(prepared.sha256, 'hex'), Buffer.from(row.private_owners_sha256, 'hex')))
     return refuse('IMPORT_PRIVATE_OWNERS_CHANGED');
-  return prepared;
+  return { owners: prepared.owners, sha256: prepared.sha256 };
 };
 
 /** Retains protected destination-policy verifiers, never raw source verifiers, sessions or API keys. */
@@ -89,7 +89,8 @@ export async function retainPrivateOwnerInputs(
     const prepared = prepare(reviewed, inventory);
     const row = await readPrivateRow(tx);
     if (row.private_owners !== null || row.private_owners_sha256 !== null) {
-      if (restore(row, reviewed).sha256 !== prepared.sha256) return refuse('IMPORT_PRIVATE_OWNERS_CHANGED');
+      if (restorePrivateOwnerInputs(row, reviewed).sha256 !== prepared.sha256)
+        return refuse('IMPORT_PRIVATE_OWNERS_CHANGED');
       return;
     }
     await tx.query(
@@ -104,7 +105,7 @@ export async function retainPrivateOwnerInputs(
 export async function loadPrivateOwnerInputs(db: ImportDatabase, context: ReviewedImportContext) {
   return withImportInputRun(db, context, false, async (tx, bound) => {
     const reviewed = { ...bound, ...(await readRetainedImportInputs(tx, bound)) };
-    return restore(await readPrivateRow(tx), reviewed).owners.map(({ intent, credential }) => ({
+    return restorePrivateOwnerInputs(await readPrivateRow(tx), reviewed).owners.map(({ intent, credential }) => ({
       intent,
       credential,
     }));
