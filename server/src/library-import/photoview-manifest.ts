@@ -89,16 +89,20 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
   )
     return refuse('PHOTOVIEW_MAPPING_CHANGED');
   const grants = Map.groupBy(rows('user_albums'), (row) => key(row.album_id));
-  const albumOwner = (id: string) => {
-    const owner = Object.hasOwn(input.albumOwners, id) ? input.albumOwners[id] : undefined;
+  const albumReaders = (id: string) => {
+    const readers = new Set<string>();
     let current: string | undefined = id;
     // Parent integrity and cycles were checked by normalizePhotoviewAccess.
     while (current !== undefined) {
-      if (owner !== undefined && (grants.get(current) ?? []).some((row) => key(row.user_id) === owner)) return owner;
+      for (const row of grants.get(current) ?? []) readers.add(key(row.user_id));
       const parent: PhotoviewRow['parent_album_id'] = albums.get(current)!.parent_album_id;
       current = parent === null ? undefined : key(parent);
     }
-    return refuse('PHOTOVIEW_OWNER_MAPPING_REQUIRED');
+    return readers;
+  };
+  const albumOwner = (id: string) => {
+    const owner = Object.hasOwn(input.albumOwners, id) ? input.albumOwners[id] : undefined;
+    return owner !== undefined && albumReaders(id).has(owner) ? owner : refuse('PHOTOVIEW_OWNER_MAPPING_REQUIRED');
   };
   const root = input.sourceRoot;
   const relative = (value: unknown) => {
@@ -123,7 +127,7 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
   // shortcut: archive face geometry and directory ancestry until their destination mappings are qualified.
   if (rows('face_groups').length > 0 || rows('image_faces').length > 0) loss('PHOTOVIEW_PEOPLE_ARCHIVED');
   if (rows('albums').some((row) => row.parent_album_id !== null)) loss('PHOTOVIEW_DIRECTORY_HIERARCHY_ARCHIVED');
-  if (rows('share_tokens').length > 0 || access.values().some((row) => row.readerIds.length > 1))
+  if (rows('share_tokens').length > 0 || albums.keys().some((id) => albumReaders(id).size > 1))
     loss('PHOTOVIEW_SHARING_RESTRICTED');
   const proofs = new Map(input.files.map((file) => [file.id, file]));
   if (proofs.size !== input.files.length) return refuse('PHOTOVIEW_FILE_EVIDENCE_MISMATCH');
