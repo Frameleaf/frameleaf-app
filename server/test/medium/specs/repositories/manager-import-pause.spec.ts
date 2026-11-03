@@ -467,7 +467,7 @@ it.each(
       );
     await sql`UPDATE job_run_item SET state='failed' WHERE "runId"=${id}::uuid`.execute(db);
     await sql`UPDATE job_run SET "finishedAt"=now() WHERE id=${id}::uuid`.execute(db);
-    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ phase: 'needs-attention', paused })}::text::jsonb WHERE key=${setupKey}`.execute(
+    await sql`UPDATE system_metadata SET value=value || ${JSON.stringify({ phase: 'needs-attention', paused: false, health: {}, scans: {} })}::text::jsonb WHERE key=${setupKey}`.execute(
       db,
     );
     const jobs = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
@@ -482,6 +482,17 @@ it.each(
       {} as never,
       {} as never,
     );
+    vi.spyOn(setup, 'progress').mockResolvedValue({} as never);
+    if (paused) {
+      await setup.setPaused(true);
+      expect(
+        (
+          await sql<{
+            state: string;
+          }>`SELECT state FROM job_selection WHERE "runId"=${id}::uuid AND queue=${queue}`.execute(db)
+        ).rows,
+      ).toEqual([{ state: 'enumerating' }]);
+    }
     await setup.begin(true);
     const items = (
       await sql<{
@@ -501,8 +512,14 @@ it.each(
     ).toBe(true);
     await store.feedManifest(queue);
     const claims = await store.claim(queue, worker, 1);
-    if (paused) expect(claims).toEqual([]);
-    else {
+    if (paused) {
+      expect(claims).toEqual([]);
+      await setup.setPaused(false);
+      await store.feedManifest(queue);
+      const [resumed] = await store.claim(queue, worker, 1);
+      expect(resumed?.data).toEqual({ fixture: 'retained-original-payload', id: asset });
+      expect(await store.complete(resumed, [])).toBe(true);
+    } else {
       expect(claims[0]?.data).toEqual({ fixture: 'retained-original-payload', id: asset });
       expect(await store.complete(claims[0], [])).toBe(true);
     }
