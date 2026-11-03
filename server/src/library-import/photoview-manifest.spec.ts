@@ -214,6 +214,29 @@ describe('Photoview common manifest mapping', () => {
       expect(() => read(value)).toThrow('PHOTOVIEW_OWNER_MAPPING_REQUIRED');
     },
   );
+  it.each([false, true])('reports sharing loss for an empty album with inherited readers (shared: %s)', (shared) => {
+    database.exec(
+      'DELETE FROM share_tokens; DELETE FROM user_media_data; DELETE FROM image_faces; DELETE FROM media_urls; DELETE FROM media; DELETE FROM user_albums',
+    );
+    for (const album of content.rows.albums)
+      database.prepare('INSERT INTO user_albums(user_id,album_id) VALUES(?,?)').run(1, album.id);
+    if (shared) {
+      database.prepare('DELETE FROM user_albums WHERE album_id=?').run(5);
+      database.prepare('INSERT INTO user_albums(user_id,album_id) VALUES(?,?)').run(2, 5);
+    }
+    const value = input();
+    value.files = [];
+    value.photoOwners = {};
+    value.albumOwners = Object.fromEntries(content.rows.albums.map((album) => [String(album.id), '1']));
+    const { manifest } = read(value);
+    expect(manifest.assets).toHaveLength(0);
+    expect(manifest.albums.find((album) => album.id === '5')).toMatchObject({
+      ownerId: '1',
+      members: [],
+      assetIds: [],
+    });
+    expect(manifest.losses.some((loss) => loss.code === 'PHOTOVIEW_SHARING_RESTRICTED')).toBe(shared);
+  });
   it('requires every owner decision and refuses unused stale decisions', () => {
     const value = input();
     delete value.photoOwners['1'];
