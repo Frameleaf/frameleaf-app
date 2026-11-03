@@ -13,6 +13,8 @@ const REPOSITORY = (names: string, noodle: string) =>
   );
 const OFFICIAL = REPOSITORY('server|microservices', 'server');
 const WORKER = REPOSITORY('server|microservices|machine-learning', 'server|ml');
+// Gallery releases before 5.9 keep their own migrations in kysely_migrations, so the image also marks Gallery.
+const GALLERY = /^(?:[a-z0-9.-]+(?::\d+)?\/)?open-noodle\/gallery-server(?::|@)/i;
 export const isSourceServer = (image: string) => OFFICIAL.test(image);
 /** Where the Immich server listens inside its own container: IMMICH_PORT/IMMICH_HOST, else Immich's defaults. */
 export function versionUrl(env: Record<string, string | undefined>): string {
@@ -203,7 +205,7 @@ export class Discovery {
       await this.docker
         .node(
           app.Id,
-          `fetch(process.argv[1]).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
+          `fetch(process.argv[1],{headers:{'x-gallery-app':'frameleaf-manager'}}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(v=>process.stdout.write('v'+v.major+'.'+v.minor+'.'+v.patch)).catch(()=>process.exit(1))`,
           [versionUrl(env)],
         )
         .catch(() => {
@@ -236,8 +238,9 @@ export class Discovery {
       id: app.Id,
       app: app.Id,
       project,
-      // Noodle Gallery reports its own release (5.x); the importer reads its Immich base from the migration ledger.
-      product: facts.noodle ? 'Noodle Gallery' : 'Immich',
+      // Gallery reports its own release (5.x) only to clients sending x-gallery-app, as the version check does;
+      // the importer reads its Immich base from the migration ledger.
+      product: facts.noodle || GALLERY.test(app.Config.Image) ? 'Noodle Gallery' : 'Immich',
       version,
       image: app.Image,
       workers: workers.map((c) => c.Id),

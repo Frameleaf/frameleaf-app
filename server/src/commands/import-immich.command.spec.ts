@@ -223,3 +223,12 @@ it.each([undefined, { mode: 'independent-copy' as const }])(
     }
   },
 );
+
+it('admits only the source products Manager names', () => {
+  for (const product of ['Immich', 'Noodle Gallery'] as const) {
+    expect(() => validateImportConfig({ ...fixture.config, product })).not.toThrow();
+  }
+  expect(() => validateImportConfig({ ...fixture.config, product: 'gallery' } as never)).toThrow(
+    'INVALID_IMPORT_CONFIGURATION',
+  );
+});

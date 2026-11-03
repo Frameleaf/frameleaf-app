@@ -16,6 +16,8 @@ export type ImportMediaPolicy =
   | { mode: 'manager-in-place'; authority: 'frameleaf-manager'; operationId: string; deploymentId: string };
 export type ImportConfig = {
   version: string;
+  /** Manager names a Noodle Gallery source, whose version is Gallery's own release rather than its Immich base. */
+  product?: 'Immich' | 'Noodle Gallery';
   sourceId: string;
   writersStopped: boolean;
   mediaRoots: MediaRootMap[];
