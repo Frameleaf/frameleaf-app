@@ -43,6 +43,10 @@ jobs:
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Install locked Server dependencies
         run: pnpm --filter 'frameleaf...' install --frozen-lockfile
+      - name: Build required SDKs
+        run: |
+          pnpm --filter @frameleaf/sdk build
+          pnpm --filter @frameleaf/plugin-sdk build
       - name: Qualify native restored database extraction
         run: node server/scripts/qualify-photoprism-mariadb.mjs
       - name: Remove disposable Docker fixtures after cancellation
