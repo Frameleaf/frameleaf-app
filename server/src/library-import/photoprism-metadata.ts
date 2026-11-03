@@ -71,8 +71,8 @@ export const normalizePhotoprismPhoto = (row: PhotoprismRow, details?: Photopris
     description: photo.photo_caption,
     takenAt: photo.taken_at,
     timeZone,
-    latitude: hasLocation ? photo.photo_lat : undefined,
-    longitude: hasLocation ? photo.photo_lng : undefined,
+    latitude: hasLocation ? photo.photo_lat : null,
+    longitude: hasLocation ? photo.photo_lng : null,
     favorite: photo.photo_favorite,
     tags,
   };

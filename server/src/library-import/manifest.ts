@@ -42,18 +42,23 @@ export const importOriginalFileNameSchema = z
       value !== '.' &&
       value !== '..',
   );
-const metadata = z.strictObject({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  takenAt: z.iso.datetime({ offset: true }).optional(),
-  timeZone: z.string().optional(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  rating: z.number().int().min(0).max(5).optional(),
-  tags: z.array(z.string()).optional(),
-  favorite: z.boolean().optional(),
-  deletedAt: z.iso.datetime({ offset: true }).optional(),
-});
+const metadata = z
+  .strictObject({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    takenAt: z.iso.datetime({ offset: true }).optional(),
+    timeZone: z.string().optional(),
+    latitude: z.number().min(-90).max(90).nullable().optional(),
+    longitude: z.number().min(-180).max(180).nullable().optional(),
+    rating: z.number().int().min(0).max(5).optional(),
+    tags: z.array(z.string()).optional(),
+    favorite: z.boolean().optional(),
+    deletedAt: z.iso.datetime({ offset: true }).optional(),
+  })
+  .refine(
+    ({ latitude, longitude }) => (latitude === null) === (longitude === null),
+    'Cleared coordinates must be paired',
+  );
 
 const legacyManifestSchema = z.strictObject({
   format: z.literal('frameleaf-library-import'),
