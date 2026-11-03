@@ -751,10 +751,12 @@ export class MetadataService extends BaseService {
     // older list as the file's and dropped the tags added since.
     // LIB-02: so does a time zone set in Frameleaf: the sidecar holds only an offset, and the next read would
     // take the zone of the GPS position instead.
+    // An XMP instant cannot represent an imported wall clock whose original zone is unknown.
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
       'timeZone',
+      'dateTimeOriginal',
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(

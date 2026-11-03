@@ -3172,7 +3172,7 @@ describe(MetadataService.name, () => {
       // LIB-02: the sidecar holds only an offset, so a time zone set in Frameleaf stays locked
       expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(
         asset.id,
-        ['description', 'latitude', 'longitude', 'dateTimeOriginal'],
+        ['description', 'latitude', 'longitude'],
         undefined,
       );
     });
