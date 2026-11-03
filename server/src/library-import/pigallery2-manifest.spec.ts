@@ -266,6 +266,14 @@ describe('PiGallery2 common manifest mapping', () => {
     database.prepare('UPDATE media_entity SET metadataCreationdateoffset=? WHERE id=6').run(offset);
     expect(() => read()).toThrow('PIGALLERY2_CAPTURE_TIME_INVALID');
   });
+  it.each(['a,,b', 'a,a', 'a,', '/a', 'a//b', 'a\u0000b'])(
+    'refuses unrepresentable keyword tags before producing a manifest (%s)',
+    (keywords) => {
+      database.prepare('UPDATE media_entity SET metadataKeywords=? WHERE id=6').run(keywords);
+      expect(() => read()).toThrow('PIGALLERY2_METADATA_INVALID');
+    },
+  );
+
   it('refuses a directory cycle even when the source lacks a cycle constraint', () => {
     database.exec('UPDATE directory_entity SET parentId=5 WHERE id=5');
     expect(() => read()).toThrow('PIGALLERY2_DIRECTORY_GRAPH_INVALID');
