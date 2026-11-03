@@ -147,13 +147,20 @@ export const MEDIA_CONCURRENCY = 16;
 export const mapInOrder = async <T, R>(items: T[], body: (item: T) => Promise<R>): Promise<R[]> => {
   const results: R[] = [];
   let next = 0;
+  // After a failure no new item starts, and the error waits for in-flight checks so none outlives the caller's lock.
+  let failure: { error: unknown } | undefined;
   const worker = async () => {
-    while (next < items.length) {
+    while (!failure && next < items.length) {
       const index = next++;
-      results[index] = await body(items[index]);
+      try {
+        results[index] = await body(items[index]);
+      } catch (error) {
+        failure ??= { error };
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(MEDIA_CONCURRENCY, items.length) }, worker));
+  if (failure) throw failure.error;
   return results;
 };
 

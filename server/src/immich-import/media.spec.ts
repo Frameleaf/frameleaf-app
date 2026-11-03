@@ -267,3 +267,22 @@ describe('mapInOrder', () => {
     expect(peak).toBe(MEDIA_CONCURRENCY);
   });
 });
+
+describe('mapInOrder failures', () => {
+  it('starts no new item after a failure and rejects only once in-flight items finish', async () => {
+    let active = 0;
+    const started: number[] = [];
+    const items = Array.from({ length: 100 }, (_, index) => index);
+    const result = mapInOrder(items, async (item) => {
+      started.push(item);
+      active++;
+      await new Promise((resolve) => setTimeout(resolve, item === 0 ? 1 : 10));
+      active--;
+      if (item === 0) throw new Error('boom');
+      return item;
+    });
+    await expect(result).rejects.toThrow('boom');
+    expect(active).toBe(0);
+    expect(started).toHaveLength(MEDIA_CONCURRENCY);
+  });
+});
