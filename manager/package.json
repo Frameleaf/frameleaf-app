@@ -27,7 +27,7 @@
     "@types/express": "5.0.6",
     "@types/js-yaml": "4.0.9",
     "@types/node": "26.6.5",
-    "@typescript/native": "npm:typescript@7.0.2",
+    "@typescript/native": "npm:typescript@7.1.0-beta",
     "playwright": "1.64.0",
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",

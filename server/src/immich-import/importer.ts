@@ -16,6 +16,7 @@ import {
   isUnmappedPath,
   lostOriginalPath,
   lostOriginalReason,
+  mapInOrder,
   mapMediaPath,
   pathChecksum,
   verifyMediaFile,
@@ -170,8 +171,7 @@ export class ImmichImportService {
         }
         let expected = 0;
         for await (const batch of this.source.batches(table)) {
-          for (const { row } of batch) {
-            const mapped = await this.mapRow(table, row);
+          for (const mapped of await mapInOrder(batch, ({ row }) => this.mapRow(table, row))) {
             if (mapped) {
               expected++;
               await this.verifyRow(table, mapped);
@@ -275,10 +275,7 @@ export class ImmichImportService {
       return;
     }
     for await (const batch of this.source.batches(table, (checkpoint?.cursor as string[] | null) ?? null)) {
-      const mapped: { row: ImportRow; mapped: ImportRow | null }[] = [];
-      for (const item of batch) {
-        mapped.push({ ...item, mapped: await this.mapRow(table, item.row) });
-      }
+      const mapped = await mapInOrder(batch, async (item) => ({ ...item, mapped: await this.mapRow(table, item.row) }));
       await this.destination.transaction(async (db) => {
         for (const { row, mapped: target } of mapped) {
           if (!target) {

@@ -58,13 +58,19 @@ The `261029-files.json` fixture includes two generated synthetic PNG originals i
 
 The two built-in anonymous principals are identified by pinned IDs and checked against their expected provider, role and login state. They are separate from human account candidates. Source creator IDs remain provenance, not inferred ownership. Email matches never merge source principals. Inventory extraction does not establish owner mappings, independent byte integrity or permission equivalence, and does not create destination accounts or sharing.
 
-Qualification remains incomplete. Synthetic SQLite originals, API-edited metadata and a private manual album have been exercised. Multi-user role fixtures require an appropriately licensed source installation; additional account roles in the pinned binary refuse setup without membership. No licensing restriction is bypassed. MariaDB, destination mapping, complete preservation, rollback and combined acceptance remain unqualified.
+Qualification remains incomplete. Synthetic SQLite originals, API-edited metadata and a private manual album have been exercised. The free PhotoPrism installation also runs locally in Docker with MariaDB, as described below. Additional restricted account roles refused setup in the pinned binary without membership; their privacy behavior remains unqualified. Destination mapping, complete preservation, rollback and combined acceptance remain unfinished.
 
 ### Password interoperability checks
 
 `fixtures/password-vectors.json` contains synthetic bcrypt verifiers generated independently by Go `golang.org/x/crypto/bcrypt` v0.22.0 and the recorded native PHP runtime. The Go runtime image is pinned by its recorded image ID. These vectors exercise Unicode, embedded NUL bytes, PHP `$2y$` normalization and the 72-byte bcrypt boundary, including the source verifier's behavior for longer inputs. A separate Python-generated PBKDF2-SHA256 vector exercises Django's encoded format. They contain no real account credentials.
 
 `createImportedOwner` writes the explicitly mapped owner and its private cluster group atomically. A protected password makes the account usable with its existing password; an absent portable credential selects the secure-claim fallback. It refuses cross-operation or cross-owner credentials, existing-email collisions and a missing destination administrator. It accepts no source administrative flag, OAuth binding, session, API key or reset token. The operation controller must call it inside the journal's owner mapping transaction, after qualifying source login restrictions and permissions. The generic controller and full source authentication qualification remain incomplete.
+
+## PhotoPrism MariaDB schema admission
+
+The `261029-mariadb114.json` structural fixture was captured from the same pinned PhotoPrism executable after it created and migrated a fresh MariaDB 11.4.5 database in Docker. Both immutable image digests and the complete server version are recorded. The native installation indexed two synthetic originals, whose source hashes and byte counts were independently checked against the original bytes, including SHA-256 hashing. Its schema contains 41 InnoDB tables and 48 completed migrations. The fixture contains database definitions and migration/version records, with no account credentials or media. The disposable containers, database volume and network are removed after capture.
+
+`admitPhotoprismMariadbSchema` requires the pinned source build, database version and case-sensitive table-name setting, the complete schema fingerprint and the exact completed migration inventory. Its catalog includes columns, indexes, constraints, key relationships, foreign-key rules, checks, triggers, routines and events. Changed or incomplete catalogs, unexpected objects, failed migrations and a different latest executable version are refused. These tests qualify structural admission only. A consistent MariaDB source reader, metadata/privacy extraction, complete preservation and end-to-end migration acceptance still require implementation and qualification.
 
 ## Primary originals in the common bundle
 
