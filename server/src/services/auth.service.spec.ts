@@ -2947,6 +2947,8 @@ describe(AuthService.name, () => {
       expect(mocks.lockedKey.write).toHaveBeenCalledTimes(1);
       const written = mocks.lockedKey.write.mock.calls[0][0];
       expect(written.publicKey).toBe(file.publicKey);
+      expect(written.format).toBe('frameleaf-locked-key/2');
+      expect(written.wraps.find((wrap) => wrap.kind === 'pin')).toHaveProperty('pepper');
       await expect(unwrapKey(written, 'pin', '654321', { pepper: PIN_PEPPER })).resolves.toHaveLength(32);
       expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
         auth.user.id,
@@ -2982,6 +2984,8 @@ describe(AuthService.name, () => {
 
       const written: LockedKeyFile = mocks.lockedKey.write.mock.calls[0][0];
       expect(written).toMatchObject({ userId: auth.user.id, mode: 'pin', encrypting: false });
+      expect(written.format).toBe('frameleaf-locked-key/2');
+      expect(written.wraps.find((wrap) => wrap.kind === 'pin')).toHaveProperty('pepper');
       await expect(unwrapKey(written, 'pin', PIN, { pepper: PIN_PEPPER })).resolves.toHaveLength(32);
     }, 20_000);
 
@@ -3070,6 +3074,8 @@ describe(AuthService.name, () => {
       expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
       const pin = pinHash.replace(' (hashed)', '');
       expect(['111111', '222222']).toContain(pin);
+      expect(stored.format).toBe('frameleaf-locked-key/2');
+      expect(stored.wraps.find((wrap) => wrap.kind === 'pin')).toHaveProperty('pepper');
       await expect(unwrapKey(stored, 'pin', pin, { pepper: PIN_PEPPER })).resolves.toHaveLength(32);
     }, 30_000);
 

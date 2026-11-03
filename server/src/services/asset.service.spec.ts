@@ -1910,6 +1910,21 @@ describe(AssetService.name, () => {
       });
     });
 
+    it.each(['-04:00', '-05:00'])('honours the explicit %s offset during a named-zone overlap', async (offset) => {
+      const asset = AssetFactory.create({ id: 'asset-1' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      const dateTimeOriginal = '2020-11-01T01:30:00' + offset + '[America/New_York]';
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([]);
+      await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal });
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(
+        [asset.id],
+        expect.objectContaining({
+          fileCreatedAt: new Date('2020-11-01T01:30:00' + offset),
+          localDateTime: new Date('2020-11-01T01:30:00Z'),
+        }),
+      );
+    });
+
     it('uses UTC consistently for an offsetless absolute bulk edit', async () => {
       const asset = AssetFactory.create({
         id: 'asset-1',
