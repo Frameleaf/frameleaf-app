@@ -140,7 +140,7 @@ it('starts the retained import regeneration during first setup once ready, resum
     );
     // FL-1146 setup bar: smart search and faces wait for the original-file check; pause holds every stage.
     const progress = await make().progress();
-    expect(progress).toMatchObject({ active: true, paused: false, completedAt: null });
+    expect(progress).toMatchObject({ active: true, paused: false, completedAt: null, people: 0, albums: 0 });
     expect(progress.stages.map(({ id, status }) => ({ id, status }))).toEqual([
       { id: 'check', status: 'running' },
       { id: 'thumbnails', status: 'running' },

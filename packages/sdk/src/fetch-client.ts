@@ -15174,12 +15174,15 @@ export type ManagerAccessDto = {
 export type LibrarySetupProgressDto = {
     /** False when this server was not set up from an import, or before its first setup */
     active: boolean;
+    albums: number;
     /** When everything finished; null while setup runs */
     completedAt: string | null;
     /** Originals listed in Library Care as missing or changed */
     flagged: number;
     items: number;
     paused: boolean;
+    /** Named people, for the completion window */
+    people: number;
     phase: Phase | null;
     stages: {
         done: number;

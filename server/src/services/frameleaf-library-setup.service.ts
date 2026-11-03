@@ -339,7 +339,17 @@ export class FrameleafLibrarySetupService {
    * set up from an import, or before its first setup started.
    */
   async progress(): Promise<LibrarySetupProgressDto> {
-    const inactive = { active: false, phase: null, paused: false, completedAt: null, items: 0, flagged: 0, stages: [] };
+    const inactive = {
+      active: false,
+      phase: null,
+      paused: false,
+      completedAt: null,
+      items: 0,
+      people: 0,
+      albums: 0,
+      flagged: 0,
+      stages: [],
+    };
     let identity;
     try {
       identity = this.identity();
@@ -371,10 +381,11 @@ export class FrameleafLibrarySetupService {
       LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
       WHERE op.id=ANY(${healthIds}::uuid[])`.execute(this.db);
     const {
-      rows: [{ items }],
-    } = await sql<{ items: number }>`SELECT count(*)::int AS items FROM asset WHERE "deletedAt" IS NULL`.execute(
-      this.db,
-    );
+      rows: [{ items, people, albums }],
+    } = await sql<{ items: number; people: number; albums: number }>`SELECT
+      (SELECT count(*) FROM asset WHERE "deletedAt" IS NULL)::int AS items,
+      (SELECT count(*) FROM person WHERE name <> '')::int AS people,
+      (SELECT count(*) FROM album WHERE "deletedAt" IS NULL)::int AS albums`.execute(this.db);
     const thumbnails = sum([JobName.AssetGenerateThumbnails]);
     const search = sum(SEARCH_STAGES);
     const checked = !!state.checkReleasedAt;
@@ -395,6 +406,8 @@ export class FrameleafLibrarySetupService {
       paused: !!state.paused,
       completedAt: state.completedAt ?? null,
       items,
+      people,
+      albums,
       flagged: check?.flagged ?? 0,
       stages: [
         {

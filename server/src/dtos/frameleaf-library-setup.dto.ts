@@ -57,6 +57,8 @@ export class LibrarySetupProgressDto extends createZodDto(
     paused: z.boolean(),
     completedAt: z.string().nullable().describe('When everything finished; null while setup runs'),
     items: z.number().int().nonnegative(),
+    people: z.number().int().nonnegative().describe('Named people, for the completion window'),
+    albums: z.number().int().nonnegative(),
     flagged: z.number().int().nonnegative().describe('Originals listed in Library Care as missing or changed'),
     stages: z.array(SetupStageSchema),
   }),
