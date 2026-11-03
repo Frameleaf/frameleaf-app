@@ -72,6 +72,9 @@ const ADMIN_ROUTES = new Set([
   'GET queues/:name/jobs',
   'GET queues/:name/statistics',
   'GET server/library-setup/manager-access',
+  // FL-1146: the setup bar after an import, shown to and paused by an administrator.
+  'GET server/library-setup/progress',
+  'PUT server/library-setup/progress',
   'GET server/statistics',
   'GET system-config',
   'GET system-config/config-file/activation',
