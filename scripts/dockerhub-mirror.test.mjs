@@ -25,7 +25,8 @@ const workflows = {
   "frameleaf-studio-engine.yml": ["lifecycle-evidence"],
   "manager.yml": ["manager"],
   "test.yml": [
-    "server-medium-tests",
+    "server-medium-image",
+    "server-medium-core-tests",
     "server-medium-scale-tests",
     "e2e-tests-server-cli",
     "e2e-tests-web",

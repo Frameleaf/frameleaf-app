@@ -62,9 +62,15 @@ source. Manager's TrueNAS installer is a Custom App, not a catalog listing.
 
 ## Unraid Community Applications
 
-1. Copy `manager/unraid/` into the public
-   [Frameleaf/unraid-apps](https://github.com/Frameleaf/unraid-apps) repository.
-   Preserve independently qualified manual templates. To publish those too, merge
+1. The public [Frameleaf/unraid-apps](https://github.com/Frameleaf/unraid-apps)
+   repository publishes Manager's listing itself: its **Publish catalog** workflow
+   checks every six hours for a newer signed Manager release, rebuilds the
+   repository-root catalog files (`templates/`, `README.md`, `ca_profile.xml`,
+   `manager-manifest.json`, `catalog-source.json` and `SHA256SUMS`) from
+   `manager/unraid/` at that release's commit and commits them. Run it by hand to
+   publish at once. Listing changes on `main` reach Community Apps with the next
+   Manager release. Screenshots in `images/` are updated by hand. When copying
+   `manager/unraid/` by hand, preserve independently qualified manual templates. To publish those too, merge
    `application/unraid/` first and Manager's directory second. Retain both manifests,
    the signing public key and a fresh checksum file with the catalog source SHA.
 2. Check the published raw TemplateURL, icon, support and WebUI links. The public
