@@ -678,6 +678,14 @@ export class JobRepository {
       options?.deduplication?.id ??
       options?.jobId ??
       (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined);
+    // One run can publish an asset's files more than once. A completed seal must not consume a
+    // later publication's obligation; live deduplication still coalesces sealing by asset.
+    const publication =
+      item.name === JobName.LockedSeal && context
+        ? `/publication/${createHash('sha256')
+            .update(JSON.stringify([context.claim.id, context.claim.token]))
+            .digest('hex')}`
+        : '';
     return {
       name: item.name,
       data,
@@ -698,6 +706,7 @@ export class JobRepository {
       itemKey: runId
         ? subject +
           (identity && identity !== subject ? `/${identity}` : '') +
+          publication +
           (item.name === JobName.FacialRecognition && data.deferred ? '/deferred' : '')
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
