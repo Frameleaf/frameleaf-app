@@ -711,7 +711,11 @@ export class MetadataService extends BaseService {
       <Tags>{
         Description: description,
         ImageDescription: description,
-        DateTimeOriginal: mergeTimeZone(dateTimeOriginal, timeZone)?.toISO(),
+        DateTimeOriginal: dateTimeOriginal
+          ? timeZone
+            ? mergeTimeZone(dateTimeOriginal, timeZone)?.toISO()
+            : asset.localDateTime.toISOString().slice(0, -1)
+          : undefined,
         GPSLatitude: latitude,
         GPSLongitude: longitude,
         Rating: rating,
