@@ -71,6 +71,41 @@ describe('SetupBar', () => {
     expect(screen.queryByText('Starts by itself when the file check is finished.')).not.toBeInTheDocument();
   });
 
+  it('keeps resume available after enabled stages finish while paused', async () => {
+    const value = progress({ paused: true, phase: Phase.Verifying });
+    value.stages = value.stages.map((stage) =>
+      stage.id === LibrarySetupStageId.Search
+        ? { ...stage, status: LibrarySetupStageStatus.Waiting, disabled: true, done: 0, total: 0 }
+        : { ...stage, status: LibrarySetupStageStatus.Done, done: stage.total },
+    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    sdkMock.pauseLibrarySetup.mockResolvedValue({ ...value, paused: false });
+    render(SetupBar);
+    expect(await screen.findByText('Setup is paused')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(sdkMock.pauseLibrarySetup).toHaveBeenCalledWith({ librarySetupPauseDto: { paused: false } });
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+  });
+
+  it('does not promise AI search when completion follows disabled processing', async () => {
+    const value = progress({ phase: Phase.Complete, completedAt: '2026-11-03T10:00:00.000Z' });
+    value.stages = value.stages.map((stage) =>
+      stage.id === LibrarySetupStageId.Search ? { ...stage, disabled: true, done: 0, total: 0 } : stage,
+    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(
+      await screen.findByText(
+        'Everything you imported is in Frameleaf, and every original was checked. AI processing is turned off. You can enable it later.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Everything you imported is in Frameleaf. Every original was checked, and smart search and faces are ready to use.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it('formats progress using the chosen number locale', async () => {
     locale.set('de-DE');
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());

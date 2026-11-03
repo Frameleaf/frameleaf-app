@@ -58,7 +58,7 @@ const KEY = 'frameleaf-manager-library-setup';
  * once; the stages below wait for Library Care's checksum scan of every original, then start by themselves.
  */
 const EARLY_STAGES: string[] = [JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails];
-const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.PersonGenerateThumbnail];
+const SEARCH_STAGES: string[] = [JobName.SmartSearch, JobName.AssetDetectFaces];
 const phoneKey = (sessionId: string) => `:phone:${sessionId}`;
 
 /** Additive API: the existing photo, setup and synchronization endpoints keep their contracts. */
@@ -229,7 +229,8 @@ export class FrameleafLibrarySetupService {
   private async startImportedRegeneration(state: SetupState, db: Kysely<DB>) {
     const installation = this.importInstallation(state);
     if (!installation || !(await this.users.hasAdmin()) || !(await this.processingSettingsReady(state))) return;
-    // Lock the run before selections, matching importer capture and cancellation/release.
+    await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
+    // Queue claims and pause changes serialize before the run and selection locks.
     // Capture cannot re-hold snapshots after observing this committed start acknowledgement.
     const imported = await this.importedRun(db, true);
     if (!imported) return;
@@ -242,10 +243,12 @@ export class FrameleafLibrarySetupService {
       marker?.installation !== installation ||
       !marker.operationId ||
       !marker.preparedAt ||
-      marker.startedAt ||
       !run.enumerationDone
     )
       return;
+    await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(!!state.paused)}::text::jsonb)
+      WHERE id=${run.id}::uuid`.execute(db);
+    if (marker.startedAt) return;
     if (state.origin === 'restored_library') {
       const summary = (await listRuns(db, 1, 0, run.id))[0];
       if (!summary || ['completed', 'cancelled', 'completed_with_errors', 'needs_attention'].includes(summary.state)) {
@@ -397,11 +400,17 @@ export class FrameleafLibrarySetupService {
       (SELECT count(*) FROM asset WHERE "deletedAt" IS NULL)::int AS items,
       (SELECT count(*) FROM person WHERE name <> '')::int AS people,
       (SELECT count(*) FROM album WHERE "deletedAt" IS NULL)::int AS albums`.execute(this.db);
-    const thumbnails = sum([JobName.AssetGenerateThumbnails]);
+    const thumbnails = sum([JobName.AssetGenerateThumbnails, JobName.PersonGenerateThumbnail]);
     const search = sum(SEARCH_STAGES);
     const checked = !!state.checkReleasedAt;
     const status = (part: { total: number; done: number }, released: boolean) =>
-      part.total > 0 && part.done >= part.total ? 'done' : !released ? 'waiting' : state.paused ? 'paused' : 'running';
+      (part.total > 0 || (run?.enumerationDone && state.phase === 'complete')) && part.done >= part.total
+        ? 'done'
+        : !released
+          ? 'waiting'
+          : state.paused
+            ? 'paused'
+            : 'running';
     const finished =
       state.phase === 'complete' && checked && search.done >= search.total && thumbnails.done >= thumbnails.total;
     if (finished && !state.completedAt) {
@@ -445,9 +454,14 @@ export class FrameleafLibrarySetupService {
       const state = await this.read<SetupState>(this.key(), db);
       if (!state || !!state.paused === paused) return;
       state.paused = paused;
+      await sql`SELECT name FROM job_queue ORDER BY name FOR NO KEY UPDATE`.execute(db);
       const imported = await this.importedRun(db, true);
       if (this.importInstallation(state) && !this.importedSetupMatches(state, imported))
         throw new BadRequestException('Imported setup identity mismatch');
+      if (this.importedSetupMatches(state, imported) && imported?.run) {
+        await sql`UPDATE job_run SET selection=jsonb_set(selection,'{managerSetup,paused}',${JSON.stringify(paused)}::text::jsonb)
+          WHERE id=${imported.run.id}::uuid`.execute(db);
+      }
       if (this.importedSetupMatches(state, imported) && imported?.run?.selection.managerSetup?.startedAt) {
         if (paused) {
           // Held items stay where they are: running jobs finish, and no new ones are admitted.
@@ -459,8 +473,17 @@ export class FrameleafLibrarySetupService {
       }
       for (const [ownerId, operationId] of Object.entries(state.health)) {
         await (paused
-          ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth])
-          : this.operations.resume(operationId, ownerId));
+          ? this.operations.requestPause(operationId, ownerId, [MediaOperationKind.MediaHealth], db)
+          : this.operations.resume(operationId, ownerId, db));
+      }
+      const { rows: scans } = await sql<{ id: string; ownerId: string }>`SELECT id,"ownerId" FROM media_operation
+        WHERE id=ANY(${[...new Set(Object.values(state.scans))]}::uuid[]) AND kind=${MediaOperationKind.LibraryScan} FOR UPDATE`.execute(
+        db,
+      );
+      for (const scan of scans) {
+        await (paused
+          ? this.operations.requestPause(scan.id, scan.ownerId, [MediaOperationKind.LibraryScan], db)
+          : this.operations.resume(scan.id, scan.ownerId, db));
       }
       await this.write(this.key(), state, db);
     });

@@ -26,6 +26,7 @@ import {
 } from 'src/queue/selection-lineage.js';
 import {
   libraryRunPending,
+  managerImportHeld,
   unfinishedAdmittedRunItems,
   unfinishedQueueItems,
   unfinishedRunItems,
@@ -378,8 +379,8 @@ export class SqlQueueStore {
         rows: [counts],
       } = await sql<{ active: number; ready: number }>`
         select count(*) filter (where state = 'active')::int active,
-          count(*) filter (where state in ('waiting','active'))::int ready
-        from job where queue = ${queue} and state in ('waiting','active')
+          count(*) filter (where state='active' or (state='waiting' and not (${managerImportHeld(sql<string>`j."runId"`)})))::int ready
+        from job j where queue = ${queue} and state in ('waiting','active')
       `.execute(tx);
       if (counts.ready <= QUEUE_LOW_WATER) {
         // Keep the ready + active set bounded even for a 15,000-item selection.
@@ -387,6 +388,7 @@ export class SqlQueueStore {
           const { numAffectedRows } = await sql`update job set state = 'waiting' where id in (
           select id from job j where queue = ${queue} and state = 'pending' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+            and not (${managerImportHeld(sql<string>`j."runId"`)})
             and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
           order by "createdAt", id limit ${Math.min(QUEUE_BATCH, slots)}
           for update skip locked
@@ -403,8 +405,9 @@ export class SqlQueueStore {
           attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
           "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "cancelReason" = null, "dependencyReason" = null
         where id in (
-          select id from job where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
+          select id from job j where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
             and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
+            and not (${managerImportHeld(sql<string>`j."runId"`)})
           order by "createdAt", id limit ${capacity} for update skip locked
         ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);

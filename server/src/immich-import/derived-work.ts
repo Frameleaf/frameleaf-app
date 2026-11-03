@@ -77,6 +77,7 @@ export async function transferImportedWork(
           operationId: string;
           preparedAt: string | null;
           startedAt: string | null;
+          paused?: boolean;
         };
       } | null;
     }>`select kind, selection from job_run where id = ${id}::uuid for update`.execute(tx);
@@ -95,6 +96,7 @@ export async function transferImportedWork(
         ? !setup ||
           setup.installation !== media.deploymentId ||
           setup.operationId !== media.operationId ||
+          (setup.paused !== undefined && typeof setup.paused !== 'boolean') ||
           (setup.preparedAt !== null &&
             (typeof setup.preparedAt !== 'string' || !Number.isFinite(Date.parse(setup.preparedAt)))) ||
           (setup.startedAt !== null &&

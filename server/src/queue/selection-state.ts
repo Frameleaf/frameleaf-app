@@ -188,6 +188,15 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
             on selected."selectionId" = original_source.id and selected."runId" = original_source."runId"
             where original_source.id = original.id and selected."rootItemKey" = child."rootItemKey" and selected.state != 'cancelled'))))`;
 
+/** Manager holds prepared imports and paused runs without stopping other queue users. */
+export const managerImportHeld = (runId: RawBuilder<string>) => sql<boolean>`exists (
+  select 1 from job_run manager_run where manager_run.id=${runId}
+    and manager_run.kind in ('immich-import-derived','library-import-derived')
+    and manager_run.selection ? 'managerSetup' and (
+      nullif(manager_run.selection #>> '{managerSetup,startedAt}','') is null
+      or coalesce(manager_run.selection #> '{managerSetup,paused}','false'::jsonb)<>'false'::jsonb
+    ))`;
+
 const requiredStages = (stage: string, ignored: readonly string[]) =>
   ignored.length > 0 ? sql`AND ${sql.ref(stage)}<>ALL(${[...ignored]}::text[])` : sql``;
 
