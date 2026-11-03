@@ -3,7 +3,7 @@ import fixture from 'src/library-import/fixtures/librephotos/1.5.1-sqlite.json' 
 import { librephotosProjections as projections } from 'src/library-import/librephotos-projections.js';
 import { ImportedPasswordContext } from 'src/library-import/passwords.js';
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
-import { sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
+import { assertSqliteTextSafe, sqliteSchemaFingerprint } from 'src/library-import/sqlite.js';
 
 export type LibrephotosTable = keyof typeof projections;
 export type LibrephotosRow = Record<string, SQLOutputValue>;
@@ -28,6 +28,7 @@ export const openLibrephotosSnapshot = (path: string, version: string) => {
     if (sqliteSchemaFingerprint(database) !== fixture.schemaSha256) {
       throw new LibrephotosReadError('LIBREPHOTOS_SCHEMA_UNQUALIFIED');
     }
+    assertSqliteTextSafe(database, 'SELECT app,name,applied FROM django_migrations');
     const required = new Set(fixture.migrations.map(({ app, name }) => JSON.stringify([app, name])));
     for (const row of database.prepare('SELECT app,name,applied FROM django_migrations').iterate()) {
       const key = JSON.stringify([row.app, row.name]);
@@ -58,6 +59,7 @@ export const openLibrephotosSnapshot = (path: string, version: string) => {
       if (!Object.hasOwn(projections, table)) throw new LibrephotosReadError('LIBREPHOTOS_TABLE_NOT_ALLOWED');
       try {
         const select = `SELECT rowid AS __frameleaf_cursor,${projections[table]} FROM "${table}"`;
+        assertSqliteTextSafe(database, select);
         const first = database.prepare(`${select} ORDER BY rowid LIMIT 1000`);
         first.setReadBigInts(true);
         const next = database.prepare(`${select} WHERE rowid>? ORDER BY rowid LIMIT 1000`);
