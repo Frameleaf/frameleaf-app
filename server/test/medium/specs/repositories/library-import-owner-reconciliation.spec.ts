@@ -275,6 +275,7 @@ it.each([
   'name',
   'password',
   'claim',
+  'provenance',
   'admin',
   'group',
   'oauth',
@@ -304,6 +305,10 @@ it.each([
     }
     case 'password': {
       await db.updateTable('user').set({ password: null }).where('id', '=', ownerId).execute();
+      break;
+    }
+    case 'provenance': {
+      await db.updateTable('user').set({ importOperationId: randomUUID() }).where('id', '=', ownerId).execute();
       break;
     }
     case 'claim': {

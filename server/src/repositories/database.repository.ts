@@ -433,6 +433,11 @@ export class DatabaseRepository {
       UNION ALL SELECT 'library', status, binding, reviewed_plan->>'destinationId', activation, activation_sha256
         FROM public.frameleaf_library_import`.execute(this.db);
     try {
+      const { rows: orphaned } = await sql`SELECT 1 FROM public."user" u
+        WHERE u."importOperationId" IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM public.frameleaf_library_import i WHERE i.operation_id=u."importOperationId" AND i.status='activated')
+        LIMIT 1`.execute(this.db);
+      if (orphaned.length > 0) throw new Error('Imported owner recovery evidence is missing');
       for (const row of rows) {
         if (row.status !== 'activated') throw new Error('Import has not activated');
         if (row.family === 'immich') continue;

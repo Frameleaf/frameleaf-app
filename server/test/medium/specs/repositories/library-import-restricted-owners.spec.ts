@@ -9,8 +9,11 @@ import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { ty
 import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
 import { EMPTY_SOURCE_ARCHIVE_HASH } from 'src/library-import/source-archive-codec.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -205,47 +208,61 @@ it('does not claim a generic owner before verified activation', async () => {
       .importClaimPending,
   ).toBe(true);
 });
-it.each(['missing-policy', 'changed-policy', 'missing-mapping', 'changed-mapping', 'changed-proof', 'missing-inputs'])(
-  'refuses a claim when generic retained evidence is $0',
-  async (damage) => {
-    const f = await setup();
-    await f.controller.activate(jobs(), async () => {});
-    const { repository, token } = await claimLink(f.claimId);
-    switch (damage) {
-      case 'missing-policy': {
-        await sql`UPDATE frameleaf_library_import SET private_owners=NULL,private_owners_sha256=NULL`.execute(db);
-        break;
-      }
-      case 'changed-policy': {
-        await sql`UPDATE frameleaf_library_import SET private_owners_sha256=${'0'.repeat(64)}`.execute(db);
-        break;
-      }
-      case 'missing-mapping': {
-        await sql`DELETE FROM frameleaf_library_import_mapping WHERE destination_id=${f.claimId}::uuid`.execute(db);
-        break;
-      }
-      case 'changed-mapping': {
-        await sql`UPDATE frameleaf_library_import_mapping SET record_sha256=${'0'.repeat(64)} WHERE destination_id=${f.claimId}::uuid`.execute(
-          db,
-        );
-        break;
-      }
-      case 'changed-proof': {
-        await sql`UPDATE frameleaf_library_import SET activation_sha256=${'0'.repeat(64)}`.execute(db);
-        break;
-      }
-      case 'missing-inputs': {
-        await sql`UPDATE frameleaf_library_import SET reviewed_manifest=NULL,reviewed_plan=NULL`.execute(db);
-        break;
-      }
+it.each([
+  'missing-policy',
+  'changed-policy',
+  'missing-mapping',
+  'changed-mapping',
+  'changed-proof',
+  'missing-inputs',
+  'missing-provenance',
+  'changed-provenance',
+])('refuses a claim when generic retained evidence is $0', async (damage) => {
+  const f = await setup();
+  await f.controller.activate(jobs(), async () => {});
+  const { repository, token } = await claimLink(f.claimId);
+  switch (damage) {
+    case 'missing-provenance': {
+      await db.updateTable('user').set({ importOperationId: null }).where('id', '=', f.claimId).execute();
+      break;
     }
-    expect(await repository.redeemImportedAccountClaim(token, 'synthetic changed hash')).toBeUndefined();
-    expect(
-      (await db.selectFrom('user').select('importClaimPending').where('id', '=', f.claimId).executeTakeFirstOrThrow())
-        .importClaimPending,
-    ).toBe(true);
-  },
-);
+    case 'changed-provenance': {
+      await db.updateTable('user').set({ importOperationId: randomUUID() }).where('id', '=', f.claimId).execute();
+      break;
+    }
+    case 'missing-policy': {
+      await sql`UPDATE frameleaf_library_import SET private_owners=NULL,private_owners_sha256=NULL`.execute(db);
+      break;
+    }
+    case 'changed-policy': {
+      await sql`UPDATE frameleaf_library_import SET private_owners_sha256=${'0'.repeat(64)}`.execute(db);
+      break;
+    }
+    case 'missing-mapping': {
+      await sql`DELETE FROM frameleaf_library_import_mapping WHERE destination_id=${f.claimId}::uuid`.execute(db);
+      break;
+    }
+    case 'changed-mapping': {
+      await sql`UPDATE frameleaf_library_import_mapping SET record_sha256=${'0'.repeat(64)} WHERE destination_id=${f.claimId}::uuid`.execute(
+        db,
+      );
+      break;
+    }
+    case 'changed-proof': {
+      await sql`UPDATE frameleaf_library_import SET activation_sha256=${'0'.repeat(64)}`.execute(db);
+      break;
+    }
+    case 'missing-inputs': {
+      await sql`UPDATE frameleaf_library_import SET reviewed_manifest=NULL,reviewed_plan=NULL`.execute(db);
+      break;
+    }
+  }
+  expect(await repository.redeemImportedAccountClaim(token, 'synthetic changed hash')).toBeUndefined();
+  expect(
+    (await db.selectFrom('user').select('importClaimPending').where('id', '=', f.claimId).executeTakeFirstOrThrow())
+      .importClaimPending,
+  ).toBe(true);
+});
 
 it('does not silently discard or contradict a restricted owner credential disposition', async () => {
   const f = await setup(restrictions[2], true);
@@ -270,4 +287,37 @@ it('does not silently discard or contradict a restricted owner credential dispos
   expect(
     (await db.selectFrom('user').select('password').where('id', '=', f.ownerId).executeTakeFirstOrThrow()).password,
   ).toBe(f.credential!.forImport());
+});
+
+it.each(['restricted', 'claim'])(
+  'retains %s claim restrictions when a partial restore loses the generic journal',
+  async (kind) => {
+    const f = await setup(restrictions[2], true);
+    await f.controller.activate(jobs(), async () => {});
+    const id = kind === 'restricted' ? f.ownerId : f.claimId;
+    const { repository, token } = await claimLink(id);
+    await sql`TRUNCATE frameleaf_library_import CASCADE`.execute(db);
+    expect(await repository.getByPasswordLink(token)).toBeUndefined();
+    expect(await repository.redeemImportedAccountClaim(token, 'synthetic changed hash')).toBeUndefined();
+    expect(
+      (await db.selectFrom('user').select('importClaimPending').where('id', '=', id).executeTakeFirstOrThrow())
+        .importClaimPending,
+    ).toBe(true);
+  },
+);
+
+it('blocks startup after a preserved-account restore loses its generic journal', async () => {
+  const f = await setup(undefined, true);
+  await f.controller.activate(jobs(), async () => {});
+  const database = new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository());
+  await expect(database.assertImportActivated()).resolves.toBeUndefined();
+  await sql`TRUNCATE frameleaf_library_import CASCADE`.execute(db);
+  await expect(database.assertImportActivated()).rejects.toThrow('DESTINATION_IMPORT_NOT_ACTIVATED');
+  expect(
+    await db
+      .selectFrom('user')
+      .select(['importClaimPending', 'importOperationId'])
+      .where('id', '=', f.ownerId)
+      .executeTakeFirstOrThrow(),
+  ).toEqual({ importClaimPending: false, importOperationId: f.context.binding.operationId });
 });

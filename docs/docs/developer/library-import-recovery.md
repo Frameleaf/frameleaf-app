@@ -244,3 +244,13 @@ Source discovery, complete source-to-manifest conversion, activation and transfe
 For legacy source imports, the private Manager provisioning profile applies to both independent copies and same-layout adoption. Default or explicit copy policies still verify independent media roots; their regeneration records now retain the same Manager setup identity and remain held until first setup. Missing private identity refuses admission. Existing standalone copies outside that profile remain independent, and an already admitted unmarked run cannot be retrofitted with Manager authority.
 
 Manager queue admission checks the current private installation and setup state for every pending promotion and waiting claim. The retained run and operation binding survives setup retries. Losing or changing that authority, the canonical import journal or the detailed run marker holds managed work before workers can claim it, including immediately after restore. Already running jobs may finish; unrelated requests and genuinely unmanaged imports remain independent. Reviewed restoration authority can resume only the same bound import.
+
+Generic imported owners retain their operation ID on the account row. This internal
+provenance survives a restore that omits the import journal or mappings; it is not
+an authentication credential and is not exposed in account responses. Claims require
+the same activated operation and retained owner policy. Startup refuses imported
+owners whose operation has no activated journal. Migration backfills retained owner
+mappings and reviewed-plan owners; downgrade refuses to discard provenance. Legacy
+accounts without this generic provenance keep their existing claim behavior. A
+partial restore that has already lost every record of an older account's origin
+cannot reconstruct that origin and is not qualified by this migration.

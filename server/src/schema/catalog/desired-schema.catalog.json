@@ -47506,6 +47506,15 @@
           "isArray": false,
           "default": "false",
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "importOperationId",
+          "tableName": "user",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [

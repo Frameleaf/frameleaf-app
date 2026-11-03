@@ -108,4 +108,8 @@ export class UserTable {
   /** Imported owners cannot sign in until they redeem a destination-issued password link. */
   @Column({ type: 'boolean', default: false })
   importClaimPending!: Generated<boolean>;
+
+  /** Retained without a journal foreign key so partial restores cannot become legacy account claims. */
+  @Column({ type: 'uuid', nullable: true })
+  importOperationId!: string | null;
 }

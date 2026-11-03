@@ -13,8 +13,10 @@ const activated = () => ({
   activation: structuredClone(sealed.payload),
   activationSha256: sealed.sha256,
 });
-const check = async (rows: Record<string, unknown>[]) => {
-  const { db } = scriptedKysely(() => ({ rows }));
+const check = async (rows: Record<string, unknown>[], orphaned = false) => {
+  const { db } = scriptedKysely(({ sql }) => ({
+    rows: sql.includes('FROM public."user" u') ? (orphaned ? [{ orphaned: true }] : []) : rows,
+  }));
   try {
     const repository = new DatabaseRepository(db, { setContext: vi.fn() } as never, {} as never);
     await repository.assertImportActivated();
@@ -49,3 +51,10 @@ it.each([
   await expect(result).rejects.toThrow('DESTINATION_IMPORT_NOT_ACTIVATED');
   await expect(result).rejects.not.toThrow('private source');
 });
+
+it.each([{ rows: [] }, { rows: [activated()] }])(
+  'blocks orphaned imported owners even with otherwise valid journals: $rows',
+  async ({ rows }) => {
+    await expect(check(rows, true)).rejects.toThrow('DESTINATION_IMPORT_NOT_ACTIVATED');
+  },
+);
