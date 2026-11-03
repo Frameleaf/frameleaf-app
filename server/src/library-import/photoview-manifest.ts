@@ -1,5 +1,6 @@
 import { posix } from 'node:path';
 import { z } from 'zod';
+import type { PhotoviewRow, PhotoviewTable, openPhotoviewSnapshot } from 'src/library-import/photoview.js';
 import fixture from 'src/library-import/fixtures/photoview/2.4.0-sqlite.json' with { type: 'json' };
 import {
   type ImportManifest,
@@ -9,7 +10,6 @@ import {
   parseImportManifest,
 } from 'src/library-import/manifest.js';
 import { normalizePhotoviewAccess } from 'src/library-import/photoview-access.js';
-import type { PhotoviewRow, PhotoviewTable, openPhotoviewSnapshot } from 'src/library-import/photoview.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
 type Input = {
@@ -116,13 +116,14 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
     return parsed.success ? parsed.data : refuse('PHOTOVIEW_ORIGINAL_PATH_INVALID');
   };
   const losses: ImportManifest['losses'] = [];
-  const loss = (code: string, entityId?: string) =>
+  const loss = (code: string, entityId?: string) => {
     losses.push({ code, ...(entityId === undefined ? {} : { entityId }), acknowledged: false });
-  if (archive.length) loss('PHOTOVIEW_SOURCE_METADATA_ARCHIVED');
+  };
+  if (archive.length > 0) loss('PHOTOVIEW_SOURCE_METADATA_ARCHIVED');
   // shortcut: archive face geometry and directory ancestry until their destination mappings are qualified.
-  if (rows('face_groups').length || rows('image_faces').length) loss('PHOTOVIEW_PEOPLE_ARCHIVED');
+  if (rows('face_groups').length > 0 || rows('image_faces').length > 0) loss('PHOTOVIEW_PEOPLE_ARCHIVED');
   if (rows('albums').some((row) => row.parent_album_id !== null)) loss('PHOTOVIEW_DIRECTORY_HIERARCHY_ARCHIVED');
-  if (rows('share_tokens').length || [...access.values()].some((row) => row.readerIds.length > 1))
+  if (rows('share_tokens').length > 0 || access.values().some((row) => row.readerIds.length > 1))
     loss('PHOTOVIEW_SHARING_RESTRICTED');
   const proofs = new Map(input.files.map((file) => [file.id, file]));
   if (proofs.size !== input.files.length) return refuse('PHOTOVIEW_FILE_EVIDENCE_MISMATCH');
