@@ -1076,6 +1076,7 @@ export class PersonService extends BaseService {
       const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
       const embeddings: FaceSearchTable[] = [];
       const mlFaceIds = new Set<string>();
+      const matchedFaceIds = new Set<string>();
       const decided = await this.getDecidedFaceIds(currentAsset);
 
       for (const face of currentAsset.faces) {
@@ -1085,20 +1086,26 @@ export class PersonService extends BaseService {
       }
 
       for (const { boundingBox, embedding } of faces) {
-        const match = currentAsset.faces.find((face) => {
+        let match: (typeof currentAsset.faces)[number] | undefined;
+        let overlap = 0.5;
+        for (const face of currentAsset.faces) {
+          if (matchedFaceIds.has(face.id)) continue;
           const widthScale = face.imageWidth / imageWidth;
           const heightScale = face.imageHeight / imageHeight;
-          return (
-            this.iou(face, {
-              x1: boundingBox.x1 * widthScale,
-              y1: boundingBox.y1 * heightScale,
-              x2: boundingBox.x2 * widthScale,
-              y2: boundingBox.y2 * heightScale,
-            }) > 0.5
-          );
-        });
+          const score = this.iou(face, {
+            x1: boundingBox.x1 * widthScale,
+            y1: boundingBox.y1 * heightScale,
+            x2: boundingBox.x2 * widthScale,
+            y2: boundingBox.y2 * heightScale,
+          });
+          if (score > overlap) {
+            match = face;
+            overlap = score;
+          }
+        }
 
         if (match) {
+          matchedFaceIds.add(match.id);
           // Keep the face identity and owner decisions while refreshing derived search data.
           // Imported ML faces can have no face_search row even though detection still matches them.
           mlFaceIds.delete(match.id);

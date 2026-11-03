@@ -533,6 +533,93 @@ describe(PersonService.name, () => {
       },
     );
 
+    it('publishes overlapping detections once per retained manual face', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+      await ctx.newAssetFile({
+        assetId: asset.id,
+        type: AssetFileType.Preview,
+        isEdited: false,
+        path: 'overlapping-preview.jpg',
+      });
+      const boxes = [
+        {
+          imageWidth: 800,
+          imageHeight: 1000,
+          boundingBoxX1: 200,
+          boundingBoxY1: 200,
+          boundingBoxX2: 400,
+          boundingBoxY2: 400,
+        },
+        {
+          imageWidth: 200,
+          imageHeight: 250,
+          boundingBoxX1: 55,
+          boundingBoxY1: 55,
+          boundingBoxX2: 105,
+          boundingBoxY2: 105,
+        },
+      ];
+      const ids: string[] = [];
+      for (const box of boxes) {
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const { assetFace } = await ctx.newAssetFace({
+          ...box,
+          assetId: asset.id,
+          personGroupId: person.personGroupId,
+          sourceType: SourceType.Manual,
+        });
+        ids.push(assetFace.id);
+      }
+      const readFaces = () =>
+        ctx.database.selectFrom('asset_face').selectAll().where('assetId', '=', asset.id).orderBy('id').execute();
+      const before = await readFaces();
+      const people = await ctx.database
+        .selectFrom('person')
+        .selectAll()
+        .where('ownerId', '=', user.id)
+        .orderBy('personGroupId')
+        .execute();
+      const embeddings = [0, 1].map((index) =>
+        JSON.stringify(Array.from({ length: 512 }, (_, column) => Number(column === index))),
+      );
+      ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+        imageWidth: 400,
+        imageHeight: 500,
+        faces: [
+          { boundingBox: { x1: 100, y1: 100, x2: 200, y2: 200 }, embedding: embeddings[0], score: 1 },
+          { boundingBox: { x1: 110, y1: 110, x2: 210, y2: 210 }, embedding: embeddings[1], score: 1 },
+        ],
+      });
+      await expect(sut.handleDetectFaces({ id: asset.id, preserveImportedFaces: true })).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(await readFaces()).toEqual(before);
+      expect(
+        await ctx.database
+          .selectFrom('person')
+          .selectAll()
+          .where('ownerId', '=', user.id)
+          .orderBy('personGroupId')
+          .execute(),
+      ).toEqual(people);
+      expect(
+        await ctx.database
+          .selectFrom('face_search')
+          .select(['faceId', 'embedding'])
+          .where('faceId', 'in', ids)
+          .orderBy('faceId')
+          .execute(),
+      ).toEqual(
+        ids
+          .map((faceId, index) => ({ faceId, embedding: embeddings[index] }))
+          .sort((a, b) => a.faceId.localeCompare(b.faceId)),
+      );
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+    });
+
     it.each([false, true].flatMap((corrected) => [0.5, 1, 2].map((scale) => ({ corrected, scale }))))(
       'repairs an imported ML face without face_search, preserving decisions (corrected=$corrected, scale=$scale)',
       async ({ corrected, scale }) => {

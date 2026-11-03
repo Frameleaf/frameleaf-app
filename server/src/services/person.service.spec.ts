@@ -1750,9 +1750,15 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
-    it.each([false, true])(
-      'matches each retained face in its own coordinate frame (imported: %s)',
-      async (preserveImportedFaces) => {
+    it.each(
+      [false, true].flatMap((preserveImportedFaces) =>
+        [false, true].flatMap((overlap) =>
+          [false, true].map((reverse) => ({ preserveImportedFaces, overlap, reverse })),
+        ),
+      ),
+    )(
+      'matches each retained face once in its own frame (imported=$preserveImportedFaces, overlap=$overlap, reverse=$reverse)',
+      async ({ preserveImportedFaces, overlap, reverse }) => {
         const asset = AssetFactory.from()
           .file({ type: AssetFileType.Preview })
           .exif()
@@ -1768,18 +1774,20 @@ describe(PersonService.name, () => {
           .face({
             imageWidth: 200,
             imageHeight: 250,
-            boundingBoxX1: 125,
-            boundingBoxY1: 125,
-            boundingBoxX2: 175,
-            boundingBoxY2: 175,
+            boundingBoxX1: overlap ? 55 : 125,
+            boundingBoxY1: overlap ? 55 : 125,
+            boundingBoxX2: overlap ? 105 : 175,
+            boundingBoxY2: overlap ? 105 : 175,
             personGroupId: newUuid(),
           })
           .build();
+        const retained = [...asset.faces];
+        if (reverse) asset.faces.reverse();
         mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
         const embeddings = ['[1,2,3]', '[4,5,6]'];
         const boxes = [
           { x1: 100, y1: 100, x2: 200, y2: 200 },
-          { x1: 250, y1: 250, x2: 350, y2: 350 },
+          overlap ? { x1: 110, y1: 110, x2: 210, y2: 210 } : { x1: 250, y1: 250, x2: 350, y2: 350 },
         ];
         await sut.publishDetectedFaces(
           asset.id,
@@ -1795,7 +1803,7 @@ describe(PersonService.name, () => {
         expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
           [],
           [],
-          asset.faces.map((face, index) => ({
+          retained.map((face, index) => ({
             faceId: face.id,
             embedding: embeddings[index],
           })),
