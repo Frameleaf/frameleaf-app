@@ -83,7 +83,19 @@ const move = async (
         file.sourceIdentity.device,
         file.sourceIdentity.inode,
       ],
-      { stdio: ['ignore', 'ignore', 'ignore', source.fd, destination.fd] },
+      {
+        // A move still in flight must retain ownership if its Node parent dies.
+        stdio: [
+          'ignore',
+          'ignore',
+          'ignore',
+          source.fd,
+          destination.fd,
+          ...(process.env.FRAMELEAF_IMPORT_EXECUTION_LOCK_FD === '3'
+            ? [3]
+            : []),
+        ],
+      },
     );
     child.once('error', () =>
       reject(new Refusal('import_relocation_move_failed')),
@@ -120,9 +132,10 @@ const transfer = async (
     total = 0n;
   let reviewed = false;
   try {
-    for (const { file, state } of journal.files(operationId)) {
+    for (const { file, state } of journal
+      .files(operationId)
+      .filter(({ file }) => file.mode === 'relocate')) {
       if (
-        file.mode !== 'relocate' ||
         file.sourceIdentity.links !== '1' ||
         !(
           rollback

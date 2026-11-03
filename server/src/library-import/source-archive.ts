@@ -24,6 +24,12 @@ const descriptorSchema = z.strictObject({
   rows: ordinal,
   sha256: hash,
 });
+export const parseSourceArchiveDescriptor = (input: unknown) => {
+  const result = descriptorSchema.safeParse(input);
+  if (!result.success || (result.data.rows === '0' && result.data.sha256 !== EMPTY_SOURCE_ARCHIVE_HASH))
+    throw new LibraryImportRefused('SOURCE_ARCHIVE_DESCRIPTOR_INVALID');
+  return result.data;
+};
 const headerSchema = z
   .strictObject({
     destinationId: z.uuid(),
@@ -82,10 +88,7 @@ export class LibrarySourceArchive {
   }
 
   async begin(input: unknown): Promise<void> {
-    const result = descriptorSchema.safeParse(input);
-    if (!result.success || (result.data.rows === '0' && result.data.sha256 !== EMPTY_SOURCE_ARCHIVE_HASH))
-      return refuse('SOURCE_ARCHIVE_DESCRIPTOR_INVALID');
-    const descriptor = result.data;
+    const descriptor = parseSourceArchiveDescriptor(input);
     return this.withRun(true, async (tx, header) => {
       const reviewed = await readRetainedImportInputs(tx, this.context);
       if (header) {

@@ -44,10 +44,15 @@ const mountId = async (handle: FileHandle) => {
 };
 
 /** Caller qualifies source inventory/privacy and holds all source writers/restart mechanisms fenced. No media is changed. */
-export async function reviewImportFiles(input: unknown): Promise<ImportPlan> {
+export async function reviewImportFiles(
+  input: unknown,
+  mode: 'capture' | 'recheck' = 'capture',
+): Promise<ImportPlan> {
   if (process.platform !== 'linux')
     throw new Refusal('import_file_review_requires_linux');
   try {
+    if (!['capture', 'recheck'].includes(mode))
+      throw new Refusal('import_file_review_mode_invalid');
     const { files, ...header } = z.record(z.string(), z.unknown()).parse(input);
     const drafts = draftFiles.parse(files);
     const base = parseImportPlan({ ...header, files: [] });
@@ -58,6 +63,11 @@ export async function reviewImportFiles(input: unknown): Promise<ImportPlan> {
     const destinations = new Set<string>();
     for (const draft of drafts) {
       const { expectedBytes, expectedSha256, ...placement } = draft;
+      if (
+        mode === 'recheck' &&
+        (expectedBytes === undefined || expectedSha256 === undefined)
+      )
+        throw new Refusal('import_file_review_evidence_required');
       const sourceRoot = roots.get(draft.sourceRoot),
         destinationRoot = roots.get(draft.destinationRoot);
       if (!sourceRoot || !destinationRoot)
@@ -85,14 +95,20 @@ export async function reviewImportFiles(input: unknown): Promise<ImportPlan> {
           throw new Refusal('import_file_review_original_invalid');
         if (String(before.dev) !== sourceRoot.device)
           throw new Refusal('import_file_review_mount_changed');
-        const hash = createHash('sha256');
-        for await (const bytes of source.createReadStream({
-          start: 0,
-          autoClose: false,
-        }))
-          hash.update(bytes);
-        const sha256 = hash.digest('hex'),
-          bytes = String(before.size);
+        let sha256: string;
+        if (mode === 'recheck') {
+          // Compare the returned identities with the sealed plan; transfer still verifies actual bytes.
+          sha256 = expectedSha256!;
+        } else {
+          const hash = createHash('sha256');
+          for await (const bytes of source.createReadStream({
+            start: 0,
+            autoClose: false,
+          }))
+            hash.update(bytes);
+          sha256 = hash.digest('hex');
+        }
+        const bytes = String(before.size);
         if (!importFileStable(before, await source.stat({ bigint: true })))
           throw new Refusal('import_file_review_original_changed');
         if (

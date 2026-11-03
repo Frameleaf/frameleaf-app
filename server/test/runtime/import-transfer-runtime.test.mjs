@@ -32,6 +32,7 @@ test('packages the actual Manager transfer modules and matching declarations wit
     'import-plan',
     'import-transfer-journal',
     'import-copy',
+    'import-file-review',
     'import-adoption',
     'import-relocation',
   ]) {

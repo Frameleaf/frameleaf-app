@@ -35,12 +35,10 @@ export async function adoptImportFiles(
       )
         throw new Refusal('import_adoption_root_changed');
     }
-    if (plan.files.some((file) => file.mode !== 'adopt'))
-      throw new Refusal('import_adoption_state_invalid');
     await assertImportDestinations(journal, operationId, roots);
     let count = 0;
     let total = 0n;
-    for (const file of plan.files) {
+    for (const file of plan.files.filter((file) => file.mode === 'adopt')) {
       journal.intent(operationId, file);
       const handles: FileHandle[] = [];
       try {
