@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import planFixture from 'src/library-import/fixtures/manager-plan-v2.json' with { type: 'json' };
@@ -8,7 +9,6 @@ import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' wit
 import { type ImportManifest, manifestFingerprint } from 'src/library-import/manifest.js';
 import { piwigoProjections } from 'src/library-import/piwigo-projections.js';
 import * as piwigo from 'src/library-import/piwigo-source.js';
-import { type SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
 type Result = { manifest: ImportManifest; archive: SourceArchiveRecord[] };
 const input = () => ({
@@ -79,7 +79,6 @@ describe('Piwigo common manifest mapping', () => {
       primaryFileId: 'image:4:original',
       localDateTime: '2019-03-17T14:15:16',
       metadata: {
-        title: 'Manually edited title',
         description: 'Manually edited caption',
         takenAt: '2019-03-17T14:15:16.000Z',
         latitude: null,
@@ -90,6 +89,9 @@ describe('Piwigo common manifest mapping', () => {
     expect(manifest.albums.find((album) => album.id === '2:owner:3')?.assetIds).toEqual(['4']);
     for (const album of manifest.albums) expect(album.members).toEqual([]);
     expect(archive.length).toBeGreaterThan(30);
+    expect(archive.find((record) => record.table === 'images' && record.value.id === 4n)?.value.name).toBe(
+      'Manually edited title',
+    );
     for (const original of content.originals)
       expect(manifest.files.find((file) => file.path === original.path.slice(2))?.sha256).toBe(
         createHash('sha256').update(Buffer.from(original.originalBase64, 'base64')).digest('hex'),

@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { posix } from 'node:path';
 import { z } from 'zod';
+import type { PiwigoRow, PiwigoTable } from 'src/library-import/piwigo-source.js';
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
 import {
   type ImportManifest,
@@ -10,7 +11,6 @@ import {
 } from 'src/library-import/manifest.js';
 import { resolvePiwigoOriginals } from 'src/library-import/piwigo-files.js';
 import { piwigoProjections } from 'src/library-import/piwigo-projections.js';
-import type { PiwigoRow, PiwigoTable } from 'src/library-import/piwigo-source.js';
 import { type SourceArchiveRecord, encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { normalizeTagValue } from 'src/utils/tag.js';
