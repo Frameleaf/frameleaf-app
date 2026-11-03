@@ -99406,6 +99406,10 @@
           "stages": {
             "items": {
               "properties": {
+                "disabled": {
+                  "description": "Optional processing is turned off; retained work can resume when enabled",
+                  "type": "boolean"
+                },
                 "done": {
                   "maximum": 9007199254740991,
                   "minimum": 0,

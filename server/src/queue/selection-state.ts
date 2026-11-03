@@ -188,13 +188,19 @@ export const libraryFrozenPending = (runId: RawBuilder<string>) => sql<boolean>`
             on selected."selectionId" = original_source.id and selected."runId" = original_source."runId"
             where original_source.id = original.id and selected."rootItemKey" = child."rootItemKey" and selected.state != 'cancelled'))))`;
 
+const requiredStages = (stage: string, ignored: readonly string[]) =>
+  ignored.length > 0 ? sql`AND ${sql.ref(stage)}<>ALL(${[...ignored]}::text[])` : sql``;
+
 /** A sufficient unfinished proof shared by the cheap publication preflight and full settlement.
  * A retained pending alias whose detailed job is already terminal is not live execution.
  * Keep both existence checks correlated: flattening them can scan all retained terminal jobs
  * for every publication instead of stopping at one live item and its indexed job identity.
  */
-export const unfinishedAdmittedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
-  exists (select 1 from job_run_item i where i."runId" = ${runId} and i.state in ('pending','waiting','active')
+export const unfinishedAdmittedRunItems = (
+  runId: RawBuilder<string>,
+  ignoredStages: readonly string[] = [],
+) => sql<boolean>`
+  exists (select 1 from job_run_item i where i."runId" = ${runId} ${requiredStages('i.stage', ignoredStages)} and i.state in ('pending','waiting','active')
     and (i."selectionId" is null or i."jobId" is not null)
     and not exists (select 1 from job j where j.id = i."jobId" and j.state not in ('pending','waiting','active')
       limit 1 offset 0) limit 1 offset 0)`;
@@ -202,21 +208,21 @@ export const unfinishedAdmittedRunItems = (runId: RawBuilder<string>) => sql<boo
 /** Probe per-run headers first. Separate frozen admission from derived library ownership so
  * PostgreSQL can use the sparse pending-manifest index without filtering retained terminal rows.
  */
-export const unfinishedRunItems = (runId: RawBuilder<string>) => sql<boolean>`
+export const unfinishedRunItems = (runId: RawBuilder<string>, ignoredStages: readonly string[] = []) => sql<boolean>`
   ${libraryRunPending(runId)}
-  or (${unfinishedAdmittedRunItems(runId)})
+  or (${unfinishedAdmittedRunItems(runId, ignoredStages)})
   or exists (select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
-    where m."runId" = ${runId} and not m."copyComplete"
+    where m."runId" = ${runId} ${requiredStages('s.stage', ignoredStages)} and not m."copyComplete"
       and (s."sourceKind" = 'frozen' or (${libraryMembershipEntitled(sql<string>`m."runId"`, sql<string>`s."libraryOperationId"`)})))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
-    where membership."runId" = ${runId} and snapshot."sourceKind" = 'frozen' and snapshot.state in ('enumerating','ready')
+    where membership."runId" = ${runId} ${requiredStages('snapshot.stage', ignoredStages)} and snapshot."sourceKind" = 'frozen' and snapshot.state in ('enumerating','ready')
       and (snapshot.state = 'enumerating' or exists (select 1 from (
         select i."itemKey" from job_run_item i
         where i."selectionId" = snapshot.id and i."runId" = membership."runId"
           and i."jobId" is null and i.state = 'pending'
         order by i."itemKey" limit 1 offset 0) pending_manifest)))
   or exists (select 1 from job_selection_run membership join job_selection snapshot on snapshot.id = membership."selectionId"
-    where membership."runId" = ${runId} and snapshot."sourceKind" != 'frozen'
+    where membership."runId" = ${runId} ${requiredStages('snapshot.stage', ignoredStages)} and snapshot."sourceKind" != 'frozen'
       and (${libraryMembershipEntitled(sql<string>`membership."runId"`, sql<string>`snapshot."libraryOperationId"`)}) and snapshot.state in ('enumerating','ready')
       and (snapshot.state = 'enumerating' or exists (select 1 from job_run_item i
         where i."selectionId" = snapshot.id and i."runId" = snapshot."runId"

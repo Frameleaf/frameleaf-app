@@ -57,6 +57,20 @@ describe('SetupBar', () => {
     expect(screen.getByText('Starts by itself when the file check is finished.')).toBeInTheDocument();
   });
 
+  it('shows intentionally disabled AI processing as off while keeping other setup visible', async () => {
+    const value = progress();
+    value.stages = value.stages.map((stage) =>
+      stage.id === LibrarySetupStageId.Search ? { ...stage, done: 0, total: 0, disabled: true } : stage,
+    );
+    sdkMock.getLibrarySetupProgress.mockResolvedValue(value);
+    render(SetupBar);
+    expect(await screen.findByText('Setting up your library')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
+    expect(screen.getByText('Off')).toBeInTheDocument();
+    expect(screen.getByText('AI processing is turned off. You can enable it later.')).toBeInTheDocument();
+    expect(screen.queryByText('Starts by itself when the file check is finished.')).not.toBeInTheDocument();
+  });
+
   it('formats progress using the chosen number locale', async () => {
     locale.set('de-DE');
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
