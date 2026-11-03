@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import vectors from 'src/library-import/fixtures/password-vectors.json' with { type: 'json' };
 import { readSqlitePassword } from 'src/library-import/sqlite-password.js';
 
 const context = {
@@ -25,5 +26,25 @@ it('distinguishes absent credentials from missing owners and refuses malformed c
     await expect(read()).rejects.toThrow(/^Imported password refused: SOURCE_PASSWORD_UNAVAILABLE$/);
   } finally {
     if (db.isOpen) db.close();
+  }
+});
+
+it('binds a credential to the owner used for lookup even when the caller exposes changing properties', async () => {
+  const db = new DatabaseSync(':memory:');
+  let reads = 0;
+  const input = {
+    ...context,
+    get sourceUserId() {
+      return reads++ === 0 ? 'owner' : 'other-owner';
+    },
+  };
+  try {
+    db.exec('CREATE TABLE users(id TEXT PRIMARY KEY,password TEXT)');
+    db.prepare('INSERT INTO users VALUES(?,?)').run('owner', vectors.go.vectors[0].hash);
+    const credential = await readSqlitePassword(db, input, 'bcrypt', 'SELECT password FROM users WHERE id=?');
+    expect(credential).toMatchObject(context);
+    expect(reads).toBe(1);
+  } finally {
+    db.close();
   }
 });

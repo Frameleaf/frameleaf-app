@@ -78,6 +78,14 @@ type Settings =
 const refused = (): never => {
   throw new Error('Imported password refused: SOURCE_PASSWORD_UNSUPPORTED');
 };
+/** Capture the exact owner mapping before a source query can yield to its caller. */
+export const captureImportedPasswordContext = (input: unknown): Readonly<ImportedPasswordContext> => {
+  try {
+    return Object.freeze(contextSchema.parse(input));
+  } catch {
+    return refused();
+  }
+};
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const argonPrefix = ({ format, settings }: ArgonSettings) =>
   `$${format}$v=${settings.version}$m=${settings.memoryCost},t=${settings.timeCost},p=${settings.parallelism}$${settings.salt}$`;
@@ -253,9 +261,7 @@ export class ImportedPassword {
     Object.freeze(this);
   }
   static async fromSource(input: unknown, format: ImportedPasswordFormat, encoded: string): Promise<ImportedPassword> {
-    const parsed = contextSchema.safeParse(input);
-    if (!parsed.success) return refused();
-    const context = parsed.data;
+    const context = captureImportedPasswordContext(input);
     const { settings, canonical } = sourceSettings(format, encoded);
     // Wrapping the old verifier raises storage protection to the destination policy without knowing plaintext.
     // Public, unique operation/owner IDs make its salt stable on resume without exposing a source-hash fingerprint.

@@ -204,7 +204,12 @@ it('keeps protected passwords separate and refuses escaped callback use', async 
   const batches = [];
   for await (const batch of readPigallery2MysqlRestore(config, async (password) => {
     escaped = password;
-    credential = await password(context);
+    const expected = { ...context };
+    const pending = password(context);
+    context.sourceUserId = 'other-owner';
+    context.destinationUserId = '33333333-3333-4333-8333-333333333333';
+    credential = await pending;
+    expect(credential).toMatchObject(expected);
   }))
     batches.push(batch);
   expect(await verifyImportedPassword('Synthetic unit source password', credential!.forImport())).toBe(true);

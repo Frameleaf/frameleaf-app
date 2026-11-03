@@ -4,7 +4,11 @@ import { z } from 'zod';
 import fixture from 'src/library-import/fixtures/photoprism/261029-mariadb114.json' with { type: 'json' };
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
 import { withPasswordCallbackDeadline } from 'src/library-import/password-callback.js';
-import { ImportedPassword, type ImportedPasswordContext } from 'src/library-import/passwords.js';
+import {
+  ImportedPassword,
+  type ImportedPasswordContext,
+  captureImportedPasswordContext,
+} from 'src/library-import/passwords.js';
 import {
   type PhotoprismInventoryRecord,
   normalizePhotoprismInventoryRow,
@@ -221,8 +225,9 @@ export async function* readPhotoprismMariadbInventory(
       try {
         await withPasswordCallbackDeadline(
           (activity) =>
-            withPasswords(async (context) => {
+            withPasswords(async (input) => {
               try {
+                const context = captureImportedPasswordContext(input);
                 if (!active || failed) return refuse('PHOTOPRISM_PASSWORD_UNAVAILABLE');
                 activity();
                 const rows = await query(
