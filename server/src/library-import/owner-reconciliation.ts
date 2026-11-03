@@ -14,31 +14,76 @@ import {
 import { beginLibraryImportReadback } from 'src/library-import/verification.js';
 
 const id = z.string().min(1).max(1024);
-const intentSchema = z.strictObject({
-  sourceUserId: id,
-  email: z
-    .email()
-    .max(254)
-    .transform((value) => value.toLowerCase()),
-  login: z.strictObject({
-    revision: id,
-    snapshotSha256: z.string().regex(/^[a-f0-9]{64}$/),
-    accountEnabled: z.literal(true),
-    passwordLoginEnabled: z.literal(true),
-    secondFactorRequired: z.literal(false),
-    externalIdentityRequired: z.literal(false),
-    ownedLibraryAccess: z.literal('full'),
-    otherRestrictions: z.literal('none'),
-  }),
-  disposition: z.discriminatedUnion('kind', [
-    z.strictObject({ kind: z.literal('preserve') }),
-    z.strictObject({
-      kind: z.literal('claim'),
-      reason: z.enum(['unsupported-local-verifier', 'no-local-verifier']),
-      claimPermitted: z.literal(true),
-    }),
-  ]),
+const loginSchema = z.strictObject({
+  revision: id,
+  snapshotSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  accountEnabled: z.boolean(),
+  passwordLoginEnabled: z.boolean(),
+  secondFactorRequired: z.boolean(),
+  externalIdentityRequired: z.boolean(),
+  ownedLibraryAccess: z.enum(['full', 'restricted', 'none']),
+  otherRestrictions: z.enum(['none', 'present']),
 });
+const restrictionSchema = z.enum([
+  'account-disabled',
+  'password-login-disabled',
+  'second-factor-required',
+  'external-identity-required',
+  'restricted-library-access',
+  'other-source-restrictions',
+]);
+const sourceRestrictions = (login: z.infer<typeof loginSchema>): z.infer<typeof restrictionSchema>[] => {
+  const reasons: z.infer<typeof restrictionSchema>[] = [];
+  if (!login.accountEnabled) reasons.push('account-disabled');
+  if (!login.passwordLoginEnabled) reasons.push('password-login-disabled');
+  if (login.secondFactorRequired) reasons.push('second-factor-required');
+  if (login.externalIdentityRequired) reasons.push('external-identity-required');
+  if (login.ownedLibraryAccess !== 'full') reasons.push('restricted-library-access');
+  if (login.otherRestrictions !== 'none') reasons.push('other-source-restrictions');
+  return reasons;
+};
+const intentSchema = z
+  .strictObject({
+    sourceUserId: id,
+    email: z
+      .email()
+      .max(254)
+      .transform((value) => value.toLowerCase()),
+    login: loginSchema,
+    disposition: z.discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('preserve') }),
+      z.strictObject({
+        kind: z.literal('claim'),
+        reason: z.enum(['unsupported-local-verifier', 'no-local-verifier']),
+        claimPermitted: z.literal(true),
+      }),
+      z.strictObject({
+        kind: z.literal('restricted'),
+        reasons: z.array(restrictionSchema).min(1),
+        acknowledged: z.literal(true),
+        credential: z.enum(['preserve', 'unavailable']),
+      }),
+    ]),
+  })
+  .superRefine((value, ctx) => {
+    const reasons = sourceRestrictions(value.login);
+    const matches =
+      value.disposition.kind === 'restricted'
+        ? reasons.length > 0 &&
+          reasons.length === value.disposition.reasons.length &&
+          reasons.every(
+            (reason) => value.disposition.kind === 'restricted' && value.disposition.reasons.includes(reason),
+          )
+        : reasons.length === 0;
+    if (!matches)
+      ctx.addIssue({ code: 'custom', message: 'Source account restrictions do not match the destination policy' });
+  })
+  .transform((value) =>
+    value.disposition.kind === 'restricted'
+      ? { ...value, disposition: { ...value.disposition, reasons: sourceRestrictions(value.login) } }
+      : value,
+  );
+
 type Context = { binding: LibraryImportBinding; manifest: unknown; plan: unknown; destinationId: string };
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const refuse = (code: string): never => {
@@ -69,8 +114,11 @@ const prepareOwner = (bound: ReturnType<typeof boundOwners>, input: unknown, cre
   const mapped = bound.owners.get(intent.sourceUserId);
   if (!mapped) return refuse('OWNER_SOURCE_MISSING');
   if (intent.login.revision !== bound.binding.source.revision) return refuse('OWNER_QUALIFICATION_CHANGED');
-  if (intent.disposition.kind === 'preserve' ? !credential : credential !== undefined)
-    return refuse('OWNER_CREDENTIAL_DISPOSITION_MISMATCH');
+  const restricted = intent.disposition.kind === 'restricted';
+  const preserve =
+    intent.disposition.kind === 'preserve' ||
+    (intent.disposition.kind === 'restricted' && intent.disposition.credential === 'preserve');
+  if (preserve ? !credential : credential !== undefined) return refuse('OWNER_CREDENTIAL_DISPOSITION_MISMATCH');
   if (
     credential &&
     (!(credential instanceof ImportedPassword) ||
@@ -95,7 +143,7 @@ const prepareOwner = (bound: ReturnType<typeof boundOwners>, input: unknown, cre
     disposition: intent.disposition,
     password: credential?.forImport() ?? null,
   });
-  return { owner, intent, credential, claim: intent.disposition.kind === 'claim', recordSha256 };
+  return { owner, intent, credential, claim: intent.disposition.kind !== 'preserve', restricted, recordSha256 };
 };
 const prepareOwnerInventory = (bound: ReturnType<typeof boundOwners>, inventory: unknown) => {
   const parsed = z
@@ -143,7 +191,7 @@ export class CanonicalOwnerWriter {
               .length > 0
           )
             return refuse('OWNER_EMAIL_COLLISION');
-          await createImportedOwner(tx, prepared.owner, prepared.credential);
+          await createImportedOwner(tx, prepared.owner, prepared.credential, prepared.restricted);
         },
       );
     } catch (error) {
@@ -210,7 +258,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
       if (groups.length !== expected.length + 1 || !groupById.has(administrators[0].clusterGroupId))
         return refuse('OWNER_RECONCILIATION_MISMATCH');
       const safeRecords = expected
-        .map(({ owner, credential, claim }) => {
+        .map(({ owner, credential, claim, restricted }) => {
           const row = byId.get(owner.destinationUserId);
           if (
             !row ||
@@ -223,7 +271,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
             row.status !== 'active' ||
             row.deletedAt !== null ||
             row.importClaimPending !== claim ||
-            row.shouldChangePassword !== claim ||
+            row.shouldChangePassword !== !credential ||
             row.pinCode !== null ||
             row.oauthId !== null ||
             row.passwordLinkHash !== null ||
@@ -242,6 +290,7 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
             name: owner.name,
             clusterGroupId: row.clusterGroupId,
             claimPending: claim,
+            ...(restricted ? { loginRestricted: true } : {}),
           };
         })
         .sort((a, b) => a.id.localeCompare(b.id));
@@ -266,8 +315,16 @@ export async function reconcileImportedOwners(db: ImportDatabase, context: Conte
         manifestSha256: bound.binding.manifestSha256,
         planSha256: bound.binding.planSha256,
         owners: expected.length,
-        preservedPasswords: expected.filter((item) => !item.claim).length,
+        preservedPasswords: expected.filter((item) => !!item.credential).length,
         claimPending: expected.filter((item) => item.claim).length,
+        ...(expected.some((item) => item.restricted)
+          ? {
+              restricted: {
+                owners: expected.filter((item) => item.restricted).length,
+                preservedPasswords: expected.filter((item) => item.restricted && item.credential).length,
+              },
+            }
+          : {}),
         sha256: digest(safeRecords),
       };
     });

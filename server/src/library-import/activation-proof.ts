@@ -27,9 +27,16 @@ const reportSchema = z.strictObject({
       owners: count,
       preservedPasswords: count,
       claimPending: count,
+      restricted: z.strictObject({ owners: count, preservedPasswords: count }).optional(),
       sha256: hash,
     })
-    .refine((value) => value.owners === value.preservedPasswords + value.claimPending),
+    .refine(
+      (value) =>
+        value.owners === value.preservedPasswords + value.claimPending - (value.restricted?.preservedPasswords ?? 0) &&
+        (value.restricted?.owners ?? 0) <= value.claimPending &&
+        (value.restricted?.preservedPasswords ?? 0) <= (value.restricted?.owners ?? 0) &&
+        (value.restricted?.preservedPasswords ?? 0) <= value.preservedPasswords,
+    ),
   assets: z.strictObject({
     ...identity,
     format: z.literal('frameleaf-asset-reconciliation'),

@@ -8,6 +8,7 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserMetadataKey, UserStatus } from 'src/enum.js';
+import { canRedeemImportedAccountClaim } from 'src/library-import/account-claim-policy.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -374,8 +375,8 @@ export class UserRepository {
 
   /** FL-538: who a still-usable "choose a password" link belongs to, by the link's SHA-256. */
   @GenerateSql({ params: [DummyValue.BUFFER] })
-  getByPasswordLink(hash: Buffer) {
-    return this.db
+  async getByPasswordLink(hash: Buffer) {
+    const user = await this.db
       .selectFrom('user')
       .select(['id', 'name', 'email', 'importClaimPending'])
       .where('passwordLinkHash', '=', hash)
@@ -383,6 +384,8 @@ export class UserRepository {
       .where('deletedAt', 'is', null)
       .where('status', '=', UserStatus.Active)
       .executeTakeFirst();
+    if (user?.importClaimPending && !(await canRedeemImportedAccountClaim(this.db, user.id))) return;
+    return user;
   }
 
   /**
@@ -421,7 +424,7 @@ export class UserRepository {
         .where('status', '=', UserStatus.Active)
         .forUpdate()
         .executeTakeFirst();
-      if (!candidate) return;
+      if (!candidate || !(await canRedeemImportedAccountClaim(tx, candidate.id))) return;
       const user = await tx
         .updateTable('user')
         .set({

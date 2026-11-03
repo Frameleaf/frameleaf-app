@@ -65,3 +65,19 @@ it('refuses private extras, incoherent account counts, unfinished archives and i
   ])
     expect(() => sealLibraryImportActivation(context, value, manager, at)).toThrow('IMPORT_ACTIVATION_PROOF_INVALID');
 });
+
+it('retains restricted-account counts without pretending their preserved passwords enable sign-in', () => {
+  const value = {
+    ...report(),
+    owners: { ...report().owners, claimPending: 2, restricted: { owners: 1, preservedPasswords: 1 } },
+  };
+  const sealed = sealLibraryImportActivation(context, value, manager, at);
+  expect(readLibraryImportActivation(sealed, context).report.owners).toMatchObject(value.owners);
+  for (const restricted of [
+    { owners: 3, preservedPasswords: 1 },
+    { owners: 1, preservedPasswords: 2 },
+  ])
+    expect(() =>
+      sealLibraryImportActivation(context, { ...value, owners: { ...value.owners, restricted } }, manager, at),
+    ).toThrow('IMPORT_ACTIVATION_PROOF_INVALID');
+});
