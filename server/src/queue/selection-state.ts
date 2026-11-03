@@ -212,7 +212,7 @@ export const managerImportHeld = (runId: RawBuilder<string>) => {
     ) as matches) journal_authority
     where manager_run.id=${runId} and manager_run.kind in ('immich-import-derived','library-import-derived')
       and (manager_run.selection ? 'managerSetupRequired' or manager_run.selection ? 'managerSetup'
-        or (${profile} and journal_authority.matches))
+        or ${profile})
       and (${validProfile} and journal_authority.matches and manager_run."enumerationDone"
         and manager_run."finishedAt" is null
         and (not manager_run.selection ? 'managerSetupRequired' or manager_run.selection->'managerSetupRequired'='true'::jsonb)

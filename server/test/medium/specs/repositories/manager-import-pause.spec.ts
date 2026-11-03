@@ -119,6 +119,7 @@ it.each(['immich-import-derived', 'library-import-derived'])(
     const [resumed] = await store.claim(queue, worker, 1);
     expect(resumed.runId).toBe(id);
   },
+  30_000, // These bulk admission cases enqueue more than 500 jobs through the real store.
 );
 
 it.each(['immich-import-derived', 'library-import-derived'])(
@@ -147,7 +148,16 @@ it('preserves admission for unrelated run kinds carrying similarly named metadat
 });
 
 for (const kind of ['immich-import-derived', 'library-import-derived'])
-  it.each(['missing marker', 'installation', 'operation', 'source identity', 'attention', 'missing setup'])(
+  it.each([
+    'missing marker',
+    'complete selection loss',
+    'selection and journal loss',
+    'installation',
+    'operation',
+    'source identity',
+    'attention',
+    'missing setup',
+  ])(
     `fences pending and waiting ${kind} work after invalidating %s`,
     async (corruption) => {
       const worker = randomUUID();
@@ -159,6 +169,13 @@ for (const kind of ['immich-import-derived', 'library-import-derived'])
       expect(active?.runId).toBe(id);
       await enqueue(id);
       switch (corruption) {
+        case 'complete selection loss':
+        case 'selection and journal loss': {
+          await sql`UPDATE job_run SET selection='{}' WHERE id=${id}::uuid`.execute(db);
+          if (corruption === 'selection and journal loss')
+            await sql`TRUNCATE frameleaf_immich_import,frameleaf_library_import CASCADE`.execute(db);
+          break;
+        }
         case 'missing marker': {
           await sql`UPDATE job_run SET selection=selection-'managerSetup' WHERE id=${id}::uuid`.execute(db);
           break;
@@ -214,6 +231,7 @@ for (const kind of ['immich-import-derived', 'library-import-derived'])
         ).rows[0].count,
       ).toBeGreaterThan(0);
     },
+    30_000,
   );
 it('backfills the independent fence before old marked work can lose its marker', async () => {
   const id = await run('immich-import-derived', true);
