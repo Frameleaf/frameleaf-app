@@ -1,6 +1,7 @@
 import { Kysely, RawNode, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
+import { connectImportDatabase } from 'src/immich-import/database.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
@@ -186,6 +187,63 @@ it('refuses finalized work that has been released or has processed an item', asy
   await sql`UPDATE job_selection SET state='enumerating' WHERE "runId"=${id}::uuid`.execute(db);
   await sql`UPDATE job_run_item SET state='completed' WHERE "runId"=${id}::uuid`.execute(db);
   await expect(repository.prepareImportedLibraryWork(context)).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+});
+
+const importConnection = async () => {
+  const [{ name }] = (await sql<{ name: string }>`SELECT current_database() AS name`.execute(db)).rows;
+  const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+  url.pathname = '/' + name;
+  return connectImportDatabase(url.href, false);
+};
+
+it('revalidates prepared work on the locked session without committing its outer transaction', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  const connection = await importConnection();
+  try {
+    await expect(repository.validateImportedLibraryWork(connection.db, context)).rejects.toThrow(
+      'DERIVED_WORK_PREPARATION_FAILED',
+    );
+    await expect(
+      connection.db.withSession!(async (session) => {
+        await session.query('SELECT pg_advisory_lock($1::bigint)', [LIBRARY_IMPORT_LOCK]);
+        await session.transaction(async (tx) => {
+          expect(await repository.validateImportedLibraryWork(tx, context)).toBe(id);
+          await tx.query('UPDATE job_run SET "finishedAt"=clock_timestamp() WHERE id=$1::uuid', [id]);
+          throw new Error('synthetic outer activation failure');
+        });
+      }),
+    ).rejects.toThrow('synthetic outer activation failure');
+    expect((await sql`SELECT "finishedAt" FROM job_run WHERE id=${id}::uuid`.execute(db)).rows).toEqual([
+      { finishedAt: null },
+    ]);
+    expect((await sql`SELECT 1 FROM job`.execute(db)).rows).toEqual([]);
+  } finally {
+    await connection.close();
+  }
+});
+
+it('independently refuses a corrupt captured payload in the activation transaction', async () => {
+  const { context } = await setup();
+  const id = await repository.dispatchImportedLibraryWork(context);
+  const before = (await sql`SELECT stage,"itemKey",selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db))
+    .rows;
+  const connection = await importConnection();
+  try {
+    await expect(
+      connection.db.withSession!((session) =>
+        session.transaction(async (tx) => {
+          await tx.query('UPDATE job_run_item SET selection=\'{}\'::jsonb WHERE "runId"=$1::uuid', [id]);
+          await repository.validateImportedLibraryWork(tx, context);
+        }),
+      ),
+    ).rejects.toThrow('DERIVED_WORK_MANIFEST_MISMATCH');
+    expect(
+      (await sql`SELECT stage,"itemKey",selection FROM job_run_item ORDER BY stage,"itemKey"`.execute(db)).rows,
+    ).toEqual(before);
+  } finally {
+    await connection.close();
+  }
 });
 
 it.each(['copying', 'abandoned', 'activated'])('refuses %s preparation without retaining work', async (status) => {

@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
-import type { ImportConfig } from 'src/immich-import/types.js';
+import type { ImportConfig, ImportDatabase } from 'src/immich-import/types.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
@@ -14,6 +14,7 @@ import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobNameSchema, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { transferImportedWork } from 'src/immich-import/derived-work.js';
+import { validatePreparedLibraryImportWork } from 'src/library-import/activation-work.js';
 import { type ManagerLibrarySetup, prepareLibraryImportWork } from 'src/library-import/derived-work.js';
 import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
@@ -1059,6 +1060,18 @@ export class JobRepository {
     const runId = await this.prepareImportedLibraryWork(context, manager);
     await this.store.finishEnumeration(runId);
     return runId;
+  }
+  validateImportedLibraryWork(
+    tx: ImportDatabase,
+    context: ReviewedImportContext,
+    manager?: ManagerLibrarySetup,
+  ): Promise<string> {
+    return validatePreparedLibraryImportWork(
+      tx,
+      (name) => this.intent({ name, data: {} } as JobItem),
+      context,
+      manager,
+    );
   }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
