@@ -325,7 +325,12 @@ it('reads explicit owner passwords in a protected callback while retaining the a
   const batches = [];
   for await (const batch of readPiwigoRestore(config, async (password) => {
     escaped = password;
-    credential = await password(context);
+    const expected = { ...context };
+    const pending = password(context);
+    context.sourceUserId = 'other-owner';
+    context.destinationUserId = '33333333-3333-4333-8333-333333333333';
+    credential = await pending;
+    expect(credential).toMatchObject(expected);
     expect(destroy).not.toHaveBeenCalled();
   }))
     batches.push(batch);

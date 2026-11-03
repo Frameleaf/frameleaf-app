@@ -5,7 +5,11 @@ import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-mysql84.json' 
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
 import { mysqlSchemaFingerprint } from 'src/library-import/mysql-schema.js';
 import { withPasswordCallbackDeadline } from 'src/library-import/password-callback.js';
-import { ImportedPassword, ImportedPasswordContext } from 'src/library-import/passwords.js';
+import {
+  ImportedPassword,
+  ImportedPasswordContext,
+  captureImportedPasswordContext,
+} from 'src/library-import/passwords.js';
 import { admitPigallery2MysqlSchema } from 'src/library-import/pigallery2-mysql-schema.js';
 import { pigallery2Projections } from 'src/library-import/pigallery2-projections.js';
 import { type Pigallery2Row, type Pigallery2Table } from 'src/library-import/pigallery2.js';
@@ -167,8 +171,9 @@ export async function* readPigallery2MysqlRestore(
       try {
         await withPasswordCallbackDeadline(
           (activity) =>
-            withPasswords(async (context) => {
+            withPasswords(async (input) => {
               try {
+                const context = captureImportedPasswordContext(input);
                 if (
                   !active ||
                   failed ||

@@ -4,7 +4,11 @@ import { z } from 'zod';
 import fixture from 'src/library-import/fixtures/piwigo/16.4.0-mariadb.json' with { type: 'json' };
 import { readMysqlSourceSchema } from 'src/library-import/mysql-catalog.js';
 import { withPasswordCallbackDeadline } from 'src/library-import/password-callback.js';
-import { ImportedPassword, ImportedPasswordContext } from 'src/library-import/passwords.js';
+import {
+  ImportedPassword,
+  ImportedPasswordContext,
+  captureImportedPasswordContext,
+} from 'src/library-import/passwords.js';
 import { piwigoProjections } from 'src/library-import/piwigo-projections.js';
 import { admitPiwigoSchema } from 'src/library-import/piwigo-schema.js';
 
@@ -135,8 +139,9 @@ export async function* readPiwigoRestore(
       try {
         await withPasswordCallbackDeadline(
           (activity) =>
-            withPasswords(async (context) => {
+            withPasswords(async (input) => {
               try {
+                const context = captureImportedPasswordContext(input);
                 if (!active || failed || !/^[1-9]\d{0,9}$/.test(context.sourceUserId))
                   refuse('PIWIGO_PASSWORD_UNAVAILABLE');
                 activity();
