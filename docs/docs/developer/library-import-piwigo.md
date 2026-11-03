@@ -47,7 +47,7 @@ Source access follows the pinned application's category rules: private categorie
 | Category hierarchy, access rules and excluded memberships | Preserve source records and disclose restrictions; never broaden destination sharing                                                      |
 | Dangling image memberships and representative IDs         | Require the exact missing-ID review, archive the records and disclose excluded relationships                                              |
 
-The synthetic mapper tests compare owner choices against independently captured native visibility, cover restricted downloads and group/direct grants, and prepare mapped originals through the actual canonical writer. This remains an internal mapping stage. It does not qualify source account provisioning, full metadata extraction, native additional-format bytes, transfer recovery, source capture authority or a completed migration. Per-user rating records and unsupported source features require further capture/mapping qualification before combined release.
+The synthetic mapper tests compare owner choices against independently captured native visibility, cover restricted downloads and group/direct grants, and prepare mapped originals through the actual canonical writer. This remains an internal mapping stage. It does not qualify source account provisioning, full metadata extraction, native additional-format bytes, transfer recovery, source capture authority or a completed migration. Owner rating records are mapped as described below; native populated-vote capture and unsupported source features still require qualification before combined release.
 
 ## Original path resolution
 
@@ -89,3 +89,25 @@ The callback has a 30-second inactivity deadline, renewed when an account read s
 The pinned default `PasswordHash(13, true)` produces portable PHPass `$P$G` verifiers. The importer supports the same iterative MD5 protocol at costs 7–18, with a 4,096-byte password limit, bounded concurrency and regular event-loop yields. Higher costs and custom formats refuse preflight. Legacy lowercase MD5 verifiers are supported with strict digest equality; PHP's legacy loose numeric comparison is deliberately not retained. Both formats are wrapped with the destination bcrypt policy; the original digest is not stored in the destination. Synthetic vectors were independently generated and verified by the pinned Piwigo PHP 8.4.16 fixture. PHPass was written by Solar Designer and placed in the public domain; see the pinned [source](https://github.com/Piwigo/Piwigo/blob/bef1a4ac424b4e986589e4cfc9f4d134f1b16f15/include/passwordhash.class.php).
 
 Readable credentials do not establish account eligibility. Source `password_verify`, `pass_convert`, external authentication, login hooks and MFA policy must be qualified before enabling any destination owner. Guest access and source administrative roles must not become destination login or administration grants. This protected channel does not complete the migration controller or source authentication qualification.
+
+### Owner ratings
+
+The mapper reads the pinned `rate` table with its complete `(element_id, user_id,
+anonymous_id)` key. The last key is bound as text, including IPv6 voter values;
+it is never interpolated into SQL or treated as a media checksum. Piwigo writes
+an IP-derived anonymous key for signed-in votes too, so an empty key does not
+identify a personal vote. Only the explicitly selected image owner's vote from
+a normal, administrator or webmaster account becomes the destination rating.
+Other users' and anonymous/shared-account votes remain in the protected archive.
+Voter identifiers never enter the destination photo metadata.
+
+A representable owner score of zero through five is retained directly, ahead of
+embedded ratings. No owner vote becomes an unrated destination value. Conflicting
+owner scores require review; values outside the destination scale are archived
+and disclosed rather than silently rescaled. The public aggregate remains a
+separate archived value. Synthetic owner/other-voter, generic-account, conflict,
+custom-scale and text-cursor cases test this mapping. They do not extend the
+native fixture's evidence to populated rating records or qualify a whole migration.
+
+The interpretation follows the pinned [rating implementation](https://github.com/Piwigo/Piwigo/blob/16.4.0/include/functions_rate.inc.php)
+and [table definition](https://github.com/Piwigo/Piwigo/blob/16.4.0/install/piwigo_structure-mysql.sql).
