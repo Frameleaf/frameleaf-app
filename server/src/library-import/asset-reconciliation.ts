@@ -56,6 +56,22 @@ export async function reconcileImportedAssets(
           return { ...photo, id: mapping.destination_id };
         })
         .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      const stackIds = new Map<unknown, string>();
+      if (manifest.version === 4) {
+        const rows = await tx.query(
+          `SELECT source_id,destination_id::text,record_sha256 FROM public.frameleaf_library_import_mapping
+          WHERE operation_id=$1::uuid AND entity_kind='stack'`,
+          [binding.operationId],
+        );
+        const stacks = new Map(rows.map((row) => [row.source_id, row]));
+        if (rows.length !== manifest.stacks.length || stacks.size !== rows.length) mismatch();
+        for (const stack of manifest.stacks) {
+          const row = stacks.get(stack.id);
+          if (!row || typeof row.destination_id !== 'string' || row.record_sha256 !== fingerprint(stack))
+            return mismatch();
+          for (const assetId of stack.assetIds) stackIds.set(mapped.get(assetId)!.destination_id, row.destination_id);
+        }
+      }
       const clocks = await tx.query(
         `SELECT p.id,to_char(p.taken::timestamptz AT TIME ZONE 'UTC',${format}) AS taken,
         to_char(p.modified::timestamptz AT TIME ZONE 'UTC',${format}) AS modified,
@@ -97,7 +113,7 @@ export async function reconcileImportedAssets(
         isExternal: false,
         isOffline: false,
         livePhotoVideoId: null,
-        stackId: null,
+        stackId: stackIds.get(id) ?? null,
         duplicateId: null,
         isEdited: false,
         ownerEligible: true,

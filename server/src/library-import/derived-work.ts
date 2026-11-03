@@ -52,7 +52,7 @@ export async function prepareLibraryImportWork(
         return refuse('IMPORT_REVIEWED_INPUTS_MISSING');
       const manifest = parseImportManifest(journal.reviewed_manifest);
       const plan = bindDestinationImportPlan(journal.reviewed_plan, binding, manifest, context.destinationId);
-      if (manifest.version !== 3) return refuse('DERIVED_WORK_REQUIRES_SEALED_MANIFEST');
+      if (manifest.version !== 3 && manifest.version !== 4) return refuse('DERIVED_WORK_REQUIRES_SEALED_MANIFEST');
 
       // Reconcile the complete source/owner/type cohort before capturing any canonical IDs.
       const expectedOwners = sql`select o."sourceId",o."destinationId"::uuid as id

@@ -98,26 +98,31 @@ const legacyManifestSchema = z.strictObject({
   losses: z.array(z.strictObject({ code: id, entityId: id.optional(), acknowledged: z.boolean() })),
 });
 export const importFileSchema = legacyManifestSchema.shape.files.element;
+const sealedManifestSchema = legacyManifestSchema.extend({
+  version: z.literal(3),
+  assets: z.array(
+    legacyManifestSchema.shape.assets.element.extend({
+      primaryFileId: id,
+      type: z.enum(['IMAGE', 'VIDEO']),
+      fileModifiedAt: importTimestampSchema,
+      originalFileNames: z
+        .record(id, importOriginalFileNameSchema)
+        .transform((names) =>
+          Object.fromEntries(Object.entries(names).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+        ),
+    }),
+  ),
+});
 const manifestSchema = z.discriminatedUnion('version', [
   legacyManifestSchema,
   legacyManifestSchema.extend({
     version: z.literal(2),
     assets: z.array(legacyManifestSchema.shape.assets.element.extend({ primaryFileId: id })),
   }),
-  legacyManifestSchema.extend({
-    version: z.literal(3),
-    assets: z.array(
-      legacyManifestSchema.shape.assets.element.extend({
-        primaryFileId: id,
-        type: z.enum(['IMAGE', 'VIDEO']),
-        fileModifiedAt: importTimestampSchema,
-        originalFileNames: z
-          .record(id, importOriginalFileNameSchema)
-          .transform((names) =>
-            Object.fromEntries(Object.entries(names).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
-          ),
-      }),
-    ),
+  sealedManifestSchema,
+  sealedManifestSchema.extend({
+    version: z.literal(4),
+    stacks: z.array(z.strictObject({ id, ownerId: id, primaryAssetId: id, assetIds: z.array(id).min(2) })),
   }),
 ]);
 export type ImportManifest = z.infer<typeof manifestSchema>;
@@ -186,6 +191,40 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
       if (!asset) fail('UNKNOWN_ALBUM_ASSET');
       // Cross-owner inclusion requires a richer permission contract before it can be represented safely.
       if (asset!.ownerId !== album.ownerId) fail('CROSS_OWNER_ALBUM_REQUIRES_PERMISSION_REVIEW');
+    }
+  }
+  if (value.version === 4) {
+    const grants = new Map<string, Map<string, 'viewer' | 'editor'>>();
+    for (const album of value.albums) {
+      for (const assetId of album.assetIds) {
+        for (const member of album.members) {
+          if (member.userId === album.ownerId) continue;
+          let principals = grants.get(assetId);
+          if (!principals) grants.set(assetId, (principals = new Map()));
+          if (principals.get(member.userId) !== 'editor') principals.set(member.userId, member.role);
+        }
+      }
+    }
+    const access = (assetId: string) =>
+      JSON.stringify([...(grants.get(assetId) ?? [])].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    const stackIds = new Set<string>(),
+      claimed = new Set<string>();
+    for (const stack of value.stacks) {
+      if (stackIds.has(stack.id)) fail('DUPLICATE_SOURCE_ID');
+      stackIds.add(stack.id);
+      if (!indexes.users.has(stack.ownerId)) fail('STACK_OWNER_INVALID');
+      if (new Set(stack.assetIds).size !== stack.assetIds.length || stack.assetIds.some((id) => !assets.has(id)))
+        fail('STACK_ASSETS_INVALID');
+      if (!stack.assetIds.includes(stack.primaryAssetId)) fail('STACK_PRIMARY_INVALID');
+      if (stack.assetIds.some((id) => assets.get(id)!.ownerId !== stack.ownerId)) fail('STACK_OWNER_INVALID');
+      const primary = assets.get(stack.primaryAssetId)!;
+      const expectedAccess = access(primary.id);
+      for (const assetId of stack.assetIds) {
+        if (claimed.has(assetId)) fail('STACK_MEMBERSHIP_CONFLICT');
+        claimed.add(assetId);
+        if (assets.get(assetId)!.visibility !== primary.visibility) fail('STACK_VISIBILITY_MISMATCH');
+        if (access(assetId) !== expectedAccess) fail('STACK_ACCESS_MISMATCH');
+      }
     }
   }
   return value;
