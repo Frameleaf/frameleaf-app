@@ -25,8 +25,8 @@ const integerRow = (row: Record<string, unknown>): PhotoprismRow =>
       typeof value === 'number' && !['photo_lat', 'photo_lng'].includes(key) ? BigInt(value) : value,
     ]),
   ) as PhotoprismRow;
-const setup = () => {
-  const photo = integerRow(metadata.photo),
+const setup = (timeZone?: string) => {
+  const photo = integerRow({ ...metadata.photo, ...(timeZone === undefined ? {} : { time_zone: timeZone }) }),
     details = integerRow(metadata.details),
     album = integerRow(metadata.album);
   const file = {
@@ -109,8 +109,8 @@ describe('PhotoPrism common manifest assembly', () => {
     expect(result.archive.find((row) => row.table === 'albums')?.value.album_description).toBe(description);
   });
 
-  it('prepares the mapped metadata through the actual canonical writer without generated media work', () => {
-    const { rows, input, file } = setup();
+  it.each(['America/Edmonton', 'Local'])('prepares source zone %s without generated media', (timeZone) => {
+    const { rows, input, file } = setup(timeZone);
     rows.push(
       ...normalizePhotoprismInventoryRow('files', {
         ...file,
@@ -166,6 +166,10 @@ describe('PhotoPrism common manifest assembly', () => {
       fileModifiedAt: asset.fileModifiedAt,
       originalFileNames: asset.originalFileNames,
     });
+    expect(prepared.metadata.timeZone).toBe(timeZone === 'Local' ? undefined : timeZone);
+    expect('localDateTime' in prepared.asset ? prepared.asset.localDateTime : undefined).toBe(
+      timeZone === 'Local' ? '2020-06-10T12:30:00' : undefined,
+    );
     expect(prepared.metadata.description).toBe(metadata.expected.Caption);
     expect(prepared.metadata.tags).toEqual(['family', 'summer']);
     expect(prepared.bytes).toBe(8n);

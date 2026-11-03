@@ -107,16 +107,25 @@ export const importFileSchema = legacyManifestSchema.shape.files.element;
 const sealedManifestSchema = legacyManifestSchema.extend({
   version: z.literal(3),
   assets: z.array(
-    legacyManifestSchema.shape.assets.element.extend({
-      primaryFileId: id,
-      type: z.enum(['IMAGE', 'VIDEO']),
-      fileModifiedAt: importTimestampSchema,
-      originalFileNames: z
-        .record(id, importOriginalFileNameSchema)
-        .transform((names) =>
-          Object.fromEntries(Object.entries(names).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
-        ),
-    }),
+    legacyManifestSchema.shape.assets.element
+      .extend({
+        primaryFileId: id,
+        localDateTime: z
+          .string()
+          .refine((value) => importTimestampSchema.safeParse(value + 'Z').success)
+          .optional(),
+        type: z.enum(['IMAGE', 'VIDEO']),
+        fileModifiedAt: importTimestampSchema,
+        originalFileNames: z
+          .record(id, importOriginalFileNameSchema)
+          .transform((names) =>
+            Object.fromEntries(Object.entries(names).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+          ),
+      })
+      .refine(
+        (asset) => asset.localDateTime === undefined || asset.metadata.timeZone === undefined,
+        'Source wall clock and named time zone are alternatives',
+      ),
   ),
 });
 const stackedManifestSchema = sealedManifestSchema.extend({
