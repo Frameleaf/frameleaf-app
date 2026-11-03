@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { onTestFailed } from 'vitest';
+import { defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
 import { IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
@@ -13,6 +14,7 @@ import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_BATCH, QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { createImportScaleDiagnostics } from 'test/medium/import-scale-diagnostics.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
@@ -382,19 +384,62 @@ describe('offline import derived-work durable ownership', () => {
     },
   );
 
-  it('keeps explicit independent-copy admission ready even in a Manager environment', async () => {
-    const config = managerConfig();
-    config.media = { mode: 'independent-copy' };
-    config.mediaRoots = [{ source: '/source', target: '/copy' }];
-    await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
-    await seed(1);
-    await repository.dispatchImportedWork(config);
-    expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([{ state: 'ready' }]);
-    expect((await sql`select selection ? 'managerSetup' as managed from job_run`.execute(db)).rows).toEqual([
-      { managed: false },
-    ]);
-    expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(1);
-  });
+  it.each([undefined, { mode: 'independent-copy' as const }])(
+    'retains Manager authority and holds copied imports: %s',
+    async (media) => {
+      const config = managerConfig();
+      config.media = media;
+      config.mediaRoots = [{ source: '/source', target: '/copy' }];
+      await sql`update frameleaf_immich_import set config_fingerprint = ${digest(config)}`.execute(db);
+      await seed(1);
+      await repository.dispatchImportedWork(config);
+      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
+        { state: 'enumerating' },
+      ]);
+      expect(
+        (await sql<{ marker: unknown }>`select selection->'managerSetup' as marker from job_run`.execute(db)).rows[0]
+          .marker,
+      ).toMatchObject({
+        installation: 'abcdef123456',
+        operationId: 'fixture-operation',
+        preparedAt: expect.any(String),
+        startedAt: null,
+      });
+      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(0);
+      vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef654321');
+      await expect(repository.dispatchImportedWork(config)).rejects.toThrow('DERIVED_MANAGER_SETUP_IDENTITY_MISMATCH');
+      expect((await sql`select distinct state from job_selection`.execute(db)).rows).toEqual([
+        { state: 'enumerating' },
+      ]);
+      vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef123456');
+      vi.stubEnv('FRAMELEAF_MANAGER_ML_ENABLED', 'true');
+      await sql`delete from system_metadata where key='frameleaf-manager-library-setup:abcdef123456'`.execute(db);
+      await sql`update frameleaf_immich_import set status='activated'`.execute(db);
+      const setup = new FrameleafLibrarySetupService(
+        db,
+        { getAll: vi.fn().mockResolvedValue([]) } as never,
+        {} as never,
+        {
+          getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }),
+        } as never,
+        { hasAdmin: vi.fn().mockResolvedValue(true) } as never,
+        {} as never,
+        {} as never,
+        {
+          getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: mapAdminConfig(defaults), revision: 'test' }),
+          updateAdminConfigWithRevision: vi.fn(),
+        } as never,
+        {} as never,
+      );
+      await setup.begin();
+      expect(
+        (
+          await sql<{ stage: string }>`select stage from job_selection where state='ready' order by stage`.execute(db)
+        ).rows.map(({ stage }) => stage),
+      ).toEqual([JobName.AssetExtractMetadata, JobName.AssetGenerateThumbnails].sort());
+      expect(await store.feedManifest(QueueName.MetadataExtraction)).toBe(1);
+    },
+  );
 
   it('reuses frozen memberships after a crash before the first journal acknowledgement', async () => {
     await seed(3);

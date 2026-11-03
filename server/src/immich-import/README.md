@@ -127,13 +127,15 @@ journal, and all six captured stages; it stamps `startedAt` and releases the hel
 snapshots atomically. A resumed import preserves that start and never revives cancelled
 or attention-required stages.
 
-The importer additionally requires `FRAMELEAF_MANAGER_ORIGIN=new_import`,
-`FRAMELEAF_MANAGER_INSTALLATION` matching the 12-hex-character deployment identity,
-and `FRAMELEAF_IMPORT_MANAGER_OPERATION_ID` matching the validated config. The
-configuration digest must match the import journal. Environment markers alone cannot
-authorize a Manager hold or retrofit one onto previously admitted work. `status` requires only `DB_URL` and reports the
-journal state for restart reconciliation. An omitted media policy or explicit
-`{"mode":"independent-copy"}` preserves the unmanaged independent-copy contract.
+Manager preparation requires `FRAMELEAF_MANAGER_ORIGIN=new_import`, a valid 12-hex-character
+`FRAMELEAF_MANAGER_INSTALLATION`, a non-empty `FRAMELEAF_IMPORT_MANAGER_OPERATION_ID`,
+and a supplied configuration whose digest matches the import journal. Default and explicit
+independent-copy imports use that same private setup authority and commit their work held.
+The in-place policy additionally requires its deployment and operation IDs to match the environment.
+First preparation retains that authority; retry requires the same marker and cannot retrofit
+one onto previously admitted work. Outside the Manager import profile, default and explicit
+independent-copy imports keep their standalone ready-work behavior. `status` requires only
+`DB_URL` and reports the journal state for restart reconciliation.
 
 Example configuration (write it to a private file):
 

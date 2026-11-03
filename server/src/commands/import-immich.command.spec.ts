@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { ImportConfig } from 'src/immich-import/types.js';
-import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
+import { ImportImmichCommand, validateImportConfig } from 'src/commands/import-immich.command.js';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 
@@ -195,3 +195,29 @@ describe('connection cleanup', () => {
     expect(process.exitCode).toBe(1);
   });
 });
+
+it.each([undefined, { mode: 'independent-copy' as const }])(
+  'requires private Manager identity before admitting copied imports: %s',
+  (media) => {
+    vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_import');
+    try {
+      expect(() => validateImportConfig({ ...fixture.config, media })).toThrow('MANAGER_SETUP_AUTHORITY_REQUIRED');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
+
+it.each([undefined, { mode: 'independent-copy' as const }])(
+  'admits copied imports with retained Manager authority: %s',
+  (media) => {
+    vi.stubEnv('FRAMELEAF_MANAGER_ORIGIN', 'new_import');
+    vi.stubEnv('FRAMELEAF_MANAGER_INSTALLATION', 'abcdef123456');
+    vi.stubEnv('FRAMELEAF_IMPORT_MANAGER_OPERATION_ID', 'operation-1');
+    try {
+      expect(() => validateImportConfig({ ...fixture.config, media })).not.toThrow();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
