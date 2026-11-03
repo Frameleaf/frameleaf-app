@@ -4,6 +4,7 @@ import { JobName, QueueName } from 'src/enum.js';
 import { importDerivedRunId } from 'src/immich-import/derived-work.js';
 import { libraryImportDerivedRunId } from 'src/library-import/derived-work.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
+import { parseLibraryImportBinding } from 'src/library-import/state.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -37,12 +38,12 @@ afterAll(async () => {
 const run = async (kind: string, started: boolean) => {
   const operationId = randomUUID(),
     destinationId = randomUUID();
-  const binding = {
+  const binding = parseLibraryImportBinding({
     operationId,
     manifestSha256: 'a'.repeat(64),
     planSha256: 'b'.repeat(64),
     source: fixture.plan.source,
-  };
+  });
   const source = { source: 'synthetic-source', config: 'synthetic-config' };
   const id =
     kind === 'library-import-derived'
