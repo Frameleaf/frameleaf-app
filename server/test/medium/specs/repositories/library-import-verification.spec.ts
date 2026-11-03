@@ -1,7 +1,7 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { LIBRARY_IMPORT_LOCK } from 'src/library-import/lock.js';
-import { beginLibraryImportReadback } from 'src/library-import/verification.js';
+import { beginLibraryImportReadback, withLibraryImportReadback } from 'src/library-import/verification.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -70,4 +70,22 @@ it('refuses a transaction whose snapshot was already established', async () => {
       await beginLibraryImportReadback(wrap(connection));
     }),
   ).rejects.toThrow('before any query');
+});
+
+it('keeps composed readbacks read-only and releases their fence after a failure', async () => {
+  await expect(
+    withLibraryImportReadback(wrap(db), async (snapshot) => {
+      await snapshot.transaction(async (nested) => {
+        await beginLibraryImportReadback(nested);
+        await nested.query("UPDATE public.frameleaf_library_import SET status='abandoned'");
+      });
+    }),
+  ).rejects.toThrow('read-only');
+  await db.transaction().execute(async (tx) => {
+    await sql`LOCK TABLE public.frameleaf_library_import IN ROW EXCLUSIVE MODE NOWAIT`.execute(tx);
+    const { rows } = await sql<{
+      acquired: boolean;
+    }>`SELECT pg_try_advisory_xact_lock(${LIBRARY_IMPORT_LOCK}::bigint) AS acquired`.execute(tx);
+    expect(rows[0].acquired).toBe(true);
+  });
 });
