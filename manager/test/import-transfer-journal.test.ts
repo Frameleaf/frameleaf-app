@@ -304,3 +304,100 @@ test('competing journal instances serialize state changes and refuse operations 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('shared original placements survive restart with independent rollback receipts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'import-placements-'));
+  let store = new Store(directory);
+  try {
+    const { operation } = store.start('import', 'placements', {});
+    const { importPlanSha256 } = await import('../src/import-plan.js');
+    const first = {
+      ...file,
+      id: 'placement-one',
+      mode: 'copy' as const,
+      sourceAssetId: 'photo-one',
+      sourceFileId: 'shared-file',
+    };
+    const second = {
+      ...first,
+      id: 'placement-two',
+      sourceAssetId: 'photo-two',
+      destinationPath: 'second/photo.jpg',
+    };
+    const base = reviewedImport([]).plan;
+    const plan = {
+      ...base,
+      version: 2,
+      roots: [
+        {
+          id: 'source-root',
+          path: '/synthetic/source',
+          device: '1',
+          inode: '20',
+        },
+        {
+          id: 'destination-root',
+          path: '/synthetic/destination',
+          device: '1',
+          inode: '30',
+        },
+      ],
+      files: [first, second],
+    };
+    const reviewed = {
+      manifestSha256: binding.manifestSha256,
+      planSha256: importPlanSha256(plan),
+    };
+    let journal = new ImportTransferJournal(store);
+    journal.begin(operation.id, reviewed);
+    journal.sealPlan(operation.id, plan);
+    journal.intent(operation.id, first);
+    journal.intent(operation.id, second);
+    journal.verified(operation.id, first.id, {
+      sha256: first.sha256,
+      bytes: first.bytes,
+    });
+    store.close();
+    store = new Store(directory);
+    store.interrupt();
+    journal = new ImportTransferJournal(store);
+    assert.deepEqual(journal.review(operation.id).plan, plan);
+    assert.deepEqual(
+      journal
+        .files(operation.id)
+        .map(({ file, state }) => [file.sourcePath, state]),
+      [
+        [first.sourcePath, 'verified'],
+        [first.sourcePath, 'intent'],
+      ],
+    );
+    assert.throws(
+      () =>
+        journal.intent(operation.id, {
+          ...second,
+          sourceAssetId: 'wrong-photo',
+        }),
+      /import_transfer_not_planned/,
+    );
+    journal.verified(operation.id, second.id, {
+      sha256: second.sha256,
+      bytes: second.bytes,
+    });
+    journal.rollbackIntent(operation.id, second.id);
+    journal.rolledBack(operation.id, second.id, {
+      sha256: second.sha256,
+      bytes: second.bytes,
+    });
+    assert.deepEqual(
+      journal.files(operation.id).map(({ state }) => state),
+      ['verified', 'rolled-back'],
+    );
+    assert.deepEqual(
+      journal.files(operation.id).map(({ file }) => file),
+      [first, second],
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

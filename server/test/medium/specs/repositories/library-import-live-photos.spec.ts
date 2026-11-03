@@ -7,7 +7,7 @@ import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
 import { destinationPlanFingerprint, parseDestinationImportPlan } from 'src/library-import/destination-plan.js';
 import { verifyImportFiles } from 'src/library-import/files.js';
 import fixture from 'src/library-import/fixtures/manager-plan-v1.json' with { type: 'json' };
-import { manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
+import { importFileSchema, manifestFingerprint, parseImportManifest } from 'src/library-import/manifest.js';
 import { createImportedOwner } from 'src/library-import/owners.js';
 import { retainReviewedImportInputs } from 'src/library-import/reviewed-inputs.js';
 import { reconcileImportedStacks } from 'src/library-import/stack-reconciliation.js';
@@ -28,8 +28,8 @@ const wrap = (connection: Kysely<any>): ImportDatabase => ({
     (await connection.executeQuery(CompiledQuery.raw(statement, parameters))).rows as Record<string, unknown>[],
   transaction: (body) => connection.transaction().execute((tx) => body(wrap(tx))),
 });
-const setup = async (stacked = false) => {
-  const plan = parseDestinationImportPlan(fixture.plan);
+const setup = async (stacked = false, placements = false) => {
+  let plan = parseDestinationImportPlan(fixture.plan);
   plan.owners = ['owner', 'viewer', 'editor', 'unrelated'].map((sourceId) => ({
     sourceId,
     destinationId: randomUUID(),
@@ -82,6 +82,17 @@ const setup = async (stacked = false) => {
     livePhotos: [{ photoAssetId: 'still', videoAssetId: 'motion' }],
     losses: [],
   });
+  if (placements)
+    plan = parseDestinationImportPlan({
+      ...plan,
+      version: 2,
+      files: plan.files.map((file) => ({
+        ...file,
+        id: 'placement-' + file.id,
+        sourceAssetId: file.id,
+        sourceFileId: file.id,
+      })),
+    });
   const binding = {
     operationId: randomUUID(),
     manifestSha256: manifestFingerprint(manifest),
@@ -144,6 +155,36 @@ beforeEach(async () => {
   );
 });
 afterAll(async () => db?.destroy());
+
+it('reconciles explicit Live Photo pairs with independent V2 file placements', async () => {
+  const { context, writer, input, photos } = await setup(false, true);
+  const id = await writer.write(input('still'));
+  expect(await writer.write(input('still'))).toBe(id);
+  expect((await sql`SELECT "livePhotoVideoId" FROM public.asset WHERE id=${id}`.execute(db)).rows).toEqual([
+    { livePhotoVideoId: photos.motion },
+  ]);
+  await new LibraryImportJournal(wrap(db)).phase(context.binding, 'verifying');
+  expect(
+    await reconcileImportedAssets(
+      wrap(db),
+      context,
+      ['motion', 'still', 'outside'].map((id) => input(id)),
+    ),
+  ).toMatchObject({
+    assets: 3,
+    originals: 3,
+    bytes: '9',
+  });
+  expect(
+    (
+      await sql`SELECT source_id FROM public.frameleaf_library_import_mapping WHERE entity_kind='file' ORDER BY source_id`.execute(
+        db,
+      )
+    ).rows,
+  ).toEqual([{ source_id: 'placement-motion' }, { source_id: 'placement-outside' }, { source_id: 'placement-still' }]);
+  const files = importFileSchema.array().parse(vi.mocked(verifyImportFiles).mock.calls.at(-1)![1]);
+  expect(files.map((file) => file.id).sort()).toEqual(['placement-motion', 'placement-outside', 'placement-still']);
+});
 
 it('atomically retains the explicit motion original and stable replay without extra album access', async () => {
   const { context, writer, input, photos, users } = await setup();

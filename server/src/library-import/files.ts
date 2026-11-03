@@ -87,6 +87,7 @@ export const verifyImportFiles = async (
   root: string,
   input: unknown,
   expectedRoot: { device: string; inode: string },
+  destinationIdentities = new Set<string>(),
 ): Promise<{ files: number; bytes: string }> => {
   const parsed = z.array(importFileSchema).safeParse(input);
   if (
@@ -97,13 +98,14 @@ export const verifyImportFiles = async (
     refuse('BUNDLE_FILE_INVENTORY_INVALID');
   const identity = rootIdentitySchema.safeParse(expectedRoot);
   if (!identity.success) refuse('BUNDLE_ROOT_INVALID');
-  return verifyFiles(root, parsed.data!, identity.data!);
+  return verifyFiles(root, parsed.data!, identity.data!, destinationIdentities);
 };
 
 const verifyFiles = async (
   root: string,
   files: ImportManifest['files'],
   expectedRoot?: { device: string; inode: string },
+  destinationIdentities?: Set<string>,
 ): Promise<{ files: number; bytes: string }> => {
   if (process.platform !== 'linux') refuse('BUNDLE_REQUIRES_LINUX_CONTAINER');
   try {
@@ -125,10 +127,16 @@ const verifyFiles = async (
         if (remainder === '..' || remainder.startsWith(`..${sep}`) || isAbsolute(remainder))
           refuse('BUNDLE_PATH_ESCAPE');
         // Resolve contained export links, then refuse a replaced final symlink or special file at open.
-        const file = await openContained(rootHandle, remainder);
+        const file = await openContained(rootHandle, destinationIdentities ? entry.path : remainder);
         try {
           const before = await file.stat({ bigint: true });
           if (!before.isFile() || before.size !== BigInt(entry.bytes)) refuse('BUNDLE_FILE_MISMATCH');
+          if (destinationIdentities) {
+            if (before.nlink !== 1n) refuse('BUNDLE_FILE_LINKS');
+            const identity = `${before.dev}:${before.ino}`;
+            if (destinationIdentities.has(identity)) refuse('BUNDLE_FILE_ALIAS');
+            destinationIdentities.add(identity);
+          }
           const hash = createHash('sha256');
           for await (const chunk of file.createReadStream({ autoClose: false })) hash.update(chunk);
           const after = await file.stat({ bigint: true });
