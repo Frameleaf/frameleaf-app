@@ -54,7 +54,9 @@ const settled = async (appleId: string): Promise<FixtureAccount> => {
   for (let attempt = 0; attempt < 60; attempt++) {
     const account = await fixture.account(appleId);
     stable =
-      previous && account.downloadsWaiting === 0 && account.downloadsServed === previous.downloadsServed ? stable + 1 : 0;
+      previous && account.downloadsWaiting === 0 && account.downloadsServed === previous.downloadsServed
+        ? stable + 1
+        : 0;
     if (stable >= 3) {
       return account;
     }

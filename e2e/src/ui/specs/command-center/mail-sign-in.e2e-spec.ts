@@ -69,7 +69,9 @@ test('signs in with Google in a new tab, then shows the account, tests it and di
   await expect(page.getByText('Waiting for you on the Google page')).toBeVisible();
   await providerPage.close();
 
-  await expect(page.getByText('Signed in with Google. Frameleaf now sends from rivera.family@example.com.')).toBeVisible({
+  await expect(
+    page.getByText('Signed in with Google. Frameleaf now sends from rivera.family@example.com.'),
+  ).toBeVisible({
     timeout: 15_000,
   });
   await expect(status(page).getByRole('heading', { name: 'Email is set up' })).toBeVisible();

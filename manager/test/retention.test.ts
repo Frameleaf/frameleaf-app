@@ -147,7 +147,8 @@ test('Manager prunes at start and after every operation settles, and the sweep n
     for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
       await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(store.history()[0].state, 'complete');
-    for (let i = 0; i < 100 && (await exists(join(directory, 'checkpoints', stop.id, 'database.dump'))); i++)
+    // The sweep runs after the operation settles; emulated arm64 runners need more than a few hundred ms.
+    for (const deadline = Date.now() + 5000; (await exists(join(directory, 'checkpoints', stop.id, 'database.dump'))) && Date.now() < deadline; )
       await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(await exists(join(directory, 'checkpoints', stop.id, 'database.dump')), false);
     assert.equal(await exists(join(directory, 'checkpoints', stop.id, 'compose.json')), true);

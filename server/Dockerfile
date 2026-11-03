@@ -501,9 +501,19 @@ RUN --mount=type=cache,id=mise-tools-${TARGETPLATFORM},target=/buildcache/mise \
 
 COPY ./packages/plugin-core ./packages/plugin-core/
 
-# Build plugins
+# Build plugins. The tools live in the mise cache mount, not in a layer, so a
+# cached `mise install` layer above does not guarantee they exist on a fresh
+# builder when only this step re-runs; `mise install --locked` is a no-op when
+# they are already present and restores them otherwise.
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   --mount=type=cache,id=mise-tools-${TARGETPLATFORM},target=/buildcache/mise \
+  --mount=type=secret,id=mise_github_token,env=MISE_GITHUB_TOKEN \
+  for attempt in 1 2 3 4 5; do \
+  if mise install --locked github:extism/js-pdk github:webassembly/binaryen; then break; fi; \
+  if [ "${attempt}" -eq 5 ]; then echo "mise install failed after 5 attempts" >&2; exit 1; fi; \
+  echo "mise install failed (attempt ${attempt}/5); retrying in $((attempt * 5))s" >&2; \
+  sleep $((attempt * 5)); \
+  done && \
   pnpm --filter @frameleaf/plugin-core install --frozen-lockfile && \
   PATH="$(mise where github:extism/js-pdk):$(mise where github:webassembly/binaryen)/bin:$PATH" \
   pnpm --filter @frameleaf/plugin-core build
