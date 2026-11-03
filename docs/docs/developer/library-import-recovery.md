@@ -228,3 +228,19 @@ Source discovery, complete source-to-manifest conversion, activation/recovery or
 For legacy source imports, the private Manager provisioning profile applies to both independent copies and same-layout adoption. Default or explicit copy policies still verify independent media roots; their regeneration records now retain the same Manager setup identity and remain held until first setup. Missing private identity refuses admission. Existing standalone copies outside that profile remain independent, and an already admitted unmarked run cannot be retrofitted with Manager authority.
 
 Manager queue admission checks the current private installation and setup state for every pending promotion and waiting claim. The retained run and operation binding survives setup retries. Losing or changing that authority, the canonical import journal or the detailed run marker holds managed work before workers can claim it, including immediately after restore. Already running jobs may finish; unrelated requests and genuinely unmanaged imports remain independent. Reviewed restoration authority can resume only the same bound import.
+
+The common setup Retry action recovers safe failed regeneration and eligible
+blocked dependencies only within the same verified import run. It preserves the
+owner's pause, frozen membership, completed outcomes and original payloads, and
+leaves unrelated, cancelled, unsafe, domain-operation and manual-review work alone.
+Interrupted frozen roots can resume only with intact identifiers and preservation
+flags. If history pruning erased a handler payload, setup keeps that failure for
+review in Library care; it never invents a replacement payload or recaptures a
+changed source inventory. Source migration rollback remains a separate operation.
+
+A `new_import` Manager profile is for a fresh, Manager-managed migration. Wrapping
+an already activated standalone import in that profile does not convert it into a
+managed import: missing setup authority requires review and remains held. An
+ordinary restore of an independent library uses `restored_library` without an
+import adoption grant. Missing both setup markers in a matching new-import
+profile cannot establish that a damaged managed run was originally standalone.
