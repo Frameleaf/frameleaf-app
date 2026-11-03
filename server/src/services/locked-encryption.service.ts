@@ -250,7 +250,14 @@ export class LockedEncryptionService {
           createdAt,
           updatedAt: createdAt,
         } as const;
-        file = await wrapKey(base, privateKey, modeKind(dto.mode), passphrase ?? dto.pinCode, await this.pepper());
+        file = await wrapKey(
+          base,
+          privateKey,
+          modeKind(dto.mode),
+          passphrase ?? dto.pinCode,
+          // only a PIN wrap uses the pepper; a passphrase must not need the pepper file at all
+          modeKind(dto.mode) === 'pin' ? await this.pepper() : {},
+        );
         file = await wrapKey(file, privateKey, 'recovery', recoveryKey);
         await this.lockedKeyRepository.write(file);
       } catch (error) {
@@ -829,7 +836,7 @@ export class LockedEncryptionService {
     }
     let privateKey: Buffer;
     try {
-      privateKey = await unwrapKey(file, 'pin', pinCode, await this.pepper());
+      privateKey = await unwrapKey(file, 'pin', pinCode, await this.pinUnwrapOptions(file));
     } catch (error) {
       if (error instanceof LockedPepperError) {
         throw this.pepperUnavailable(error);
@@ -1041,7 +1048,7 @@ export class LockedEncryptionService {
       return null;
     }
     try {
-      return await unwrapKey(file, 'pin', pinCode, await this.pepper());
+      return await unwrapKey(file, 'pin', pinCode, await this.pinUnwrapOptions(file));
     } catch (error) {
       if (error instanceof WrongSecretError) {
         return null;
@@ -1136,6 +1143,16 @@ export class LockedEncryptionService {
   }
 
   /** The server's Locked pepper as `wrapKey`/`unwrapKey` options; every PIN wrap is made and opened with it. */
+  /**
+   * The pepper for opening this file's PIN wrap, fetched only when that wrap was made with one: a
+   * format-1 PIN wrap opens without the pepper file, so a missing file must not lock it out.
+   */
+  private pinUnwrapOptions(file: LockedKeyFile): Promise<{ pepper?: Buffer }> {
+    return file.wraps.some((wrap) => wrap.kind === 'pin' && wrap.pepper !== undefined)
+      ? this.pepper()
+      : Promise.resolve({});
+  }
+
   private async pepper(): Promise<{ pepper: Buffer }> {
     try {
       return { pepper: await this.lockedKeyRepository.pepper() };
@@ -1167,7 +1184,7 @@ export class LockedEncryptionService {
       (verify) =>
         verify(async () => {
           try {
-            return await unwrapKey(file, kind, secret, kind === 'pin' ? await this.pepper() : {});
+            return await unwrapKey(file, kind, secret, kind === 'pin' ? await this.pinUnwrapOptions(file) : {});
           } catch (error) {
             if (error instanceof WrongSecretError) {
               throw new UnauthorizedException(kind === 'pin' ? 'Wrong PIN code' : `Wrong ${secretName(kind)}`);

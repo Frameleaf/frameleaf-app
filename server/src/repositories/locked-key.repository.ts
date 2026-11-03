@@ -150,10 +150,36 @@ export class LockedKeyRepository {
     return pepper;
   }
 
-  /** Whether any key file on disk holds a wrap made with the pepper (a format-2 PIN wrap). */
+  /**
+   * Whether any key file on disk holds a wrap made with the pepper (a format-2 PIN wrap). Fails
+   * closed: a key file that cannot be read or classified (a half-restored or damaged one) is a
+   * `LockedPepperFileError`, since making a new pepper while it may hold a peppered wrap would
+   * close that wrap for good once the file is restored.
+   */
   private async hasPepperedWrap(): Promise<boolean> {
-    const files = await this.list();
-    return files.some((file) => file.wraps.some((wrap) => wrap.pepper !== undefined));
+    let peppered = false;
+    for (const name of await this.names()) {
+      const userId = name.slice(0, -'.json'.length);
+      if (!name.endsWith('.json') || !UUID.test(userId)) {
+        continue;
+      }
+      let file: LockedKeyFile | null;
+      try {
+        file = await this.read(userId);
+      } catch {
+        file = null;
+      }
+      if (!file) {
+        throw new LockedPepperFileError(
+          `The Locked pepper file is missing and the key file ${join(this.directory(), name)} cannot be inspected. No new pepper is made until every key file can be read: restore the pepper file from a backup, or repair or remove that key file.`,
+          'missing',
+        );
+      }
+      if (file.wraps.some((wrap) => wrap.pepper !== undefined)) {
+        peppered = true;
+      }
+    }
+    return peppered;
   }
 
   /**

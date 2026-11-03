@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { Batcher, CrawlOptions, crawl, discoverEndpoint } from 'src/utils.js';
 import { Mock } from 'vitest';
 
@@ -338,6 +338,18 @@ describe('crawl', () => {
         // the link itself, named on purpose, is crawled (fast-glob resolves the named folder)
         const named = await crawl({ pathsToCrawl: [join(directory, 'nested', 'shared')], recursive: true, extensions });
         expect(named.map((path) => readContent(path))).toEqual(['on the nas']);
+        // ... also when its parent is named as well: the deepest named root decides
+        const both = await crawl({
+          pathsToCrawl: [directory, join(directory, 'nested', 'shared')],
+          recursive: true,
+          extensions,
+        });
+        expect(both.map((path) => readContent(path))).toEqual(['mine', 'on the nas', 'on the nas']);
+        // a wildcard pattern starts from its literal folder and does not leave it through a link either
+        // (`nested/*` names the folders under nested, so the file link directly in nested is not matched)
+        const wildcard = await crawl({ pathsToCrawl: [join(directory, 'nested', '*')], recursive: true, extensions });
+        expect(wildcard.map((path) => readContent(path))).toEqual(['mine']);
+        expect(wildcard.some((path) => path.startsWith(elsewhere) || path.includes(`${sep}shared${sep}`))).toBe(false);
         // a linked file named on purpose is uploaded through the link
         const file = await crawl({ pathsToCrawl: [join(directory, 'nested', 'link.jpg')], extensions });
         expect(file).toEqual([join(directory, 'nested', 'link.jpg')]);

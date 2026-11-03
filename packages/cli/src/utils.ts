@@ -217,6 +217,11 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         patterns.push(convertPathToPatternOnWin(currentPath));
+        // a wildcard pattern: its literal prefix is the folder the crawl may not leave through a link
+        const base = globBase(resolve(currentPath));
+        if (base) {
+          roots.push(base);
+        }
       } else {
         throw error;
       }
@@ -252,6 +257,17 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
  * folder linked from inside a root leads elsewhere (a NAS share, another library), so the files
  * behind it are neither uploaded nor, with `--delete`, removed.
  */
+/** The folder a glob pattern starts from: everything before its first wildcard, cut at a separator. */
+const globBase = (pattern: string): string | undefined => {
+  const magic = pattern.search(/[*?[\]{}()!]/);
+  if (magic < 0) {
+    return undefined;
+  }
+  const literal = pattern.slice(0, magic);
+  const cut = Math.max(literal.lastIndexOf('/'), literal.lastIndexOf('\\'));
+  return cut > 0 ? literal.slice(0, cut) : undefined;
+};
+
 const insideRoots = async (files: string[], roots: string[]): Promise<string[]> => {
   const realRoots = new Map<string, string>();
   for (const root of roots) {
@@ -268,12 +284,19 @@ const insideRoots = async (files: string[], roots: string[]): Promise<string[]> 
   const realFolders = new Map<string, string>();
   const kept: string[] = [];
   for (const file of files) {
-    // fast-glob reports forward-slash paths on Windows; compare native forms on every platform
     const nativeFile = resolve(file);
-    const root = realRoots.keys().find((candidate) => {
+    // fast-glob reports forward-slash paths on Windows; compare native forms on every platform.
+    // The deepest root wins: a linked folder named on purpose inside another named root is crawled.
+    let root: string | undefined;
+    for (const candidate of realRoots.keys()) {
       const nativeRoot = resolve(candidate);
-      return nativeFile === nativeRoot || nativeFile.startsWith(nativeRoot + sep);
-    });
+      if (
+        (nativeFile === nativeRoot || nativeFile.startsWith(nativeRoot + sep)) &&
+        (!root || nativeRoot.length > resolve(root).length)
+      ) {
+        root = candidate;
+      }
+    }
     if (!root) {
       kept.push(file);
       continue;

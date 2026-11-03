@@ -49,6 +49,11 @@ export class ActivityService extends BaseService {
 
   async create(auth: AuthDto, dto: ActivityCreateDto): Promise<MaybeDuplicate<ActivityResponseDto>> {
     await this.requireAccess({ auth, permission: Permission.ActivityCreate, ids: [dto.albumId] });
+    // ids come back from PostgreSQL in lower case; an upper-case id passes validation but would
+    // never match the access and membership sets
+    if (dto.assetId) {
+      dto.assetId = dto.assetId.toLowerCase();
+    }
 
     const common = {
       userId: auth.user.id,
