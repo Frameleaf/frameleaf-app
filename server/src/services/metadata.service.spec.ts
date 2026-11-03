@@ -1910,6 +1910,31 @@ describe(MetadataService.name, () => {
       },
     );
 
+    it('preserves an imported wall clock during ordinary metadata extraction after writing its sidecar', async () => {
+      const instant = new Date('2020-06-10T18:30:00.000Z');
+      const local = new Date('2020-06-10T12:30:00.000Z');
+      const asset = AssetFactory.from({ fileCreatedAt: instant, localDateTime: local })
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: instant, timeZone: null })
+        .build();
+      const locks = new Set<LockableProperty>(['dateTimeOriginal', 'timeZone']);
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockImplementation(async () => [...locks]);
+      mocks.asset.unlockProperties.mockImplementation(async (_id, properties) => {
+        for (const property of properties) locks.delete(property);
+      });
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalled();
+
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: null, updateId: 'revision', timeZone: null });
+      mocks.job.isImportedMetadataJob.mockResolvedValue(false);
+      mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO(instant.toISOString()), zone: 'UTC' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('fileCreatedAt');
+      expect(mocks.asset.update.mock.calls[0][0]).not.toHaveProperty('localDateTime');
+    });
+
     it('does not publish capture clocks from a metadata revision changed while reading the file', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
