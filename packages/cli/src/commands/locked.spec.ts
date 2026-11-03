@@ -8,7 +8,7 @@ import {
 } from '@frameleaf/locked-crypto';
 import { Command } from 'commander';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { chmod, copyFile, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -289,6 +289,27 @@ describe('locked decrypt', { timeout: 120_000 }, () => {
         Object.defineProperty(process, 'stdin', stdin);
         vi.restoreAllMocks();
       }
+    });
+
+    it('finds the pepper inside a copy of the library that carries the default identity folder', async () => {
+      const withIdentity = join(root, `library-${randomUUID()}`);
+      await cp(library, withIdentity, { recursive: true });
+      await mkdir(join(withIdentity, 'frameleaf', 'identity'), { recursive: true });
+      await writeFile(
+        join(withIdentity, 'frameleaf', 'identity', 'locked-pin-pepper.key'),
+        `${pepper.toString('base64')}\n`,
+      );
+      const found = join(root, `found-${randomUUID()}`);
+      await expect(
+        lockedDecrypt({ library: withIdentity, to: found, user: 'Cara', secret: '735102' }),
+      ).resolves.toMatchObject({ written: 1, failed: [] });
+      expect(await readFile(join(found, 'cara.png'))).toEqual(plain.caraPhoto);
+      // an explicit pepper still wins over the copy's file
+      const wrongPepper = randomBytes(32).toString('base64');
+      const wrong = join(root, `wrong-${randomUUID()}`);
+      await expect(
+        lockedDecrypt({ library: withIdentity, to: wrong, user: 'Cara', secret: '735102', pepper: wrongPepper }),
+      ).rejects.toMatchObject({ exitCode: 2 });
     });
 
     it('without the pepper the PIN is refused with a hint naming --pepper-file, exit code 2, nothing written', async () => {
