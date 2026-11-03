@@ -901,7 +901,7 @@ describe(AssetService.name, () => {
           expect.objectContaining({
             exif: expect.objectContaining({
               assetId: asset.id,
-              dateTimeOriginal: '2020-06-10T12:30:00',
+              dateTimeOriginal: '2020-06-10T12:30:00Z',
               timeZone: 'UTC',
             }),
           }),
@@ -1921,6 +1921,11 @@ describe(AssetService.name, () => {
         { assetId: asset.id, dateTimeOriginal: new Date('2020-06-10T12:30:00Z'), timeZone: 'UTC' },
       ]);
       await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal: '2020-06-10T12:30:00' });
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        [asset.id],
+        { dateTimeOriginal: '2020-06-10T12:30:00Z' },
+        [],
+      );
       expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC');
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
