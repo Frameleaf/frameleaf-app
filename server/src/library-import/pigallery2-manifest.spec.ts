@@ -60,7 +60,7 @@ const input = () => ({
     };
   }),
   archivedFiles: enriched.files
-    .filter((file) => !rows.media_entity.some((media) => directoryPath(media.directoryId) + media.name === file.path))
+    .filter((file) => rows.media_entity.every((media) => directoryPath(media.directoryId) + media.name !== file.path))
     .map((file) => {
       const bytes = Buffer.alloc(Number(file.bytes), 65);
       return { path: file.path, bytes: String(bytes.length), sha256: digest(bytes), content: new Uint8Array(bytes) };
@@ -93,7 +93,7 @@ describe('PiGallery2 common manifest mapping', () => {
       for (const record of records) {
         const row: Record<string, SQLInputValue> = { ...record };
         if (table === 'user_entity') row.password = 'excluded-password-hash';
-        if (table === 'sharing_entity') {
+        else if (table === 'sharing_entity') {
           row.password = row.has_password === 1 ? 'excluded-share-password-hash' : null;
           row.sharingKey = 'excluded-bearer-token';
           delete row.has_password;

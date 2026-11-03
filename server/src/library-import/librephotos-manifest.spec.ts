@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
@@ -340,9 +341,7 @@ describe('LibrePhotos common manifest mapping', () => {
     const source: Snapshot = {
       version: pgSchema.source.version,
       schemaSha256: pgSchema.schemaSha256,
-      async *rows(table) {
-        yield await Promise.resolve(rows.get(table) ?? []);
-      },
+      rows: (table) => Readable.from([rows.get(table) ?? []]),
     };
     const options = input();
     options.source.schemaSha256 = pgSchema.schemaSha256;

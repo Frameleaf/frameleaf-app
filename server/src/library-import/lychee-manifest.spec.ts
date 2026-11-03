@@ -403,17 +403,38 @@ describe('Lychee common manifest mapping', () => {
     'refuses %s original evidence',
     (kind) => {
       const value = input();
-      if (kind === 'missing') value.files.pop();
-      else if (kind === 'no-original')
-        database.prepare('DELETE FROM size_variants WHERE id=?').run(original(photo.id).id);
-      else if (kind === 'extra') value.files.push({ ...value.files[0], id: 'preview:1', path: 'preview/image.jpg' });
-      else if (kind === 'path') value.files[0].path = 'preview/image.jpg';
-      else if (kind === 'size') value.files[0].bytes = '1';
-      else if (kind === 'hash') value.files[0].sha256 = 'source-checksum';
-      else if (kind === 'remote')
-        database
-          .prepare('UPDATE size_variants SET storage_disk=? WHERE id=?')
-          .run('s3', original(content.originals[0].photoId).id);
+      switch (kind) {
+        case 'missing': {
+          value.files.pop();
+          break;
+        }
+        case 'no-original': {
+          database.prepare('DELETE FROM size_variants WHERE id=?').run(original(photo.id).id);
+          break;
+        }
+        case 'extra': {
+          value.files.push({ ...value.files[0], id: 'preview:1', path: 'preview/image.jpg' });
+          break;
+        }
+        case 'path': {
+          value.files[0].path = 'preview/image.jpg';
+          break;
+        }
+        case 'size': {
+          value.files[0].bytes = '1';
+          break;
+        }
+        case 'hash': {
+          value.files[0].sha256 = 'source-checksum';
+          break;
+        }
+        case 'remote': {
+          database
+            .prepare('UPDATE size_variants SET storage_disk=? WHERE id=?')
+            .run('s3', original(content.originals[0].photoId).id);
+          break;
+        }
+      }
       expect(() => read(value)).toThrow(/LYCHEE_/);
     },
   );
@@ -430,24 +451,52 @@ describe('Lychee common manifest mapping', () => {
     'stale-snapshot',
   ])('refuses unqualified %s state before destination effects', (kind) => {
     const value = input();
-    if (kind === 'schema') value.source.schemaSha256 = '0'.repeat(64);
-    else if (kind === 'revision') value.inventory.revisionAfter = 'changed';
-    else if (kind === 'writers') value.inventory.writersStopped = false;
-    else if (kind === 'owner') database.prepare('UPDATE photos SET owner_id=999 WHERE id=?').run(photo.id);
-    else if (kind === 'album-cycle')
-      database.prepare('UPDATE albums SET parent_id=id WHERE id=?').run(content.rows.albums[0].id);
-    else if (kind === 'stale-snapshot') value.materializedAlbums.unknown = [photo.id];
-    else if (kind === 'timezone-invalid')
-      database
-        .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?')
-        .run('2020-06-10 18:30:00.000000', 'Mars/Olympus', photo.id);
-    else if (kind === 'timezone')
-      database
-        .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=NULL WHERE id=?')
-        .run('2020-06-10 18:30:00.000000', photo.id);
-    else if (kind === 'date')
-      database.prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?').run('invalid', 'UTC', photo.id);
-    else if (kind === 'gps') database.prepare('UPDATE photos SET latitude=45,longitude=NULL WHERE id=?').run(photo.id);
+    switch (kind) {
+      case 'schema': {
+        value.source.schemaSha256 = '0'.repeat(64);
+        break;
+      }
+      case 'revision': {
+        value.inventory.revisionAfter = 'changed';
+        break;
+      }
+      case 'writers': {
+        value.inventory.writersStopped = false;
+        break;
+      }
+      case 'owner': {
+        database.prepare('UPDATE photos SET owner_id=999 WHERE id=?').run(photo.id);
+        break;
+      }
+      case 'album-cycle': {
+        database.prepare('UPDATE albums SET parent_id=id WHERE id=?').run(content.rows.albums[0].id);
+        break;
+      }
+      case 'stale-snapshot': {
+        value.materializedAlbums.unknown = [photo.id];
+        break;
+      }
+      case 'timezone-invalid': {
+        database
+          .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?')
+          .run('2020-06-10 18:30:00.000000', 'Mars/Olympus', photo.id);
+        break;
+      }
+      case 'timezone': {
+        database
+          .prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=NULL WHERE id=?')
+          .run('2020-06-10 18:30:00.000000', photo.id);
+        break;
+      }
+      case 'date': {
+        database.prepare('UPDATE photos SET taken_at=?,taken_at_orig_tz=? WHERE id=?').run('invalid', 'UTC', photo.id);
+        break;
+      }
+      case 'gps': {
+        database.prepare('UPDATE photos SET latitude=45,longitude=NULL WHERE id=?').run(photo.id);
+        break;
+      }
+    }
     expect(() => read(value)).toThrow(/LYCHEE_/);
   });
 });
